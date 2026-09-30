@@ -304,6 +304,8 @@ def test_memory_plan_sizes_from_what_is_available_and_never_guesses_when_unread(
     assert small["heap_rows"] == kls.MIN_HEAP_ROWS  # the floor protects the default export
     assert big["heap_rows"] == int(64 * 2**30 * kls.HEAP_SHARE / kls.ROW_BYTES)
     assert big["batch"] > small["batch"]
+    assert floor["family_rows"] == kls.MIN_FAMILY_ROWS and small["family_rows"] == kls.MIN_FAMILY_ROWS
+    assert big["family_rows"] == int(64 * 2**30 * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES)
 
 
 def test_row_budget_constant_matches_the_measured_row_size():
@@ -324,6 +326,141 @@ def test_row_budget_constant_matches_the_measured_row_size():
     finally:
         tracemalloc.stop()
     assert abs(per_row - kls.ROW_BYTES) / kls.ROW_BYTES < 0.25, per_row
+
+
+def test_family_row_budget_constant_matches_the_measured_size():
+    """FAMILY_ROW_BYTES turns a share of available memory into how many keywords the families
+    may be grouped over. Measured here on a mixed basis (a third multi-token phrases); the
+    budget must cover the peak while grouping and must not be absurdly far above it."""
+    from src.analytics.families import build_families
+
+    rnd = random.Random(3)
+    vocab = [f"w{i}" for i in range(5000)]
+    n = 20_000
+    fam = []
+    for i in range(n):
+        toks = [rnd.choice(vocab) for _ in range(rnd.choice([2, 3]) if rnd.random() < 0.33 else 1)]
+        norm = " ".join(toks)
+        fam.append((
+            kls.order_key(i, i % 500, True),
+            {"term": norm.title(), "normalized": norm, "kind": rnd.choice(["person", "org", "term"]),
+             "mentions": i % 500, "articles": i % 90},
+        ))
+    gc.collect()
+    tracemalloc.start()
+    try:
+        base = tracemalloc.get_traced_memory()[0] - 0
+        families = build_families([it for _k, it in fam], {})
+        peak_extra = tracemalloc.get_traced_memory()[1] - base
+        del families
+    finally:
+        tracemalloc.stop()
+    per_entry = peak_extra / n
+    # (what `fam` itself holds is ~0.5 KB per entry and is measured before tracing starts; the
+    # constant covers both, so compare it with grouping's own peak plus that)
+    assert per_entry + 500 <= kls.FAMILY_ROW_BYTES * 1.25, per_entry
+    assert per_entry + 500 >= kls.FAMILY_ROW_BYTES * 0.4, per_entry
+
+
+def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
+    """EXPORT_ENTRY_BYTES turns an instance's keyword count into the memory the digest needs, which
+    the bundle gate compares with the machine (R27). Measured here on the digest path, the one the
+    bundle runs: the constant must cover the peak per exported entry, and must not sit so far above
+    it that the gate refuses machines that could run the export."""
+    from src.api.diagnostics.keywords import keyword_log
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+
+    def digest(db) -> bytes:
+        return _drain_body(keyword_log(db=db, digest=True, fmt="json", per_lang=5000, page=1, max_mb=None))
+
+    warm = tmp_path / "warm.db"
+    _build(warm, 9, articles=300, keywords=3_000, with_boilerplate=False)
+    db = _session(warm)
+    digest(db)  # lazy tables a first export loads are not this export's own memory
+    db.close()
+
+    p = tmp_path / "entry.db"
+    _build(p, 9, articles=300, keywords=15_000, with_boilerplate=False)
+    db = _session(p)
+    try:
+        gc.collect()
+        tracemalloc.start()
+        try:
+            body = digest(db)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        exported = json.loads(body)["data"]["corpus"]["keywords_exported"]
+    finally:
+        db.close()
+    assert exported > 10_000
+    per_entry = peak / exported
+    assert per_entry <= kls.EXPORT_ENTRY_BYTES, per_entry
+    assert per_entry >= kls.EXPORT_ENTRY_BYTES * 0.5, per_entry
+
+
+def _counted(path: Path):
+    """A session that records every SQL statement it runs."""
+    eng = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    seen: list[str] = []
+
+    @event.listens_for(eng, "before_cursor_execute")
+    def _rec(_c, _cur, statement, *_a):  # noqa: ANN001
+        seen.append(statement)
+
+    return sessionmaker(bind=eng, future=True)(), seen
+
+
+def test_the_estimate_is_read_from_the_instances_counts_and_never_scans_the_mentions(dbs):
+    con = sqlite3.connect(dbs[1])
+    n_art = con.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+    max_kid = con.execute("SELECT MAX(id) FROM keywords").fetchone()[0]
+    n_lang = con.execute("SELECT COUNT(DISTINCT language) FROM articles").fetchone()[0]
+    con.close()
+    db, seen = _counted(dbs[1])
+    est = kls.estimate_export_need(db, per_language=5000)
+    db.close()
+    assert est["articles"] == n_art and est["keyword_id_bound"] == max_kid
+    assert est["languages"] == n_lang + 1  # the "?" an article without a language falls in
+    assert est["exportable_keywords"] == min(max_kid, est["languages"] * 5000)
+    assert est["need_mb"] >= kls.EXPORT_FIXED_BYTES / 2**20
+    assert seen and not any("keyword_mentions" in q for q in seen), seen
+
+
+def test_the_estimate_grows_with_the_keywords_until_the_window_bounds_it(tmp_path):
+    needs = {}
+    for k in (500, 4_000):
+        p = tmp_path / f"est{k}.db"
+        _build(p, 2, articles=120, keywords=k, with_boilerplate=False)
+        db = _session(p)
+        needs[k] = (
+            kls.estimate_export_need(db, per_language=5000),
+            kls.estimate_export_need(db, per_language=10),
+        )
+        db.close()
+    assert needs[4_000][0]["need_mb"] > needs[500][0]["need_mb"]
+    # a window of 10 per language holds at most languages x 10 entries, whatever the table holds
+    for k in needs:
+        small = needs[k][1]
+        assert small["exportable_keywords"] == min(k, small["languages"] * 10)
+        assert small["need_mb"] < needs[k][0]["need_mb"] or k == 500
+
+
+def test_sparse_article_ids_do_not_size_the_estimate_from_the_largest_id(tmp_path):
+    """Three articles with ids near a billion: a flat array over the id range would be 12 GB. The
+    scan uses two dicts for ids this sparse (see ArticleMaps), and the estimate must agree."""
+    p = tmp_path / "sparse.db"
+    _build(p, 4, articles=3, keywords=50, with_boilerplate=False)
+    con = sqlite3.connect(p)
+    con.execute("UPDATE articles SET id = id + 900000000")
+    con.execute("UPDATE keyword_mentions SET article_id = article_id + 900000000")
+    con.commit()
+    con.close()
+    db = _session(p)
+    est = kls.estimate_export_need(db, per_language=5000)
+    db.close()
+    assert est["need_mb"] < 100, est
 
 
 def test_fit_window_is_the_largest_equal_window_and_keeps_every_language():
@@ -405,6 +542,8 @@ def _same_archive(a: dict[str, bytes], b: dict[str, bytes]) -> None:
             sa, sb = json.loads(a[name]), json.loads(b[name])
             for s in (sa, sb):
                 s.pop("generated_at", None)
+                # the budget is the machine's (it differs between the two runs by construction)
+                s["data"]["families_provenance"].pop("basis_budget_keywords", None)
             assert sa == sb
         else:
             assert a[name] == b[name], name
@@ -416,7 +555,7 @@ def test_the_archive_is_the_same_whether_the_ranking_stayed_in_memory_or_went_to
     db = _session(dbs[1])
     heap = _zip(_call(db))
     assert json.loads(heap["manifest.json"])["ranking_spilled_to_disk"] is False
-    monkeypatch.setattr(kls, "memory_plan", lambda _avail: {"heap_rows": 30, "batch": 7})
+    monkeypatch.setattr(kls, "memory_plan", lambda _avail: {"heap_rows": 30, "batch": 7, "family_rows": 10**9})
     import src.api.diagnostics.keywords as kw_mod
 
     monkeypatch.setattr(kw_mod, "memory_plan", kls.memory_plan)
@@ -455,12 +594,69 @@ def test_a_byte_cap_trims_and_every_keyword_is_accounted_for(dbs, data_dir):
     db.close()
 
 
+def test_the_trim_loop_keeps_going_until_the_archive_fits(dbs, data_dir):
+    """Not "at most eight rebuilds": a cap a few rounds away is still reached."""
+    db = _session(dbs[1])
+    full = _zip(_call(db))
+    whole = sum(len(v) for v in full.values())
+    cap_mb = max(0.0005, whole / 2**20 / 50)
+    resp = _call(db, max_mb=cap_mb)
+    size = Path(resp.path).stat().st_size
+    cap = max(256, int(cap_mb * 2**20))
+    members = _zip(resp)
+    summary = len(members["summary.json"]) + len(members["manifest.json"])
+    man = json.loads(members["manifest.json"])
+    assert man["keywords_omitted_to_fit"] > 0
+    assert size <= cap or summary > cap * 0.5, (size, cap, summary)
+    db.close()
+
+
+def test_a_summary_larger_than_the_cap_ends_with_one_keyword_per_language_and_says_so(dbs, data_dir):
+    """The cap is not a guarantee: summary.json is never trimmed. The loop must STOP (not spin)
+    once nothing is left to drop, and the archive is returned over the cap, every dropped keyword
+    still counted."""
+    db = _session(dbs[1])
+    asked = json.loads(_zip(_call(db))["manifest.json"])["keywords_in_archive"]
+    resp = _call(db, max_mb=0.000001)  # floored at 256 bytes: smaller than any summary
+    size = Path(resp.path).stat().st_size
+    members = _zip(resp)
+    man = json.loads(members["manifest.json"])
+    assert size > man["max_bytes"] == 256
+    assert all(m["keywords"] == 1 for m in man["languages"])
+    assert man["keywords_in_archive"] + man["keywords_omitted_to_fit"] == asked
+    assert "never trimmed" in man["note"]
+    db.close()
+
+
 def test_a_window_far_beyond_the_cap_is_cut_up_front_and_disclosed(dbs, data_dir):
     db = _session(dbs[1])
     man = json.loads(_zip(_call(db, max_mb=0.001))["manifest.json"])
     note = man["window_clamped_to_fit_cap"]
     assert note["asked_per_lang"] == 1_000_000 and note["exported_per_language_max"] >= 1
     assert "max_mb=0" in note["why"]
+    db.close()
+
+
+def test_families_are_grouped_over_the_whole_window_unless_memory_says_otherwise(
+    dbs, data_dir, monkeypatch
+):
+    """The limit on the families' basis is the machine's memory, never a fixed number, and the
+    summary says which case it is in and what the limit protects."""
+    import src.api.diagnostics.keywords as kw_mod
+
+    db = _session(dbs[1])
+    prov = json.loads(_zip(_call(db))["summary.json"])["data"]["families_provenance"]
+    assert prov["basis_is_whole_window"] is True and prov["basis_per_language"] is None
+    assert "WHOLE window" in prov["note"] and "memory" in prov["note"]
+
+    monkeypatch.setattr(
+        kls, "memory_plan", lambda _a: {"heap_rows": 10**9, "batch": 800, "family_rows": 60}
+    )
+    monkeypatch.setattr(kw_mod, "memory_plan", kls.memory_plan)
+    prov = json.loads(_zip(_call(db))["summary.json"])["data"]["families_provenance"]
+    assert prov["basis_is_whole_window"] is False
+    assert 1 <= prov["basis_keywords"] <= 60 and prov["basis_budget_keywords"] == 60
+    assert prov["basis_per_language"] >= 1 and "budget" in prov["note"]
     db.close()
 
 
@@ -558,9 +754,14 @@ def test_memory_running_out_mid_archive_stops_it_and_removes_the_partial_file(
 
 
 def test_a_full_disk_stops_the_archive_with_507_and_removes_it(dbs, data_dir, monkeypatch):
+    """The between-batches watch, the backstop: the up-front check is turned off here so the
+    archive actually starts, and the drive is already at its reserve."""
     import collections
 
+    import src.api.diagnostics.keywords as kw_mod
+
     Usage = collections.namedtuple("Usage", "total used free")
+    monkeypatch.setattr(kw_mod, "zip_disk_preflight", lambda *_a: None)
     monkeypatch.setattr(kle.shutil, "disk_usage", lambda _p: Usage(10**12, 10**12 - 1000, 1000))
     db = _session(dbs[0])
     with pytest.raises(HTTPException) as err:
@@ -570,13 +771,75 @@ def test_a_full_disk_stops_the_archive_with_507_and_removes_it(dbs, data_dir, mo
     db.close()
 
 
+def test_an_archive_the_drive_cannot_take_is_refused_before_a_byte_of_it_is_written(
+    dbs, data_dir, monkeypatch
+):
+    """Expected output = the window's keywords x a conservative zipped entry + the fixed members.
+    The drive below has the reserve and 1 GiB to spare; the archive is expected to need far more,
+    so nothing is written and the refusal says how much was needed and how much is free."""
+    import collections
+
+    Usage = collections.namedtuple("Usage", "total used free")
+    reserve = 10**12 // 100 * 1  # 1 % of a 1 TB drive: the export keeps this free
+    monkeypatch.setattr(kle.shutil, "disk_usage", lambda _p: Usage(10**12, 0, reserve + 2**30))
+    monkeypatch.setattr(kle, "ZIP_BYTES_PER_ENTRY", 10**7)  # 10 MB an entry -> a huge archive
+    wrote: list[int] = []
+    monkeypatch.setattr(kle.ZipJob, "write", lambda *_a, **_k: wrote.append(1))
+    db = _session(dbs[0])
+    with pytest.raises(HTTPException) as err:
+        _call(db)
+    assert err.value.status_code == 507 and "GiB" in str(err.value.detail)
+    assert "free" in str(err.value.detail)
+    assert wrote == [] and _leftovers(data_dir) == []
+    db.close()
+
+
+def test_the_expected_archive_size_is_bounded_by_the_cap_when_there_is_one():
+    assert kle.expected_zip_bytes(0, None) == kle.ZIP_FIXED_BYTES
+    assert kle.expected_zip_bytes(1_000_000, None) == kle.ZIP_FIXED_BYTES + 1_000_000 * kle.ZIP_BYTES_PER_ENTRY
+    cap = 9 * 2**20
+    assert kle.expected_zip_bytes(10**9, cap) == cap + kle.ZIP_FIXED_BYTES
+    assert kle.expected_zip_bytes(10, cap) == kle.ZIP_FIXED_BYTES + 10 * kle.ZIP_BYTES_PER_ENTRY
+
+
+def test_the_zipped_entry_constant_covers_the_measured_size(tmp_path, monkeypatch):
+    """ZIP_BYTES_PER_ENTRY is what the disk check multiplies by. Measured on keywords whose terms
+    are random letters (about as incompressible as a term list gets): it must cover the archive
+    per entry and not be so high that a drive with plenty of room is refused."""
+    import string
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    p = tmp_path / "zipped.db"
+    _build(p, 6, articles=800, keywords=20_000, with_boilerplate=False)
+    rnd = random.Random(11)
+    words = ["".join(rnd.choice(string.ascii_lowercase) for _ in range(rnd.randint(5, 14)))
+             for _ in range(20_000)]
+    con = sqlite3.connect(p)
+    con.executemany("UPDATE keywords SET term=?, normalized_term=? WHERE id=?",
+                    [(w.title(), w, i + 1) for i, w in enumerate(words)])
+    con.commit()
+    con.close()
+    db = _session(p)
+    try:
+        resp = _call(db)
+        size = Path(resp.path).stat().st_size
+        members = _zip(resp)
+    finally:
+        db.close()
+    entries = json.loads(members["manifest.json"])["keywords_in_archive"]
+    assert entries > 15_000
+    per_entry = size / entries
+    assert per_entry <= kle.ZIP_BYTES_PER_ENTRY, per_entry
+    assert per_entry * 10 >= kle.ZIP_BYTES_PER_ENTRY, per_entry
+
+
 def test_a_spill_the_disk_cannot_take_is_refused_before_the_file_exists(dbs, data_dir, monkeypatch):
     import collections
 
     import src.api.diagnostics.keywords as kw_mod
 
     Usage = collections.namedtuple("Usage", "total used free")
-    monkeypatch.setattr(kls, "memory_plan", lambda _a: {"heap_rows": 20, "batch": 7})
+    monkeypatch.setattr(kls, "memory_plan", lambda _a: {"heap_rows": 20, "batch": 7, "family_rows": 10**9})
     monkeypatch.setattr(kw_mod, "memory_plan", kls.memory_plan)
     monkeypatch.setattr(kle.shutil, "disk_usage", lambda _p: Usage(10**12, 10**12 - 1000, 1000))
     db = _session(dbs[0])
@@ -605,20 +868,17 @@ def test_what_the_zip_holds_does_not_grow_with_the_window(tmp_path_factory, monk
     forced onto disk (the mode a small machine is in), so what remains is what the archive
     itself holds -- one batch, the article arrays, the digests -- and tracemalloc sees every
     Python allocation of it. (The old builder measured ~2 KB per keyword here.)"""
-    import dataclasses
-
     import src.api.diagnostics.keywords as kw_mod
 
     root = tmp_path_factory.mktemp("kw-flat")
     monkeypatch.setenv("OO_DATA_DIR", str(root))
-    monkeypatch.setattr(kls, "memory_plan", lambda _a: {"heap_rows": 500, "batch": 800})
-    monkeypatch.setattr(kw_mod, "memory_plan", kls.memory_plan)
-    # The families are grouped over the first ``basis_per_language`` keywords of each language
-    # (production: 5,000 x the languages, a constant that does not depend on the corpus). Both
-    # windows below must be LARGER than the basis for what is held to have reached its bound.
+    # The families are grouped over what fits a memory budget (production: a tenth of the
+    # memory available at the start, ~2 KB per keyword); both windows below are LARGER than
+    # the budget used here, so what is held has reached its bound.
     monkeypatch.setattr(
-        kw_mod, "_ZIP_HOOKS", dataclasses.replace(kw_mod._ZIP_HOOKS, basis_per_language=150)
+        kls, "memory_plan", lambda _a: {"heap_rows": 500, "batch": 800, "family_rows": 900}
     )
+    monkeypatch.setattr(kw_mod, "memory_plan", kls.memory_plan)
     def one(n: int) -> int:
         p = root / f"flat{n}.db"
         _build(p, 5, articles=300, keywords=n, with_boilerplate=False)

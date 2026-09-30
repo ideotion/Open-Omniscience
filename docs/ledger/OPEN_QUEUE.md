@@ -666,7 +666,10 @@
   decided, unbuilt, and belong to PRs 2 and 4–7 of that plan. **AMENDED 2026-09-22 (same
   day, later):** `R28` — the FULL/LIGHT diagnostics toggle — shipped as the first half of
   PR 2 and is a SEPARATE instruction, not one of the seven; `R27` itself is still unbuilt
-  (see its own entry below).
+  (see its own entry below). **CORRECTED 2026-09-30:** that was true for one day; `R27` was built
+  in PR #1166 (`ram_declined_reason`, outcome `declined-ram`) and, on 2026-09-30, is also sized
+  from the instance's own counts for the one member it covers (see the keyword-export entry at
+  the head of this queue).
 
   **What PR 1 does build, and what it deliberately leaves alone.** The drain inherits the
   import's commit batch when the scheduler loop is not alive (R21), publishes the
@@ -800,6 +803,17 @@
   declines — an unmeasured cost is neither small nor large, and guessing either way is
   worse than running it. Every bundle already records `rss_peak_rise_kb` per member, so
   the evidence arrives on its own; the map grows from runs, never from estimates.
+  **AMENDED 2026-09-30 (keyword-export thread, `R27` ACKNOWLEDGED):** the digest's 3,322.8 MiB was
+  the UNBOUNDED builder, and a total-RAM-only line could not see the instance: bundle `091717`
+  (14.65 M keywords, 1.83 M articles) was SIGKILLed inside the digest member while its total read
+  6,773 MiB, above the 6,645.6 line that 3,322.8 implies, with 2,280 MiB available, so the gate
+  admitted it. The code is now bounded, the static
+  reading is 200.0 MiB (a synthetic corpus), and the gate for this member is sized from the
+  instance's OWN counts times per-row costs that are each MEASURED (`EXPORT_ENTRY_BYTES`,
+  `EXPORT_FIXED_BYTES`, pinned by tracemalloc tests), held against half of total RAM as before
+  AND against the memory available now minus the memory stop's floor. The rule above stands
+  for every other member: one that is not measured never declines; an estimator is added only
+  to a member whose per-row costs have been measured and pinned.
 
 - **THE PLANNED-WORK REVERSE INDEX, AND THE DECISIONS ROUND IT CAME WITH (2026-09-22, rulings
   `R29` and `R30`).** The maintainer asked for two things in one turn: a numbered decisions list
@@ -885,6 +899,10 @@
   makes the confusion available: a future session reading `_LIGHT_DECLINED` and finding
   `keyword-log-digest.json` in it could close `R27` on work that never reads a RAM figure.
   Nothing in the tree reads the floor for a bundle member yet. `R27` stays open.
+  **CORRECTED 2026-09-30: stale since 2026-09-23.** `R27` was built in PR #1166: `ram_declined_reason`
+  reads total RAM, declines above half of it, and lifts on `OO_ALLOW_BIG_SCANS`; the overlap
+  with `_LIGHT_DECLINED` this paragraph warns about is still real and is what
+  `tests/test_diagnostics_bundle_profile.py` pins.
 
   **(2) WHY A TOGGLE AT ALL — a tension that had stood unnoticed since 2026-09-02.** The
   crash brief of that date ruled, in its own §3 item 4, that the bundle «still runs **every**

@@ -220,6 +220,10 @@ _RAW_CEILING: dict[str, int] = {
     "src/analytics/group_stats.py": 1,
     "src/analytics/keyword_fold.py": 1,
     "src/analytics/keyword_growth.py": 6,
+    # The keyword-log export's ONE scan over the mention rows names the table in exactly one
+    # place (the MENTIONS_TABLE constant), so D22's move onto KeywordMentionRead is a one-line
+    # change there; it is a reader that has not moved yet, owned by the keyword thread.
+    "src/analytics/keyword_log_scan.py": 1,
     "src/analytics/latest.py": 2,
     "src/analytics/map_serve.py": 1,
     "src/analytics/queries.py": 8,
@@ -235,7 +239,9 @@ _RAW_CEILING: dict[str, int] = {
     "src/api/ai.py": 1,
     "src/api/database.py": 3,
     "src/api/diagnostics/corpus.py": 1,
-    "src/api/diagnostics/keywords.py": 3,
+    # Was 3: the export's SQL moved into src/analytics/keyword_log_scan.py (above); what is left
+    # here is one docstring sentence.
+    "src/api/diagnostics/keywords.py": 1,
     "src/api/diagnostics/performance.py": 2,
     "src/api/feed.py": 1,
     "src/api/insights.py": 2,

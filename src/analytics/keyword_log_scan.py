@@ -33,8 +33,8 @@ WHAT THIS MODULE DOES INSTEAD. Nothing here is proportional to the number of key
   replaced, tie-break included (``tests/test_keyword_log_scan.py`` is the differential).
 
 WHAT IT DOES NOT DO. It does not change what is counted or how it is ranked: the same
-``keyword_mentions`` rows (``MENTIONS_TABLE`` is the one place that names the table, so the
-keyword thread's move of readers onto ``KeywordMentionRead`` (D22) is a one-line change), the
+mention rows (``MENTIONS_TABLE`` is the one place that names the table, so the keyword
+thread's move of readers onto ``KeywordMentionRead`` (D22) is a one-line change), the
 same per-article language (``articles.language``, not the per-mention column), the same
 order: mention-bearing keywords by mentions descending then id ascending, then the orphans by
 id ascending, within each language.
@@ -81,6 +81,22 @@ ROW_BYTES = 200
 #: per-batch entries and the zip buffers, and the rest of the machine is the operator's.
 HEAP_SHARE = 0.10
 
+#: Bytes one keyword costs while the families are grouped over it: the entry's `fam` item, the
+#: grouping's own record for it, and the family it lands in. MEASURED (a 60,000-entry basis
+#: peaked at 1.47-1.85 KB per entry depending on how many were multi-token phrases), rounded up;
+#: ``test_family_row_budget_constant_matches_the_measured_size`` fails if it drifts.
+FAMILY_ROW_BYTES = 2000
+
+#: The share of AVAILABLE memory the family grouping may use, on top of the ranker's own tenth.
+FAMILY_SHARE = 0.10
+
+#: Floor on the family basis, in entries. What it protects: the default export (5,000 keywords
+#: per language over a dozen or so languages) must still be grouped WHOLE on a machine so small
+#: that a tenth of what is left is less than that; the live memory stop, not this number, is what
+#: protects such a machine. There is no ceiling: a machine with memory to spare groups its whole
+#: window.
+MIN_FAMILY_ROWS = 50_000
+
 #: Floor on the heap row budget. What it protects: the default export (5,000 keywords per
 #: language over a few dozen languages, about 200,000 rows) must stay in memory on a
 #: machine so small that 10 % of what is left would be less than that, instead of writing
@@ -126,12 +142,14 @@ def memory_plan(available_bytes: float | None) -> dict[str, int]:
     if available_bytes is None or available_bytes <= 0:
         rows = MIN_HEAP_ROWS
         batch = 800
+        family_rows = MIN_FAMILY_ROWS
     else:
         rows = max(MIN_HEAP_ROWS, int(available_bytes * HEAP_SHARE / ROW_BYTES))
         # An entry is about 2 KB once it is a dict and a JSON string; a batch may use ~0.2 % of
         # what is available. 800 is what every reader of this file used before it was sized.
         batch = max(800, min(8000, int(available_bytes * 0.002 / 2048)))
-    return {"heap_rows": rows, "batch": batch}
+        family_rows = max(MIN_FAMILY_ROWS, int(available_bytes * FAMILY_SHARE / FAMILY_ROW_BYTES))
+    return {"heap_rows": rows, "batch": batch, "family_rows": family_rows}
 
 
 def available_bytes_now() -> float | None:
@@ -572,6 +590,60 @@ class Ranker:
 
 
 # --------------------------------------------------------------------------- the scan
+
+
+#: What the single-file / digest form of the export holds per keyword it exports, at its peak:
+#: the survivor row, its metadata and language signature, the digests' items and the families'
+#: grouping (MEASURED on the digest path at 15,000-30,000 exported keywords: 2.2-2.5 KB each;
+#: ``test_export_entry_constant_matches_the_measured_size`` fails if it drifts).
+EXPORT_ENTRY_BYTES = 2500
+
+#: The rest of the export's rise in resident memory that does not scale with the corpus: the
+#: SQLite page cache, the accumulators, the interpreter's own growth. MEASURED: a digest over
+#: 13 languages x 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M,
+#: of which the per-keyword part above is ~160 MB.
+EXPORT_FIXED_BYTES = 60 * 2**20
+
+#: Bytes per article while the language/source arrays are dense (an ``I`` and a ``q``), and
+#: per article when the ids are too sparse for that and two dicts stand in (measured ~100 each).
+_ARRAY_BYTES_PER_ID = 12
+_SPARSE_BYTES_PER_ARTICLE = 200
+
+
+def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
+    """What one export over THIS database is expected to add to the process, from its own counts.
+
+    ``per_language`` is the window the export is asked for per language (the digest and the
+    JSON stream use the classic 5,000). The estimate is the fixed part, plus one keyword's cost
+    times the keywords that can be exported (at most ``per_language`` for each language and never
+    more than the keyword table holds), plus the article arrays (12 bytes per article id) and
+    the keyword mark (a byte per id). The ranker is NOT in it: its heaps are bounded by a share
+    of the memory available at the start and spill to disk past that, so it cannot be what
+    makes the export too big for the machine.
+
+    Four cheap reads (two index scans and two aggregates); ``None`` for a count that cannot be
+    read is treated as zero by the caller's fallback, never guessed.
+    """
+    n_art, min_art, max_art = (int(v or 0) for v in db.execute(
+        text("SELECT COUNT(*), COALESCE(MIN(id), 0), COALESCE(MAX(id), 0) FROM articles")
+    ).one())
+    max_kid = int(db.execute(text("SELECT COALESCE(MAX(id), 0) FROM keywords")).scalar() or 0)
+    # +1 for the "?" language an article without one (or a keyword no mention names) falls in.
+    languages = int(db.execute(text("SELECT COUNT(DISTINCT language) FROM articles")).scalar() or 0) + 1
+    dense = min_art >= 0 and max_art <= max(_DENSE_FLOOR, _DENSE_FACTOR * n_art)
+    article_bytes = (
+        _ARRAY_BYTES_PER_ID * (max_art + 1) if dense else _SPARSE_BYTES_PER_ARTICLE * n_art
+    )
+    entries = min(max_kid, languages * per_language)
+    need = EXPORT_FIXED_BYTES + entries * EXPORT_ENTRY_BYTES + article_bytes + (max_kid + 1)
+    return {
+        "need_mb": need / 2**20,
+        "articles": n_art,
+        "keyword_id_bound": max_kid,
+        "languages": languages,
+        "exportable_keywords": entries,
+        "per_language": per_language,
+    }
 
 
 class ScanStats:

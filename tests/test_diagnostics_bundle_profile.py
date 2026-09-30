@@ -399,3 +399,106 @@ def test_a_RAM_decline_is_never_reported_as_a_light_profile_CHOICE(monkeypatch):
     assert "does not have the memory" in marker
     assert "OO_ALLOW_BIG_SCANS" in marker
     assert "choice you made" not in marker.replace("not a choice you made", "")
+
+
+# --------------------------------------------------------------------------- #
+# R27 sized from the INSTANCE (2026-09-30): the keyword digest's need is      #
+# estimated from the instance's own counts, and held against what is          #
+# available now as well as against half of total RAM                          #
+# --------------------------------------------------------------------------- #
+
+_EST = "keyword-log-digest.json"
+
+
+def _estimated(monkeypatch, need_mb, *, total, available, floor=256.0):
+    """Pin the estimator's answer, the machine's RAM and what is free, and clear the override."""
+    from src.api.diagnostics import bundle
+
+    monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
+    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: total)
+    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, lambda _db: need_mb)
+    monkeypatch.setattr("src.database.maintenance._available_mb", lambda: available)
+    monkeypatch.setattr("src.database.maintenance._read_memory_floor_mb", lambda: floor)
+    return object()  # the gate only hands the session to the estimator
+
+
+def test_an_estimated_member_declines_when_it_would_leave_the_memory_stop_no_room(monkeypatch):
+    """1,500 MiB expected, 1,700 available, 256 kept free by the stop: 1,756 > 1,700. Half of an
+    8 GB machine is 4,096, so R27's own rule would have let it run -- and the stop would have
+    ended the export halfway, after minutes of work. It is declined before the first byte."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=8192.0, available=1700.0)
+    reason = ram_declined_reason(_EST, db=db)
+    assert reason and "1,500.0" in reason and "1,700" in reason and "256" in reason
+    assert "estimated from this instance's own counts" in reason
+    assert "OO_ALLOW_BIG_SCANS" in reason
+
+
+def test_an_estimated_member_runs_when_it_fits_with_the_floor_to_spare(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=8192.0, available=1757.0)
+    assert ram_declined_reason(_EST, db=db) is None
+
+
+def test_an_estimated_member_still_obeys_half_of_total_RAM(monkeypatch):
+    """R27 is kept, not replaced: plenty AVAILABLE does not lift the half-of-total rule."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=2500.0, available=9000.0)
+    reason = ram_declined_reason(_EST, db=db)
+    assert reason and "finding F12" in reason and "1,250" in reason
+
+
+def test_the_existing_override_lifts_an_estimated_decline_too(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=2500.0, available=100.0)
+    monkeypatch.setenv("OO_ALLOW_BIG_SCANS", "1")
+    assert ram_declined_reason(_EST, db=db) is None
+
+
+def test_an_unreadable_machine_never_declines_an_estimated_member(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=None, available=None, floor=None)
+    assert ram_declined_reason(_EST, db=db) is None
+
+
+def test_without_a_session_the_measured_constant_applies_exactly_as_before(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _estimated(monkeypatch, 99999.0, total=4029.0, available=10.0)
+    assert ram_declined_reason(_EST) is None  # 200 MiB measured < half of 4,029
+
+
+def test_an_estimate_that_cannot_be_made_falls_back_to_the_measured_constant(monkeypatch):
+    from src.api.diagnostics import bundle
+
+    _estimated(monkeypatch, 0.0, total=4029.0, available=10.0)
+
+    def _boom(_db):
+        raise RuntimeError("no such table")
+
+    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, _boom)
+    monkeypatch.setitem(bundle._MEMBER_RSS_NEED_MB, _EST, 3322.8)
+    reason = bundle.ram_declined_reason(_EST, db=object())
+    assert reason and "it measured a 3,322.8 MiB peak RSS rise" in reason
+
+
+def test_the_bundle_hands_its_session_to_the_gate(monkeypatch):
+    """The member loop must pass its session, or the estimate is never made and the digest is
+    gated on a constant forever."""
+    import io
+    import zipfile
+
+    from src.api.diagnostics.bundle import _write_all_diagnostics_zip
+
+    db = _estimated(monkeypatch, 1500.0, total=8192.0, available=1700.0)
+    members = [(_EST, lambda: {"ran": True}), ("ordinary.json", lambda: {"ran": True})]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        results = _write_all_diagnostics_zip(members, z, profile="full", db=db)
+    outcomes = {r["file"]: r["outcome"] for r in results}
+    assert outcomes[_EST] == "declined-ram" and outcomes["ordinary.json"] == "ok"

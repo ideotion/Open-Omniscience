@@ -41,6 +41,7 @@ from src.analytics.keyword_log_export import (
     fit_window,
     resolve_max_bytes,
     unlink_quietly,
+    zip_disk_preflight,
 )
 from src.analytics.keyword_log_scan import (
     ArticleMaps,
@@ -184,17 +185,22 @@ def _ring_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
 # channel it exists for). The aggregates ARE the analysis; the long tail is not.
 _DIGEST_SAMPLE = 100
 
-# Hard ceiling for the per-language ZIP export (?format=zip). The single-file log
+# Default size cap for the per-language ZIP export (?format=zip). The single-file log
 # grew to ~20 MB live (137k keywords), so the shareable archive is capped: it
 # splits per language and zips (JSON compresses ~8x, so the archive is normally a
-# few MB), and as a guarantee, if the compressed archive ever exceeds this it
-# drops the lowest-mention keywords PER LANGUAGE (equal-fair — a global mentions
-# cut would re-anglicise the export) and records the omission. Env-tunable.
+# few MB), and if the compressed archive exceeds this it drops the lowest-mention
+# keywords PER LANGUAGE (equal-fair — a global mentions cut would re-anglicise the
+# export) and records the omission. The cap is what the loop AIMS for, not a
+# guarantee: summary.json is never trimmed, so a summary alone larger than the cap
+# leaves the archive over it (see finish_zip). Env-tunable; `max_mb=0` on the
+# request lifts it.
 def _keyword_zip_max_bytes() -> int:
-    # Default 9 MB so a shared archive stays UNDER the common 10 MB attachment limit
-    # (raised 2026-07-01: the maintainer could not send a log). With the families cap
-    # below, a 727k-keyword corpus is ~8 MB with EVERY keyword — no trimming needed;
-    # a larger corpus trims its lowest-mention tail (per language, recorded) to fit.
+    # WHAT THE 9 MB PROTECTS: the ATTACHMENT CHANNEL. It keeps a shared archive UNDER the
+    # common 10 MB attachment limit (raised 2026-07-01: the maintainer could not send a
+    # log); it is not a memory bound any more (the export holds a batch either way) and
+    # protects nothing else. With the families cap below, a 727k-keyword corpus is ~8 MB
+    # with EVERY keyword — no trimming needed; a larger corpus trims its lowest-mention
+    # tail (per language, recorded) to fit. The "All keywords" button asks for no cap.
     try:
         mb = float(os.environ.get("OO_KEYWORD_LOG_MAX_MB", "9"))
     except ValueError:
@@ -320,7 +326,6 @@ def _safe_lang_filename(lang: str) -> str:
 
 # What the archive writer borrows from this route (built after the names it lends exist).
 _ZIP_HOOKS = ZipHooks(
-    basis_per_language=_MAX_KEYWORDS_PER_LANG,
     families_cap=_keyword_zip_families_cap,
     safe_lang_filename=_safe_lang_filename,
     new_stopword_acc=_new_stopword_acc,
@@ -333,8 +338,9 @@ _ZIP_HOOKS = ZipHooks(
 def _keyword_zip(
     *, job: ZipJob, keep: dict[str, int], omitted: dict[str, int] | None = None
 ) -> Response:
-    """Build the per-language keyword-log ZIP on disk (under the byte cap) and serve it; the
-    scratch file is deleted once it has been sent. See ``finish_zip`` for what is in it."""
+    """Build the per-language keyword-log ZIP on disk (aiming under the byte cap, see
+    ``finish_zip`` for when that cannot be met) and serve it; the scratch file is deleted once
+    it has been sent. ``finish_zip`` says what is in it."""
     path = finish_zip(job, keep, omitted)
     fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.zip"
     return FileResponse(
@@ -389,9 +395,10 @@ def keyword_log(
         alias="format",
         description=(
             "'json' (default — the full single-file stream, byte-for-byte unchanged) "
-            "or 'zip' — a per-language split archive kept UNDER 10 MB (summary.json "
-            "+ keywords/<lang>.json + manifest.json), so it fits a typical attachment "
-            "limit. The recommended share format: every keyword, no huge single blob."
+            "or 'zip' — a per-language split archive (summary.json + keywords/<lang>.json "
+            "+ manifest.json) that by default aims under 9 MB, so it fits a typical "
+            "attachment limit (`max_mb=0` lifts the cap). The recommended share format: "
+            "every keyword, no huge single blob."
         ),
     ),
     per_lang: int = Query(
@@ -622,6 +629,14 @@ def keyword_log(
                     "has_more": any(t > hi for t in per_lang_seen.values()),
                     "keywords_total_corpus": sum(per_lang_seen.values()),
                 }
+                # What the families are grouped over: the whole window when it fits the memory
+                # budget, else the largest equal per-language prefix that does (never a fixed
+                # number: a machine with memory to spare groups everything it exports).
+                basis_c = fit_window(
+                    {lg: ranker.taken(lg) for lg in languages}, plan["family_rows"]
+                )
+                # Refuse an archive the drive cannot take BEFORE writing any of it.
+                zip_disk_preflight(out_dir, exported, max_bytes)
                 job = ZipJob(
                     hooks=_ZIP_HOOKS,
                     db=db, maps=maps, ranker=ranker, out_dir=out_dir, is_hidden=is_hidden,
@@ -630,6 +645,7 @@ def keyword_log(
                     suspects_total=suspects_total, suspects_capped=suspects_capped,
                     page_info=page_info, max_bytes=max_bytes, batch=plan["batch"], check=check,
                     disk_watch=disk_watch_for(out_dir), window_note=window_note,
+                    basis_per_language=basis_c, basis_budget_rows=plan["family_rows"],
                 )
                 return _keyword_zip(
                     job=job,

@@ -50,7 +50,6 @@ class ZipHooks:
     """What the route lends the archive writer: its digest builders, its file-name rule and
     its family cap (all of which tests pin under the route's own names)."""
 
-    basis_per_language: int
     families_cap: Callable[[], int]
     safe_lang_filename: Callable[[str], str]
     new_stopword_acc: Callable[[Any], Any]
@@ -169,6 +168,36 @@ def disk_watch_for(d: Path | None):
     return _watch
 
 
+#: A conservative ZIPPED size of one exported entry, to refuse a write the drive obviously cannot
+#: take BEFORE minutes of work rather than halfway through them (the between-batches watch stays
+#: as the backstop). Measured: an entry is ~210 B of JSON and deflates to 9-15 B on a synthetic
+#: corpus, and the field's own logs (1.24-1.45 MB of JSON per 5,000 keywords, zip 7-14x smaller)
+#: put it at 18-41 B, so 64 covers the worst reading ~1.5x. It protects the operator's drive
+#: (a full disk stops the database's own log), nothing else: a refusal names the numbers and
+#: the smaller window that would have fit.
+ZIP_BYTES_PER_ENTRY = 64
+
+#: summary.json + manifest.json: families and digests, a few MB at the largest measured.
+ZIP_FIXED_BYTES = 8 * 2**20
+
+
+def expected_zip_bytes(entries: int, max_bytes: int | None) -> int:
+    """The archive's expected size on disk: the fixed members plus a conservative entry cost,
+    bounded by the cap (plus the members the cap does not trim) when there is one."""
+    need = ZIP_FIXED_BYTES + entries * ZIP_BYTES_PER_ENTRY
+    return need if max_bytes is None else min(need, max_bytes + ZIP_FIXED_BYTES)
+
+
+def zip_disk_preflight(out_dir: Path | None, entries: int, max_bytes: int | None) -> None:
+    """Refuse, with the numbers, an archive the drive cannot take plus its reserve (HTTP 507).
+
+    ``out_dir`` is where the archive will be written (the OS temp folder when there is no data
+    folder, exactly as :meth:`ZipJob._path` decides).
+    """
+    target = out_dir if out_dir is not None else Path(tempfile.gettempdir())
+    disk_check_for(target)(expected_zip_bytes(entries, max_bytes))  # type: ignore[misc]
+
+
 def batched(it, n: int):
     while True:
         chunk = list(itertools.islice(it, n))
@@ -268,7 +297,8 @@ class ZipJob:
                  is_hidden, overrides: dict, supergroups: list, corpus: dict, method: str,
                  per_source_concentration: list, suspects_total: int, suspects_capped: bool,
                  page_info: dict, max_bytes: int | None, batch: int, check, disk_watch,
-                 window_note: dict | None) -> None:
+                 window_note: dict | None, basis_per_language: int | None,
+                 basis_budget_rows: int) -> None:
         self.hooks = hooks
         self.db, self.maps, self.ranker, self.out_dir = db, maps, ranker, out_dir
         self.basis_counts: dict[str, int] = {}
@@ -279,6 +309,11 @@ class ZipJob:
         self.page_info, self.max_bytes, self.batch = page_info, max_bytes, batch
         self.check, self.disk_watch, self.window_note = check, disk_watch, window_note
         self.summary_payload: dict | None = None
+        # The families are grouped over the first ``basis_per_language`` keywords of each
+        # language's window, or over the whole window when that is None. The number is sized
+        # from the machine (see memory_plan), never fixed.
+        self.basis_per_language = basis_per_language
+        self.basis_budget_rows = basis_budget_rows
 
     def _path(self) -> Path:
         d = self.out_dir
@@ -289,10 +324,12 @@ class ZipJob:
     def _build_summary(self, sw: StopwordAcc, ring: RingAcc, fam: list, total_keep: int) -> dict:
         _fam_cap = self.hooks.families_cap()
         fam.sort(key=lambda t: t[0])
-        families = [f.to_dict() for f in build_families([it for _k, it in fam], self.overrides)]
-        _families_shown = (
-            families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
-        )
+        families = build_families([it for _k, it in fam], self.overrides)
+        # Only the families that are EMBEDDED are turned into dicts: the rest would sit in memory
+        # for nothing while the summary is written.
+        shown_families = families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
+        _families_shown = [f.to_dict() for f in shown_families]
+        whole = self.basis_per_language is None
         return {
             "corpus": self.corpus,
             "method": self.method,
@@ -302,22 +339,31 @@ class ZipJob:
                 "total": len(families),
                 "omitted": len(families) - len(_families_shown),
                 "sorted_by": "mentions (desc)",
-                # The families are grouped over the top keywords of each language's window,
-                # never over a window of millions: the grouping compares every multi-word
-                # entity with every other, so its cost is quadratic in what it is given.
-                "basis_per_language": self.hooks.basis_per_language,
+                # What the grouping was given, and what limits it. The limit is MEMORY, not time:
+                # the grouping is linear in its input (a token index, not a pairwise comparison),
+                # and its working set is about 2 KB per keyword, so the window it may hold is
+                # sized from the memory available when the export started.
+                "basis_per_language": self.basis_per_language,
                 "basis_keywords": sum(self.basis_counts.values()),
-                "basis_is_whole_window": all(
-                    self.ranker.taken(lg) <= self.hooks.basis_per_language for lg in self.basis_counts
-                ),
+                "basis_is_whole_window": whole,
+                "basis_budget_keywords": self.basis_budget_rows,
                 "note": (
                     "Only the top families are embedded here (the full per-keyword family dump "
                     "is large, redundant with keywords/<lang>.json, and unused by "
                     "analyze_keyword_log.py). Set OO_KEYWORD_LOG_FAMILIES=0 to embed all. "
-                    "Families are grouped over the first "
-                    f"{self.hooks.basis_per_language} keywords of each language's window "
-                    "(basis_keywords in all); for a window larger than that the tail is in "
-                    "the shards but not in a family."
+                    + (
+                        "Families are grouped over the WHOLE window "
+                        f"({sum(self.basis_counts.values())} keywords). "
+                        if whole else
+                        "Families are grouped over the first "
+                        f"{self.basis_per_language} keywords of each language's window "
+                        f"({sum(self.basis_counts.values())} keywords in all, the largest set "
+                        f"that fits the {self.basis_budget_rows}-keyword budget); the rest of "
+                        "the window is in the shards but not in a family. "
+                    )
+                    + "The budget is a tenth of the memory available when the export started, "
+                    "at about 2 KB per keyword: it protects the machine, and a machine with "
+                    "more free memory groups more."
                 ),
             },
             "overrides": [
@@ -387,7 +433,7 @@ class ZipJob:
                                     assert sw is not None and ring is not None
                                     sw.feed(okey, m, a, dom, mt)
                                     ring.feed(okey, m, a, dom, mt)
-                                    if pos < self.hooks.basis_per_language:
+                                    if self.basis_per_language is None or pos < self.basis_per_language:
                                         self.basis_counts[lang] = self.basis_counts.get(lang, 0) + 1
                                         if not e["hidden"]:
                                             fam.append((okey, {
@@ -431,8 +477,10 @@ class ZipJob:
                     "note": (
                         "Per-language split of the keyword diagnostics log"
                         + (
-                            ", zipped to keep the shared file under 10 MB (fits a typical "
-                            "attachment limit). "
+                            ", zipped and trimmed to aim under max_bytes (the default, 9 MB, "
+                            "keeps a shared file under the common 10 MB attachment limit; "
+                            "summary.json is never trimmed, so a summary alone larger than "
+                            "the cap leaves the file over it). "
                             if self.max_bytes is not None else
                             ", written with NO byte cap (max_mb=0): every keyword of the "
                             "requested window, however large the file. "
@@ -481,34 +529,47 @@ def resolve_max_bytes(fmt: str, max_mb: Any, default_bytes: int) -> int | None:
     return default_bytes
 
 
+#: Trim rounds are bounded only so a pathological size estimate cannot loop forever: each round
+#: shrinks every language by the ratio the last archive missed the cap by (x0.9), so an archive
+#: whose shards are the whole problem is under its cap in two or three rounds.
+_MAX_TRIM_ROUNDS = 40
+
+
 def finish_zip(
     job: ZipJob, keep: dict[str, int], omitted: dict[str, int] | None = None
 ) -> Path:
-    """Build the per-language keyword-log ZIP on disk, under the byte cap; return its path.
+    """Build the per-language keyword-log ZIP on disk, aiming under the byte cap; return its path.
 
     Members: ``summary.json`` (the corpus-wide aggregates — families, super-groups,
     per-source concentration — the SAME data the single-file log carries minus the
     keyword list), ``keywords/<lang>.json`` (each language's keywords, same
     per-keyword fields), and ``manifest.json`` (what's inside + any omissions). The
     split mirrors the per-language export quota; JSON compresses ~8x so the archive
-    is normally a few MB. If the compressed archive still exceeds the cap (only on a
-    very large corpus) the lowest-mention keywords are dropped PER LANGUAGE
-    (equal-fair) and recorded — never a silent or anglicising cut. With no cap
-    (``max_mb=0``) nothing is dropped, and nothing is held: the archive is written to a
-    scratch file a batch at a time. The CALLER deletes the file once it has been sent."""
+    is normally a few MB. While the compressed archive exceeds the cap the lowest-mention
+    keywords are dropped PER LANGUAGE (equal-fair) and recorded — never a silent or
+    anglicising cut — and the archive is rewritten, until it fits OR every language is down to
+    one keyword. THE CAP IS NOT A GUARANTEE in that last case: ``summary.json`` and
+    ``manifest.json`` are never trimmed, so an archive whose summary alone is larger than the cap
+    is returned over it (the manifest's ``max_bytes`` is the cap that was asked for). The default
+    cap (9 MB) exists so a shared archive stays under the common 10 MB attachment limit; it is a
+    property of the default, not of the function. With no cap (``max_mb=0``) nothing is dropped,
+    and nothing is held: the archive is written to a scratch file a batch at a time. The CALLER
+    deletes the file once it has been sent."""
     keep = dict(keep)
     omitted = dict(omitted or {})
     path = job.write(keep, omitted)
-    guard = 0
     max_bytes = job.max_bytes
-    while max_bytes is not None and path.stat().st_size > max_bytes and guard < 8:
-        guard += 1
-        ratio = max_bytes / path.stat().st_size * 0.9
+    for _ in range(_MAX_TRIM_ROUNDS):
+        size = path.stat().st_size
+        if max_bytes is None or size <= max_bytes:
+            break
+        ratio = max_bytes / size * 0.9
+        trimmed = {lang: new for lang, n in keep.items() if (new := max(1, int(n * ratio))) < n}
+        if not trimmed:
+            break  # nothing left to drop: what is over the cap is the summary, which is not trimmed
         unlink_quietly(path)
-        for lang, n in list(keep.items()):
-            new = max(1, int(n * ratio))
-            if new < n:
-                omitted[lang] = omitted.get(lang, 0) + (n - new)
-                keep[lang] = new
+        for lang, new in trimmed.items():
+            omitted[lang] = omitted.get(lang, 0) + (keep[lang] - new)
+            keep[lang] = new
         path = job.write(keep, omitted)
     return path

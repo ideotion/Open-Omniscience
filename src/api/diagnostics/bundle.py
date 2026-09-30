@@ -18,7 +18,9 @@ import json
 import os
 import pathlib
 import threading
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -648,7 +650,7 @@ _MEMBER_RSS_NEED_MB: dict[str, float] = {
     "keyword-log-digest.json": 200.0,
 }
 
-#: A member declines when its measured need exceeds this share of TOTAL RAM.
+#: A member declines when its need exceeds this share of TOTAL RAM.
 #: Half, per R27's own words. It is self-limiting by construction: the one measured
 #: member needs 3,322.8 MiB, so it declines on a 4 GB machine and runs from ~6.6 GB up,
 #: which is the "below the floor" shape the ruling asks for without a second threshold
@@ -656,7 +658,37 @@ _MEMBER_RSS_NEED_MB: dict[str, float] = {
 _MEMBER_RAM_SHARE = 0.5
 
 
-def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | None:
+def _keyword_digest_need_mb(db) -> float:
+    """What the keyword digest is expected to add to the process on THIS instance.
+
+    From the instance's own counts (articles, the keyword id range, the languages its articles
+    carry) times the per-row costs MEASURED for the bounded export -- see
+    :func:`src.analytics.keyword_log_scan.estimate_export_need`. The 200 MiB in
+    ``_MEMBER_RSS_NEED_MB`` is one synthetic corpus's reading; this is the instance's own
+    number, and it is what the gate uses whenever a session is at hand.
+    """
+    from src.analytics.keyword_log_scan import estimate_export_need
+
+    return float(estimate_export_need(db, per_language=_MAX_KEYWORDS_PER_LANG)["need_mb"])
+
+
+#: Members whose need is ESTIMATED from the instance's counts, not read from one earlier run:
+#: ``name -> fn(db) -> MiB``. The static map above stays as the fallback for a call without a
+#: session (and for a count that cannot be read) and keeps R27's half-of-RAM rule; an estimated
+#: member is ALSO held against the memory that is available right now, because a fixed
+#: reading cannot know that the machine is busy.
+_MEMBER_NEED_ESTIMATORS: dict[str, Callable[[Any], float]] = {
+    "keyword-log-digest.json": _keyword_digest_need_mb,
+}
+
+
+def ram_declined_reason(
+    name: str,
+    *,
+    total_mb: float | None = None,
+    db: Any = None,
+    available_mb: float | None = None,
+) -> str | None:
     """Why this member must not run on THIS machine, or ``None`` to run it.
 
     THREE REFUSALS TO REFUSE, each the mirror of a recorded defect:
@@ -665,8 +697,25 @@ def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | No
     never declines (absence of a reading is not a reading); and the operator's existing
     override lifts it, because S1.3's does and a second override key for the same idea
     is how two surfaces come to disagree.
+
+    With a session (``db``) an estimated member (``_MEMBER_NEED_ESTIMATORS``) is sized from
+    the instance's own counts and must fit BOTH R27's half of total RAM AND what is available
+    now minus the floor the memory stop keeps free -- a need that would leave the stop no room
+    is declined here, before the first byte, instead of by the stop in the middle of the run.
+    Without one, the measured constant applies, exactly as before.
     """
-    need = _MEMBER_RSS_NEED_MB.get(name)
+    measured = _MEMBER_RSS_NEED_MB.get(name)
+    estimator = _MEMBER_NEED_ESTIMATORS.get(name)
+    need: float | None = None
+    estimated = False
+    if estimator is not None and db is not None:
+        try:
+            need = estimator(db)
+            estimated = True
+        except Exception:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
+            _LOG.debug("need estimate for %s failed; using the measured constant", name, exc_info=True)
+    if need is None:
+        need = measured
     if need is None:
         return None
     from src.config.machine_floor import _override_requested
@@ -674,18 +723,34 @@ def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | No
 
     if _override_requested():
         return None
-    total = total_ram_mb() if total_mb is None else total_mb
-    if total is None or total <= 0:
-        return None
-    ceiling = total * _MEMBER_RAM_SHARE
-    if need <= ceiling:
-        return None
-    return (
-        f"it measured a {need:,.1f} MiB peak RSS rise on the operator's instance, and "
-        f"this machine has {total:,.0f} MiB of RAM -- more than the {ceiling:,.0f} MiB "
-        f"({_MEMBER_RAM_SHARE:.0%} of total) a single bundle member may ask for. Running "
-        "it would put this machine into swap on its own (finding F12)"
+    said = (
+        f"it is expected to add {need:,.1f} MiB (estimated from this instance's own counts)"
+        if estimated
+        else f"it measured a {need:,.1f} MiB peak RSS rise on the operator's instance"
     )
+    total = total_ram_mb() if total_mb is None else total_mb
+    if total is not None and total > 0:
+        ceiling = total * _MEMBER_RAM_SHARE
+        if need > ceiling:
+            return (
+                f"{said}, and this machine has {total:,.0f} MiB "
+                f"of RAM -- more than the {ceiling:,.0f} MiB ({_MEMBER_RAM_SHARE:.0%} of "
+                "total) a single bundle member may ask for. Running it would put this "
+                "machine into swap on its own (finding F12)"
+            )
+    if estimated:
+        from src.database import maintenance as _mt
+
+        avail = _mt._available_mb() if available_mb is None else available_mb
+        floor = _mt._read_memory_floor_mb()
+        if avail is not None and floor is not None and need + floor > avail:
+            return (
+                f"{said}, and this machine has {avail:,.0f} MiB "
+                f"available right now with {floor:,.0f} MiB the memory stop keeps free -- "
+                "it would leave the stop no room and end in swap or a killed app (finding "
+                "F12). Close other programs, or set OO_ALLOW_BIG_SCANS=1 to run it anyway"
+            )
+    return None
 
 
 _LIGHT_DECLINED: dict[str, str] = {
@@ -1866,7 +1931,7 @@ def _write_all_diagnostics_zip(
             # A RAM decline would happen on the FULL profile too, so reporting it as a
             # light-profile choice would tell the operator they skipped something they
             # were never going to be allowed to run on this box.
-            ram_reason = ram_declined_reason(name)
+            ram_reason = ram_declined_reason(name, db=db)
             declined_reason = ram_reason or (
                 _LIGHT_DECLINED.get(name) if profile == "light" else None
             )
