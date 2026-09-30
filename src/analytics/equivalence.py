@@ -179,6 +179,15 @@ def invalidate_ring_caches() -> None:
     _index.cache_clear()
     _multi_index.cache_clear()
     _member_languages.cache_clear()
+    # The stoplist layer reads the rings too (R102: a ring member a language spells as content
+    # is not hidden by another language's grammar), so its memoised views go with them. Local
+    # import: extract imports this module lazily, and this keeps the dependency one-way.
+    from src.analytics import extract, month_occupancy
+
+    extract._ring_member_exemptions.cache_clear()
+    extract.global_stopwords.cache_clear()
+    month_occupancy.banned_month_tokens.cache_clear()
+    month_occupancy._token_re.cache_clear()
 
 
 @lru_cache(maxsize=1)

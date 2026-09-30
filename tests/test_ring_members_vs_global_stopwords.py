@@ -50,6 +50,8 @@ test below is what fails there, and it is the one that quotes the ring.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import pytest
 
 from src.analytics.equivalence import load_rings
@@ -214,3 +216,23 @@ def test_the_query_time_union_lets_a_stored_member_through_but_extraction_stays_
     for words in _EXEMPT.values():
         assert not (set(words) & every)
     assert "podcast" in _stopset("es")
+
+
+def test_a_ring_reload_refreshes_the_exemptions(monkeypatch):
+    """Review finding: the exemption set is memoised on top of the rings, so a restore or a
+    Wikidata ring load (both call invalidate_ring_caches) must refresh it, or a removed ring
+    keeps exempting and a new one stays hidden until restart."""
+    from src.analytics import equivalence, extract
+
+    assert "dette" in ring_member_exemptions().get("fr", frozenset())
+    real = equivalence.load_rings
+    monkeypatch.setattr(equivalence, "load_rings", lru_cache(maxsize=1)(lambda: ()))
+    try:
+        equivalence.invalidate_ring_caches()
+        assert ring_member_exemptions() == {}
+        assert "dette" in _stopset("fr")
+    finally:
+        monkeypatch.setattr(equivalence, "load_rings", real)
+        equivalence.invalidate_ring_caches()
+    assert "dette" in ring_member_exemptions().get("fr", frozenset())
+    assert "dette" not in extract._stopset("fr")
