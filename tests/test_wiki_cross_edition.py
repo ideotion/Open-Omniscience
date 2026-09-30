@@ -26,6 +26,7 @@ from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki import cross_edition as X
 from src.wiki.identity import external_id_for
 from src.wiki.lane_models import WikiWalkCursor, WikiWalkPage
+from tests.js_source_helper import object_literal
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 
@@ -402,7 +403,7 @@ def test_every_string_the_two_views_draw_is_keyed_in_all_twelve_locales():
     js = (_STATIC / "app-living.js").read_text(encoding="utf-8")
     block = js[js.index("// --- One item across editions, and the most-viewed"):]
     lits = {m.replace('\\"', '"') for m in re.findall(r'\btf?\("((?:[^"\\]|\\.)*)"', block)}
-    table = block[block.index("_WIKI_DIV_STATES"):block.index("function _wikiEdCell")]
+    table = object_literal(block, "_WIKI_DIV_STATES")
     lits |= set(re.findall(r':\s*\n?\s*"((?:[^"\\]|\\.)*)"', table))
     lits |= set(re.findall(r'"(The Wikipedia lane [^"]*)"', block))
     from src.wiki import cross_edition
