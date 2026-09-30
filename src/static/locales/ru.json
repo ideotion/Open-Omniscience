@@ -3280,7 +3280,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "участники OpenStreetMap",
   "OpenStreetMap data of {date}": "Данные OpenStreetMap от {date}",
-  "OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.": "Данные OpenStreetMap остаются на этой машине: они не попадают в экспорт, бюллетени и файлы доказательств, пока вопрос их лицензии (ODbL) открыт.",
+  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "Данные OpenStreetMap остаются на этом компьютере. Если созданный вами документ содержит их (карточка картографических данных в бюллетене), он несёт © OpenStreetMap contributors и строку ODbL 1.0, условие «распространять на тех же условиях» которой действует для производной базы данных.",
   "OpenStreetMap names only one party": "OpenStreetMap называет только одну сторону",
   "OpenStreetMap object": "Объект OpenStreetMap",
   "OpenStreetMap places, roads and buildings:": "Места, дороги и здания OpenStreetMap:",

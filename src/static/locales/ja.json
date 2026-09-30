@@ -3280,7 +3280,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "OpenStreetMap 寄稿者",
   "OpenStreetMap data of {date}": "{date} 時点の OpenStreetMap データ",
-  "OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.": "OpenStreetMap のデータはこのマシンに留まります。ライセンス（ODbL）の問題が未解決の間、エクスポート・速報・証拠ファイルには含めません。",
+  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "OpenStreetMap のデータはこのマシンに残ります。作成した文書がそれを含む場合（速報の地図データカード）、その文書には © OpenStreetMap contributors と ODbL 1.0 の一文が付き、継承の条件（シェアアライク）はそこから派生したデータベースに適用されます。",
   "OpenStreetMap names only one party": "OpenStreetMap は当事者を一つしか挙げていません",
   "OpenStreetMap object": "OpenStreetMap オブジェクト",
   "OpenStreetMap places, roads and buildings:": "OpenStreetMap の場所・道路・建物：",
