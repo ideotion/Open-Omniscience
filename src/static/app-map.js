@@ -1381,8 +1381,11 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // PF10 = a (2026-09-30): below 600 px the control groups collapse into ONE in-map
       // button that opens them (the CSS does the hiding; above 600 px the button is not
-      // shown and nothing here has any visible effect). Choosing a control closes the panel
-      // so the map shows what the choice did, and a repaint keeps whatever state it had.
+      // shown and nothing here has any visible effect). The panel opens below the map, never
+      // over it, so a choice needs no auto-close: closing on a choice hid the focused control
+      // (focus fell to <body>, one slider step per opening) and raced the repaint, whose new
+      // panel was opened by the state the old panel's listener then reset. Only the button
+      // writes the state; a repaint reads it, so the two cannot disagree.
       {
         const wrap = svg.closest(".oomap-wrap");
         const tog = host.querySelector("[data-oomap-ctl]");
@@ -1395,8 +1398,6 @@
           };
           setOpen(!!host._ooCtlOpen);
           tog.addEventListener("click", () => setOpen(!host._ooCtlOpen));
-          panel.addEventListener("click", (e) => { if (e.target.closest("button")) setOpen(false); });
-          panel.addEventListener("change", () => setOpen(false));
         }
       }
       const W = MAP_W, H = MAP_H;
