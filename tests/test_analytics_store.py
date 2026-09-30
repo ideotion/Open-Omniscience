@@ -885,3 +885,39 @@ def test_a_keywords_only_reindex_does_not_precompute_when_where_who(db, monkeypa
     assert seen and all(len(t) == 6 for t in seen), (
         f"a full re-index stopped precomputing when/where/who: {[len(t) for t in seen]}"
     )
+
+
+def test_one_apply_updates_the_article_row_once(db):
+    """D45 (d): sentiment, the top keyword and the attempt stamp are ONE UPDATE.
+
+    Sentiment used to be assigned at the top of ``index_article``, so the first query of
+    the pass autoflushed an UPDATE and the top keyword + ``keyword_indexed_at`` issued a
+    second one -- two rewrites of the row's index entries for one change.
+    """
+    from sqlalchemy import event
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    a = _article(db, "u1", "Climate policy and energy prices in Paris. " * 6)
+
+    updates: list[str] = []
+
+    def _on_exec(conn, cursor, statement, parameters, context, executemany):
+        flat = " ".join(statement.split()).lower()
+        if flat.startswith("update articles "):
+            updates.append(flat)
+
+    event.listen(db.get_bind(), "before_cursor_execute", _on_exec)
+    try:
+        # A fixed sentiment, so the test does not depend on the optional scorer.
+        index_article(
+            db, a, extractor=BaselineExtractor(), precomputed_sentiment=(0.5, "positive")
+        )
+        db.flush()
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", _on_exec)
+
+    assert len(updates) == 1, updates
+    assert "sentiment_label" in updates[0] and "keyword_indexed_at" in updates[0]
+    assert "top_keyword_id" in updates[0]
+    assert a.keyword_indexed_at is not None
