@@ -8364,9 +8364,8 @@ def _shipped_csv_rows() -> tuple[list[str], list[list[str]]]:
     ~830 LF-terminated ones into a huge, misleading diff); csv.reader over already-decoded
     text handles mixed line endings fine for read-only parsing."""
     import csv
-    import io
-
     import importlib.util
+    import io
 
     csv_path = _ROOT / "docs" / "ledger" / "shipped.csv"
     text = csv_path.read_text(encoding="utf-8")
