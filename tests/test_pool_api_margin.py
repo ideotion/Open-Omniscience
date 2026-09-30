@@ -13,11 +13,13 @@ that already holds its connection, so every thread queued on a gate held for up 
 **153 stalls measured at exactly 30.0 s**, 160 of 332 calls failed, and three
 diagnostics-bundle members died on the same error (F1, F9).
 
-WHAT IS DELIBERATELY *NOT* ASSERTED HERE: that the medium tier is safe. It is not, and
-the last test says so out loud. R26 raised the pool and forbade lowering the worker cap;
-those two together cannot bound a `collect_parallelism` of 50 on a machine that can only
-afford 24 connections. A test that quietly skipped that would be the ledger's own
-"fabricated security" shape -- a guard whose green tells you something it never checked.
+WHAT WAS DELIBERATELY *NOT* ASSERTED HERE UNTIL D44: that the medium tier is safe. It was
+not: R26 raised the pool and forbade lowering the worker cap, and those two together
+cannot bound a `collect_parallelism` of 50 on a machine that can only afford 24
+connections. The maintainer answered D44 = a on 2026-09-30 (a RESERVATION at checkout,
+`src/database/pool_reserve.py`), so `test_the_medium_tier_is_exhaustible_no_longer...`
+below now asserts the reservation, and the raw subtraction stays pinned as
+`unreserved_headroom` so nobody can read the green as "the pool grew".
 """
 
 from __future__ import annotations
@@ -89,24 +91,28 @@ def test_a_large_machine_is_untouched():
 # --------------------------------------------------------------------------- #
 
 
-def test_the_medium_tier_is_still_exhaustible_and_says_so():
-    """R26 CANNOT FIX MEDIUM, and this is the test that keeps that visible.
+def test_the_medium_tier_keeps_the_margin_free_because_of_the_reservation():
+    """D44 = a (2026-09-30). The collector may not take the last `_API_MARGIN` connections.
 
-    `collect_parallelism` ships at 50; the floor's worker cap applies only BELOW the
-    floor, so nothing caps a medium machine's fan-out. Sizing a pool to 54 connections
-    at 16 MiB each is 864 MiB of worst-case page cache on an 8 GB box -- not a fix. The
-    only two ways out are a reservation at checkout or a cap on the fan-out, and R26
-    forbids the second. So this asserts the HONEST answer rather than a green one."""
+    `collect_parallelism` still ships at 50 and the pool is still 24 -- neither moved, and
+    R26 still forbids lowering the worker cap. What changed is that collector-role
+    checkouts are bounded at `pool_total - _API_MARGIN` (`pool_reserve.py`), so the verdict
+    is now `sufficient`, and the PLAIN subtraction that used to fail stays visible as
+    `unreserved_headroom` so the size of what the reservation absorbs is not hidden."""
     medium = mb.resolve_for(6000)
     assert medium["tier"] == "medium"
+    assert medium["pool_total"] == 24
 
     shipped_parallelism = 50  # src/scheduler/settings.py: collect_parallelism
     verdict = mb.api_headroom_for(shipped_parallelism, pool_total=medium["pool_total"])
-    assert verdict["sufficient"] is False
-    assert verdict["headroom"] < 0
-    # ...and the margin still helped: 24 connections instead of 20 is four more calls
-    # that get served before the pool empties.
-    assert medium["pool_total"] == 24
+    assert verdict["reserved"] is True
+    assert verdict["sufficient"] is True
+    assert verdict["headroom"] == mb._API_MARGIN
+    assert verdict["collector_ceiling"] == 24 - mb._API_MARGIN
+    assert verdict["waiting_workers"] == 50 - (24 - mb._API_MARGIN)
+    # the un-reserved question is still answered, and still "no":
+    assert verdict["unreserved_headroom"] == 24 - 50
+    assert mb.api_headroom_for(50, pool_total=24, reserved=False)["sufficient"] is False
 
 
 def test_api_headroom_takes_the_fan_out_as_a_PARAMETER_not_from_a_constant():
@@ -149,7 +155,9 @@ def test_api_headroom_takes_the_fan_out_as_a_PARAMETER_not_from_a_constant():
     ],
 )
 def test_the_headroom_arithmetic_is_plain_subtraction(workers, total, ok):
-    assert mb.api_headroom_for(workers, pool_total=total)["sufficient"] is ok
+    # reserved=False: the plain subtraction, the pre-D44 question of a pool with no
+    # reservation. (With the reservation the verdict is `sufficient` for any fan-out.)
+    assert mb.api_headroom_for(workers, pool_total=total, reserved=False)["sufficient"] is ok
 
 
 # --------------------------------------------------------------------------- #
@@ -190,8 +198,10 @@ def test_the_pass_summary_publishes_the_comparison_that_was_never_made(monkeypat
     block = CollectionMonitor(governor=_Gov(), pass_id="p", mode="rss")._db_memory()
 
     assert block["pool_bound"] == 12 and block["w_max"] == 50
-    assert block["api_headroom"]["sufficient"] is False
-    assert block["api_headroom"]["headroom"] == 12 - 50
+    # D44 = a: 50 workers against 12 connections, and the reservation holds the margin.
+    assert block["api_headroom"]["sufficient"] is True
+    assert block["api_headroom"]["headroom"] == mb._API_MARGIN
+    assert block["api_headroom"]["unreserved_headroom"] == 12 - 50
     assert block["api_headroom"]["api_margin"] == mb._API_MARGIN
 
 
