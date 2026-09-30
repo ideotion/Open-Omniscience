@@ -41,6 +41,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _INDEX = _ROOT / "src" / "static" / "index.html"
 _SOURCES = _ROOT / "src" / "static" / "app-sources.js"
 _BOOT = _ROOT / "src" / "static" / "app-boot.js"
+_CORE = _ROOT / "src" / "static" / "app-core.js"
 _CSS = _ROOT / "src" / "static" / "app.css"
 
 _STATES = ("running", "halted", "stopped")
@@ -109,11 +110,14 @@ def test_the_button_carries_the_i18n_walker_OPT_OUT():
 def test_the_glyph_is_ONE_constant_mark_whose_FILL_is_the_state():
     """Invariant #14's grammar: never an action glyph that swaps on click."""
     button = _button()
-    assert button.count("<path") == 1, (
+    # The W itself is everything before the state pip (a corner indicator that describes
+    # the state and is never an action glyph -- see test_the_state_pip_*).
+    glyph = button[: button.index('id="wiki-pip"')]
+    assert glyph.count("<path") == 1, (
         "more than one path in the glyph -- the state must be the FILL of one constant "
         "mark, not a different picture per state"
     )
-    assert 'id="wiki-mark"' in button
+    assert 'id="wiki-mark"' in glyph
     painter = _painter_body()
     assert 'setAttribute("fill"' in painter, "the painter does not set the FILL"
 
@@ -186,7 +190,10 @@ def test_the_toasts_CONFIRM_a_state_rather_than_repeat_an_order():
         for order in ("Pause the Wikipedia stream", "Stop the Wikipedia stream",
                       "Resume the Wikipedia stream", "Start the Wikipedia stream"):
             assert f't9("{order}")' not in toasts, f"{name} toasts the order {order!r}"
-        assert 't9("Wikipedia stream: paused")' in toasts, f"{name} no longer confirms a state"
+        # toggleWikiLane names the state through _wikiLaneHeading AFTER re-reading the status
+        # (whose paused words are that function's own); stopWikiLane names it directly.
+        assert ('t9("Wikipedia stream: paused")' in toasts
+                or "toast(_wikiLaneHeading(" in toasts), f"{name} no longer confirms a state"
 
 
 def test_stopping_and_pausing_are_NOT_gated_on_a_network_consent():
@@ -455,3 +462,73 @@ def test_a_run_that_RAISES_still_deregisters():
     finally:
         clear_kill_switch()
     assert live_streams() == (), "a refused run stayed in the registry as though live"
+
+
+def test_the_state_pip_draws_five_states_by_SHAPE_and_never_a_play_or_pause_glyph():
+    """The top-bar W was unreadable: a stream that was only CHOSEN drew the same filled W
+    as one that was arriving, and paused looked like stopped. The pip in the corner says
+    which, by shape (a colour alone fails for anyone who cannot tell the hues apart)."""
+    html = _INDEX.read_text(encoding="utf-8")
+    css = _CSS.read_text(encoding="utf-8")
+    pip = html[html.index('id="wiki-pip"') :]
+    pip = pip[: pip.index("</span>")]
+    assert 'aria-hidden="true"' in pip[:80], "the pip repeats the hover; a screen reader reads the button"
+    for shape in ("pip-dot", "pip-ring", "pip-dash", "pip-x"):
+        assert f'class="{shape}"' in pip, shape
+    assert "pip-bars" not in pip and "pip-play" not in pip, (
+        "invariant #14: never a play or pause glyph -- the pip describes the state, "
+        "not the action a click performs"
+    )
+    for state in ("live", "held", "waiting", "paused", "stopped"):
+        assert f'#wiki-toggle[data-wiki="{state}"]' in css, f"no CSS for the {state} pip"
+    # The pip sits in the corner, out of flow: the button's footprint is invariant #3.
+    rule = css_rule(css, "#wiki-pip")
+    assert "position:absolute" in rule.replace(" ", ""), "the pip must not change the button's size"
+    assert "data-wiki" in _painter_body(), "the painter never sets data-wiki"
+
+
+def test_a_click_on_a_HELD_stream_starts_it_rather_than_pausing_something_not_running():
+    """'Nothing happens' on click: a stream chosen but held (airplane mode, or not started
+    in this session) was PAUSED by the click -- the opposite of the intent, and a change
+    too faint to see. Held -> running (through the one consent popup); live -> paused."""
+    body = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "toggleWikiLane"))
+    assert "_wikiLaneHeld(" in body, "toggleWikiLane does not tell a held stream from a live one"
+    assert re.search(r'next\s*=\s*\(from === "running" && !held\)\s*\?\s*"halted"\s*:\s*"running"', body)
+
+
+def test_the_toggle_repaints_when_the_network_crosses_and_when_a_switch_is_saved():
+    """The 'reactive' complaint: going online started the stream and the W kept saying
+    'chosen, not connected' until the next minute's poll; ticking the walk's box changed
+    nothing on the bar."""
+    core = strip_comments(function_body(_CORE.read_text(encoding="utf-8"), "_paintNetwork"))
+    assert "_wikiLaneRefreshSoon()" in core, "a network crossing does not re-read the stream's status"
+    walk = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "saveWikiWalk"))
+    assert "loadWikiLane()" in walk and "loadWikiLaneSummary()" in walk
+
+
+def test_the_toast_after_a_click_names_what_the_STATUS_then_says_not_what_was_asked():
+    """A held stream whose start fails (or has not connected yet) was toasted 'running':
+    a state the app did not have. The toast follows a re-read and names the real one."""
+    body = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "toggleWikiLane"))
+    assert "await loadWikiLane()" in body
+    assert "toast(_wikiLaneHeading(" in body
+    assert 'toast(now === "running"' not in body, "the toast claims the state that was asked for"
+
+
+def test_airplane_mode_outranks_a_stream_the_server_still_lists_as_live():
+    """A stopping stream stays registered until its blocking read returns, so the status can
+    say active:true for up to a minute after airplane mode is engaged. The server's own
+    ``online`` decides: live under airplane mode is a claim the app does not have."""
+    body = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "loadWikiLane"))
+    assert "st.online === false" in body
+    assert "!offline && lane.active === true" in body
+
+
+def test_the_network_crossing_hook_has_its_own_memory_and_the_offline_POST_rereads():
+    core = strip_comments(function_body(_CORE.read_text(encoding="utf-8"), "_paintNetwork"))
+    assert "_wikiNetSeen" in core and "_was ===" not in core.split("_wikiNetSeen")[0][-200:], (
+        "the crossing must be judged against the last PAINT, not _netOnline (which the poll "
+        "writes without painting and which starts at true, so boot counted as a crossing)"
+    )
+    toggle = strip_comments(function_body(_CORE.read_text(encoding="utf-8"), "toggleNetwork"))
+    assert "_wikiLaneRefreshSoon()" in toggle, "the offline POST never re-reads the toggle"

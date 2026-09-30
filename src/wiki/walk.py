@@ -565,6 +565,17 @@ class WikiWalker:
         return {"refused": token}
 
     # -- for a status surface ------------------------------------------------- #
+    def is_on(self) -> bool:
+        """Whether the operator's switch reads ON now. An unreadable switch is OFF.
+
+        Read from the switch itself, never from the last reported state: that state stays
+        ``off`` until a window runs, and a window the runner sized by it would never run.
+        """
+        try:
+            return bool(self._enabled())
+        except Exception:  # noqa: BLE001 - an unreadable switch is an OFF switch
+            return False
+
     def status(self) -> dict:
         """What this process's walker is doing now. The COUNTS are the lane's rows, read
         by :func:`walk_coverage`; this is only what is not in a row."""

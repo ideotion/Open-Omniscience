@@ -41,8 +41,10 @@ wiki lane (``tests/test_wiki_lane_end_to_end.py``) and the law lane
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -54,6 +56,16 @@ from src.versioned.feed import FeedChange
 from src.versioned.models import VersionedChange, VersionedEntity, _utcnow
 
 _LOG = logging.getLogger("versioned.pipeline")
+
+
+class LaneTransactionLost(RuntimeError):
+    """A savepoint could not be rolled back: the lane's whole transaction is no longer ours.
+
+    SQLite ends the ENTIRE transaction on its own for SQLITE_FULL, IOERR, BUSY and NOMEM, and
+    the savepoint rollback then fails ("no such savepoint"). Carrying on would commit what a
+    later feed writes and silently lose every earlier feed's rows of this drain, so this is
+    raised past the pass and the drain fails loudly (and is counted) instead.
+    """
 
 
 @dataclass(slots=True)
@@ -72,6 +84,11 @@ class PassResult:
     #: Changes recorded whose text this pass did not fetch, because the budget ran
     #: out. NOT a gap — see the module docstring.
     text_deferred: int = 0
+    #: Followed pages whose text an EARLIER pass left unfetched and this pass's catch-up FOUND
+    #: waiting (at most ``catch_up``; found, not necessarily fetched: the time bound may have
+    #: run out). Not added to ``text_deferred``, which counts a page once, on the pass that
+    #: left it. 0 while every waiting page is cooling off or once this feed's time is spent.
+    text_backlog: int = 0
     #: Entities this pass STARTED following because ``admit`` said to. Its own
     #: counter because "the lane grew" is a fact an operator is owed: a rule that
     #: admits pages is still the operator's choice, but it is a choice they made
@@ -106,6 +123,7 @@ class PassResult:
             "revisions_unchanged": self.revisions_unchanged,
             "articles_indexed": self.articles_indexed,
             "text_deferred": self.text_deferred,
+            "text_backlog": self.text_backlog,
             "entities_admitted": self.entities_admitted,
             "text_withheld": self.text_withheld,
             "text_withheld_reasons": dict(self.text_withheld_reasons),
@@ -281,6 +299,10 @@ def run_feed_once(
     budget: ReadBudget | None = None,
     admit: Callable[[FeedChange], Admission | None] | None = None,
     text_policy: Callable[[VersionedEntity], tuple[bool, str | None]] | None = None,
+    fetch_deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    catch_up: int = 0,
+    attempts: dict[int, float] | None = None,
 ) -> PassResult:
     """One pass: read the feed, record every change, fetch what the budget allows.
 
@@ -366,6 +388,36 @@ def run_feed_once(
     # the source happened to list first.
     touched: list[str] = []
     seen: set[str] = set()
+    # THE BACKLOG FIRST, oldest waiting first. A text that a time bound (or a failed fetch)
+    # left unfetched has its change recorded with ``ingested_revision_id`` still NULL, and
+    # nothing else ever comes back for it: without this, a page admitted on its first edit
+    # whose baseline was deferred would have no text until it happened to change again --
+    # the outcome ``admit`` exists to prevent. Opt-in (``catch_up`` > 0), so a lane that
+    # never bounds its fetching (law, OSM) behaves exactly as before.
+    #
+    # Skipped when this feed's time is already spent (the read is outside the bound, and there
+    # is no time to fetch what it would find). Backlog-only pages are NOT counted as deferred
+    # or withheld below: they were counted on the pass that first left them, and counting them
+    # again every 30 s would report the same page thousands of times.
+    batch_ids = {c.external_id for c in batch.changes}
+    backlog_only: set[str] = set()
+    if catch_up > 0 and not (fetch_deadline is not None and monotonic() >= fetch_deadline):
+        now = monotonic()
+        recent: set[int] = set()
+        if attempts is not None:
+            for entity_key, at in list(attempts.items()):
+                if now - at < BACKLOG_COOLDOWN_S:
+                    recent.add(entity_key)
+                else:
+                    del attempts[entity_key]
+        for backlog_id, backlog_entity in _unfetched_entities(lane, feed, catch_up, exclude=recent):
+            if backlog_id not in seen:
+                seen.add(backlog_id)
+                touched.append(backlog_id)
+                entity_ids.setdefault(backlog_id, backlog_entity)
+                if backlog_id not in batch_ids:
+                    backlog_only.add(backlog_id)
+        result.text_backlog = len(backlog_only)
     for change in sorted(
         (c for c in batch.changes if c.external_id in entity_ids),
         key=lambda c: (c.occurred_at is None, c.occurred_at),
@@ -377,7 +429,8 @@ def run_feed_once(
     allowance = budget.max_versions if budget.max_versions is not None else len(touched)
     for external_id in touched:
         if allowance <= 0:
-            result.text_deferred += 1
+            if external_id not in backlog_only:
+                result.text_deferred += 1
             continue
         entity = lane.get(VersionedEntity, entity_ids[external_id])
         if entity is None or not entity.watching:
@@ -390,10 +443,34 @@ def run_feed_once(
                 # ``"unstated"`` rather than dropped, because a withheld text with
                 # no reason anywhere is the shape this whole family of counters
                 # exists to prevent.
-                result.text_withheld += 1
-                key = why or "unstated"
-                result.text_withheld_reasons[key] = result.text_withheld_reasons.get(key, 0) + 1
+                if external_id not in backlog_only:
+                    result.text_withheld += 1
+                    key = why or "unstated"
+                    result.text_withheld_reasons[key] = result.text_withheld_reasons.get(key, 0) + 1
                 continue
+        # A TIME BOUND ON FETCHING, beside the count bound, checked where a request is about
+        # to be made: AFTER the watching and policy refusals, so an unwatched page and a text
+        # the storage budget refused are never relabelled "deferred" (the module docstring
+        # forbids exactly that merge). A feed that resumes behind a backlog touches thousands
+        # of pages, each one polite request, and without a bound the pass -- and everything
+        # the caller runs after it -- waits for all of them. Changes are already recorded, so
+        # an unfetched text is counted under ``text_deferred`` and is picked up by the next
+        # pass's backlog (``catch_up``); a fetch already in flight is not interrupted.
+        if fetch_deadline is not None and monotonic() >= fetch_deadline:
+            if external_id not in backlog_only:
+                result.text_deferred += 1
+            continue
+        # THE ATTEMPT IS REMEMBERED (in this process, by the caller's ``attempts`` map), not
+        # written to ``last_checked_at``: that column means "a text was fetched and stored",
+        # and the backlog is exactly the changes newer than it. A page that fails at ANY later
+        # step (the fetch, the store, the link) is left alone for ``BACKLOG_COOLDOWN_S`` instead
+        # of heading every pass; a restart forgets it, which costs one more try.
+        if attempts is not None:
+            attempts[entity.id] = monotonic()
+        # The text is covered only up to when the fetch BEGAN (less a margin for the source's
+        # whole-second times and a little clock skew): an edit that lands while we fetch, store or
+        # index is not in the text we got, and stamping "now" afterwards would call it covered.
+        covered_through = _utcnow() - timedelta(seconds=COVERED_MARGIN_S)
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
@@ -423,7 +500,39 @@ def run_feed_once(
             # tracks the SOURCE's current state, not our history of it.
             entity.deleted_at = None
             lane.flush()
-        outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
+        # ONE PAGE'S STORE FAILING must not end the pass, leave the session needing a rollback
+        # for the feeds after it, or (with the catch-up) be asked for again at the head of every
+        # pass: its lane writes run in a SAVEPOINT (the corpus index path commits on its own, so
+        # it gets none), and a failure is named and moved on from.
+        lane_sp = lane.begin_nested()
+        try:
+            outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
+            _link_ingested(lane, feed, external_id, entity.id)
+            # On EVERY successful path (a revision already held, an unchanged text, a baseline),
+            # so the backlog's "newer than the stored text" is decided in one place.
+            entity.last_checked_at = covered_through
+            lane_sp.commit()
+        except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
+            # UNCONDITIONALLY: a failure raised inside a flush leaves the savepoint INACTIVE,
+            # and skipping the rollback then leaves the session needing one, so every later
+            # query (this feed's and the next feeds') raises and the whole drain rolls back.
+            try:
+                lane_sp.rollback()
+            except Exception as rollback_exc:
+                raise LaneTransactionLost(
+                    f"{external_id}: {type(exc).__name__}: {exc}; then the savepoint rollback "
+                    f"failed: {type(rollback_exc).__name__}: {rollback_exc}"
+                ) from exc
+            if corpus is not None and hasattr(corpus, "rollback"):
+                # The corpus index path commits per article, so nothing already stored is lost
+                # here; what this clears is a session a failed flush left pending-rollback.
+                try:
+                    corpus.rollback()
+                except Exception:  # noqa: BLE001 - the original failure is the one to report
+                    _LOG.debug("the corpus session could not be rolled back", exc_info=True)
+            _LOG.warning("storing %s failed", external_id, exc_info=True)
+            result.errors.append(f"{external_id}: store: {type(exc).__name__}: {exc}")
+            continue
         if outcome == "baseline":
             result.baselines_captured += 1
         elif outcome == "revision":
@@ -432,9 +541,74 @@ def run_feed_once(
             result.revisions_unchanged += 1
         if article_id is not None:
             result.articles_indexed += 1
-        _link_ingested(lane, feed, external_id, entity.id)
 
     return result
+
+
+#: Seconds a followed page is left alone after the catch-up last ATTEMPTED it (this process's
+#: own memory, never stored) before the backlog asks for it again. Its backoff: a page that
+#: keeps failing, or the source answering 429, is not re-asked on every 30 s drain. It binds the
+#: catch-up only: a page in the current batch is not held back by it (though the catch-up's
+#: pages are tried first within the feed's time share).
+BACKLOG_COOLDOWN_S: float = 300.0
+
+#: Seconds taken off the fetch's start time when it is recorded as the time a text is good
+#: through: the source's times are whole seconds and its clock is not ours. The price is one
+#: extra fetch of a page edited within this margin of its own fetch.
+COVERED_MARGIN_S: float = 2.0
+
+
+def _unfetched_entities(
+    lane: Session, feed: str, limit: int, *, exclude: Collection[int] = ()
+) -> list[tuple[str, int]]:
+    """``(external_id, entity_id)`` of followed entities holding a change NEWER than the last
+    text stored for them, the longest-unchecked first.
+
+    "Newer than the last stored text" is ``VersionedChange.occurred_at > last_checked_at``
+    (or no text stored yet): ``last_checked_at`` is written only when a text was fetched and
+    stored, and a text fetched at T reflects every edit that occurred before T. It is NOT
+    ``ingested_revision_id IS NULL``, which is also NULL for every page that only has a
+    baseline and for every re-fetch that found the text unchanged, so a read on it would
+    hand back every followed page for ever.
+
+    Driven from the ENTITIES (the followed set: thousands) with one ``EXISTS`` per entity,
+    which seeks ``ix_versioned_change_entity_time (entity_id, occurred_at)`` straight past
+    the changes a fetch already covered, never a scan of the feed's changes (millions, most
+    for pages nobody follows). A page the source reported GONE (``deleted_at``) is excluded,
+    or it would be asked for again on every pass for ever, and so are the ids in ``exclude``
+    (attempted within ``BACKLOG_COOLDOWN_S``).
+    """
+    from sqlalchemy import and_, exists, func, literal, or_
+
+    # COALESCE, not ``last_checked_at IS NULL OR ...``: an OR keeps the planner from seeking the
+    # range on ``occurred_at`` and it walks every change of every followed page instead.
+    epoch = literal(datetime(1970, 1, 1, tzinfo=UTC), type_=VersionedEntity.last_checked_at.type)
+    newer = exists().where(
+        VersionedChange.entity_id == VersionedEntity.id,
+        VersionedChange.feed == feed,
+        VersionedChange.occurred_at > func.coalesce(VersionedEntity.last_checked_at, epoch),
+    )
+    # A page never stored whose changes carry NO time is waiting too (NULL compares as nothing).
+    never_stored = and_(
+        VersionedEntity.last_checked_at.is_(None),
+        exists().where(
+            VersionedChange.entity_id == VersionedEntity.id, VersionedChange.feed == feed
+        ),
+    )
+    waiting = or_(newer, never_stored)
+    query = select(VersionedEntity.external_id, VersionedEntity.id).where(
+        VersionedEntity.watching.is_(True),
+        VersionedEntity.deleted_at.is_(None),
+        waiting,
+    )
+    if exclude:
+        query = query.where(VersionedEntity.id.not_in(list(exclude)))
+    rows = lane.execute(
+        query.order_by(
+            VersionedEntity.last_checked_at.asc().nullsfirst(), VersionedEntity.id
+        ).limit(limit)
+    ).all()
+    return [(str(r[0]), int(r[1])) for r in rows if r[0]]
 
 
 def _link_ingested(lane: Session, feed: str, external_id: str, entity_id: int) -> None:
