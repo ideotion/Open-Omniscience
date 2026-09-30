@@ -416,18 +416,31 @@ def _is_code_token(word: str) -> bool:
 _STOPWORDS_EXTRA_DIR = Path(__file__).resolve().parents[2] / "configs" / "stopwords_extra"
 
 
-def _load_extra_stopwords() -> frozenset[str]:
-    """Union of every configs/stopwords_extra/*.yml file's word list. A missing or
-    empty directory is a no-op (never invents a stopword); a malformed individual
-    file is skipped rather than crashing extraction."""
-    words: set[str] = set()
+def _load_extra_stopwords_by_language() -> dict[str, frozenset[str]]:
+    """Every configs/stopwords_extra/<lang>.yml file's word list, keyed by the file's stem.
+
+    The files are UNIONED into the global set (:func:`_load_extra_stopwords`), so a stem is
+    provenance, not scoping -- except in one place: :func:`ring_member_exemptions` reads it to
+    tell a word its OWN language's curated list holds (a decision about that language) from a
+    word another language's list happens to hold (a collision)."""
+    by_lang: dict[str, frozenset[str]] = {}
     if _STOPWORDS_EXTRA_DIR.is_dir():
         for path in sorted(_STOPWORDS_EXTRA_DIR.glob("*.yml")):
             try:
                 data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             except (OSError, yaml.YAMLError):
                 continue
-            words.update(str(w) for w in (data.get("stopwords") or []))
+            by_lang[path.stem.lower()] = frozenset(str(w) for w in (data.get("stopwords") or []))
+    return by_lang
+
+
+def _load_extra_stopwords() -> frozenset[str]:
+    """Union of every configs/stopwords_extra/*.yml file's word list. A missing or
+    empty directory is a no-op (never invents a stopword); a malformed individual
+    file is skipped rather than crashing extraction."""
+    words: set[str] = set()
+    for group in _load_extra_stopwords_by_language().values():
+        words.update(group)
     return frozenset(words)
 
 
@@ -440,13 +453,8 @@ _EXTRA_STOPWORDS = _EXTRA_STOPWORDS | frozenset(
 
 
 @lru_cache(maxsize=1)
-def global_stopwords() -> frozenset[str]:
-    """Union of all built-in per-language stoplists + the curated extra set.
-
-    Language-agnostic: a word that is a stopword in any supported language (or in
-    the curated extra list) is treated as one. Used both at extraction time and at
-    query time (so leaky terms already in the store are hidden retroactively).
-    """
+def _global_stopwords_raw() -> frozenset[str]:
+    """The language-agnostic union itself, before any ring exemption (see :func:`global_stopwords`)."""
     s: set[str] = set(_EXTRA_STOPWORDS)
     s |= set(stopwords_manager.default_stopwords)
     for lang in getattr(stopwords_manager, "language_stopwords", {}):
@@ -454,8 +462,65 @@ def global_stopwords() -> frozenset[str]:
     return frozenset(s)
 
 
+@lru_cache(maxsize=1)
+def _ring_member_exemptions() -> dict[str, frozenset[str]]:
+    """Per language, the ring members that the language-agnostic union would hide.
+
+    A ring member (an entry ``lang:term`` of a translation ring, the concept in that
+    language's own word) is EXEMPT when it is a single word the union hides only because
+    ANOTHER language's list holds it (Danish "dette" hides French "dette", the member of the
+    ``debt`` ring; German "war" hides English "war"). It is NOT exempt when its own language
+    stoplists it -- the vendored list or that language's curated ``stopwords_extra`` file --
+    because that is a decision about the language itself (French "tout" stays hidden).
+    Ruled 2026-09-30 (R102, D24): a translated concept is signal, not grammar.
+    """
+    from src.analytics.equivalence import load_rings
+
+    raw = _global_stopwords_raw()
+    extra = _load_extra_stopwords_by_language()
+    out: dict[str, set[str]] = {}
+    for ring in load_rings():
+        for lang, term in ring.members:
+            term = (term or "").lower()
+            if not term or " " in term or term not in raw:
+                continue
+            lang = lang.lower()
+            own = stopwords_manager.get_stopwords(lang)
+            if term in own or term in extra.get(lang, frozenset()):
+                continue
+            out.setdefault(lang, set()).add(term)
+    return {lang: frozenset(words) for lang, words in out.items()}
+
+
+def ring_member_exemptions() -> dict[str, frozenset[str]]:
+    """Public read of :func:`_ring_member_exemptions`: ``{language: exempt terms}``."""
+    return dict(_ring_member_exemptions())
+
+
+@lru_cache(maxsize=1)
+def global_stopwords() -> frozenset[str]:
+    """Union of all built-in per-language stoplists + the curated extra set, minus the ring
+    members a language uses as its own word for a concept (R102).
+
+    Language-agnostic: a word that is a stopword in any supported language (or in
+    the curated extra list) is treated as one. Used at QUERY time (so leaky terms already in
+    the store are hidden retroactively). EXTRACTION is stricter about what it drops: it takes
+    :func:`_stopset`, which lifts an exemption only in the language whose ring names the word.
+    Here the exemption is lifted for every language, because a keyword only reaches the store
+    through extraction, so the query-time layer can only ever see what a language admitted.
+    """
+    exempt: set[str] = set()
+    for words in _ring_member_exemptions().values():
+        exempt |= words
+    return _global_stopwords_raw() - exempt
+
+
 def _stopset(language: str) -> frozenset[str]:
-    return frozenset(stopwords_manager.get_stopwords(language)) | global_stopwords()
+    """What extraction drops in ``language``: its own list plus the union, except the ring
+    members that ``language`` itself spells as content (:func:`_ring_member_exemptions`)."""
+    lang = (language or "").lower()
+    exempt = _ring_member_exemptions().get(lang, frozenset())
+    return frozenset(stopwords_manager.get_stopwords(language)) | (_global_stopwords_raw() - exempt)
 
 
 def lemma_key(
