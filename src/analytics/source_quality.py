@@ -690,7 +690,7 @@ def link_dense_article_ids(
         art_q = art_q.filter(Article.created_at >= since)
     if source_ids is not None:
         art_q = art_q.filter(Article.source_id.in_(sorted(source_ids)))
-    dense: set[int] = set()
+    dense = set()
     for aid, wc, sid in art_q:
         if sid is None:
             continue

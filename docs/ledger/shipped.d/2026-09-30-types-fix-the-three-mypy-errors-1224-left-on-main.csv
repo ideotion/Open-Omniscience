@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,types,Fix the three mypy errors #1224 left on main,shipped (draft),PR #1236,src/analytics/source_quality.py; src/analytics/source_audit.py,mypy src/ was red on main after #1224 (dense annotated twice in one function; int() of a sample_articles the checker could not narrow through the sampled flag). The second dense loses its annotation; the two casts test sample_articles is not None directly. Behaviour is identical: sampled is exactly that test.
