@@ -1832,12 +1832,7 @@ class BackgroundScheduler:
         shown: str | None = None
         while not self._stop.is_set():
             g = storage_guard.storage_guard
-            if not storage_guard.supervisor_running():
-                try:
-                    g.poll()
-                    g.drain_if_due()
-                except Exception:  # noqa: BLE001 - a pause must never crash the loop
-                    _LOG.debug("storage guard: loop-side poll failed", exc_info=True)
+            g.poll_and_drain_unsupervised()  # a no-op while the supervisor thread runs
             kind = g.admit()
             if kind is None:
                 break

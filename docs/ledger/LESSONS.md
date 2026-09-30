@@ -12833,8 +12833,10 @@ to 39.2 s per GiB of boot WAL), the free-disk term protects the drive.
 `id(dbapi_connection)`. SQLAlchemy clears `record.dbapi_connection` BEFORE it fires `checkin` on an invalidated
 connection, and a detached connection never checks in at all, so either left an immortal row whose age grew
 without bound, and every WAL diagnosis then named it as the oldest holder (reproduced against SQLAlchemy 2.1.1;
-the same hole `pool_reserve.py` documents for its slot table). The field's "one API-thread checkout held for the
-whole process life" (rank 12) may well have been such a phantom. **Key a checkout register on the connection
+the same hole `pool_reserve.py` documents for its slot table). (The field's "one API-thread checkout held for
+the whole process life", rank 12, turned out NOT to be a phantom: it was the status probe's deliberately pinned
+idle connection, PR B. The phantom class is real and would have been named as a pinner all the same.)
+**Key a checkout register on the connection
 RECORD (the one object `checkout`, `checkin`, `detach` and `invalidate` are all handed), validate at READ time
 (`record.fairy_ref is not None`), and count what the read pruned**, so a phantom is a reading rather than a
 silent lie. Before naming a long holder as a leak, rule out a phantom: list the pool from the holder's own side.
@@ -12849,3 +12851,28 @@ carries the original ("Original exception was: (sqlite3.OperationalError) databa
 classifier (`storage_guard.is_disk_full`) therefore walks `.orig`/`__cause__`/`__context__` AND matches the text.
 A real SQLITE_FULL can be forced for a test with `PRAGMA max_page_count=8`, so the classifier is pinned against
 SQLite's own message rather than one typed from memory.
+
+### A BACKGROUND THREAD STARTED AT BOOT NEEDS A TEST-SUITE OPT-OUT, AND A FIXTURE THAT RESETS ITS LATCH IS NOT ONE (WAL / disk thread review, 2026-09-30, `tests/conftest.py`)
+
+The storage guard's supervisor starts inside `_run_startup_upkeep`, and two tests unset `OO_NO_SCHEDULER` and run
+that upkeep, so the thread started in the middle of the suite and never stopped. The conftest fixture reset the
+LATCH per test, which is not the same thing: the leaked thread kept sampling the developer's real drive and
+polling whatever `storage_guard.storage_guard` was at that moment (a test's fake included), and on a nearly full
+drive it re-tripped the real singleton within ten seconds of every reset and ran `checkpoint_wal(force=True)`
+against the global engine, taking the write gate. In CI's serial order the boot tests run BEFORE
+`test_storage_guard`, so its own `assert supervisor_running() is False` failed there and nowhere else. The repo's
+precedent was already in the conftest (`OO_OFFLINE_MAINTENANCE=0`, `OO_LLM_AUTOSTART=0`): **a thing that starts a
+thread or samples the real machine gets an `OO_*` off-switch defaulted off for the suite, and its own test file
+turns it on for itself with injected readings.** Give every such thread's `stop()`/`start()` a per-start stop
+event, too: a shared event that `start()` clears revives the old thread, and one that it does not leaves none.
+
+### AN AFFECTED-TEST SWEEP IS NOT A SWEEP OF GUARDS: RUN THE WHOLE-TREE GUARDS AND EVERY NODE HARNESS THAT EXTRACTS WHAT YOU CHANGED (WAL / disk thread review, 2026-09-30)
+
+PR A went to review green on 178 "affected" test files and had two CI-red blockers that only a wider run found:
+a node harness (`tests/clickthrough_b16_node_test.js`) extracts `_renderVitals` BY NAME and evaluates it alone, so
+the new `_storageGuardHtml` call inside it was an undefined name (`ReferenceError`), and the repo-wide
+`test_source_slicing_discipline` budget (230) had gone to 231 through one test-file slice. **A function that gains
+a helper call breaks every harness that extracts it without the helper**: grep `tests/*_node_test.js` for the
+function's name and run ALL the node-wrapped tests, not the ones whose name sounds related; and run the repo-wide
+guard tests (slicing budget, ruff ratchet, i18n gates, inline-handler ratchet, planned index, repo invariants)
+before saying a change is verified.

@@ -226,11 +226,6 @@ def _gauge_lane_mib(kind: str) -> Callable[[Session], int | None]:
     return gauge
 
 
-# ``lane_mib_<kind>`` (S04-08 S4): each lane's size, so Settings -> Storage can state a
-# MEASURED growth rate rather than a guess. An absent lane returns None and is skipped
-# (a hole, never a recorded 0 -- "no file yet" is not "an empty file"). Not in
-# ALL_METRICS either, for the same reason as the WAL: the Library endpoint's allowlist is
-# for corpus counters, and these are read through /api/storage/lanes.
 def _gauge_disk_free_mib(_session: Session) -> int | None:
     """Free space on the drive that holds the corpus, in whole MiB (storage guard, rank 2).
 
@@ -245,6 +240,11 @@ def _gauge_disk_free_mib(_session: Session) -> int | None:
     return None if free is None else int(free // MIB)
 
 
+# ``lane_mib_<kind>`` (S04-08 S4): each lane's size, so Settings -> Storage can state a
+# MEASURED growth rate rather than a guess. An absent lane returns None and is skipped
+# (a hole, never a recorded 0 -- "no file yet" is not "an empty file"). Not in
+# ALL_METRICS either, for the same reason as the WAL: the Library endpoint's allowlist is
+# for corpus counters, and these are read through /api/storage/lanes.
 _GAUGE_METRICS: dict[str, Callable[[Session], int | None]] = {
     "wal_bytes": _gauge_wal_bytes,
     "disk_free_mib": _gauge_disk_free_mib,

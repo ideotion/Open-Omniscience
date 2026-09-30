@@ -11769,7 +11769,13 @@
   does collection PAUSE by itself at those thresholds (new behaviour; recommended), or does the guard only WARN?**
   Built on YES; on b the engaged path becomes a warning only (the notice, the named holders and the gauges stay).
   **NOT CHANGED, and the deferral in the entry above stands:** the boundary's PASSIVE/TRUNCATE logic and
-  `wal_autocheckpoint` (MEASURE FIRST); the bound is a STOP, not a new checkpoint. **Still to come from the same
+  `wal_autocheckpoint` (MEASURE FIRST); the bound is a STOP, not a new checkpoint. **ONE SIZING QUESTION THE
+  REVIEW RAISED, ASKED OF THE COORDINATOR (2026-09-30; built as written, D2):** the disk reserve
+  `max(1 GiB, 2% of the drive)` has a floor but NO CEILING, and "grows with the machine" is not a stated
+  protection: what it protects is the writes still in flight while a pass winds down plus the pass tail, which
+  does not scale with the drive, so a 4 TB volume pauses at about 80 GB free. The proposed fix is a ceiling (10
+  GiB was suggested) justified by a MEASURED figure, the most bytes written between the guard's first refusal and
+  the pass's end on the largest instance; no ceiling is written until that figure exists. **Still to come from the same
   thread:** PR B (the pool: rank 12's endpoint on a standing row; rank 7's last-good activity preview, which is
   NOT the ruling-gated 429 cap), PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
   machine's measured recovery rate), PR D (rank 9's browse query).

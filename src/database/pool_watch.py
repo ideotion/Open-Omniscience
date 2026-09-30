@@ -44,23 +44,38 @@ from typing import Any
 # same hole ``pool_reserve.py`` documents for its slot table). The record is the one
 # object ``checkout``, ``checkin``, ``detach`` and ``invalidate`` are all handed.
 _LIVE: dict[int, dict[str, Any]] = {}
-_LOCK = threading.Lock()
+# Re-entrant: a fairy collected by the garbage collector fires its ``checkin`` on whatever
+# thread the collector interrupted, which may already hold this lock (a read pruning rows,
+# say). A plain Lock would deadlock that thread; the table is never iterated live for the
+# same reason (see ``checked_out``).
+_LOCK = threading.RLock()
 _REGISTERED = False
-# Rows dropped at READ time because their record is no longer checked out -- the
-# phantoms the event keys above could not prevent (a listener attached late, an id
-# reused after a record was collected). A reading, never a control input.
+# Rows dropped at READ time because their record no longer shows a checkout. Mostly the
+# phantoms the event keys above could not prevent (a listener attached late, an id reused
+# after a record was collected), but SQLAlchemy clears ``fairy_ref`` just BEFORE it fires
+# ``checkin``, so a read in that instant also counts a legitimate return (its checkin then
+# finds the row gone, harmlessly). A reading of how often the read path had to tidy, never a
+# count of phantoms and never a control input.
 _PRUNED = 0
 
 
 def _on_checkout(dbapi_connection, connection_record, _connection_proxy) -> None:
-    thread = threading.current_thread()
-    with _LOCK:
-        _LIVE[id(connection_record)] = {
-            "thread": thread.name,
-            "ident": thread.ident,
-            "checkout_at": time.monotonic(),
-            "record": weakref.ref(connection_record),
-        }
+    # On the pool's hot path: an instrument must never be the reason a checkout fails.
+    try:
+        thread = threading.current_thread()
+        try:
+            ref: Any = weakref.ref(connection_record)
+        except TypeError:  # a pool record that cannot be weak-referenced: keep the row unverifiable
+            ref = None
+        with _LOCK:
+            _LIVE[id(connection_record)] = {
+                "thread": thread.name,
+                "ident": thread.ident,
+                "checkout_at": time.monotonic(),
+                "record": ref,
+            }
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _on_checkin(dbapi_connection, connection_record) -> None:
@@ -98,9 +113,11 @@ def checked_out() -> list[dict[str, Any]]:
     global _PRUNED
     now = time.monotonic()
     with _LOCK:
-        dead = [k for k, rec in _LIVE.items() if not _still_out(rec)]
+        # Snapshots, never the live dict: a collected fairy's checkin can pop a row from
+        # inside this block (the lock is re-entrant).
+        dead = [k for k, rec in list(_LIVE.items()) if not _still_out(rec)]
         for k in dead:
-            del _LIVE[k]
+            _LIVE.pop(k, None)
         _PRUNED += len(dead)
         rows = [
             {
@@ -108,14 +125,15 @@ def checked_out() -> list[dict[str, Any]]:
                 "ident": rec["ident"],
                 "age_s": round(now - rec["checkout_at"], 3),
             }
-            for rec in _LIVE.values()
+            for rec in list(_LIVE.values())
         ]
     rows.sort(key=lambda r: r["age_s"], reverse=True)
     return rows
 
 
 def pruned_total() -> int:
-    """How many phantom rows reads have dropped since the process started."""
+    """How many rows reads have pruned since the process started (phantoms, plus the odd
+    return caught between SQLAlchemy clearing the record and firing ``checkin``)."""
     with _LOCK:
         return _PRUNED
 

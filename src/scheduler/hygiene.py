@@ -200,6 +200,7 @@ def _reader_snapshot() -> dict:
     """
     try:
         from src.database import pool_watch
+        from src.scheduler.storage_guard import PIN_HOLDERS_MAX
 
         if not pool_watch.is_registered():
             return {"instrument": "unattached"}
@@ -208,10 +209,12 @@ def _reader_snapshot() -> dict:
             "n": len(rows),
             "oldest_age_s": rows[0]["age_s"] if rows else None,
             "oldest_thread": rows[0]["thread"] if rows else None,
-            # Every checkout, oldest first, not the oldest alone (rank 6, 2026-09-30): the
-            # oldest is often not the pinner, and a record that names one row cannot be
-            # checked against the stack a later bundle captures for the same thread.
-            "holders": [{"thread": r["thread"], "age_s": r["age_s"]} for r in rows[:8]],
+            # The oldest checkouts, oldest first, not the oldest alone (rank 6, 2026-09-30):
+            # the oldest is often not the pinner, and a record that names one row cannot be
+            # checked against the stack a later bundle captures for the same thread. Capped
+            # at PIN_HOLDERS_MAX because this record rides every pass summary (the cap bounds
+            # the payload, not the truth; ``n`` above is the full count).
+            "holders": [{"thread": r["thread"], "age_s": r["age_s"]} for r in rows[:PIN_HOLDERS_MAX]],
         }
     except Exception:  # noqa: BLE001 - an instrument must never break the tail
         return {"instrument": "unreadable"}

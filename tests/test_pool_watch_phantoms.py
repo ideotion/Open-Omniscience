@@ -69,25 +69,49 @@ def test_a_detached_connection_leaves_no_phantom_row(eng):
 
 
 def test_a_row_whose_record_is_no_longer_out_is_pruned_at_read_time_and_counted(eng):
+    """A checkin the listeners never saw (a listener attached late, here: detached for the
+    return) leaves a row for a record that is back in the pool. The pool's own state is left
+    untouched: the connection really is checked in, and the table still remembers it."""
     c = eng.connect()
-    rec = c.connection._connection_record  # the pool's record for this checkout
     assert len(pool_watch.checked_out()) == 1
     before = pool_watch.pruned_total()
-    # Simulate a checkin the listeners never saw (a listener attached late): the record
-    # says it is no longer out, while the table still remembers it.
-    rec.fairy_ref = None
+    event.remove(eng, "checkin", pool_watch._on_checkin)
+    try:
+        c.close()
+    finally:
+        event.listen(eng, "checkin", pool_watch._on_checkin)
+    assert len(pool_watch._LIVE) == 1, "fixture: the checkin listener really did not see the return"
     assert pool_watch.checked_out() == []
     assert pool_watch.pruned_total() == before + 1
-    c.close()
+    assert pool_watch._LIVE == {}
 
 
-def test_registering_the_same_engine_twice_does_not_double_the_rows(eng):
+def test_registering_the_same_engine_twice_attaches_each_listener_once(eng):
+    def attached(name, fn):
+        return sum(1 for f in getattr(eng.pool.dispatch, name) if f is fn)
+
     assert pool_watch.register(eng) is False, "registration is idempotent per engine"
+    assert attached("checkout", pool_watch._on_checkout) == 1
+    assert attached("checkin", pool_watch._on_checkin) == 1
+    assert attached("detach", pool_watch._on_detach) == 1
+
+
+def test_a_checkout_hook_that_cannot_weak_reference_the_record_still_records_the_row(eng, monkeypatch):
+    """The hook is on the pool's hot path: a failure in it must never fail a checkout."""
+    import types
+
+    def no_ref(*_a, **_k):
+        raise TypeError("cannot create weak reference")
+
+    # only THIS module's name is swapped: SQLAlchemy itself weak-references through the real one
+    monkeypatch.setattr(pool_watch, "weakref", types.SimpleNamespace(ref=no_ref))
     c = eng.connect()
     try:
-        assert len(pool_watch.checked_out()) == 1
+        rows = pool_watch.checked_out()
+        assert len(rows) == 1, "an unverifiable row is kept, never silently dropped"
     finally:
         c.close()
+    assert pool_watch.checked_out() == []
 
 
 def test_stacks_are_captured_on_demand_for_a_live_thread_only(eng):
@@ -100,12 +124,33 @@ def test_stacks_are_captured_on_demand_for_a_live_thread_only(eng):
 
 
 def test_the_oldest_checkout_comes_first(eng):
-    a = eng.connect()
-    b = eng.connect()
+    """Two threads check out in a known order; the listing must put the older one first (the
+    sort is what makes the top row the WAL pinner's candidate)."""
+    import time
+
+    held = {}
+    release = threading.Event()
+
+    def holder(name):
+        c = eng.connect()
+        held[name] = c
+        release.wait(5.0)
+        c.close()
+
+    older = threading.Thread(target=holder, args=("older",), name="pw-older")
+    younger = threading.Thread(target=holder, args=("younger",), name="pw-younger")
+    older.start()
+    while "older" not in held:
+        time.sleep(0.005)
+    time.sleep(0.05)
+    younger.start()
+    while "younger" not in held:
+        time.sleep(0.005)
     try:
-        rows = pool_watch.checked_out()
-        assert len(rows) == 2
-        assert rows[0]["age_s"] >= rows[1]["age_s"]
+        names = [r["thread"] for r in pool_watch.checked_out()]
+        assert names == ["pw-older", "pw-younger"], names
     finally:
-        a.close()
-        b.close()
+        release.set()
+        older.join(5.0)
+        younger.join(5.0)
+    assert pool_watch.checked_out() == []

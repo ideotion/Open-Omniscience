@@ -1998,14 +1998,18 @@
     // sizes through the one byte formatter. The caveat IS the notice -- visible by default,
     // never behind a toggle -- with the method one hover away; the button is a RETRY (the guard
     // re-engages on fresh over-limit samples), never an override of the measurement.
-    function _storageGuardHtml(g, t, tf) {
+    function _storageGuardHtml(a, t, tf) {
+      // Only while collection is meant to be running: "Collection is paused" about a stopped
+      // scheduler or airplane mode would be a claim about a state that is not the case.
+      const g = a && a.storage_guard;
       if (!g || !g.engaged || !Array.isArray(g.notes) || !g.notes.length) return "";
+      if (!a.running || a.online === false) return "";
       const lines = g.notes.map((n) => {
         const vars = {};
         Object.keys(n.vars || {}).forEach((k) => { vars[k] = _fmtBytes(n.vars[k]); });
         return `<div class="vwarn">${esc(tf(n.frame, vars))}</div>`;
       }).join("");
-      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look."))}">` +
+      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look. If the log does not clear by itself, quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
         lines +
         `<button class="tiny secondary" data-on-click="storageGuardResume()">${esc(t("Try again now"))}</button></div>`;
     }
@@ -2096,7 +2100,7 @@
         row(esc(t9("Memory")), _fmtBytes(p.rss_bytes)) +
         row(esc(t9("Scraping ↓")), (dl == null ? "—" : esc(perSec(dl))) +
             ` <span class="muted">· ${esc(tf("total {size}", { size: _fmtBytes(sc.bytes_total) }))} · ${sc.fetches_total||0}×</span>`);
-      $("vitals-body").innerHTML = _storageGuardHtml(a.storage_guard, t9, tf) + nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
+      $("vitals-body").innerHTML = _storageGuardHtml(a, t9, tf) + nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
       $("vitals-note").innerHTML = "";
     }
     // The session line (2026-09-18, maintainer-asked with the chronology): the three
@@ -2583,7 +2587,7 @@
       el.innerHTML =
         sect(t("Collection")) +
         `<div class="vr"><span>${esc(t("State"))}</span><b>${stateHtml}</b></div>` +
-        _storageGuardHtml(a.storage_guard, t, tf) +
+        _storageGuardHtml(a, t, tf) +
         pendingHtml +
         nowHtml +
         _concurrencyHtml(a.concurrency, pg, t, row, sect) +

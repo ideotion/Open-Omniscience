@@ -40,6 +40,13 @@ from src.scheduler.storage_guard import (
 from tests.js_source_helper import python_function_source
 
 
+@pytest.fixture(autouse=True)
+def _guard_enabled_for_these_tests(monkeypatch):
+    """conftest.py switches the guard off for the suite; this file is its own, and feeds it
+    injected readings, never the real drive."""
+    monkeypatch.setenv("OO_STORAGE_GUARD", "1")
+
+
 class Clock:
     def __init__(self) -> None:
         self.t = 1000.0
@@ -329,7 +336,7 @@ def test_a_busy_drain_names_the_holders_at_most_once_a_minute(monkeypatch):
     clock.advance(storage_guard.PIN_REPORT_EVERY_S)
     g.drain_if_due()
     assert len(reports) == 2
-    assert g.state()["last_pin_report"] is not None
+    assert g.state(detail=True)["last_pin_report"] is not None
 
 
 def test_a_gate_busy_skip_is_reported_as_pinned_not_as_success():
@@ -350,6 +357,109 @@ def test_a_drain_that_raises_never_kills_the_supervisor():
     assert g.state()["last_drain"]["ran"] is False
 
 
+def test_the_drain_never_runs_while_an_exclusive_operation_owns_the_machine(monkeypatch):
+    """An import or a restore owns the machine: a drain opens connections to the live corpus
+    and must not do so between a restore's dispose and its file swap. Nothing is stamped, so the
+    drain runs at once when the operation ends."""
+    calls = []
+    g = _guard(drain_fn=lambda: calls.append(1) or {"busy": 0})
+    _feed(g, wal=2 * GIB, n=2)
+    monkeypatch.setattr(runner, "owns_the_machine", lambda: True)
+    assert g.drain_if_due() is None and calls == []
+    monkeypatch.setattr(runner, "owns_the_machine", lambda: False)
+    assert g.drain_if_due() is not None and calls == [1]
+
+
+def test_the_drain_holds_a_corpus_lease_so_a_restore_waits_for_it():
+    from src.database.corpus_lease import active_leases
+
+    seen = []
+    g = _guard(drain_fn=lambda: seen.append(active_leases()) or {"busy": 0})
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    assert seen == [["storage-guard-drain"]]
+    assert active_leases() == [], "and it lets go"
+
+
+def test_a_drive_only_pause_drains_only_a_log_big_enough_to_give_space_back():
+    """Below the smallest log the guard itself calls large, a reset frees next to nothing and
+    logs a record every ten seconds onto a nearly full drive."""
+    clock = Clock()
+    calls = []
+    g = _guard(clock, drain_fn=lambda: calls.append(1) or {"busy": 0})
+    _feed(g, free=MIB, wal=MIB, n=2)
+    assert g.kind() == "disk" and g.drain_if_due() is None and calls == []
+    clock.advance(DRAIN_EVERY_S + 1)
+    _feed(g, free=MIB, wal=storage_guard.WAL_ABSOLUTE_MIN_BYTES, n=1)
+    assert g.drain_if_due() is not None and calls == [1]
+
+
+def test_with_the_checkpoint_switched_off_the_drain_says_so(monkeypatch):
+    """OO_WAL_CHECKPOINT=0 makes the drain a no-op by the operator's own switch: the state says
+    so, instead of reading as a drain that failed."""
+    monkeypatch.setenv("OO_WAL_CHECKPOINT", "0")
+    g = _guard(drain_fn=lambda: None)
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    assert g.state()["last_drain"]["checkpoint_disabled"] is True
+    monkeypatch.delenv("OO_WAL_CHECKPOINT")
+    g2 = _guard(drain_fn=lambda: None)
+    _feed(g2, wal=2 * GIB, n=2)
+    g2.drain_if_due()
+    assert g2.state()["last_drain"]["checkpoint_disabled"] is False
+
+
+def test_a_gate_busy_skip_and_a_busy_truncate_are_logged_as_different_facts(caplog, monkeypatch):
+    monkeypatch.setattr(storage_guard, "_pin_report", lambda d: {"holders": [], "instrument": "attached"})
+    caplog.set_level("WARNING", logger="scheduler.storage_guard")
+    g = _guard(drain_fn=lambda: {"busy": 1, "skipped": None})
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    assert "TRUNCATE is busy" in caplog.text and "write gate stayed busy" not in caplog.text
+    caplog.clear()
+    g = _guard(drain_fn=lambda: {"skipped": "gate busy", "detail": "x", "waited_s": 30.0})
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    assert "write gate stayed busy" in caplog.text and "TRUNCATE is busy" not in caplog.text
+
+
+def test_the_pin_report_names_at_most_the_stated_holders_with_the_stated_stack_depth(monkeypatch):
+    rows = [{"ident": 100 + i, "thread": f"t{i}", "age_s": 100.0 - i} for i in range(12)]
+    asked = {}
+
+    def stacks_for(idents, *, depth=12):
+        asked["idents"], asked["depth"] = list(idents), depth
+        return {i: ["frame"] for i in idents}
+
+    monkeypatch.setattr(pool_watch, "is_registered", lambda: True)
+    monkeypatch.setattr(pool_watch, "checked_out", lambda: rows)
+    monkeypatch.setattr(pool_watch, "stacks_for", stacks_for)
+    rep = storage_guard._pin_report({"busy": 1})
+    assert rep["checkouts"] == 12
+    assert len(rep["holders"]) == storage_guard.PIN_HOLDERS_MAX
+    assert asked["depth"] == storage_guard.PIN_STACK_DEPTH
+    assert [h["thread"] for h in rep["holders"]] == ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7"]
+
+
+def test_a_disk_full_error_is_logged_even_when_the_wal_latch_is_already_engaged(caplog):
+    caplog.set_level("WARNING", logger="scheduler.storage_guard")
+    g = _feed(_guard(), wal=2 * GIB, n=2)
+    assert g.kind() == "wal"
+    caplog.clear()
+    g.note_disk_full("database or disk is full")
+    assert "a write failed for want of space" in caplog.text
+    assert g.state()["kinds"] == ["disk", "wal"]
+
+
+def test_a_disabled_guard_takes_no_reading_at_all(monkeypatch):
+    monkeypatch.setenv("OO_STORAGE_GUARD", "0")
+    reads = []
+    g = _guard(readings_fn=lambda: reads.append(1) or {})
+    assert g.poll() is False
+    g.poll_and_drain_unsupervised()
+    assert reads == [], "OO_STORAGE_GUARD=0 means no stat, no glob and no statvfs either"
+
+
 # --------------------------------------------------------------------------- #
 #  what the state says (plain words, numbers apart, a stated method)
 # --------------------------------------------------------------------------- #
@@ -364,6 +474,49 @@ def test_the_state_carries_frames_and_numbers_apart_and_says_it_resumes_by_itsel
     assert "no table is read" in st["method"].lower()
     assert "history" not in st, "the six-hour history rides the bundle, never the polled payload"
     assert len(g.state(detail=True)["history"]) == 1
+
+
+def test_the_polled_state_omits_the_pin_report_and_the_bundle_carries_it(monkeypatch):
+    monkeypatch.setattr(
+        storage_guard, "_pin_report", lambda d: {"holders": [{"thread": "x", "age_s": 1.0, "stack": ["a"]}]}
+    )
+    g = _guard(drain_fn=lambda: {"busy": 1})
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    polled = g.state()
+    assert "last_pin_report" not in polled and polled["has_pin_report"] is True
+    assert g.state(detail=True)["last_pin_report"]["holders"][0]["thread"] == "x"
+
+
+def test_a_full_disk_write_error_on_a_drive_with_room_gets_its_own_sentence():
+    """A quota can refuse writes while the free figure is healthy: "only 300 GB is free" about
+    a healthy 300 GB would contradict itself and hide the real release rule (a hold, then
+    healthy samples)."""
+    g = _feed(_guard(), free=_FREE_OK)
+    g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    (note,) = g.state()["notes"]
+    assert note["kind"] == "disk" and note["frame"] == storage_guard.FRAME_DISK_ERROR
+    assert "short hold" in note["frame"] and "{resume}" not in note["frame"]
+    g2 = _feed(_guard(), free=MIB, n=2)  # a measured shortage keeps the plain frame
+    assert g2.state()["notes"][0]["frame"] == storage_guard.FRAME_DISK
+
+
+def test_an_error_before_the_first_sample_still_renders_a_sentence():
+    g = _guard()
+    g.note_disk_full("database or disk is full")
+    st = g.state()
+    assert st["engaged"] and st["reason"] and "{free}" not in st["reason"]
+    assert "?" in st["reason"], "an unmeasured figure reads '?', never a fabricated number"
+
+
+def test_sizes_read_the_same_in_the_log_and_on_the_page():
+    """The page writes binary steps with MB/GB labels; a log line that said 2.1 GB for the same
+    figure would read as two different limits."""
+    assert storage_guard._size_text(2 * GIB) == "2.0 GB"
+    assert storage_guard._size_text(512 * MIB) == "512 MB"
+    assert storage_guard._size_text(1536 * MIB) == "1.5 GB"
+    assert storage_guard._size_text(None) == "?"
+    assert storage_guard._size_text(0) == "0 B"
 
 
 def test_a_healthy_guard_says_nothing_is_wrong():
@@ -462,9 +615,8 @@ def test_the_loop_releases_the_latch_itself_when_no_supervisor_runs(monkeypatch)
     """The supervisor is what normally releases the latch. With the scheduler started over the
     API after an ``OO_NO_SCHEDULER=1`` boot there is none, and a loop that only waited would
     wait for ever: the loop takes the readings itself."""
-    from src.scheduler.storage_guard import supervisor_running
-
-    assert supervisor_running() is False
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    assert storage_guard.supervisor_running() is False
     g = _engaged("wal")
     monkeypatch.setattr(storage_guard, "storage_guard", g)
     runs = {"n": 0}
@@ -634,7 +786,7 @@ def test_a_real_pinned_reader_engages_the_guard_is_named_and_released_when_it_en
     rec = g.drain_if_due()
     assert rec is not None and rec["busy"] == 1, "TRUNCATE is busy while the cursor is open"
     assert wal.stat().st_size > 1 * MIB, "and the file was not reset"
-    rep = g.state()["last_pin_report"]
+    rep = g.state(detail=True)["last_pin_report"]
     assert rep["instrument"] == "attached"
     (holder, *_rest) = rep["holders"]
     assert holder["thread"] == threading.current_thread().name
@@ -673,7 +825,8 @@ def test_the_reader_snapshot_lists_every_holder_not_only_the_oldest(tmp_path):
     a, b = eng.connect(), eng.connect()
     try:
         snap = _reader_snapshot()
-        assert snap["n"] == 2 and len(snap["holders"]) == 2
+        # The registry is process-wide: a daemon's own checkout may be listed too.
+        assert snap["n"] >= 2 and len(snap["holders"]) >= 2
         assert set(snap["holders"][0]) == {"thread", "age_s"}
         assert snap["oldest_thread"] == snap["holders"][0]["thread"]
     finally:
@@ -741,6 +894,48 @@ def test_boot_starts_the_supervisor_inside_the_scheduler_gate():
     )
 
 
+def test_the_supervisor_can_be_stopped_and_started_again_and_leaves_one_live_thread(monkeypatch):
+    monkeypatch.setattr(storage_guard, "POLL_EVERY_S", 0.05)
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    monkeypatch.setattr(storage_guard, "_STOP", threading.Event())
+    try:
+        assert storage_guard.start() is True
+        assert storage_guard.supervisor_running() is True
+        assert storage_guard.start() is False, "idempotent while running"
+        first = storage_guard._THREAD
+        storage_guard.stop()
+        assert storage_guard.supervisor_running() is False
+        assert storage_guard.start() is True, "a start right after a stop must not be refused"
+        assert storage_guard.supervisor_running() is True
+        first.join(timeout=2.0)
+        assert not first.is_alive(), "the old thread exits on its own event; the clear never revives it"
+        live = [t for t in threading.enumerate() if t.name == "oo-storage-guard" and t.is_alive()]
+        assert len(live) == 1
+    finally:
+        storage_guard.stop()
+
+
+def test_the_guard_being_off_starts_no_supervisor(monkeypatch):
+    monkeypatch.setenv("OO_STORAGE_GUARD", "0")
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    assert storage_guard.start() is False
+    assert storage_guard._THREAD is None
+
+
+def test_wait_if_engaged_ends_by_itself_when_no_supervisor_runs(monkeypatch):
+    """A caller that waits (the keyword boot recompute will) must not wait for ever when the
+    supervisor never started: it takes the readings and the drain itself."""
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    g = _engaged("wal")
+    waiter = threading.Thread(target=g.wait_if_engaged, kwargs={"poll_s": 0.02}, daemon=True)
+    waiter.start()
+    time.sleep(0.15)
+    assert waiter.is_alive(), "still over the limit: still waiting"
+    g.fake["wal_bytes"] = 0
+    waiter.join(timeout=5.0)
+    assert not waiter.is_alive(), "the wait outlived the condition that caused it"
+
+
 def test_the_runner_consults_the_guard_at_every_point_the_memory_guard_is_consulted():
     src = _src("src/scheduler/runner.py")
     assert src.count("storage_guard.storage_guard.admit()") >= 3  # wind-down, lane, off-peak
@@ -749,7 +944,12 @@ def test_the_runner_consults_the_guard_at_every_point_the_memory_guard_is_consul
 
 
 def test_the_engine_hook_and_the_read_engine_registration_exist():
-    assert "_storage_guard_on_disk_full" in _src("src/database/session.py")
+    from src.database import session
+
+    assert event.contains(session.engine, "handle_error", session._storage_guard_on_disk_full), (
+        "the global engine must carry the full-disk listener (a substring check would pass "
+        "with the decorator removed)"
+    )
     assert "_pool_watch.register(eng)" in _src("src/database/read_snapshot.py")
 
 
@@ -759,10 +959,17 @@ def test_the_conftest_isolates_the_process_global_latch():
 
 def test_every_storage_string_is_in_the_twelve_locales():
     import json
+    import re
 
+    # The hover text is read from the page itself, so a reworded sentence that forgets its
+    # locale keys fails here rather than showing English in eleven languages.
+    hover = re.search(r't9?\("(Measured from the size of the database[^"]*)"\)', _src("src/static/app-core.js"))
+    assert hover, "the hover text moved -- re-anchor this test"
     keys = [
         storage_guard.FRAME_WAL,
         storage_guard.FRAME_DISK,
+        storage_guard.FRAME_DISK_ERROR,
+        hover.group(1),
         "Paused: the database log has grown too large",
         "Paused: the data drive is nearly full",
         "Try again now",
@@ -776,11 +983,25 @@ def test_every_storage_string_is_in_the_twelve_locales():
                 assert d[k] != k, f"{p.name}: untranslated {k[:50]!r}"
 
 
+def test_the_notice_runs_as_real_code_under_node_in_both_uis():
+    """The vitals panel / Schedule tab and /tasks draw the engaged notice from the payload,
+    and draw nothing over a stopped scheduler or airplane mode (tests/storage_guard_node_test.js)."""
+    import subprocess
+
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests" / "storage_guard_node_test.js")],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all checks ok" in proc.stdout
+
+
 def test_the_ui_renders_the_notice_from_the_payload_and_the_button_is_dispatchable():
     core = _src("src/static/app-core.js")
     assert "function _storageGuardHtml" in core and "async function storageGuardResume" in core
-    assert core.count("_storageGuardHtml(a.storage_guard") == 2  # vitals panel + schedule tab
+    # the definition, then the vitals panel and the schedule tab
+    assert core.count("_storageGuardHtml(a, ") - core.count("function _storageGuardHtml(a, ") == 2
     assert '"storageGuardResume"' in _src("src/static/oo-on.js")
     tm = _src("src/static/taskmanager.js")
-    assert "storageGuardHtml(a.storage_guard)" in tm and 'data-tm="storage-resume"' in tm
+    assert "storageGuardHtml(a)" in tm and 'data-tm="storage-resume"' in tm
     assert "paused-wal-pinned" in core and "paused-low-disk" in core

@@ -385,14 +385,17 @@
     return { "paused-wal-pinned": "Paused: the database log has grown too large",
              "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
   }
-  function storageGuardHtml(g) {
+  function storageGuardHtml(a) {
+    // Only while collection is meant to be running (see app-core.js _storageGuardHtml).
+    var g = a && a.storage_guard;
     if (!g || !g.engaged || !g.notes || !g.notes.length) return "";
+    if (!a.running || a.online === false) return "";
     var lines = g.notes.map(function (n) {
       var vars = {};
       Object.keys(n.vars || {}).forEach(function (k) { vars[k] = fmtBytes(n.vars[k]); });
       return '<div class="vwarn">' + esc(tf(n.frame, vars)) + "</div>";
     }).join("");
-    return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look.")) + '">' +
+    return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look. If the log does not clear by itself, quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer).")) + '">' +
       lines + '<button class="tiny secondary" data-tm="storage-resume">' + esc(t("Try again now")) + "</button></div>";
   }
 
@@ -437,7 +440,7 @@
     // No "Mode" row and no mode after the current domain: the scheduler mode was
     // RETIRED (Q1020 = a, b45bed19) and neither the settings, the activity nor the
     // pass progress carries one, so both read as an empty value (2026-09-27 re-walk T-5).
-    el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + storageGuardHtml(a.storage_guard) + now +
+    el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + storageGuardHtml(a) + now +
       sect(t("Schedule")) + '<div class="vr"><span>' + esc(t("Cadence")) + "</span><b>" + cadence + "</b></div>" + next + last +
       '<div class="vnote">' + esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method.")) + "</div>";
   }
