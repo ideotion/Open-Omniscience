@@ -1495,7 +1495,7 @@ def run_qualification_pass(
         _LOG.info("qualification pass paused during the cohort freeze: %s", exc)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
-            "trial_fetch_errors": trial_errors,
+            "trial_fetch_errors": trial_errors, "deferred": deferred,
         }
     # A cut frozen at another threshold is a DIFFERENT baseline -- it decides which sources
     # form the cohort at all. Refused rather than answered, because the failure is invisible:
@@ -1520,7 +1520,7 @@ def run_qualification_pass(
         _LOG.info("qualification pass paused: %s", exc)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
-            "trial_fetch_errors": trial_errors,
+            "trial_fetch_errors": trial_errors, "deferred": deferred,
         }
     fails_by_source = sa.flag_criteria(
         per, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"],

@@ -544,3 +544,13 @@ def test_the_memory_guard_also_ends_the_trial_fetching(machine, monkeypatch):
 
     out = q.run_qualification_pass(s, fetcher=object(), per_pass=10, should_pause=pause)
     assert len(tried) == 1 and out["deferred"] == 1
+
+
+def test_the_per_candidate_read_checks_the_memory_guard_between_sources():
+    s = _session()
+    for d in ("a.example", "b.example"):
+        s.add(Source(name=d, domain=d, language="en", enabled=False, status=q.STATUS_UNQUALIFIED))
+    s.commit()
+    ids = {x.id for x in s.query(Source)}
+    with pytest.raises(sq.ScanPaused):
+        sq.collect_article_stats(s, source_ids=ids, per_source_recent=10, should_pause=lambda: True)
