@@ -130,7 +130,7 @@
           what = `<ul class="dossier-list">` + ps.map((p) =>
             `<li><button type="button" class="linkish dossier-place" data-place-id="${esc(p.id)}" title="${esc(t("Open the place card"))}">`
             + `<span dir="auto">${esc(p.name)}</span></button>`
-            + ` <span class="muted small">${esc([p.kind, p.country ? ooCountryCode(p.country) : ""].filter(Boolean).join(" · "))}`
+            + ` <span class="muted small">${esc([ooPlaceKind(p.kind).text, p.country ? ooCountryCode(p.country) : ""].filter(Boolean).join(" · "))}`
             + ` · ${esc(tf("Mentioned in {n} articles", {n: p.articles || 0}))}</span></li>`).join("") + `</ul>`
             + (r.count > ps.length ? `<div class="muted small">${esc(tf("{shown} of {n} shown", {shown: ps.length, n: r.count}))}</div>` : "");
         }

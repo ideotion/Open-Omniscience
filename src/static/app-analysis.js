@@ -4438,6 +4438,7 @@
       (body.metadata || []).forEach((m) => { meta[m.key] = m.value; });
       const coord = meta.coordinates ? `${(+meta.coordinates.lat).toFixed(4)}, ${(+meta.coordinates.lon).toFixed(4)}` : "";
       const pop = meta.population != null ? fmtNum(Number(meta.population)) : "";
+      const pKind = ooPlaceKind(meta.kind);
       const inception = meta.inception && meta.inception.time ? String(meta.inception.time).replace(/^\+/, "").slice(0, meta.inception.precision >= 11 ? 10 : 4) : "";
       let html = "";
       // The description is prose a source wrote, so it is quoted as that source's, with its
@@ -4449,7 +4450,7 @@
         html += `<p class="muted" style="margin:0 0 8px">${esc(d.item && d.item.status === "missing" ? t("Wikidata has no item with this id.") : t("No description on this machine yet: fetch the Wikidata items in Settings → Advanced."))}</p>`;
       }
       html += `<div class="vsect">${esc(t("Metadata"))}</div><table class="data" style="margin:4px 0 10px"><tbody>`
-        + row(t("Kind"), meta.kind ? esc(meta.kind) : "")
+        + row(t("Kind"), pKind.text ? `<span${pKind.title ? ` title="${esc(pKind.title)}"` : ""}>${esc(pKind.text)}</span>` : "")
         + row(t("Country"), meta.country ? esc(meta.country) : "")
         + row(t("Population"), pop ? esc(pop) : "")
         + row(t("Coordinates"), coord ? esc(coord) : "")

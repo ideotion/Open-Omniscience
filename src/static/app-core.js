@@ -234,6 +234,34 @@
       return kind === "non-iso" ? label + " \u2014 " + t("not an ISO code") : label;
     }
 
+    // A Place's `kind` is OpenStreetMap's own `place=*` word, stored verbatim (`city`, `hamlet`,
+    // `isolated_dwelling` ...), and it is shown in the INTERFACE language (R71 b, item 14). The
+    // words are OSM's fixed vocabulary, so each is a keyed string; a kind this table does not
+    // know -- a `key=value` tag of a non-place object, or a word OSM adds later -- is returned
+    // as OSM wrote it, never guessed at. `title` is the hover: the word as OpenStreetMap wrote
+    // it, so a translation never hides what the data says. An absent kind stays absent.
+    function ooPlaceKind(kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const raw = kind == null ? "" : String(kind).trim();
+      if (!raw) return { text: "", title: "" };
+      const words = {
+        country: t("country"), state: t("state"), region: t("region"), province: t("province"),
+        district: t("district"), county: t("county"), municipality: t("municipality"),
+        city: t("city"), borough: t("borough"), suburb: t("suburb"), quarter: t("quarter"),
+        neighbourhood: t("neighbourhood"), city_block: t("city block"), plot: t("plot"),
+        town: t("town"), village: t("village"), hamlet: t("hamlet"),
+        isolated_dwelling: t("isolated dwelling"), farm: t("farm"), allotments: t("allotments"),
+        continent: t("continent"), archipelago: t("archipelago"), island: t("island"),
+        islet: t("islet"), square: t("square"), locality: t("locality"), sea: t("sea"),
+        ocean: t("ocean"), "boundary=administrative": t("administrative area"),
+      };
+      const label = Object.prototype.hasOwnProperty.call(words, raw) ? words[raw] : "";
+      if (!label) return { text: raw, title: "" };
+      return { text: label, title: tf("OpenStreetMap's word: {kind}", { kind: "\u2068" + raw + "\u2069" }) };
+    }
+
     // ONE renderer, so no surface re-derives the pair. Returns the escaped HTML
     // for a single country: the CODE visible, the localised NAME in the hover.
     // `opts.cls` adds a class; `opts.empty` is what an absent value renders as

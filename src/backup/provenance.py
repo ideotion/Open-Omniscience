@@ -56,6 +56,20 @@ PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
         "kind": "'model'", "producer": "{a}.model", "version": "{a}.prompt_version",
         "prompt_text": "{a}.prompt_text", "produced_at": "{a}.created_at",
     },
+    # 2026-09-30, R71 (b): a Place is read from OpenStreetMap's gazetteer and an item from
+    # Wikidata; neither is a model's or a person's output. `producer` names the SOURCE and
+    # the vintage it was read at, `version` stays NULL (there is no prompt), and `prompt_text`
+    # is NULL. `kind` is `extractor` because a program read it, not because a model wrote it.
+    "places": {
+        "kind": "'extractor'",
+        "producer": "'OpenStreetMap gazetteer' || COALESCE(' ' || {a}.gazetteer_vintage, '')",
+        "version": "NULL", "prompt_text": "NULL", "produced_at": "{a}.as_of",
+    },
+    "wikidata_items": {
+        "kind": "'extractor'", "producer": "'Wikidata'",
+        "version": "CAST({a}.lastrevid AS TEXT)", "prompt_text": "NULL",
+        "produced_at": "{a}.fetched_at",
+    },
     # A confirm or reject is the operator's own judgement, whatever extractor proposed the date.
     "article_mentioned_dates": {
         "kind": "CASE WHEN {a}.status IN ('confirmed', 'rejected') THEN 'human' ELSE 'extractor' END",
@@ -101,6 +115,21 @@ ALTERNATE_SPECS: dict[str, dict[str, Any]] = {
         "scope": "law", "differs": ["summary"], "shown": ["summary", "prompt_version"],
         "match": {"model": "model"},
     },
+    # 2026-09-30, R71 (b). Neither table has an integer id: the identity IS the key.
+    "places": {
+        "scope": "none",
+        "differs": ["name", "kind", "qid", "names_json", "population"],
+        "shown": ["name", "kind", "qid", "names_json", "population", "country", "country_alpha3",
+                  "lat", "lon", "gazetteer_vintage", "as_of"],
+        "match": {"place_id": "id"},
+    },
+    "wikidata_items": {
+        "scope": "none",
+        "differs": ["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json"],
+        "shown": ["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json",
+                  "lastrevid", "fetched_at"],
+        "match": {"qid": "qid"},
+    },
 }
 
 
@@ -123,6 +152,10 @@ def producer_tag_sql(table: str, alias: str, *, origin: str, batch: str, at: str
 def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     """The tag of ONE local deduced row, or None when the row does not exist.
 
+    ``row_id`` is the row's SQLite ``rowid``, which is what ``merged_rows`` records and which IS
+    the ``id`` for every table with an integer key. Places and Wikidata items are keyed on text,
+    so ``id`` would not do for them; ``rowid`` does for all.
+
     A row with no ``merged_rows`` entry was produced here: ``origin`` is ``"local"`` and
     ``arrived`` is null."""
     from sqlalchemy import text
@@ -134,8 +167,8 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     row = session.execute(
         text(
             f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, never input
-            " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.id"
-            " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.id = :id"
+            " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.rowid"
+            " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.rowid = :id"
             " ORDER BY b.id LIMIT 1"
         ),
         {"t": table, "id": int(row_id)},

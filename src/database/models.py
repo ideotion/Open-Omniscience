@@ -2125,8 +2125,11 @@ class WikidataItem(Base):
     item that answered.
 
     JSON as TEXT, the house shape (``event_imports.sources``), so the table carries no
-    dialect-specific type. Not carried by a backup restore (see ``_MERGE_NOT_CARRIED``):
-    it is a cache of a public CC0 source, re-read at R8's rate.
+    dialect-specific type. CARRIED by a backup restore since 2026-09-30 (R71 b): an item the
+    corpus lacks is added, and one it already holds with other values keeps its own while the
+    backup's go to ``metadata_alternates`` (``_merge_places`` in ``src/backup/merge.py``). It
+    is a cache of a public CC0 source, so a restore that left it behind would only cost the
+    re-read at R8's rate -- carrying it saves that, it does not make the row authoritative.
     """
 
     __tablename__ = "wikidata_items"
@@ -2174,9 +2177,11 @@ class Place(Base):
     label is the fallback and is read from :class:`WikidataItem` at display time, so the
     two sources are never blended into one column that could not say which one spoke.
 
-    **Q823 ⛔ (ODbL) IS OPEN, SO NOTHING HERE LEAVES THE MACHINE:** no backup member, no
-    export, no bulletin line. ``_MERGE_NOT_CARRIED`` says so, and the rows are rebuilt from
-    the gazetteer after a restore.
+    **Q823 = a (2026-09-29): OSM DATA MAY LEAVE THE MACHINE, CREDITED.** A Place rides a
+    backup restore (``_merge_places`` in ``src/backup/merge.py``) and every artifact that
+    holds one carries «© OpenStreetMap contributors» and the ODbL 1.0 line
+    (``src/backup/attribution.py``, ``OSM_DERIVED_TABLES``). A restore never changes a Place
+    this corpus already has: the backup's other values wait in ``metadata_alternates``.
     """
 
     __tablename__ = "places"

@@ -1791,6 +1791,13 @@ _MERGE_HANDLED = {
     # 2026-09-30, R61 (item 12): the ≈ titles are deduced metadata and ride the backup; they
     # left _MERGE_NOT_CARRIED for it. See `_merge_ai_layer`.
     "article_title_translations",
+    # 2026-09-30, R71 (b) and Q823 = a (OSM data may leave the machine with OSM's credit and the
+    # ODbL, which the attribution seam already adds to a backup that holds a place). The Places
+    # and the Wikidata items they carry are deduced from a public source, not written by a person,
+    # so they ride the backup under the same rule as every other deduced item: a restore ADDS
+    # what this corpus lacks, and where it holds the same place or item with other values it
+    # keeps the incoming ones beside its own. See `_merge_places`.
+    "places", "wikidata_items",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -1858,19 +1865,10 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
-    # S05-03 (row C of the 0.5 gate). Places are OSM-derived and Q823 ⛔ (the ODbL question)
-    # is open, so no Place row leaves this machine by any route -- a restore included. They
-    # are rebuilt from the gazetteer by the local "resolve places" job, which makes no request.
-    "places": (
-        "OSM-derived (Q823 open); rebuilt from the gazetteer by the local resolve-places job"
-    ),
-    # A cache of a public CC0 source. Whether it rides a backup is one of the questions
-    # S05-03 §6 leaves to the maintainer; until then it is re-read at R8's rate, and the
-    # restore report counts what was left behind rather than dropping it silently.
-    "wikidata_items": (
-        "a local cache of Wikidata (CC0), re-read at one request per 10 seconds; whether it "
-        "rides a backup is not ruled yet (S05-03 §6)"
-    ),
+    # `places` and `wikidata_items` LEFT THIS LIST on 2026-09-30 (R71 b, Q823 = a). They were
+    # held back while the ODbL question was open; the maintainer answered it, and a restore
+    # that dropped them would have cost a Wikidata re-read at one request per 10 seconds and
+    # a re-materialise of every notable place. They now have a handler (`_merge_places`).
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
     # reading above -- per-machine, self-healing, re-learned next pass -- was correct
     # about the mechanism and was overturned as a POLICY: re-learning it costs a full
@@ -2019,6 +2017,8 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
         # temp.map_articles it joins.
         ("watches", _merge_watches),
         ("AI layer", _merge_ai_layer),
+        # 2026-09-30, R71 (b). After `articles`, whose temp.map_articles a place's body joins.
+        ("places", _merge_places),
         # 2026-09-16, the Q701 note. After `sources`, whose temp.map_sources it joins.
         # ALWAYS a step, even when the operator untrusted the history: a restore that
         # adopted nothing because they said not to, and a restore that had nothing to
@@ -3656,7 +3656,7 @@ def _capture_alternates(
         "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
         " provenance, origin, status, created_at)"
         f" SELECT :batch, :table, json_object({ident}),"
-        f" (SELECT MIN(t.id) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
+        f" (SELECT MIN(t.rowid) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
         " :origin, 'pending', :now"
         f"{where}"
         " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
@@ -4193,6 +4193,89 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         )
         tt.duplicate = max(0, tt.duplicate - tt.conflict)
         results["article_title_translations"] = tt
+
+
+def _merge_places(con, batch_id, results) -> None:
+    """The Wikidata items and the Places, carried by a restore (R71 b; Q823 = a; R61).
+
+    Neither table has an integer id: a Place is keyed on its OpenStreetMap object
+    (``node/240109189``) and an item on its QID, and both are the SAME thing in every corpus --
+    which is the cross-corpus identity, so no id map is needed. ``merged_rows`` records them by
+    SQLite ``rowid`` like every other table (`_insert_window` reads ``rowid``, and a text-keyed
+    table still has one).
+
+    THE RULING, applied as it was for the ≈ titles: this corpus's own row is never changed. A
+    place or item the corpus lacks is ADDED (with the ``oo.prov/1`` tag on its way in, via
+    ``merged_rows``); one it already holds with other values keeps its own, and the backup's
+    values go to ``metadata_alternates`` for the operator to keep or discard. What counts as
+    "other values" is `ALTERNATE_SPECS`' ``differs``; a place that differs only in its
+    coordinates or its vintage is the same place measured twice, not a contradiction.
+
+    ``article_id`` (the Place's body Article, once row D indexes one) goes through
+    ``temp.map_articles`` like every other article pointer, and is NULL when the article did not
+    come across -- a place is never left pointing at another corpus's id. ``geometry_ref`` is
+    carried as written: it names where the geometry lives on the machine that made the row, and
+    the Place card already says "the lane does not hold it" when this machine's OSM lane does
+    not (`_osm_facts`), so a carried reference never claims geometry this machine lacks.
+
+    Items first: a Place's ``qid`` is a soft reference to them (no foreign key), but the order
+    keeps the report reading the way the data depends. A backup that predates either table has
+    nothing to carry and says so by not reporting the domain.
+    """
+    if _inc_has_table(con, "wikidata_items"):
+        wd = DomainResult()
+        wd_key = "t.qid = i.qid"
+        wd.conflict = _capture_alternates(
+            con, batch_id, "wikidata_items", key=wd_key, joins="",
+            identity=[("qid", "i.qid")],
+            differs=["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json"],
+            shown=["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json",
+                   "lastrevid", "fetched_at"],
+        )
+        wd.duplicate = _count(
+            con,
+            "SELECT COUNT(*) FROM inc.wikidata_items i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f" WHERE EXISTS (SELECT 1 FROM wikidata_items t WHERE {wd_key})",
+        )
+        wd.new = _insert_tracked(
+            con, batch_id, "wikidata_items",
+            "INSERT OR IGNORE INTO wikidata_items (qid, status, resolved_qid, labels_json,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            " descriptions_json, claims_json, lastrevid, fetched_at)"
+            " SELECT i.qid, i.status, i.resolved_qid, i.labels_json, i.descriptions_json,"
+            " i.claims_json, i.lastrevid, i.fetched_at FROM inc.wikidata_items i"
+            f" WHERE NOT EXISTS (SELECT 1 FROM wikidata_items t WHERE {wd_key})",
+        )
+        wd.duplicate = max(0, wd.duplicate - wd.conflict)
+        results["wikidata_items"] = wd
+
+    if _inc_has_table(con, "places"):
+        pl = DomainResult()
+        pl_key = "t.id = i.id"
+        pl.conflict = _capture_alternates(
+            con, batch_id, "places", key=pl_key, joins="",
+            identity=[("place_id", "i.id")],
+            differs=["name", "kind", "qid", "names_json", "population"],
+            shown=["name", "kind", "qid", "names_json", "population", "country", "country_alpha3",
+                   "lat", "lon", "gazetteer_vintage", "as_of"],
+        )
+        pl.duplicate = _count(
+            con,
+            "SELECT COUNT(*) FROM inc.places i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f" WHERE EXISTS (SELECT 1 FROM places t WHERE {pl_key})",
+        )
+        pl.new = _insert_tracked(
+            con, batch_id, "places",
+            "INSERT OR IGNORE INTO places (id, qid, kind, name, names_json, country,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            " country_alpha3, admin_path_json, geometry_ref, lat, lon, population,"
+            " gazetteer_vintage, article_id, as_of)"
+            " SELECT i.id, i.qid, i.kind, i.name, i.names_json, i.country, i.country_alpha3,"
+            " i.admin_path_json, i.geometry_ref, i.lat, i.lon, i.population,"
+            " i.gazetteer_vintage, ma.new, i.as_of FROM inc.places i"
+            " LEFT JOIN temp.map_articles ma ON ma.old = i.article_id"
+            f" WHERE NOT EXISTS (SELECT 1 FROM places t WHERE {pl_key})",
+        )
+        pl.duplicate = max(0, pl.duplicate - pl.conflict)
+        results["places"] = pl
 
 
 def _merge_statistics(con, batch_id, results) -> None:
