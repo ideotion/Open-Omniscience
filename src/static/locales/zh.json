@@ -3964,6 +3964,7 @@
   "Save this search": "保存此搜索",
   "Saved search": "已保存的搜索",
   "Saved synthesis.html": "已保存 synthesis.html",
+  "Saved {file}: {n} articles, {size}.": "已保存 {file}：{n} 篇文章，{size}。",
   "Saved.": "已保存。",
   "Saved. Find it in Insights → Watches; it never fires a Lead.": "已保存。可在洞察 → 监视中找到；它从不触发线索。",
   "Saved. The stream starts when you go online.": "已保存。你上线后流会启动。",
