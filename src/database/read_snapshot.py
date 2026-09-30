@@ -44,6 +44,7 @@ from sqlalchemy.orm import Session as SASession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
+from src.database import pool_watch as _pool_watch
 from src.database.session import get_db
 
 _LOG = logging.getLogger(__name__)
@@ -68,6 +69,12 @@ def _build_read_engine(url: str) -> Engine:
         return connect(db_path, check_same_thread=False, timeout=30)
 
     eng = create_engine(url, future=True, creator=_creator, poolclass=NullPool)
+    # This engine's read transaction is held across a WHOLE export, which is exactly the
+    # shape that pins the WAL (a snapshot taken at the first read, kept to the last). The
+    # pin report (storage guard, hygiene's checkpoint record) lists pooled checkouts, so an
+    # engine nobody registered was invisible to it: a pinned WAL during an export read as
+    # "nobody is reading". Registering names the export's thread and how long it has held.
+    _pool_watch.register(eng)
 
     @event.listens_for(eng, "connect")
     def _read_pragmas(dbapi_connection, _record) -> None:  # noqa: ANN001

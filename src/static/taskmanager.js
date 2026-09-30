@@ -375,6 +375,27 @@
     $("queue-body").innerHTML = qHtml;
   }
 
+  // ---- The storage guard's notice (mirrors app-core.js _storageGuardHtml; see there) ---- //
+  // Collection is PAUSED because the database's write-ahead log is held open past this
+  // machine's limit, or the data drive is nearly full. The server sends each sentence as a
+  // frame with its numbers (bytes) apart, so the sentence is written in the UI language and
+  // the sizes through this page's byte formatter. Visible by default; the method is one hover
+  // away; the button is a RETRY (the guard re-engages on fresh over-limit samples).
+  function storagePausedText(phase) {
+    return { "paused-wal-pinned": "Paused: the database log has grown too large",
+             "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
+  }
+  function storageGuardHtml(g) {
+    if (!g || !g.engaged || !g.notes || !g.notes.length) return "";
+    var lines = g.notes.map(function (n) {
+      var vars = {};
+      Object.keys(n.vars || {}).forEach(function (k) { vars[k] = fmtBytes(n.vars[k]); });
+      return '<div class="vwarn">' + esc(tf(n.frame, vars)) + "</div>";
+    }).join("");
+    return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look.")) + '">' +
+      lines + '<button class="tiny secondary" data-tm="storage-resume">' + esc(t("Try again now")) + "</button></div>";
+  }
+
   // ---- Schedule — the scheduler's own facts, AIRPLANE-AWARE ---- //
   function renderSchedule(a) {
     var el = $("sched-body");
@@ -384,8 +405,10 @@
     var sect = function (x) { return '<div class="vsect">' + x + "</div>"; };
     // Airplane mode is the truth: a pass winding down while offline is NOT
     // "collection in progress" — show it as paused, in the engaged-airplane colour.
+    var pausedTxt = storagePausedText(a.phase);
     var state = offline ? '<span class="pill err">' + esc(t("paused — airplane mode")) + "</span>"
               : a.active ? '<span class="pill ok">' + esc(t("running — collection in progress")) + "</span>"
+              : pausedTxt ? '<span class="pill warn">' + esc(t(pausedTxt)) + "</span>"
               : a.running ? '<span class="pill ok">' + esc(t("running")) + "</span>"
               : '<span class="pill">' + esc(t("stopped")) + "</span>";
     var now;
@@ -414,7 +437,7 @@
     // No "Mode" row and no mode after the current domain: the scheduler mode was
     // RETIRED (Q1020 = a, b45bed19) and neither the settings, the activity nor the
     // pass progress carries one, so both read as an empty value (2026-09-27 re-walk T-5).
-    el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + now +
+    el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + storageGuardHtml(a.storage_guard) + now +
       sect(t("Schedule")) + '<div class="vr"><span>' + esc(t("Cadence")) + "</span><b>" + cadence + "</b></div>" + next + last +
       '<div class="vnote">' + esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method.")) + "</div>";
   }
@@ -628,6 +651,14 @@
       try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Resumed.")); }
       catch (e) { toast(e.message, "err"); }
     },
+    // The storage guard's "Try again now": a RETRY, never an override -- the guard re-engages
+    // after fresh over-limit samples if the log is still held open or the drive still full.
+    storageResume: async function () {
+      try {
+        await api("/api/scheduler/storage-guard/resume", { method: "POST" });
+        toast(t("Trying again. Collection pauses again by itself if the limit is still exceeded."));
+      } catch (e) { toast(e.message, "err"); }
+    },
     move: async function (key, dir, kind) {
       var jobs = (_jobs && _jobs.jobs) || [];
       var qJobs = jobs.filter(function (j) { return j.state === "queued" && j.kind === kind; })
@@ -654,6 +685,7 @@
     var act = b.getAttribute("data-tm"), id = b.getAttribute("data-id");
     if (act === "cancel") window.TM.cancel(id);
     else if (act === "resume") window.TM.resume(id, b.getAttribute("data-local") === "1");
+    else if (act === "storage-resume") window.TM.storageResume();
     else if (act === "move") window.TM.move(b.getAttribute("data-key"), Number(b.getAttribute("data-dir")), b.getAttribute("data-kind"));
   });
 

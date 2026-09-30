@@ -200,6 +200,19 @@ def _memory_guard_not_leaked():
 
 
 @pytest.fixture(autouse=True)
+def _storage_guard_not_leaked():
+    """The storage guard (WAL pinned / drive nearly full) is a process-global latch, the
+    same order-dependent-pollution class as the memory guard above: a test that engages it
+    (or feeds it a full-disk error) must never leak a paused collection into the next one.
+    Reset on the way in as well as out, like the caches below."""
+    from src.scheduler.storage_guard import storage_guard
+
+    storage_guard._reset_for_tests()
+    yield
+    storage_guard._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _pending_resume_not_leaked():
     """SCHED-1's resume watcher is a process-global daemon: any test whose resume
     runs out of retries hands off to one, and it polls every RESUME_POLL_S for the

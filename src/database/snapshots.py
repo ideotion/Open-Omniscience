@@ -231,8 +231,23 @@ def _gauge_lane_mib(kind: str) -> Callable[[Session], int | None]:
 # (a hole, never a recorded 0 -- "no file yet" is not "an empty file"). Not in
 # ALL_METRICS either, for the same reason as the WAL: the Library endpoint's allowlist is
 # for corpus counters, and these are read through /api/storage/lanes.
+def _gauge_disk_free_mib(_session: Session) -> int | None:
+    """Free space on the drive that holds the corpus, in whole MiB (storage guard, rank 2).
+
+    Three of sixteen instances filled their data drive and the bundle could say only how
+    much was free at export time -- never how fast it had been going. MiB rather than bytes
+    for the reason ``lane_mib_*`` are (``value`` is a 32-bit Integer on PostgreSQL). None
+    when the drive cannot be read (a hole in the series, never a recorded 0, which would
+    read as "full")."""
+    from src.scheduler.storage_guard import MIB, read_storage
+
+    free = read_storage().get("disk_free_bytes")
+    return None if free is None else int(free // MIB)
+
+
 _GAUGE_METRICS: dict[str, Callable[[Session], int | None]] = {
     "wal_bytes": _gauge_wal_bytes,
+    "disk_free_mib": _gauge_disk_free_mib,
     "lane_mib_press": _gauge_lane_mib("press"),
     "lane_mib_wiki": _gauge_lane_mib("wiki"),
     "lane_mib_law": _gauge_lane_mib("law"),

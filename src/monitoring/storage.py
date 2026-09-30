@@ -228,6 +228,15 @@ def storage_composition(session: Session) -> dict[str, Any]:
     hist = _wal_history(session)
     if hist is not None:
         out["wal_history"] = hist
+    # The storage guard (rank 1/2/6): engagements, the limits it derived from THIS machine,
+    # the last drain and the named pin report, plus six hours of WAL and free-disk samples.
+    # Carried here so every bundle shows it without a new export section.
+    try:
+        from src.scheduler.storage_guard import storage_guard
+
+        out["storage_guard"] = storage_guard.state(detail=True)
+    except Exception:  # noqa: BLE001 - visibility is best-effort; never break the diagnostic
+        pass
     if page_size and page_count is not None:
         out["db_bytes"] = page_size * page_count
     if page_size and freelist is not None:

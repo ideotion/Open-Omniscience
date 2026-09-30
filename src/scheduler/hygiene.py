@@ -208,6 +208,10 @@ def _reader_snapshot() -> dict:
             "n": len(rows),
             "oldest_age_s": rows[0]["age_s"] if rows else None,
             "oldest_thread": rows[0]["thread"] if rows else None,
+            # Every checkout, oldest first, not the oldest alone (rank 6, 2026-09-30): the
+            # oldest is often not the pinner, and a record that names one row cannot be
+            # checked against the stack a later bundle captures for the same thread.
+            "holders": [{"thread": r["thread"], "age_s": r["age_s"]} for r in rows[:8]],
         }
     except Exception:  # noqa: BLE001 - an instrument must never break the tail
         return {"instrument": "unreadable"}

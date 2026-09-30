@@ -347,7 +347,8 @@ async function t5() {
   await check("T-5 the app's Schedule subtab prints no Mode row", () => {
     const el = { innerHTML: "" };
     const f = new Function("$", "window", "_actData", "esc", "fmtLocal", "fmtRelative", "_concurrencyHtml",
-      "_housekeepingHtml", extract(APP, "_renderSchedule") + "return _renderSchedule;")(
+      "_housekeepingHtml", extract(APP, "_storagePausedText") + extract(APP, "_storageGuardHtml")
+      + extract(APP, "_renderSchedule") + "return _renderSchedule;")(
       (id) => (id === "sched-tm-body" ? el : null), {}, ACT, esc, (x) => x, (x) => x, () => "", () => "");
     f();
     const labels = rowLabels(el.innerHTML);
@@ -357,7 +358,8 @@ async function t5() {
   await check("T-5 /tasks prints no Mode row and no empty mode after the domain", () => {
     const el = { innerHTML: "" };
     const f = new Function("$", "esc", "t", "fmtNum", "fmtLocal", "fmtRel",
-      extract(TM, "renderSchedule") + "return renderSchedule;")(
+      extract(TM, "storagePausedText") + extract(TM, "storageGuardHtml")
+      + extract(TM, "renderSchedule") + "return renderSchedule;")(
       (id) => (id === "sched-body" ? el : null), esc, (s) => s, (n) => String(n), (x) => x, (x) => x);
     f(ACT);
     const labels = rowLabels(el.innerHTML);
