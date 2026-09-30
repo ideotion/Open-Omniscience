@@ -2463,7 +2463,8 @@
           + ` \u00b7 <bdi>${esc(String(b.origin || "").slice(0, 12))}</bdi>`
           + ` \u00b7 ${esc(tf("{n} not yet looked at", { n: b.pending }))}`
           + (b.swapped ? ` \u00b7 ${esc(tf("{n} swapped", { n: b.swapped }))}` : "")
-          + ` <button class="secondary tiny" data-on-click="altDiscardBatch(${Number(b.id)}, ${Number(n)})">${esc(t("Discard all from this restore"))}</button></div>`;
+          + (n > 0 ? ` <button class="secondary tiny" data-on-click="altDiscardBatch(${Number(b.id)}, ${Number(n)})">${esc(t("Discard all from this restore"))}</button>` : "")
+          + `</div>`;
       }).join("");
       const cards = rep.items.map((it) => {
         const art = it.article ? `<div class="hint"><bdi>${esc(it.article.title || "")}</bdi></div>` : "";
@@ -2481,7 +2482,7 @@
           + `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">${sides}</div>${note}`
           + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">`
           + (it.status === "pending" ? `<button class="secondary tiny" data-on-click="altAct(${id}, 'keep')">${esc(t("Keep both"))}</button>` : "")
-          + (it.local ? `<button class="secondary tiny" data-on-click="altAct(${id}, 'swap')" title="${esc(t("Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back."))}">${esc(sw ? t("Switch back to the previous value") : t("Use the restore’s value instead"))}</button>` : "")
+          + (it.local ? `<button class="secondary tiny" data-on-click="altAct(${id}, 'swap')" title="${esc(sw ? t("Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.") : t("Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back."))}">${esc(sw ? t("Switch back to the previous value") : t("Use the restore’s value instead"))}</button>` : "")
           + `<button class="secondary tiny" data-on-click="altAct(${id}, 'discard')">${esc(sw ? t("Discard the kept value") : t("Discard the restore’s value"))}</button>`
           + `</div></div>`;
       }).join("");

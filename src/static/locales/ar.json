@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "عرض قيمة الاستعادة في التطبيق بدلًا من ذلك. قيمتك الحالية محفوظة إلى جانبها، فيمكنك العودة.",
   "Show the shortlist": "عرض القائمة المختصرة",
   "Show the slice held on this machine": "عرض المقطع المحفوظ على هذا الجهاز",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "عرض القيمة المحفوظة إلى جانبها في التطبيق بدلًا من ذلك. القيمة المعروضة الآن ستُحفظ إلى جانبها، فيمكنك التبديل مجددًا.",
   "Show the {n} tabs this depth does not pin": "عرض التبويبات الـ{n} التي لا يثبّتها هذا العمق",
   "Show them in the sidebar": "أظهرها في الشريط الجانبي",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "اعرض وسوم هذه الكلمة المفتاحية، وأضف أو أزل وسومك. الوسم تسمية تؤكدها أنت، وليس درجة أبدًا.",

@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "Stattdessen den Wert der Wiederherstellung in der App anzeigen. Ihr aktueller Wert bleibt daneben erhalten, Sie können zurückwechseln.",
   "Show the shortlist": "Auswahlliste anzeigen",
   "Show the slice held on this machine": "Den auf diesem Rechner gespeicherten Ausschnitt zeigen",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "Stattdessen den daneben aufbewahrten Wert in der App anzeigen. Der jetzt angezeigte bleibt daneben erhalten, Sie können erneut wechseln.",
   "Show the {n} tabs this depth does not pin": "Die {n} Tabs anzeigen, die diese Tiefe nicht anheftet",
   "Show them in the sidebar": "In der Seitenleiste anzeigen",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Zeigt die Tags dieses Schlüsselworts und lässt dich eigene hinzufügen oder entfernen. Ein Tag ist ein Label, das du behauptest — nie eine Bewertung.",

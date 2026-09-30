@@ -312,3 +312,150 @@ def test_every_deduced_table_swaps_and_swaps_back_exactly(tmp_path):
         for i in ids:
             assert swap(s, i)["status"] == "pending"
         assert dump(s) == before
+
+
+def _rows(*specs):
+    """Local keyword translations: (model, text, created_at) each."""
+    def f(s):
+        for model, value, at in specs:
+            s.add(KeywordTranslation(term="chat", source_lang="fr", target_lang="en", text=value,
+                                     model=model, prompt_version="v1", created_at=at))
+    return f
+
+
+def _shown_by_the_reader(s):
+    """What the app shows for the term: the NEWEST row of the group, whatever its model."""
+    return s.execute(text(
+        "SELECT text FROM keyword_translations WHERE term = 'chat' AND target_lang = 'en'"
+        " ORDER BY created_at DESC, id DESC LIMIT 1")).scalar()
+
+
+def test_a_swap_that_would_let_another_models_result_take_over_is_refused(tmp_path):
+    day = timedelta(days=1)
+    incoming = _rows(("m1", "THEIRS", _T0))                                   # older than everything here
+    local = _rows(("m1", "OURS", _T0 + 5 * day), ("m2", "OTHER-MODEL", _T0 + 3 * day))
+    _, _, live = _two(tmp_path, incoming, local)
+    with _corpus(live)() as s:
+        assert _shown_by_the_reader(s) == "OURS"
+        with pytest.raises(AlternateError) as e:
+            swap(s, _one(s).id)
+        assert e.value.status == 409 and "newer" in str(e.value)
+        assert _shown_by_the_reader(s) == "OURS" and _one(s).status == "pending"
+
+
+def test_a_swap_that_keeps_the_row_the_newest_shows_the_restores_value_to_the_reader(tmp_path):
+    day = timedelta(days=1)
+    incoming = _rows(("m1", "THEIRS", _T0 + 4 * day))
+    local = _rows(("m1", "OURS", _T0 + 5 * day), ("m2", "OTHER-MODEL", _T0 + 3 * day))
+    _, _, live = _two(tmp_path, incoming, local)
+    with _corpus(live)() as s:
+        swap(s, _one(s).id)
+        assert _shown_by_the_reader(s) == "THEIRS", "what the panel calls shown IS what the reader shows"
+
+
+def test_the_row_a_difference_is_read_against_is_the_one_the_reader_shows(tmp_path):
+    """Two local analyses share one identity and the OLDER one has the higher rowid."""
+    def add(*rows):
+        def f(s):
+            src = Source(name="S", domain="s.example")
+            s.add(src)
+            s.flush()
+            a = Article(url="https://s.example/1", canonical_url="https://s.example/1",
+                        source_id=src.id, title="T", content="c", hash="h1")
+            s.add(a)
+            s.flush()
+            for result, at in rows:
+                s.add(ArticleAnalysis(article_id=a.id, kind="summary", result=result, model="m",
+                                      prompt_version="v", created_at=at))
+        return f
+
+    local = add(("NEWEST-BY-STAMP", _T1), ("APPENDED-LATER-BUT-OLDER", _T0))
+    _, _, live = _two(tmp_path, add(("THEIRS", _T0 + timedelta(days=3))), local)
+    with _corpus(live)() as s:
+        [item] = list_alternates(s)["items"]
+        assert item["local"]["result"] == "NEWEST-BY-STAMP"
+
+
+def test_swapping_a_text_keyed_row_never_touches_another_rows_arrival_after_a_renumber(tmp_path):
+    def local(s):
+        _place("node/2", "Ours", _T0)(s)
+
+    def incoming(s):
+        _place("node/2", "Theirs", _T1)(s)
+        _place("node/9", "Arrived", _T0)(s)
+
+    _, batch, live = _two(tmp_path, incoming, local)
+    with _corpus(live)() as s:
+        r9 = s.execute(text("SELECT rowid FROM places WHERE id = 'node/9'")).scalar()
+        # what VACUUM is allowed to do to a text-keyed table: hand node/2 the rowid node/9 had
+        s.execute(text("UPDATE places SET rowid = 1000 WHERE id = 'node/9'"))
+        s.execute(text("UPDATE places SET rowid = :r WHERE id = 'node/2'"), {"r": r9})
+        s.commit()
+        swap(s, _one(s).id)
+        rid9 = s.execute(text("SELECT rowid FROM places WHERE id = 'node/9'")).scalar()
+        tag = provenance_tag(s, "places", rid9)
+        assert tag["arrived"]["batch"] == batch, "node/9 is still an arrival, not 'made here'"
+
+
+def test_a_carried_alternate_keeps_its_chain_through_a_swap_and_back(tmp_path):
+    a, b, c = tmp_path / "a.db", tmp_path / "b.db", tmp_path / "c.db"
+    for path, value in ((a, "FROM-A"), (b, "FROM-B"), (c, "FROM-C")):
+        with _corpus(path)() as s:
+            _tr(value)(s)
+            s.commit()
+    meta = lambda o: {**_META, "origin_fingerprint": o}  # noqa: E731
+    merge_corpus(a, b, meta("machine-A"))
+    merge_corpus(b, c, meta("machine-B"))
+    with _corpus(c)() as s:
+        alt = s.query(MetadataAlternate).filter(MetadataAlternate.origin == "machine-A").one()
+        before = (alt.origin, alt.provenance, alt.fields)
+        swap(s, alt.id)
+        swap(s, alt.id)
+        alt = s.get(MetadataAlternate, alt.id)
+        assert (alt.origin, alt.provenance, alt.fields) == before, "origin, tag (with its carried chain) and values"
+    merge_corpus(b, c, meta("machine-B"))
+    with _corpus(c)() as s:
+        assert s.query(MetadataAlternate).filter(MetadataAlternate.origin == "machine-A").count() == 1
+
+
+def test_an_imported_value_with_no_prompt_does_not_keep_the_local_prompt(tmp_path):
+    def add(result, prompt):
+        def f(s):
+            src = Source(name="S", domain="s.example")
+            s.add(src)
+            s.flush()
+            a = Article(url="https://s.example/1", canonical_url="https://s.example/1",
+                        source_id=src.id, title="T", content="c", hash="h1")
+            s.add(a)
+            s.flush()
+            s.add(ArticleAnalysis(article_id=a.id, kind="summary", result=result, model="m",
+                                  prompt_version="v", prompt_text=prompt, created_at=_T1))
+        return f
+
+    _, _, live = _two(tmp_path, add("THEIRS", None), add("OURS", "our prompt"))
+    with _corpus(live)() as s:
+        swap(s, _one(s).id)
+        a = s.query(ArticleAnalysis).one()
+        assert a.result == "THEIRS" and a.prompt_text is None
+        assert provenance_tag(s, "article_analyses", a.id)["prompt_text"] is None
+
+
+def test_a_swap_the_database_refuses_writes_nothing_and_says_409(tmp_path):
+    _, _, live = _two(tmp_path, _tr("THEIRS"), _tr("OURS"))
+    with _corpus(live)() as s:
+        alt = _one(s)
+        alt.fields = json.dumps({"text": None})           # text is NOT NULL
+        s.commit()
+        with pytest.raises(AlternateError) as e:
+            swap(s, alt.id)
+        assert e.value.status == 409
+        assert _row(s).text == "OURS" and _one(s).status == "pending"
+        assert json.loads(_one(s).fields) == {"text": None}
+
+
+def test_the_discard_route_takes_the_confirmation_the_panel_sends():
+    import inspect
+
+    from src.api import backup_v2
+
+    assert "confirm" in inspect.signature(backup_v2.alternates_discard).parameters

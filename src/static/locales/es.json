@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "Mostrar en la aplicación el valor de la restauración. Su valor actual se guarda al lado, así que puede volver atrás.",
   "Show the shortlist": "Mostrar la lista breve",
   "Show the slice held on this machine": "Mostrar el tramo guardado en esta máquina",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "Mostrar en la aplicación el valor guardado al lado. El que se muestra ahora se guarda al lado, así que puede cambiar de nuevo.",
   "Show the {n} tabs this depth does not pin": "Mostrar las {n} pestañas que esta profundidad no fija",
   "Show them in the sidebar": "Mostrarlas en la barra lateral",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Muestra las etiquetas de esta palabra clave y permite añadir o quitar las tuyas. Una etiqueta es una AFIRMACIÓN tuya, nunca una puntuación.",

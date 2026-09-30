@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "アプリに復元側の値を表示します。現在の値は隣に保持されるので、いつでも元に戻せます。",
   "Show the shortlist": "厳選リストを表示",
   "Show the slice held on this machine": "この端末に保存済みのデータを表示",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "隣に保持されている値をアプリに表示します。現在表示中の値は隣に保持されるので、再び切り替えられます。",
   "Show the {n} tabs this depth does not pin": "この深さで固定されない {n} 個のタブを表示",
   "Show them in the sidebar": "サイドバーに表示",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "このキーワードのタグを表示し、自分のタグを追加・削除します。タグはあなたが付けるラベルであり、スコアではありません。",

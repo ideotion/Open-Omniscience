@@ -91,8 +91,11 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
         params[f"m{i}"] = identity.get(name)
     if not where:
         return None
+    # Newest first in the READERS' order: by the row's own stamp, then by rowid.
+    stamp = producer_extra_columns(table).get("produced_at")
+    order = (f"COALESCE(t.{stamp}, '') DESC, " if stamp and stamp in _columns(session, table) else "") + "t.rowid DESC"
     row = session.execute(
-        text(f"SELECT t.rowid FROM {table} t{joins} WHERE " + " AND ".join(where) + " ORDER BY t.rowid DESC LIMIT 1"),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS; the identity values are bound
+        text(f"SELECT t.rowid FROM {table} t{joins} WHERE " + " AND ".join(where) + f" ORDER BY {order} LIMIT 1"),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS or PRODUCER_COLUMNS; the identity values are bound
         params,
     ).fetchone()
     return None if row is None else int(row[0])
@@ -192,7 +195,8 @@ def list_alternates(
         "items": [_item(session, r) for r in rows],
         "method": (
             "each item is a value a restore brought that differs from the one this machine "
-            "holds; the machine's own value is what the app shows, and nothing here changes that"
+            "holds; the app shows this machine's value unless the operator chose the restore's, and "
+            "nothing here changes what is shown by itself"
         ),
     }
 
@@ -242,6 +246,53 @@ def discard_batch(session: Any, batch_id: int) -> dict:
     return {"batch_id": batch_id, "discarded": int(n or 0), "left_swapped": int(left or 0)}
 
 
+def _notnull(session: Any, table: str) -> set[str]:
+    if table not in PRODUCER_COLUMNS:
+        raise AlternateError(f"unknown table {table!r}", 400)
+    return {r[1] for r in session.execute(text(f"PRAGMA table_info({table})")) if r[3]}  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS, checked above
+
+
+#: Rows a reader ranks TOGETHER with a given row, beyond the scope's own parent: the readers
+#: pick the newest of a group by its stamp, across models and prompt versions.
+_SIBLINGS: dict[str, list[str]] = {
+    "article_analyses": ["article_id", "kind"],
+    "ai_keyword": ["article_id", "kind", "term"],
+    "article_mentioned_dates": ["article_id", "mentioned_on", "precision"],
+    "article_title_translations": ["article_id", "target_lang"],
+    "keyword_translations": ["term", "target_lang"],
+    "law_revision_summaries": ["revision_id"],
+}
+
+
+def _refuse_if_a_newer_sibling_would_take_over(
+    session: Any, table: str, local_id: int, stamp_col: str | None, sets: dict
+) -> None:
+    """A swap moves the row's own stamp to the adopted value's. Readers show the NEWEST row of
+    a group, so if that stamp is older than a sibling the row currently outranks, the app would
+    start showing the sibling and the swap would not do what it says. Refuse, and say why."""
+    group = _SIBLINGS.get(table)
+    if not group or stamp_col is None or stamp_col not in sets or sets[stamp_col] is None:
+        return
+    cur = session.execute(
+        text(f"SELECT {stamp_col} FROM {table} WHERE rowid = :id"), {"id": local_id}  # noqa: S608  # nosec B608 - table is a validated key, stamp_col a module literal
+    ).scalar()
+    if cur is None or str(sets[stamp_col]) >= str(cur):
+        return
+    same = " AND ".join(f"{c} IS (SELECT {c} FROM {table} WHERE rowid = :id)" for c in group)  # nosec B608 - module literals
+    n = session.execute(
+        text(
+            f"SELECT COUNT(*) FROM {table} WHERE rowid != :id AND {same}"  # noqa: S608  # nosec B608 - table and columns are module literals; values are bound
+            f" AND {stamp_col} > :new AND {stamp_col} <= :cur"
+        ),
+        {"id": local_id, "new": sets[stamp_col], "cur": cur},
+    ).scalar()
+    if n:
+        raise AlternateError(
+            "another result on this machine is newer than the restore's value, so the app would "
+            "keep showing that one; swapping would not make the restore's value the one shown", 409
+        )
+
+
 def _scalars(values: dict) -> bool:
     return all(v is None or isinstance(v, (str, int, float, bool)) for v in values.values())
 
@@ -285,9 +336,15 @@ def swap(session: Any, alt_id: int) -> dict:
     if before_json is None or before_tag is None:
         raise AlternateError("the row this differs from is gone, so there is nothing to swap with", 409)
     sets = {c: imported[c] for c in names}
+    notnull = _notnull(session, table)
+    stamp_col = producer_extra_columns(table).get("produced_at")
     for field, column in producer_extra_columns(table).items():
-        if column in have and column not in sets and prov.get(field) is not None:
-            sets[column] = prov[field]
+        if column in have and column not in sets:
+            value = prov.get(field)
+            if value is None and column in notnull:
+                raise AlternateError("this difference does not say when it was produced, so it cannot be swapped", 400)
+            sets[column] = value      # a value with no prompt must not keep the local prompt beside it
+    _refuse_if_a_newer_sibling_would_take_over(session, table, local_id, stamp_col, sets)
     key_col = KEYED_TABLES.get(table)
     key_val = (
         session.execute(text(f"SELECT {key_col} FROM {table} WHERE rowid = :id"), {"id": local_id}).scalar()  # noqa: S608  # nosec B608 - table is a validated key of ALTERNATE_SPECS and key_col a module literal from KEYED_TABLES
@@ -306,24 +363,47 @@ def swap(session: Any, alt_id: int) -> dict:
             ),
             {**{f"v{i}": v for i, v in enumerate(sets.values())}, "id": local_id},
         )
+        # A text-keyed table is found by its KEY only (its rowid may have been renumbered, so
+        # a row_id match could belong to another row); an integer-keyed one by its id.
         session.execute(
             text(
-                "DELETE FROM merged_rows WHERE table_name = :t"
-                " AND (row_id = :id OR (row_key IS NOT NULL AND row_key = :k))"
+                "DELETE FROM merged_rows WHERE table_name = :t AND "
+                + ("row_key = :k" if key_col else "row_id = :id")
             ),
-            {"t": table, "id": local_id, "k": key_val},
+            {"t": table, "id": local_id, "k": None if key_val is None else str(key_val)}
+            if key_col else {"t": table, "id": local_id},
         )
         exists = arrived is not None and session.execute(
             text("SELECT 1 FROM merge_batches WHERE id = :b"), {"b": arrived}
         ).fetchone()
         if exists:
+            slot = local_id
+            if key_col and session.execute(
+                text("SELECT 1 FROM merged_rows WHERE batch_id = :b AND table_name = :t AND row_id = :id"),
+                {"b": arrived, "t": table, "id": local_id},
+            ).fetchone():
+                # The rowid is another row's leftover (a text-keyed table's rowids can be
+                # renumbered) and the primary key includes it. This row is found by its KEY,
+                # so any free number will do; a negative one can never be a real rowid.
+                slot = int(session.execute(
+                    text("SELECT MIN(MIN(row_id), 0) - 1 FROM merged_rows WHERE batch_id = :b AND table_name = :t"),
+                    {"b": arrived, "t": table},
+                ).scalar())
             session.execute(
                 text("INSERT INTO merged_rows (batch_id, table_name, row_id, row_key) VALUES (:b, :t, :id, :k)"),
-                {"b": arrived, "t": table, "id": local_id, "k": None if key_val is None else str(key_val)},
+                {"b": arrived, "t": table, "id": slot, "k": None if key_val is None else str(key_val)},
             )
+        # The alternate now holds the row's old values under the row's old tag; the tag it had
+        # (a carried one keeps its chain) rides inside it, and comes back verbatim on the swap
+        # back. ``origin`` is the record's own and never changes: a restore de-duplicates on it.
+        if alt.status == "swapped":
+            out = prov.get("swapped_out")
+            back = out.get("provenance") if isinstance(out, dict) else None
+            new_prov = back if isinstance(back, dict) else before_tag
+        else:
+            new_prov = {**before_tag, "swapped_out": {"provenance": prov}}
         alt.fields = before_json
-        alt.provenance = json.dumps(before_tag)
-        alt.origin = str(before_tag.get("origin") or "local")[:128]
+        alt.provenance = json.dumps(new_prov)
         alt.local_row_id = local_id
         alt.status = "pending" if alt.status == "swapped" else "swapped"
         session.commit()

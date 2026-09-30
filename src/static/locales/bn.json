@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "অ্যাপে রিস্টোরের মান দেখান। আপনার বর্তমান মানটি পাশে রাখা থাকবে, তাই ফিরে যেতে পারবেন।",
   "Show the shortlist": "সংক্ষিপ্ত তালিকা দেখান",
   "Show the slice held on this machine": "এই যন্ত্রে রাখা অংশটি দেখান",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "পাশে রাখা মানটি অ্যাপে দেখান। এখন দেখানো মানটি পাশে রাখা থাকবে, তাই আবার বদলাতে পারবেন।",
   "Show the {n} tabs this depth does not pin": "এই গভীরতা যে {n}টি ট্যাব পিন করে না সেগুলো দেখান",
   "Show them in the sidebar": "সাইডবারে দেখান",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "এই কীওয়ার্ডের ট্যাগ দেখুন, এবং নিজের ট্যাগ যোগ বা সরান। ট্যাগ হলো আপনার দেওয়া একটি লেবেল, কখনোই স্কোর নয়।",

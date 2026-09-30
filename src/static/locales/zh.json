@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "改在应用中显示恢复中的值。您当前的值会并列保留，可随时切换回去。",
   "Show the shortlist": "显示精选列表",
   "Show the slice held on this machine": "显示本机已保存的数据片段",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "改在应用中显示并列保留的值。当前显示的值会并列保留，可再次切换。",
   "Show the {n} tabs this depth does not pin": "显示此深度未固定的 {n} 个标签页",
   "Show them in the sidebar": "在侧边栏中显示",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "显示该关键词的标签，并可添加或移除您自己的标签。标签是您所作的标注，绝非评分。",

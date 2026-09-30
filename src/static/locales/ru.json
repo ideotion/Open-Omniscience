@@ -4172,6 +4172,7 @@
   "Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back.": "Показывать в приложении значение из восстановления. Ваше текущее значение хранится рядом, так что можно вернуться.",
   "Show the shortlist": "Показать краткий список",
   "Show the slice held on this machine": "Показать фрагмент, уже сохранённый на этом компьютере",
+  "Show the value kept alongside in the app instead. The one shown now is kept beside it, so you can switch again.": "Показывать в приложении значение, хранящееся рядом. Показываемое сейчас останется рядом, так что можно переключиться снова.",
   "Show the {n} tabs this depth does not pin": "Показать {n} вкладок, которые эта глубина не закрепляет",
   "Show them in the sidebar": "Показать на боковой панели",
   "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Показывает метки этого ключевого слова и позволяет добавлять или удалять свои. Метка — это ярлык, который утверждаете вы, а не оценка.",
