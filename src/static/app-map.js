@@ -1316,6 +1316,9 @@
           ${_mapSphere()}${grid}${paths}${_adm1.markup}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${wikiPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
+        <button type="button" class="tiny secondary oomap-ctl-toggle" data-oomap-ctl aria-expanded="false"
+                title="${esc(t("Show or hide the map's controls"))}">☰ ${esc(t("Map controls"))}</button>
+        <div class="oomap-panel">
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
           <button class="tiny secondary" data-oomap="in" title="${esc(t("Zoom in"))}">＋</button>
           <button class="tiny secondary" data-oomap="out" title="${esc(t("Zoom out"))}">－</button>
@@ -1323,6 +1326,7 @@
           <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
         </div>
         ${pickerHtml}${granHtml}${sliderHtml}
+        </div>
         <ul class="sr-only">${srTop}</ul>
       </div>
       <div class="oomap-legend" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px">
@@ -1539,6 +1543,27 @@
     function _wireOoMap(host, opts) {
       const svg = host.querySelector("#oo-choro"); if (!svg) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // PF10 = a (2026-09-30): below 600 px the control groups collapse into ONE in-map
+      // button that opens them (the CSS does the hiding; above 600 px the button is not
+      // shown and nothing here has any visible effect). The panel opens below the map, never
+      // over it, so a choice needs no auto-close: closing on a choice hid the focused control
+      // (focus fell to <body>, one slider step per opening) and raced the repaint, whose new
+      // panel was opened by the state the old panel's listener then reset. Only the button
+      // writes the state; a repaint reads it, so the two cannot disagree.
+      {
+        const wrap = svg.closest(".oomap-wrap");
+        const tog = host.querySelector("[data-oomap-ctl]");
+        const panel = host.querySelector(".oomap-panel");
+        if (wrap && tog && panel) {
+          const setOpen = (on) => {
+            host._ooCtlOpen = !!on;
+            wrap.classList.toggle("oomap-ctl-open", !!on);
+            tog.setAttribute("aria-expanded", on ? "true" : "false");
+          };
+          setOpen(!!host._ooCtlOpen);
+          tog.addEventListener("click", () => setOpen(!host._ooCtlOpen));
+        }
+      }
       const W = MAP_W, H = MAP_H;
       // Reset the ⛶ glyph/title when fullscreen exits (Esc or the button). Wired once.
       // worldmap-fullscreen-hides-legend-caveat (P1): fullscreen used to target
