@@ -2012,9 +2012,10 @@ class ArticleTitleTranslation(Base):
     ``model`` and ``prompt_version`` are NOT NULL here (the sweep always knows both), so
     the plain UNIQUE constraint is enough and no NULL-safe twin index is needed.
 
-    **NOT CARRIED BY A RESTORE** (``_MERGE_NOT_CARRIED``): Q513 is silent on backups and the
-    brief leaves it open, so the proposed default is the cheap, reversible one -- a
-    derived, regenerable table the sweep re-fills, rather than a new backup member.
+    **CARRIED BY A RESTORE** (R61, 2026-09-29, «12=b»: all deduced metadata rides backups with
+    its provenance). Until then this table sat in ``_MERGE_NOT_CARRIED``; ``_merge_ai_layer``
+    now merges it on the identity above, and a row that contradicts a local one is kept beside
+    it in ``metadata_alternates`` rather than dropped.
     """
 
     __tablename__ = "article_title_translations"
@@ -2895,6 +2896,47 @@ class MergedRow(Base):
 
     def __repr__(self) -> str:
         return f"<MergedRow(b{self.batch_id} {self.table_name}#{self.row_id})>"
+
+
+class MetadataAlternate(Base):
+    """The OTHER value a restore brought for a deduced item this corpus already had (R61).
+
+    The maintainer's rule (2026-09-29, item 12): deduced metadata rides backups with its
+    provenance; on a contradiction the imported value never prevails over the local one, both
+    are kept and reachable, and the operator may discard afterwards. Before this table the
+    merge kept the local row and DROPPED the incoming value without a trace.
+
+    A row here is a RECORD BESIDE the local row, never a second copy of it: the deduced table
+    itself is not written, so every reader that shows local data is unchanged and no imported
+    value can appear where a local one is shown. The only way an imported value becomes the
+    shown one is the operator choosing it (the differences panel).
+
+    ``identity`` names the item by its natural key (an article by its content hash), so the
+    pointer survives a later restore; ``local_row_id`` is the convenience id of the local row
+    it contradicts. ``fields`` is the imported row's compared and shown fields; ``provenance``
+    is the ``oo.prov/1`` tag of the imported value (see ``src/backup/provenance.py``).
+    """
+
+    __tablename__ = "metadata_alternates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("merge_batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    table_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    identity: Mapped[str] = mapped_column(Text, nullable=False)  # JSON object
+    local_row_id: Mapped[int | None] = mapped_column(Integer)
+    fields: Mapped[str] = mapped_column(Text, nullable=False)  # JSON object
+    provenance: Mapped[str] = mapped_column(Text, nullable=False)  # JSON object, oo.prov/1
+    origin: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")  # pending|kept
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (Index("ix_metadata_alternates_item", "table_name", "identity"),)
+
+    def __repr__(self) -> str:
+        return f"<MetadataAlternate({self.table_name} b{self.batch_id} {self.status})>"
+
 
 
 class StatFigure(Base):
