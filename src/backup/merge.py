@@ -3608,10 +3608,14 @@ def _capture_alternates(
 ) -> int:
     """Keep the OTHER value when a restore brings a different one for a deduced item (R61).
 
-    Runs BEFORE the table's own INSERT, over the rows whose identity this corpus already has
-    (``key``, an ON-clause over the incoming row ``i`` and the local row ``t``) and whose
-    ``differs`` fields disagree. The local row is left exactly as it is; the imported values go
-    to ``metadata_alternates`` with an ``oo.prov/1`` tag. Returns how many were recorded.
+    Runs BEFORE the table's own INSERT, over the incoming rows whose item this corpus already
+    has (``key``, a condition over the incoming row ``i`` and a local row ``t``) and for which
+    no local row holds the same ``differs`` values. The local rows are left exactly as they
+    are; the imported values go to ``metadata_alternates`` with an ``oo.prov/1`` tag.
+
+    Returns how many incoming rows contradict a local item, recorded now or on an earlier
+    restore of the same backup. The caller reports that as ``conflict`` and takes it out of
+    ``duplicate``, so the two stay disjoint like every other domain's.
 
     ``identity`` names the item by its natural key so the pointer survives a later restore (an
     article by its hash, never its local id). ``fields`` stores every ``shown`` field of the
@@ -3632,22 +3636,39 @@ def _capture_alternates(
     tag = producer_tag_sql(
         table, "i", origin=":origin", batch=":batch", at=":at", app_version=":version"
     )
-    changed = " OR ".join(f"t.{c} IS NOT i.{c}" for c in differs)
-    cur = con.execute(
+    same = " AND ".join(f"t.{c} IS i.{c}" for c in differs)
+    tbl = _ident(table)
+    # A contradiction is "this corpus has the item, and NONE of its rows says what the backup
+    # says". Some of these tables have no unique constraint and a local pass appends a row on
+    # every run, so "some local row differs" would report the backup's value as foreign when
+    # the corpus already holds it in a sibling row.
+    where = (
+        f" FROM inc.{tbl} i {joins}"  # nosec B608 - joins/key/differs are module literals from this file's own callers and tbl is _ident-quoted; no request, user or file value reaches them
+        f" WHERE EXISTS (SELECT 1 FROM {tbl} t WHERE {key})"
+        f" AND NOT EXISTS (SELECT 1 FROM {tbl} t WHERE {key} AND {same})"
+    )
+    contradicting = int(_q(con, "SELECT COUNT(*)" + where)[0][0])  # nosec B608 - identifiers come from the app's OWN fixed schema maps, never input
+    if not contradicting:
+        return 0
+    # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
+    # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
+    con.execute(
         "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
         " provenance, origin, status, created_at)"
-        f" SELECT :batch, :table, json_object({ident}), t.id, json_object({fields}), {tag},"
+        f" SELECT :batch, :table, json_object({ident}),"
+        f" (SELECT MIN(t.id) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
         " :origin, 'pending', :now"
-        f" FROM inc.{_ident(table)} i {joins} JOIN {_ident(table)} t ON {key}"
-        f" WHERE ({changed}) AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
-        f"  WHERE x.table_name = :table AND x.origin = :origin AND x.identity = json_object({ident})"
-        f"  AND x.fields = json_object({fields})) GROUP BY i.id",
+        f"{where}"
+        " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
+        "  WHERE x.table_name = :table AND x.origin = :origin"
+        f"  AND x.identity = json_object({ident}) AND x.fields = json_object({fields}))"
+        f" GROUP BY json_object({ident}), json_object({fields})",
         {
             "batch": batch_id, "table": table, "origin": origin, "at": at, "version": version,
             "now": datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds"),
         },
     )
-    return int(cur.rowcount or 0)
+    return contradicting
 
 
 def _local_has_table(con: sqlite3.Connection, name: str) -> bool:
@@ -3689,6 +3710,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         " FROM inc.article_analyses i JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_analyses t WHERE {an_key})",
     )
+    an.duplicate = max(0, an.duplicate - an.conflict)
     results["article_analyses"] = an
 
     md = DomainResult()
@@ -3732,6 +3754,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         + _WINDOW_MARK,
         src="article_mentioned_dates",
     )
+    md.duplicate = max(0, md.duplicate - md.conflict)
     results["article_mentioned_dates"] = md
 
 
@@ -3937,6 +3960,7 @@ def _merge_law(con, batch_id, results) -> None:
         " JOIN temp.map_law_rev mr ON mr.old = i.revision_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM law_revision_summaries t WHERE {summ_key})",
     )
+    summ.duplicate = max(0, summ.duplicate - summ.conflict)
     results["law_revision_summaries"] = summ
 
 
@@ -4099,6 +4123,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         " FROM inc.ai_keyword i JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM ai_keyword t WHERE {k_key})",
     )
+    k.duplicate = max(0, k.duplicate - k.conflict)
     results["ai_keyword"] = k
 
     # The tentative translation tier (Q404). No FK and no id map: the identity is the
@@ -4132,6 +4157,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         " i.created_at FROM inc.keyword_translations i"
         f" WHERE NOT EXISTS (SELECT 1 FROM keyword_translations t WHERE {tr_key})",
     )
+    tr.duplicate = max(0, tr.duplicate - tr.conflict)
     results["keyword_translations"] = tr
 
     # The ≈ titles and one-line summaries (R61, item 12: deduced metadata rides the backup).
@@ -4165,6 +4191,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
             " i.prompt_version, i.created_at FROM inc.article_title_translations i"
             f"{tt_joins} WHERE NOT EXISTS (SELECT 1 FROM article_title_translations t WHERE {tt_key})",
         )
+        tt.duplicate = max(0, tt.duplicate - tt.conflict)
         results["article_title_translations"] = tt
 
 

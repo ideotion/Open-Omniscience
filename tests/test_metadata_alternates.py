@@ -266,3 +266,63 @@ def test_every_captured_table_has_a_producer_mapping():
     captured = set(re.findall(r'_capture_alternates\(\s*con, batch_id, "(\w+)"', src))
     assert captured, "found no capture call; the pattern is stale"
     assert captured <= set(PRODUCER_COLUMNS)
+
+
+def test_a_value_the_corpus_already_holds_in_a_sibling_row_is_no_contradiction(tmp_path):
+    """`article_analyses` has no unique constraint and a local pass appends a row per run,
+    so an item can have several local rows. The backup's summary equals the SECOND one."""
+    def inc(s):
+        a = _article(s)
+        s.add(ArticleAnalysis(article_id=a.id, kind="summary", result="OURS2", model="m",
+                              prompt_version="v1", created_at=_T0))
+
+    def loc(s):
+        a = _article(s)
+        for r in ("OURS1", "OURS2"):
+            s.add(ArticleAnalysis(article_id=a.id, kind="summary", result=r, model="m",
+                                  prompt_version="v1", created_at=_T0))
+
+    counts, _, live, _ = _two(tmp_path, inc, loc)
+    assert _alts(live) == []
+    assert counts["article_analyses"]["conflict"] == 0
+
+
+def test_conflict_and_duplicate_are_disjoint_and_stable_across_a_second_restore(tmp_path):
+    def tr(text, term):
+        return KeywordTranslation(term=term, source_lang="fr", target_lang="en", text=text,
+                                  model=None, prompt_version=None, created_at=_T0)
+
+    def inc(s):
+        s.add(tr("THEIRS", "chat"))   # contradicts (NULL model and prompt: the COALESCE key)
+        s.add(tr("same", "chien"))    # agrees
+
+    def loc(s):
+        s.add(tr("OURS", "chat"))
+        s.add(tr("same", "chien"))
+
+    counts, _, live, incoming = _two(tmp_path, inc, loc)
+    got = counts["keyword_translations"]
+    assert (got["new"], got["duplicate"], got["conflict"]) == (0, 1, 1)
+    assert len(_alts(live)) == 1
+    again, _ = merge_corpus(incoming, live, _META)
+    assert again["keyword_translations"]["conflict"] == 1, "the same contradiction, still reported"
+    assert len(_alts(live)) == 1, "...but never recorded twice"
+
+
+def test_two_incoming_rows_that_collapse_onto_one_item_record_one_alternate(tmp_path):
+    """Two incoming articles with different hashes cannot collapse, so drive the same shape
+    directly: two incoming translations with the identical contradicting value."""
+    def inc(s):
+        a = _article(s)
+        s.add(ArticleAnalysis(article_id=a.id, kind="summary", result="THEIRS", model="m",
+                              prompt_version="v1", created_at=_T0))
+        s.add(ArticleAnalysis(article_id=a.id, kind="summary", result="THEIRS", model="m",
+                              prompt_version="v1", created_at=_T0))
+
+    def loc(s):
+        a = _article(s)
+        s.add(ArticleAnalysis(article_id=a.id, kind="summary", result="OURS", model="m",
+                              prompt_version="v1", created_at=_T0))
+
+    _, _, live, _ = _two(tmp_path, inc, loc)
+    assert len(_alts(live)) == 1

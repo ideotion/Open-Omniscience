@@ -135,8 +135,10 @@ def test_an_incoming_row_NEVER_replaces_a_local_one(tmp_path):
     # ...AND the handler actually looked. Without this the test passes unchanged if the
     # merge step for this table is deleted outright: the pre-existing LOCAL row would
     # still read "LOCAL", so "never overwrote" and "never ran" are the same observation.
-    assert counts["keyword_translations"]["duplicate"] == 1, (
-        "the incoming row was not even RECOGNISED as a duplicate; this test cannot tell "
+    # R61: an item this corpus has whose value DIFFERS is a conflict (kept beside the local
+    # row), no longer also a duplicate -- the two counts are disjoint like every domain's.
+    assert counts["keyword_translations"]["conflict"] == 1, (
+        "the incoming row was not even RECOGNISED as a contradiction; this test cannot tell "
         "'refused to overwrite' from 'did nothing at all'"
     )
 
