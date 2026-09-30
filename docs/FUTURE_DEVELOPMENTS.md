@@ -3180,6 +3180,6 @@ ordinary work behind an existing seam.
 
 ## Keyword engine (maintainer, 2026-09-30, `R105` and `R107`)
 
-- **A dedicated session on the engine's inner workings, logic and defaults** (planned, not started): the maintainer finds the engine buggy and its sorting wrong, and keywords are the core of the app. The brief is the list of known problems in the `OPEN_QUEUE.md` entry «A DEDICATED KEYWORD-ENGINE SESSION IS PLANNED».
+- **A dedicated session on the engine's inner workings, logic and defaults** (planned, not started; it starts after v0.5.0 ships, `R110`): the maintainer finds the engine buggy and its sorting wrong, and keywords are the core of the app. The brief is the list of known problems in the `OPEN_QUEUE.md` entry «A DEDICATED KEYWORD-ENGINE SESSION IS PLANNED».
 - **Evaluate `sudachipy` for Japanese keywords** (`R105`): keywords keep `janome`; search already uses `sudachipy` (`PF12`). Measure cost, word quality and the re-index a switch would cost before any change; the maintainer asked for the potential gains to be marked for evaluation.
 - **An offline resolver that reads a Wikidata download** (`R106`): kept in the kinds design's independence plan (tier T4), measured before it is promised.
