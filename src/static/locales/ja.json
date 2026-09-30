@@ -609,6 +609,7 @@
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "ここではブール演算子が使えます：AND、OR、NOT、「引用句」。",
   "Boolean query": "ブール検索",
   "Boots recorded by the session ledger after its first line; sessions before the ledger existed are unknown.": "セッション台帳の最初の行以降に記録された起動。台帳ができる前のセッションは不明です。",
+  "Borders are drawn thinner than the file while a wide view is in sight; zoom in and they sharpen, up to the file's full detail.": "広い範囲を表示している間、境界線はファイルより粗く描かれます。拡大すると細かくなり、ファイルの詳細をすべて描画します。",
   "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "表示日付の OpenStreetMap データから描いた境界です。© OpenStreetMap contributors（ODbL 1.0）。",
   "Borders: Natural Earth 50m": "境界：Natural Earth 50m",
   "Borders: OpenStreetMap, as of {date}": "境界：OpenStreetMap（{date} 時点）",

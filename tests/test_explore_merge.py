@@ -172,3 +172,18 @@ def test_every_new_string_is_keyed_x12():
         for k in keys:
             assert d.get(k, "").strip(), f"{p.name} has no key {k!r}"
             assert sorted(re.findall(r"\{(\w+)\}", d[k])) == sorted(re.findall(r"\{(\w+)\}", k))
+
+
+def test_a_strip_click_brings_the_analysis_into_view_and_a_programmatic_select_does_not():
+    """The analysis sits under a list that runs to thousands of pixels, so a click on
+    "Advanced" that only swapped the panel below the fold looked like a click that did
+    nothing (walked 2026-09-30, 6,000 px down). Only a CLICK scrolls: a search spawning its
+    analysis selects Overview programmatically and must not scroll away from its own list."""
+    ana = read_static("app-analysis.js")
+    boot = read_static("app-boot.js")
+    body = function_body(ana, "_exploreRevealAnalysis")
+    assert "window.scrollBy" in body and "prefers-reduced-motion" in body
+    assert "_exploreRevealAnalysis" not in function_body(ana, "anSelectTab")
+    assert "_exploreRevealAnalysis" not in function_body(ana, "_anApplySeed")
+    wired = boot.split('$("an-subtabs").addEventListener("click"', 1)[1].split("});", 1)[0]
+    assert "_exploreRevealAnalysis()" in wired and 'closest("[data-tab]")' in wired

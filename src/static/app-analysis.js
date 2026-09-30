@@ -224,6 +224,23 @@
         : tf("Below: the analysis of “{label}”. Its articles are listed under Articles; a search here lists and analyses a new set.", {label});
       note.hidden = false;
     }
+    // A subtab clicked on the Explore strip must SHOW what it opened. The analysis sits under
+    // the search list, which can run to thousands of pixels (50 rows), so a click that only
+    // swapped the panel below the fold looked like a click that did nothing (walked
+    // 2026-09-30: "Advanced" opened 6,000 px down). Brings the top of the analysis just under
+    // the sticky strip when it is not already near it; a reader already looking at the
+    // analysis is left where they are. Only a click calls this, never a programmatic select,
+    // so a search that spawns its analysis does not scroll away from the list it just drew.
+    function _exploreRevealAnalysis() {
+      const part = $("tab-analyze"), strip = $("subtab-strip");
+      if (!part || !part.offsetParent) return;
+      const edge = (strip && !strip.hidden) ? strip.getBoundingClientRect().bottom : 0;
+      const top = part.getBoundingClientRect().top;
+      if (top > edge + window.innerHeight * 0.4 || top < edge - 8) {
+        const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.scrollBy({ top: top - edge - 8, behavior: calm ? "auto" : "smooth" });
+      }
+    }
     // The PERSISTENT provenance header (ruling 15). Sits above the subtabs, so it stays
     // on screen whichever subtab the reader is on -- an analysis opened from a Lead
     // should never lose track of which Lead, and on what basis, it came from.
@@ -3902,7 +3919,9 @@
       const fill = (id, rows, val, label) => {
         const el = $(id); if (!el) return;
         const keep = new Set(_advMulti(id));
-        el.innerHTML = rows.map((r) => `<option value="${esc(String(val(r)))}"${keep.has(String(val(r))) ? " selected" : ""}>${esc(label(r))}</option>`).join("");
+        // dir="auto": a Latin source name in the Arabic interface sat right-aligned and
+        // was clipped on its LEFT, hiding the start of the name (walked 2026-09-30).
+        el.innerHTML = rows.map((r) => `<option value="${esc(String(val(r)))}" dir="auto"${keep.has(String(val(r))) ? " selected" : ""}>${esc(label(r))}</option>`).join("");
       };
       fill("adv-sources", d.sources || [], (r) => r.id,
         (r) => (r.name || r.domain || ("#" + r.id)) + (r.domain && r.name !== r.domain ? " (" + r.domain + ")" : "") + " · " + n(r.articles || 0));

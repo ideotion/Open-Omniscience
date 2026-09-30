@@ -43,6 +43,7 @@ const src =
   extract("fmtNum") + "\n" +
   extract("ooLabelText") + "\n" +
   extract("_ooAdmin1Name") + "\n" +
+  extract("_ooStrideRings") + "\n" +
   extract("_ooAdmin1Layer") + "\n" +
   extract("_ooRankedTable") + "\n" +
   "module.exports = { _ooAdmin1Layer, _ooRankedTable };";

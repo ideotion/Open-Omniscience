@@ -199,7 +199,7 @@ def _place_clause(places):
 
 def _route_selects(session, qid: str) -> tuple[dict, list]:
     """Each route's SELECT of article ids, and what it matched on."""
-    from src.database.models import ArticleEntity, ArticleKeyword, ArticleMentionedPlace
+    from src.database.models import ArticleEntity, ArticleMentionedPlace, KeywordMention
 
     terms = item_terms(qid)
     names = _entity_names(session, terms, qid)
@@ -210,8 +210,11 @@ def _route_selects(session, qid: str) -> tuple[dict, list]:
         routes["entities"] = (
             select(ArticleEntity.article_id).where(ArticleEntity.name.in_(names)), names)
     if kw_ids:
+        # keyword_mentions is where indexing writes an article's keywords; article_keywords is
+        # a legacy link table nothing but a backup restore fills, so joining through it found
+        # no article on a real corpus (walked 2026-09-30).
         routes["keywords"] = (
-            select(ArticleKeyword.article_id).where(ArticleKeyword.keyword_id.in_(kw_ids)), kw_terms)
+            select(KeywordMention.article_id).where(KeywordMention.keyword_id.in_(kw_ids)), kw_terms)
     if places:
         routes["places"] = (
             select(ArticleMentionedPlace.article_id).where(_place_clause(places)),
