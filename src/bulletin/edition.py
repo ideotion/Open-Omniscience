@@ -66,7 +66,9 @@ def build_edition(
 
     edition = layer_a(session, period, rising_limit=rising_limit, target_lang=target_lang)
     edition["narration_requested"] = bool(narrate)
-    edition["attribution"] = _attribution(session, period)
+    edition["attribution"], _attr_error = _attribution(session, period, edition)
+    if _attr_error:
+        edition["attribution_error"] = _attr_error
     # D2 (register, placed by RC08.2 = a): every edition OPENS on the deterministic
     # introduction. Best-effort like the attribution block: an opening that could not
     # be composed costs the paragraph, never the record.
@@ -162,37 +164,45 @@ def build_edition(
     return edition
 
 
-def _attribution(session, period: Period) -> list[dict]:
-    """The licence lines that apply to THIS edition (Q1008 = a), recorded IN the record.
+def _attribution(session, period: Period, edition: dict | None = None) -> tuple[list[dict], str | None]:
+    """``(lines, error)``: the licence lines that apply to THIS edition (Q1008 = a).
 
-    Measured from the sources that actually contributed to the period, and stored on the
-    edition rather than computed at render time: a bulletin downloaded again next year
-    must carry the lines that applied when it was made, not the ones that apply to
-    whatever the corpus holds by then. A record's account of itself does not drift.
+    Recorded IN the record, measured from the sources that actually contributed to the
+    period plus the lane cards the cards section SHOWS (``card:<producer>`` signals), and
+    stored on the edition rather than computed at render time: a bulletin downloaded again
+    next year must carry the lines that applied when it was made, not the ones that apply
+    to whatever the corpus holds by then. A record's account of itself does not drift.
 
-    Degrades to an empty list rather than costing the edition: a licence block is owed,
-    and a document that could not compute one is still a document — but a FAILURE is
-    recorded as such (an empty list from a failed query and an empty list from "nothing
-    third-party contributed" are kept apart by the ``attribution_error`` key).
+    Degrades rather than costing the edition: a licence block is owed, and a document that
+    could not compute one is still a document. A FAILED source query still leaves the card
+    lines (they are read from the record, not from the database, so they cannot fail with
+    it: the cards section runs last, and a spent statement deadline is exactly when the
+    next query raises), and the failure is returned so the edition can record it under
+    ``attribution_error`` -- an empty list from a failed query and an empty list from
+    "nothing third-party contributed" are different facts.
     """
     from src.backup.attribution import (
         PendingRulingError,
         attribution_dicts,
+        card_signals_from_edition,
         signals_from_sources,
     )
     from src.bulletin.evidence import period_source_rows
 
+    card_signals = card_signals_from_edition(edition)
     try:
-        return attribution_dicts(signals_from_sources(period_source_rows(session, period)))
+        return attribution_dicts(
+            signals_from_sources(period_source_rows(session, period)) | card_signals
+        ), None
     except PendingRulingError:
         # A licence line waiting on a ruling (none today: Q823's OSM case was ruled "a" and
         # now renders). Raised rather than swallowed by the module that knows why, and
         # re-raised here: a bulletin whose attribution block would be silently short is
         # not a bulletin this app may write.
         raise
-    except Exception:  # noqa: BLE001 - the record survives a failed licence query
+    except Exception as exc:  # noqa: BLE001 - the record survives a failed licence query
         _LOG.warning("bulletin: could not compute the attribution lines", exc_info=True)
-        return []
+        return attribution_dicts(card_signals), f"{type(exc).__name__}: {exc}"
 
 
 def attach_narration(edition: dict) -> dict:

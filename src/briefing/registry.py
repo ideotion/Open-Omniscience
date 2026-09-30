@@ -485,10 +485,12 @@ def _disabled_names() -> frozenset[str]:
         return frozenset()
 
 
-#: Producers whose cards are made from a lane that must not leave the machine (Q823 ⛔, the ODbL
-#: question: no OSM-derived row in an export, a bulletin or an evidence ZIP). They run only when
-#: the caller says ``lanes=True``, which Home's refresh does and a bulletin, a lead report or a
-#: card audit does not -- so a new caller is safe by default rather than by remembering.
+#: Producers whose cards are made from a lane that carries a licence (Q823 = a: OpenStreetMap data
+#: leaves only with OSM's credit and the ODbL line). They run only when the caller says
+#: ``lanes=True``: Home's refresh does, and so does the bulletin, whose edition records which lane
+#: cards it shows and credits OpenStreetMap against exactly those (``src/bulletin/cards.py``,
+#: ``attribution.OSM_DERIVED_CARDS``). A lead report or a card audit carries no attribution block,
+#: so it does not -- a new caller is safe by default rather than by remembering.
 LANE_ONLY_PRODUCERS: frozenset[str] = frozenset({"osm_tag_completeness"})
 
 

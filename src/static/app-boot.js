@@ -103,6 +103,9 @@
         if (qd && qd.dataset.advLoaded === "1" && typeof loadQualificationGates === "function") {
           loadQualificationGates();
           if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          // The queue panel picks its list separator from the page direction, so it has to be
+          // redrawn on a switch too (found in the R95 follow-up review: en -> ar kept the ASCII comma).
+          if (typeof loadQualQueue === "function") loadQualQueue();
           if (typeof _renderOverlayMerge === "function") _renderOverlayMerge();
         }
       } catch (_e) {}

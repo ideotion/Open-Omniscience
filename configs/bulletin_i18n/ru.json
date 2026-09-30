@@ -393,5 +393,11 @@
   "Mentions": "Упоминания",
 
   "“{translation}” (translated from {language}: {term})": "«{translation}» (перевод с {language}: {term})",
-  "{term} (in {language})": "{term} (на {language})"
+  "{term} (in {language})": "{term} (на {language})",
+
+  "osm tag completeness": "Полнота тегов OpenStreetMap",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "Из мест этой страны с метаданными (объекты, которые линия OSM хранит как «poi») — число мест с каждым тегом. Тег засчитывается, если у него или у его пары contact:* (contact:website, contact:email, contact:phone) непустое значение. Четыре ключа считаются отдельно и никогда не объединяются.",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "Отсутствие тега значит, что OpenStreetMap его не фиксирует, а не что у места его нет. Полнота зависит от того, насколько активно регион картографируется. Цифры описывают выгрузку на дату её выпуска."
 }

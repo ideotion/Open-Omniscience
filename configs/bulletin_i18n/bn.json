@@ -393,5 +393,11 @@
   "Mentions": "উল্লেখ",
 
   "“{translation}” (translated from {language}: {term})": "“{translation}” ({language} থেকে অনূদিত: {term})",
-  "{term} (in {language})": "{term} ({language} ভাষায়)"
+  "{term} (in {language})": "{term} ({language} ভাষায়)",
+
+  "osm tag completeness": "OpenStreetMap ট্যাগের পূর্ণতা",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "এই দেশের মেটাডেটাসহ স্থানগুলোর মধ্যে (OSM লেনে ‘poi’ হিসেবে রাখা অবজেক্ট), প্রতিটি ট্যাগ কতগুলোতে আছে তার সংখ্যা। ট্যাগটির, বা তার contact:* জোড়ার (contact:website, contact:email, contact:phone), মান ফাঁকা না হলে তা গণ্য হয়। চারটি কী আলাদাভাবে গোনা হয়, কখনো মেশানো হয় না।",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "কোনো ট্যাগ না থাকার অর্থ OpenStreetMap সেটি নথিভুক্ত করেনি, স্থানটির তা নেই এমন নয়। পূর্ণতা নির্ভর করে একটি অঞ্চল কতটা সক্রিয়ভাবে ম্যাপ করা হয়েছে তার ওপর। সংখ্যাগুলো এক্সট্র্যাক্টটিকে তার সংস্করণের সময়ে বর্ণনা করে।"
 }
