@@ -90,7 +90,8 @@ def find_flooded_topics(
     max_items: int = 12,
 ) -> dict:
     """Sources flooding a single topic vs their own history (two-proportion z-test)."""
-    from src.database.models import Keyword, KeywordMention, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Keyword, Source
 
     today = date.today()
     r_start = today - timedelta(days=recent_days)
@@ -99,13 +100,13 @@ def find_flooded_topics(
 
     # Candidate sources: enough RECENT articles (km-only, source_id index).
     src_recent = dict(
-        session.query(KeywordMention.source_id, func.count(distinct(KeywordMention.article_id)))
+        session.query(KeywordMentionRead.source_id, func.count(distinct(KeywordMentionRead.article_id)))
         .filter(
-            KeywordMention.observed_on >= r_start,
-            KeywordMention.observed_on < r_hi,
-            KeywordMention.source_id.isnot(None),
+            KeywordMentionRead.observed_on >= r_start,
+            KeywordMentionRead.observed_on < r_hi,
+            KeywordMentionRead.source_id.isnot(None),
         )
-        .group_by(KeywordMention.source_id)
+        .group_by(KeywordMentionRead.source_id)
         .all()
     )
     cands = sorted(
@@ -167,31 +168,31 @@ def find_flooded_topics(
             chunk = cand_ids[i : i + 400]
             for sid, n in (
                 session.query(
-                    KeywordMention.source_id, func.count(distinct(KeywordMention.article_id))
+                    KeywordMentionRead.source_id, func.count(distinct(KeywordMentionRead.article_id))
                 )
                 .filter(
-                    KeywordMention.source_id.in_(chunk),
-                    KeywordMention.observed_on >= b_start,
-                    KeywordMention.observed_on < r_start,
+                    KeywordMentionRead.source_id.in_(chunk),
+                    KeywordMentionRead.observed_on >= b_start,
+                    KeywordMentionRead.observed_on < r_start,
                 )
-                .group_by(KeywordMention.source_id)
+                .group_by(KeywordMentionRead.source_id)
             ):
                 prior_count_by_source[int(sid)] = int(n or 0)
             # Only the pairs the count floor below would keep: a pair under it is skipped
             # before anything else reads it, so dropping it in SQL changes no answer.
             for sid, kid, n in (
                 session.query(
-                    KeywordMention.source_id,
-                    KeywordMention.keyword_id,
-                    func.count(distinct(KeywordMention.article_id)),
+                    KeywordMentionRead.source_id,
+                    KeywordMentionRead.keyword_id,
+                    func.count(distinct(KeywordMentionRead.article_id)),
                 )
                 .filter(
-                    KeywordMention.source_id.in_(chunk),
-                    KeywordMention.observed_on >= r_start,
-                    KeywordMention.observed_on < r_hi,
+                    KeywordMentionRead.source_id.in_(chunk),
+                    KeywordMentionRead.observed_on >= r_start,
+                    KeywordMentionRead.observed_on < r_hi,
                 )
-                .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
-                .having(func.count(distinct(KeywordMention.article_id)) >= min_recent_count)
+                .group_by(KeywordMentionRead.source_id, KeywordMentionRead.keyword_id)
+                .having(func.count(distinct(KeywordMentionRead.article_id)) >= min_recent_count)
             ):
                 recent_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
             # The prior share is read only for a pair that already passed the recent
@@ -208,17 +209,17 @@ def find_flooded_topics(
             for j in range(0, len(wanted_kids), 400):
                 for sid, kid, n in (
                     session.query(
-                        KeywordMention.source_id,
-                        KeywordMention.keyword_id,
-                        func.count(distinct(KeywordMention.article_id)),
+                        KeywordMentionRead.source_id,
+                        KeywordMentionRead.keyword_id,
+                        func.count(distinct(KeywordMentionRead.article_id)),
                     )
                     .filter(
-                        KeywordMention.source_id.in_(wanted_sids),
-                        KeywordMention.keyword_id.in_(wanted_kids[j : j + 400]),
-                        KeywordMention.observed_on >= b_start,
-                        KeywordMention.observed_on < r_start,
+                        KeywordMentionRead.source_id.in_(wanted_sids),
+                        KeywordMentionRead.keyword_id.in_(wanted_kids[j : j + 400]),
+                        KeywordMentionRead.observed_on >= b_start,
+                        KeywordMentionRead.observed_on < r_start,
                     )
-                    .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+                    .group_by(KeywordMentionRead.source_id, KeywordMentionRead.keyword_id)
                 ):
                     if int(kid) in wanted[int(sid)]:
                         prior_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
@@ -254,11 +255,11 @@ def find_flooded_topics(
             kw_lang = normalize_lang(kw.language) if kw.language else None
             if kw_lang:
                 term_sources = int(
-                    session.query(func.count(distinct(KeywordMention.source_id)))
+                    session.query(func.count(distinct(KeywordMentionRead.source_id)))
                     .filter(
-                        KeywordMention.keyword_id == kid,
-                        KeywordMention.observed_on >= r_start,
-                        KeywordMention.observed_on < r_hi,
+                        KeywordMentionRead.keyword_id == kid,
+                        KeywordMentionRead.observed_on >= r_start,
+                        KeywordMentionRead.observed_on < r_hi,
                     )
                     .scalar()
                     or 0
@@ -267,12 +268,12 @@ def find_flooded_topics(
                     continue  # publishing furniture / a term nearly every active source carries
             article_ids = sorted(
                 r[0]
-                for r in session.query(KeywordMention.article_id)
+                for r in session.query(KeywordMentionRead.article_id)
                 .filter(
-                    KeywordMention.source_id == source_id,
-                    KeywordMention.keyword_id == kid,
-                    KeywordMention.observed_on >= r_start,
-                    KeywordMention.observed_on < r_hi,
+                    KeywordMentionRead.source_id == source_id,
+                    KeywordMentionRead.keyword_id == kid,
+                    KeywordMentionRead.observed_on >= r_start,
+                    KeywordMentionRead.observed_on < r_hi,
                 )
                 .distinct()
             )
@@ -372,7 +373,8 @@ def find_buried_topics(
     (z, the two shares, counts, the BH-adjusted q-value), never a blend; no score.
     """
     from src.analytics.queries import _hidden_predicate
-    from src.database.models import Keyword, KeywordMention, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Keyword, Source
     from src.stats.fdr import benjamini_hochberg
 
     today = date.today()
@@ -384,23 +386,23 @@ def find_buried_topics(
                 "fdr_q": fdr_q, "tests": 0, "note": note, "method": _METHOD, "caveat": BURY_CAVEAT}
 
     win = [
-        KeywordMention.observed_on >= cutoff,
-        KeywordMention.observed_on < hi,
-        KeywordMention.source_id.isnot(None),
+        KeywordMentionRead.observed_on >= cutoff,
+        KeywordMentionRead.observed_on < hi,
+        KeywordMentionRead.source_id.isnot(None),
     ]
 
     # Corpus size N in the window (distinct sourced articles).
     n_corpus = int(
-        session.query(func.count(distinct(KeywordMention.article_id))).filter(*win).scalar() or 0
+        session.query(func.count(distinct(KeywordMentionRead.article_id))).filter(*win).scalar() or 0
     )
     if n_corpus < max(min_corpus_articles * 2, 2 * min_source_articles):
         return _empty("corpus too small in window")
 
     # Candidate sources: enough articles in the window (index scan on source_id).
     src_tot = dict(
-        session.query(KeywordMention.source_id, func.count(distinct(KeywordMention.article_id)))
+        session.query(KeywordMentionRead.source_id, func.count(distinct(KeywordMentionRead.article_id)))
         .filter(*win)
-        .group_by(KeywordMention.source_id)
+        .group_by(KeywordMentionRead.source_id)
         .all()
     )
     candidates = sorted(
@@ -419,14 +421,14 @@ def find_buried_topics(
     # Fetching every keyword of the window held one row per keyword (five objects each).
     topic_rows = (
         session.query(
-            KeywordMention.keyword_id,
-            func.count(distinct(KeywordMention.article_id)),
-            func.count(distinct(KeywordMention.source_id)),
+            KeywordMentionRead.keyword_id,
+            func.count(distinct(KeywordMentionRead.article_id)),
+            func.count(distinct(KeywordMentionRead.source_id)),
         )
         .filter(*win)
-        .group_by(KeywordMention.keyword_id)
-        .having(func.count(distinct(KeywordMention.article_id)) >= min_corpus_articles)
-        .having(func.count(distinct(KeywordMention.source_id)) >= min_corpus_sources)
+        .group_by(KeywordMentionRead.keyword_id)
+        .having(func.count(distinct(KeywordMentionRead.article_id)) >= min_corpus_articles)
+        .having(func.count(distinct(KeywordMentionRead.source_id)) >= min_corpus_sources)
         .all()
     )
     big: list[tuple[int, int, int]] = []
@@ -470,14 +472,14 @@ def find_buried_topics(
         chunk = cand_ids[i : i + 400]
         for sid, kid, a_s in (
             session.query(
-                KeywordMention.source_id,
-                KeywordMention.keyword_id,
-                func.count(distinct(KeywordMention.article_id)),
+                KeywordMentionRead.source_id,
+                KeywordMentionRead.keyword_id,
+                func.count(distinct(KeywordMentionRead.article_id)),
             )
             .filter(*win)
-            .filter(KeywordMention.source_id.in_(chunk))
-            .filter(KeywordMention.keyword_id.in_(big_ids))
-            .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+            .filter(KeywordMentionRead.source_id.in_(chunk))
+            .filter(KeywordMentionRead.keyword_id.in_(big_ids))
+            .group_by(KeywordMentionRead.source_id, KeywordMentionRead.keyword_id)
         ):
             pair[(int(sid), int(kid))] = int(a_s or 0)
 
@@ -545,11 +547,11 @@ def find_buried_topics(
         # construction, which is the whole point of the finding and not useful to open).
         article_ids = sorted(
             r[0]
-            for r in session.query(KeywordMention.article_id)
+            for r in session.query(KeywordMentionRead.article_id)
             .filter(
-                KeywordMention.keyword_id == t["kid"],
-                KeywordMention.observed_on >= cutoff,
-                KeywordMention.observed_on < hi,
+                KeywordMentionRead.keyword_id == t["kid"],
+                KeywordMentionRead.observed_on >= cutoff,
+                KeywordMentionRead.observed_on < hi,
             )
             .distinct()
         )

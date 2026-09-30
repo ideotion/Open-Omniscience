@@ -164,7 +164,6 @@ _CEILING: dict[str, int] = {
     "src/ai_layer/triage.py": 1,
     "src/analytics/article_lang_map.py": 1,
     "src/analytics/columnar.py": 7,
-    "src/analytics/concentration.py": 65,
     "src/analytics/corroboration.py": 8,
     "src/analytics/emergence.py": 11,
     "src/analytics/engine_report.py": 9,
