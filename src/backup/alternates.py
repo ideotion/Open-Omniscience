@@ -67,7 +67,9 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
             " JOIN law_revisions r ON r.id = t.revision_id"
             " JOIN law_documents d ON d.id = r.document_id"
         )
-        where.append("d.url = :document_url AND r.content_hash = :revision_content_hash")
+        where.append("d.jurisdiction = :jurisdiction AND d.url = :document_url"
+                     " AND r.content_hash = :revision_content_hash")
+        params["jurisdiction"] = identity.get("jurisdiction")
         params["document_url"] = identity.get("document_url")
         params["revision_content_hash"] = identity.get("revision_content_hash")
     for i, (name, column) in enumerate(spec["match"].items()):
@@ -144,7 +146,7 @@ def list_alternates(
     total = q.count()
     rows = (
         q.order_by(MetadataAlternate.batch_id.desc(), MetadataAlternate.id)
-        .offset(max(0, offset)).limit(max(1, min(limit, 200))).all()
+        .offset(max(0, offset)).limit(max(1, min(limit, 1000))).all()
     )
     counts: dict[int, dict[str, int]] = {}
     for bid, st, n in session.execute(
@@ -170,7 +172,7 @@ def list_alternates(
         "items": [_item(session, r) for r in rows],
         "method": (
             "each item is a value a restore brought that differs from the one this machine "
-            "holds; the machine's own value is what the app shows until you choose otherwise"
+            "holds; the machine's own value is what the app shows, and nothing here changes that"
         ),
     }
 

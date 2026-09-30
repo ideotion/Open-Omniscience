@@ -445,3 +445,82 @@ def test_the_routes_exist_and_refuse_an_unknown_id():
         for verb in ("keep", "discard"):
             assert c.post(f"/api/backup/alternates/999999/{verb}").status_code == 404
         assert c.post("/api/backup/alternates/batch/999999/discard").json()["discarded"] == 0
+
+
+def _all_six(which):
+    """One article and one law revision holding every kind of deduced item, valued by ``which``."""
+    def f(s):
+        a = _article(s)
+        s.add(KeywordTranslation(term="chat", source_lang="fr", target_lang="en", text=which,
+                                 model="m1", prompt_version="v1", created_at=_T0))
+        s.add(ArticleTitleTranslation(article_id=a.id, source_lang="fr", target_lang="en",
+                                      title=which, summary="s", model="m1",
+                                      prompt_version="tt-v1", created_at=_T0))
+        s.add(ArticleAnalysis(article_id=a.id, kind="summary", result=which, model="m1",
+                              prompt_version="v1", created_at=_T0))
+        s.add(AiKeyword(article_id=a.id, term="hiroshima", kind="entity", model="m1",
+                        prompt_version="v1", confirmed=(which == "THEIRS"), created_at=_T0))
+        s.add(ArticleMentionedDate(
+            article_id=a.id, mentioned_on=date(1945, 8, 6), precision="day", snippet="x",
+            confidence=0.9, extractor="dateextract",
+            status="confirmed" if which == "THEIRS" else "candidate", created_at=_T0))
+        doc = LawDocument(jurisdiction="uk", title="Act", url="https://example.uk/act")
+        s.add(doc)
+        s.flush()
+        rev = LawRevision(document_id=doc.id, observed_at=_T0, content_hash="ch1", full_text="T")
+        s.add(rev)
+        s.flush()
+        s.add(LawRevisionSummary(revision_id=rev.id, summary=which, model="m1",
+                                 prompt_version="v1", created_at=_T0))
+    return f
+
+
+def test_the_identity_the_capture_writes_is_exactly_what_the_resolver_reads(tmp_path):
+    """ALTERNATE_SPECS and the six capture calls in merge.py are two definitions of one thing;
+    this pins them together, table by table, and proves every item resolves to its local row."""
+    from src.backup.alternates import list_alternates
+    from src.backup.provenance import ALTERNATE_SPECS, PRODUCER_COLUMNS
+
+    _, _, live, _ = _two(tmp_path, _all_six("THEIRS"), _all_six("OURS"))
+    scope_keys = {
+        "article": {"article_hash"}, "none": set(),
+        "law": {"jurisdiction", "document_url", "revision_content_hash"},
+    }
+    assert set(ALTERNATE_SPECS) == set(PRODUCER_COLUMNS)
+    seen = set()
+    for table, identity, _, _, _, _ in _alts(live):
+        spec = ALTERNATE_SPECS[table]
+        assert set(identity) == scope_keys[spec["scope"]] | set(spec["match"]), table
+        seen.add(table)
+    assert seen == set(ALTERNATE_SPECS), "every table records an alternate on a contradiction"
+    with _corpus(live)() as s:
+        items = list_alternates(s)["items"]
+    assert {i["table"] for i in items} == set(ALTERNATE_SPECS)
+    for i in items:
+        assert i["local"] is not None, f"{i['table']}: the local row was not found by identity"
+        assert i["local_provenance"]["origin"] == "local"
+
+
+def test_the_same_law_url_in_two_jurisdictions_is_two_items(tmp_path):
+    from src.backup.alternates import list_alternates
+
+    def add(uk, eu):
+        def f(s):
+            for juris, summary in (("uk", uk), ("eu", eu)):
+                doc = LawDocument(jurisdiction=juris, title="Act", url="https://example.org/act")
+                s.add(doc)
+                s.flush()
+                rev = LawRevision(document_id=doc.id, observed_at=_T0, content_hash="ch1",
+                                  full_text="T")
+                s.add(rev)
+                s.flush()
+                s.add(LawRevisionSummary(revision_id=rev.id, summary=summary, model="m1",
+                                         prompt_version="v1", created_at=_T0))
+        return f
+
+    _, _, live, _ = _two(tmp_path, add("UK-THEIRS", "EU-THEIRS"), add("UK-OURS", "EU-OURS"))
+    with _corpus(live)() as s:
+        items = {i["identity"]["jurisdiction"]: i for i in list_alternates(s)["items"]}
+    assert set(items) == {"uk", "eu"}, "one alternate per document, not one for both"
+    assert items["uk"]["local"]["summary"] == "UK-OURS"
+    assert items["eu"]["local"]["summary"] == "EU-OURS"

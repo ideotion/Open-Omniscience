@@ -5232,7 +5232,7 @@
   "What's missing": "欠けているもの",
   "Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.": "ホイール＝カーソル位置でズーム · ドラッグ＝移動 · ダブルクリック＝全範囲 · バーにカーソルを合わせると正確な値。斜線＝サスペンド、点線の枠＝記録なし、破線の端＝終了時刻なし。",
   "When": "いつ",
-  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.": "復元によって、このマシンが既に持つ値と異なる値（翻訳、日付の状態、AI の要約など）が持ち込まれた場合、このマシンの値はそのまま残り、もう一方はここに保管されます。ご自身で選ばない限り、復元の内容があなたの値の代わりに表示されることはありません。",
+  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is ever shown in place of yours.": "復元によって、このマシンが既に持つ値と異なる値（翻訳、日付の状態、AI の要約など）が持ち込まれた場合、このマシンの値はそのまま残り、もう一方はここに保管されます。復元の内容があなたの値の代わりに表示されることは決してありません。",
   "When it was discussed": "いつ話題になったか",
   "When it was in the field": "実施期間",
   "When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.": "オフにすると、候補ソースは未判定のまま残り、収集に自動的に組み入れられることはありません。何も削除されず、すでに下された判定が変更されたり見直されたりすることもありません。",
