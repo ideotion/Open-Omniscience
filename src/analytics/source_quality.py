@@ -45,7 +45,8 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics.managed import UNSEGMENTED
 from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
-from src.database.models import Article, ArticleLink, KeywordMention, Source
+from src.database.derived_views import KeywordMentionRead
+from src.database.models import Article, ArticleLink, Source
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
 from src.ingest.non_article import classify_index_page as _classify_index_page
 
@@ -322,24 +323,24 @@ def collect_article_stats(
         for chunk in _chunks(aids):
             for aid, total, distinct, mx in (
                 session.query(
-                    KeywordMention.article_id,
-                    func.coalesce(func.sum(KeywordMention.count), 0),
+                    KeywordMentionRead.article_id,
+                    func.coalesce(func.sum(KeywordMentionRead.count), 0),
                     func.count(),
-                    func.coalesce(func.max(KeywordMention.count), 0),
+                    func.coalesce(func.max(KeywordMentionRead.count), 0),
                 )
-                .filter(KeywordMention.article_id.in_(chunk))
-                .group_by(KeywordMention.article_id)
+                .filter(KeywordMentionRead.article_id.in_(chunk))
+                .group_by(KeywordMentionRead.article_id)
             ):
                 agg[int(aid)] = (int(total or 0), int(distinct or 0), int(mx or 0))
                 _tick()
     else:
         for aid, total, distinct, mx in (
             session.query(
-                KeywordMention.article_id,
-                func.coalesce(func.sum(KeywordMention.count), 0),
+                KeywordMentionRead.article_id,
+                func.coalesce(func.sum(KeywordMentionRead.count), 0),
                 func.count(),
-                func.coalesce(func.max(KeywordMention.count), 0),
-            ).group_by(KeywordMention.article_id)
+                func.coalesce(func.max(KeywordMentionRead.count), 0),
+            ).group_by(KeywordMentionRead.article_id)
         ):
             agg[int(aid)] = (int(total or 0), int(distinct or 0), int(mx or 0))
             _tick()
