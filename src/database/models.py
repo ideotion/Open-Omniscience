@@ -3279,7 +3279,7 @@ def mentions_view_sql() -> str:
     """The exact ``CREATE VIEW`` for the current column set (also what a stale view is
     compared against, whitespace-insensitively)."""
     cols = ", ".join(c.name for c in KeywordMention.__table__.columns)
-    return f"CREATE VIEW {MENTIONS_VIEW} AS SELECT {cols} FROM {KeywordMention.__tablename__}"
+    return f"CREATE VIEW {MENTIONS_VIEW} AS SELECT {cols} FROM {KeywordMention.__tablename__}"  # nosec B608 - view name is a module constant; columns and table name come from the KeywordMention model, never request, user or file input
 
 
 event.listen(

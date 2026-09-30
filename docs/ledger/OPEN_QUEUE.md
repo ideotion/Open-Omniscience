@@ -745,6 +745,7 @@
   `false` on that tier. `tests/test_pool_api_margin.py::test_the_medium_tier_is_still_exhaustible_and_says_so`
   asserts the honest answer, so a green suite can never imply a fix that is not there.
   **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `D44` = a, a reservation at checkout; not built.
+  **SHIPPED 2026-09-30 (PR #1243):** the reservation is built (`src/database/pool_reserve.py`); the collector may hold at most the pool total minus `_API_MARGIN` connections, fetch fan-out is not capped, and the medium tier's pinning test now asserts the reserved verdict.
 
   **(4) `R27` RE-OPENED `R28`'s ROW-C HOLE ONE WEEK AFTER IT WAS CLOSED, and the shape is
   worth keeping.** `complete_profile` was `profile == "full"` — correct while only the
@@ -1230,6 +1231,7 @@
   plan files, which is exactly the state the protocol's ASSUMPTION rule exists to prevent.
   **ANSWERED 2026-09-29 (the 37-question list, head entry):** RC02 = a, RC03 = a, RC04 = a, RC07 = c («0.6 or later», release unnamed), RC08 = a, RC09 = a, RC11 = b, RC12 = c, RC13 = b with eclipses (the eclipse half a recorded default), RC14 = a, RC15 = c, RC17 = a. STILL OPEN: RC05 (thread «Keyword working session»), RC06 (thread «Fix source qualification») and RC16 (a later discussion). With RC01 and RC10 of 2026-09-27, 19 of the round's 22 lines now carry an answer.
   **ANSWERED 2026-09-30 (the older-rounds list, head entry):** residual point (1) above is settled: `RC13`'s eclipse suffix is «with eclipses» (`R99`).
+  **R99 IS HELD FOR THE RELIGIOUS-CALENDAR RESEARCH SESSION (recorded 2026-09-30, the project coordinator, on the maintainer's item 30 = a and `D10` = a):** the eclipse list must come from a published source such as NASA's, dated and sourced, by a session that can reach it. The build environment used for the 2026-09-30 older-answers fixes cannot reach `eclipse.gsfc.nasa.gov` (the egress proxy refuses it), so nothing was built there and **NO LATER THREAD IS TO COMPUTE THE ECLIPSES INSTEAD** (a Meeus-style computation was considered and rejected: the maintainer chose researched dates over formulas at item 30).
 - **THE 2026-09-06 REGISTER ANSWERED — 65 OF 65 THROUGH THE RULINGS ARTIFACT (2026-09-15 15:02–16:00Z;
   recorded the same day; NOTHING RESOLVED BY THE SESSION; draft PR #1131).** THE PRIMARY RECORD is the
   register itself, answered in place:
@@ -16034,5 +16036,11 @@ maintainer as a card.
    and lists; it creates no key. The bundle format (`oo-evidence-1`), its signature and `scripts/verify_evidence.py`
    are untouched. Only the older signed JSON exit gets the review: the claim trail's ZIP (S2) already lists
    its members and the bulletin evidence ZIP has no button in the UI to put a review on.
-6. **The bulletin carrier (the piece that lifts the `held_q823` hold on the Map data completeness card) is not
-   built here.** It needs the bulletin evidence ZIP to have a place in the UI first; it stays a follow-up.
+6. ~~**The bulletin carrier (the piece that lifts the `held_q823` hold on the Map data completeness card) is not
+   built here.** It needs the bulletin evidence ZIP to have a place in the UI first; it stays a follow-up.~~
+   **BUILT 2026-09-30 (row K, sixth PR).** It did not need a UI for the evidence ZIP. What
+   the card needed was a signal for the attribution seam, and a bulletin holds cards, so the signal is the card
+   (`card:osm_tag_completeness`, emitted for a lane card the edition SHOWS). Where: `bulletin/cards.py`
+   (`lane_cards_shown`), `bulletin/edition.py` (`_attribution`), `backup/attribution.py` (`OSM_DERIVED_CARDS`,
+   `card_signals_from_edition`), read by the edition, the evidence ZIP (whose `edition.json` carries the cards
+   section) and `review.apply_selection`; `render_html` now prints the block the Markdown always had.
