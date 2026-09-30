@@ -1004,7 +1004,7 @@ class CollectionMonitor:
             if w_max:
                 out["w_max"] = w_max
                 out["page_cache_ceiling_mb"] = worker_cache_ceiling_mb(w_max)
-                # F1/R26: THIS IS THE COMPARISON NOBODY WAS MAKING. The pool bound and
+                # F1/R26/D44: THIS IS THE COMPARISON NOBODY WAS MAKING. The pool bound and
                 # the fan-out were both already in this block, side by side, and nothing
                 # subtracted one from the other -- so a collector that could hold every
                 # connection looked exactly like one that could not. `sufficient` is
@@ -1014,6 +1014,18 @@ class CollectionMonitor:
                 out["api_headroom"] = api_headroom_for(w_max, pool_bound=out["pool_bound"])
             else:
                 out["page_cache_ceiling_mb_unavailable"] = "no governor w_max"
+            # D44 = a: what the reservation at checkout actually did this process --
+            # how often a collector worker queued for a slot and how often a nested
+            # session leaned on the margin. A reading of the live pool, absent (never
+            # zeroed) when the engine's pool is not the reserving one.
+            try:
+                from src.database.session import engine as _engine
+
+                _res = getattr(_engine.pool, "reservation", None)
+                if callable(_res):
+                    out["collector_reservation"] = _res()
+            except Exception:  # noqa: BLE001 - a report line is never worth a pass
+                pass
             if self._pool_peak is not None:
                 out["pool_checkout_peak"] = self._pool_peak
             else:
