@@ -1048,6 +1048,16 @@ wiki that asks it to slow down is asked again after a pause that doubles up to a
 hour. A restart resumes each edition where it stopped. Its progress is in **Living
 sources** and in the task manager.
 
+**Why the walk can wait behind the stream's first drain.** The stream stores what it heard in
+a drain every 30 seconds; the search index, the fetch of other changed pages and the walk run
+in the time *after* each drain. A drain fetches the text of the followed pages that changed,
+and behind a backlog (a stream resumed hours back) that is thousands of polite requests, so the
+drain now has a **20-second bound for fetching texts**, shared out between the editions. Every
+change is still recorded; a text not reached in time is counted as *deferred* in the drain's
+report and arrives with that page's next change. The status (`/api/scheduler/status`, the
+`wiki_lane.service.drain` block) says where the drain is: the stage (`hot-sets` or `feeds`),
+the edition, how long it has been in this drain, and how many drains failed in a row and why.
+
 **Reading the W in the top bar.** The W is the **stream's** switch, not the walk's: the
 walk is the tick box above, and it runs only while the stream does. The small mark in the
 W's corner says what the stream is doing by shape: a solid dot is connected and receiving;

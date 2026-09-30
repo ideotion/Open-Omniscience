@@ -72,6 +72,13 @@ DRAIN_LIMIT: int = 2000
 #: enough that a real breakage is reported while anyone is still watching.
 MAX_CONSECUTIVE_FAILURES: int = 3
 
+#: Seconds one drain may spend FETCHING page texts, shared out between the feeds. The drain
+#: records every change first and then fetches one polite request per touched page; behind a
+#: backlog (a stream resumed hours back) that is thousands of requests, and the walk, WARM and
+#: the search index run only AFTER the drain, so an unbounded drain starves all three. Texts
+#: not fetched in time are counted as deferred and arrive with the page's next change.
+DRAIN_TEXT_SECONDS: float = 20.0
+
 #: Seconds between drains when the runner drives its own loop. The stream keeps
 #: buffering in between, so this is a latency-versus-transaction-size choice and not
 #: a rate: nothing about the network depends on it.
@@ -89,6 +96,10 @@ class DrainReport:
     articles_indexed: int = 0
     text_withheld: int = 0
     text_withheld_reasons: dict[str, int] = field(default_factory=dict)
+    #: Texts not fetched in this drain because its time bound (or a count bound) ran out.
+    #: Distinct from ``text_withheld``: withheld is a POLICY refusal with a reason, deferred
+    #: is "not yet", and the two need opposite responses.
+    text_deferred: int = 0
     gaps_recorded: int = 0
     #: Whether this drain recorded a lane-file size sample. At most one an hour, so
     #: ``False`` is the ordinary case and not a failure.
@@ -106,6 +117,7 @@ class DrainReport:
         self.revisions_stored += result.revisions_stored
         self.articles_indexed += result.articles_indexed
         self.text_withheld += result.text_withheld
+        self.text_deferred += result.text_deferred
         for reason, n in result.text_withheld_reasons.items():
             self.text_withheld_reasons[reason] = self.text_withheld_reasons.get(reason, 0) + n
         if result.gap_recorded:
@@ -120,6 +132,7 @@ class DrainReport:
             "revisions_stored": self.revisions_stored,
             "articles_indexed": self.articles_indexed,
             "text_withheld": self.text_withheld,
+            "text_deferred": self.text_deferred,
             "text_withheld_reasons": dict(self.text_withheld_reasons),
             "gaps_recorded": self.gaps_recorded,
             "size_sampled": self.size_sampled,
@@ -197,6 +210,9 @@ def drain_once(
     budget: BudgetState,
     corpus: Any | None = None,
     limit: int = DRAIN_LIMIT,
+    text_seconds: float | None = DRAIN_TEXT_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    on_feed: Callable[[str], None] | None = None,
 ) -> DrainReport:
     """Drain every feed's buffer into the lane once. No network of its own.
 
@@ -217,7 +233,17 @@ def drain_once(
         report.errors.append(f"size sample: {type(exc).__name__}: {exc}")
     admit = make_admit(adapter, hot_sets)
     policy = make_text_policy(budget)
-    for feed in adapter.feeds():
+    feeds = list(adapter.feeds())
+    started = monotonic()
+    for index, feed in enumerate(feeds):
+        if on_feed is not None:
+            on_feed(feed)
+        # EACH FEED GETS AN EQUAL SHARE OF WHAT IS LEFT, so a busy first edition cannot spend
+        # the whole bound and leave the last eleven with no text at all.
+        deadline = None
+        if text_seconds is not None:
+            left = max(0.0, text_seconds - (monotonic() - started))
+            deadline = monotonic() + left / max(1, len(feeds) - index)
         try:
             result = run_feed_once(
                 lane,
@@ -227,6 +253,8 @@ def drain_once(
                 budget=ReadBudget(max_requests=limit),
                 admit=admit,
                 text_policy=policy,
+                fetch_deadline=deadline,
+                monotonic=monotonic,
             )
         except Exception as exc:  # noqa: BLE001 - one edition must not end the drain
             # NAMED, and the drain continues. Eleven editions still collecting while
@@ -320,6 +348,30 @@ class WikiLaneRunner:
         #: rather than only in the log, because a status surface cannot read a log.
         self.consecutive_failures = 0
         self.last_error: str | None = None
+        #: WHERE THE DRAIN IS, for a status surface. A status that said only ``drains: 0``
+        #: could not tell a drain that had not started from one stuck in its first hot-set
+        #: read, or fetching texts behind a backlog, or failing and retrying: four different
+        #: problems with one symptom. ``stage`` is one of ``idle`` / ``hot-sets`` / ``feeds``,
+        #: ``feed`` the edition being drained, and ``since`` the monotonic start of this drain.
+        self.drain_stage: str = "idle"
+        self.drain_feed: str | None = None
+        self._drain_since: float | None = None
+        self._last_drain_ended: float | None = None
+
+    def drain_status(self) -> dict:
+        """Where the drain loop is right now, measured on this runner. Never raises."""
+        since = self._drain_since
+        ended = self._last_drain_ended
+        now = self._monotonic()
+        return {
+            "stage": self.drain_stage,
+            "feed": self.drain_feed,
+            "running_for_s": round(now - since, 1) if since is not None else None,
+            "since_last_drain_s": round(now - ended, 1) if ended is not None else None,
+            "consecutive_failures": self.consecutive_failures,
+            "last_error": self.last_error,
+            "stopped": self._stop.is_set(),
+        }
 
     # -- the stream half ---------------------------------------------------- #
     def _should_stop(self) -> bool:
@@ -392,18 +444,34 @@ class WikiLaneRunner:
     # -- the drain half ----------------------------------------------------- #
     def drain(self) -> DrainReport:
         """One drain, on the CALLER's thread. Opens the lane, stores, closes."""
-        budget = self._budget()
-        hot = self._hot_sets()
-        lane_cm = self._lane_session()
-        corpus_cm = self._corpus_session() if self._corpus_session is not None else None
-        with lane_cm as lane:
-            if corpus_cm is None:
-                report = drain_once(lane, self._adapter, hot_sets=hot, budget=budget)
-            else:
-                with corpus_cm as corpus:
+        self._drain_since = self._monotonic()
+        self.drain_stage, self.drain_feed = "hot-sets", None
+        try:
+            budget = self._budget()
+            hot = self._hot_sets()
+            lane_cm = self._lane_session()
+            corpus_cm = self._corpus_session() if self._corpus_session is not None else None
+            self.drain_stage = "feeds"
+
+            def _note_feed(feed: str) -> None:
+                self.drain_feed = feed
+
+            with lane_cm as lane:
+                if corpus_cm is None:
                     report = drain_once(
-                        lane, self._adapter, hot_sets=hot, budget=budget, corpus=corpus
+                        lane, self._adapter, hot_sets=hot, budget=budget,
+                        monotonic=self._monotonic, on_feed=_note_feed,
                     )
+                else:
+                    with corpus_cm as corpus:
+                        report = drain_once(
+                            lane, self._adapter, hot_sets=hot, budget=budget, corpus=corpus,
+                            monotonic=self._monotonic, on_feed=_note_feed,
+                        )
+        finally:
+            self.drain_stage, self.drain_feed = "idle", None
+            self._last_drain_ended = self._monotonic()
+            self._drain_since = None
         self.last_drain = report.as_dict()
         self.drains += 1
         return report

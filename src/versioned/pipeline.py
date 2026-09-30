@@ -41,6 +41,7 @@ wiki lane (``tests/test_wiki_lane_end_to_end.py``) and the law lane
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -281,6 +282,8 @@ def run_feed_once(
     budget: ReadBudget | None = None,
     admit: Callable[[FeedChange], Admission | None] | None = None,
     text_policy: Callable[[VersionedEntity], tuple[bool, str | None]] | None = None,
+    fetch_deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> PassResult:
     """One pass: read the feed, record every change, fetch what the budget allows.
 
@@ -377,6 +380,15 @@ def run_feed_once(
     allowance = budget.max_versions if budget.max_versions is not None else len(touched)
     for external_id in touched:
         if allowance <= 0:
+            result.text_deferred += 1
+            continue
+        # A TIME BOUND ON FETCHING, beside the count bound. A feed that resumes behind a
+        # backlog touches thousands of pages, each one polite request, and without a bound
+        # the pass (and everything the caller runs after it) waits for all of them. Changes
+        # are already recorded above, so an unfetched text loses nothing but its text: it is
+        # counted under ``text_deferred`` (never dropped silently) and arrives with the
+        # page's next change.
+        if fetch_deadline is not None and monotonic() >= fetch_deadline:
             result.text_deferred += 1
             continue
         entity = lane.get(VersionedEntity, entity_ids[external_id])
