@@ -10375,3 +10375,11 @@ to the loop, an import's exclusive window, a re-index drain and any writer job, 
 `maintenance_skips`. Cause: the window had one caller, the loop; both `auto_cleanup` and
 `auto_incremental_vacuum` were null on the big offline instance. Lesson: `LESSONS.md`, the entry dated by
 this PR.
+
+- **2026-09-30 · database/derived-views (keyword session, R96 step 0 readers).** Readers of the keyword rows move onto
+the read-only `KeywordMentionRead` (over the `keyword_mentions_all` view) file by file, each PR lowering the
+seam ratchet: queries and conjunction (#1250), concentration (#1254), four analytics modules (#1258), the bulletin
+modules (#1261). Two lessons from their Opus reviews: `init_db`'s stamp alignment runs alembic, whose `env.py`
+drops the view, AFTER the ensure (fixed in #1250: a second ensure); and a regex rename rewrites strings that are
+data (the bulletin's method sentence is the key of its 11 translations). Lesson: `LESSONS.md`, the entry
+"A RENAME BY REGEX ALSO REWRITES STRINGS THAT ARE DATA".

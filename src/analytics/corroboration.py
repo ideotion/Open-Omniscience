@@ -30,7 +30,8 @@ from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
 
-from src.database.models import ArticleMentionedPlace, Keyword, KeywordMention
+from src.database.derived_views import KeywordMentionRead
+from src.database.models import ArticleMentionedPlace, Keyword
 
 _LOG = logging.getLogger(__name__)
 
@@ -127,17 +128,17 @@ def find_weather_opportunities(
     kw_meta = {kid: (terms[norm][0], norm, terms[norm][1]) for kid, norm in kw_rows}
 
     # 2) Recent mentions of those keywords (covering-index friendly).
-    mq = session.query(KeywordMention.keyword_id, KeywordMention.article_id,
-                       KeywordMention.observed_on).filter(
-        KeywordMention.keyword_id.in_(list(kw_meta.keys())),
-        KeywordMention.observed_on.isnot(None),
+    mq = session.query(KeywordMentionRead.keyword_id, KeywordMentionRead.article_id,
+                       KeywordMentionRead.observed_on).filter(
+        KeywordMentionRead.keyword_id.in_(list(kw_meta.keys())),
+        KeywordMentionRead.observed_on.isnot(None),
     )
     if cutoff is not None:
-        mq = mq.filter(KeywordMention.observed_on >= cutoff)
+        mq = mq.filter(KeywordMentionRead.observed_on >= cutoff)
     if article_ids is not None:
         mention_rows = []
         for chunk in _chunks(sorted({int(a) for a in article_ids})):
-            mention_rows.extend(mq.filter(KeywordMention.article_id.in_(chunk)).all())
+            mention_rows.extend(mq.filter(KeywordMentionRead.article_id.in_(chunk)).all())
     else:
         mention_rows = mq.all()
     if not mention_rows:

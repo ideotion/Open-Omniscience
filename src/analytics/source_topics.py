@@ -82,16 +82,17 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
     """
     from sqlalchemy import func, select
 
-    from src.database.models import KeywordMention, KeywordTag, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import KeywordTag, Source
 
     stmt = (
         select(
             Source.domain,
             KeywordTag.tag,
-            func.count(func.distinct(KeywordMention.article_id)),
+            func.count(func.distinct(KeywordMentionRead.article_id)),
         )
-        .join(KeywordTag, KeywordTag.keyword_id == KeywordMention.keyword_id)
-        .join(Source, Source.id == KeywordMention.source_id)
+        .join(KeywordTag, KeywordTag.keyword_id == KeywordMentionRead.keyword_id)
+        .join(Source, Source.id == KeywordMentionRead.source_id)
         .where(KeywordTag.axis == "topic")
         .group_by(Source.domain, KeywordTag.tag)
     )

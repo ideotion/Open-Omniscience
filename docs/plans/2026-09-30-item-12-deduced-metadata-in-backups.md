@@ -111,10 +111,18 @@ as alternates" (the counts stay counts, no verdict). Fully local machines with n
 
 Settings, Data and backup (not a tenth subtab; the nine are pinned by a test): a panel "Differences from
 restores" listing alternates grouped by restore batch (date, where from, how many), each item showing
-the local value and the imported value side by side, each with its provenance tag in words, and two
-actions: **Keep both** (marks it seen) and **Discard the imported value**. There is no action that makes
-the imported value the shown one (built as a swap, a review found six defects in it, and the ruling says
-imported never prevails; it can return as its own slice on identity-based resolution). A per-batch "Discard all from this restore" is offered with a
+the local value and the imported value side by side, each with its provenance tag in words, and three
+actions: **Keep both** (marks it seen), **Discard the imported value**, and (slice 4, the operator's explicit
+choice, on the user's "yes, bring it back, give users the choice" of 09-30) **Use the restore's value instead**.
+The swap is a reversible trade, never an overwrite: the row takes the alternate's shown columns and its
+producer stamp (`created_at`/`prompt_text`, or `as_of`/`fetched_at` for places and Wikidata items), and the
+alternate takes the row's, each with its own tag; `merged_rows` is rewritten (by `row_key` for the two text-keyed
+tables) so the row's arrival is the batch its value came from, or none when it was made here; it all happens in one
+transaction, by identity at that moment. The record then has `status = 'swapped'`, is listed with the pending ones,
+labelled by role ("Shown in the app" / "Kept alongside"), can be swapped back, is skipped by the per-batch discard,
+and a single discard of it asks for an explicit confirmation (it is the only copy of the value that was shown).
+The three reviews' defects (adopt resolving the local row by a stored id, a provenance left false, a discard that
+could delete the original) are designed out this way. A per-batch "Discard all from this restore" is offered with a
 count confirmation. Every string ships in 12 languages. The reader's ≈ title and the date list carry a small
 "n alternates" hover pointing to the panel (slice 2, if it fits).
 
@@ -133,7 +141,7 @@ count confirmation. Every string ships in 12 languages. The reader's ≈ title a
    JSON object, is counted, not invented a home and never allowed to fail the restore. A discarded alternate returns if an older backup still carrying it is restored, like any
    other row a restore adds; discarding it again is one click.
 
-**Status 2026-09-30:** slice 1 = #1237 (merged). Slice 2 = #1242 (panel, keep/discard, the local side found by
+**Status 2026-09-30 (slice 4, the swap, is PR #1265, after #1257):** slice 1 = #1237 (merged). Slice 2 = #1242 (panel, keep/discard, the local side found by
 identity: article hash or law jurisdiction + url + revision hash, plus the key columns; newest row). Slice 3 (alternates travel in backups, read by rowid so text-keyed tables work) is PR #1252 below. Known limitation: `merged_rows` is never pruned, so a row that reuses the id of a deleted
 restore-inserted row can be tagged "arrived" (SQLite reuses integer keys); the tag is honest about the row it
 reads, not about a row that no longer exists (when a reused id has several `merged_rows` entries the tag names

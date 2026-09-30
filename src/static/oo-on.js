@@ -276,7 +276,7 @@
     "mbAnchorKey", "mbAnchorKind", "mbAnchorsLoad", "mbAnchorsSave", "mbBuildBatch", "mbRun",
     "migrateOllamaStore", "mmExpand", "mmLevel", "mmReload", "mmView", "mmWindowChange",
     "onAiActivityToggle", "onFetchModeChange", "onUninstallMode", "ooFolderPicker",
-    "ooFolderPickerUse", "openAnalysisFor", "openAnalysisForIds", "openCardCorpus",
+    "ooFolderPickerUse", "ooMapCloseDetail", "openAnalysisFor", "openAnalysisForIds", "openCardCorpus",
     "openCardCorpusQuery", "openChannelCorpus", "openConceptMap", "openConjunctionLensChannel",
     "openCorpus", "openDoc",
     "openDraft", "openGuide", "openIdxComparison", "openInsightsTrends", "openLinkPreview",

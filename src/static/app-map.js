@@ -621,6 +621,7 @@
             }
           }
         }
+        if (typeof host._ooOnLod === "function") host._ooOnLod();   // the selection outline follows the new `d`
         if (hold) simplified = wasSimplified; else { wasReady = ready; wasSimplified = simplified; }
         // The legend's hover says so only while something in sight is drawn thinner than the file.
         const lab = host.querySelector("[data-oomap-borders]");
@@ -1491,6 +1492,7 @@
       host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
       host._ooOpts = opts;                         // the cheap focus path reuses these unchanged
       host._ooLabels = labelCands;                 // for the dynamic-label declutter (re-laid-out on zoom)
+      host._ooOnLod = () => { if (host.id === "oo-coverage-map") _ooMapSyncOutline(); };
       // The rings the shipped OSM outlines were drawn from, so a zoom can redraw them at the
       // detail the view can use.
       const lodCountries = {};
@@ -1505,6 +1507,9 @@
             disputed: Object.fromEntries((((wv === OOMAP_WORLDVIEW_OSM ? osmConv : disputed) || {}).areas || []).map(a => [a.id, a])) } : null;
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
+      // The caller's own follow-up for a redraw of THIS host (the Regions toggle, the worldview
+      // select and another map's worldview change all re-enter here with `host._ooOpts`).
+      if (typeof opts.afterRender === "function") opts.afterRender(host);
     }
     // The worldview in force, for a caller outside this file that keys a repaint on it
     // (app-sources.js's coverage stamp): a function, so it hoists across the module order.
@@ -2269,8 +2274,10 @@
         onOsm: () => _ooMapToggleOsm(),
         osmLane: _ooMapOsmLaneOn,
         // Click a country → its coverage breakdown (THEME-2 "click-country → list").
-        onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
+        onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim, (iso || "").toLowerCase()),
         valueLabel: fmtV,
+        // The map block owns its innerHTML, so every redraw wipes the docked card: put back.
+        afterRender: _ooMapRestoreDetail,
       });
     }
     // Click-a-country detail (THEME-2): the per-country coverage breakdown across
@@ -2286,20 +2293,96 @@
     // `_ooMapDetailRepaint` is true only while this redraw runs, so the redraw does not
     // scroll the page the way a click on the map does.
     let _ooMapDetailLast = null, _ooMapDetailRepaint = false;
+    // WHERE THE PANEL SITS. It used to sit after the whole map block, below the ranked
+    // table (365 px of it), so a click on a country scrolled the page down past the map to
+    // reach the card and the reader lost the country they had just clicked (the journalist
+    // walk, 2026-09-30). It now docks directly UNDER the map, so map and card are on screen
+    // together. The dock is a plain move of the one host, and it is re-created when a
+    // re-render of the map block wiped it (the block owns its own innerHTML).
+    function _ooMapDetailHost() {
+      let host = $("oo-coverage-detail");
+      const wrap = (typeof document.querySelector === "function")
+        ? document.querySelector("#oo-coverage-map .oomap-wrap") : null;
+      if (!wrap || typeof wrap.insertAdjacentElement !== "function") return host;
+      if (!host) { host = document.createElement("div"); host.id = "oo-coverage-detail"; host.style.marginTop = "8px"; }
+      if (host.previousElementSibling !== wrap) wrap.insertAdjacentElement("afterend", host);
+      return host;
+    }
+    // The clicked country is OUTLINED on the map, so the card and the shape it describes
+    // are visibly the same thing. The outline is ONE stroke-only path drawn ABOVE every fill
+    // (a stroke put on the shape itself is half covered by whichever neighbour is drawn
+    // later, so it read 2 px on some borders and 1 px on others), copied from the current
+    // `d` of the shapes that carry the country's code, so it is re-synced when the zoom
+    // redraws them at another detail. It lives in the World map only: every ooMap draws an
+    // `svg#oo-choro`, and a click here must not outline a country on the maps below it.
+    let _ooMapSelIso = null;
+    function _ooMapMarkSelected(iso) {
+      _ooMapSelIso = iso || null;
+      _ooMapSyncOutline();
+    }
+    function _ooMapOutlineD(el) {
+      const d = el.getAttribute("d");
+      if (d) return d;
+      const cx = +el.getAttribute("cx"), cy = +el.getAttribute("cy"), r = +el.getAttribute("r");   // a microstate's centroid dot
+      if (!(r > 0) || !isFinite(cx) || !isFinite(cy)) return "";
+      return `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
+    }
+    function _ooMapSyncOutline() {
+      const root = $("oo-coverage-map");
+      const svg = root && typeof root.querySelector === "function" ? root.querySelector("svg#oo-choro") : null;
+      if (!svg) return;
+      const old = svg.querySelector("#oomap-sel-outline");
+      if (old) old.remove();
+      if (!_ooMapSelIso) return;
+      let d = "";
+      svg.querySelectorAll("[data-iso]").forEach(el => {
+        if (el.getAttribute("data-iso") === _ooMapSelIso && !el.hasAttribute("data-oomap-disputed")) d += _ooMapOutlineD(el) + " ";
+      });
+      if (!d.trim()) return;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("id", "oomap-sel-outline");
+      path.setAttribute("class", "oomap-sel");
+      path.setAttribute("fill", "none");
+      path.setAttribute("pointer-events", "none");
+      path.setAttribute("d", d);
+      const labels = svg.querySelector("#oomap-labels");
+      if (labels) svg.insertBefore(path, labels); else svg.appendChild(path);
+    }
+    function ooMapCloseDetail() {
+      const host = $("oo-coverage-detail");
+      if (host) host.innerHTML = "";
+      _ooMapDetailLast = null;
+      _ooMapMarkSelected(null);
+    }
+    // After the map block re-rendered (a dimension switch, a layer, a language): the card
+    // and the outline are put back from what they showed, with no fetch and no scroll.
+    function _ooMapRestoreDetail() {
+      if (!_ooMapDetailLast) return;
+      repaintOoMapDetailFromCache();
+    }
     function repaintOoMapDetailFromCache() {
-      const host = $("oo-coverage-detail"), last = _ooMapDetailLast;
-      if (!last || !host || !host.firstElementChild) return;
+      const last = _ooMapDetailLast;
+      if (!last) return;
       _ooMapDetailRepaint = true;
       try {
-        if (last.kind === "country") _ooMapCountryDetail(last.row, last.dim);
+        if (last.kind === "country") _ooMapCountryDetail(last.row, last.dim, last.iso);
         else if (last.kind === "signal") _ooMapSignalDetail(last.s, last.visible, last.win);
       } finally { _ooMapDetailRepaint = false; }
     }
-    function _ooMapCountryDetail(row, dim) {
-      const host = $("oo-coverage-detail"); if (!host) return;
-      _ooMapDetailLast = { kind: "country", row, dim };
+    function _ooMapCountryDetail(row, dim, clickedIso) {
+      const host = _ooMapDetailHost(); if (!host) return;
+      const isoKey = (clickedIso || (row && row.country) || "").toLowerCase();
+      _ooMapDetailLast = { kind: "country", row, dim, iso: isoKey };
+      _ooMapMarkSelected(isoKey);
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-      if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
+      const closeBtn = `<button type="button" class="tiny ghost" style="margin-inline-start:auto" aria-label="${esc(t("Close"))}" title="${esc(t("Close"))}" data-on-click="ooMapCloseDetail()">×</button>`;
+      if (!row) {
+        host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2);display:flex;align-items:center;gap:8px">`
+          + (isoKey ? `<strong>${ooCountryCell(isoKey)}</strong> ` : "")
+          + `<span class="muted">${esc(t("No coverage recorded for this country yet."))}</span>${closeBtn}</div>`;
+        if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: _ooMapScrollBehavior(), block: "nearest" });
+        return;
+      }
       const iso = (row.country || "").toLowerCase();
       // The heading of a panel the reader OPENED: the code identifies it and the
       // title carries the name, which is the ordinary Q302 pair -- written through
@@ -2312,7 +2395,7 @@
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${esc(_ltrIsolate((row.sentiment >= 0 ? "+" : "") + fmtNum(row.sentiment, 2)))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
       host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <strong>${heading}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
+          <strong>${heading}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}${closeBtn}
         </div>
         <div style="margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px">
           ${line(t("Sources"), row.sources)}
@@ -2325,7 +2408,13 @@
           <button class="tiny secondary" data-on-click="showTab('sources')">${esc(t("Explore sources"))}</button>
         </div>
       </div>`;
-      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: _ooMapScrollBehavior(), block: "nearest" });
+    }
+    // Smooth unless the reader asked the system for less motion (the shared reveal
+    // pattern _exploreRevealAnalysis already follows).
+    function _ooMapScrollBehavior() {
+      try { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"; }
+      catch (_e) { return "smooth"; }
     }
     // Signal click-to-detail (slice 5a.2 — ported faithfully from the temporal map's
     // showTmapDetail so retiring #oo-tmap loses nothing): the event's kind/title,
@@ -2353,10 +2442,11 @@
       return out.sort((a, b) => a.score - b.score).slice(0, 6);
     }
     function _ooMapSignalDetail(s, visible, win) {
-      const host = $("oo-coverage-detail"); if (!host || !s) return;
+      const host = _ooMapDetailHost(); if (!host || !s) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       _ooMapSigSet = visible || []; _ooMapSigWin = win || 25;
       _ooMapDetailLast = { kind: "signal", s, visible, win };
+      _ooMapMarkSelected(null);   // a signal is not a country: no country stays outlined
       const url = s.url ? safeUrl(s.url) : null;
       // Item 2 (field-feedback A6, ruled): for a hazard, the composed search
       // combines TYPE + PLACE (two real, provider-asserted facts) rather than the
@@ -2407,7 +2497,7 @@
             <div style="margin-top:4px">${items}</div></div>`;
         })()}
       </div>`;
-      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: _ooMapScrollBehavior(), block: "nearest" });
     }
     // Item 3 (field-feedback A6, ruled): deep-link from the Home Alerts strip to
     // the World map, "centred on the event" -- switches to the map, selects the

@@ -377,15 +377,15 @@ def test_keep_and_discard_never_touch_the_local_row(tmp_path):
         assert s.query(ArticleTitleTranslation).one().title == "Ours"
 
 
-def test_there_is_no_way_to_make_an_imported_value_the_shown_one(tmp_path):
-    """The maintainer's rule: imported data never prevails. No action swaps a value in."""
+def test_a_restore_never_makes_an_imported_value_the_shown_one_by_itself(tmp_path):
+    """The maintainer's rule: imported data never prevails on its own. Showing the restore's value
+    is the operator's explicit ``swap`` (tests/test_alternates_swap.py); nothing else does it."""
     import src.backup.alternates as alt
 
-    assert not hasattr(alt, "adopt")
-    from src.api import backup_v2
-
-    paths = {getattr(r, "path", "") for r in backup_v2.router.routes}
-    assert not any(p.endswith("/adopt") for p in paths)
+    assert not hasattr(alt, "adopt"), "there is one way in, the reversible swap"
+    _, live = _live_with_a_title_difference(tmp_path)
+    with _corpus(live)() as s:
+        assert s.query(ArticleTitleTranslation).one().title == "Ours"
 
 
 def test_the_local_side_is_found_by_identity_and_is_the_newest_row(tmp_path):

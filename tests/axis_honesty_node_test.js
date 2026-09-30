@@ -124,6 +124,39 @@ test("degenerate inputs never throw or fabricate", () => {
 });
 
 // --------------------------------------------------------------------------- //
+// The journalist walk (2026-09-30): a 0-4 count axis was labelled 0, 1, 3, 4 -- the 2 was
+// snapped away, so the labels read as evenly spaced numbers that were not.
+// --------------------------------------------------------------------------- //
+test("a small COUNT axis is labelled at an even step (0-4 -> 0, 2, 4, never 0, 1, 3, 4)", () => {
+  assert(JSON.stringify(honestTicks(0, 4, 4, true)) === "[0,2,4]", JSON.stringify(honestTicks(0, 4, 4, true)));
+  assert(JSON.stringify(honestTicks(0, 10, 4, true)) === "[0,5,10]", JSON.stringify(honestTicks(0, 10, 4, true)));
+  assert(JSON.stringify(honestTicks(0, 5, 4, true)) === "[0,1,2,3,4,5]", JSON.stringify(honestTicks(0, 5, 4, true)));
+});
+
+test("every small integer range is either evenly stepped or falls back to the snapped ticks", () => {
+  for (let R = 2; R <= 60; R++) {
+    for (const want of [3, 4]) {
+      const t = honestTicks(0, R, want, true);
+      assert(t[0] === 0 && t[t.length - 1] === R, `the real extremes must stay ticks, 0..${R}: ${JSON.stringify(t)}`);
+      assert(t.every(Number.isInteger), `fractional tick on 0..${R}`);
+      const gaps = new Set(t.slice(1).map((v, i) => v - t[i]));
+      // Even spacing whenever an even step divides the range (composite, or small enough).
+      // (never more than twice the labels asked for: 0..7 with three wanted keeps its snapped ticks)
+      const divisors = [...Array(R).keys()].map((i) => i + 1)
+        .filter((s) => R % s === 0 && s <= R / 2 && R / s + 1 <= want * 2);
+      if (divisors.length) assert(gaps.size === 1, `uneven labels on 0..${R} (want=${want}): ${JSON.stringify(t)}`);
+      assert(t.length <= want * 2, `too many labels on 0..${R}: ${JSON.stringify(t)}`);
+    }
+  }
+});
+
+test("a range too wide to see a rounding error, and a prime one, keep the snapped ticks", () => {
+  assert(JSON.stringify(honestTicks(0, 23, 4, true)) === "[0,8,15,23]", JSON.stringify(honestTicks(0, 23, 4, true)));
+  const wide = honestTicks(0, 100000, 4, true);
+  assert(wide.length === 4 && wide[0] === 0 && wide[3] === 100000, JSON.stringify(wide));
+});
+
+// --------------------------------------------------------------------------- //
 // X labels: granularity follows the span, and duplicates are dropped by TEXT.
 // --------------------------------------------------------------------------- //
 test("two hourly points in one month do NOT both render '2026-07'", () => {
