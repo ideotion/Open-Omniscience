@@ -51,11 +51,15 @@ def review_decide(body: DecisionBody) -> dict:
 @router.get("/export")
 def review_export(language: str = Query(..., min_length=2, max_length=10), db: Session = Depends(get_db)) -> dict:
     """The language's decisions as a reviewed-batch YAML document to save. Applied nowhere."""
+    try:
+        text = review.export_batch(db, language)
+    except review.ReviewError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     state = review.review_state(db, language)
     return {
         "language": state["language"],
         "filename": f"stopword-review-{state['language']}.yml",
         "accepted": state["counts"]["accepted"],
         "rejected": state["counts"]["rejected"],
-        "yaml": review.export_batch(db, language),
+        "yaml": text,
     }

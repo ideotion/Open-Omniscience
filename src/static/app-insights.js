@@ -1156,7 +1156,7 @@
     // LOOPBACK read and write of this install's own state: no egress, so it is not
     // ensureOnline-gated. It never changes a stoplist and has no control that sets a kind
     // (R107). A refusal (a platform name, a translated concept) is the server's 409, shown in
-    // the server's own words beside the word instead of being hidden.
+    // the server's own words in the status line instead of being hidden.
     let _swrWired = false;
     function _swrLangLabel(code) {
       const name = (typeof ooLangName === "function") ? ooLangName(code, "") : "";

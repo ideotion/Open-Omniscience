@@ -159,8 +159,10 @@ def _already_listed(lang: str, term: str) -> bool:
 def _elsewhere(db: Any, lang: str, terms: list[str]) -> dict[str, list[dict[str, Any]]]:
     """Where else each spelling is a keyword on this install: the collision evidence.
 
-    One bounded query over the ``keywords`` table by ``normalized_term`` (indexed); a word
-    that is content in another language is exactly what a global list would hide there.
+    One bounded query over the ``keywords`` table by ``normalized_term`` (indexed, so the column
+    is compared as stored, never wrapped in ``lower()``, which would force a scan per chunk);
+    a non-entity keyword is stored lowercase already, as the candidates are. A word that is
+    content in another language is exactly what a global list would hide there.
     """
     if db is None or not terms:
         return {}
@@ -174,15 +176,15 @@ def _elsewhere(db: Any, lang: str, terms: list[str]) -> dict[str, list[dict[str,
         chunk = terms[i : i + 400]
         rows = db.execute(
             select(
-                func.lower(Keyword.normalized_term),
+                Keyword.normalized_term,
                 Keyword.language,
                 func.sum(Keyword.article_count),
             )
-            .where(func.lower(Keyword.normalized_term).in_(chunk))
+            .where(Keyword.normalized_term.in_(chunk))
             .where(Keyword.is_entity.is_not(True))
             .where(Keyword.language.is_not(None))
             .where(Keyword.language != lang)
-            .group_by(func.lower(Keyword.normalized_term), Keyword.language)
+            .group_by(Keyword.normalized_term, Keyword.language)
         ).all()
         for term, other, articles in rows:
             n = int(articles or 0)
@@ -331,17 +333,21 @@ def export_batch(db: Any, language: str) -> str:
     """
     state = review_state(db, language)
     lang = state["language"]
-    acc = [r for r in state["candidates"] if r["decision"] == "accept"]
+    if not state["batches"]:
+        raise ReviewError(f"no shipped batch for language {language!r}")
+    # A word accepted earlier that has since become a ring member or a platform name is left
+    # out: R102 and R104 outrank an old decision, and the screen shows it as blocked.
+    acc = [r for r in state["candidates"] if r["decision"] == "accept" and not r["blocked"]]
     rej = [r for r in state["candidates"] if r["decision"] == "reject"]
     lines = [
-        f"# Reviewed stopword batch, exported from this install for language '{lang}'.",
+        f"# Reviewed stopword batch, exported from this install for language {_yaml_scalar(lang)}.",
         f"# Exported {datetime.now(UTC).isoformat(timespec='seconds')}. Not applied anywhere:",
         "# a stoplist changes only in a release, merged from this file after the collision",
         "# check (a word hidden in one language may be content in another).",
-        f"language: {lang}",
+        f"language: {_yaml_scalar(lang)}",
         "reviewed_batches:",
     ]
-    lines += [f"  - {b['id']}" for b in state["batches"]] or ["  []"]
+    lines += [f"  - {_yaml_scalar(str(b['id']))}" for b in state["batches"]] or ["  []"]
     lines.append("accepted:")
     for r in acc:
         note = f"articles {r['articles']}, mentions {r['mentions']}, class {r['class']}, batch {r['batch']}"
@@ -360,7 +366,7 @@ def export_batch(db: Any, language: str) -> str:
 
 def _yaml_scalar(term: str) -> str:
     """A list item that survives YAML: quote anything YAML would read as a bool, number or null."""
-    dumped = yaml.safe_dump(term, allow_unicode=True, default_flow_style=True).strip()
+    dumped = yaml.safe_dump(term, allow_unicode=True, default_flow_style=True, width=float("inf")).strip()
     if dumped.endswith("\n..."):
         dumped = dumped[:-4].strip()
     return dumped.removesuffix("\n...").strip()

@@ -140,14 +140,34 @@ def test_the_export_is_yaml_text_with_accepted_and_rejected_words():
     assert parsed["accepted"] == ["permalink"] and parsed["rejected"] == ["follow"]
     assert parsed["reviewed_batches"] == ["en-test-a", "en-test-b"]
     assert "Not applied anywhere" in doc
-    empty = yaml.safe_load(sr.export_batch(None, "fr"))
-    assert empty["accepted"] == [] and empty["rejected"] == [] and empty["reviewed_batches"] == []
+    with pytest.raises(sr.ReviewError, match="no shipped batch"):
+        sr.export_batch(None, "fr")  # a language with no batch has nothing to export
+    with pytest.raises(sr.ReviewError):
+        sr.export_batch(None, "yes")  # never written into the document as a bare YAML word
 
 
 def test_a_word_yaml_would_misread_is_quoted_in_the_export(monkeypatch):
     assert yaml.safe_load("- " + sr._yaml_scalar("yes")) == ["yes"]
     assert yaml.safe_load("- " + sr._yaml_scalar("null")) == ["null"]
     assert yaml.safe_load("- " + sr._yaml_scalar("123")) == ["123"]
+
+
+def test_a_long_phrase_survives_the_export_unfolded():
+    phrase = " ".join(f"word{i}" for i in range(40))
+    assert yaml.safe_load("- " + sr._yaml_scalar(phrase)) == [phrase]
+
+
+def test_a_word_accepted_before_it_became_blocked_is_not_exported(monkeypatch):
+    sr.record_decision("en", "permalink", "accept")
+    assert yaml.safe_load(sr.export_batch(None, "en"))["accepted"] == ["permalink"]
+    _ring_member(monkeypatch, "en", "permalink")  # a regenerated ring file now holds it
+    assert yaml.safe_load(sr.export_batch(None, "en"))["accepted"] == []
+
+
+def test_the_review_configs_stay_out_of_the_engine_identity():
+    from src.analytics.engine_identity import ENGINE_DATA_GLOBS
+
+    assert not any("stopword_review" in g for g in ENGINE_DATA_GLOBS)
 
 
 def test_the_collision_evidence_reads_the_keywords_of_other_languages(tmp_path):
@@ -192,6 +212,7 @@ def test_the_routes_dispatch_and_the_refusal_is_a_409():
         body = exp.json()
         assert body["filename"] == "stopword-review-en.yml" and body["accepted"] == 1
         assert "accepted:" in body["yaml"]
+        assert c.get("/api/keywords/stopword-review/export", params={"language": "yes"}).status_code == 404
 
 
 def test_no_control_in_the_module_or_router_sets_a_kind():
