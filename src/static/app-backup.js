@@ -2424,7 +2424,7 @@
     // no labels to translate: a term with its languages, a date, a kind, a law document.
     function _altAbout(it) {
       const i = it.identity || {};
-      const arrow = " \u2192 ";   // the line sits in an auto-direction <bdi> that starts Latin, so LTR
+      const arrow = " \u2192 ";   // the language codes around it are Latin runs, so it reads left to right
       let bits = [];
       if (it.table === "keyword_translations") {
         bits = [i.term, [i.source_lang, i.target_lang].filter(Boolean).join(arrow)];
@@ -2470,26 +2470,38 @@
       return head + cards + more;
     }
 
-    let _altLimit = 50;
+    // The rows shown so far. A page is read by OFFSET and appended, so "Show more" never re-reads
+    // what is already on screen and has no ceiling of its own.
+    let _altRep = null;
 
-    function altMore() { _altLimit += 50; return loadAlternates(); }
+    async function _altFetch(offset) {
+      const sel = document.getElementById("alt-status");
+      return api("/api/backup/alternates?limit=50&offset=" + offset + "&status="
+        + encodeURIComponent(sel ? sel.value : "pending"));
+    }
 
-    async function loadAlternates() {
+    async function loadAlternates(more) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const host = document.getElementById("alt-body");
       if (!host) return;
-      const sel = document.getElementById("alt-status");
       try {
-        const rep = await api("/api/backup/alternates?limit=" + _altLimit + "&status=" + encodeURIComponent(sel ? sel.value : "pending"));
-        host.innerHTML = _altHtml(rep, t, tf);
+        if (more === true && _altRep) {
+          const page = await _altFetch(_altRep.items.length);
+          _altRep = Object.assign({}, page, { items: _altRep.items.concat(page.items) });
+        } else {
+          _altRep = await _altFetch(0);
+        }
+        host.innerHTML = _altHtml(_altRep, t, tf);
       } catch (e) {
         // A failed read is not "no differences": that would be a claim about the data.
         host.innerHTML = `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`;
       }
     }
+
+    function altMore() { return loadAlternates(true); }
 
     async function altAct(id, verb) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

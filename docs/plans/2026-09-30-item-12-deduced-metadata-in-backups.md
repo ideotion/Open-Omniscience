@@ -123,7 +123,7 @@ count confirmation. Every string ships in 12 languages. The reader's ≈ title a
 1. `metadata_alternates` migration, `provenance.py`, the `article_title_translations` handler, alternate
    capture in the six collision handlers, restore-report lines, tests (including a two-corpus restore proving
    local is byte-identical afterwards). Completeness tests updated (`_MERGE_NOT_CARRIED` loses the title table).
-2. Endpoints (`GET /api/backup/alternates`, `POST .../{id}/discard|adopt|keep`, batch discard) and the
+2. Endpoints (`GET /api/backup/alternates`, `POST .../{id}/keep|discard`, batch discard) and the
    Settings panel, checked by me in Chromium.
 3. Alternates travel in backups: each incoming alternate is re-attached to THIS corpus's row by its natural
    identity (never the exporter's ids), only if it still contradicts what this corpus holds, arriving pending

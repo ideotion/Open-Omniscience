@@ -524,3 +524,51 @@ def test_the_same_law_url_in_two_jurisdictions_is_two_items(tmp_path):
     assert set(items) == {"uk", "eu"}, "one alternate per document, not one for both"
     assert items["uk"]["local"]["summary"] == "UK-OURS"
     assert items["eu"]["local"]["summary"] == "EU-OURS"
+
+
+def test_a_law_alternate_recorded_before_jurisdiction_joined_the_identity_still_finds_its_row(tmp_path):
+    from src.backup.alternates import list_alternates
+
+    def add(summary):
+        def f(s):
+            doc = LawDocument(jurisdiction="uk", title="Act", url="https://example.uk/act")
+            s.add(doc)
+            s.flush()
+            rev = LawRevision(document_id=doc.id, observed_at=_T0, content_hash="ch1", full_text="T")
+            s.add(rev)
+            s.flush()
+            s.add(LawRevisionSummary(revision_id=rev.id, summary=summary, model="m1",
+                                     prompt_version="v1", created_at=_T0))
+        return f
+
+    _, _, live, _ = _two(tmp_path, add("THEIRS"), add("OURS"))
+    with _corpus(live)() as s:
+        alt = s.query(MetadataAlternate).one()
+        ident = json.loads(alt.identity)
+        del ident["jurisdiction"]
+        alt.identity = json.dumps(ident)
+        s.commit()
+        [item] = list_alternates(s)["items"]
+    assert item["local"]["summary"] == "OURS", "an old identity is not 'the row is gone'"
+
+
+def test_the_list_pages_by_offset_without_repeating_or_skipping(tmp_path):
+    from src.backup.alternates import list_alternates
+
+    def inc(s):
+        for n in range(7):
+            s.add(KeywordTranslation(term=f"t{n}", source_lang="fr", target_lang="en",
+                                     text=f"in{n}", model="m1", prompt_version="v1", created_at=_T0))
+
+    def loc(s):
+        for n in range(7):
+            s.add(KeywordTranslation(term=f"t{n}", source_lang="fr", target_lang="en",
+                                     text=f"loc{n}", model="m1", prompt_version="v1", created_at=_T0))
+
+    _, _, live, _ = _two(tmp_path, inc, loc)
+    with _corpus(live)() as s:
+        first = list_alternates(s, limit=3, offset=0)
+        second = list_alternates(s, limit=3, offset=3)
+        third = list_alternates(s, limit=3, offset=6)
+    ids = [i["id"] for r in (first, second, third) for i in r["items"]]
+    assert first["total"] == 7 and len(ids) == 7 and len(set(ids)) == 7

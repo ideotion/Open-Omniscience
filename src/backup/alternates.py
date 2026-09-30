@@ -67,9 +67,12 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
             " JOIN law_revisions r ON r.id = t.revision_id"
             " JOIN law_documents d ON d.id = r.document_id"
         )
-        where.append("d.jurisdiction = :jurisdiction AND d.url = :document_url"
-                     " AND r.content_hash = :revision_content_hash")
-        params["jurisdiction"] = identity.get("jurisdiction")
+        where.append("d.url = :document_url AND r.content_hash = :revision_content_hash")
+        # An alternate recorded before the jurisdiction joined the identity has none: the newest
+        # matching row is then the best available answer, never "gone".
+        if identity.get("jurisdiction"):
+            where.append("d.jurisdiction = :jurisdiction")
+            params["jurisdiction"] = identity["jurisdiction"]
         params["document_url"] = identity.get("document_url")
         params["revision_content_hash"] = identity.get("revision_content_hash")
     for i, (name, column) in enumerate(spec["match"].items()):
