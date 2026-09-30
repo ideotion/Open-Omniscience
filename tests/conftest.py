@@ -36,6 +36,10 @@ atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
+# Never start the offline-maintenance timer either: the boot-upkeep tests that unset
+# OO_NO_SCHEDULER would otherwise leave a daemon that runs real maintenance against
+# whatever test database is current 180 s later, in the middle of the suite.
+os.environ.setdefault("OO_OFFLINE_MAINTENANCE", "0")
 # Never START a real Ollama/vLLM server during tests. A sweep's failure path now asks
 # the activation layer to bring its backend back up (field report 2026-08-04), which is
 # right in production and would spawn a daemon here on any machine that HAS one

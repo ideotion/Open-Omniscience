@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,ui,Restore the locale key the claim trail's save message still draws (main's red test after #1240),shipped,PR #1248,src/static/locales/*.json; tests/test_claim_workspace.py,"#1240's review fix removed the string 'Saved {file}: {n} articles, {size}.' from the 12 locales although app-claim.js still draws it in the claim trail's save message; test_claim_workspace's every-string test went red on main. The key is back in all 12 locales (port of d15304b3 from #1245, which keeps the same change)."

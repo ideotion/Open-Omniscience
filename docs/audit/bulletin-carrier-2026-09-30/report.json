@@ -1,0 +1,33 @@
+{
+ "osm_hint": "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.",
+ "osm_pick_options": 1,
+ "period_dropdown_picks": [
+  [
+   "daily",
+   "daily"
+  ],
+  [
+   "weekly",
+   "weekly"
+  ],
+  [
+   "monthly",
+   "monthly"
+  ],
+  [
+   "trimester",
+   "trimester"
+  ],
+  [
+   "semester",
+   "semester"
+  ],
+  [
+   "yearly",
+   "yearly"
+  ]
+ ],
+ "html_has_credit": true,
+ "errors": [],
+ "blocked_non_loopback": []
+}

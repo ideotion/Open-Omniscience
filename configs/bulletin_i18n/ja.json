@@ -393,5 +393,11 @@
   "Mentions": "言及",
 
   "“{translation}” (translated from {language}: {term})": "「{translation}」（{language} からの翻訳: {term}）",
-  "{term} (in {language})": "{term}（{language}）"
+  "{term} (in {language})": "{term}（{language}）",
+
+  "osm tag completeness": "OpenStreetMap タグの充足度",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "この国のメタデータを持つ場所（OSM レーンが「poi」として保持するオブジェクト）のうち、各タグを持つものの数です。タグ本体またはその contact:* の対（contact:website、contact:email、contact:phone）に空でない値があれば数えます。4 つのキーは別々に数え、合算しません。",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "タグがないことは、OpenStreetMap がそれを記録していないという意味で、その場所に存在しないという意味ではありません。充足度は地域がどれだけ活発にマッピングされているかで変わります。数値は、抽出データをその版の時点で示しています。"
 }

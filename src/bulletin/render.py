@@ -1559,6 +1559,17 @@ def render_html(edition: dict, *, lang: str = "en", tr: Translator | None = None
         elif line.startswith("### "):
             body.append(f"<h3>{_e(line[4:])}</h3>")
 
+    # THE LICENCE LINES (Q1008 = a), the same block the Markdown carries, read off the same
+    # record. The HTML view is the default one, so a document that shows an OpenStreetMap
+    # card there without «© OpenStreetMap contributors» and the ODbL line would break Q823 = a.
+    for line in _md_attribution(edition, T):
+        if line.startswith("## "):
+            body.append(f"<h2>{_e(line[3:])}</h2>")
+        elif line.startswith("- "):
+            body.append(f'<p class="meta">{_e(line[2:])}</p>')
+        elif line:
+            body.append(f'<p class="meta">{_e(line)}</p>')
+
     body.append(
         "<footer>"
         + _e(

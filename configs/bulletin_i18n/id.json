@@ -393,5 +393,11 @@
   "Mentions": "Penyebutan",
 
   "“{translation}” (translated from {language}: {term})": "“{translation}” (diterjemahkan dari {language}: {term})",
-  "{term} (in {language})": "{term} (dalam {language})"
+  "{term} (in {language})": "{term} (dalam {language})",
+
+  "osm tag completeness": "Kelengkapan tag OpenStreetMap",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "Dari tempat di negara ini yang memiliki metadata (objek yang disimpan sebagai ‘poi’ oleh jalur OSM), jumlah yang memuat setiap tag. Sebuah tag dihitung bila ia, atau kembarannya contact:* (contact:website, contact:email, contact:phone), bernilai tidak kosong. Keempat kunci dihitung terpisah dan tidak pernah digabung.",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "Tag yang hilang berarti OpenStreetMap tidak mencatatnya, bukan berarti tempat itu tidak memilikinya. Kelengkapan bergantung pada seberapa aktif suatu wilayah dipetakan. Angka-angkanya menggambarkan ekstrak pada masa terbitnya."
 }

@@ -393,5 +393,11 @@
   "Mentions": "提及",
 
   "“{translation}” (translated from {language}: {term})": "“{translation}”（译自 {language}：{term}）",
-  "{term} (in {language})": "{term}（{language}）"
+  "{term} (in {language})": "{term}（{language}）",
+
+  "osm tag completeness": "OpenStreetMap 标签完整度",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "在该国带有元数据的地点中（OSM 通道保留为“poi”的对象），带有各个标签的数量。标签本身或其 contact:* 对应标签（contact:website、contact:email、contact:phone）有非空值即计入。四个键分别统计，从不合并。",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "标签缺失表示 OpenStreetMap 没有记录它，并不表示该地点没有它。完整度取决于一个地区被绘制得有多活跃。这些数字描述的是该版本时点的提取数据。"
 }
