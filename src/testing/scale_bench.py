@@ -248,6 +248,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_law_source_type,
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
+        ensure_merged_rows_row_key_column,
         ensure_source_catalog_baseline_column,
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
@@ -293,6 +294,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_source_counter_columns(engine)
     ensure_source_qualification_columns(engine)
     ensure_source_last_crawled_column(engine)
+    ensure_merged_rows_row_key_column(engine)
     analyze = optimize_at_boot(engine)
     return {"hot_indexes_created": created, "analyze": analyze}
 

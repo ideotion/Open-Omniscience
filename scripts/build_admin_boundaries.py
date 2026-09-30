@@ -28,6 +28,10 @@ THE VINTAGE: the date of the OSM data is read from the file's own header
 neither needs ``--vintage YYYY-MM-DD``; the build refuses to write a border with no
 "as of".
 
+It also writes ``src/static/osm_borders/`` (a small world file plus one detail file per country,
+``scripts/split_admin_boundaries.py``), which is what the map loads; ``--no-split`` skips it and removes the previous one, which would
+describe an older build.
+
 Then record each artifact's sha256 and ``last_verified`` in
 ``configs/external_artifacts.yml`` (entries ``osm-admin0-boundaries`` and
 ``osm-admin1-boundaries``); the report printed here gives the counts the PR states.
@@ -105,6 +109,38 @@ def _write(doc: dict, path: Path) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def write_outputs(admin0: dict, admin1: dict, out: Path, *, no_split: bool = False) -> None:
+    """Write the two whole artifacts and keep ``osm_borders/`` in step with them (or remove it)."""
+    from scripts.split_admin_boundaries import remove_split, write_split
+    from src.timemap.admin_split import WORLD_PRECISION, WORLD_VERTEX_BUDGET
+
+    s0 = _write(admin0, out / OUT_ADMIN0)
+    s1 = _write(admin1, out / OUT_ADMIN1)
+    print(f"Wrote {out / OUT_ADMIN0}  sha256 {s0}", file=sys.stderr)
+    print(f"Wrote {out / OUT_ADMIN1}  sha256 {s1}", file=sys.stderr)
+    if no_split:
+        # A world file from the PREVIOUS build would be read first by the map and would outrank the
+        # whole files just written, so skipping the split removes it rather than leaving it stale.
+        if remove_split(out):
+            print(f"Removed the previous {out / 'osm_borders'} (it described the old build).", file=sys.stderr)
+        return
+    # The map loads the split (a small world file, then a country's detail as it zooms in); the two
+    # whole files stay what the server reads. One run keeps all three in step.
+    try:
+        rep = write_split(admin0, admin1, out, budget=WORLD_VERTEX_BUDGET, precision=WORLD_PRECISION)
+    except BaseException:
+        # The whole files above are already the NEW build. A split left from the previous one would be
+        # read FIRST by the map and draw the old borders under the new "as of": remove it, so the map
+        # falls back to the whole files, and let the failure through.
+        remove_split(out)
+        print("The split failed; the previous osm_borders/ was removed so the map reads the new whole "
+              "files. Run scripts/split_admin_boundaries.py once the cause is fixed.", file=sys.stderr)
+        raise
+    print(json.dumps({"split": {k: v for k, v in rep.items() if k != "sha256"}}, indent=2))
+    for w in rep.get("warnings", []):
+        print("WARNING:", w, file=sys.stderr)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pbf", help="a local OpenStreetMap .osm.pbf (planet or extract), boundaries filtered")
@@ -116,6 +152,8 @@ def main() -> int:
     ap.add_argument("--admin1-cap", type=int, default=ADMIN1_VERTEX_CAP, help="vertices per region")
     ap.add_argument("--contested-cap", type=int, default=CONTESTED_VERTEX_CAP, help="vertices per contested area")
     ap.add_argument("--out-dir", default=str(_STATIC), help="where the two JSON files go")
+    ap.add_argument("--no-split", action="store_true",
+                    help="do not write the map's world + per-country detail files (scripts/split_admin_boundaries.py)")
     ap.add_argument("--dry-run", action="store_true", help="report counts and sizes, write nothing")
     args = ap.parse_args()
 
@@ -148,11 +186,7 @@ def main() -> int:
     print(json.dumps(report, indent=2, ensure_ascii=False))
     if args.dry_run:
         return 0
-    out = Path(args.out_dir)
-    s0 = _write(admin0, out / OUT_ADMIN0)
-    s1 = _write(admin1, out / OUT_ADMIN1)
-    print(f"Wrote {out / OUT_ADMIN0}  sha256 {s0}", file=sys.stderr)
-    print(f"Wrote {out / OUT_ADMIN1}  sha256 {s1}", file=sys.stderr)
+    write_outputs(admin0, admin1, Path(args.out_dir), no_split=args.no_split)
     print("Record both sha256 values and last_verified in configs/external_artifacts.yml.", file=sys.stderr)
     return 0
 
