@@ -367,7 +367,9 @@ def test_pass_budgets_follow_the_machine_and_never_drop_below_the_setting():
     big = q.adaptive_pass_budgets(5, 2, available_mb=16000.0, cpus=8)
     assert big["new"] == 48 and big["rechecks"] == 24 and big["auto"] is True
     huge = q.adaptive_pass_budgets(5, 2, available_mb=200000.0, cpus=64)
-    assert (huge["new"], huge["rechecks"]) == (60, 30), "generous, but not unbounded"
+    assert (huge["new"], huge["rechecks"]) == (384, 192), "no fixed ceiling: cores x 6 slots"
+    ram_bound = q.adaptive_pass_budgets(5, 2, available_mb=3000.0, cpus=64)
+    assert ram_bound["new"] == 30, "memory bounds it before the cores do"
     pinned_up = q.adaptive_pass_budgets(80, 40, available_mb=500.0, cpus=1)
     assert (pinned_up["new"], pinned_up["rechecks"]) == (80, 40), "the setting is a floor"
 
@@ -431,7 +433,7 @@ def test_a_candidates_read_is_its_newest_articles_and_no_more():
 
 def test_the_pass_reports_how_many_candidates_hit_the_read_cap(machine, monkeypatch):
     machine(*BIG_BOX)
-    monkeypatch.setattr(q, "QUALIFICATION_HISTORY_ARTICLES", 25)
+    monkeypatch.setattr(q, "candidate_history_cap", lambda n, **k: 25)
     s = _session()
     _seed_healthy_en_cohort(s)
     cand = _add_candidate_with_articles(s, domain="big.example", status=q.STATUS_UNQUALIFIED,
@@ -494,3 +496,13 @@ def test_a_source_under_the_cap_draws_the_same_furniture_sample_as_before():
     unbounded = sa2.sq_source_to_articles(s, source_ids={sid})[sid]
     bounded = sa2.sq_source_to_articles(s, source_ids={sid}, per_source_recent=50)[sid]
     assert bounded == unbounded == sorted(a for (a,) in s.query(Article.id))
+
+
+def test_the_candidate_read_bound_is_sized_from_available_memory():
+    small = q.candidate_history_cap(5, available_mb=900.0)
+    big = q.candidate_history_cap(5, available_mb=64000.0)
+    assert small >= q.QUALIFICATION_HISTORY_FALLBACK
+    assert big > 100 * small, "a large machine is not held to a small machine's number"
+    more = q.candidate_history_cap(50, available_mb=64000.0)
+    assert more < big, "the read budget is shared by the pass's candidates"
+    assert q.candidate_history_cap(5, available_mb=50.0) == q.QUALIFICATION_HISTORY_FALLBACK

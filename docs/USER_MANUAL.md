@@ -600,10 +600,11 @@ the next one joins the queue.
 
 **How many sources a pass judges** grows with the machine (ruling R95): the two numbers in
 Settings → Scheduler (*qualification per pass*, *qualification re-checks per pass*) are a
-minimum, and while *qualification budget auto* is on (the default) a machine with the memory
-and cores for it judges up to 60 new sources and 30 re-checks per pass. A 0 still switches a
-lane off; switching auto off pins the numbers exactly. Each candidate is judged on its newest
-2,000 articles, and the pass says how many candidates that cap applied to.
+minimum, and while *qualification budget auto* is on (the default) each pass judges as many
+new sources and re-checks as the machine's memory and cores carry, with no fixed ceiling. A
+setting below the defaults, or 0, is kept as given; switching auto off pins the numbers
+exactly. Each candidate is judged on its newest articles, as many as the memory available can
+hold (at least 2,000), and the pass says how many candidates that bound applied to.
 
 **On a small machine** (less memory than the app's scan floor), a pass judges candidates
 against a **sample of the newest 20,000 articles** instead of the whole corpus, and the

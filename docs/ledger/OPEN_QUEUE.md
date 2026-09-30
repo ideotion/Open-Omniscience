@@ -1031,8 +1031,8 @@
   — 6,200+ qualified sources every 3 months is ~70 re-checks a day, and 2 per pass at the
   field's pass rate is ~30 to 40; the queue view shows the due count, so a shortfall is
   visible rather than silent; **BUILT 2026-09-30 (R95): both budgets are now a floor that grows
-  with the machine (up to 60 new and 30 re-checks per pass), and a candidate's read is capped at
-  its newest 2,000 articles**; (3) **RC06** (how far back a re-check looks) waits on this work and is not
+  with the machine (memory and cores, no fixed ceiling), and a candidate's read is bounded to a
+  number of its newest articles sized from available memory (at least 2,000)**; (3) **RC06** (how far back a re-check looks) waits on this work and is not
   answered by it; (4) a sampled verdict is judged against a baseline of the newest 20,000
   articles, labelled `+sample`; nothing re-judges it when the machine later has the memory.
 - **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,

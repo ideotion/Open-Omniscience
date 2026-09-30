@@ -97,21 +97,47 @@ CRITERIA_VERSION_SAMPLED = CRITERIA_VERSION + "+sample"
 # articles is a stable baseline; the whole history was never needed for one.
 QUALIFICATION_SAMPLE_ARTICLES = 20_000
 
-# How many of a CANDIDATE'S OWN newest articles the scoped read takes (2026-09-30, follow-up to
-# R93). Judging N candidates at once used to materialise every candidate's whole history, and
-# the candidates that matter most for re-checks are the long-lived ones (hundreds of thousands
-# of articles each). A source's extraction quality shows in its recent articles -- the same
-# reason the re-check reads a recency window -- so the newest 2,000 are the evidence, and
-# `run_qualification_pass` says how many candidates were capped rather than letting the cap
-# pass for the whole history.
-QUALIFICATION_HISTORY_ARTICLES = 2_000
+# A CANDIDATE'S OWN read is bounded to its newest articles (2026-09-30, follow-up to R93):
+# judging N candidates at once used to materialise every candidate's whole history, and the
+# candidates that matter most for re-checks are the long-lived ones (hundreds of thousands of
+# articles each). The bound is SIZED FROM THE MACHINE (`candidate_history_cap`): half of the
+# memory available, less the scan's fixed overhead, divided by the floor's own measured cost
+# per article and by the number of candidates in the pass. The constant below is the fallback
+# for a machine whose memory cannot be read, and the least a candidate is ever given.
+QUALIFICATION_HISTORY_FALLBACK = 2_000
+_HISTORY_MEMORY_SHARE = 0.5  # of the available memory a pass may spend on candidate reads
 
 # The adaptive per-pass budgets (maintainer preference 2026-09-29: no fixed caps, limits
-# follow the hardware, generous defaults). The configured settings are the FLOOR.
-_AUTO_NEW_MIN, _AUTO_NEW_MAX = 5, 60
-_AUTO_RECHECK_MIN, _AUTO_RECHECK_MAX = 2, 30
+# follow the hardware, generous defaults). The configured settings are the FLOOR, and the
+# only fixed numbers left are the shipped defaults below, which are that floor.
+_AUTO_NEW_MIN = 5
+_AUTO_RECHECK_MIN = 2
 _AUTO_MB_PER_SLOT = 100.0   # available memory one candidate slot is allowed to claim
 _AUTO_SLOTS_PER_CORE = 6    # trial fetches wait on the network, so a core carries several
+
+
+def candidate_history_cap(n_candidates: int, *, available_mb: float | None = None) -> int:
+    """How many of its newest articles each of ``n_candidates`` may be read from this pass.
+
+    The pass may spend ``_HISTORY_MEMORY_SHARE`` of the memory available, less the scan's
+    fixed overhead, at the floor's measured cost per article; that budget is shared by the
+    candidates. On a large machine this is effectively the whole history, on a small one a
+    few thousand, and it is never below ``QUALIFICATION_HISTORY_FALLBACK`` (a candidate is
+    always given at least the fallback's worth of evidence) -- which is also what an unreadable
+    machine gets. The memory guard's pause still applies inside the read.
+    """
+    if available_mb is None:
+        from src.config.machine_floor import _mem_readings
+
+        available_mb = _mem_readings()[1]
+    if available_mb is None:
+        return QUALIFICATION_HISTORY_FALLBACK
+    from src.config.machine_floor import scan_need_mb
+
+    per_article_mb = (scan_need_mb(1_000_000) - scan_need_mb(0)) / 1_000_000
+    budget_mb = available_mb * _HISTORY_MEMORY_SHARE - scan_need_mb(0)
+    share = int(budget_mb / per_article_mb / max(1, int(n_candidates))) if budget_mb > 0 else 0
+    return max(QUALIFICATION_HISTORY_FALLBACK, share)
 
 
 def effective_qualification_budgets(settings) -> tuple[int, int]:
@@ -137,7 +163,7 @@ def adaptive_pass_budgets(
     An explicit 0 stays 0 (that is how an operator switches a lane off), and an unreadable
     machine returns the configured numbers unchanged. The ceiling is memory / cores because
     that is what a pass actually spends: the scoped read of each candidate (bounded by
-    ``QUALIFICATION_HISTORY_ARTICLES``) and the trial fetches. The memory guard's pause still
+    ``candidate_history_cap``) and the trial fetches. The memory guard's pause still
     applies inside the pass, so a generous budget is still given up under pressure.
     """
     if available_mb is None:
@@ -155,8 +181,8 @@ def adaptive_pass_budgets(
     # 2, an operator may write 1) and is kept as given: auto grows a budget, it never overrides
     # someone who asked for less.
     slots = int(min(cpus * _AUTO_SLOTS_PER_CORE, available_mb // _AUTO_MB_PER_SLOT))
-    auto_new = max(_AUTO_NEW_MIN, min(_AUTO_NEW_MAX, slots))
-    auto_rech = max(_AUTO_RECHECK_MIN, min(_AUTO_RECHECK_MAX, auto_new // 2))
+    auto_new = max(_AUTO_NEW_MIN, slots)
+    auto_rech = max(_AUTO_RECHECK_MIN, auto_new // 2)
     return {
         "new": max(new, auto_new) if new >= _AUTO_NEW_MIN else new,
         "rechecks": max(rech, auto_rech) if rech >= _AUTO_RECHECK_MIN else rech,
@@ -1457,10 +1483,11 @@ def run_qualification_pass(
             f"judges at {TRIAL_MIN_ARTICLES} -- a cut frozen at another threshold is a "
             "different baseline"
         )
+    history_cap = candidate_history_cap(len(candidates))
     try:
         per = sa.scoped_metrics(
             session, {int(s.id) for s in candidates}, frozen, should_pause=should_pause,
-            per_source_recent=QUALIFICATION_HISTORY_ARTICLES,
+            per_source_recent=history_cap,
         )
     except sq.ScanPaused as exc:
         # S5.2: nothing is stamped from a paused scan. The candidates keep whatever status
@@ -1530,9 +1557,9 @@ def run_qualification_pass(
         "criteria_version": criteria_version,
         # Candidates whose stored history reached the read cap: their verdict rests on their
         # newest `history_cap` articles, not on everything stored.
-        "history_cap": QUALIFICATION_HISTORY_ARTICLES,
+        "history_cap": history_cap,
         "history_capped": sum(
-            1 for m in per.values() if int(m.get("article_count") or 0) >= QUALIFICATION_HISTORY_ARTICLES
+            1 for m in per.values() if int(m.get("article_count") or 0) >= history_cap
         ),
         **tally,
     }

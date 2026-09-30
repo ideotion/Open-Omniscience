@@ -183,8 +183,8 @@ class SchedulerSettings:
 
     # The two numbers above are a FLOOR, not a cap (maintainer preference 2026-09-29: no
     # fixed caps; limits follow the hardware). While this is on, each pass runs
-    # `qualification.adaptive_pass_budgets` -- up to 60 new candidates and 30 re-checks on a
-    # machine with the memory and cores for it, and exactly the configured numbers when the
+    # `qualification.adaptive_pass_budgets` -- as many new candidates and re-checks as
+    # the machine's memory and cores carry (no fixed ceiling), and exactly the configured numbers when the
     # machine cannot be read. An explicit 0 still switches that lane off. Turn it off to pin
     # the configured numbers exactly.
     qualification_budget_auto: bool = True
