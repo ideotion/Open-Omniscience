@@ -79,6 +79,8 @@ class SchedulerConfigUpdate(BaseModel):
     # backlog. 0 disables re-verification. Absent from this model = silently unwritable,
     # since save_settings only sees the fields the body declares.
     qualification_recheck_per_pass: int | None = None
+    # Grow the two budgets above to the machine (R95); off pins them exactly.
+    qualification_budget_auto: bool | None = None
     # SCRAPING SCOPE. Absent from this model = silently unwritable, the trap named on
     # qualification_recheck_per_pass above.
     #

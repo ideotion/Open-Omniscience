@@ -114,6 +114,19 @@ _AUTO_MB_PER_SLOT = 100.0   # available memory one candidate slot is allowed to 
 _AUTO_SLOTS_PER_CORE = 6    # trial fetches wait on the network, so a core carries several
 
 
+def effective_qualification_budgets(settings) -> tuple[int, int]:
+    """(new, re-checks) per pass the lane actually runs for ``settings``: the configured
+    numbers, grown to the machine while ``qualification_budget_auto`` is on. ONE definition,
+    so the lane, the queue view, the activity ledger and the Quality gates panel cannot
+    quote different budgets for the same pass."""
+    new = int(getattr(settings, "qualification_per_pass", 0))
+    rech = int(getattr(settings, "qualification_recheck_per_pass", 0))
+    if getattr(settings, "qualification_budget_auto", False):
+        b = adaptive_pass_budgets(new, rech)
+        return b["new"], b["rechecks"]
+    return new, rech
+
+
 def adaptive_pass_budgets(
     configured_new: int, configured_recheck: int, *,
     available_mb: float | None = None, cpus: int | None = None,
@@ -138,12 +151,15 @@ def adaptive_pass_budgets(
     new, rech = int(configured_new), int(configured_recheck)
     if available_mb is None:
         return {"new": new, "rechecks": rech, "auto": False, "available_mb": None, "cpus": cpus}
+    # A number BELOW the shipped default is a deliberate lowering (the low power profile writes
+    # 2, an operator may write 1) and is kept as given: auto grows a budget, it never overrides
+    # someone who asked for less.
     slots = int(min(cpus * _AUTO_SLOTS_PER_CORE, available_mb // _AUTO_MB_PER_SLOT))
     auto_new = max(_AUTO_NEW_MIN, min(_AUTO_NEW_MAX, slots))
     auto_rech = max(_AUTO_RECHECK_MIN, min(_AUTO_RECHECK_MAX, auto_new // 2))
     return {
-        "new": max(new, auto_new) if new > 0 else 0,
-        "rechecks": max(rech, auto_rech) if rech > 0 else 0,
+        "new": max(new, auto_new) if new >= _AUTO_NEW_MIN else new,
+        "rechecks": max(rech, auto_rech) if rech >= _AUTO_RECHECK_MIN else rech,
         "auto": True, "available_mb": round(float(available_mb), 1), "cpus": cpus,
     }
 

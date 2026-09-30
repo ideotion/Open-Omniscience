@@ -836,6 +836,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
         )
+    if "qualification_budget_auto" in updates and updates["qualification_budget_auto"] is not None:
+        current.qualification_budget_auto = _coerce_bool(
+            updates["qualification_budget_auto"], current.qualification_budget_auto
+        )
     if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
         current.scrape_app_provided_only = _coerce_bool(
             updates["scrape_app_provided_only"], current.scrape_app_provided_only

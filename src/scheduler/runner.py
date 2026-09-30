@@ -1358,14 +1358,10 @@ def _lane_step_world_discovery(session, fetcher, settings: SchedulerSettings) ->
 
 
 def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> dict:
-    from src.catalog.qualification import adaptive_pass_budgets, advance_qualification
+    from src.catalog.qualification import advance_qualification, effective_qualification_budgets
     from src.monitoring import tasks as _bgtasks
 
-    new_n = settings.qualification_per_pass
-    recheck = getattr(settings, "qualification_recheck_per_pass", 0)
-    if getattr(settings, "qualification_budget_auto", False):
-        b = adaptive_pass_budgets(new_n, recheck)
-        new_n, recheck = b["new"], b["rechecks"]
+    new_n, recheck = effective_qualification_budgets(settings)
     tok = _bgtasks.register(
         "qualification", "qualifying candidate sources",
         detail=(

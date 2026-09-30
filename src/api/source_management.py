@@ -1908,15 +1908,13 @@ def _floor_note_parts(criterion: dict, floor_status: dict) -> list[str]:
 def qualification_queue_view(db: Session = Depends(get_db)) -> dict:
     """The qualification QUEUE (R94, 2026-09-29): new candidates first, then due re-checks,
     in the order the pass takes them. Read-only; counts and domains, never a score."""
-    from src.catalog.qualification import adaptive_pass_budgets, qualification_queue
+    from src.catalog.qualification import effective_qualification_budgets, qualification_queue
     from src.scheduler.settings import load_settings
 
     settings = load_settings()
-    per_pass = {"new": settings.qualification_per_pass,
-                "rechecks": settings.qualification_recheck_per_pass, "auto": False}
-    if settings.qualification_budget_auto:
-        b = adaptive_pass_budgets(per_pass["new"], per_pass["rechecks"])
-        per_pass = {"new": b["new"], "rechecks": b["rechecks"], "auto": b["auto"]}
+    new_n, rech_n = effective_qualification_budgets(settings)
+    per_pass = {"new": new_n, "rechecks": rech_n,
+                "auto": bool(settings.qualification_budget_auto)}
     return {
         **qualification_queue(db, recheck_per_pass=per_pass["rechecks"]),
         "per_pass": per_pass,
@@ -1962,9 +1960,15 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
     from src.scheduler.settings import load_settings, retired_settings_disclosures
 
     settings = load_settings()
+    from src.catalog.qualification import effective_qualification_budgets
+
+    eff_new, eff_rech = effective_qualification_budgets(settings)
     current = {
         "qualification_per_pass": settings.qualification_per_pass,
         "qualification_recheck_per_pass": settings.qualification_recheck_per_pass,
+        "qualification_budget_auto": settings.qualification_budget_auto,
+        "qualification_effective_per_pass": eff_new,
+        "qualification_effective_recheck_per_pass": eff_rech,
         "min_source_articles": MIN_SOURCE_ARTICLES,
         "source_cohort_floor": SOURCE_COHORT_FLOOR,
         "tail_p": TAIL_P,
@@ -2098,7 +2102,7 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         # applies -- and until 2026-09-04 the engine applied no re-verification at all.
         "recheck": {
             "qualified_months": QUALIFIED_RECHECK_MONTHS,
-            "per_pass": settings.qualification_recheck_per_pass,
+            "per_pass": eff_rech,
             "note": (
                 "A QUALIFIED verdict is re-checked on a flat clock, never the disqualified "
                 "ladder's doubling. Re-checks draw on their OWN per-pass budget: while they "

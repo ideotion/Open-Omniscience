@@ -439,3 +439,58 @@ def test_the_pass_reports_how_many_candidates_hit_the_read_cap(machine, monkeypa
     _many_articles(s, cand.id, 40)
     out = q.run_qualification_pass(s, fetcher=None, per_pass=5)
     assert out["history_cap"] == 25 and out["history_capped"] == 1
+
+
+def test_a_deliberately_lowered_budget_is_kept_even_on_a_big_machine():
+    """The low power profile writes 2, an operator may write 1: auto grows, never overrides."""
+    out = q.adaptive_pass_budgets(2, 1, available_mb=16000.0, cpus=8)
+    assert (out["new"], out["rechecks"]) == (2, 1)
+
+
+def test_auto_can_be_switched_off_through_the_settings_api(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    with TestClient(app) as c:
+        assert c.get("/api/scheduler/config").json().get("qualification_budget_auto") is True
+        r = c.put("/api/scheduler/config", json={"qualification_budget_auto": False})
+        assert r.status_code == 200
+        assert c.get("/api/scheduler/config").json()["qualification_budget_auto"] is False
+
+
+def test_every_surface_quotes_the_budgets_the_lane_runs(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.monitoring import activity_ledger as al
+
+    monkeypatch.setattr(q, "adaptive_pass_budgets", lambda n, r, **k: {
+        "new": 33, "rechecks": 11, "auto": True, "available_mb": 1.0, "cpus": 1})
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    with TestClient(app) as c:
+        pp = c.get("/api/sources/qualification/queue").json()["per_pass"]
+        assert (pp["new"], pp["rechecks"], pp["auto"]) == (33, 11, True)
+        cfg = c.get("/api/sources/qualification/config").json()
+        assert cfg["recheck"]["per_pass"] == 11
+    st = SimpleNamespace(qualification_per_pass=5, qualification_recheck_per_pass=2,
+                         qualification_budget_auto=True)
+    assert al._qualification_budget(st, 0) == 33 and al._qualification_budget(st, 1) == 11
+
+
+def test_a_source_under_the_cap_draws_the_same_furniture_sample_as_before():
+    from src.analytics import source_audit as sa2
+    from src.database.models import Article
+
+    s = _session()
+    s.add(Source(name="f.example", domain="f.example", language="en", enabled=False,
+                 status=q.STATUS_UNQUALIFIED))
+    s.commit()
+    sid = s.query(Source).one().id
+    _many_articles(s, sid, 12)
+    unbounded = sa2.sq_source_to_articles(s, source_ids={sid})[sid]
+    bounded = sa2.sq_source_to_articles(s, source_ids={sid}, per_source_recent=50)[sid]
+    assert bounded == unbounded == sorted(a for (a,) in s.query(Article.id))

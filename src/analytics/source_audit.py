@@ -521,7 +521,9 @@ def sq_source_to_articles(
                     session.query(Article.id).filter(Article.source_id == sid_)
                     .order_by(Article.id.desc()).limit(int(per_source_recent))
                 )
-                out_r[int(sid_)] = [int(a) for (a,) in rows]
+                # ASCENDING, like the unbounded read: the furniture sample below is seeded and
+                # order-dependent, so a source under the cap must draw the same articles.
+                out_r[int(sid_)] = sorted(int(a) for (a,) in rows)
             return out_r
         q = q.filter(Article.source_id.in_(sorted(source_ids)))
     out: dict[int, list[int]] = {}
