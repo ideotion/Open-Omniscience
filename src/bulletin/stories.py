@@ -32,7 +32,8 @@ from typing import Any
 from sqlalchemy import and_, func
 
 from src.bulletin.period import Period
-from src.database.models import Article, Keyword, KeywordMention, Source
+from src.database.derived_views import KeywordMentionRead
+from src.database.models import Article, Keyword, Source
 
 _LOG = logging.getLogger(__name__)
 
@@ -66,9 +67,9 @@ def article_keyword_sets(session, period: Period) -> dict[int, set[int]]:
     lo, hi = period.start, period.end
     rows = (
         session.query(
-            KeywordMention.article_id, KeywordMention.keyword_id, KeywordMention.count
+            KeywordMentionRead.article_id, KeywordMentionRead.keyword_id, KeywordMentionRead.count
         )
-        .filter(and_(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi))
+        .filter(and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi))
         .all()
     )
     per: dict[int, list[tuple[int, int]]] = {}

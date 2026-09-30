@@ -42,6 +42,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
     ArticleAnalysis,
@@ -49,7 +50,6 @@ from src.database.models import (
     ArticleMentionedDate,
     ArticleMentionedPlace,
     Keyword,
-    KeywordMention,
     Source,
 )
 
@@ -84,10 +84,10 @@ def _keywords(session, ids: list[int], per: int) -> dict[int, list[dict]]:
     out: dict[int, list[dict]] = {}
     for chunk in _chunks(ids):
         rows = (
-            session.query(KeywordMention.article_id, Keyword.term, KeywordMention.count)
-            .join(Keyword, Keyword.id == KeywordMention.keyword_id)
-            .filter(KeywordMention.article_id.in_(chunk))
-            .order_by(KeywordMention.article_id, KeywordMention.count.desc(), Keyword.term)
+            session.query(KeywordMentionRead.article_id, Keyword.term, KeywordMentionRead.count)
+            .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
+            .filter(KeywordMentionRead.article_id.in_(chunk))
+            .order_by(KeywordMentionRead.article_id, KeywordMentionRead.count.desc(), Keyword.term)
             .all()
         )
         for aid, term, count in rows:
