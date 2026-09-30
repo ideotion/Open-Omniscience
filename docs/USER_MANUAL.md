@@ -1048,6 +1048,17 @@ wiki that asks it to slow down is asked again after a pause that doubles up to a
 hour. A restart resumes each edition where it stopped. Its progress is in **Living
 sources** and in the task manager.
 
+**Reading the W in the top bar.** The W is the **stream's** switch, not the walk's: the
+walk is the tick box above, and it runs only while the stream does. The small mark in the
+W's corner says what the stream is doing by shape: a solid dot is connected and receiving;
+a ring is *chosen but not connected* (airplane mode holds it, or it has not started in this
+session); a ring with a dot is connecting and failing, retrying on its own; a dash is paused;
+a cross is stopped. Hover it for the words, including whether the page walk is on. A click
+on a ring **starts** the stream (you confirm going online once); a click on a dot or a ring
+with a dot **pauses** it; Shift+click stops it. Settings → Wikipedia shows the same two lines
+in words above the editions. Both repaint when you go online or offline, and when you tick
+or untick the walk.
+
 **The other changed pages (off unless you switch it on):** the live stream stores
 the text of the pages it follows and only counts the changes it reports on every
 other page. Ticking **Also fetch the text of other changed pages** (Settings →

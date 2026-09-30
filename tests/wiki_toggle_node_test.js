@@ -41,6 +41,10 @@ const STATES_DECL = (function () {
   return m[0];
 })();
 
+// The painter's own helpers (the held/shape/heading/walk-line words), EXTRACTED like it.
+const PAINTER_HELPERS = ["_wikiLaneHeld", "_wikiLaneShape", "_wikiLaneHeading", "_wikiWalkLine"]
+  .map((n) => extract(n)).join("\n") + "\n";
+
 // -- a fake DOM, just enough ------------------------------------------------- //
 function makeButton() {
   const el = {
@@ -75,6 +79,7 @@ function run(state, translate, active, why) {
   // test is about it.
   const body = STATES_DECL + "\nlet _wikiLaneState = null; let _wikiLaneActive = false;\n"
     + "let _wikiLaneWhy = WHY;\n"
+    + PAINTER_HELPERS
     + extract("_paintWikiLane")
     + "\n_paintWikiLane(STATE, ACTIVE); return {btn: BTN, mark: MARK, state: _wikiLaneState, active: _wikiLaneActive};";
   const fn = new Function("$", "document", "window", "OOI18N", "console", "BTN", "MARK", "STATE", "ACTIVE", "WHY", body);
@@ -197,6 +202,7 @@ console.log("wiki_toggle_node_test: ok");
                   live: btn.classList.contains("wiki-live")};
   const body = STATES_DECL + "\nlet _wikiLaneState = null; let _wikiLaneActive = false;\n"
     + "let _wikiLaneWhy = {reason: null, waitingOn: null};\n"
+    + PAINTER_HELPERS
     + extract("_paintWikiLane")
     + "\n_paintWikiLane('running', true); _paintWikiLane('draining', true);"
     + "\nreturn {btn: BTN, mark: MARK, state: _wikiLaneState};";
@@ -278,3 +284,65 @@ console.log("wiki_toggle_node_test: chosen-vs-happening ok");
 }
 
 console.log("wiki_toggle_node_test: waiting-reason ok");
+
+// -- the state pip and what a click DOES (the top-bar W was unreadable) -------- //
+//
+// A stream that is only CHOSEN drew the same filled W as one that was arriving, and a
+// click on it PAUSED something that was not running. The pip names five states by shape,
+// the hover names the action, and a held stream's action is START.
+{
+  const held = run("running", undefined, false, {reason: "airplane-mode", waitingOn: null});
+  assert.strictEqual(held.btn.getAttribute("data-wiki"), "held");
+  assert.ok(/Start the Wikipedia stream/.test(held.btn.title),
+    "a held stream's click starts it; the hover must say Start, not Pause");
+  assert.ok(!/Pause the Wikipedia stream/.test(held.btn.title));
+  assert.ok(/chosen, not connected/.test(held.btn.title),
+    "a stream that is only chosen must not be headed 'running'");
+  assert.ok(!held.btn.classList.contains("wiki-live"));
+
+  const notStarted = run("running", undefined, false, {reason: "not-started", waitingOn: null});
+  assert.strictEqual(notStarted.btn.getAttribute("data-wiki"), "held");
+
+  const live = run("running", undefined, true, {reason: null, waitingOn: null});
+  assert.strictEqual(live.btn.getAttribute("data-wiki"), "live");
+  assert.ok(/Pause the Wikipedia stream/.test(live.btn.title));
+
+  // Connecting but failing is WAITING: it keeps Pause (there IS a stream to pause) and
+  // is never drawn as live.
+  const waiting = run("running", undefined, false, {reason: "transport-waiting", waitingOn: "proxy down"});
+  assert.strictEqual(waiting.btn.getAttribute("data-wiki"), "waiting");
+  assert.ok(/Pause the Wikipedia stream/.test(waiting.btn.title));
+  assert.ok(/proxy down/.test(waiting.btn.title));
+
+  assert.strictEqual(run("halted").btn.getAttribute("data-wiki"), "paused");
+  assert.strictEqual(run("stopped").btn.getAttribute("data-wiki"), "stopped");
+
+  // Five states, five distinct pips: two that draw the same would be the original defect.
+  const shapes = [live, held, waiting, run("halted"), run("stopped")].map((r) => r.btn.getAttribute("data-wiki"));
+  assert.strictEqual(new Set(shapes).size, 5);
+}
+
+// -- the walk is a SEPARATE switch, and the hover says what it is doing --------- //
+{
+  const off = run("running", undefined, true, {reason: null, waitingOn: null, walk: {enabled: false, state: null}});
+  assert.ok(/Page walk: off/.test(off.btn.title) && /Settings/.test(off.btn.title),
+    "an off walk must be named, with where its switch is");
+  const on = run("running", undefined, true, {reason: null, waitingOn: null, walk: {enabled: true, state: "walking"}});
+  assert.ok(/Page walk: /.test(on.btn.title));
+  assert.ok(!/Page walk: off/.test(on.btn.title));
+  // No walk block at all (an older status): no line, never an invented state.
+  const none = run("running", undefined, true, {reason: null, waitingOn: null});
+  assert.ok(!/Page walk/.test(none.btn.title), "no walk info must draw no walk line");
+  // Enabled with no runner: said as not running, never as walking.
+  const idle = run("running", undefined, false, {reason: "airplane-mode", waitingOn: null, walk: {enabled: true, state: null}});
+  assert.ok(!/alking/.test(idle.btn.title), "an enabled walk with no runner must not read as walking");
+}
+
+// -- a language switch still repaints with the locale it now has ---------------- //
+{
+  const tr = (s) => "«" + s + "»";
+  const r = run("running", tr, false, {reason: "airplane-mode", waitingOn: null, walk: {enabled: true, state: null}});
+  assert.ok(/«Wikipedia stream: chosen, not connected»/.test(r.btn.title), "the new heading is not translated");
+  assert.ok(/«Page walk: \{state\}»/.test(r.btn.title) === false, "the walk line's placeholder must be filled");
+}
+console.log("wiki_toggle_node_test: pip-and-walk ok");

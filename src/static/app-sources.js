@@ -1150,6 +1150,45 @@
     //: off when it is something else. tests/test_wiki_toggle_ui.py pins the two lists
     //: against each other so they cannot drift apart in silence.
     const WIKI_LANE_STATES = ["running", "halted", "stopped"];
+
+    // CHOSEN is not CONNECTED, and the toggle says which (the operator could not tell a
+    // stream that was arriving from one that was only switched on -- both drew a filled
+    // W). HELD = the stream is chosen and nothing is connected, because airplane mode
+    // holds it or it has not started in this session; a click on a held stream STARTS it
+    // rather than pausing something that is not running. A stream that is connecting but
+    // failing is WAITING (``transport-waiting``) and keeps Pause.
+    function _wikiLaneHeld(state, active, why) {
+      const r = (why && why.reason) || null;
+      return state === "running" && active !== true && r !== "transport-waiting";
+    }
+    // The ONE word for what the lane is doing, used by the hover and by Settings. The pip
+    // in the corner of the toggle draws the same five values by SHAPE, never by colour alone.
+    function _wikiLaneShape(state, active, why) {
+      if (state === "halted") return "paused";
+      if (state === "stopped") return "stopped";
+      if (_wikiLaneHeld(state, active, why)) return "held";
+      if (why && why.reason === "transport-waiting") return "waiting";
+      return "live";
+    }
+    function _wikiLaneHeading(state, active, why) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (state === "halted") return t9("Wikipedia stream: paused");
+      if (state === "stopped") return t9("Wikipedia stream: stopped");
+      return _wikiLaneHeld(state, active, why)
+        ? t9("Wikipedia stream: chosen, not connected")
+        : t9("Wikipedia stream: running");
+    }
+    // The page walk is a SEPARATE switch (Settings → Wikipedia) that runs only while the
+    // stream runs; a stream toggle that says nothing about it left an operator unable to
+    // tell whether the multi-day run they wanted was on. ``walk`` is {enabled, state}.
+    function _wikiWalkLine(walk) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!walk) return "";
+      if (!walk.enabled) return t9("Page walk: off. Its switch is in Settings → Wikipedia.");
+      const words = (typeof _LIVING_WALK_STATE !== "undefined") ? _LIVING_WALK_STATE : {};
+      const w = words[walk.state] || words.not_running || "Not running now";
+      return t9("Page walk: {state}").replace("{state}", t9(w));
+    }
     function _paintWikiLane(state, active) {
       const btn = $("wiki-toggle");
       if (!btn) return;
@@ -1199,23 +1238,32 @@
         : halted
           ? t9("The connection is closed and your place is kept; Resume continues from where it stopped.")
           : t9("Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.");
-      const heading = running
-        ? t9("Wikipedia stream: running")
-        : halted
-          ? t9("Wikipedia stream: paused")
-          : t9("Wikipedia stream: stopped");
-      const action = running ? t9("Pause the Wikipedia stream")
+      const heading = _wikiLaneHeading(state, _wikiLaneActive, why);
+      const held = _wikiLaneHeld(state, _wikiLaneActive, why);
+      // What a click DOES: a held stream is started, a live or waiting one is paused.
+      const action = (running && !held) ? t9("Pause the Wikipedia stream")
                              : halted ? t9("Resume the Wikipedia stream")
                                       : t9("Start the Wikipedia stream");
+      btn.setAttribute("data-wiki", _wikiLaneShape(state, _wikiLaneActive, why));
       // The hover carries the CAVEAT (invariant #17's bubble reads the live title),
       // including what the lane contacts — a hover is a consent surface, so it
       // names the hosts rather than only the state.
       // Named only where Shift+click does something: a stopped lane has nothing to stop.
       const stopHint = (running || halted) ? t9("Shift+click stops the stream completely.") + "\n" : "";
-      btn.title = heading + " — " + detail + "\n" + action + "\n" + stopHint
+      const walkLine = _wikiWalkLine(why.walk);
+      btn.title = heading + " — " + detail + "\n" + (walkLine ? walkLine + "\n" : "")
+        + action + "\n" + stopHint
         + t9("This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.");
       btn.setAttribute("aria-label", action);
       btn.setAttribute("aria-pressed", running ? "true" : "false");
+    }
+
+    // The walk's switch and, while a runner exists, what it is doing (the status's own
+    // ``service.walk``); null when the status carries no lane block at all.
+    function _wikiWalkOf(lane) {
+      if (!lane || typeof lane.walk_enabled === "undefined") return null;
+      const w = (lane.service && lane.service.walk) || null;
+      return {enabled: !!lane.walk_enabled, state: (w && w.state) || null};
     }
 
     async function loadWikiLane() {
@@ -1225,7 +1273,8 @@
         // the first is what would let this button claim a stream that is not running.
         const st = await api("/api/scheduler/status");
         const lane = (st && st.wiki_lane) || {};
-        _wikiLaneWhy = {reason: lane.reason || null, waitingOn: lane.waiting_on || null};
+        _wikiLaneWhy = {reason: lane.reason || null, waitingOn: lane.waiting_on || null,
+                        walk: _wikiWalkOf(lane)};
         // A WAITING stream is registered but delivers nothing, so it is not drawn
         // as live: the breathing accent means "happening now".
         _paintWikiLane(lane.state || "running",
@@ -1261,7 +1310,11 @@
       // that lands before the first config read would otherwise act on a guess.
       if (_wikiLaneState === null) { await loadWikiLane(); }
       const from = _wikiLaneState || "running";
-      const next = from === "running" ? "halted" : "running";
+      // A stream that is CHOSEN but not connected (airplane mode holds it, or it has not
+      // started in this session) is STARTED by a click, not paused: pausing something
+      // that is not running looked like "nothing happens".
+      const held = _wikiLaneHeld(from, _wikiLaneActive, _wikiLaneWhy);
+      const next = (from === "running" && !held) ? "halted" : "running";
       if (next === "running") {
         // GOING TO RUNNING IS AN EGRESS. Invariant #14: every offline -> online
         // transition passes the ONE consent popup, and this is one, because the
@@ -1285,6 +1338,9 @@
               : now === "halted" ? t9("Wikipedia stream: paused")
                                  : t9("Wikipedia stream: stopped"));
         loadWikiLane();  // the reason the last paint carried belongs to the old state
+        // A start needs a moment to connect: read the status again, so the toggle shows
+        // what the server then reports rather than the moment before it connected.
+        if (now === "running") setTimeout(loadWikiLane, 2500);
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
       }
@@ -1512,6 +1568,14 @@
           bits.push(t9("not yet measured — this lane has not run"));
         }
         if (!lane.wizard_done) bits.push(t9("using the defaults"));
+        // WHAT THE STREAM AND THE WALK ARE DOING, in words, beside the budget: the two
+        // switches are different controls (the top-bar W and the box below) and the
+        // operator could not see either one's state from here.
+        const why = {reason: lane.reason || null, walk: _wikiWalkOf(lane)};
+        const known = WIKI_LANE_STATES.indexOf(lane.state || "running") !== -1;
+        if (known) bits.unshift(_wikiLaneHeading(lane.state || "running", lane.active === true, why));
+        const wl = _wikiWalkLine(why.walk);
+        if (wl) bits.splice(known ? 1 : 0, 0, wl);
         el.textContent = bits.join(" · ");
         // The walk's switch mirrors the STORED setting, never the box's last click: a
         // save that failed must not leave a ticked box over a walk that is off.
@@ -1537,6 +1601,10 @@
         const box = $("wiki-walk-enabled");
         if (box) box.checked = stored;
         if (typeof livingRefreshIfShown === "function") livingRefreshIfShown();
+        // The top-bar toggle's hover and the summary above both name the walk's state:
+        // repaint them from the status now, not at the next minute's poll.
+        loadWikiLane();
+        loadWikiLaneSummary();
         toast(stored ? t9("The walk is on. It starts with the live stream, when you are online.")
                      : t9("The walk is off. Pages it already listed are kept."));
       } catch (e) {
@@ -1557,6 +1625,7 @@
         const box = $("wiki-warm-enabled");
         if (box) box.checked = stored;
         if (typeof livingRefreshIfShown === "function") livingRefreshIfShown();
+        loadWikiLaneSummary();
         toast(stored ? t9("Fetching other changed pages is on. It starts with the live stream, when you are online.")
                      : t9("Fetching other changed pages is off. Texts already fetched are kept."));
       } catch (e) {

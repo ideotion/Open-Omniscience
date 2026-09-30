@@ -1104,6 +1104,14 @@
       // stale offline at boot (we boot offline). Re-check it the moment we go online
       // so it reflects a now-reachable Ollama without the user opening Settings.
       if (online && _was !== true && typeof loadLlmHealth === "function") loadLlmHealth();
+      // The Wikipedia toggle reads the status, and going online (or offline) is what
+      // starts (or stops) the stream: repaint it at the crossing rather than up to a
+      // minute later, or it keeps saying "chosen, not connected" over a live stream. A
+      // second read follows, because a stream takes a moment to connect.
+      if ((_was === true || _was === false) && _was !== online && typeof loadWikiLane === "function") {
+        loadWikiLane();
+        setTimeout(() => { if (typeof loadWikiLane === "function") loadWikiLane(); }, 2500);
+      }
       _paintActivity();
       const btn = $("net-toggle"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

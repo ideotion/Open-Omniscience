@@ -977,6 +977,25 @@
     #wiki-toggle.wiki-halted { color:var(--muted);
                                box-shadow:0 0 0 3px color-mix(in srgb, var(--muted) 12%, transparent); }
     #wiki-toggle #wiki-mark { transition:fill .35s ease; }
+    /* The state pip (bottom-right corner, out of the footprint): SHAPE carries the state,
+       the hue only reinforces it. The halo matches the bar so the shape stays legible over
+       the glyph. .icon-btn svg sets 18px, so the pip's own size is restated. */
+    #wiki-toggle { position:relative; }
+    #wiki-pip { position:absolute; right:1px; bottom:1px; width:10px; height:10px; pointer-events:none; }
+    #wiki-toggle #wiki-pip svg { width:10px; height:10px; }
+    #wiki-pip .pip-bg { fill:var(--bg); }
+    #wiki-pip .pip-dot, #wiki-pip .pip-ring, #wiki-pip .pip-dash, #wiki-pip .pip-x { display:none; }
+    #wiki-pip .pip-ring, #wiki-pip .pip-dash, #wiki-pip .pip-x { stroke:currentColor; stroke-width:1.5; stroke-linecap:round; }
+    #wiki-pip .pip-dot { fill:currentColor; }
+    #wiki-toggle[data-wiki="live"] #wiki-pip { color:var(--ok); }
+    #wiki-toggle[data-wiki="live"] .pip-dot { display:inline; }
+    #wiki-toggle[data-wiki="held"] #wiki-pip, #wiki-toggle[data-wiki="waiting"] #wiki-pip { color:var(--caveat); }
+    #wiki-toggle[data-wiki="held"] .pip-ring, #wiki-toggle[data-wiki="waiting"] .pip-ring { display:inline; }
+    #wiki-toggle[data-wiki="waiting"] .pip-dot { display:inline; transform-origin:center; transform:scale(.45); }
+    #wiki-toggle[data-wiki="paused"] #wiki-pip { color:var(--muted); }
+    #wiki-toggle[data-wiki="paused"] .pip-dash { display:inline; }
+    #wiki-toggle[data-wiki="stopped"] #wiki-pip { color:var(--muted); }
+    #wiki-toggle[data-wiki="stopped"] .pip-x { display:inline; }
     @keyframes wikilive {
       0%, 100% { box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
       50%      { box-shadow:0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
