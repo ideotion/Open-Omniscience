@@ -2034,7 +2034,7 @@ def insights_trend_articles(
 ) -> dict:
     """The articles behind a brushed span of a keyword trend chart (plan F4).
 
-    Resolves against ``KeywordMention.observed_on`` — the column the chart's x-axis is
+    Resolves against ``KeywordMentionRead.observed_on`` — the column the chart's x-axis is
     actually drawn from — rather than through the ``published_at`` date filter, which
     means a different thing and would return fewer articles than the selected bars were
     counting. ``bucket`` must be the bucket the CHART was drawn with: the span is widened
@@ -3427,7 +3427,8 @@ def insights_supergroup_articles(
         distinct_ids,
         resolve_member_keyword_ids,
     )
-    from src.database.models import KeywordMention, KeywordSuperGroup
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import KeywordSuperGroup
 
     sg = db.query(KeywordSuperGroup).filter(KeywordSuperGroup.id == group_id).one_or_none()
     if sg is None:
@@ -3439,8 +3440,8 @@ def insights_supergroup_articles(
     found: set[int] = set()
     for chunk in _chunks(sorted(keyword_ids)):
         for (aid,) in (
-            db.query(KeywordMention.article_id)
-            .filter(KeywordMention.keyword_id.in_(chunk))
+            db.query(KeywordMentionRead.article_id)
+            .filter(KeywordMentionRead.keyword_id.in_(chunk))
             .distinct()
             .all()
         ):
@@ -3828,7 +3829,8 @@ def keywords_by_tag(
     only, never a score."""
     from sqlalchemy import func
 
-    from src.database.models import Keyword, KeywordMention, KeywordTag
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Keyword, KeywordTag
 
     ax, tg = _norm_tag(axis, tag)
 
@@ -3856,11 +3858,11 @@ def keywords_by_tag(
                 Keyword.normalized_term,
                 Keyword.term,
                 Keyword.language,
-                func.coalesce(func.sum(KeywordMention.count), 0),
-                func.count(func.distinct(KeywordMention.article_id)),
+                func.coalesce(func.sum(KeywordMentionRead.count), 0),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
             )
             .join(matching, matching.c.keyword_id == Keyword.id)
-            .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .outerjoin(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
             .group_by(Keyword.id)
             .all()
         )

@@ -1732,7 +1732,7 @@ def test_articles_provenance_toggle_and_keyword_count():
     # backend: /api/articles accepts a provenance filter + a keyword_count sort; each result
     # carries provenance + keyword_count; the count is mentions-only (no decrypt join).
     assert "_provenance_filter(" in main and "_KEYWORD_COUNT_SORT" in main
-    assert "_keyword_counts(" in main and "KeywordMention.count" in main
+    assert "_keyword_counts(" in main and "KeywordMentionRead.count" in main
     assert '"keyword_count": keyword_count' in main  # per-result count
     assert '"keyword_for_count"' in main  # the resolved keyword whose counts are shown
     # frontend: the provenance toggle + the count badge + the count-sort wiring

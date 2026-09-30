@@ -160,20 +160,12 @@ def test_the_prune_pilot_still_prunes_only_true_orphans(db):
 # reference. Zero slack (the CLAUDE.md size-ratchet's own rule): a count left above the real
 # one fails too, so the ceiling is lowered in the same PR as the move.
 _CEILING: dict[str, int] = {
-    "src/ai_layer/source_tags.py": 13,
     "src/ai_layer/triage.py": 1,
     "src/analytics/article_lang_map.py": 1,
     "src/analytics/columnar.py": 7,
     "src/analytics/keyword_fold.py": 17,
     "src/analytics/serve_gate.py": 2,
     "src/analytics/store.py": 24,
-    "src/api/database.py": 2,
-    "src/api/diagnostics/bundle.py": 2,
-    "src/api/feed.py": 6,
-    "src/api/insights.py": 9,
-    "src/api/link_analysis.py": 2,
-    "src/api/link_preview.py": 5,
-    "src/api/main.py": 25,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,

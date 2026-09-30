@@ -20,11 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
     ArticleLink,
     Keyword,
-    KeywordMention,
     LawDocument,
     Source,
     WikiPage,
@@ -101,9 +101,9 @@ def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
     if local:
         kw_rows = (
             db.query(Keyword.term)
-            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-            .filter(KeywordMention.article_id == local[0])
-            .order_by(KeywordMention.count.desc())
+            .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+            .filter(KeywordMentionRead.article_id == local[0])
+            .order_by(KeywordMentionRead.count.desc())
             .limit(6)
             .all()
         )
