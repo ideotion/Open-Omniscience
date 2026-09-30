@@ -1186,8 +1186,14 @@
       if (!walk) return "";
       if (!walk.enabled) return t9("Page walk: off. Its switch is in Settings → Wikipedia.");
       const words = (typeof _LIVING_WALK_STATE !== "undefined") ? _LIVING_WALK_STATE : {};
-      const w = words[walk.state] || words.not_running || "Not running now";
-      return t9("Page walk: {state}").replace("{state}", t9(w));
+      // The walker reads its switch once per window, so for a moment after the box is
+      // ticked it still reports "off": that is "not started", as Living sources reads it
+      // (src/api/living.py's _state_since_switch), never "Off" beside a ticked box. No
+      // runner at all is "not running now". A state this build does not know is shown
+      // as the raw key, never relabelled as a real one (the same refusal as the toggle's).
+      const key = (!walk.state || walk.state === "off")
+        ? (walk.state === "off" ? "not_started" : "not_running") : walk.state;
+      return t9("Page walk: {state}").replace("{state}", words[key] ? t9(words[key]) : String(key));
     }
     function _paintWikiLane(state, active) {
       const btn = $("wiki-toggle");
@@ -1255,7 +1261,9 @@
         + action + "\n" + stopHint
         + t9("This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.");
       btn.setAttribute("aria-label", action);
-      btn.setAttribute("aria-pressed", running ? "true" : "false");
+      // Pressed = the stream is running (live or waiting). A held stream is NOT pressed, and
+      // its label says Start, so a screen reader hears an unpressed button that starts it.
+      btn.setAttribute("aria-pressed", (running && !held) ? "true" : "false");
     }
 
     // The walk's switch and, while a runner exists, what it is doing (the status's own
@@ -1266,6 +1274,13 @@
       return {enabled: !!lane.walk_enabled, state: (w && w.state) || null};
     }
 
+    // A start or a stop takes a moment to show in the status: read it now and again
+    // shortly after, so the toggle shows what the server then reports.
+    function _wikiLaneRefreshSoon() {
+      loadWikiLane();
+      setTimeout(loadWikiLane, 2500);
+    }
+
     async function loadWikiLane() {
       try {
         // The STATUS, not the config: the config holds the operator's choice and the
@@ -1273,12 +1288,18 @@
         // the first is what would let this button claim a stream that is not running.
         const st = await api("/api/scheduler/status");
         const lane = (st && st.wiki_lane) || {};
-        _wikiLaneWhy = {reason: lane.reason || null, waitingOn: lane.waiting_on || null,
-                        walk: _wikiWalkOf(lane)};
+        // AIRPLANE MODE WINS over a stream still listed as live: a stopping stream stays
+        // registered until its blocking read returns (up to a minute), and the socket guard
+        // already refuses everything, so "live" under airplane mode would be a claim the app
+        // does not have. The server's own ``online`` (the kill switch) decides.
+        const offline = !!st && st.online === false;
+        _wikiLaneWhy = {reason: (offline && (lane.state || "running") === "running")
+                          ? "airplane-mode" : (lane.reason || null),
+                        waitingOn: lane.waiting_on || null, walk: _wikiWalkOf(lane)};
         // A WAITING stream is registered but delivers nothing, so it is not drawn
         // as live: the breathing accent means "happening now".
         _paintWikiLane(lane.state || "running",
-                       lane.active === true && lane.reason !== "transport-waiting");
+                       !offline && lane.active === true && lane.reason !== "transport-waiting");
         _scheduleWikiLaneRefresh();
       } catch (_e) {
         // The chrome keeps the boot paint. NOT a silent "stopped": claiming the
@@ -1331,15 +1352,14 @@
           {method: "PUT", body: JSON.stringify({wiki_lane_state: next})});
         const now = (c && c.wiki_lane_state) || next;
         _paintWikiLane(now, _wikiLaneActive);
-        // The toast CONFIRMS what happened, in the hover's own heading for the state
-        // the server returned -- the action labels read as orders ("Pause the
-        // Wikipedia stream" after it was paused; row P).
-        toast(now === "running" ? t9("Wikipedia stream: running")
-              : now === "halted" ? t9("Wikipedia stream: paused")
-                                 : t9("Wikipedia stream: stopped"));
-        loadWikiLane();  // the reason the last paint carried belongs to the old state
-        // A start needs a moment to connect: read the status again, so the toggle shows
-        // what the server then reports rather than the moment before it connected.
+        // The reason the last paint carried belongs to the old state: read the status
+        // BEFORE the toast, which names what the status then says. "running" said at once
+        // for a stream that had not connected (or could not start) claimed a state the
+        // app did not have; a start that is still connecting reads "chosen, not connected".
+        await loadWikiLane();
+        toast(_wikiLaneHeading(_wikiLaneState || now, _wikiLaneActive, _wikiLaneWhy));
+        // A start needs a moment to connect: read again, so the toggle shows what the
+        // server then reports rather than the moment before it connected.
         if (now === "running") setTimeout(loadWikiLane, 2500);
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
@@ -1574,8 +1594,12 @@
         const why = {reason: lane.reason || null, walk: _wikiWalkOf(lane)};
         const known = WIKI_LANE_STATES.indexOf(lane.state || "running") !== -1;
         if (known) bits.unshift(_wikiLaneHeading(lane.state || "running", lane.active === true, why));
+        if (known && lane.reason === "transport-waiting") {
+          bits.splice(1, 0, t9("Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.")
+            .replace("{why}", lane.waiting_on || t9("no reason was reported")));
+        }
         const wl = _wikiWalkLine(why.walk);
-        if (wl) bits.splice(known ? 1 : 0, 0, wl);
+        if (wl) bits.splice(known ? (lane.reason === "transport-waiting" ? 2 : 1) : 0, 0, wl);
         el.textContent = bits.join(" · ");
         // The walk's switch mirrors the STORED setting, never the box's last click: a
         // save that failed must not leave a ticked box over a walk that is off.

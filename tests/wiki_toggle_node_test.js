@@ -42,7 +42,16 @@ const STATES_DECL = (function () {
 })();
 
 // The painter's own helpers (the held/shape/heading/walk-line words), EXTRACTED like it.
-const PAINTER_HELPERS = ["_wikiLaneHeld", "_wikiLaneShape", "_wikiLaneHeading", "_wikiWalkLine"]
+// ``_LIVING_WALK_STATE`` (the walk's words, declared in app-living.js) is extracted too: a
+// sandbox without it drew every walk state as "Not running now", which made a check that
+// the walk never reads as walking pass vacuously.
+const WALK_WORDS = (function () {
+  const m = /const _LIVING_WALK_STATE = \{[^}]+\};/.exec(APP);
+  assert.ok(m, "the walk's state words moved -- the hover reads them");
+  return m[0];
+})();
+const PAINTER_HELPERS = WALK_WORDS + "\n"
+  + ["_wikiLaneHeld", "_wikiLaneShape", "_wikiLaneHeading", "_wikiWalkLine"]
   .map((n) => extract(n)).join("\n") + "\n";
 
 // -- a fake DOM, just enough ------------------------------------------------- //
@@ -335,7 +344,18 @@ console.log("wiki_toggle_node_test: waiting-reason ok");
   assert.ok(!/Page walk/.test(none.btn.title), "no walk info must draw no walk line");
   // Enabled with no runner: said as not running, never as walking.
   const idle = run("running", undefined, false, {reason: "airplane-mode", waitingOn: null, walk: {enabled: true, state: null}});
+  assert.ok(/Page walk: Not running now/.test(idle.btn.title), "no runner must read as not running now");
   assert.ok(!/alking/.test(idle.btn.title), "an enabled walk with no runner must not read as walking");
+  // The real words, now that the sandbox has them: walking is walking.
+  assert.ok(/Page walk: Walking/.test(on.btn.title), "a walking walk must read as Walking");
+  // The walker reads its switch once per window: just after the box is ticked it still
+  // says "off", which must read as NOT STARTED beside a ticked box -- never "Off".
+  const justTicked = run("running", undefined, true, {reason: null, waitingOn: null, walk: {enabled: true, state: "off"}});
+  assert.ok(/Page walk: Not started yet/.test(justTicked.btn.title), justTicked.btn.title);
+  assert.ok(!/Page walk: Off/.test(justTicked.btn.title));
+  // A state this build does not know is shown as itself, never relabelled as a real one.
+  const odd = run("running", undefined, true, {reason: null, waitingOn: null, walk: {enabled: true, state: "hibernating"}});
+  assert.ok(/Page walk: hibernating/.test(odd.btn.title), odd.btn.title);
 }
 
 // -- a language switch still repaints with the locale it now has ---------------- //
@@ -345,4 +365,8 @@ console.log("wiki_toggle_node_test: waiting-reason ok");
   assert.ok(/«Wikipedia stream: chosen, not connected»/.test(r.btn.title), "the new heading is not translated");
   assert.ok(/«Page walk: \{state\}»/.test(r.btn.title) === false, "the walk line's placeholder must be filled");
 }
+// -- a held stream is NOT pressed; a live or waiting one is (assistive tech) ----- //
+assert.strictEqual(run("running", undefined, false, {reason: "airplane-mode", waitingOn: null}).btn.getAttribute("aria-pressed"), "false");
+assert.strictEqual(run("running", undefined, true, {reason: null, waitingOn: null}).btn.getAttribute("aria-pressed"), "true");
+assert.strictEqual(run("running", undefined, false, {reason: "transport-waiting", waitingOn: "x"}).btn.getAttribute("aria-pressed"), "true");
 console.log("wiki_toggle_node_test: pip-and-walk ok");

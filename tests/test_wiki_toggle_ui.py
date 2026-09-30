@@ -190,7 +190,10 @@ def test_the_toasts_CONFIRM_a_state_rather_than_repeat_an_order():
         for order in ("Pause the Wikipedia stream", "Stop the Wikipedia stream",
                       "Resume the Wikipedia stream", "Start the Wikipedia stream"):
             assert f't9("{order}")' not in toasts, f"{name} toasts the order {order!r}"
-        assert 't9("Wikipedia stream: paused")' in toasts, f"{name} no longer confirms a state"
+        # toggleWikiLane names the state through _wikiLaneHeading AFTER re-reading the status
+        # (whose paused words are that function's own); stopWikiLane names it directly.
+        assert ('t9("Wikipedia stream: paused")' in toasts
+                or "toast(_wikiLaneHeading(" in toasts), f"{name} no longer confirms a state"
 
 
 def test_stopping_and_pausing_are_NOT_gated_on_a_network_consent():
@@ -498,6 +501,34 @@ def test_the_toggle_repaints_when_the_network_crosses_and_when_a_switch_is_saved
     'chosen, not connected' until the next minute's poll; ticking the walk's box changed
     nothing on the bar."""
     core = strip_comments(function_body(_CORE.read_text(encoding="utf-8"), "_paintNetwork"))
-    assert "loadWikiLane()" in core, "a network crossing does not re-read the stream's status"
+    assert "_wikiLaneRefreshSoon()" in core, "a network crossing does not re-read the stream's status"
     walk = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "saveWikiWalk"))
     assert "loadWikiLane()" in walk and "loadWikiLaneSummary()" in walk
+
+
+def test_the_toast_after_a_click_names_what_the_STATUS_then_says_not_what_was_asked():
+    """A held stream whose start fails (or has not connected yet) was toasted 'running':
+    a state the app did not have. The toast follows a re-read and names the real one."""
+    body = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "toggleWikiLane"))
+    assert "await loadWikiLane()" in body
+    assert "toast(_wikiLaneHeading(" in body
+    assert 'toast(now === "running"' not in body, "the toast claims the state that was asked for"
+
+
+def test_airplane_mode_outranks_a_stream_the_server_still_lists_as_live():
+    """A stopping stream stays registered until its blocking read returns, so the status can
+    say active:true for up to a minute after airplane mode is engaged. The server's own
+    ``online`` decides: live under airplane mode is a claim the app does not have."""
+    body = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "loadWikiLane"))
+    assert "st.online === false" in body
+    assert "!offline && lane.active === true" in body
+
+
+def test_the_network_crossing_hook_has_its_own_memory_and_the_offline_POST_rereads():
+    core = strip_comments(function_body(_CORE.read_text(encoding="utf-8"), "_paintNetwork"))
+    assert "_wikiNetSeen" in core and "_was ===" not in core.split("_wikiNetSeen")[0][-200:], (
+        "the crossing must be judged against the last PAINT, not _netOnline (which the poll "
+        "writes without painting and which starts at true, so boot counted as a crossing)"
+    )
+    toggle = strip_comments(function_body(_CORE.read_text(encoding="utf-8"), "toggleNetwork"))
+    assert "_wikiLaneRefreshSoon()" in toggle, "the offline POST never re-reads the toggle"

@@ -594,6 +594,7 @@
     // Last known network state (airplane mode). Default true (online): never paint
     // "paused" until we actually learn we are offline (no fabricated status either way).
     let _netOnline = true;
+    let _wikiNetSeen = null;      // the online state last PAINTED; null until the first paint
     // Separate from _netOnline above: whether that value (and the #net-toggle
     // `off` class) reflect a REAL answer from the backend, set only inside
     // _paintNetwork(). toggleNetwork() reads this so a click can never trust a
@@ -1045,6 +1046,9 @@
         try {
           const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:false})});
           _paintNetwork(r.online);  // reconcile with the backend truth
+          // The instant paint above already read the Wikipedia toggle, before this POST
+          // stopped the stream; read it again now that the server says it did.
+          if (typeof _wikiLaneRefreshSoon === "function") _wikiLaneRefreshSoon();
           if (!r.online) toast(t("Offline — every new network request is refused. One in-flight request may finish."), "err");
         } catch (e) {
           _paintNetwork(true);      // the backend refused -> we are NOT offline; revert honestly
@@ -1108,10 +1112,13 @@
       // starts (or stops) the stream: repaint it at the crossing rather than up to a
       // minute later, or it keeps saying "chosen, not connected" over a live stream. A
       // second read follows, because a stream takes a moment to connect.
-      if ((_was === true || _was === false) && _was !== online && typeof loadWikiLane === "function") {
-        loadWikiLane();
-        setTimeout(() => { if (typeof loadWikiLane === "function") loadWikiLane(); }, 2500);
+      // Its own memory of the last PAINT, not ``_was``: ``_netOnline`` is also written by the
+      // activity poll without a paint, which could swallow the crossing, and it starts at
+      // true, which would count the first paint at boot as one.
+      if (_wikiNetSeen !== null && _wikiNetSeen !== online && typeof _wikiLaneRefreshSoon === "function") {
+        _wikiLaneRefreshSoon();
       }
+      _wikiNetSeen = online;
       _paintActivity();
       const btn = $("net-toggle"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
