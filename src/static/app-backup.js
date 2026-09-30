@@ -2391,15 +2391,19 @@
       language: "Language", source_lang: "Source language",
     };
 
+    // Directionality isolates around a name set inside a translated sentence: a model name such
+    // as granite4.1:3b would otherwise be reordered by the surrounding right-to-left text.
+    function _altIso(v) { return "\u2068" + String(v) + "\u2069"; }
+
     function _altProv(p, t, tf) {
       if (!p) return `<span class="muted">${esc(t("not recorded"))}</span>`;
       const by = p.kind === "human"
         ? t("By a person (confirm or reject)")
-        : (p.version ? tf("By {producer}, prompt {version}", { producer: p.producer || "?", version: p.version })
-                      : tf("By {producer}", { producer: p.producer || "?" }));
+        : (p.version ? tf("By {producer}, prompt {version}", { producer: _altIso(p.producer || "?"), version: _altIso(p.version) })
+                      : tf("By {producer}", { producer: _altIso(p.producer || "?") }));
       const where = p.arrived
         ? tf("Arrived from {origin}, restore of {date}", {
-            origin: String(p.origin || "").slice(0, 12), date: fmtDateTime(p.arrived.at) })
+            origin: _altIso(String(p.origin || "").slice(0, 12)), date: _altIso(fmtDateTime(p.arrived.at)) })
         : t("Made here");
       return `<span title="${esc("oo.prov/1 " + JSON.stringify(p))}">${esc(by)} \u00b7 <bdi>${esc(where)}</bdi></span>`;
     }
@@ -2435,7 +2439,6 @@
           + `</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">`
           + (it.status === "pending" ? `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'keep')">${esc(t("Keep both"))}</button>` : "")
           + `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'discard')">${esc(t("Discard the restore’s value"))}</button>`
-          + (it.local ? `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'adopt')">${esc(t("Use the restore’s value instead"))}</button>` : "")
           + `</div></div>`;
       }).join("");
       const more = rep.total > rep.items.length
@@ -2462,7 +2465,6 @@
 
     async function altAct(id, verb) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (verb === "adopt" && !confirm(t("Use the restore’s value here? The value this machine holds now is kept as the alternate, so you can switch back."))) return;
       try {
         await api("/api/backup/alternates/" + encodeURIComponent(id) + "/" + verb, { method: "POST" });
       } catch (e) {

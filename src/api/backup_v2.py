@@ -336,13 +336,6 @@ def alternates_discard(alt_id: int) -> dict:
     return _alt_call(discard, alt_id)
 
 
-@router.post("/alternates/{alt_id}/adopt")
-def alternates_adopt(alt_id: int) -> dict:
-    from src.backup.alternates import adopt
-
-    return _alt_call(adopt, alt_id)
-
-
 # --------------------------------------------------------------------------- #
 # Large-data "copy to a folder/drive" backup (brief §2.A) — wiki dumps + OSM
 # maps + Ollama models streamed SERVER-SIDE into a user-chosen directory. These

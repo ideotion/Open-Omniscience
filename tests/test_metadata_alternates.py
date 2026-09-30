@@ -328,7 +328,7 @@ def test_two_incoming_rows_that_collapse_onto_one_item_record_one_alternate(tmp_
     assert len(_alts(live)) == 1
 
 
-# ----- slice 2: the operator's side (list, keep, discard, adopt) ---------------------------
+# ----- slice 2: the operator's side (list, keep, discard) ---------------------------
 
 
 def _live_with_a_title_difference(tmp_path):
@@ -374,40 +374,52 @@ def test_keep_and_discard_never_touch_the_local_row(tmp_path):
         assert s.query(ArticleTitleTranslation).one().title == "Ours"
 
 
-def test_adopt_swaps_the_values_and_records_where_it_came_from(tmp_path):
-    from src.backup.alternates import adopt, list_alternates
+def test_there_is_no_way_to_make_an_imported_value_the_shown_one(tmp_path):
+    """The maintainer's rule: imported data never prevails. No action swaps a value in."""
+    import src.backup.alternates as alt
+
+    assert not hasattr(alt, "adopt")
+    from src.api import backup_v2
+
+    paths = {getattr(r, "path", "") for r in backup_v2.router.routes}
+    assert not any(p.endswith("/adopt") for p in paths)
+
+
+def test_the_local_side_is_found_by_identity_and_is_the_newest_row(tmp_path):
+    """Two local rows share one identity (no unique constraint on analyses): the panel shows
+    the one the readers show (the newest), never the oldest."""
+    from src.backup.alternates import list_alternates
+
+    def add(result, *more):
+        def f(s):
+            a = _article(s)
+            for r in (result, *more):
+                s.add(ArticleAnalysis(
+                    article_id=a.id, kind="summary", model="m1", prompt_version="v1",
+                    result=r, created_at=_T0))
+        return f
+
+    _, batch, live, _ = _two(tmp_path, add("THEIRS"), add("old local", "new local"))
+    with _corpus(live)() as s:
+        [item] = list_alternates(s)["items"]
+    assert item["local"]["result"] == "new local"
+
+
+def test_a_reused_row_id_never_shows_an_unrelated_row_as_the_local_side(tmp_path):
+    """SQLite reuses the highest integer key after a delete: the stored local_row_id can then
+    name a row of ANOTHER article. The panel resolves by identity and says the row is gone."""
+    from src.backup.alternates import list_alternates
 
     batch, live = _live_with_a_title_difference(tmp_path)
     with _corpus(live)() as s:
-        alt_id = list_alternates(s)["items"][0]["id"]
-        adopt(s, alt_id)
-        row = s.query(ArticleTitleTranslation).one()
-        assert row.title == "Theirs"
-        [item] = list_alternates(s, status="all")["items"]
-        assert item["imported"]["title"] == "Ours", "the replaced value is kept, not lost"
-        assert item["status"] == "kept"
-        # the row now carries an arrival record for that restore, like one the restore inserted
-        tag = provenance_tag(s, "article_title_translations", row.id)
-        assert tag["origin"] == "machine-B" and tag["arrived"]["batch"] == batch
-        # and adopting again reverses it
-        adopt(s, alt_id)
-        assert s.query(ArticleTitleTranslation).one().title == "Ours"
-
-
-def test_adopt_refuses_when_the_local_row_is_gone(tmp_path):
-    from src.backup.alternates import AlternateError, adopt, list_alternates
-
-    batch, live = _live_with_a_title_difference(tmp_path)
-    with _corpus(live)() as s:
-        alt_id = list_alternates(s)["items"][0]["id"]
         s.query(ArticleTitleTranslation).delete()
+        other = _article(s, hash_="h2")
+        s.add(ArticleTitleTranslation(
+            article_id=other.id, source_lang="fr", target_lang="de", title="UNRELATED",
+            summary="s", model="m1", prompt_version="tt-v1", created_at=_T0))
         s.commit()
-        with pytest.raises(AlternateError) as e:
-            adopt(s, alt_id)
-        assert e.value.status == 409
-        with pytest.raises(AlternateError) as e2:
-            adopt(s, 99999)
-        assert e2.value.status == 404
+        [item] = list_alternates(s)["items"]
+    assert item["local"] is None, "an unrelated row that inherited the id is not the local side"
 
 
 def test_discarding_a_restore_discards_only_that_restores_alternates(tmp_path):
@@ -430,6 +442,6 @@ def test_the_routes_exist_and_refuse_an_unknown_id():
         r = c.get("/api/backup/alternates")
         assert r.status_code == 200 and {"total", "batches", "items"} <= set(r.json())
         assert c.get("/api/backup/alternates?status=bogus").status_code == 422
-        for verb in ("keep", "discard", "adopt"):
+        for verb in ("keep", "discard"):
             assert c.post(f"/api/backup/alternates/999999/{verb}").status_code == 404
         assert c.post("/api/backup/alternates/batch/999999/discard").json()["discarded"] == 0

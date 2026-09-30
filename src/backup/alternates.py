@@ -9,14 +9,16 @@ list the differences with both values and both provenance tags, and let the oper
 Nothing here runs on its own -- every mutation is one explicit call for one alternate (or one
 restore batch), and none touches a row the operator did not point at.
 
-The four actions:
+The three actions:
 
 * ``keep``    -- mark it seen; both values stay.
 * ``discard`` -- delete the alternate; the local value stays (the imported one is gone).
-* ``adopt``   -- the imported value becomes the local row's value and the value it replaced
-  becomes the alternate, so nothing is lost and the choice can be reversed by adopting again.
-  The only way an imported value ever becomes the shown one.
 * ``discard_batch`` -- discard every alternate one restore brought.
+
+There is deliberately NO action that makes an imported value the one the app shows (the
+maintainer's rule: imported data never prevails over local data). A "show this one instead"
+swap was built and reviewed and taken out: doing it right needs identity-based resolution of
+the local row plus a provenance rewrite, and it is a separate slice if the operator asks for it.
 """
 
 from __future__ import annotations
@@ -26,10 +28,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from src.backup.provenance import PRODUCER_COLUMNS, provenance_tag
-
-#: Columns an ``adopt`` may never write, whatever the stored fields say.
-_NEVER_WRITTEN = frozenset({"id", "article_id", "revision_id", "created_at"})
+from src.backup.provenance import ALTERNATE_SPECS, PRODUCER_COLUMNS, provenance_tag
 
 
 class AlternateError(Exception):
@@ -44,6 +43,43 @@ def _columns(session: Any, table: str) -> set[str]:
     if table not in PRODUCER_COLUMNS:
         raise AlternateError(f"unknown table {table!r}", 400)
     return {r[1] for r in session.execute(text(f"PRAGMA table_info({table})"))}  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS, checked above
+
+
+def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
+    """The id of the local row this alternate differs from, found by its IDENTITY.
+
+    Never by the ``local_row_id`` the restore stored: those tables use plain integer keys that
+    SQLite reuses after a delete, so a stored id can point at an unrelated row later. Where the
+    corpus holds several rows for one identity (a local pass appends one per run), the newest is
+    the one shown, as the readers do."""
+    spec = ALTERNATE_SPECS.get(table)
+    if spec is None or table not in PRODUCER_COLUMNS:
+        return None
+    joins = ""
+    where: list[str] = []
+    params: dict[str, Any] = {}
+    if spec["scope"] == "article":
+        joins = " JOIN articles a ON a.id = t.article_id"
+        where.append("a.hash = :article_hash")
+        params["article_hash"] = identity.get("article_hash")
+    elif spec["scope"] == "law":
+        joins = (
+            " JOIN law_revisions r ON r.id = t.revision_id"
+            " JOIN law_documents d ON d.id = r.document_id"
+        )
+        where.append("d.url = :document_url AND r.content_hash = :revision_content_hash")
+        params["document_url"] = identity.get("document_url")
+        params["revision_content_hash"] = identity.get("revision_content_hash")
+    for i, (name, column) in enumerate(spec["match"].items()):
+        where.append(f"COALESCE(t.{column}, '') = COALESCE(:m{i}, '')")
+        params[f"m{i}"] = identity.get(name)
+    if not where:
+        return None
+    row = session.execute(
+        text(f"SELECT t.id FROM {table} t{joins} WHERE " + " AND ".join(where) + " ORDER BY t.id DESC LIMIT 1"),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS; the identity values are bound
+        params,
+    ).fetchone()
+    return None if row is None else int(row[0])
 
 
 def _local_values(session: Any, table: str, row_id: int | None, names: list[str]) -> dict | None:
@@ -72,7 +108,8 @@ def _article_of(session: Any, identity: dict) -> dict | None:
 def _item(session: Any, r: Any) -> dict:
     identity = json.loads(r.identity)
     imported = json.loads(r.fields)
-    local = _local_values(session, r.table_name, r.local_row_id, list(imported))
+    local_id = _local_row_id(session, r.table_name, identity)
+    local = _local_values(session, r.table_name, local_id, list(imported))
     differing = [k for k, v in imported.items() if local is None or local.get(k) != v]
     return {
         "id": r.id,
@@ -85,7 +122,8 @@ def _item(session: Any, r: Any) -> dict:
         "imported_provenance": json.loads(r.provenance),
         "local": local,
         "local_provenance": (
-            provenance_tag(session, r.table_name, r.local_row_id) if local is not None else None
+            provenance_tag(session, r.table_name, local_id)
+            if local is not None and local_id is not None else None
         ),
         "differing": differing,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -166,43 +204,3 @@ def discard_batch(session: Any, batch_id: int) -> dict:
     ).rowcount
     session.commit()
     return {"batch_id": batch_id, "discarded": int(n or 0)}
-
-
-def adopt(session: Any, alt_id: int) -> dict:
-    """Make the imported value the local row's value; the replaced value becomes the alternate.
-
-    Refused when the local row no longer exists (nothing to replace) or names a column the
-    table does not have. The swap is one transaction."""
-    alt = _get(session, alt_id)
-    table = alt.table_name
-    imported = json.loads(alt.fields)
-    have = _columns(session, table)
-    cols = [c for c in imported if c in have and c not in _NEVER_WRITTEN]
-    if not cols:
-        raise AlternateError("nothing in this alternate can be applied", 400)
-    before = _local_values(session, table, alt.local_row_id, cols)
-    if before is None:
-        raise AlternateError("the local row this differs from is gone", 409)
-    tag_before = provenance_tag(session, table, alt.local_row_id)
-    session.execute(
-        text(
-            f"UPDATE {table} SET " + ", ".join(f"{c} = :v_{i}" for i, c in enumerate(cols))  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS and cols are intersected with the table's own columns; values are bound
-            + " WHERE id = :id"
-        ),
-        {**{f"v_{i}": imported[c] for i, c in enumerate(cols)}, "id": alt.local_row_id},
-    )
-    # The row now says what the backup said, so it must say where that came from: an arrival
-    # record for the batch, exactly like a row the restore itself inserted.
-    session.execute(
-        text(
-            "INSERT OR IGNORE INTO merged_rows (batch_id, table_name, row_id)"
-            " VALUES (:b, :t, :r)"
-        ),
-        {"b": alt.batch_id, "t": table, "r": alt.local_row_id},
-    )
-    alt.fields = json.dumps(before, ensure_ascii=False)
-    alt.provenance = json.dumps(tag_before, ensure_ascii=False)
-    alt.origin = (tag_before or {}).get("origin") or "local"
-    alt.status = "kept"
-    session.commit()
-    return {"id": alt_id, "adopted": True, "columns": cols}
