@@ -704,7 +704,7 @@
       try {
         const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
         $("ingest-result").textContent = t("Feed result —") + " " + tally(r.tally);
-        toast("Ingest complete."); doSearch();
+        toast("Ingest complete."); doSearch({refresh: true});
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
 
@@ -719,7 +719,7 @@
           body: JSON.stringify({source_id: Number(id), url})});
         $("ingest-result").innerHTML = `Result: <span class="pill ${r.result==='stored'?'ok':'warn'}">${esc(r.result)}</span>` +
           (r.detail ? ` — ${esc(r.detail)}` : "");
-        if (r.result === "stored") { $("ing-url").value = ""; doSearch(); }
+        if (r.result === "stored") { $("ing-url").value = ""; doSearch({refresh: true}); }
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
 
@@ -862,7 +862,7 @@
             `<td>${x.status === "ok" ? tally(x.tally)
               : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
           `</table>`;
-        toast("Batch ingest complete."); doSearch();
+        toast("Batch ingest complete."); doSearch({refresh: true});
       } catch (e) { $("bi-status").textContent = ""; toast(_failMsg("Batch ingest failed: {error}", e), "err"); }
       finally { btn.disabled = false; }
     }
@@ -1657,7 +1657,7 @@
         let tries = 0;
         const poll = setInterval(async () => {
           try { const s = await api("/api/scheduler/status"); renderSchedStatus(s);
-            if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch(); loadDbStats(); } }
+            if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch({refresh: true}); loadDbStats(); } }
           catch { clearInterval(poll); }
         }, 1500);
       } catch (e) { toast(_failMsg("Run now failed: {error}", e), "err"); }
