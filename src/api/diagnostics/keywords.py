@@ -42,6 +42,7 @@ from src.analytics.keyword_log_export import (
     finish_zip,
     fit_window,
     resolve_max_bytes,
+    sweep_stale_scratch,
     unlink_quietly,
     zip_disk_preflight,
 )
@@ -496,7 +497,15 @@ def keyword_log(
     out_dir = export_dir()
     # Where the ranking spills when it must: the data folder, else the OS temp folder, never
     # "nowhere" (a ranker with no place to spill used to grow to the whole window in memory).
-    scratch_dir = out_dir if out_dir is not None else Path(tempfile.gettempdir())
+    # The OS temp folder is the last resort, not the choice: on some systems it is a RAM disk, which
+    # is what ``export_dir`` exists to avoid. It is used because the alternatives are to grow in
+    # memory (the crash this code was written for) or to refuse an export the machine could do.
+    # Its stale scratch files are swept like the data folder's (only this export's own prefixes).
+    if out_dir is not None:
+        scratch_dir = out_dir
+    else:
+        scratch_dir = Path(tempfile.gettempdir())
+        sweep_stale_scratch(scratch_dir)
     ranker: Ranker | None = None
     try:
         with statement_deadline(db, seconds=_export_deadline_seconds()):
@@ -525,7 +534,10 @@ def keyword_log(
 
             ranker = Ranker(
                 lo, hi, heap_rows=plan["heap_rows"], spill_dir=scratch_dir,
-                disk_check=disk_check_for(scratch_dir), disk_watch=disk_watch_for(scratch_dir),
+                disk_check=disk_check_for(scratch_dir),
+                disk_watch=disk_watch_for(
+                    scratch_dir, stopped="stopped ranking and removed its scratch file"
+                ),
                 # Every keyword there is bounds what the ranking can ever write to disk (its id
                 # range is one primary-key read): the up-front check sizes the file from it.
                 expected_rows=int(
@@ -728,7 +740,7 @@ def keyword_log(
         return entry_for(s, meta, lang_sig, is_hidden)
 
     # THE PHASE AFTER THE SCAN holds every survivor, its metadata and signature, the families'
-    # grouping and the digests at once (~2.1 KB per survivor, the measured cost): bounded by the
+    # grouping and the digests at once (~2.5 KB per survivor, the measured resident cost): bounded by the
     # languages, never by the corpus, but the largest instance reaches about a gigabyte here.
     # The memory stop reads between steps, and a stop answers 503 with the numbers, as it does
     # inside the scan.

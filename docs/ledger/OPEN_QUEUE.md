@@ -60,7 +60,7 @@
   2,280 MiB available. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
   (`EXPORT_ENTRY_BYTES` 2,750 B = the 2,500 B per exported keyword MEASURED by peak resident size on synthetic databases of 100,000,
   205,000 and 410,000 entries, the last being the shape of the largest instance's export, plus ten per cent;
-  `EXPORT_FIXED_BYTES` 60 MiB against a measured intercept of 38 MiB; the Python-allocation halves are pinned by tracemalloc tests);
+  `EXPORT_FIXED_BYTES` 60 MiB against a measured intercept of 38 MiB; both are pinned BY VALUE against that resident-size measurement, and tracemalloc tests bound them from below, because tracemalloc cannot see the allocator's overhead);
   the static 200.0 MiB (was 3,322.8, the unbounded code) is the fallback without a session and is a 13-language reading. The
   field reason: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read 6,773 MiB, above the line
   the old number implied. The performance report's `keyword_export_streamed` probe passes every argument itself and goes through
@@ -851,7 +851,7 @@
   admitted it. The code is now bounded, the static
   reading is 200.0 MiB (a synthetic corpus), and the gate for this member is sized from the
   instance's OWN counts times per-row costs that are each MEASURED (`EXPORT_ENTRY_BYTES`,
-  `EXPORT_FIXED_BYTES`, pinned by tracemalloc tests), held against half of total RAM as before
+  `EXPORT_FIXED_BYTES`, pinned by value against the resident-size measurement and bounded from below by tracemalloc tests), held against half of total RAM as before
   AND against the memory available now minus the memory stop's floor (that second branch is a DEFAULT TAKEN, not
   yet ruled: see the "All keywords" zip entry, item 3). The rule above stands
   for every other member: one that is not measured never declines; an estimator is added only

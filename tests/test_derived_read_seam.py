@@ -222,11 +222,12 @@ _RAW_CEILING: dict[str, int] = {
     "src/analytics/keyword_growth.py": 6,
     # The keyword-log export reads the mention rows through ONE constant (MENTIONS_TABLE), so
     # D22's move onto KeywordMentionRead is a one-line change there; it is a reader that has not
-    # moved yet, owned by the keyword thread. The count is the constant's own definition plus
-    # each read written through it: the scan's one ordered pass (keyword_log_scan.py) and the
-    # language-signature probe (keyword_log_export.py).
-    "src/analytics/keyword_log_export.py": 1,
-    "src/analytics/keyword_log_scan.py": 2,
+    # moved yet, owned by the keyword thread. The count is EVERY mention of that name, however a
+    # read is spelled around it: in keyword_log_scan.py its docstring line, its definition (which
+    # also carries the literal table name) and the scan's one ordered pass; in
+    # keyword_log_export.py its import and the language-signature probe.
+    "src/analytics/keyword_log_export.py": 2,
+    "src/analytics/keyword_log_scan.py": 4,
     "src/analytics/latest.py": 2,
     "src/analytics/map_serve.py": 1,
     "src/analytics/queries.py": 8,
@@ -278,15 +279,33 @@ _RAW_CEILING: dict[str, int] = {
 }
 
 
+# The literal table name, or the keyword export's constant for it (the one place that names the
+# table). The constant is matched by NAME, not by the ``{MENTIONS_TABLE}`` an f-string writes, so a
+# read spelled ``{kls.MENTIONS_TABLE}``, ``"FROM " + MENTIONS_TABLE``, ``.format(MENTIONS_TABLE)``
+# or ``% MENTIONS_TABLE`` is counted as well.
+_RAW_RE = re.compile(r"\bkeyword_mentions\b|\bMENTIONS_TABLE\b")
+
+
+def test_the_raw_ratchet_sees_a_read_however_the_constant_is_spelled():
+    for spelling in (
+        'f"SELECT 1 FROM {MENTIONS_TABLE}"',
+        'f"SELECT 1 FROM {kls.MENTIONS_TABLE}"',
+        '"SELECT 1 FROM " + MENTIONS_TABLE',
+        '"SELECT 1 FROM {}".format(MENTIONS_TABLE)',
+        '"SELECT 1 FROM %s" % MENTIONS_TABLE',
+        '"SELECT 1 FROM keyword_mentions"',
+    ):
+        assert _RAW_RE.search(spelling), spelling
+    assert not _RAW_RE.search("MENTIONS_TABLES and keyword_mentions_all")
+
+
 def _actual_raw() -> dict[str, int]:
     found: dict[str, int] = {}
     for f in _SRC.rglob("*.py"):
         rel = f.relative_to(_SRC.parent).as_posix()
         if rel in _SKIP:
             continue
-        # ``{MENTIONS_TABLE}`` is a read written through the keyword export's constant (the one
-        # place that names the table): a regex for the literal name alone cannot see it.
-        n = len(re.findall(r"\bkeyword_mentions\b|\{MENTIONS_TABLE\}", f.read_text(encoding="utf-8")))
+        n = len(_RAW_RE.findall(f.read_text(encoding="utf-8")))
         if n:
             found[rel] = n
     return found

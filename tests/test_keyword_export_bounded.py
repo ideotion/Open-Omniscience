@@ -29,12 +29,15 @@ replaces) was checked by ``differential_keyword_export.py`` (shared under
 from __future__ import annotations
 
 import asyncio
+import errno
 import gc
 import io
 import json
 import random
 import sqlite3
+import tempfile
 import tracemalloc
+import types
 import zipfile
 from collections import Counter
 from pathlib import Path
@@ -347,6 +350,67 @@ def test_a_window_that_starts_past_zero_still_reads_the_same_after_pruning(tmp_p
         r.close()
 
 
+def test_the_floor_and_the_prune_hold_when_ids_arrive_out_of_order(tmp_path):
+    """Production feeds ids out of order: the orphan pass reads ``SELECT id, language FROM
+    keywords`` off a covering index that orders by language and then id, and a NULL and an empty
+    language both land in "?", so inside "?" the ids arrive 4, 8, 12, then 1, 5, 9. The floor's
+    tie-break (a row that ties on mentions ranks by LOWER id) was only ever fed ascending ids
+    here, so a floor one id too high passed. Heavy ties and shuffled ids make the tie-break the
+    deciding factor."""
+    for seed in range(8):
+        rnd = random.Random(700 + seed)
+        lo, hi = (0, 5) if seed % 2 == 0 else (2, 9)
+        r = kls.Ranker(lo, hi, heap_rows=8, spill_dir=tmp_path, disk_check=None)
+        kids = list(range(1, 1_501))
+        rnd.shuffle(kids)
+        by_lang: dict[str, list[tuple]] = {}
+        for kid in kids:
+            lg = rnd.choice(["?", "?", "en"])
+            orphan = rnd.random() < 0.35
+            m = 0 if orphan else rnd.choice([1, 1, 1, 2, 2, 3])
+            by_lang.setdefault(lg, []).append((kid, m, None if orphan else "en"))
+            r.add(lg, kid, m, 1, None, None, None if orphan else "en")
+        try:
+            assert r.spilled
+            for lg, rows in by_lang.items():
+                assert [row[0] for row in r.rows(lg)] == _window_reference(rows, lo, hi), (seed, lg)
+        finally:
+            r.close()
+    assert _leftovers(tmp_path) == []
+
+
+def test_a_window_that_ends_before_it_starts_is_empty_in_both_modes(tmp_path):
+    """SQLite reads a NEGATIVE limit as "no limit", so spill mode used to return everything after
+    ``lo`` where heap mode's slice [lo:hi] is empty. The route cannot reach it (the window never
+    shrinks below one), but the two modes are one behaviour. The spill holds up to 2 x hi rows
+    between prunes, so a window of [4, 3) over five rows on disk is the smallest case where an
+    unclamped limit has a row to wrongly return."""
+    for heap_rows in (10**9, 2):
+        r = kls.Ranker(4, 3, heap_rows=heap_rows, spill_dir=tmp_path, disk_check=None)
+        for kid in range(1, 6):
+            r.add("en", kid, 9 - kid, 1, None, None, "en")
+        try:
+            assert r.spilled is (heap_rows == 2)
+            assert list(r.rows("en")) == []
+        finally:
+            r.close()
+
+
+def test_a_row_ranking_just_ahead_of_the_cut_is_kept_after_a_prune(tmp_path):
+    """Directed, because random order almost never produces it: after a prune the floor is the
+    key of the row at the cut, and a row that TIES on mentions with a LOWER id ranks ahead of the
+    cut and must still be written. Ids 10..60 (all tied) force the first prune with 30 at the cut;
+    id 29 arrives afterwards and belongs in the window. A floor one id too high drops it."""
+    r = kls.Ranker(0, 3, heap_rows=2, spill_dir=tmp_path, disk_check=None)
+    for kid in (10, 20, 30, 40, 50, 60, 29):
+        r.add("en", kid, 5, 1, None, None, "en")
+    try:
+        assert r.spilled and "en" in r._floor, "the prune must have run for this to test anything"
+        assert [row[0] for row in r.rows("en")] == [10, 20, 29]
+    finally:
+        r.close()
+
+
 def test_the_disk_is_watched_while_the_ranking_spills_not_only_before_it(tmp_path):
     flushes = {"n": 0}
 
@@ -362,6 +426,76 @@ def test_the_disk_is_watched_while_the_ranking_spills_not_only_before_it(tmp_pat
     assert err.value.status == 507 and flushes["n"] == 3
     r.close()
     assert _leftovers(tmp_path) == []
+
+
+def _enospc(*_a, **_k):
+    raise OSError(errno.ENOSPC, "No space left on device")
+
+
+def test_a_drive_with_no_room_for_the_scratch_file_is_a_507_for_the_spill_and_the_archive(
+    tmp_path, monkeypatch
+):
+    """Creating the scratch file is the first write the export makes, and a drive with no room
+    answers ENOSPC from the OS there, not from SQLite: that used to surface as a 500."""
+    monkeypatch.setattr(tempfile, "mkstemp", _enospc)
+    r = kls.Ranker(0, 10**9, heap_rows=3, spill_dir=tmp_path, disk_check=None)
+    with pytest.raises(kls.ExportRefused) as err:
+        for kid in range(1, 10):
+            r.add("en", kid, 1, 1, None, None, "en")
+    assert err.value.status == 507 and "no room" in str(err.value)
+    r.close()
+    with pytest.raises(kls.ExportRefused) as err2:
+        kle.ZipJob._path(types.SimpleNamespace(out_dir=tmp_path))
+    assert err2.value.status == 507
+
+
+def test_an_error_creating_the_scratch_file_that_is_not_a_full_drive_is_not_renamed(tmp_path, monkeypatch):
+    def denied(*_a, **_k):
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(tempfile, "mkstemp", denied)
+    with pytest.raises(PermissionError):
+        kls.scratch_file("p-", ".x", tmp_path)
+
+
+def test_the_disk_watch_says_what_the_export_was_doing_when_it_stopped(tmp_path, monkeypatch):
+    import collections
+
+    Usage = collections.namedtuple("Usage", "total used free")
+    monkeypatch.setattr(kle.shutil, "disk_usage", lambda _p: Usage(10**12, 10**12 - 1000, 1000))
+    with pytest.raises(kls.ExportRefused) as archive:
+        kle.disk_watch_for(tmp_path)()
+    assert "stopped writing the archive and removed it" in str(archive.value)
+    with pytest.raises(kls.ExportRefused) as spill:
+        kle.disk_watch_for(tmp_path, stopped="stopped ranking and removed its scratch file")()
+    assert "stopped ranking and removed its scratch file" in str(spill.value)
+    assert "writing the archive" not in str(spill.value)
+    assert spill.value.status == 507
+
+
+def test_with_no_data_folder_the_temp_folders_stale_scratch_is_swept_too(dbs, tmp_path, monkeypatch):
+    """The OS temp folder is the last resort for the spill, and what a killed export left there
+    (only this export's own prefixes, and only once it is stale) is swept like the data folder's."""
+    import os
+    import time
+
+    import src.api.diagnostics.keywords as kw_mod
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(kw_mod, "export_dir", lambda: None)
+    stale = tmp_path / f"{kls.SPILL_PREFIX}9-9.sqlite"
+    other = tmp_path / "somebody-elses.tmp"
+    for p in (stale, other):
+        p.write_bytes(b"x")
+    long_ago = time.time() - 13 * 3600
+    os.utime(stale, (long_ago, long_ago))
+    os.utime(other, (long_ago, long_ago))
+    db = _session(dbs[0])
+    try:
+        _call(db, fmt="json", digest=True, per_lang=5000, max_mb=None)
+    finally:
+        db.close()
+    assert not stale.exists() and other.exists()
 
 
 class _FullDiskConnection:
@@ -601,8 +735,9 @@ def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
     the bundle gate compares with the machine (R27). Measured here on the digest path, the one the
     bundle runs, as the SLOPE between two corpus sizes (so the fixed part does not hide in it): the
     constant must cover the peak per exported entry, and must not sit so far above it that the
-    gate refuses machines that could run the export. (Resident size at 100k-410k entries is
-    measured out of process: see the constant's comment.)"""
+    gate refuses machines that could run the export. This is the LOWER bound: tracemalloc misses the
+    allocator's overhead, so the window is wide on purpose; the resident size at 100k-410k entries,
+    measured out of process, is what pins the value (the test below)."""
     small_peak, small_n = _digest_peak(tmp_path, monkeypatch, keywords=12_000, seed=9)
     big_peak, big_n = _digest_peak(tmp_path, monkeypatch, keywords=30_000, seed=10)
     assert small_n > 8_000 and big_n > small_n * 1.5
@@ -611,13 +746,42 @@ def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
     assert slope >= kls.EXPORT_ENTRY_BYTES * 0.5, slope
 
 
-def test_export_fixed_constant_covers_the_measured_intercept(tmp_path, monkeypatch):
+# The RESIDENT-size measurements the two constants rest on (peak RSS of the digest in its own
+# process, synthetic databases of 82 languages x 5,000 exported keywords, 2026-09-30: +277 / +528
+# / +1,015 MiB at 100,000 / 205,000 / 410,000 entries). The fit is the slope and the intercept
+# below. tracemalloc cannot see the allocator's overhead, the SQLite page cache or the
+# interpreter, so it can only ever be a LOWER bound on these; the constants are pinned against the
+# measurement itself, and moving one means measuring again, not editing a number.
+_MEASURED_RSS_SLOPE_BYTES = 2_505
+_MEASURED_RSS_INTERCEPT_BYTES = int(38.8 * 2**20)
+
+
+def test_export_entry_constant_is_the_measured_resident_slope_plus_its_margin():
+    """Two-sided, and by value. It must cover the slope that was measured (or the gate admits a
+    machine the export then kills), and it may not drift far above it (or the gate refuses machines
+    that could run the export). The margin is the ten per cent the constant's comment states."""
+    assert kls.EXPORT_ENTRY_BYTES == 2750
+    assert kls.EXPORT_ENTRY_BYTES >= _MEASURED_RSS_SLOPE_BYTES
+    assert kls.EXPORT_ENTRY_BYTES <= _MEASURED_RSS_SLOPE_BYTES * 1.15
+
+
+def test_export_fixed_constant_covers_the_measured_intercept():
+    """The 38 MiB the resident size showed at the three sizes is what EXPORT_FIXED_BYTES must
+    cover, with a margin the comment calls 1.6x: at least the measured intercept, at most twice it.
+    (A constant of 1 MiB, or zero, used to pass the tracemalloc test below: that one reads about
+    zero, because the export's own structures all scale with the entries.)"""
+    assert kls.EXPORT_FIXED_BYTES == 60 * 2**20
+    assert kls.EXPORT_FIXED_BYTES >= _MEASURED_RSS_INTERCEPT_BYTES
+    assert kls.EXPORT_FIXED_BYTES <= 2 * _MEASURED_RSS_INTERCEPT_BYTES
+
+
+def test_no_python_structure_that_grows_with_the_corpus_hides_in_the_fixed_constant(tmp_path, monkeypatch):
     """The part of the export's memory that does not grow with the corpus (EXPORT_FIXED_BYTES) is
     the intercept of the same two-size fit. On the Python-allocation basis it is about zero (the
     export's own structures all scale with the entries); the 38 MiB the RESIDENT size shows is the
     SQLite page cache, the allocator's arenas and the interpreter, which tracemalloc cannot see and
-    which the out-of-process measurement in the constant's comment pins. What this test keeps is
-    the half it can see: no Python structure that grows with the corpus hides in the constant."""
+    which the test above pins. What this test keeps is the half it can see: no Python structure
+    that grows with the corpus hides in the constant."""
     small_peak, small_n = _digest_peak(tmp_path, monkeypatch, keywords=12_000, seed=9)
     big_peak, big_n = _digest_peak(tmp_path, monkeypatch, keywords=30_000, seed=10)
     slope = (big_peak - small_peak) / (big_n - small_n)
@@ -1036,17 +1200,39 @@ def test_memory_running_out_after_the_scan_stops_the_json_and_digest_forms_with_
 def test_the_survivor_phase_reads_the_memory_stop_as_it_goes_not_only_at_its_ends(
     tmp_path, data_dir, monkeypatch
 ):
+    """Counted INSIDE the survivor loop only: between the first entry built and the families'
+    grouping. The scan and the metadata batches read the stop too (every 800 survivors), so a
+    count over the whole request would pass with the loop's own check deleted -- which is the
+    loop that holds about a gigabyte at the largest instance's size."""
     import src.api.diagnostics.keywords as kw_mod
 
     p = tmp_path / "many.db"
     _build(p, 9, articles=200, keywords=9_000, with_boilerplate=False)
-    reads = {"n": 0}
-    monkeypatch.setattr(kw_mod, "raise_if_memory_short", lambda *, started=None: reads.update(n=reads["n"] + 1))
+    state = {"in_loop": False, "reads_in_loop": 0, "entries": 0}
+    real_entry, real_families = kw_mod.entry_for, kw_mod.build_families
+
+    def entry(*a, **k):
+        state["in_loop"] = True
+        state["entries"] += 1
+        return real_entry(*a, **k)
+
+    def families(items, overrides):
+        state["in_loop"] = False
+        return real_families(items, overrides)
+
+    def stop(*, started=None):
+        if state["in_loop"]:
+            state["reads_in_loop"] += 1
+
+    monkeypatch.setattr(kw_mod, "entry_for", entry)
+    monkeypatch.setattr(kw_mod, "build_families", families)
+    monkeypatch.setattr(kw_mod, "raise_if_memory_short", stop)
     db = _session(p)
     doc = json.loads(_drain_body(_call(db, fmt="json", digest=True, per_lang=5000, max_mb=None)))
     survivors = doc["data"]["corpus"]["keywords_exported"]
-    assert survivors > 4_000
-    assert reads["n"] >= survivors // 2_000  # at least one read per 2,000 survivors
+    assert survivors > 4_000 and state["entries"] >= survivors
+    # one read at the start of every block of 2,000 survivors: ceil(n / 2,000)
+    assert state["reads_in_loop"] == -(-survivors // 2_000), state
     db.close()
 
 
@@ -1119,6 +1305,8 @@ def test_a_machine_already_at_its_floor_is_refused_with_numbers_and_leaves_nothi
     with pytest.raises(HTTPException) as err:
         _call(db)
     assert err.value.status_code == 503 and "MB" in str(err.value.detail)
+    # Said as a refusal to START, not as a stop after some seconds of work: nothing had run.
+    assert "did not start this read" in str(err.value.detail)
     assert _leftovers(data_dir) == []
     db.close()
 

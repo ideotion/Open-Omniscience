@@ -44,6 +44,7 @@ id ascending, within each language.
 from __future__ import annotations
 
 import contextlib
+import errno
 import heapq
 import logging
 import os
@@ -470,6 +471,27 @@ def _refuse_when_the_disk_is_full():
         ) from exc
 
 
+def scratch_file(prefix: str, suffix: str, directory: Path | str) -> Path:
+    """Create an empty scratch file with a name no other export can share (``mkstemp``).
+
+    A full drive answers here too: creating the file is the first write the export makes, and on
+    a drive with no room it raises ``ENOSPC`` from the OS, not from SQLite. That is the same
+    refusal (HTTP 507) the free-space checks give, never a 500 that reads as a bug in the app.
+    """
+    try:
+        fd, name = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=str(directory))
+    except OSError as exc:
+        if exc.errno != errno.ENOSPC:
+            raise
+        raise ExportRefused(
+            "the drive holding your data has no room for the export's scratch file. Free some "
+            "space, or ask for a smaller window (per_lang=...).",
+            status=507,
+        ) from exc
+    os.close(fd)
+    return Path(name)
+
+
 class Ranker:
     """Per-language quota ranking that never holds more than ``heap_rows`` rows in memory.
 
@@ -561,9 +583,8 @@ class Ranker:
             self._disk_check(bound * SPILL_ROW_BYTES)
         # mkstemp: a name no other export can share (two in one millisecond used to), created
         # before anything else so a failure below has a file to remove.
-        fd, name = tempfile.mkstemp(prefix=SPILL_PREFIX, suffix=".sqlite", dir=str(self._spill_dir))
-        os.close(fd)
-        self._path = Path(name)
+        self._path = scratch_file(SPILL_PREFIX, ".sqlite", self._spill_dir)
+        name = str(self._path)
         con: sqlite3.Connection | None = None
         try:
             with _refuse_when_the_disk_is_full():
@@ -659,7 +680,10 @@ class Ranker:
         yield from self._con.execute(
             "SELECT kid, m, a, first, last, dom FROM kw WHERE lang=? "
             "ORDER BY has_m DESC, m DESC, kid ASC LIMIT ? OFFSET ?",
-            (lang, self._hi - self._lo, self._lo),
+            # max(0, ...): SQLite reads a NEGATIVE limit as "no limit", where the heap form's
+            # slice [lo:hi] is empty when hi < lo. The route cannot reach it (fit_window never
+            # returns less than one), but the two modes are one behaviour, so they agree here too.
+            (lang, max(0, self._hi - self._lo), self._lo),
         )
 
     def close(self) -> None:
@@ -695,9 +719,12 @@ class Ranker:
 #: 100,000 / 205,000 / 410,000 entries, a slope of 2,495-2,505 bytes per entry (and the same with
 #: multi-language signatures), against 2,100 by tracemalloc at 15,000-30,000 entries (the gap is
 #: the allocator's own overhead). The constant is that slope plus ten per cent, because real
-#: terms are longer than the synthetic ones; the test below fails if it stops covering the
-#: Python-allocation cost, and ``/mnt/project-files/keyword-export/synth_many_languages.py`` +
-#: ``measure_keyword_export.py`` re-measure the resident size.
+#: terms are longer than the synthetic ones. Two tests hold it: one fails if it stops covering the
+#: Python-allocation cost (tracemalloc, a LOWER bound on what the process takes), and one pins
+#: the value itself, so changing it means re-measuring the resident size on purpose. The
+#: measuring scripts (a synthetic database of N languages x 5,000 keywords and a peak-RSS probe of
+#: the digest) are kept with the project's shared files, not in this repository; the method is
+#: the one in the sentence above.
 EXPORT_ENTRY_BYTES = 2750
 
 #: The rest of the export's rise in resident memory that does not scale with the corpus: the
@@ -705,7 +732,8 @@ EXPORT_ENTRY_BYTES = 2750
 #: the fit above is 38 MiB (37.8-38.8 at the three sizes), and a digest over 13 languages x
 #: 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M. 60 MiB is 1.6x
 #: the measured intercept; ``test_export_fixed_constant_covers_the_measured_intercept`` fails
-#: if the Python-allocation intercept outgrows it.
+#: if it drops below the 38 MiB that was measured, and the value itself is pinned, so a change is
+#: a re-measurement and not a drift.
 EXPORT_FIXED_BYTES = 60 * 2**20
 
 #: Bytes per article while the language/source arrays are dense (an ``I`` and a ``q``), and

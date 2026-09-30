@@ -19,7 +19,6 @@ from __future__ import annotations
 import contextlib
 import itertools
 import json
-import os
 import shutil
 import tempfile
 import time
@@ -41,6 +40,7 @@ from src.analytics.keyword_log_scan import (
     RingAcc,
     StopwordAcc,
     order_key,
+    scratch_file,
 )
 from src.utils.export_envelope import envelope
 
@@ -158,8 +158,12 @@ def disk_check_for(d: Path | None):
     return _check
 
 
-def disk_watch_for(d: Path | None):
-    """Called between batches while the archive grows: stop before the drive is full."""
+def disk_watch_for(d: Path | None, *, stopped: str = "stopped writing the archive and removed it"):
+    """Called between batches while the archive grows: stop before the drive is full.
+
+    ``stopped`` finishes the sentence the refusal says ("so it ..."): what the export was doing
+    when it stopped, because the same watch guards the ranking's scratch file as well as the
+    archive."""
     if d is None:
         return lambda: None
 
@@ -173,7 +177,7 @@ def disk_watch_for(d: Path | None):
             raise ExportRefused(
                 f"the drive holding your data is down to {free / 2**30:.2f} GiB free "
                 f"(the export keeps {reserve / 2**30:.1f} GiB free for the database's own "
-                "log), so it stopped writing the archive and removed it.",
+                f"log), so it {stopped}.",
                 status=507,
             )
 
@@ -333,9 +337,7 @@ class ZipJob:
             d = Path(tempfile.gettempdir())
         # mkstemp, not pid + clock: two exports in the same millisecond shared a name, and one
         # deleted the other's archive once it had been sent.
-        fd, name = tempfile.mkstemp(prefix=ZIP_TMP_PREFIX, suffix=".zip", dir=str(d))
-        os.close(fd)
-        return Path(name)
+        return scratch_file(ZIP_TMP_PREFIX, ".zip", d)
 
     def _build_summary(self, sw: StopwordAcc, ring: RingAcc, fam: list, total_keep: int) -> dict:
         _fam_cap = self.hooks.families_cap()
