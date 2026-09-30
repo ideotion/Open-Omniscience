@@ -14,7 +14,14 @@ from sqlalchemy.orm import Session
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article
 from src.database.session import get_db
-from src.reporting.evidence import build_signed_bundle, load_or_create_signing_key, verify_bundle
+from src.reporting.evidence import (
+    BUNDLE_VERSION,
+    ITEM_FIELDS,
+    build_signed_bundle,
+    existing_public_key_hex,
+    load_or_create_signing_key,
+    verify_bundle,
+)
 from src.reporting.methods import METHODS_SCHEMA, build_methods_markdown
 
 router = APIRouter(prefix="/api/reports", tags=["reporting"])
@@ -49,6 +56,29 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
 
     key = load_or_create_signing_key()
     return build_signed_bundle(articles, key, case_name=req.case_name)
+
+
+@router.post("/evidence/plan")
+def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
+    """What an evidence bundle for this selection would hold, before it is written.
+
+    The review screen's numbers and lists: how many articles, from how many sources, which
+    fields each item carries (the text is NOT one of them: only its SHA-256), and which key
+    will sign. READ-ONLY: it never creates the signing key (that happens at export), makes no
+    network call and writes nothing, so looking costs nothing.
+    """
+    articles = _select_articles(req, db)
+    if not articles:
+        raise HTTPException(status_code=404, detail="No matching articles to export.")
+    pub = existing_public_key_hex()
+    return {
+        "bundle_version": BUNDLE_VERSION,
+        "articles": len(articles),
+        "sources": len({a.source_id for a in articles}),
+        "item_fields": list(ITEM_FIELDS),
+        "text_included": False,
+        "signer": {"exists": pub is not None, "ed25519_pub": pub},
+    }
 
 
 class VerifyRequest(BaseModel):

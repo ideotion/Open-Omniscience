@@ -1,0 +1,107 @@
+// The signed-evidence review's renderers, run as REAL code (gate row K, brief S05-11 S5).
+//
+// Open Omniscience - Global Intelligence Platform for Investigative Journalism
+// Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+//
+// The review is what stands between a click and a file that leaves the machine, so most
+// checks are refusals:
+//
+//   * it says the file is PLAINTEXT, beside the numbers and before the button, not in a hover;
+//   * it says what the signature proves and that one key on every bundle links them all;
+//   * with no key yet it says one will be created, instead of showing an empty key;
+//   * it lists what the file holds, and names the item fields it was given (the wire, not a
+//     re-typed list), with the JSON keys shown as code, never translated;
+//   * after saving it names the file, the size and the key to hand over, and how to check it
+//     offline;
+//   * nothing it says scores, ranks or vouches for the articles.
+//
+// EXTRACTED from the shipped module rather than re-typed.
+
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+
+const SRC = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app-evidence.js"), "utf-8");
+
+function extract(name) {
+  const at = SRC.indexOf("function " + name + "(");
+  assert.ok(at !== -1, name + " not found -- was it renamed?");
+  let i = SRC.indexOf("(", at), depth = 0;
+  for (; i < SRC.length; i++) {
+    if (SRC[i] === "(") depth++;
+    else if (SRC[i] === ")") { depth--; if (depth === 0) { i++; break; } }
+  }
+  const open = SRC.indexOf("{", i);
+  let d = 0, j = open;
+  for (; j < SRC.length; j++) {
+    if (SRC[j] === "{") d++;
+    else if (SRC[j] === "}") { d--; if (d === 0) { j++; break; } }
+  }
+  return SRC.slice(at, j);
+}
+
+const FNS = ["evidenceMembersHtml", "evidenceReviewHtml", "evidenceDoneHtml"];
+const src =
+  "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
+  FNS.map(extract).join("\n") + "\n" +
+  "module.exports = {" + FNS.join(", ") + "};";
+const R = (() => {
+  const m = { exports: {} };
+  new Function("module", "exports", src)(m, m.exports);
+  return m.exports;
+})();
+
+const t = (s) => s;
+const tf = (s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]);
+const decode = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"")
+  .replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const visible = (html) => decode(String(html).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+
+const FIELDS = ["id", "url", "canonical_url", "source_id", "title", "published_at", "stored_hash", "content_sha256"];
+const PLAN = { bundle_version: "oo-evidence-1", articles: 14, sources: 5, item_fields: FIELDS, text_included: false,
+  signer: { exists: true, ed25519_pub: "ab".repeat(32) } };
+
+const review = visible(R.evidenceReviewHtml(PLAN, t, tf));
+assert.ok(review.includes("Articles: 14") && review.includes("Sources: 5"), review);
+assert.ok(review.includes("Plaintext: the file is not encrypted."), review);
+assert.ok(review.includes("The articles' text is not in it, only its SHA-256."), review);
+assert.ok(review.includes("It is signed with this install's evidence key.") && review.includes("links all of them"), review);
+assert.ok(review.includes("id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256"), review);
+assert.ok(review.includes("manifest") && review.includes("signature") && review.includes("public_key"), review);
+assert.ok(!review.includes("created on this machine"), "a key that exists is not 'created'");
+
+// no key yet: say one will be made, and that it stays here
+const fresh = visible(R.evidenceReviewHtml(Object.assign({}, PLAN, { signer: { exists: false, ed25519_pub: null } }), t, tf));
+assert.ok(fresh.includes("no evidence key yet") && fresh.includes("created on this machine when you save"), fresh);
+assert.ok(!fresh.includes("It is signed with this install's evidence key."), fresh);
+// no fields on the wire: still a well-formed line, never "undefined"
+const bare = visible(R.evidenceReviewHtml({ articles: 1, sources: 1, signer: {} }, t, tf));
+assert.ok(!bare.includes("undefined") && !bare.includes("null"), bare);
+
+// the JSON keys are code (never translated); the explanation beside them is text
+const members = R.evidenceMembersHtml(PLAN, t, tf);
+assert.ok(members.includes("<code>manifest</code>") && members.includes("<code>manifest.items</code>"), members);
+assert.strictEqual((members.match(/<li>/g) || []).length, 3);
+
+// caveats are on the page as plain paragraphs, not in a title attribute
+const html = R.evidenceReviewHtml(PLAN, t, tf);
+assert.strictEqual((html.match(/class="card-caveat"/g) || []).length, 2);
+assert.ok(!/title=/.test(html), "the caveats do not hide in a hover");
+
+// after saving
+const done = visible(R.evidenceDoneHtml(PLAN, { filename: "evidence-bundle-2026-09-30.json", bytes: 5120, count: 14, pub: "cd".repeat(32) },
+  t, tf, (n) => "B(" + n + ")"));
+assert.ok(done.includes("Saved ⁨evidence-bundle-2026-09-30.json⁩: 14 articles, B(5120)."), done);
+assert.ok(done.includes("Signing key (Ed25519), to give the recipient some other way:") && done.includes("cd".repeat(32)), done);
+assert.ok(done.includes("scripts/verify_evidence.py") && done.includes("What the file holds"), done);
+assert.ok(done.indexOf("Saved") < done.indexOf("What the file holds") && done.indexOf("What the file holds") < done.indexOf("Signing key"), done);
+
+// the file name is text, never markup
+const hostile = R.evidenceDoneHtml(PLAN, { filename: "<img src=x onerror=1>.json", bytes: 1, count: 1, pub: "<b>k</b>" }, t, tf, (n) => n);
+assert.ok(!hostile.includes("<img") && !hostile.includes("<b>k"), hostile);
+
+// nothing vouches for the articles
+const all = review + " " + fresh + " " + done;
+assert.ok(!/\b(score[sd]?|rating|rank(ed|ing)?|grade[sd]?|credib\w*|trustworth\w*|reliab\w*|verified)\b/i.test(all), all);
+
+console.log("evidence review node test: all checks passed");

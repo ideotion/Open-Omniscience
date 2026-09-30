@@ -1879,6 +1879,8 @@
         <label class="depth-opt"><input type="radio" name="set-depth" value="standard"><span class="depth-t"><b>Standard</b><span class="depth-d">Every tab pinned; the fine-tuning of each Lead folded away until you open it.</span></span></label>
         <label class="depth-opt"><input type="radio" name="set-depth" value="full"><span class="depth-t"><b>Full</b><span class="depth-d">Everything pinned and open.</span></span></label>
       </div>
+      <p><button class="secondary" type="button" data-on-click="openTour()"
+                 title="A short walk through the sidebar's tabs at this depth. It changes nothing and can be left at any step.">Take the tour</button></p>
 
       <h3 style="margin-bottom:6px">Feed scrolling history</h3>
       <p class="muted" style="margin-top:0">The Feed remembers two things and nothing else: which order it drew, and how far down it you have scrolled. It keeps no record of which articles you read — there is no reading history in your corpus, in a backup, or anywhere else. Both are stored on this device only.</p>
@@ -3537,6 +3539,8 @@
         <p class="hint" style="margin-top:0">Tabs opened from Leads and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.</p>
         <p class="muted" style="margin-top:0"><span>Everything you need to operate the tool — rendered here, offline. The User Manual is the detailed notice; the other guides go deeper on specific subjects.</span>
           <a href="/docs" target="_blank" rel="noopener">For developers: the raw API reference (Swagger) ↗</a></p>
+        <p><button class="secondary" type="button" data-on-click="openTour()"
+                   title="A short walk through the sidebar's tabs at your interface depth. It changes nothing and can be left at any step.">Take the tour</button></p>
         <div class="doc-layout">
           <div class="doc-nav" id="doc-nav"><div class="muted">Loading…</div></div>
           <div id="doc-prose" class="prose"><div class="muted">Pick a document on the left.</div></div>
@@ -3795,6 +3799,36 @@
     <div id="dossier-body" data-i18n-dyn style="max-height:72vh;overflow:auto"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" type="button" id="dossier-close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- S05-11 S5: the review before a signed evidence bundle is saved, and the message after it
+       (app-evidence.js). Read-only until Save: the plan makes no key, no file and no request
+       beyond loopback. No inline handlers: _evidenceWire binds both buttons once. -->
+  <dialog id="evidence-review" aria-labelledby="evidence-h" style="width:min(620px,94vw);max-height:90vh;padding:18px">
+    <h3 id="evidence-h" style="margin:0 0 8px">Export signed evidence</h3>
+    <div id="evidence-body" data-i18n-dyn style="max-height:66vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
+      <span id="evidence-status" class="hint" role="status"></span>
+      <button class="secondary" type="button" id="evidence-close" data-i18n-dyn>Cancel</button>
+      <button type="button" id="evidence-save">Save the signed bundle</button>
+    </div>
+  </dialog>
+
+  <!-- S05-11 S5: the onboarding tour. Opened by an explicit command only (Settings -> General,
+       the command palette, Help & docs); never by itself. One step per tab the sidebar pins at
+       the reader's depth, drawn by app-tour.js from the live sidebar. It narrows nothing: no
+       filter, no hidden tab, no stored record. No inline handlers: _tourWire binds every
+       button once. -->
+  <dialog id="tour" aria-labelledby="tour-h" style="width:min(560px,94vw);max-height:90vh;padding:18px">
+    <h3 id="tour-h" style="margin:0 0 8px">A short tour</h3>
+    <div id="tour-body" data-i18n-dyn style="max-height:66vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+      <button class="ghost" type="button" id="tour-skip">Skip the tour</button>
+      <span style="display:flex;gap:8px">
+        <button class="secondary" type="button" id="tour-back">Back</button>
+        <button type="button" id="tour-next" data-i18n-dyn>Next</button>
+      </span>
     </div>
   </dialog>
 
@@ -4093,6 +4127,8 @@
   <script src="/static/app-analysis.js"></script>
   <script src="/static/app-claim.js"></script>
   <script src="/static/app-dossier.js"></script>
+  <script src="/static/app-evidence.js"></script>
+  <script src="/static/app-tour.js"></script>
   <script src="/static/app-ai-tools.js"></script>
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
