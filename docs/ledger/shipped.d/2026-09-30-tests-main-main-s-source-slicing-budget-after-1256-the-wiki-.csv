@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,tests/main,Main's source-slicing budget after #1256: the wiki compare test slices its state table with the shared helper,shipped,PR #1262,tests/test_wiki_cross_edition.py,With #1256 merged the hand-rolled slicing count was 231 against a budget of 230; test_wiki_cross_edition.py cut _WIKI_DIV_STATES with two anchors and now uses object_literal from tests/js_source_helper. Budget unchanged at 230.
