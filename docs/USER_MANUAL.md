@@ -1105,6 +1105,29 @@ Source, Language and Time boxes, and `source:`, `author:`, `url:`, `tag:` and
 Exports, the analysis window and the bulk actions work on your corpus; a Wikipedia
 text joins them once you add it.
 
+**One item across editions, and the most-viewed pages** (Living sources → Wikipedia, at the
+bottom). Two views that only read what this machine already holds; neither fetches.
+*One item across editions*: type a Wikidata item (Q42) or press one of the suggestions (the
+items whose pages the stream recorded the most changes for this week) and a table shows, for
+each edition you follow, that edition's page, its **size in bytes of wikitext** (read once,
+when the page walk reached the page), when it was read, and the **changes this machine
+recorded in the last seven days**. An edition with no page says why: the walk has not run
+for it, has not finished it (and how far it got, so the item may be there), or finished it
+and found none. A page the stream does not follow reads "not followed", because its change
+count is unknown, never zero. The bar beside a size is that size over the largest on screen,
+from zero; nothing else is computed, and the editions are separate articles, not
+translations. The page walk is off until you switch it on (Settings → Wikipedia), so on an
+instance that has not walked there is nothing to compare yet and the table says so.
+*Most-viewed pages beside your corpus*: the source's own list of the most-viewed pages of its
+latest day (rank and view count as it gave them; the first fifty rows are kept), each beside
+the number of articles in **your corpus** that mention the title as a phrase, published that
+UTC day and in the seven days ending on it. It is **one day, not a series**: the list is
+overwritten every day and no per-page view history is kept. The counts are your corpus's,
+which is what this machine collected, not the press; a title can be ambiguous or written
+differently in another language; Wikipedia-sourced and quarantined articles are not counted;
+a row the count did not reach in its time limit reads "not counted". The two numbers sit side
+by side and are never combined.
+
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md).

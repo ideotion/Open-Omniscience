@@ -452,7 +452,7 @@
       _livingView = kind;
       _LIVING_KINDS.forEach((v) => { const el = $("living-" + v); if (el) el.style.display = (v === kind) ? "" : "none"; });
       loadLivingOverview();
-      if (kind === "wiki") { _livingStreamOffset = 0; loadLivingStream(); loadLivingPages(); }
+      if (kind === "wiki") { _livingStreamOffset = 0; loadLivingStream(); loadLivingPages(); loadWikiDivergence(($("wiki-div-q") || {}).value || ""); loadWikiAttention(); }
       else if (kind === "law") { loadLivingLaw(); loadLawEvolution(); }
       else if (kind === "osm") loadLivingMaps();
     }
@@ -890,6 +890,7 @@
         });
       }
       renderLivingMaps();
+      repaintWikiCompareFromCache();
       if (typeof repaintLawEvolutionFromCache === "function") repaintLawEvolutionFromCache();
     }
 
@@ -1256,4 +1257,214 @@
     // A language switch (app-boot.js) redraws the section from what it holds, never a fetch.
     function repaintLaneSearchFromCache() {
       if (_laneSearchLast) renderLaneSearch();
+    }
+
+    // --- One item across editions, and the most-viewed pages beside the press (Q712's 4-5) ---
+    // Both read what this machine already holds: the page walk's rows (an edition's own size
+    // and Wikidata item per page), the stream's recorded changes, and the once-a-day top-viewed
+    // list. Nothing here fetches. The renderers are pure (payload, t, tf) -> HTML, driven in
+    // node (tests/wiki_compare_node_test.js); an absence is named with its reason and an
+    // unknown change count is never drawn as 0. No figure is derived from two others: a size
+    // spread is the two sizes, an attention row is two counts in two units side by side.
+    const _WIKI_DIV_STATES = {
+      "walk-never-ran": "The walk has not run for this edition.",
+      "none-after-complete-walk": "The walk finished this edition and found no page for this item.",
+    };
+
+    function _wikiEdCell(edition) {
+      return typeof ooLangCell === "function" ? ooLangCell(edition, { cls: "pill" }) : esc(String(edition));
+    }
+
+    const _WIKI_LANE_STATES = {
+      "lane-never-run": "The Wikipedia lane has not run on this machine yet.",
+      "lane-unreadable": "The Wikipedia lane could not be read just now.",
+    };
+    function _wikiLaneStateHtml(d, t) {
+      return (d && Object.prototype.hasOwnProperty.call(_WIKI_LANE_STATES, d.reason))
+        ? `<div class="muted">${esc(t(_WIKI_LANE_STATES[d.reason]))}</div>` : "";
+    }
+
+    // "Q42: 5 changes, found in 3 editions", one button per suggested item.
+    function wikiDivCandidatesHtml(d, t, tf) {
+      if (d && Object.prototype.hasOwnProperty.call(_WIKI_LANE_STATES, d.reason)) return "";
+      const items = (d && d.candidates && Array.isArray(d.candidates.items)) ? d.candidates.items : [];
+      if (!items.length) {
+        return `<div class="hint">${esc(t("No suggestion yet: the walk has not linked any page the stream recorded a change for to a Wikidata item."))}</div>`;
+      }
+      const days = d.candidates.window_days;
+      return `<div class="hint">${esc(tf("Items whose pages the stream recorded the most changes for in the last {n} days:", { n: days }))}</div>`
+        + `<div class="row wiki-div-cands">${items.map((c) => `<button type="button" class="secondary tiny" data-div-qid="${esc(c.qid)}"`
+          + ` title="${esc(t("Compare this item across the editions you follow."))}">`
+          + `${esc(tf("{qid}: {n} changes, found in {m} editions", { qid: c.qid, n: _livingCount(c.changes_in_window), m: _livingCount(c.editions_found) }))}</button>`).join("")}</div>`;
+    }
+
+    function _wikiDivStateText(r, t, tf) {
+      if (Object.prototype.hasOwnProperty.call(_WIKI_DIV_STATES, r.state)) return t(_WIKI_DIV_STATES[r.state]);
+      if (r.state === "walk-incomplete") {
+        const w = r.walk || {};
+        return typeof w.edition_articles === "number"
+          ? tf("The walk has not finished this edition ({seen} of {total} pages), so the item may be there.",
+            { seen: _livingCount(w.pages_seen), total: _livingCount(w.edition_articles) })
+          : tf("The walk has not finished this edition ({seen} pages so far), so the item may be there.",
+            { seen: _livingCount(w.pages_seen) });
+      }
+      // A state outside the known four is shown as the server sent it, never mapped.
+      return String(r.state || "?");
+    }
+
+    // The bar's length is the size over the LARGEST size on screen, from a zero baseline:
+    // a length, never a ratio shown as a number. The exact figure sits beside it.
+    function _wikiDivRowHtml(r, t, tf, max) {
+      if (r.state !== "found") {
+        return `<tr><td>${_wikiEdCell(r.edition)}</td><td colspan="4" class="muted">${esc(_wikiDivStateText(r, t, tf))}</td></tr>`;
+      }
+      const bar = (typeof r.length_bytes === "number" && max > 0)
+        ? `<span class="wiki-size-bar" aria-hidden="true"><i style="width:${Math.max(1, Math.round(100 * r.length_bytes / max))}%"></i></span>` : "";
+      const size = typeof r.length_bytes === "number"
+        ? `<span title="${esc(tf("{n} bytes of wikitext, read when the walk reached the page.", { n: fmtNum(r.length_bytes, 0) }))}">${esc(humanBytes(r.length_bytes))}</span>${bar}`
+        : `<span class="muted">${esc(t("unknown"))}</span>`;
+      const changes = r.followed
+        ? esc(_livingCount(r.changes_in_window))
+        : `<span class="muted" title="${esc(t("The stream does not follow this page, so no change was recorded for it: the count is unknown, not zero."))}">${esc(t("not followed"))}</span>`;
+      return `<tr><td>${_wikiEdCell(r.edition)}</td><td dir="auto">${esc(r.title || ("#" + r.page_id))}</td>`
+        + `<td>${size}</td><td class="muted small">${esc(livingWhen(r.read_at, t))}</td><td>${changes}</td></tr>`;
+    }
+
+    function wikiDivergenceHtml(d, t, tf) {
+      if (!d) return "";
+      if (d.reason === "no-item-chosen") return "";
+      if (Object.prototype.hasOwnProperty.call(_WIKI_LANE_STATES, d.reason)) return _wikiLaneStateHtml(d, t);
+      if (d.reason === "qid-invalid") {
+        return `<div class="note err">${esc(t("That is not a Wikidata item. Write Q followed by a number, for example Q42."))}</div>`;
+      }
+      const rows = Array.isArray(d.editions) ? d.editions : [];
+      const head = d.measured
+        ? ""
+        : `<div class="muted">${esc(tf("The walk has not found {qid} in any edition it has read.", { qid: d.qid }))}</div>`;
+      if (!rows.length) return head + (d.caveat ? `<div class="card-caveat">${esc(t(d.caveat))}</div>` : "");
+      const max = rows.reduce((m, r) => (r.state === "found" && typeof r.length_bytes === "number" ? Math.max(m, r.length_bytes) : m), 0);
+      const table = `<div class="wiki-table-wrap"><table class="living-table"><thead><tr><th>${esc(t("Edition"))}</th><th>${esc(t("Page"))}</th>`
+        + `<th>${esc(t("Size"))}</th><th>${esc(t("Read"))}</th><th>${esc(tf("Changes in the last {n} days", { n: d.window_days }))}</th></tr></thead>`
+        + `<tbody>${rows.map((r) => _wikiDivRowHtml(r, t, tf, max)).join("")}</tbody></table></div>`;
+      const span = (d.n_sized >= 2 && d.smallest && d.largest)
+        ? `<div class="hint">${esc(tf("Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.", {
+          small: ooLangCode(d.smallest.edition) || d.smallest.edition, smallSize: humanBytes(d.smallest.length_bytes),
+          large: ooLangCode(d.largest.edition) || d.largest.edition, largeSize: humanBytes(d.largest.length_bytes) }))}</div>` : "";
+      return `<h4>${esc(d.qid)}</h4>` + head + table + span
+        + `<div class="hint">${esc(t(d.method))}</div>`
+        + `<div class="card-caveat">${esc(t(d.caveat))}</div>`;
+    }
+
+    function wikiAttentionHtml(d, t, tf) {
+      if (!d) return "";
+      if (d.reason === "no-top-list-yet") {
+        return `<div class="muted">${esc(t("No list of most-viewed pages has been read yet. The live stream reads one edition's list a day while it runs."))}</div>`;
+      }
+      if (!d.measured) return _wikiLaneStateHtml(d, t);
+      const rows = Array.isArray(d.rows) ? d.rows : [];
+      const cell = (n) => (typeof n === "number"
+        ? esc(_livingCount(n))
+        : `<span class="muted" title="${esc(t("Not counted: the count ran out of time before reaching this row."))}">${esc(t("not counted"))}</span>`);
+      const body = rows.map((r) => `<tr><td>${esc(r.rank == null ? "" : _livingCount(r.rank))}</td><td dir="auto">${esc(r.title)}</td>`
+        + `<td>${esc(typeof r.views === "number" ? _livingCount(r.views) : "")}</td><td>${cell(r.press_day)}</td><td>${cell(r.press_7d)}</td></tr>`).join("");
+      const cap = tf("Top {n} of the list for {day}.", { n: _livingCount(d.n), day: d.day });
+      const skipped = d.skipped
+        ? `<div class="hint">${esc(tf("{n} row(s) were not counted: the count ran out of time.", { n: _livingCount(d.skipped) }))}</div>` : "";
+      return `<div class="hint">${esc(cap)}</div>`
+        + `<div class="wiki-table-wrap"><table class="living-table"><thead><tr><th>${esc(t("Rank"))}</th><th>${esc(t("Page"))}</th><th>${esc(t("Views that day"))}</th>`
+        + `<th title="${esc(t("Articles in your corpus that mention the title as a phrase and were published on that UTC day."))}">${esc(t("Articles that day"))}</th>`
+        + `<th title="${esc(t("The same count for the seven days ending on that day."))}">${esc(t("Articles in 7 days"))}</th></tr></thead>`
+        + `<tbody>${body}</tbody></table></div>` + skipped
+        + `<div class="hint">${esc(t(d.method))}</div>`
+        + `<div class="card-caveat">${esc(t(d.caveat))}</div>`;
+    }
+
+    let _wikiDivLast = null;   // {q, d}
+    let _wikiAttLast = null;   // {d}
+    let _wikiCompareWired = false;
+    function _wikiCompareWire() {
+      if (_wikiCompareWired) return;
+      const form = $("wiki-div-form");
+      if (!form) return;
+      _wikiCompareWired = true;
+      form.addEventListener("submit", (e) => { e.preventDefault(); loadWikiDivergence(($("wiki-div-q") || {}).value || ""); });
+      const cands = $("wiki-div-cands");
+      if (cands) cands.addEventListener("click", (e) => {
+        const b = e.target.closest && e.target.closest("[data-div-qid]");
+        if (!b) return;
+        const q = $("wiki-div-q");
+        if (q) q.value = b.getAttribute("data-div-qid");
+        loadWikiDivergence(b.getAttribute("data-div-qid"));
+      });
+      const att = $("wiki-att-tools");
+      if (att) att.addEventListener("click", (e) => {
+        if (e.target.closest && e.target.closest("[data-att-refresh]")) loadWikiAttention(_wikiAttEdition(), true);
+      });
+      if (att) att.addEventListener("change", (e) => {
+        if (e.target && e.target.id === "wiki-att-edition") loadWikiAttention(e.target.value, true);
+      });
+    }
+
+    function _wikiAttEdition() {
+      const sel = $("wiki-att-edition");
+      return sel ? sel.value : "";
+    }
+
+    function renderWikiDivergence() {
+      const t = _livingT(), tf = _livingTf();
+      const cands = $("wiki-div-cands"), out = $("wiki-div-result");
+      if (cands) cands.innerHTML = _wikiDivLast ? wikiDivCandidatesHtml(_wikiDivLast.d, t, tf) : "";
+      if (out) out.innerHTML = _wikiDivLast ? wikiDivergenceHtml(_wikiDivLast.d, t, tf) : "";
+    }
+
+    // With no item it asks only for the suggestions; with one it reads that item across editions.
+    async function loadWikiDivergence(q) {
+      _wikiCompareWire();
+      const t = _livingT();
+      const out = $("wiki-div-result");
+      const words = String(q || "").trim();
+      try {
+        const d = await api("/api/wiki/lane/divergence" + (words ? "?" + new URLSearchParams({ qid: words }).toString() : ""));
+        _wikiDivLast = { q: words, d };
+        renderWikiDivergence();
+      } catch (e) {
+        _wikiDivLast = null;
+        if (out) out.innerHTML = _livingFailHtml(e.message, t);
+      }
+    }
+
+    function renderWikiAttention() {
+      const t = _livingT(), tf = _livingTf();
+      const tools = $("wiki-att-tools"), out = $("wiki-att-result");
+      const d = _wikiAttLast && _wikiAttLast.d;
+      if (tools) {
+        const withList = (d && Array.isArray(d.with_list)) ? d.with_list : [];
+        const pick = (d && d.edition) || "";
+        tools.innerHTML = (withList.length > 1
+          ? `<select id="wiki-att-edition" aria-label="${esc(t("Edition"))}">${withList.map((e) =>
+            `<option value="${esc(e)}"${e === pick ? " selected" : ""}>${esc((typeof ooLangCode === "function" && ooLangCode(e)) || e)}</option>`).join("")}</select> ` : "")
+          + `<button type="button" class="secondary tiny" data-att-refresh>${esc(t("Refresh"))}</button>`;
+      }
+      if (out) out.innerHTML = d ? wikiAttentionHtml(d, t, tf) : "";
+    }
+
+    async function loadWikiAttention(edition, force) {
+      _wikiCompareWire();
+      if (_wikiAttLast && !force) { renderWikiAttention(); return; }
+      const t = _livingT();
+      const out = $("wiki-att-result");
+      if (out) out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const d = await api("/api/wiki/lane/attention" + (edition ? "?" + new URLSearchParams({ edition }).toString() : ""));
+        _wikiAttLast = { d };
+        renderWikiAttention();
+      } catch (e) {
+        _wikiAttLast = null;
+        if (out) out.innerHTML = _livingFailHtml(e.message, t);
+      }
+    }
+
+    function repaintWikiCompareFromCache() {
+      renderWikiDivergence();
+      renderWikiAttention();
     }
