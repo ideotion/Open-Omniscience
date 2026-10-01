@@ -495,3 +495,34 @@ def _call_with(db, **kw):
     kw.setdefault("page", 1)
     kw.setdefault("max_mb", 0)
     return keyword_log(db=db, **kw)
+
+
+def test_a_failed_build_closes_the_open_part_before_its_folder_goes(tmp_path, monkeypatch):
+    """`finish_parts` aborts the writer on ANY exception (a refusal, a memory stop, a bug): the part
+    being written is closed, then the whole folder is removed. On Linux the removal succeeds with a
+    handle still open, so the only thing that shows the abort happened is the writer's own state,
+    which is what this reads; where an open handle blocks a delete, that leak is the whole defect."""
+    from types import SimpleNamespace
+
+    made: list[up.PartWriter] = []
+
+    class Spy(up.PartWriter):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            made.append(self)
+
+    monkeypatch.setattr(kle, "PartWriter", Spy)
+
+    def write_parts(writer, _keep, _omitted):
+        g = up.RecordGroup("keywords/en.json", {"language": "en"}, "keywords", 700)
+        for i in range(700):          # past one chunk: the first part is open and holds records
+            writer.add_record(g, json.dumps({"keyword": f"w{i}", "mentions": i}))
+        assert writer._part is not None, "the test must fail with a part open"
+        raise RuntimeError("the build failed after the first part was opened")
+
+    job = SimpleNamespace(check=None, disk_watch=None, max_bytes=None, write_parts=write_parts)
+    with pytest.raises(RuntimeError, match="the build failed"):
+        kle.finish_parts(job, {"en": 700}, scratch_dir=tmp_path, stem="oo-keyword-log-20261001-000000")
+    assert len(made) == 1
+    assert made[0]._part is None, "the open part was closed (abort) before the folder was removed"
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(kle.PARTS_DIR_PREFIX)], "and the folder is gone"

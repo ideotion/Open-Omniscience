@@ -5133,7 +5133,7 @@
   "Type a command, or search the corpus…": "कोई कमांड लिखें, या कॉर्पस खोजें…",
   "Type a house number, street, postcode or town.": "मकान नंबर, सड़क, पिन कोड या शहर लिखें।",
   "Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.": "भाग संख्या लिखें और उसके बगल का बटन दबाएँ; उस भाग से पाँच फ़ाइलें सहेजी जाएँगी, जैसे कुछ फ़ाइलें अपलोड न हो पाने पर। मैनिफ़ेस्ट दोबारा नहीं सहेजा जाता।",
-  "Type a part number from 1 to {n}.": "1 से {n} तक का कोई भाग संख्या लिखें।",
+  "Type a part number from 1 to {n}.": "1 से {n} तक की कोई भाग संख्या लिखें।",
   "Type a search or pick a filter first.": "पहले कोई खोज टाइप करें या कोई फ़िल्टर चुनें।",
   "Type or paste a claim first.": "पहले कोई दावा लिखें या चिपकाएँ।",
   "Type the words to find.": "ढूँढने के लिए शब्द टाइप करें।",

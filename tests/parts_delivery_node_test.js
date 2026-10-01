@@ -60,14 +60,16 @@ function makePage() {
 function load(page, opts) {
   opts = opts || {};
   const src = [
-    constLine("_PARTS_PER_CLICK"),
+    constLine("_PARTS_PER_CLICK"), constLine("_ALL_DIAG_POLL_CEILING_MS"),
     "let _partsSet = null;", "let _partsGen = 0;",
     extract("_partsFiles"), extract("_partsWindow"), extract("_partsNextLabel"),
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
     extract("_partsReady"), extract("downloadKeywordParts"), extract("downloadDiagnosticsVolumes"),
+    extract("runAllDiagnostics"),
     "return {_partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, partsSaveNext," +
-    " partsSaveRest, partsSaveFrom, downloadKeywordParts, downloadDiagnosticsVolumes, state: () => _partsSet};",
+    " partsSaveRest, partsSaveFrom, downloadKeywordParts, downloadDiagnosticsVolumes, runAllDiagnostics," +
+    " state: () => _partsSet};",
   ].join("\n");
   const $ = (id) => page.els[id] || null;
   const fakeWindow = {};   // no OOI18N: the tf() fallback path, which is the boot-time state too
@@ -196,6 +198,8 @@ function listing(parts, manifests) {
     assert.deepStrictEqual(names, [12, 13, 14, 15, 16].map((n) => partName(n, 30)));
     assert.ok(!names.includes("oo-x-manifest.zip"), "the manifest is not saved again");
     assert.strictEqual(page.els["parts-from"].value, "17");
+    assert.strictEqual(page.els["parts-status"].textContent, "Asked your browser to save 15 of 31 files.",
+      "the count is the files asked for (10 + 5), not the position (17)");
   }
 
   // ---- files are counted by the files asked for, not by clicks: parts 3 and 4 sent again are not counted twice
@@ -272,6 +276,7 @@ function listing(parts, manifests) {
     const first = api.partsSaveNext();
     assert.strictEqual(page.els["parts-next"].disabled, true, "the buttons are disabled while files are on their way");
     assert.strictEqual(page.els["parts-from-go"].disabled, true);
+    assert.strictEqual(page.els["parts-rest"].disabled, true, "so is 'save all the rest'");
     const second = api.partsSaveNext();
     await Promise.all([first, second]);
     assert.strictEqual(page.clicked.length, 5, "two clicks, five files");
@@ -417,6 +422,104 @@ function listing(parts, manifests) {
       assert.ok(words.test(pg.els["parts-status"].textContent), status + ": " + pg.els["parts-status"].textContent);
       assert.strictEqual(pg.clicked.length, 0);
     }
+  }
+
+
+  // ---- a part sent again is a side trip: "Save the next 5" goes on from the furthest file, not back over saved ones
+  {
+    const page = makePage(); const api = load(page);
+    api._partsOffer(listing(30, 1), "keywords");
+    for (let k = 0; k < 4; k++) await api.partsSaveNext();      // files 0-19: the manifest and parts 1-19
+    assert.strictEqual(api.state().pos, 20);
+    page.els["parts-from"].value = "3";
+    await api.partsSaveFrom();                                  // parts 3-7 again
+    assert.deepStrictEqual(page.clicked.slice(20).map((c) => c.download), [3, 4, 5, 6, 7].map((n) => partName(n, 30)));
+    assert.strictEqual(api.state().pos, 20, "the side trip did not pull the position back");
+    assert.strictEqual(page.els["parts-next"].textContent, "Save the next 5");
+    assert.strictEqual(page.els["parts-from"].value, "20", "the box names the next part the ordinary button saves");
+    await api.partsSaveNext();
+    assert.deepStrictEqual(page.clicked.slice(25).map((c) => c.download), [20, 21, 22, 23, 24].map((n) => partName(n, 30)),
+      "the next click goes on at part 20, not back at part 8");
+    // and from a fresh set a typed number still moves the position on (a person resuming after a crash)
+    const pg2 = makePage(); const a2 = load(pg2);
+    a2._partsOffer(listing(30, 1), "keywords");
+    pg2.els["parts-from"].value = "12";
+    await a2.partsSaveFrom();
+    assert.strictEqual(a2.state().pos, 17, "typing 12 on an untouched set resumes there: the next click saves part 17");
+  }
+
+  // ---- keyword build overtaken: its REFUSAL does not write over the newer set either
+  {
+    const page = makePage(); const waiting = [];
+    const api = load(page, {api: (url) => url.includes("max_mb=0")
+      ? Promise.resolve(listing(8, 1)) : new Promise((_res, rej) => waiting.push(() => rej(new Error("slow refusal"))))});
+    const slow = api.downloadKeywordParts({disabled: false}, "default");
+    await api.downloadKeywordParts({disabled: false}, "all");
+    waiting[0]();
+    await slow;
+    assert.ok(/numbered parts: 8\)/.test(page.els["parts-status"].textContent),
+      "the old build's refusal said nothing: " + page.els["parts-status"].textContent);
+  }
+
+  // ---- the diagnostics split overtaken by a newer button: neither its refusal nor its files take the bar
+  {
+    for (const outcome of ["refuse", "succeed"]) {
+      const page = makePage(); const waiting = [];
+      const api = load(page, {api: (url) => url.includes("all-job/volumes")
+        ? new Promise((res, rej) => waiting.push(() => {
+            if (outcome === "refuse") { const e = new Error("boom"); e.status = 404; rej(e); } else res(listing(3, 1));
+          }))
+        : Promise.resolve(listing(8, 1))});
+      const slow = api.downloadDiagnosticsVolumes({disabled: false});
+      await api.downloadKeywordParts({disabled: false}, "all");
+      waiting[0]();
+      await slow;
+      assert.strictEqual(api.state().kind, "keywords", outcome + ": the newer keyword set keeps the bar");
+      assert.strictEqual(api.state().pcount, 8);
+      assert.ok(/numbered parts: 8\)/.test(page.els["parts-status"].textContent),
+        outcome + ": " + page.els["parts-status"].textContent);
+      assert.strictEqual(page.clicked.length, 0, outcome + ": the old split saved nothing");
+    }
+  }
+
+  // ---- a finished All diagnostics build replaces the bar like any other button: it takes a number, and waits for a click in flight
+  // The fake api answers the build's start, one "done" poll and the split; `holdKeyword` holds a keyword build.
+  function buildApi(holdKeyword) {
+    return (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
+      if (url === "/api/diagnostics/all-job/volumes") return Promise.resolve(listing(4, 1));
+      return holdKeyword ? new Promise((resolve) => holdKeyword.push(() => resolve(listing(3, 1)))) : Promise.resolve(listing(3, 1));
+    };
+  }
+  {
+    // an older keyword build still on its way when the diagnostics build finishes does not take the bar back
+    const page = makePage(); const held = [];
+    const api = load(page, {api: buildApi(held)});
+    const keyword = api.downloadKeywordParts({disabled: false}, "default");   // waits
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(api.state().kind, "diagnostics");
+    held[0]();
+    await keyword;
+    assert.strictEqual(api.state().kind, "diagnostics", "the keyword build that landed later left the bar to the archive");
+    assert.ok(/numbered parts: 3\)/.test(page.els["parts-status"].textContent) === false, page.els["parts-status"].textContent);
+  }
+  {
+    // a click that is handing files over is let finish: the archive takes the bar only after the fifth file
+    const page = makePage(); const hold = [];
+    const api = load(page, {hold, api: buildApi(null)});
+    api._partsOffer(listing(30, 1), "keywords");
+    const saving = api.partsSaveNext();
+    const build = api.runAllDiagnostics({disabled: false});
+    let finished = 0; saving.then(() => finished++); build.then(() => finished++);
+    for (let spin = 0; spin < 400 && finished < 2; spin++) {
+      await Promise.resolve();
+      if (hold.length) hold.shift()();
+    }
+    assert.strictEqual(finished, 2, "both finished");
+    assert.strictEqual(page.clicked.length, 5, "the save in flight was not cut");
+    assert.strictEqual(api.state().kind, "diagnostics", "and the finished archive then took the bar");
+    assert.strictEqual(api.state().pcount, 4);
   }
 
   console.log("all assertions passed");

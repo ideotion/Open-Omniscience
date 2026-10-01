@@ -710,8 +710,11 @@ class ZipJob:
 
 class _LangCursor:
     """Where one language stands in the rank-major set: its ranked rows, how many of its first
-    ``n`` have been written, and whether it is finished. A cursor and two integers is all a
-    language holds between rounds."""
+    ``n`` have been written, and whether it is finished. Between rounds a language holds its
+    ``rows`` and two integers: a database cursor when the ranking spilled to disk, a sorted copy
+    of its own rows when the ranking is in memory (about 19 bytes a row, measured: 12.07 against
+    11.14 MB at 20 languages), so what grows with the number of languages is that copy, never a
+    batch."""
 
     __slots__ = ("rows", "n", "pos", "done")
 

@@ -221,6 +221,14 @@ def _find_set(path: Path) -> tuple[str, list[Path], Path | None] | None:
     return stem, [f for _, f in sorted(found)], manifest if manifest.is_file() else None
 
 
+# Every way a damaged zip is known to fail while being read: a cut file or a bad checksum
+# (BadZipFile, zlib.error, EOFError, OSError), a flipped method or flag byte in the directory
+# (NotImplementedError "compression method", RuntimeError "encrypted"), and text that no longer
+# decodes or parses (ValueError, which UnicodeDecodeError is a kind of). A flip-every-byte run over
+# one part found the last two kinds crashing the script, 98 flips in 10,942.
+_DAMAGED = (zipfile.BadZipFile, zlib.error, EOFError, OSError, NotImplementedError, RuntimeError, ValueError)
+
+
 def _check_set(stem: str, parts: list[Path], manifest: Path | None) -> None:
     """Warn on stderr about parts that are missing or differ from the manifest."""
     import hashlib
@@ -235,7 +243,7 @@ def _check_set(stem: str, parts: list[Path], manifest: Path | None) -> None:
     try:
         with zipfile.ZipFile(manifest) as z:
             listed = json.loads(z.read("manifest.json"))["parts"]
-    except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
+    except (*_DAMAGED, KeyError) as exc:
         print(f"warning: {manifest.name} could not be read ({exc}); parts not checked", file=sys.stderr)
         return
     missing = [p["name"] for p in listed if p["name"] not in have]
@@ -264,14 +272,14 @@ def _readable_members(part: Path):
     skipped: the rest of the set is still read."""
     try:
         z = zipfile.ZipFile(part)
-    except (zipfile.BadZipFile, OSError) as exc:
+    except _DAMAGED as exc:
         print(f"warning: {part.name} cannot be opened ({exc}); skipped", file=sys.stderr)
         return
     with z:
         for name in z.namelist():
             try:
                 raw = z.read(name)
-            except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as exc:
+            except _DAMAGED as exc:
                 print(f"warning: {part.name}: {name} is damaged ({exc}); skipped", file=sys.stderr)
                 continue
             yield name, raw

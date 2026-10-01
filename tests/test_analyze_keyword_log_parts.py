@@ -121,6 +121,30 @@ def _part_keywords(part: Path) -> list[dict]:
     return out
 
 
+@pytest.mark.parametrize("what, offset, value", [
+    ("an unsupported compression method", 10, b"\x63\x00"),   # method 99, in the central directory
+    ("the encrypted flag", 8, b"\x01\x08"),                  # bit 0 set (UTF-8 bit 11 kept)
+])
+def test_a_directory_byte_flipped_to_something_unreadable_is_named_not_a_crash(
+        tmp_path, capsys, what, offset, value):
+    """A flip-every-byte run over one part found 98 flips in 10,942 that crashed the script: a
+    flipped method byte raises NotImplementedError and a flipped flag byte RuntimeError, neither of
+    which the readers' except lists named. Truncation and bad checksums were handled; these are
+    the other half of "a part damaged on the way"."""
+    data, manifest = _build(tmp_path)
+    bad = tmp_path / manifest["parts"][1]["name"]
+    raw = bytearray(bad.read_bytes())
+    at = raw.index(b"PK\x01\x02")  # the first central-directory entry of this part
+    raw[at + offset: at + offset + 2] = value
+    bad.write_bytes(bytes(raw))
+    doc = _analyzer().load_log(tmp_path)   # must not raise
+    err = capsys.readouterr().err
+    assert f"{bad.name}: " in err and "is damaged" in err, (what, err)
+    got = doc["data"]["keywords"]
+    assert 0 < len(got) < len(_expected(data)), "the rest of the set is still read"
+    assert all(k in _expected(data) for k in got), "nothing invented, only fewer"
+
+
 def test_without_a_manifest_the_part_names_still_say_how_many_there_should_be(tmp_path, capsys):
     _data, manifest = _build(tmp_path)
     (tmp_path / f"{STEM}-manifest.zip").unlink()

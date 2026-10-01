@@ -583,6 +583,27 @@ def test_every_closed_part_keeps_the_room_the_accounting_reserves_and_no_more(tm
     assert min(room) >= 450 and max(room) <= 800, sorted(room)
 
 
+def test_a_part_closed_at_a_language_change_keeps_the_member_closing_reserve(tmp_path):
+    """The reserve test above writes a few long members, so the trial that opens a NEW member while
+    another is open (a language change) almost never decides where a part ends, and dropping the
+    second member-tail term from that trial passed the whole suite. Here every record is its own
+    language, so every trial is one: the room left in the closed parts is 1,739-1,765 bytes at this
+    cap (most of it the part.json counted raw and written deflated), and 1,480 without the term.
+    The floor sits between them."""
+    rnd = random.Random(3)
+    cap = 4_096
+    w = up.PartWriter(tmp_path / "set", stem="oo-keyword-log-20261001-000000", cap=cap)
+    for g in range(900):
+        lang = f"l{g:03d}"
+        grp = up.RecordGroup(f"keywords/{lang}.json", {"language": lang}, "keywords", 1)
+        w.add_record(grp, json.dumps({"keyword": f"{lang}-" + "x" * (g % 13), "mentions": 1000 - g,
+                                      "sig": rnd.randbytes(10).hex()}, separators=(",", ":")))
+    manifest = w.finish()
+    room = [cap - p["bytes"] for p in manifest["parts"]][1:-1]
+    assert len(room) >= 50, "the set must span many parts for this to test anything"
+    assert min(room) >= 1_650, sorted(room)[:5]
+
+
 def test_the_post_check_stops_a_part_over_the_cap_instead_of_handing_it_over(tmp_path):
     """The accounting is the first guard and this is the second: a part that closes over the cap
     is an error that stops the export, whatever went wrong before it. The accounting is made

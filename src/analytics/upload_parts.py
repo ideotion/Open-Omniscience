@@ -84,8 +84,10 @@ _MEMBER_TAIL = 160
 #: entry (46 bytes), and the end-of-directory record (22 bytes) once per file.
 _LOCAL_FIXED, _CENTRAL_FIXED, _END_FIXED = 30, 46, 22
 
-#: A deflate stream of ``n`` bytes never grows past ``n + n/1000 + 12`` (zlib's own bound for a
-#: stream that is finished); small documents round up to this.
+#: Bytes kept for the framing of a small deflated member, added where a member is counted raw
+#: (the part.json, whose real deflated size is smaller than the raw count). A constant, not zlib's
+#: n/1000 bound: ``finish`` re-measures every part, so a constant that was wrong would be an error,
+#: never an oversize file.
 _DEFLATE_SLACK = 16
 
 #: Names a reader can rely on inside every part.

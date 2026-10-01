@@ -855,7 +855,8 @@
     // prompt or a file the browser failed to fetch, so no message says a file "was saved".
     const _PARTS_PER_CLICK = 5;
     // {files, base, kind, pos, mcount, pcount, shown, saving, offered}: the set the bar is offering. `pos`
-    // is where the next click starts, `shown` the number the page itself last wrote in the box (a
+    // is where the next click starts: the furthest file any click has reached, so sending part 3 again
+    // after twenty files never sends "Save the next 5" back over files already saved; `shown` the number the page itself last wrote in the box (a
     // different value in the box is the person's own), `saving` is true while one click's files are
     // being handed over (a second click then does nothing), `kind` is "keywords" or "diagnostics" (a
     // part number typed for one is never applied to the other), `offered` holds the indexes of the
@@ -947,6 +948,7 @@
       const set = _partsSet;
       if (!set || set.saving) return;   // a second click while files are on their way does nothing
       let note = "";
+      let start = set.pos;   // a typed part number is a side trip: it never moves `pos` back
       if (fromPart != null) {
         if (!isFinite(fromPart) || fromPart < 1) {
           _partsStatus(tf("Type a part number from 1 to {n}.", {n: set.pcount}));
@@ -956,9 +958,9 @@
         if (first < fromPart) {
           note = tf("There are only {n} parts, so saving starts at the last part.", {n: set.pcount}) + " ";
         }
-        set.pos = set.mcount + first - 1;
+        start = set.mcount + first - 1;
       }
-      const win = _partsWindow(set.files.length, set.pos, count);
+      const win = _partsWindow(set.files.length, start, count);
       set.saving = true;
       _partsRender();
       let fresh = 0;   // files of this click the browser was not asked for before
@@ -1157,6 +1159,11 @@
             set(t("Ready — preparing the numbered files…"));
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
+              // A finished build replaces the bar's set like any other button, so it takes a
+              // number (an older keyword build still on its way then leaves the bar to it), and a
+              // click that is handing files over is let finish first: never cut after two of five.
+              while (_partsSet && _partsSet.saving) await sleep(250);
+              ++_partsGen;
               set("");
               _partsReady(m, "diagnostics");
             } catch (e) {
