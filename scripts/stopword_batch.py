@@ -106,6 +106,8 @@ RESERVED_NAMES = frozenset({"con", "prn", "aux", "nul", *(f"com{i}" for i in ran
 # letters, an optional script or region part), or the "?" / unknown bucket. A word in this column
 # (its language column missing) must stop the file, not be read as a row for another language.
 VERDICT_LANGUAGE = re.compile(r"[a-z]{2,3}(?:[-_][a-z0-9]{2,8})?|\?|unknown")
+# A model id as the converter writes it (claude-sonnet-5-5, sonnet-5.5): no underscore, comma or space.
+MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
 # What the third column of any row must hold (the triage converter writes K, N, W or U).
 VERDICT_TOKENS = frozenset({"N", "K", "W", "U", "JUNK"})
 # The only verdict flag that does not block a word. Anything else, spelt however, is a reading
@@ -250,13 +252,18 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
         row = out.setdefault(word, {"junk": True, "high": True, "flags": set(), "single_reader": False,
                                     "models": set()})
         row["junk"] &= verdict in ("N", "JUNK")
-        row["high"] &= cols[4].upper() == HIGH and bool(cols[5])  # the converter always names the model
-        # a flag in the MODEL column (that column omitted, the flags shifted left) is still a flag
-        flags |= {cols[5].lower()} & {"unstable", "single_reader"}
+        # A flag in the MODEL column (that column omitted, the flags shifted left) is still a flag, in
+        # whatever spelling: a model id has no underscore, comma or space, so anything else there is
+        # read as flags, and a row whose model column holds no model id is never high confidence.
+        model = cols[5]
+        flag_shift = bool(model) and (not MODEL_ID.fullmatch(model) or model.lower() == "unstable")
+        if flag_shift:
+            flags |= {t for t in re.split(r"[,;\s]+", model.lower()) if t}
+        row["high"] &= cols[4].upper() == HIGH and bool(model) and not flag_shift
         row["flags"] |= flags
         row["single_reader"] |= "single_reader" in flags
-        if cols[5] and cols[5].lower() not in {"unstable", "single_reader"}:
-            row["models"].add(cols[5])
+        if model and not flag_shift:
+            row["models"].add(model)
         if skipped is not None:
             skipped["\0read"] += 1
     if not out:

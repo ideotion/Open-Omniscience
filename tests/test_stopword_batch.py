@@ -858,7 +858,7 @@ def test_a_flag_in_the_model_column_still_blocks_and_is_not_named_as_a_model(tmp
     f = tmp_path / "v.tsv"
     f.write_text("en\tzzalpha\tN\tbp\tH\tunstable\n", "utf-8")
     v = sb.read_verdicts(f, "en")
-    assert sb.verdict_refusals("zzalpha", v) == ["unstable"]
+    assert "unstable" in sb.verdict_refusals("zzalpha", v)
     assert v["zzalpha"]["models"] == set()
 
 
@@ -882,3 +882,21 @@ def test_a_words_file_ends_rows_only_at_cr_and_lf(tmp_path):
     f = tmp_path / "w.txt"
     f.write_bytes("permalink\rfollow\r\nwidget\u2028x\n".encode("utf-8"))
     assert sb.read_words(f) == ["permalink", "follow", "widget x"]
+
+
+@pytest.mark.parametrize("shifted", ["not_repeated", "unstable,not_repeated", "Unstable, single_reader",
+                                     "single_reader", "unstable", "some_future_flag"])
+def test_a_flag_shifted_into_the_model_column_blocks_in_any_spelling(tmp_path, shifted):
+    f = tmp_path / "v.tsv"
+    f.write_text(f"en\tzzalpha\tN\tfn\tH\t{shifted}\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("zzalpha", v) != []
+    assert v["zzalpha"]["models"] == set()
+
+
+@pytest.mark.parametrize("model", ["claude-sonnet-5-5", "sonnet-5.5", "sonnet", "haiku-4.5"])
+def test_a_real_model_id_in_the_model_column_is_a_model(tmp_path, model):
+    f = tmp_path / "v.tsv"
+    f.write_text(f"en\tzzalpha\tN\tfn\tH\t{model}\t\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("zzalpha", v) == [] and v["zzalpha"]["models"] == {model}
