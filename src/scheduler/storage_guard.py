@@ -116,8 +116,9 @@ What then stops the drive from filling, in order:
   that replaces the pause names it;
 * it ends when both causes are gone (the next trip pauses normally again), and it lives in
   memory only: quitting the app ends it. Start and Run now (:meth:`reset`) leave it alone while
-  a covered limit is still exceeded by the last reading, and end it, re-arming the limit, when the
-  reading is already back under the limit and only the hysteresis holds the latch (the notes
+  a covered limit is still exceeded by the last reading (or cannot be read against), and end it,
+  re-arming the limit, when the reading is already back under the limit and only the hysteresis
+  holds the latch (the notes
   then still compare against the limit: the latch holds below it until the resume level).
 
 This is a bound, not a promise that the drive can never fill. The floor is read on every
@@ -902,8 +903,8 @@ class StorageGuard:
             _LOG.warning("storage guard released (%s) -- collection resumes", reason)
         if had_override:
             _LOG.warning(
-                "STORAGE GUARD OVERRIDE ENDED (%s) -- the last reading is already back under the limit, "
-                "so the retry re-armed it.",
+                "STORAGE GUARD OVERRIDE ENDED (%s) -- the last reading no longer shows a limit it covered "
+                "as exceeded, so the retry re-armed the guard.",
                 reason,
             )
 
@@ -915,7 +916,9 @@ class StorageGuard:
         wal, free = last.get("wal_bytes"), last.get("disk_free_bytes")
         wal_high, reserve = thr.get("wal_high_bytes"), thr.get("disk_reserve_bytes")
         # The WAL limit has a free-space term that is dropped when free space cannot be read, so
-        # an unreadable figure leaves the stored limit too high: no evidence the log is under it.
+        # an unreadable figure may leave the stored limit too high (not with OO_WAL_HIGH_MB set,
+        # where keeping the override is merely cautious: the next blind sample withdraws it):
+        # no evidence the log is under its real limit.
         if "wal" in kinds and self._wal and (wal is None or wal_high is None or free is None or wal >= wal_high):
             return True
         return bool("disk" in kinds and self._disk and (free is None or reserve is None or free < reserve))

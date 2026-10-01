@@ -1141,12 +1141,15 @@ def test_an_override_with_nothing_engaged_is_not_recorded():
     assert g.admit() == "wal"
 
 
-def test_the_start_and_run_now_retry_leaves_an_override_that_holds_alone():
+def test_the_start_and_run_now_retry_leaves_an_override_that_holds_alone(caplog):
     """Collection already runs under an override: clearing the latches would only end it and
     re-pause collection two samples later, which is none of the ways R112 lets an override end."""
+    caplog.set_level("WARNING", logger="scheduler.storage_guard")
     g = _overridable()
     g.override(reason="test")
+    caplog.clear()
     g.reset(reason="operator started collection")
+    assert "OVERRIDE ENDED" not in caplog.text, "a kept override did not end"
     assert g.engaged is True and g.state()["overridden"] is True
     for _ in range(3):
         g.poll()
@@ -1155,8 +1158,10 @@ def test_the_start_and_run_now_retry_leaves_an_override_that_holds_alone():
     # without an override it is still the retry it always was: the latches clear, and re-trip
     # after fresh samples if the cause remains
     g2 = _overridable()
+    caplog.clear()
     g2.reset(reason="operator started collection")
     assert g2.engaged is False
+    assert "OVERRIDE ENDED" not in caplog.text, "no override existed, so none ended"
     g2.poll()
     g2.poll()
     assert g2.admit() == "wal", "a retry that finds the limit still exceeded pauses again"
