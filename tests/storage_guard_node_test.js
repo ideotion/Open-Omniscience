@@ -46,9 +46,17 @@ const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</
 const tf = (s, o) => s.replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null ? String(o[k]) : m));
 const bytes = (n) => (n == null ? "—" : Math.round(n / 1048576) + " MB");
 
-const FRAME_WAL = "Collection is paused: the database's write-ahead log has grown to {size} (this machine's limit is {limit}) and cannot be reset while something still holds it open, such as a long read or a long write. Collection resumes by itself as soon as the log can be reset.";
+// The frames are the CURRENT locale keys, found by their opening words: a fixture copied by hand
+// goes stale silently (it did, once), and a frame reworded in the module without its locale key
+// would fail here and in test_every_storage_string_is_in_the_twelve_locales.
+const frame = (prefix) => {
+  const ks = Object.keys(EN).filter((k) => k.startsWith(prefix));
+  assert.strictEqual(ks.length, 1, "expected one locale key starting " + JSON.stringify(prefix) + ", found " + ks.length);
+  return ks[0];
+};
+const FRAME_WAL = frame("Collection is paused: the database's working file (its write-ahead log) has grown to {size}");
 const GUARD = { engaged: true, notes: [{ kind: "wal", frame: FRAME_WAL, vars: { size: 3221225472, limit: 1073741824 } }] };
-const FRAME_OVERRIDE_WAL = "Collection was resumed by you although the database's write-ahead log is {size} (this machine's limit is {limit}). It stops again by itself if free space falls to {floor}, the least the log needs to be written back into the database, or if a write fails for lack of space. The next start will spend longer recovering the log.";
+const FRAME_OVERRIDE_WAL = frame("Collection was resumed by you although the database's working file");
 const OVERRIDDEN = { engaged: true, overridden: true, notes: [{ kind: "override-wal", frame: FRAME_OVERRIDE_WAL, vars: { size: 3221225472, limit: 1073741824, floor: 3221225472 } }] };
 const ok = (over) => Object.assign({ running: true, online: true, storage_guard: GUARD }, over || {});
 
@@ -79,7 +87,9 @@ for (const [ui, draw] of Object.entries(render)) {
     assert.ok(html.includes("forces it on while the limit is still exceeded"), html);
     assert.ok(html.includes("never less than 128 MB"), html);
     assert.ok(html.includes("Quitting and reopening the app ends anything the app itself is holding open"), html);
-    assert.ok(html.includes("1 GB for the writes still in flight plus 2% of the drive as room for everything else"), html);
+    assert.ok(html.includes("the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it)"), html);
+    assert.ok(!html.includes("plus 2% of the drive"), "the reserve is a max, not a sum: " + html);
+    assert.ok(html.includes("or if a second limit is crossed"), html);
   });
   check(ui + ": while an override holds the note says so with its floor and the button is not offered", () => {
     const html = draw(ok({ storage_guard: OVERRIDDEN }));
@@ -103,7 +113,7 @@ for (const [ui, draw] of Object.entries(render)) {
 
 // The click: the server grants the override, or refuses with a sentence frame whose sizes are
 // written through the page's own formatter -- and a refusal is an error toast, never a success.
-const FRAME_STOPPED = "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the least the database's log needs to be written back into place. Collection stays paused. Free some space or move the data folder.";
+const FRAME_STOPPED = frame("Collection cannot be kept running against this limit: free space is {free}, at or below {floor}");
 function handlerSource(src, marker) {
   const at = src.indexOf(marker);
   assert.ok(at !== -1, marker + " not found -- was it renamed?");

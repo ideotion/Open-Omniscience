@@ -2012,7 +2012,7 @@
         Object.keys(n.vars || {}).forEach((k) => { vars[k] = _fmtBytes(n.vars[k]); });
         return `<div class="vwarn">${esc(tf(n.frame, vars))}</div>`;
       }).join("");
-      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is 1 GB for the writes still in flight plus 2% of the drive as room for everything else that writes to it. Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the least the log needs to be written back into the database, or if a write fails for lack of space, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
+      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
         lines +
         (g.overridden ? "" : `<button class="tiny secondary" data-on-click="storageGuardResume()">${esc(t("Resume anyway"))}</button>`) +
         "</div>";
@@ -2028,7 +2028,8 @@
     }
     async function storageGuardResume() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, o) => s.replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null) ? String(o[k]) : m));
       try {
         const r = await api("/api/scheduler/storage-guard/resume", {method: "POST"});
         const o = (r && r.storage_guard_override) || {};

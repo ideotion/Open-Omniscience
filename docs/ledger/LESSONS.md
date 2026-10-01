@@ -12888,7 +12888,15 @@ log), never a number typed from habit; (2) a REFUSAL with its own sentence when 
 at or below the floor, or unreadable) rather than a silent no-op; (3) a WITHDRAWAL on the real failure (a write that
 fails for want of space ends it at once and latches the hold during which the button is refused: a drive that
 says "free" and refuses writes cannot be forced); (4) an end when the cause clears, kept in memory only. **Keep the
-latch's truth apart from the permission:** `engaged` stays the condition (the drain and the maintenance block read it),
-`admit()` is whether new work may start. And when the override covers one cause (the log), free space falling under the
-OTHER cause's reserve (the drive) legitimately trips that latch too; test numbers must respect it (a 2 GiB log on a
-500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not the floor, is what a naive test sees).
+latch's truth apart from the permission:** `engaged` stays the condition (the drain, the maintenance block and a
+background `wait_if_engaged` read it: forcing COLLECTION on does not force a rewrite on), `admit()` is whether new
+collection may start. **An override covers what the operator SAW when they chose, and nothing else:** the first build let a
+disk latch that tripped later ride on a log-only override, which put the user past a limit they had never been shown
+(the independent review of #1283 caught it); the override now records the limits exceeded at the grant and a later
+one ends it, the ordinary pause shows with the new numbers, and the button offers it again. **A sentence that describes an
+EVENT needs an owner and an end:** the "withdrawn at the floor" note was cleared only while an override existed, so after a
+withdrawal it outlived its episode and came back, with its frozen numbers, as a present-tense sentence about a drive that
+had 300 GB free; it now goes with the episode and once free space reads above the floor. And an override that can no longer
+be bounded (free space unreadable for `trip_after` samples) is withdrawn like one that could not be granted. Test numbers
+must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not
+the floor, is what a naive test sees).

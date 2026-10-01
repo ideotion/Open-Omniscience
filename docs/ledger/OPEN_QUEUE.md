@@ -11768,18 +11768,20 @@
   holders with stacks. It resumes by itself with hysteresis. **D1 IS DECIDED: YES, collection pauses by itself, with a
   button that really overrides (`R112`).** Merged #1279 shipped the pause with a retry-only button; the NEXT PR carries the
   override: «Resume anyway» continues collection while a limit is still exceeded and ends by itself at the override floor
-  `max(128 MiB, the log's own size)` (the least a checkpoint may need to write the log back), at once on a write that
-  fails for want of space (which also latches the 300 s hold during which the button is refused), and when the cause clears;
-  it is refused with a sentence when free space is already at or below the floor or cannot be read, lives in memory only,
-  and leaves the drain and the maintenance block as they were. Each number says what it protects (`storage_guard.py`'s
+  `max(128 MiB, the log's own size)` (the room to write the log back and finish a write; it does not reserve the pass tail
+  written after a withdrawal, which the measured tail would size), at once on a write that fails for want of space (which
+  also latches the 300 s hold during which the button is refused), when free space can no longer be read, when a SECOND limit
+  it was not granted for trips (the pause shows again and the button offers it with that limit in view), and when the cause
+  clears; it is refused with a sentence when free space is already at or below the floor or cannot be read, lives in memory
+  only, and leaves the drain and the maintenance block as they were. Each number says what it protects (`storage_guard.py`'s
   docstring, and the PR).
   **NOT CHANGED, and the deferral in the entry above stands:** the boundary's PASSIVE/TRUNCATE logic and
   `wal_autocheckpoint` (MEASURE FIRST); the bound is a STOP, not a new checkpoint. **ONE SIZING QUESTION, ANSWERED AS OPTION a
   (D2, the coordinator's standing ruling 2026-09-30):** the disk reserve `max(1 GiB, 2% of the drive)` has a floor but NO CEILING.
-  Its stated reason is now ONE sentence, said the same way in the module docstring, the notice's hover and the method string: **1 GiB
-  for the writes still in flight while a pass winds down (plus the pass-tail records), and 2% of the drive as room for everything
-  else that writes to it** (the OS, a browser, a download; not a measured need of this app). The first part does not scale with the
-  drive, so a 4 TB volume pauses at about 80 GB free. It STAYS as built; a ceiling is written only once the pass tail is MEASURED
+  Its stated reason is now ONE sentence, said the same way in the module docstring, the notice's hover and the method string: **the
+  larger of 1 GiB (the writes still in flight while a pass winds down, plus the pass-tail records) and 2% of the drive (room for
+  everything else that writes to it)** (the OS, a browser, a download; not a measured need of this app). The first part does not scale
+  with the drive, so a 4 TB volume pauses at about 80 GB free. It STAYS as built; a ceiling is written only once the pass tail is MEASURED
   (the most bytes written between the guard's first refusal and the pass's end on the largest instance; PR B adds the
   measurement), never a fixed 10 GiB. **"BY ITSELF" MEANS "FOR AS LONG AS THE HOLDER LIVES":** a reader the app itself holds open
   never ends on its own, so the exits are "Resume anyway", a restart, or the holder ending (stated in the guard's docstring). **Still to come from the same

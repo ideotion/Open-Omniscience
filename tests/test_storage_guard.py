@@ -826,20 +826,101 @@ def test_an_override_is_withdrawn_when_free_space_falls_to_the_logs_size():
     assert withdrawn["vars"] == {"free": 20 * GIB, "floor": 20 * GIB}
 
 
-def test_the_disk_reserve_latch_can_join_an_override_but_the_floor_still_ends_it():
-    """While overridden for the log, free space also falls under the drive's reserve: the disk
-    latch trips as usual, the notice names both, and the floor is still what stops collection."""
+def test_a_limit_the_override_was_not_granted_for_ends_it_and_the_button_offers_it_again():
+    """The operator chose with the log's pause in view. A drive reserve that trips later is a
+    new fact they have not seen: the override ends, the ordinary pause shows with the new numbers,
+    and the button grants it again (now for both) while the floor still holds."""
     g = _overridable(wal=2 * GIB, free=100 * GIB)  # reserve 10 GiB, floor 2 GiB
     g.override(reason="test")
+    assert g.state()["kinds"] == ["override-wal"] and g.admit() is None
     g.fake["disk_free_bytes"] = 5 * GIB
     g.poll()
     g.poll()
-    assert g.state()["kinds"] == ["override-disk", "override-wal"]
-    assert g.admit() is None
+    assert g.admit() == "disk", "collection pauses again for the second limit"
+    st = g.state()
+    assert st["overridden"] is False and st["kinds"] == ["disk", "wal"], st["kinds"]
+    assert "override-withdrawn" not in st["kinds"], "this is not a floor withdrawal"
+    r = g.override(reason="test again")
+    assert r["overridden"] is True, "5 GiB is above the 2 GiB floor, so it is granted again"
+    assert g.state()["kinds"] == ["override-disk", "override-wal"] and g.admit() is None
     g.fake["disk_free_bytes"] = 2 * GIB
     g.poll()
-    assert g.admit() == "disk", "now both latches pause it"
+    assert g.admit() == "disk", "and the floor still ends it"
     assert g.state()["kinds"][0] == "override-withdrawn"
+
+
+def test_an_override_granted_for_both_limits_survives_one_of_them_clearing():
+    g = _overridable(wal=2 * GIB, free=5 * GIB, kind="disk")  # the disk reserve (10 GiB) AND the log limit
+    g.poll()
+    g.poll()
+    assert g.kind() == "disk" and g.state()["kinds"][-1] == "wal"
+    assert g.override(reason="test")["overridden"] is True
+    g.fake["disk_free_bytes"] = 100 * GIB
+    g.poll()
+    g.poll()
+    assert g.kind() == "wal" and g.admit() is None, "the log's limit still holds and is still overridden"
+
+
+def _withdraw(g):
+    g.override(reason="test")
+    g.fake["disk_free_bytes"] = 20 * GIB  # at the floor of a 20 GiB log
+    g.poll()
+    assert g.state()["kinds"][0] == "override-withdrawn"
+
+
+def test_a_withdrawal_note_goes_with_its_episode_not_into_the_next_one():
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    _withdraw(g)
+    # the reader let go: the log resets and the drive recovers, both latches release
+    g.fake["wal_bytes"], g.fake["disk_free_bytes"] = 0, 300 * GIB
+    g.poll()
+    g.poll()
+    assert not g.engaged
+    # days later the log trips again at 2 GiB on a drive with room: no stale sentence about 20 GB
+    g.fake["wal_bytes"] = 2 * GIB
+    g.poll()
+    g.poll()
+    assert g.engaged
+    assert g.state()["kinds"] == ["wal"], g.state()["kinds"]
+
+
+def test_a_withdrawal_note_goes_once_free_space_reads_above_the_floor_again():
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    _withdraw(g)
+    g.fake["disk_free_bytes"] = 200 * GIB  # the log is still pinned, the drive recovered
+    g.poll()
+    assert g.state()["kinds"] == ["wal"], "the 'cannot be kept running' note would now be false"
+    assert g.override(reason="test")["overridden"] is True, "and the button would be granted"
+
+
+def test_an_override_is_withdrawn_when_free_space_stays_unreadable():
+    """An override that cannot be bounded is not granted, and one that can no longer be bounded
+    does not run on until a write fails."""
+    g = _overridable()
+    g.override(reason="test")
+    g.fake["disk_free_bytes"] = None
+    g.poll()
+    assert g.admit() is None, "one missed reading carries no information"
+    g.poll()
+    assert g.admit() == "wal", "trip_after misses in a row withdraw it"
+    st = g.state()
+    assert st["overridden"] is False
+    assert st["kinds"] == ["override-withdrawn", "wal"]
+    assert st["notes"][0]["frame"] == storage_guard.FRAME_OVERRIDE_UNREADABLE
+    # a reading that returns above the floor clears the note and the button works again
+    g.fake["disk_free_bytes"] = 100 * GIB
+    g.poll()
+    assert g.state()["kinds"] == ["wal"]
+    assert g.override(reason="test")["overridden"] is True
+
+
+def test_one_unreadable_sample_between_good_ones_does_not_withdraw_an_override():
+    g = _overridable()
+    g.override(reason="test")
+    for free in (None, 100 * GIB, None, 100 * GIB, None):
+        g.fake["disk_free_bytes"] = free
+        g.poll()
+    assert g.admit() is None
 
 
 def test_the_floor_never_falls_when_a_reading_is_missing():
@@ -980,7 +1061,7 @@ def test_an_override_and_its_withdrawal_are_logged_with_the_numbers(caplog):
     text = "\n".join(r.getMessage() for r in caplog.records)
     assert "STORAGE GUARD OVERRIDDEN (operator resumed via the API)" in text
     assert "WAL 20 GB, free 100 GB" in text.replace(".0 GB", " GB")
-    assert "STORAGE GUARD OVERRIDE WITHDRAWN" in text and "15" in text
+    assert "free space 15.0 GB fell to the override floor 20.0 GB" in text, text
 
 
 def test_the_polled_state_says_what_bounds_an_override():
@@ -1297,15 +1378,32 @@ def test_no_sentence_the_guard_sends_tells_the_user_to_do_anything():
     assert "once writes succeed" not in storage_guard.FRAME_DISK_ERROR, "release does not attempt a write"
 
 
+def test_the_floors_reason_holds_for_both_terms_of_the_max_and_no_refusal_promises_a_resume_time():
+    """Review of #1283: the floor is max(128 MiB, the log's size). "The least the file needs to be
+    written back" is false when the 128 MiB term is the one that bites, and "resumes once the drive
+    has room" is false for a log-only pause (it resumes when the log resets)."""
+    for f in (storage_guard.FRAME_OVERRIDE_WAL, storage_guard.FRAME_OVERRIDE_DISK, storage_guard.FRAME_OVERRIDE_STOPPED):
+        assert "write" in f and "finish a write" in f and "the least" not in f, f
+    assert "resumes" not in storage_guard.FRAME_OVERRIDE_STOPPED
+    assert "room again" not in storage_guard.FRAME_OVERRIDE_STOPPED
+
+
 def test_the_reserve_has_one_stated_reason_everywhere_it_is_said():
-    """P3: 1 GiB for the writes still in flight plus 2% of the drive as room for everything
-    else writing to it -- the same two-part reason in the docstring, the hover and the method."""
-    doc = storage_guard.__doc__ or ""
-    assert "1 GiB for the writes still in flight" in doc and "2% of the drive as room for everything" in doc
+    """P3, and the review of #1283: the reserve is the LARGER of 1 GiB (the writes still in flight)
+    and 2% of the drive (room for everything else), never a sum: on a 500 GiB drive it is 10 GiB, and
+    "1 GB plus 2%" would say 11."""
+    doc = " ".join((storage_guard.__doc__ or "").split())
+    assert "the larger of 1 GiB (the writes still in flight while a pass winds down" in doc
+    assert "and 2% of the drive (room for everything else that writes to it)" in doc
     method = _guard().state()["method"]
-    assert "1 GiB for the writes still in flight" in method and "2% of the drive as room" in method
+    assert "the larger of 1 GiB (the writes still in flight while a pass winds down)" in method
+    assert "and 2% of the drive (room for everything else that writes to it)" in method
     for page in ("src/static/app-core.js", "src/static/taskmanager.js"):
-        assert "1 GB for the writes still in flight plus 2% of the drive as room for everything else" in _src(page)
+        assert (
+            "the larger of 1 GB (for the writes still in flight) and 2% of the drive "
+            "(room for everything else that writes to it)"
+        ) in _src(page)
+        assert "plus 2% of the drive" not in _src(page)
 
 
 def test_the_stack_depth_is_one_number_in_the_report_and_the_on_demand_capture():
@@ -1353,6 +1451,29 @@ def test_a_long_pin_logs_one_warning_an_episode_and_one_when_the_holders_change(
         sg._pin_report = real
 
 
+def test_younger_holders_churning_do_not_bring_the_warning_back_every_minute(caplog):
+    """Under an override collection runs, so the younger checkouts change at every report; the
+    pinner is the OLDEST holder, and only a change of that one is news."""
+    clock = Clock()
+    holders = [[{"thread": "pinner", "age_s": 900.0}, {"thread": "worker-1", "age_s": 2.0}]]
+    g = _guard(clock, drain_fn=lambda: {"busy": 1, "wal_bytes_before": 3 * GIB, "wal_bytes_after": 3 * GIB})
+    _feed(g, wal=3 * GIB, n=2)
+    import src.scheduler.storage_guard as sg
+
+    real = sg._pin_report
+    sg._pin_report = lambda rec: {"holders": holders[0], "n": len(holders[0])}
+    try:
+        with caplog.at_level("INFO", logger=sg._LOG.name):
+            for i in range(4):
+                holders[0] = [{"thread": "pinner", "age_s": 900.0 + i * 60}, {"thread": f"worker-{i}", "age_s": 1.0}]
+                clock.advance(storage_guard.PIN_REPORT_EVERY_S + 1)
+                g.drain_if_due()
+            levels = [r.levelname for r in caplog.records if "TRUNCATE is busy" in r.getMessage()]
+            assert levels == ["WARNING", "INFO", "INFO", "INFO"], levels
+    finally:
+        sg._pin_report = real
+
+
 def test_the_drain_is_paced_from_when_it_ended_not_from_when_it_began():
     """P9: a drain that queued 30 s on the write gate must not be followed 5 s later by the next."""
     clock = Clock()
@@ -1394,6 +1515,32 @@ def test_a_write_error_latch_whose_hold_lapsed_with_free_space_unreadable_releas
     assert g.kind() == "disk", "the next failed write latches it again at once"
 
 
+def test_a_measured_latch_that_a_write_error_also_hit_never_releases_on_an_unreadable_figure():
+    """The normal field sequence: the drive MEASURES full, then the pass in flight fails on it. A
+    measurement set that latch, so an unreadable figure after the hold must not call it recovered."""
+    clock = Clock()
+    g = _guard(clock)
+    _feed(g, free=MIB, n=2)
+    assert g.kind() == "disk"
+    g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    clock.advance(ERROR_HOLD_S + 1)
+    for _ in range(6):
+        g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=None, disk_total_bytes=None)
+    assert g.engaged, "the measurement said full and nothing measured otherwise"
+
+
+def test_a_write_error_latch_a_measurement_later_confirms_is_no_longer_a_retry_candidate():
+    clock = Clock()
+    g = _guard(clock)
+    _feed(g, free=_FREE_OK)
+    g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=MIB, disk_total_bytes=_TOTAL)  # measured short
+    clock.advance(ERROR_HOLD_S + 1)
+    for _ in range(6):
+        g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=None, disk_total_bytes=None)
+    assert g.engaged
+
+
 def test_a_latch_set_by_measurement_never_releases_on_an_unreadable_figure():
     clock = Clock()
     g = _guard(clock)
@@ -1415,6 +1562,18 @@ def test_wait_if_engaged_can_be_bounded():
     stop = threading.Event()
     stop.set()
     assert g.wait_if_engaged(stop, poll_s=0.05) is False, "an interrupted wait returns at once"
+
+
+def test_a_background_wait_does_not_follow_the_operators_override():
+    """"Resume anyway" forces COLLECTION on (admit); a background rewrite is not collection, so
+    wait_if_engaged (and the off-peak gate) read the latch."""
+    g = _overridable()
+    g._clock = time.monotonic
+    g.override(reason="test")
+    assert g.admit() is None
+    t0 = time.monotonic()
+    assert g.wait_if_engaged(max_wait_s=0.2, poll_s=0.05) is True, "still waits while the latch holds"
+    assert time.monotonic() - t0 >= 0.15
 
 
 def test_the_conftest_isolates_the_process_global_latch():

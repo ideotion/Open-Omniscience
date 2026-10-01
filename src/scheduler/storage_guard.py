@@ -45,8 +45,8 @@ overrides exist for an operator who knows better):
     - never below 128 MiB, so a tiny drive does not make the guard fire on a healthy WAL.
 * ``disk_reserve = max(1 GiB, 2% of the drive)`` (``OO_DISK_RESERVE_MB`` overrides). ONE
   two-part reason, said the same way here, in the notice's hover, in ``state()["method"]`` and
-  in the ledger: **1 GiB for the writes still in flight while a pass winds down (plus the
-  pass-tail records), and 2% of the drive as room for everything else that writes to it** (the
+  in the ledger: **the larger of 1 GiB (the writes still in flight while a pass winds down, plus
+  the pass-tail records) and 2% of the drive (room for everything else that writes to it)** (the
   OS, a browser, a download), which is NOT a measured need of this app. It stays as decided
   (coordinator, 2026-09-30, option a): the 2% term has no upper bound, so on a very large volume
   it is the first candidate for a ceiling, and a ceiling is written only once the pass tail is
@@ -72,7 +72,8 @@ holds open never ends on its own, so the exits are the operator's "Resume anyway
 restart (which ends what the app itself holds open and resets the log when the database
 reopens), or the holder ending. ``OO_WAL_CHECKPOINT=0`` is the operator's own switch against
 the boundary checkpoint and the drain obeys it (the drain record says so); with it set the
-log is reset only by a later write that SQLite itself resets on, or by the override.
+log is reset only by a later write that SQLite itself resets on; "Resume anyway" lets collection
+run past it but resets nothing.
 
 NEVER BLOCKS. Consumers call :meth:`StorageGuard.admit` (a non-blocking read of the latch)
 BEFORE taking on new work; in-flight work always finishes. The supervisor thread normally does
@@ -100,13 +101,21 @@ What then stops the drive from filling, in order:
   the button is refused while that hold lasts (a drive that refuses writes cannot be forced:
   that is how one machine failed fourteen passes on one full disk);
 * the button is refused when free space is already at or below the floor, or cannot be read
-  (an override that cannot be bounded is not granted);
+  (an override that cannot be bounded is not granted), and a granted one is withdrawn the same
+  way when free space then stays unreadable for ``trip_after`` samples;
+* it covers the limits that were exceeded WHEN IT WAS GRANTED and nothing else: a second limit
+  that trips later (the drive's reserve while the log was overridden, or the other way round)
+  ends it, the ordinary pause shows with the new numbers, and the button offers it again with
+  that limit in view;
 * it ends when both causes are gone (the next trip pauses normally again), and it lives in
   memory only: quitting the app ends it.
 
-This is a bound, not a promise that the drive can never fill: the floor is read every
-``POLL_EVERY_S`` (5 s) and a pass can write between two readings, so the write error above is the
-last net and it does not wait for a reading.
+This is a bound, not a promise that the drive can never fill. The floor is read every
+``POLL_EVERY_S`` (5 s) while the supervisor runs (without one, at each pass boundary), and a pass
+can write between two readings; the floor reserves room to write the log back and finish a
+write, NOT the pass tail written after a withdrawal (a measured tail is what would size that, and
+it is not a fixed number). The write error above is the last net and it does not wait for a
+reading.
 
 The drain keeps running while the override holds, so the WAL still resets the moment its reader
 lets go, and the notice says that the override is on, what bounds it, and that the next start
@@ -207,20 +216,23 @@ FRAME_DISK = (
 FRAME_OVERRIDE_WAL = (
     "Collection was resumed by you although the database's working file (its write-ahead log) "
     "is {size} (this machine's limit is {limit}). It stops again by itself if free space falls "
-    "to {floor}, the least that file needs to be written back into the database, or if a write "
-    "fails for lack of space. The next start will spend longer recovering it."
+    "to {floor}, the room the database needs to write that file back into place and finish a "
+    "write, or if a write fails for lack of space. The next start will spend longer "
+    "recovering it."
 )
 FRAME_OVERRIDE_DISK = (
     "Collection was resumed by you although only {free} is free on the data drive (this "
     "machine's reserve is {reserve}). It stops again by itself if free space falls to {floor}, "
-    "the least the database's working file needs to be written back into place, or if a write "
-    "fails for lack of space."
+    "the room the database needs to write its working file back into place and finish a "
+    "write, or if a write fails for lack of space."
 )
-#: Both a refusal at the click and an override that ended: the same fact either way.
+#: Both a refusal at the click and an override that ended: the same fact either way. It does
+#: not say WHEN collection resumes: that depends on which limit holds, and the pause note
+#: beside it says so.
 FRAME_OVERRIDE_STOPPED = (
     "Collection cannot be kept running against this limit: free space is {free}, at or below "
-    "{floor}, the least the database's working file needs to be written back into place. "
-    "Collection stays paused and resumes by itself once the drive has room again."
+    "{floor}, the room the database needs to write its working file back into place and "
+    "finish a write. Collection stays paused."
 )
 FRAME_OVERRIDE_HELD = (
     "The drive refused a write for lack of space a short while ago, so collection cannot be "
@@ -467,6 +479,10 @@ class StorageGuard:
         self._override: dict[str, Any] | None = None
         self._withdrawn: dict[str, Any] | None = None
         self._overrides = 0
+        self._override_blind = 0  # consecutive samples with free space unreadable while overridden
+        # The DISK latch was set by a failed WRITE (not by a measurement): only such a latch is
+        # released as a retry when its hold lapses with free space unreadable.
+        self._disk_by_error = False
         self._wal_seen = 0  # the last WAL size actually read (the floor must not fall on a miss)
         # What the last pin report named (the kind and the holders), so a long pin logs ONE
         # WARNING an episode (and another when the holders change), not one a minute: the error
@@ -491,6 +507,8 @@ class StorageGuard:
             self._last_pin_report = self._last_pin_mono = None
             self._override = self._withdrawn = None
             self._overrides = 0
+            self._override_blind = 0
+            self._disk_by_error = False
             self._wal_seen = 0
             self._report_key = None
 
@@ -514,9 +532,11 @@ class StorageGuard:
 
         A non-blocking read of the latch: it samples nothing, takes no lock a worker could
         queue on for long, and never raises. Long background writers call it at a chunk
-        boundary (the keyword boot recompute is the planned second consumer). None while the
-        operator's override holds, though the latch itself stays engaged (``engaged`` is the
-        condition's truth, ``admit`` is whether new work may start).
+        boundary. This is COLLECTION's gate: it is None while the operator's override holds, though
+        the latch itself stays engaged (``engaged`` is the condition's truth, ``admit`` is whether
+        new collection may start). A background writer that is not collection (off-peak
+        maintenance, the keyword boot recompute) reads ``engaged`` or :meth:`wait_if_engaged`,
+        which do NOT follow the override: forcing collection on does not force a rewrite on.
         """
         if not self.enabled():
             return None
@@ -604,23 +624,34 @@ class StorageGuard:
                         self._disk_over = 0
                 else:
                     held = self._hold_until is not None and now_mono < self._hold_until
+                    if disk_free_bytes < reserve:
+                        # A measurement agrees the drive is short: this latch is no longer
+                        # "only a failed write", so an unreadable figure later never releases it.
+                        self._disk_by_error = False
                     if disk_free_bytes >= disk_resume and not held:
                         self._disk_under += 1
                         if self._disk_under >= self.resume_after:
                             self._disk, self._disk_over, self._disk_under = False, 0, 0
                             self._hold_until = None
+                            self._disk_by_error = False
                             released.append("disk")
                     else:
                         self._disk_under = 0
-            elif self._disk and self._hold_until is not None and now_mono >= self._hold_until:
-                # A latch a failed WRITE set (the hold marks it), the hold has lapsed and free
-                # space cannot be read: nothing could ever confirm recovery by measurement (a
+            elif (
+                self._disk
+                and self._disk_by_error
+                and self._hold_until is not None
+                and now_mono >= self._hold_until
+            ):
+                # A latch ONLY a failed WRITE set (never a measurement), its hold has lapsed and
+                # free space cannot be read: nothing could ever confirm recovery by measurement (a
                 # PostgreSQL install reads no free space at all), so release it as a RETRY. The
                 # next failed write latches it again at once, so this cannot hide a full drive.
                 self._disk_under += 1
                 if self._disk_under >= self.resume_after:
                     self._disk, self._disk_over, self._disk_under = False, 0, 0
                     self._hold_until = None
+                    self._disk_by_error = False
                     released.append("disk-retry")
             self._account_locked(was, now_mono)
             engaged = self._wal or self._disk
@@ -628,29 +659,67 @@ class StorageGuard:
         self._log_transitions(tripped, released)
         if override_event == "cleared":
             _LOG.warning("storage guard override ended: the cause is gone, the guard is armed again")
+        elif override_event == "widened":
+            _LOG.warning(
+                "STORAGE GUARD OVERRIDE ENDED -- a limit the override was not granted for was "
+                "crossed; collection pauses again, and \"Resume anyway\" offers it again with the "
+                "new limit in view."
+            )
+        elif override_event == "unreadable":
+            _LOG.warning(
+                "STORAGE GUARD OVERRIDE WITHDRAWN -- free space on the data drive cannot be read, "
+                "so the override can no longer be kept within what the drive can take; collection "
+                "pauses again."
+            )
         elif override_event is not None:
             _LOG.warning(
                 "STORAGE GUARD OVERRIDE WITHDRAWN -- free space %s fell to the override floor "
-                "%s (what the log needs to be written back into the database); collection "
-                "pauses again.",
+                "%s (the room to write the log back into the database and finish a write); "
+                "collection pauses again.",
                 _size_text(disk_free_bytes),
                 _size_text(override_floor_bytes(self._wal_seen)),
             )
         return engaged
 
     def _update_override_locked(self, engaged: bool, disk_free_bytes: int | None) -> str | None:
-        """End the operator's override when its cause is gone, or withdraw it when free space
-        has fallen to the floor. Caller holds the lock. Returns ``"cleared"``, ``"withdrawn"``
-        or None."""
+        """End the operator's override when its cause is gone, when a limit it was not granted
+        for trips, or when it can no longer be bounded; withdraw it when free space has fallen to
+        the floor. Caller holds the lock. Returns ``"cleared"``, ``"widened"``, ``"unreadable"``,
+        ``"withdrawn"`` or None.
+
+        A withdrawal note belongs to the episode that withdrew it, and to the time free space
+        stays at or below the floor: it goes with the episode, and goes once free space reads
+        above the floor again (the button is offered then, and would be granted)."""
+        floor = override_floor_bytes(self._wal_seen)
         if self._override is None:
+            w = self._withdrawn
+            if w is not None:
+                if not engaged or (disk_free_bytes is not None and disk_free_bytes > floor):
+                    self._withdrawn = None
+                elif disk_free_bytes is not None and w.get("kind") == "unreadable":
+                    self._withdrawn = {"kind": "floor", "disk_free_bytes": disk_free_bytes, "floor_bytes": floor}
             return None
         if not engaged:
             self._override = self._withdrawn = None
+            self._override_blind = 0
             return "cleared"
-        floor = override_floor_bytes(self._wal_seen)
-        if disk_free_bytes is not None and disk_free_bytes <= floor:
+        now_on = {k for k, on in (("wal", self._wal), ("disk", self._disk)) if on}
+        if not now_on <= set(self._override.get("kinds", ())):
+            self._override = self._withdrawn = None
+            self._override_blind = 0
+            return "widened"
+        if disk_free_bytes is None:
+            self._override_blind += 1
+            if self._override_blind >= self.trip_after:
+                self._override = None
+                self._override_blind = 0
+                self._withdrawn = {"kind": "unreadable"}
+                return "unreadable"
+            return None
+        self._override_blind = 0
+        if disk_free_bytes <= floor:
             self._override = None
-            self._withdrawn = {"disk_free_bytes": disk_free_bytes, "floor_bytes": floor}
+            self._withdrawn = {"kind": "floor", "disk_free_bytes": disk_free_bytes, "floor_bytes": floor}
             return "withdrawn"
         return None
 
@@ -721,6 +790,8 @@ class StorageGuard:
                     "wal_bytes": self._last.get("wal_bytes"),
                     "corpus_bytes": self._last.get("corpus_bytes"),
                 }
+                if not was_disk:
+                    self._disk_by_error = True  # no measurement set this latch: a write did
                 self._disk = True
                 self._disk_over = self._disk_under = 0
                 self._hold_until = now_mono + ERROR_HOLD_S
@@ -769,6 +840,8 @@ class StorageGuard:
             self._wal_over = self._wal_under = self._disk_over = self._disk_under = 0
             self._hold_until = None
             self._override = self._withdrawn = None
+            self._override_blind = 0
+            self._disk_by_error = False
             self._account_locked(was, now_mono)
         if was:
             _LOG.warning("storage guard released (%s) -- collection resumes", reason)
@@ -812,7 +885,11 @@ class StorageGuard:
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
                     "since_mono": now_mono,
                     "reason": reason,
+                    # The limits that were exceeded when the operator chose: a later one is a new
+                    # fact the operator has not seen (see _update_override_locked).
+                    "kinds": tuple(k for k, on in (("wal", self._wal), ("disk", self._disk)) if on),
                 }
+                self._override_blind = 0
                 self._withdrawn = None
                 self._overrides += 1
                 out["overridden"] = True
@@ -922,18 +999,19 @@ class StorageGuard:
                 "wal_bytes_after": rec.get("wal_bytes_after") if isinstance(rec, dict) else None,
                 "ran": rec is not None,
                 # OO_WAL_CHECKPOINT=0 makes the drain a no-op by the operator's own switch: the
-                # latch then releases only when SQLite resets the log on a later write, or on
-                # "Try again now". Said here rather than left to read as a drain that failed.
+                # latch then releases only when SQLite resets the log on a later write, or on a
+                # start or run-now retry. Said here rather than left to read as a drain that failed.
                 "checkpoint_disabled": bool(rec is None and not _checkpoint_enabled()),
             }
             if report is not None:
                 self._last_pin_report = report
                 self._last_pin_mono = now_mono
         if report is not None:
-            key = (
-                "pinned" if pinned else "gate-busy",
-                tuple(sorted(str(h.get("thread")) for h in report.get("holders", []))),
-            )
+            # The oldest holder is the pinner: the younger ones churn with the workers (and
+            # more so under an override, when collection runs), so keying on all of them would
+            # bring back the one-warning-a-minute flood this key exists to stop.
+            holders = report.get("holders", [])
+            key = ("pinned" if pinned else "gate-busy", str(holders[0].get("thread")) if holders else None)
             with self._lock:
                 fresh = key != self._report_key
                 self._report_key = key
@@ -967,6 +1045,9 @@ class StorageGuard:
         """Block, interruptibly, while engaged. For a long background writer at a chunk
         boundary; holds no session, gate or permit here. Returns whether it waited.
 
+        It follows the LATCH, not the operator's override: "Resume anyway" forces COLLECTION on
+        (:meth:`admit`), and a background rewrite (the keyword boot recompute) is not collection.
+
         Without a supervisor thread it takes the readings and the drain itself each turn
         (:meth:`poll_and_drain_unsupervised`), so the wait ends when the cause does. It ends
         when ``stop`` is set, or after ``max_wait_s`` seconds when one is given (a pause lasts
@@ -978,7 +1059,7 @@ class StorageGuard:
         pause = stop if stop is not None else threading.Event()  # never set: a plain timed wait
         while True:
             self.poll_and_drain_unsupervised()
-            if self.admit() is None:
+            if not (self.enabled() and self.engaged):
                 break
             if stop is not None and stop.is_set():
                 break
@@ -1028,16 +1109,21 @@ class StorageGuard:
                         }
                     )
             elif (wal or disk) and self._withdrawn is not None:
-                notes.append(
-                    {
-                        "kind": "override-withdrawn",
-                        "frame": FRAME_OVERRIDE_STOPPED,
-                        "vars": {
-                            "free": self._withdrawn["disk_free_bytes"],
-                            "floor": self._withdrawn["floor_bytes"],
-                        },
-                    }
-                )
+                if self._withdrawn.get("kind") == "unreadable":
+                    notes.append(
+                        {"kind": "override-withdrawn", "frame": FRAME_OVERRIDE_UNREADABLE, "vars": {}}
+                    )
+                else:
+                    notes.append(
+                        {
+                            "kind": "override-withdrawn",
+                            "frame": FRAME_OVERRIDE_STOPPED,
+                            "vars": {
+                                "free": self._withdrawn["disk_free_bytes"],
+                                "floor": self._withdrawn["floor_bytes"],
+                            },
+                        }
+                    )
             if disk and not overridden:
                 # A write-error latch on a drive that still reports room says so, instead of
                 # "only X is free" about a healthy X.
@@ -1116,16 +1202,17 @@ class StorageGuard:
                     "WAL limit = min(clamp(10% of the corpus file, 512 MiB, 2 GiB), 10% of free "
                     "disk), never below 128 MiB: it protects normal bursts (floor), the next "
                     "unlock's recovery time (ceiling) and the drive (the free-disk term). Disk "
-                    "reserve = max(1 GiB, 2% of the drive): 1 GiB for the writes still in flight while a "
-                    "pass winds down, and 2% of the drive as room for everything else that writes "
-                    "to it. Engages after "
+                    "reserve = the larger of 1 GiB (the writes still in flight while a pass winds "
+                    "down) and 2% of the drive (room for everything else that writes to it). "
+                    "Engages after "
                     f"{self.trip_after} consecutive samples, resumes after {self.resume_after} "
                     "healthy ones with margin, or at once on a full-disk write error. The "
                     "operator's override (\"Resume anyway\") lets collection continue while a "
-                    "limit is exceeded; it ends by itself when the cause clears, stops again if "
-                    "free space falls to max(128 MiB, the log's own size) (what a checkpoint may "
-                    "need to write the log back into the database), and is refused while a write "
-                    "has just failed for lack of space. "
+                    "limit is exceeded; it ends by itself when the cause clears or another limit "
+                    "is crossed, stops again if free space falls to max(128 MiB, the log's own "
+                    "size) (the room to write the log back into the database and finish a write) "
+                    "or cannot be read, and is refused while a write has just failed for lack of "
+                    "space. "
                     "Missing readings never count. The history is one sample a minute for six "
                     "hours, in memory only; the hourly wal_bytes and disk_free_mib gauges are "
                     "recorded by idle maintenance, which yields while the guard is engaged, so "
