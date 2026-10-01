@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from datetime import UTC, datetime
 
 from src.briefing.card import BUCKET_LABELS, BUCKETS
@@ -146,6 +147,63 @@ def _is_cache_stale(session, payload: dict, *, current: int | None = None) -> bo
     return grew >= _STALE_GROWTH_MIN and grew >= int(cached) * _STALE_GROWTH_FRAC
 
 
+# A feed that carries a stop marker (``kept_reason`` / ``incomplete_reason``) is repaired
+# without anyone pressing Refresh: once the machine has headroom again, the next Home poll
+# starts ONE background refresh. Three things keep that from becoming a loop:
+#   * ``_MARKER_RETRY_S`` seconds must pass AFTER the last refresh FINISHED (any refresh, the
+#     scheduler's included), so a refresh that keeps ending early, or one that itself takes
+#     minutes on a large corpus, never runs back to back;
+#   * memory must be a margin ABOVE the floor, not a megabyte over it (the floor, up to
+#     ``_REPAIR_MARGIN_MAX_MB``): a refresh started there only stops again at the first producer
+#     boundary and re-marks the feed. A guard floor set above what the machine usually has free
+#     therefore leaves the repair off, and the Refresh button as the way out;
+#   * the scheduler's own briefing refresh and housekeeping lane are not running when the
+#     repair STARTS. The other direction is not closed: a pass-tail refresh that starts during a
+#     repair is not held back, exactly as for the stale-cache refresh and the Refresh button,
+#     which never took those locks either.
+# The state is per process, so a restart (an app update) tries once straight away.
+_MARKER_RETRY_S = 600.0
+_REPAIR_MARGIN_MAX_MB = 512.0
+_marker_retry: dict[str, float | None] = {"at": None}
+
+
+def _monotonic() -> float:
+    return time.monotonic()
+
+
+def _scheduler_is_busy_with_the_whole_corpus() -> bool:
+    """True while the scheduler's pass-tail briefing refresh or its heavy-tail housekeeping runs."""
+    try:
+        from src.scheduler import runner
+
+        sched = runner._scheduler  # never created here: no scheduler means nothing is running
+        return sched is not None and sched.whole_corpus_work_running()
+    except Exception:  # noqa: BLE001 - a probe failure must never break Home
+        return False
+
+
+def _has_headroom_for_a_repair() -> bool:
+    """Memory is a margin above the guard's floor (or cannot be measured, the honest default)."""
+    try:
+        from src.database.maintenance import _available_mb, _read_memory_floor_mb
+
+        floor, avail = _read_memory_floor_mb(), _available_mb()
+    except Exception:  # noqa: BLE001 - no DB layer, or no reading
+        return True
+    return floor is None or avail is None or avail > floor + min(floor, _REPAIR_MARGIN_MAX_MB)
+
+
+def _marker_wants_refresh(payload: dict) -> bool:
+    """True when ``payload`` carries a stop marker and a repair is allowed right now."""
+    if not (payload.get("kept_reason") or payload.get("incomplete_reason")):
+        return False
+    if not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
+        return False
+    with _refresh_lock:
+        last = _marker_retry["at"]
+    return last is None or _monotonic() - last >= _MARKER_RETRY_S
+
+
 def _dismissed_path():
     from src.paths import data_dir
 
@@ -258,6 +316,19 @@ def clear_dismissed() -> None:
 def refresh_briefing(session, on_progress=None) -> dict:
     """Recompute the briefing from all producers and write the cache. Returns it.
 
+    Whatever the outcome, the time it finished is remembered: a marker repair waits
+    ``_MARKER_RETRY_S`` from there (see ``_marker_wants_refresh``).
+    """
+    try:
+        return _refresh_briefing(session, on_progress)
+    finally:
+        with _refresh_lock:
+            _marker_retry["at"] = _monotonic()
+
+
+def _refresh_briefing(session, on_progress=None) -> dict:
+    """The body of :func:`refresh_briefing`.
+
     ``on_progress(done, total, name)`` (optional) is forwarded to ``run_all`` so a
     background recompute can publish a progress bar; callers that don't need it
     (the scheduler, an explicit synchronous get) pass nothing — unchanged behaviour."""
@@ -270,6 +341,10 @@ def refresh_briefing(session, on_progress=None) -> dict:
         evaluate_watches(session)
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
+    # Which feed was on disk when this run STARTED: a refresh that lands while this one runs
+    # must not be overwritten with the feed it just replaced, and only a read taken before the
+    # run can tell (two reads taken after it cannot).
+    started_with = (_read_cache() or {}).get("generated_at")
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
     produced, stats = run_all_bounded(
         session, on_progress=on_progress, lanes=True, memory_stop=True
@@ -314,12 +389,15 @@ def refresh_briefing(session, on_progress=None) -> dict:
             # Written into the cache as well, so Home (which reads the cache, not this return
             # value) can say that the feed it shows is the previous one and why. The next
             # refresh that completes replaces the whole payload, marker included.
+            # (A refresh that lands between the read above and the write below still loses to
+            # this one; the marker repair puts that right, so it is not guarded a second time.)
+            if existing.get("generated_at") != started_with:
+                # A refresh landed during this run: its feed is the newer one, so the marker is
+                # not written (Home would call a fresh feed "the previous feed"); this call
+                # still reports that it kept the cache, which is what its caller records.
+                return kept
             try:
-                # Only if no full refresh landed since this one read the cache: it must not be
-                # overwritten with the feed it just replaced.
-                current = _read_cache()
-                if current and current.get("generated_at") == existing.get("generated_at"):
-                    _write_cache(kept)
+                _write_cache(kept)
             except OSError:
                 _LOG.warning("could not record that the briefing refresh kept the cache", exc_info=True)
             return kept
@@ -453,6 +531,7 @@ def get_briefing(
     stale = cached is not None and (
         cached.get("version") != CACHE_VERSION  # a servable prior shape: recompute once
         or _is_cache_stale(session, cached, current=_count_once())
+        or _marker_wants_refresh(cached)
     )
     need_recompute = force or cached is None or stale
     if need_recompute and background:
@@ -461,7 +540,7 @@ def get_briefing(
         payload = cached
     elif need_recompute:
         if stale:
-            _LOG.info("briefing cache is stale (corpus grew, or an older cache shape); recomputing")
+            _LOG.info("briefing cache is stale (corpus grew, an older cache shape, or a stop marker to repair); recomputing")
         payload = refresh_briefing(session)
     else:
         payload = cached

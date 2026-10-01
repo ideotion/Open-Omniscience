@@ -531,6 +531,26 @@ def _more(items: list[str], shown: int = SHOWN_ROWS) -> str:
     return ", ".join(items[:shown]) + (f" and {len(items) - shown} more" if len(items) > shown else "")
 
 
+def _check_json_target(args: argparse.Namespace, root: Path) -> None:
+    """Refuse a ``--json`` path that would overwrite something it must not: an input file, a file in
+    the checkout (a tracked file is one), a second name of such a file, or not a regular file."""
+    target = args.json.resolve()
+    if (target.suffix != ".json" or args.json.is_symlink()
+            or target.is_relative_to((root / "configs").resolve())):
+        raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
+    inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
+    if target.exists() and not target.is_file():  # a directory, or a pipe that would block the write
+        raise SystemExit("--json must name a regular file, not a directory or a pipe")
+    if target in inputs or (target.exists() and (target.is_relative_to(root) or target.stat().st_nlink > 1 or any(
+            # samefile: another spelling of an input on a case-insensitive file system, which the
+            # resolved-path comparison above cannot equate
+            p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words) if p))):
+        raise SystemExit(
+            "--json would overwrite an input file (the log, the verdicts or the words), an existing file "
+            "in the checkout (a tracked file is one), or a file that has another name (a hard link: the "
+            "other name would change too); name a new file or one outside the checkout")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log", type=Path, help="keyword-log zip or JSON from the diagnostics export")
@@ -542,7 +562,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="append the addable words to the language's file")
     ap.add_argument("--batch-id", help="the batch's id, e.g. en-2026-10 (required with --apply)")
     ap.add_argument("--json", type=Path,
-                    help="also write the full evidence report here: a .json file outside configs/ (overwritten if it exists; never an input file or a file in the checkout)")
+                    help="also write the full evidence report here: a .json file outside configs/ "
+                         "(overwritten if it exists; never an input file, an existing file in the "
+                         "checkout, or a file with a second name)")
     args = ap.parse_args(argv)
 
     import analyze_keyword_log as akl
@@ -551,17 +573,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.apply and not (args.words and args.batch_id and args.verdicts):
         raise SystemExit("--apply needs --words, --batch-id and --verdicts (the triage decision rows)")
     if args.json is not None:
-        target = args.json.resolve()
-        if (target.suffix != ".json" or args.json.is_symlink()
-                or target.is_relative_to((ROOT / "configs").resolve())):
-            raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
-        inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
-        if target.is_dir():
-            raise SystemExit("--json must name a file, not a directory")
-        if target in inputs or (target.exists() and (target.is_relative_to(ROOT) or target.stat().st_nlink > 1 or any(
-                p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words) if p))):
-            raise SystemExit("--json would overwrite an input file (the log, the verdicts or the words) or an existing file in the checkout "
-                             "(a tracked file is one); name a new file or one outside the checkout")
+        try:
+            _check_json_target(args, ROOT)
+        except OSError as exc:  # e.g. a folder this user may not search: a message, not a traceback
+            raise SystemExit(f"--json: cannot check {args.json}: {exc.strerror or exc}") from exc
     doc = akl.load_log(args.log)
     keywords = log_keywords(doc)
     index = index_log(keywords)

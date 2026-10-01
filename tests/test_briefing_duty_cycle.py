@@ -137,3 +137,27 @@ def test_briefing_refresh_is_visible_in_the_task_manager_while_running(monkeypat
     sched._briefing_thread.join(timeout=5)
     snap_after = bgtasks.snapshot()
     assert not any(t["kind"] == "briefing" for t in snap_after), snap_after
+
+
+@pytest.mark.parametrize(
+    ("result", "ledgered"),
+    [
+        ({"cards": [1, 2], "kept_reason": "memory_short"}, False),
+        ({"cards": [1, 2], "kept_reason": "deadline"}, False),
+        ({"cards": [1, 2], "incomplete_reason": "deadline"}, True),  # a partial set DID surface cards
+        ({"cards": [1, 2]}, True),
+    ],
+)
+def test_a_refresh_that_kept_the_cached_feed_is_not_ledgered_as_cards_surfaced(
+    monkeypatch, sched, result, ledgered
+):
+    """A kept feed acted on nothing: an Activity Ledger line saying N cards were surfaced would
+    be false (R111 / diagnostics rank 4, the coordinator's check of PR #1284)."""
+    _fake_scope_factory(monkeypatch)
+    monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda session: result)
+    seen: list[str] = []
+    monkeypatch.setattr("src.scheduler.runner._activity", lambda action, *a, **k: seen.append(action))
+
+    sched._refresh_briefing_async()
+    sched._briefing_thread.join(timeout=5)
+    assert (seen == ["briefing"]) is ledgered
