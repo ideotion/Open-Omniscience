@@ -235,7 +235,10 @@
           value: run.window_days
             ? tf("No sign of life in the last {n} days", { n: _livingCount(run.window_days) })
             : t("Could not be read"),
-          hover: t("No change was recorded, no size sample taken and no walk request made in that time. This is not a run of zero hours; it is no reading.") }];
+          // The "no sign of life" hover states a measured fact; an unreadable clock measured nothing.
+          hover: run.window_days
+            ? t("No change was recorded, no size sample taken and no walk request made in that time. This is not a run of zero hours; it is no reading.")
+            : t("This part could not be read just now. The other figures on this page are unaffected.") }];
       }
       const facts = [
         { label: t("Run so far"),

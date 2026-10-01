@@ -201,6 +201,8 @@ const WIKI = {
   const unread = group(R.livingWikiGroups({ ...WIKI, stream: { ...WIKI.stream,
     run: { measured: false, reason: "the run clock could not be read: OperationalError" } } }, t, tf), "Live stream");
   assert.ok(visible(unread).includes("Run so far Could not be read"), visible(unread));
+  assert.ok(!hovers(unread).includes("no walk request made"),
+    "an unreadable run clock claimed a measured absence in its hover");
   noJunk(R.livingGroupsHtml(quietGroups), "the run rows");
   noVerdict(R.livingGroupsHtml(quietGroups), "the run rows");
 }

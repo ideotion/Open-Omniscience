@@ -8,7 +8,8 @@ airplane button brings it online, and whether Wikipedia scraping was on or off w
 went offline or shut down stays as it was -- a run that was on resumes with that one click, one
 that was off stays off. That is three separate facts and each is pinned here: the settings are not
 touched by the toggle, the click is what starts the lane, and the lane starts only when its
-setting says running.
+setting says running. "The app always starts offline" is pinned elsewhere:
+tests/test_boot_airplane_never_revokes_online.py covers the boot engage.
 """
 
 from __future__ import annotations
@@ -26,35 +27,61 @@ _KEYS = ("wiki_lane_state", "wiki_walk_enabled", "wiki_warm_enabled")
 def data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)  # the toggle's lane seam is skipped under it
+    monkeypatch.delenv(
+        "OO_NO_SCHEDULER", raising=False
+    )  # the toggle's lane seam is skipped under it
     return tmp_path
+
+
+class _Runner:
+    """Stands in for the stream runner only; the service's real start and stop run around it."""
+
+    streaming = False
+
+    def __init__(self):
+        self.started = 0
+        self.stopped = 0
+
+    def start(self):
+        self.started += 1
+        self.streaming = True
+        return True
+
+    def run_until_stopped(self, **_k):
+        return 0
+
+    def stop(self, **_k):
+        self.stopped += 1
+        self.streaming = False
 
 
 @pytest.fixture
 def toggle(data_dir, monkeypatch):
-    """The real /api/system/network route, with the scheduler and the lane replaced by recorders."""
+    """The real /api/system/network route and the real lane start and stop, with the scheduler and
+    the stream runner replaced by recorders. Only the runner is faked, so a stop path that saved a
+    setting would be seen by the settings checks."""
     import src.ingest as ingest
     import src.scheduler.runner as runner_mod
     import src.wiki.service as svc
     from src.api.system import router
 
-    calls: list[str] = []
+    built: list[_Runner] = []
 
     class _FakeScheduler:
         def start(self):
-            calls.append("scheduler.start")
+            pass
 
         def stop(self):
-            calls.append("scheduler.stop")
+            pass
 
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: _FakeScheduler())
-    monkeypatch.setattr(svc, "start_wiki_lane", lambda: calls.append("lane.start") or True)
-    monkeypatch.setattr(svc, "stop_wiki_lane", lambda **_k: calls.append("lane.stop"))
+    monkeypatch.setattr(svc, "_build", lambda: built.append(_Runner()) or built[-1])
     app = FastAPI()
     app.include_router(router)
     try:
-        yield TestClient(app), calls
+        yield TestClient(app), built
     finally:
+        svc.stop_wiki_lane(timeout=1.0)
         ingest.activate_kill_switch()  # leave the process as every other test expects it
 
 
@@ -72,38 +99,25 @@ def _read():
     ],
 )
 def test_going_offline_and_online_never_touches_what_was_chosen(toggle, chosen):
-    client, _calls = toggle
+    client, _built = toggle
     save_settings(chosen)
     for online in (False, True, False, True):
         assert client.post("/api/system/network", json={"online": online}).status_code == 200
-        assert _read() == chosen, f"the airplane button changed a Wikipedia setting (online={online})"
+        assert _read() == chosen, (
+            f"the airplane button changed a Wikipedia setting (online={online})"
+        )
 
 
 def test_the_click_online_is_what_starts_the_lane_and_offline_stops_it(toggle):
-    client, calls = toggle
+    client, built = toggle
     save_settings({"wiki_lane_state": "running"})
     client.post("/api/system/network", json={"online": True})
-    assert "lane.start" in calls and "lane.stop" not in calls
+    assert len(built) == 1 and built[0].started == 1 and built[0].stopped == 0
     client.post("/api/system/network", json={"online": False})
-    assert calls[-1] == "lane.stop"
-
-
-class _Runner:
-    streaming = False
-
-    def __init__(self):
-        self.started = 0
-
-    def start(self):
-        self.started += 1
-        self.streaming = True
-        return True
-
-    def run_until_stopped(self, **_k):
-        return 0
-
-    def stop(self, **_k):
-        self.streaming = False
+    assert built[0].stopped == 1
+    # What was on stays on: the next click resumes it, because the setting still says running.
+    client.post("/api/system/network", json={"online": True})
+    assert len(built) == 2 and built[1].started == 1
 
 
 @pytest.mark.parametrize(
