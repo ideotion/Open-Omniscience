@@ -24,17 +24,23 @@ from src.catalog import qualification_integrity as qi
 from src.catalog.qualification import (
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
-    VERDICT_NO_EVIDENCE,
     allocate_rechecks,
     pending_forced_rechecks,
     qualification_queue,
 )
-from src.database.models import Base, Source
+from src.database.models import Base, Source, SourceQualificationAttempt
 from tests.test_qualification_recheck import LONG_AGO, NOW, _attempt, _selected, _src
 
 MEASURED = "oo-source-qualification-3"
 CURATED = "oo-curated-catalog-1"
 T_FLAG = NOW - timedelta(days=1)
+
+
+def _COHORT():
+    return {
+        "min_articles": 1, "cohort_cut": {}, "cohort": {"baselines": {}, "lang_short_cut": {}},
+        "token": "t", "articles": 0, "sources": 0, "furniture_df": None,
+    }
 
 
 @pytest.fixture()
@@ -55,8 +61,19 @@ def store(monkeypatch):
     return data
 
 
-def _flag(store, *sources, at=T_FLAG):
-    store[q.RECHECK_FIRST_KEY] = {"flagged": {str(s.id): at.replace(tzinfo=None).isoformat() for s in sources}}
+def _flag(store, *sources, at=T_FLAG, tried=None, turn="ordinary"):
+    """``tried`` maps a domain to when THIS install last tried it (the entry's own record)."""
+    tried = tried or {}
+    store[q.RECHECK_FIRST_KEY] = {
+        "turn": turn,
+        "flagged": {
+            str(s.id): {
+                "flagged_at": at.replace(tzinfo=None).isoformat(),
+                "last_tried_at": tried[s.domain].replace(tzinfo=None).isoformat() if s.domain in tried else None,
+            }
+            for s in sources
+        },
+    }
 
 
 def _inverted_qualified(db, domain, *, newest_disq_days_ago=10):
@@ -95,13 +112,13 @@ def test_a_re_check_budget_of_zero_switches_the_list_off_too(db, store):
 
 
 def test_an_unreachable_host_goes_to_the_back_and_a_judgement_settles_it(db, store):
-    """no_evidence is not a judgement: the entry stays, but being the MOST recently tried it
-    yields the head of the line to a source nobody has tried; a local judgement writes the verdict
-    and the status together, so the entry is no longer inverted and drops out."""
+    """The order is when THIS install last tried the entry, recorded in the entry: a host that
+    never answers is stamped at every try and yields the head of the line to a source nobody has
+    tried; a local judgement writes the verdict and the status together, so the entry is no
+    longer inverted and drops out."""
     dead = _inverted_qualified(db, "dead.example")
     fresh = _inverted_qualified(db, "fresh.example")
-    _attempt(db, dead, VERDICT_NO_EVIDENCE, NOW - timedelta(hours=1))   # the host never answers
-    _flag(store, dead, fresh)
+    _flag(store, dead, fresh, tried={"dead.example": NOW - timedelta(hours=1)})
 
     assert [s.domain for s in pending_forced_rechecks(db)] == ["fresh.example", "dead.example"]
     # one slot: the untried source gets it, not the dead host
@@ -111,6 +128,56 @@ def test_an_unreachable_host_goes_to_the_back_and_a_judgement_settles_it(db, sto
     fresh.status = STATUS_DISQUALIFIED                                  # ...and settled it
     db.commit()
     assert [s.domain for s in pending_forced_rechecks(db)] == ["dead.example"]
+
+
+def test_the_order_ignores_the_attempt_log_whose_newest_row_is_the_copied_in_one(db, store):
+    """For a flagged source the newest attempt is the imported one that inverted it, and it may
+    carry a clock AHEAD of this machine's. That must not park the entry at the back."""
+    ahead = _inverted_qualified(db, "ahead.example", newest_disq_days_ago=-30)   # 30 days in the future
+    other = _inverted_qualified(db, "other.example", newest_disq_days_ago=10)
+    _flag(store, ahead, other, tried={"other.example": NOW - timedelta(days=1)})
+    assert [s.domain for s in pending_forced_rechecks(db)][0] == "ahead.example", "never tried here"
+
+
+def test_a_pass_stamps_what_it_tried_so_a_dead_host_sinks_and_the_rest_rotate(db, store):
+    a = _inverted_qualified(db, "a.example")
+    b = _inverted_qualified(db, "b.example")
+    c = _inverted_qualified(db, "c.example")
+    _flag(store, a, b, c)
+
+    def one_pass(hours):
+        before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+        q.run_qualification_pass(
+            db, None, per_pass=0, recheck_per_pass=1, now=NOW + timedelta(hours=hours),
+            cohort_provider=_COHORT)
+        ids = {x.source_id for x in db.query(SourceQualificationAttempt).all() if x.id not in before}
+        return {x.domain for x in db.query(Source).filter(Source.id.in_(ids or {-1})).all()}
+
+    # an empty cohort judges nothing: every try writes no_evidence, as a dead host does
+    assert [one_pass(h) for h in (1, 2, 3, 4)] == [{"a.example"}, {"b.example"}, {"c.example"}, {"a.example"}]
+    stamped = store[q.RECHECK_FIRST_KEY]["flagged"]
+    assert all(e["last_tried_at"] for e in stamped.values())
+
+
+def test_with_an_odd_budget_the_extra_slot_changes_hands_each_pass(db, store):
+    """One slot, a long list and an ordinary queue that is due: rounding the slot up for the list
+    would give it to the list every pass. It alternates instead."""
+    flagged = [_inverted_qualified(db, f"f{i}.example") for i in range(4)]
+    _flag(store, *flagged)
+    for i in range(4):
+        old = _src(db, f"old{i}.example", STATUS_QUALIFIED, qualified_at=LONG_AGO)
+        _attempt(db, old, STATUS_QUALIFIED, LONG_AGO + timedelta(days=i))
+
+    def kind(hours):
+        before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+        q.run_qualification_pass(
+            db, None, per_pass=0, recheck_per_pass=1, now=NOW + timedelta(hours=hours),
+            cohort_provider=_COHORT)
+        ids = {x.source_id for x in db.query(SourceQualificationAttempt).all() if x.id not in before}
+        names = {x.domain for x in db.query(Source).filter(Source.id.in_(ids or {-1})).all()}
+        return "list" if any(n.startswith("f") for n in names) else "ordinary"
+
+    assert [kind(h) for h in (1, 2, 3, 4)] == ["ordinary", "list", "ordinary", "list"]
 
 
 def test_a_healed_inversion_leaves_the_list(db, store):
@@ -204,6 +271,11 @@ def test_the_boot_step_lists_measured_inversions_in_both_directions(db, store, m
     qi.flag_inversions_for_recheck(now=NOW + timedelta(days=5))
     assert store[q.RECHECK_FIRST_KEY]["flagged"] == first
 
+    # an entry this install already tried keeps its record across boots
+    store[q.RECHECK_FIRST_KEY]["flagged"][str(qual.id)]["last_tried_at"] = "2026-09-04T00:00:00"
+    qi.flag_inversions_for_recheck(now=NOW + timedelta(days=5))
+    assert store[q.RECHECK_FIRST_KEY]["flagged"][str(qual.id)]["last_tried_at"] == "2026-09-04T00:00:00"
+
     # a healed inversion drops out at the next boot
     qual.status = STATUS_DISQUALIFIED
     db.commit()
@@ -253,10 +325,7 @@ def test_the_pass_reports_how_many_rechecks_came_from_the_list(db, store):
     _flag(store, a)
     out = q.run_qualification_pass(
         db, None, per_pass=0, recheck_per_pass=2, now=NOW,
-        cohort_provider=lambda: {
-            "min_articles": 1, "cohort_cut": {}, "cohort": {"baselines": {}, "lang_short_cut": {}},
-            "token": "t", "articles": 0, "sources": 0, "furniture_df": None,
-        },
+        cohort_provider=_COHORT,
     )
     assert out["forced_rechecks"] == 1 and out["rechecks"] == 1
     assert db.query(Source).count() == 1

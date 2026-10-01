@@ -775,7 +775,7 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     copied-in attempt resets the re-verification clock, so left alone the re-check would come a
     whole interval after the OTHER instance's attempt. This lists every such source, in either
     direction (live qualified against a newer disqualification, or live disqualified against a
-    newer qualification), keeps the original ``flagged_at`` of one already listed, and drops
+    newer qualification), keeps the ``flagged_at`` and ``last_tried_at`` of one already listed, and drops
     those no longer inverted. It changes no verdict and writes nothing else.
 
     Fails closed like the repair: an unreadable stored list skips the step and rewrites nothing.
@@ -789,7 +789,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     from src.catalog.qualification import RECHECK_FIRST_KEY
 
     try:
-        stored = (kv_get_json_strict(RECHECK_FIRST_KEY) or {}).get("flagged") or {}
+        raw = kv_get_json_strict(RECHECK_FIRST_KEY) or {}
+        stored = raw.get("flagged") or {}
     except Exception:  # noqa: BLE001 - reported, never raised
         _LOG.warning("recheck-first list skipped: it cannot be read", exc_info=True)
         return {"flagged": 0, "skipped": "the list cannot be read"}
@@ -801,9 +802,17 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
         if r.get("live_stamp") == "measured"
     }
     stamp = _iso(now or datetime.now(UTC)) or ""
-    updated = {sid: str(stored.get(sid) or stamp) for sid in sorted(wanted, key=int)}
-    if updated != {str(k): str(v) for k, v in stored.items()}:
-        kv_set_json(RECHECK_FIRST_KEY, {"flagged": updated, "updated_at": stamp})
+    def _entry(sid: str) -> dict[str, Any]:
+        old = stored.get(sid)
+        if isinstance(old, dict):          # keep what this install already recorded about it
+            return {"flagged_at": old.get("flagged_at") or stamp, "last_tried_at": old.get("last_tried_at")}
+        return {"flagged_at": str(old) if old else stamp, "last_tried_at": None}
+
+    updated = {sid: _entry(sid) for sid in sorted(wanted, key=int)}
+    if updated != stored:
+        kv_set_json(RECHECK_FIRST_KEY, {
+            "flagged": updated, "turn": raw.get("turn") or "ordinary", "updated_at": stamp,
+        })
     return {"flagged": len(updated)}
 
 
