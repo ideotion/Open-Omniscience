@@ -1590,7 +1590,8 @@ Official **figures** are not here at all — they are data, so they live under
   the rest later. To send again only some files, type a part number in "Start at part number" and press "Save from this part": it hands over five files
   from that part (the manifest is not saved again), and a number past the last part starts at the last one and says so. A number you type in the same box also tells the two
   "again" buttons where to start, for the same kind of set (a number the page wrote there itself is ignored, so "again" with the box untouched
-  starts at the manifest). Sending a part again does not move "Save the next 5": it goes on from the furthest file already handed to the browser.
+  starts at the manifest). Sending a part again does not move "Save the next 5": it goes on from the furthest file already handed to the browser. Typing a number ahead of the files already saved skips the ones in
+  between (the count in the status line says how many were asked for); type the first missing part number to fill the gap.
   A set is complete when every name from `…-part-01-of-NN` to `…-part-NN-of-NN` is present and its SHA-256 matches the
   manifest. To read a set with the analysis script, give it the folder (or any one file of it): `python scripts/analyze_keyword_log.py <folder>` — it
   names the parts that are missing or differ from the manifest, skips a part that is damaged, and reads the rest.

@@ -588,8 +588,10 @@ def test_a_part_closed_at_a_language_change_keeps_the_member_closing_reserve(tmp
     another is open (a language change) almost never decides where a part ends, and dropping the
     second member-tail term from that trial passed the whole suite. Here every record is its own
     language, so every trial is one: the room left in the closed parts is 1,739-1,765 bytes at this
-    cap (most of it the part.json counted raw and written deflated), and 1,480 without the term.
-    The floor sits between them."""
+    cap with classic zlib (1,659 at the worst of its levels and strategies; most of it is the
+    part.json counted raw and written deflated, so a tighter count of that would move the number),
+    and 1,480 without the term. The floor sits between them, nearer the mutant than a compressor's
+    own spread."""
     rnd = random.Random(3)
     cap = 4_096
     w = up.PartWriter(tmp_path / "set", stem="oo-keyword-log-20261001-000000", cap=cap)
@@ -601,7 +603,7 @@ def test_a_part_closed_at_a_language_change_keeps_the_member_closing_reserve(tmp
     manifest = w.finish()
     room = [cap - p["bytes"] for p in manifest["parts"]][1:-1]
     assert len(room) >= 50, "the set must span many parts for this to test anything"
-    assert min(room) >= 1_650, sorted(room)[:5]
+    assert min(room) >= 1_600, sorted(room)[:5]
 
 
 def test_the_post_check_stops_a_part_over_the_cap_instead_of_handing_it_over(tmp_path):

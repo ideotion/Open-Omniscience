@@ -1122,6 +1122,7 @@
       const el = $("all-diag-status");
       const set = (msg) => { if (el) el.textContent = msg; };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const askedAt = _partsGen;   // what the bar was doing when this build was asked for
       if (btn) btn.disabled = true;
       set(t("Starting…"));
       try {
@@ -1160,12 +1161,18 @@
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
               // A finished build replaces the bar's set like any other button, so it takes a
-              // number (an older keyword build still on its way then leaves the bar to it), and a
-              // click that is handing files over is let finish first: never cut after two of five.
+              // number (a keyword build asked for BEFORE this one was started, still on its way,
+              // then leaves the bar to it), and a click that is handing files over is let finish
+              // first: never cut after two of five. A button pressed while this build ran is the
+              // newer request and keeps the bar: the archive then waits for its own "again" button.
               while (_partsSet && _partsSet.saving) await sleep(250);
-              ++_partsGen;
-              set("");
-              _partsReady(m, "diagnostics");
+              if (_partsGen !== askedAt) {
+                set(t("The archive is ready. Press “All diagnostics, again” to save it as numbered files."));
+              } else {
+                ++_partsGen;
+                set("");
+                _partsReady(m, "diagnostics");
+              }
             } catch (e) {
               set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
             }

@@ -4588,6 +4588,7 @@
   "The app stopped answering": "توقّف التطبيق عن الاستجابة",
   "The app will close in {n} s to protect your data.": "سيُغلق التطبيق خلال {n} ث لحماية بياناتك.",
   "The app's own bookkeeping. No article's content is changed.": "المحاسبة الداخلية للتطبيق نفسه. لا يتغيّر محتوى أي مقالة.",
+  "The archive is ready. Press “All diagnostics, again” to save it as numbered files.": "الأرشيف جاهز. اضغط «كل التشخيصات، مرة أخرى» لحفظه في ملفات مرقّمة.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "تتداخل الفروع: المقال الذي يحمل صيغتَي المفهوم بلغتين يُحسب على كلا الفرعين ومرةً واحدة في المركز، لذلك لا يساوي مجموع الفروع هذا الإجمالي. وحين تتشارك عدة لغات الإملاء نفسه، تحمل الفروع المقالات نفسها وتوضّح ذلك. عدّ فقط، ولا درجة أبدًا.",
   "The article names no point for this place, so the point stands in for the country: its largest city in the gazetteer.": "لا يذكر المقال نقطة لهذا المكان، فالنقطة تمثّل البلد: أكبر مدنه في دليل الأماكن.",
   "The articles collected on this machine, in an order you can reshuffle. It keeps no record of what you have read.": "المقالات التي جُمعت على هذا الجهاز، بترتيب يمكنك إعادة خلطه. ولا يحتفظ بأي سجل لما قرأته.",

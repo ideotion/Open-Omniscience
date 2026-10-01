@@ -46,7 +46,7 @@ function makePage() {
   const els = {};
   const mk = (id, extra) => (els[id] = Object.assign({id, hidden: true, textContent: "", value: ""}, extra));
   mk("parts-bar"); mk("parts-status"); mk("parts-next"); mk("parts-rest"); mk("parts-from-wrap"); mk("parts-from-go");
-  mk("parts-from", {value: "1"});
+  mk("parts-from", {value: "1"}); mk("all-diag-status");
   const clicked = [];
   const document = {
     body: {appendChild() {}},
@@ -520,6 +520,33 @@ function listing(parts, manifests) {
     assert.strictEqual(page.clicked.length, 5, "the save in flight was not cut");
     assert.strictEqual(api.state().kind, "diagnostics", "and the finished archive then took the bar");
     assert.strictEqual(api.state().pcount, 4);
+  }
+
+
+  // ---- a button pressed WHILE the diagnostics build runs is the newer request: the finished archive does not take the bar from it
+  {
+    const READY = "The archive is ready. Press “All diagnostics, again” to save it as numbered files.";
+    for (const keywordFinishesFirst of [false, true]) {
+      const page = makePage(); const statusHeld = []; const keywordHeld = [];
+      const api = load(page, {api: (url) => {
+        if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+        if (url === "/api/diagnostics/all-job/status") return new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})));
+        if (url === "/api/diagnostics/all-job/volumes") return Promise.resolve(listing(4, 1));
+        return new Promise((resolve) => keywordHeld.push(() => resolve(listing(3, 1))));
+      }});
+      const diag = api.runAllDiagnostics({disabled: false});
+      for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+      assert.strictEqual(statusHeld.length, 1, "the build is being polled");
+      const keyword = api.downloadKeywordParts({disabled: false}, "default");   // pressed while it runs
+      for (let spin = 0; spin < 10 && keywordHeld.length === 0; spin++) await Promise.resolve();
+      if (keywordFinishesFirst) { keywordHeld[0](); await keyword; }
+      statusHeld[0]();
+      await diag;
+      assert.strictEqual(page.els["all-diag-status"].textContent, READY, "the archive says it is ready and what to press");
+      if (!keywordFinishesFirst) { keywordHeld[0](); await keyword; }
+      assert.strictEqual(api.state().kind, "keywords", "the keyword set the person asked for last has the bar");
+      assert.ok(/numbered parts: 3\)/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    }
   }
 
   console.log("all assertions passed");

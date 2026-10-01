@@ -48,6 +48,7 @@ _STRINGS = [
     "Type a part number from 1 to {n}.",
     "Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.",
     "Could not build the keyword files: {why}",
+    "The archive is ready. Press “All diagnostics, again” to save it as numbered files.",
 ]
 
 

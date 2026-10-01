@@ -4588,6 +4588,7 @@
   "The app stopped answering": "アプリが応答しなくなりました",
   "The app will close in {n} s to protect your data.": "データを保護するため、アプリは {n} 秒後に終了します。",
   "The app's own bookkeeping. No article's content is changed.": "アプリ自身の帳簿付けです。記事の内容は変更されません。",
+  "The archive is ready. Press “All diagnostics, again” to save it as numbered files.": "アーカイブの準備ができました。「すべての診断をもう一度」を押すと、番号付きファイルとして保存できます。",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "枝は重複します：概念の2つの言語の語形を含む記事は、両方の枝の下で数えられますが、中心では一度だけ数えられます。そのため、枝ごとの数字を足しても、その合計にはなりません。複数の言語が同じ綴りを共有する場合、それらの枝は同じ記事を持ち、その旨が示されます。件数の集計のみで、スコアではありません。",
   "The article names no point for this place, so the point stands in for the country: its largest city in the gazetteer.": "記事はこの場所の地点を示していないため、国を代表する地点を使います：地名辞典でその国の最大の都市です。",
   "The articles collected on this machine, in an order you can reshuffle. It keeps no record of what you have read.": "このマシンに集めた記事を、並べ替え可能な順序で表示します。何を読んだかの記録は残しません。",

@@ -223,10 +223,11 @@ def _find_set(path: Path) -> tuple[str, list[Path], Path | None] | None:
 
 # Every way a damaged zip is known to fail while being read: a cut file or a bad checksum
 # (BadZipFile, zlib.error, EOFError, OSError), a flipped method or flag byte in the directory
-# (NotImplementedError "compression method", RuntimeError "encrypted"), and text that no longer
+# ("compression method" is a NotImplementedError, "encrypted" a RuntimeError: the one entry
+# covers both), and text that no longer
 # decodes or parses (ValueError, which UnicodeDecodeError is a kind of). A flip-every-byte run over
 # one part found the last two kinds crashing the script, 98 flips in 10,942.
-_DAMAGED = (zipfile.BadZipFile, zlib.error, EOFError, OSError, NotImplementedError, RuntimeError, ValueError)
+_DAMAGED = (zipfile.BadZipFile, zlib.error, EOFError, OSError, RuntimeError, ValueError)
 
 
 def _check_set(stem: str, parts: list[Path], manifest: Path | None) -> None:
