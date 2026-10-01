@@ -880,7 +880,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
       assert.strictEqual(page.clicked.length, clicksBefore, failure + ": its loop asked for no more dead files");
       assert.strictEqual(page.els["parts-status"].textContent, "", failure + ": and wrote no status for a set that is gone");
       assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
-      // the busy marker was released with the drop: the next press takes the bar as usual
+      // and a later press still takes the bar (a smoke check: the busy marker's release is pinned by the earlier blocks)
       failNow = false;
       const next = api.downloadDiagnosticsVolumes({disabled: false});
       for (let k = 0; k < 60; k++) { if (hold.length) hold.shift()(); await Promise.resolve(); }
