@@ -444,18 +444,16 @@ def storage_guard_resume() -> dict:
             _LOG.warning(
                 "storage guard override refused: its supervisor is not running and could not be started"
             )
+            # The click's answer only: the status poll's own preview (``override_refusal``) does not
+            # know about a dead supervisor, so the button can be drawn again at the next poll and a
+            # further click is refused with the same true sentence.
             refused = guard.state().get("override_refusal") or {
                 "kind": "supervisor",
                 "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,
                 "vars": {},
             }
-            payload = _status_payload()
-            # the page replaces the button with the sentence until its next poll
-            shown = payload.get("storage_guard")
-            if isinstance(shown, dict) and shown.get("override_refusal") is None:
-                shown["override_refusal"] = refused
             return {
-                **payload,
+                **_status_payload(),
                 "storage_guard_override": {"engaged": True, "overridden": False, "refused": refused},
             }
     result = guard.override(reason="operator resumed via the API")

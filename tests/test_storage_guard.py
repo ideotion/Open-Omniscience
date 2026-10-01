@@ -747,7 +747,6 @@ def test_the_resume_endpoint_refuses_while_no_supervisor_can_watch_the_floor_and
     o = payload["storage_guard_override"]
     assert o["engaged"] is True and o["overridden"] is False
     assert o["refused"] == {"kind": "supervisor", "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR, "vars": {}}
-    assert payload["storage_guard"]["override_refusal"] == o["refused"], "the page swaps the button for the sentence"
     assert "free space" in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR and "cannot be read" not in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR
     assert asked == [1], "starting it was tried first"
     assert g.admit() == "wal" and g.state()["overridden"] is False, "a refusal changes nothing"

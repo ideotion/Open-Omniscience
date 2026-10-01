@@ -107,7 +107,9 @@ What then stops the drive from filling, in order:
   way when free space then stays unreadable for ``trip_after`` samples. The page does not offer
   a button that would be refused: ``state()["override_refusal"]`` is the answer a click would
   get (from the last sample, decided by the same code as the click), and the page says it
-  instead of drawing the button;
+  instead of drawing the button. One refusal is the click's own: a supervisor that is not
+  running (``kind`` ``supervisor``, answered by the route) is not in that preview, so the button
+  can be drawn again at the next poll and a further click is refused with the same sentence;
 * it covers the limits that were exceeded WHEN IT WAS GRANTED (the latch's, read under the lock
   at the click) and nothing else: a second limit that trips later (the drive's reserve while the
   log was overridden, or the other way round) ends it, the ordinary pause shows with the new
@@ -194,9 +196,9 @@ DRAIN_EVERY_S = 10.0
 #: The longest the GUARD's own drain waits for the write gate, whatever the operator set for
 #: ``OO_CKPT_GATE_TIMEOUT_S`` (``0`` there means "wait for ever" for the pass-boundary
 #: checkpoint). It protects the override's bound: the drain runs between two floor readings, so
-#: its wait is the gap in which free space can fall unseen, and this keeps the floor read at least
-#: every 5 to about 40 s (30 s of gate wait plus the checkpoint's own run) however long a writer holds
-#: the gate.
+#: its wait is the gap in which free space can fall unseen, and this keeps the floor read at most
+#: about 35 s apart (the 5 s poll wait plus 30 s of gate wait), plus the checkpoint's own run, however
+#: long a writer holds the gate.
 #: Chosen as the setting's own default, not measured.
 DRAIN_GATE_TIMEOUT_S = 30.0
 #: Holders named per report, and frames per stack. They bound the PAYLOAD (a pin report rides
