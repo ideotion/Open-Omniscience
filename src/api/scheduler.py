@@ -426,8 +426,9 @@ def storage_guard_resume() -> dict:
     the override floor (``max(128 MiB, the log's size)``) and when a write fails for want of
     space. It is REFUSED (with a sentence frame, nothing changes) while a write has just
     failed, when free space cannot be read, or when it is already at or below the floor; the
-    status payload's ``storage_guard.override_refusal`` previews that answer so the page
-    offers the button only when it would be granted. It is also refused, with its own
+    status payload's ``storage_guard.override_refusal`` previews that answer from the last
+    sample, so the page offers the button only when that sample says it would be granted. It
+    is also refused, with its own
     sentence (kind ``supervisor``), when the guard's supervisor is not running and cannot be
     started: an override is granted only while something reads the floor between passes. A
     refusal the last sample already shows (held, unreadable, at or below the floor) is the one
@@ -445,8 +446,8 @@ def storage_guard_resume() -> dict:
                 "storage guard override refused: its supervisor is not running and could not be started"
             )
             # The click's answer only: the status poll's own preview (``override_refusal``) does not
-            # know about a dead supervisor, so the button can be drawn again at the next poll and a
-            # further click is refused with the same true sentence.
+            # know about a dead supervisor, so the button stays and a further click is refused with
+            # the same true sentence.
             refused = guard.state().get("override_refusal") or {
                 "kind": "supervisor",
                 "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,

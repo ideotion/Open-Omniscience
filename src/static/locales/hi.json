@@ -883,7 +883,7 @@
   "Collection": "संग्रह",
   "Collection activity": "संग्रह गतिविधि",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "संग्रह और सुराग आपके ऑनलाइन रहते हुए पृष्ठभूमि में अपने आप अपडेट होते रहते हैं — हाथ से कुछ भी शुरू करने की ज़रूरत नहीं।",
-  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "संग्रह को ज़बरदस्ती शुरू नहीं किया जा सकता: ज़बरदस्ती शुरू होने के दौरान ड्राइव की खाली जगह पर नज़र रखने वाली जाँच चालू नहीं हो सकी, इसलिए ज़बरदस्ती शुरू करना उस सीमा में नहीं रखा जा सकता जो ड्राइव सह सके। संग्रह रुका रहेगा।",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "संग्रह को ज़बरदस्ती शुरू नहीं किया जा सकता: ज़बरदस्ती चालू रहने के दौरान ड्राइव की खाली जगह पर नज़र रखने वाली जाँच चालू नहीं हो सकी, इसलिए ज़बरदस्ती शुरू करना उस सीमा में नहीं रखा जा सकता जो ड्राइव सह सके। संग्रह रुका रहेगा।",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "इस सीमा के रहते संग्रह जारी नहीं रखा जा सकता: खाली जगह {free} है, जो {floor} (डेटाबेस को अपनी कार्य फ़ाइल वापस लिखने और एक लेखन पूरा करने के लिए ज़रूरी जगह) या उससे कम है। संग्रह रुका रहेगा।",
   "Collection coverage": "संग्रह कवरेज",
   "Collection is OFF — click to turn on": "संग्रह बंद है — चालू करने के लिए क्लिक करें",

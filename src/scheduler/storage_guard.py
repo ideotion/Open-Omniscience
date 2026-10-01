@@ -105,11 +105,11 @@ What then stops the drive from filling, in order:
 * the button is refused when free space is already at or below the floor, or cannot be read
   (an override that cannot be bounded is not granted), and a granted one is withdrawn the same
   way when free space then stays unreadable for ``trip_after`` samples. The page does not offer
-  a button that would be refused: ``state()["override_refusal"]`` is the answer a click would
-  get (from the last sample, decided by the same code as the click), and the page says it
-  instead of drawing the button. One refusal is the click's own: a supervisor that is not
-  running (``kind`` ``supervisor``, answered by the route) is not in that preview, so the button
-  can be drawn again at the next poll and a further click is refused with the same sentence;
+  a button that the last sample says would be refused: ``state()["override_refusal"]`` is the
+  answer a click would get (from the last sample, decided by the same code as the click), and
+  the page says it instead of drawing the button. One refusal is the click's own: a supervisor
+  that is not running (``kind`` ``supervisor``, answered by the route) is not in that preview,
+  so the button stays and a further click is refused with the same sentence;
 * it covers the limits that were exceeded WHEN IT WAS GRANTED (the latch's, read under the lock
   at the click) and nothing else: a second limit that trips later (the drive's reserve while the
   log was overridden, or the other way round) ends it, the ordinary pause shows with the new
@@ -129,9 +129,10 @@ to :data:`DRAIN_GATE_TIMEOUT_S` (30 s) for the write gate that running collector
 whatever ``OO_CKPT_GATE_TIMEOUT_S`` says (a shorter setting shortens it; ``0`` and a longer one
 leave the guard's own wait at 30 s, while the pass-boundary checkpoint and the restore's pre-swap
 checkpoint keep the operator's setting). While overridden, the gap between two readings is 5 s to
-about 40 s plus the checkpoint's own run (which nothing bounds). At the 1.4 MB/s of log growth
-the sampling comment below records (its source is not in the repo), 40 s is about 56 MB: 42% of
-the smallest floor (128 MiB) and less of any larger one; that rate is the log's growth, not
+about 35 s plus the checkpoint's own run and the drain's wait for a pooled connection (which
+nothing here bounds). At the 1.4 MB/s of log growth the sampling comment below records (its
+source is not in the repo), 35 s is about 49 MB: 37% of the smallest floor (128 MiB) and less
+of any larger one; that rate is the log's growth, not
 everything a pass writes. The floor reserves room to write the log back and finish a write, NOT
 the pass tail written after a withdrawal (a measured tail is what would size that, and it is not
 a fixed number). The write error above is the last net and it does not wait for a reading.
@@ -197,8 +198,8 @@ DRAIN_EVERY_S = 10.0
 #: ``OO_CKPT_GATE_TIMEOUT_S`` (``0`` there means "wait for ever" for the pass-boundary
 #: checkpoint). It protects the override's bound: the drain runs between two floor readings, so
 #: its wait is the gap in which free space can fall unseen, and this keeps the floor read at most
-#: about 35 s apart (the 5 s poll wait plus 30 s of gate wait), plus the checkpoint's own run, however
-#: long a writer holds the gate.
+#: about 35 s apart (the 5 s poll wait plus 30 s of gate wait), plus the checkpoint's own run and
+#: any wait for a pooled connection, however long a writer holds the gate.
 #: Chosen as the setting's own default, not measured.
 DRAIN_GATE_TIMEOUT_S = 30.0
 #: Holders named per report, and frames per stack. They bound the PAYLOAD (a pin report rides
@@ -1265,7 +1266,8 @@ class StorageGuard:
                 "overridden": bool(overridden),
                 # What a click on the button would be refused with right now (the same decision
                 # override() makes, from the last sample), or None when it would be granted: the
-                # page offers the button only then, and says the refusal otherwise.
+                # page offers the button only then, and says the refusal otherwise (a supervisor
+                # that is not running is the route's own answer and is not in this preview).
                 "override_refusal": (
                     self._override_refusal_locked(free_now, floor_now, self._clock())
                     if (wal or disk) and not overridden

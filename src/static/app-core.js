@@ -2015,7 +2015,7 @@
       return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
         lines + _storageGuardTail(g, t, tf) + "</div>";
     }
-    // What stands under the notice: the button when a click would be granted, the server's own
+    // What stands under the notice: the button when the last sample says a click would be granted, the server's own
     // refusal sentence in its place when it would not (so no button is drawn beside "Collection
     // stays paused" to answer with that same sentence as an error), and nothing while an
     // override holds. A withdrawal note already says the refusal, so it is not said twice; a
@@ -2046,8 +2046,9 @@
         const r = await api("/api/scheduler/storage-guard/resume", {method: "POST"});
         const o = (r && r.storage_guard_override) || {};
         if (o.refused) {
-          // The server could not grant it (a write just failed, free space unreadable or already
-          // at the floor): its own sentence, with the sizes through the page's formatter.
+          // The server could not grant it (a write just failed, free space unreadable, already at
+          // the floor, or no supervisor running): its own sentence, with the sizes through the
+          // page's formatter.
           const vars = {};
           Object.keys(o.refused.vars || {}).forEach((k) => { vars[k] = _fmtBytes(o.refused.vars[k]); });
           toast(tf(o.refused.frame, vars), "err");
