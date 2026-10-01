@@ -535,15 +535,84 @@ def test_pieces_that_do_not_follow_each_other_are_refused():
         up.join_json_pieces([pieces[0], pieces[2]])
 
 
-def test_text_is_cut_on_line_boundaries_and_rejoins_byte_for_byte():
-    lines = [(f"event {i} " + "x" * (i % 37)).encode() + b"\n" for i in range(3_000)]
-    data = b"".join(lines)
-    chunks = up.split_text(data, 4_000)
-    assert len(chunks) > 5 and b"".join(chunks) == data
-    assert all(len(c) <= 4_000 and c.endswith(b"\n") for c in chunks)
+def test_a_manifest_file_over_its_cap_is_an_error_and_never_handed_over(tmp_path):
+    # one value that cannot be cut and does not compress: the only way a manifest file can end over
+    # its cap (at 1,000,000 bytes a 5,000-part manifest is about 377 KB, so this is not a real path)
+    manifest = {"parts": [], "note": random.Random(9).randbytes(1_500).hex()}
+    with pytest.raises(RuntimeError, match="over its 1000-byte cap"):
+        up.write_manifest_zips(tmp_path, "oo-keyword-log-20261001-000000", manifest, 1_000)
 
 
-def test_a_single_line_longer_than_a_chunk_is_the_one_record_that_is_cut():
-    chunks = up.split_text(("a\n" + "é" * 3_000 + "\nb\n").encode(), 1_000)
-    assert all(len(c) <= 1_000 for c in chunks)
-    assert b"".join(chunks).decode() == "a\n" + "é" * 3_000 + "\nb\n"
+def test_an_ordinary_manifest_is_one_file_and_a_long_one_is_several_each_under_the_cap(tmp_path):
+    parts = [{"name": f"p{i:04d}", "bytes": 900_000 + i, "sha256": hashlib.sha256(str(i).encode()).hexdigest(), "members": []}
+             for i in range(400)]
+    names = up.write_manifest_zips(tmp_path, "oo-keyword-log-20261001-000000", {"parts": parts}, 6_000)
+    assert len(names) > 1 and all((tmp_path / n).stat().st_size <= 6_000 for n in names)
+    (tmp_path / "one").mkdir()
+    one = up.write_manifest_zips(tmp_path / "one", "oo-keyword-log-20261001-000000", {"parts": parts[:3]}, 6_000)
+    assert one == ["oo-keyword-log-20261001-000000-manifest.zip"]
+
+
+# ----------------------------------------------------- the size accounting, pinned by what it leaves
+def _reserve_set(tmp_path: Path, monkeypatch, cap: int) -> list[int]:
+    """The room left in every closed part of a set written one record per trial, so a part ends
+    as close to the cap as the accounting allows and what is left IS the accounting's reserve."""
+    monkeypatch.setattr(up, "_CHUNK_RECORDS", 1)
+    rnd = random.Random(3)
+    w = up.PartWriter(tmp_path / "set", stem="oo-keyword-log-20261001-000000", cap=cap)
+    for lang in ("fr", "en", "de"):
+        g = up.RecordGroup(f"keywords/{lang}.json", {"language": lang}, "keywords", 400)
+        for i in range(400):
+            w.add_record(g, json.dumps({"keyword": f"{lang}-{i:05d}-" + "x" * (i % 17), "mentions": 1000 - i,
+                                        "sig": rnd.randbytes(10).hex()}, separators=(",", ":")))
+    w.add_front_json_document("summary.json", {"kind": "k", "data": {"n": 1}})
+    manifest = w.finish()
+    return [cap - p["bytes"] for p in manifest["parts"]]
+
+
+@pytest.mark.parametrize("cap", [4_096, 6_000])
+def test_every_closed_part_keeps_the_room_the_accounting_reserves_and_no_more(tmp_path, monkeypatch, cap):
+    """The cap holds because each trial counts the closing of the member, the zip directory, the
+    part.json still to come and a deflate margin. None of them is visible alone (the part.json is
+    counted raw and written deflated, which leaves slack), so this pins their SUM from both sides
+    on the parts between the front part and the last: measured 517-676 bytes unused. Dropping the
+    member tail (160 bytes), the directory term, or allowing the cap to be passed by 300 leaves
+    well under 450 and fails here; reserving more than 800 means parts are no longer filled."""
+    room = _reserve_set(tmp_path, monkeypatch, cap)[1:-1]  # the first part is the summary's, the last is short
+    assert len(room) >= 5, "the set must span several parts for this to test anything"
+    assert 450 <= min(room) and max(room) <= 800, sorted(room)
+
+
+def test_the_post_check_stops_a_part_over_the_cap_instead_of_handing_it_over(tmp_path):
+    """The accounting is the first guard and this is the second: a part that closes over the cap
+    is an error that stops the export, whatever went wrong before it. The accounting is made
+    wrong here the simple way, by lowering the cap after the parts were filled to the old one."""
+    rnd = random.Random(9)
+    w = up.PartWriter(tmp_path / "set", stem="oo-keyword-log-20261001-000000", cap=6_000)
+    g = up.RecordGroup("keywords/en.json", {"language": "en"}, "keywords", 600)
+    for rec in _records(rnd, 600, dense=True):
+        w.add_record(g, rec)
+    w.cap = 3_000
+    with pytest.raises(RuntimeError, match="over the 3000 cap.*nothing was handed over"):
+        w.finish()
+
+
+def test_non_ascii_member_names_are_flagged_utf8_and_read_back_by_the_readers_a_user_has(tmp_path):
+    """A language file named for a non-Latin code must come back as itself in any unzip tool:
+    that needs the zip's UTF-8 name flag, and without it the name is read as cp437 mojibake."""
+    names = ["日本語", "العربية", "español-ñ"]
+    w = up.PartWriter(tmp_path / "set", stem="oo-keyword-log-20261001-000000", cap=20_000)
+    for n in names:
+        g = up.RecordGroup(f"keywords/{n}.json", {"language": n}, "keywords", 3)
+        for i in range(3):
+            w.add_record(g, json.dumps({"i": i, "term": n}, ensure_ascii=False))
+    manifest = w.finish()
+    seen: list[str] = []
+    for p in _parts(tmp_path, manifest):
+        with zipfile.ZipFile(p) as z:
+            assert z.testzip() is None
+            for info in z.infolist():
+                assert info.flag_bits & 0x800, f"{info.filename} is not flagged UTF-8"
+                seen.append(info.filename)
+    for n in names:
+        assert f"keywords/{n}.from-000000.json" in seen, (n, seen)

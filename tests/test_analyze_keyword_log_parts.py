@@ -176,6 +176,34 @@ def test_a_folder_with_two_sets_reads_the_newer_and_says_so(tmp_path, capsys):
     assert "2 sets" in capsys.readouterr().err
 
 
+def test_a_folder_that_also_holds_a_diagnostics_bundle_set_reads_the_keyword_log(tmp_path, capsys):
+    """Both kinds of numbered set share one naming; a shared Downloads folder holds both, and the
+    NEWER one must not win just for being newer (a bundle's parts carry no keywords)."""
+    import os
+
+    data, _manifest = _build(tmp_path, per_lang=40)
+    bundle = tmp_path / "oo-all-diagnostics-20261002-000000-part-01-of-01.zip"
+    with zipfile.ZipFile(bundle, "w") as z:
+        z.writestr("debug-bundle.json", "{}")
+    os.utime(bundle, (4_000_000_000, 4_000_000_000))  # newer than any keyword file
+    doc = _analyzer().load_log(tmp_path)
+    assert doc["data"]["keywords"] == _expected(data)
+    assert "2 sets" not in capsys.readouterr().err
+
+
+def test_a_record_that_went_out_as_oversize_pieces_is_named_not_silently_skipped(tmp_path, capsys):
+    w = up.PartWriter(tmp_path, stem=STEM, cap=6_000)
+    g = up.RecordGroup("keywords/en.json", {"language": "en"}, "keywords", 3, 0)
+    w.add_record(g, json.dumps({"keyword": "a", "mentions": 1}))
+    w.add_record(g, json.dumps({"keyword": "b" * 40_000, "mentions": 2, "noise": random.Random(1).randbytes(20_000).hex()}))
+    w.add_record(g, json.dumps({"keyword": "c", "mentions": 3}))
+    w.finish()
+    doc = _analyzer().load_log(tmp_path)
+    err = capsys.readouterr().err
+    assert "numbered pieces" in err and "keywords/en" in err
+    assert [k["keyword"] for k in doc["data"]["keywords"]] == ["a", "c"], "what could be read, nothing invented"
+
+
 def test_a_folder_with_no_parts_is_refused_not_read_as_empty(tmp_path):
     with pytest.raises(SystemExit, match="no numbered keyword-log parts"):
         _analyzer().load_log(tmp_path)

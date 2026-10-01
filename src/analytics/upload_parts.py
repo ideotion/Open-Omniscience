@@ -234,40 +234,6 @@ def join_json_pieces(pieces: Iterable[dict]) -> Any:
     return holder.get("root")
 
 
-def split_text(data: bytes, limit: int) -> list[bytes]:
-    """Cut text on LINE boundaries into chunks of at most ``limit`` bytes (a line is a record).
-
-    A single line longer than ``limit`` is cut at a character boundary, the one case where a
-    record is split; the caller is told by the chunk count, and it does not occur in our logs
-    (a journal line is under a kilobyte)."""
-    out: list[bytes] = []
-    cur: list[bytes] = []
-    size = 0
-    for line in data.splitlines(keepends=True):
-        if len(line) > limit:
-            if cur:
-                out.append(b"".join(cur))
-                cur, size = [], 0
-            text = line.decode("utf-8", errors="replace")
-            piece = ""
-            for ch in text:
-                if len((piece + ch).encode("utf-8")) > limit:
-                    out.append(piece.encode("utf-8"))
-                    piece = ""
-                piece += ch
-            if piece:
-                cur, size = [piece.encode("utf-8")], len(piece.encode("utf-8"))
-            continue
-        if cur and size + len(line) > limit:
-            out.append(b"".join(cur))
-            cur, size = [], 0
-        cur.append(line)
-        size += len(line)
-    if cur:
-        out.append(b"".join(cur))
-    return out
-
-
 # ------------------------------------------------------------------ hashing
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -853,6 +819,11 @@ def write_manifest_zips(
             for i, piece in enumerate(group, start=1):
                 z.writestr(f"{istem}.s{i:03d}.{ext}" if dot else f"{inner}.s{i:03d}",
                            piece_document(piece))
+    for n in names:
+        # the parts and the volumes are checked once written; the manifest files are too, so that a
+        # file over the cap is an error here and never a download the person's upload refuses
+        if (out_dir / n).stat().st_size > cap:
+            raise RuntimeError(f"manifest file {n} is over its {cap}-byte cap")
     return names
 
 

@@ -3293,12 +3293,13 @@
       <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
            to a click: see downloadKeywordParts / _partsSave in app-diagnostics.js. -->
       <div class="row" id="parts-bar" hidden style="margin-top:6px">
-        <span id="parts-status" class="small"></span>
+        <span id="parts-status" class="small" role="status" aria-live="polite"></span>
         <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>
         <button id="parts-rest" class="secondary" data-on-click="partsSaveRest()" hidden>Save all the rest</button>
-        <label id="parts-from-wrap" class="small" hidden title="Type a part number to continue from it, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
+        <label id="parts-from-wrap" class="small" hidden title="Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
           <input id="parts-from" type="number" min="1" value="1" style="width:5em">
         </label>
+        <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
       </div>
       <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
            focused result) and write the exact ir_eval gold-set file the run below consumes.

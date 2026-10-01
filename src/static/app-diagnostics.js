@@ -849,10 +849,21 @@
     // set was asynchronous and had already spent the click that started it), and five is what one
     // message takes. The set can be hundreds of files, so there is deliberately NO background
     // loop of hundreds: "Save all the rest" is one explicit click for a person who wants it.
-    // The MANIFEST is saved first (it names every file with its size and SHA-256), and a typed
-    // part number restarts from there, e.g. after a few files failed to upload.
+    // The MANIFEST is saved first (it names every file with its size and SHA-256), and the button
+    // beside the part-number box saves five files from that part on, e.g. after a few files failed
+    // to upload. The page only ASKS THE BROWSER to save: it cannot see a refused multiple-download
+    // prompt or a file the browser failed to fetch, so no message says a file "was saved".
     const _PARTS_PER_CLICK = 5;
-    let _partsSet = null;   // {files, base, pos, mcount, pcount, shown}: the set the bar is offering
+    // {files, base, kind, pos, mcount, pcount, shown, saving, offered}: the set the bar is offering. `pos`
+    // is where the next click starts, `shown` the number the page itself last wrote in the box (a
+    // different value in the box is the person's own), `saving` is true while one click's files are
+    // being handed over (a second click then does nothing), `kind` is "keywords" or "diagnostics" (a
+    // part number typed for one is never applied to the other), `offered` holds the indexes of the
+    // files the browser was asked for, so a part sent again is not counted twice.
+    let _partsSet = null;
+    // Every action that replaces the bar's set takes a number; one that finds a newer number after
+    // an await was overtaken and leaves the bar to the newer one.
+    let _partsGen = 0;
 
     // The manifest first, then the numbered parts in order (the listing carries both kinds).
     function _partsFiles(listing) {
@@ -868,11 +879,13 @@
 
     // The label of the Save button: what ONE click will do from here.
     function _partsNextLabel(total, pos) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const n = Math.min(_PARTS_PER_CLICK, total - pos);
       if (pos === 0 && total <= _PARTS_PER_CLICK) return tf("Save all {n} files", {n});
       if (pos === 0) return tf("Save the first {n}", {n});
+      if (total - pos === 1) return t("Save the last file");
       if (total - pos <= _PARTS_PER_CLICK) return tf("Save the last {n}", {n});
       return tf("Save the next {n}", {n});
     }
@@ -885,70 +898,115 @@
 
     function _partsRender() {
       const set = _partsSet;
-      const next = $("parts-next"), rest = $("parts-rest"), from = $("parts-from"), box = $("parts-from-wrap");
+      const next = $("parts-next"), rest = $("parts-rest"), from = $("parts-from");
+      const box = $("parts-from-wrap"), go = $("parts-from-go");
       const left = set ? set.files.length - set.pos : 0;
-      if (next) { next.hidden = left <= 0; if (set) next.textContent = _partsNextLabel(set.files.length, set.pos); }
-      if (rest) rest.hidden = left <= _PARTS_PER_CLICK;
-      if (box) box.hidden = !set || set.pcount < 2;
-      if (from && set) { from.value = String(Math.max(1, set.pos - set.mcount + 1)); set.shown = from.value; }
+      const busy = !!(set && set.saving);
+      const fromShown = !!set && set.pcount >= 2;
+      if (next) {
+        next.hidden = left <= 0;
+        next.disabled = busy;
+        if (set) next.textContent = _partsNextLabel(set.files.length, set.pos);
+      }
+      if (rest) { rest.hidden = left <= _PARTS_PER_CLICK; rest.disabled = busy; }
+      if (box) box.hidden = !fromShown;
+      if (go) { go.hidden = !fromShown; go.disabled = busy; }
+      if (from && set) {
+        // the next part to save, never past the last one: after a full save the box then offers
+        // the last part, a number that can be sent again, not "13 of 12"
+        from.value = String(Math.min(set.pcount, Math.max(1, set.pos - set.mcount + 1)));
+        from.max = String(set.pcount);
+        set.shown = from.value;
+      }
     }
 
-    function _partsOffer(listing) {
+    function _partsOffer(listing, kind) {
       const files = _partsFiles(listing);
       const pcount = files.filter((f) => f.kind !== "manifest").length;
-      _partsSet = {files, base: listing.download_base, pos: 0, mcount: files.length - pcount, pcount};
+      _partsSet = {files, base: listing.download_base, kind, pos: 0, mcount: files.length - pcount, pcount,
+                   shown: "", saving: false, offered: new Set()};
       _partsRender();
       return _partsSet;
     }
 
-    async function _partsSave(count) {
+    // The part number the person typed in the box for a set of this `kind`; 0 when they left what
+    // the page wrote there (or the bar holds the other kind of set).
+    function _partsTyped(kind) {
+      const set = _partsSet, typed = $("parts-from");
+      if (!set || !typed || set.kind !== kind || typed.value === set.shown) return 0;
+      const want = parseInt(typed.value, 10);
+      return isFinite(want) && want >= 1 ? want : 0;
+    }
+
+    // Hand `count` files to the browser, from where the last click stopped, or from part
+    // `fromPart` (1 = the first numbered part; the manifest is never saved again that way).
+    async function _partsSave(count, fromPart) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const set = _partsSet;
-      if (!set) return;
-      const typed = $("parts-from");
-      const want = typed ? parseInt(typed.value, 10) : NaN;
-      // A part number TYPED in the box (one that differs from what the page last wrote there)
-      // moves the position; the manifest is not saved again.
-      if (typed && typed.value !== set.shown && isFinite(want) && want >= 1) {
-        set.pos = Math.min(set.files.length, set.mcount + want - 1);
+      if (!set || set.saving) return;   // a second click while files are on their way does nothing
+      let note = "";
+      if (fromPart != null) {
+        if (!isFinite(fromPart) || fromPart < 1) {
+          _partsStatus(tf("Type a part number from 1 to {n}.", {n: set.pcount}));
+          return;
+        }
+        const first = Math.min(fromPart, set.pcount);
+        if (first < fromPart) {
+          note = tf("There are only {n} parts, so saving starts at part {n}.", {n: set.pcount}) + " ";
+        }
+        set.pos = set.mcount + first - 1;
       }
       const win = _partsWindow(set.files.length, set.pos, count);
-      for (let i = win.from; i < win.to; i++) {
-        const f = set.files[i];
-        const a = document.createElement("a");
-        a.href = set.base + encodeURIComponent(f.name);
-        a.download = f.name;
-        a.hidden = true;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        // Staggered: a browser drops concurrent downloads opened in one tick, and a silently
-        // missing file is exactly the incomplete set this exists to avoid handing someone.
-        await new Promise((r) => setTimeout(r, 400));
-      }
-      set.pos = win.to;
+      set.saving = true;
       _partsRender();
-      if (set.pos >= set.files.length) {
-        _partsStatus(tf("All {n} files saved. Send them all together: the manifest lists every file with its size and checksum.",
-                        {n: set.files.length}));
+      try {
+        for (let i = win.from; i < win.to; i++) {
+          if (_partsSet !== set) return;   // another set took the bar: this one is not ours to finish
+          const f = set.files[i];
+          const a = document.createElement("a");
+          a.href = set.base + encodeURIComponent(f.name);
+          a.download = f.name;
+          a.hidden = true;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          set.offered.add(i);
+          // Staggered: a browser drops concurrent downloads opened in one tick, and a silently
+          // missing file is exactly the incomplete set this exists to avoid handing someone.
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      } finally {
+        set.saving = false;
+        if (_partsSet === set) set.pos = Math.max(set.pos, win.to);
+      }
+      if (_partsSet !== set) return;   // never write the status of a set that is no longer shown
+      _partsRender();
+      const done = set.offered.size;
+      if (done >= set.files.length) {
+        _partsStatus(note + tf("Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
+                               {n: set.files.length}));
       } else {
-        _partsStatus(tf("Saved {done} of {n} files.", {done: set.pos, n: set.files.length}));
+        _partsStatus(note + tf("Asked your browser to save {done} of {n} files.", {done, n: set.files.length}));
       }
     }
 
     function partsSaveNext() { return _partsSave(_PARTS_PER_CLICK); }
     function partsSaveRest() { return _partsSave(_partsSet ? _partsSet.files.length : 0); }
+    function partsSaveFrom() {
+      const typed = $("parts-from");
+      return _partsSave(_PARTS_PER_CLICK, typed ? parseInt(typed.value, 10) : NaN);
+    }
 
     // The set is ready: say how many files, and wait for the click that saves the first five.
-    function _partsReady(listing) {
+    function _partsReady(listing, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
-      const set = _partsOffer(listing);
-      _partsStatus(tf("{n} files of at most 1 MB each are ready: the manifest and {parts} numbered parts.",
-                      {n: set.files.length, parts: set.pcount})
+      const set = _partsOffer(listing, kind);
+      _partsStatus(tf("{n} files of at most 1 MB each are ready (manifest: {m}, numbered parts: {parts}).",
+                      {n: set.files.length, m: set.mcount, parts: set.pcount})
         + " " + t("Your browser may ask once to allow several downloads: allow them."));
       return set;
     }
@@ -966,6 +1024,9 @@
         "again": "/api/diagnostics/keywords/parts/latest",
       };
       if (!urls[mode]) return;
+      const gen = ++_partsGen;
+      // "again" starts at the part number the person typed (read BEFORE the bar is cleared)
+      const startAt = mode === "again" ? _partsTyped("keywords") : 0;
       if (btn) btn.disabled = true;
       _partsSet = null;
       _partsRender();
@@ -976,17 +1037,19 @@
         try {
           listing = await api(urls[mode]);
         } catch (e) {
+          if (gen !== _partsGen) return;
           const why = (e && (e.detail || e.message)) || t("unknown error");
           _partsStatus(e && e.status === 404 && mode === "again"
             ? t("No keyword files are kept on this machine yet — build them with one of the keyword buttons.")
             : tf("Could not build the keyword files: {why}", {why}));
           return;
         }
+        if (gen !== _partsGen) return;   // a newer button took the bar while this one waited
         if (mode === "again") {
-          _partsOffer(listing);
-          await _partsSave(_PARTS_PER_CLICK);   // the click that asked is still alive
+          _partsOffer(listing, "keywords");
+          await _partsSave(_PARTS_PER_CLICK, startAt || null);   // the click that asked is still alive
         } else {
-          _partsReady(listing);
+          _partsReady(listing, "keywords");
         }
       } finally {
         if (btn) btn.disabled = false;
@@ -1005,6 +1068,8 @@
       // TEMPLATES, not concatenated fragments (the frame translates, the value substitutes).
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const gen = ++_partsGen;
+      const startAt = _partsTyped("diagnostics");   // read BEFORE the bar is cleared
       if (btn) btn.disabled = true;
       _partsSet = null;
       _partsRender();
@@ -1014,6 +1079,7 @@
         try {
           m = await api("/api/diagnostics/all-job/volumes");
         } catch (e) {
+          if (gen !== _partsGen) return;
           // Three DIFFERENT facts, and only one of them is fixed by pressing the other
           // button: nothing built yet (404), a build in flight whose archive is not the
           // one on disk (409), and an actual failure. Read from the STRUCTURED
@@ -1030,12 +1096,13 @@
           }
           return;
         }
+        if (gen !== _partsGen) return;
         if (!((m && m.files) || []).length) {
           _partsStatus(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
           return;
         }
-        _partsOffer(m);
-        await _partsSave(_PARTS_PER_CLICK);   // the click that asked is still alive
+        _partsOffer(m, "diagnostics");
+        await _partsSave(_PARTS_PER_CLICK, startAt || null);   // the click that asked is still alive
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1086,7 +1153,7 @@
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
               set("");
-              _partsReady(m);
+              _partsReady(m, "diagnostics");
             } catch (e) {
               set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
             }

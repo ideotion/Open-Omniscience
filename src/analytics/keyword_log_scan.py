@@ -777,6 +777,11 @@ class Ranker:
         """Rows of this language inside the window."""
         return max(0, min(self._seen.get(lang, 0), self._hi) - self._lo)
 
+    @property
+    def window_start(self) -> int:
+        """The rank (from 0) of the first row of the window: what a later page starts at."""
+        return self._lo
+
     def rows(self, lang: str) -> Iterator[tuple]:
         if self._con is None:
             h = sorted(self._heaps.get(lang, ()), reverse=True)

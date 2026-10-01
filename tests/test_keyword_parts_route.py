@@ -120,6 +120,31 @@ def test_a_set_has_the_same_entries_in_the_same_order_as_the_single_archive(db_p
     assert sum(len(v) for v in whole.values()) > 1_000
 
 
+def _keyword_members(d: Path, listing: dict) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for f in listing["files"]:
+        if f["kind"] == "part":
+            with zipfile.ZipFile(d / f["name"]) as z:
+                for n in z.namelist():
+                    if n.startswith("keywords/"):
+                        out[n] = json.loads(z.read(n))
+    return out
+
+
+def test_a_later_page_names_its_members_by_their_true_rank(db_path, data_dir):
+    """Page 2 of 50 a language holds ranks 50-99, and its members say so: the rank of the first
+    record is in the file name and in slice_from, so two pages unzipped into one folder never
+    overwrite each other (the Opus review found page 2 restarting at 000000)."""
+    one = _listing(db_path, per_lang=50, page=1)
+    two = _listing(db_path, per_lang=50, page=2)
+    first = _keyword_members(_set_dir(data_dir, one), one)
+    later = _keyword_members(_set_dir(data_dir, two), two)
+    assert first and later and not set(first) & set(later), "no member name is shared by two pages"
+    assert all(".from-000000." in n and d["slice_from"] == 0 for n, d in first.items())
+    assert all(".from-000050." in n and d["slice_from"] == 50 for n, d in later.items())
+    assert all(d["slice_to"] == 50 + d["count"] for d in later.values())
+
+
 def test_every_part_is_under_the_cap_numbered_and_opens_on_its_own(db_path, data_dir, small_cap):
     listing = _listing(db_path)
     d = _set_dir(data_dir, listing)

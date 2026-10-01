@@ -411,7 +411,7 @@ def _keyword_parts(
         "files": files,
         "download_base": f"/api/diagnostics/keywords/parts/{set_dir.name}/",
         "note": (
-            "Save every file listed, the manifest last: each part opens on its own, and the "
+            "Save every file listed, the manifest first: each part opens on its own, and the "
             "manifest lists every part with its size and SHA-256 so a set can be confirmed "
             "complete."
         ),
@@ -496,7 +496,7 @@ def keyword_log(
         # reaching SQLite's 64-bit LIMIT/OFFSET; it is 1,000x the largest language measured.
         le=1_000_000_000,
         description=(
-            "ZIP only: how many keywords PER dominant language to export (default "
+            "ZIP and parts only: how many keywords PER dominant language to export (default "
             f"{_MAX_KEYWORDS_PER_LANG}). Raise it to export far more — even the whole "
             "corpus — in one archive (the <10 MB byte cap still applies unless "
             "`max_mb=0` and, if hit, trims the lowest-mention keywords per language and "
@@ -508,7 +508,7 @@ def keyword_log(
         1,
         ge=1,
         description=(
-            "ZIP only: 1-indexed page through the per-language keyword list (page N = "
+            "ZIP and parts only: 1-indexed page through the per-language keyword list (page N = "
             "keywords ranked [(N-1)*per_lang : N*per_lang] by mentions). The manifest "
             "reports pages_total + has_more so the full set can be exported across "
             "several files."
@@ -518,7 +518,7 @@ def keyword_log(
         None,
         ge=0,
         description=(
-            "ZIP only: the archive's size cap in MB. Left out: OO_KEYWORD_LOG_MAX_MB (9 MB). "
+            "ZIP and parts only: the size cap in MB (with `format=parts`, for the TOTAL of all the numbered files: each file is at most 1,000,000 bytes whatever this says). Left out: OO_KEYWORD_LOG_MAX_MB (9 MB). "
             "`0` = NO cap: every keyword of the requested window is written, however large "
             "the file, straight to disk a batch at a time (memory stays bounded; the drive "
             "needs the room, and the export refuses, with the numbers, when it does not)."

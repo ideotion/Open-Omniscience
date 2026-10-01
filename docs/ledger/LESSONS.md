@@ -12899,8 +12899,8 @@ stream per member and, before a chunk of 500 records is committed, compressing i
 the `part.json` appended at the end fit, the copy becomes the compressor, otherwise the part closes and the chunk
 opens the next. Measured on a 2 M-keyword synthetic corpus, every part reached 998-999 KB (99.8%), the front part and
 the last being short by design. `zipfile` cannot snapshot its compressor, so the writer is ours (about a hundred lines)
-and every part is checked against `zipfile.testzip` AND `unzip -t` in the tests, because a hand-written zip that only
-its own reader opens is not a zip. A record larger than a part is never written whole: it goes out as numbered byte
+and the tests read every set back through `zipfile` (CRC-checked), one of them also through `unzip -t`, because a
+hand-written zip that only its own reader opens is not a zip (the browser walks run both on every file saved). A record larger than a part is never written whole: it goes out as numbered byte
 pieces named in the manifest, so the cap holds for any input.
 
 ### TWO PARTS OF ONE SET MUST NEVER SHARE A MEMBER NAME, AND A READER MUST CHECK THAT THE SLICES FOLLOW EACH OTHER (1 MB parts, 2026-10-01)
@@ -12923,3 +12923,20 @@ attribute, not the layout. **Any element that is toggled by `hidden` and also ha
 `X[hidden]{display:none}`**, and the test that pins it must read the CSS, not the DOM. Generally: a surface with a
 state machine (nothing built, built, partly saved, all saved, nothing kept) is walked in a browser through EVERY state
 including the empty ones, with each drop-down opened and an option picked, before it is called done.
+
+### A SAVE LOOP THAT AWAITS NEEDS AN IN-FLIGHT GUARD, A STALE-SET CHECK, AND WORDS THAT CLAIM ONLY WHAT THE PAGE KNOWS (1 MB parts review, 2026-10-01, `src/static/app-diagnostics.js`)
+
+An independent review drove the shipped save functions in node and found what no earlier test could: a loop that hands
+five files to the browser with a 400 ms wait between them, and advances its position only at the end, saves ten files
+(five of them `(1).zip` copies) when clicked twice, and an old loop whose set was replaced by another button keeps
+downloading the OLD set and then writes "All 31 files saved" over the NEW set's status. The fixes are small and
+general: a `saving` flag on the set (a second click does nothing; the buttons are disabled meanwhile), a check after
+every `await` that `_partsSet` is still the set the loop started with (and never a status for a set that is no longer
+shown), and a generation number on the actions that REPLACE the set (a slow build that finishes after a newer button took
+the bar leaves it alone). The same review found that "again" ignored the typed part number the manual promised, that the
+box after a full save read "13 of 12 parts" and had no button to use it, and that every message said "saved" when the page
+only ASKED the browser (a refused several-downloads question or a failed fetch looks identical from the page): the
+messages now say "asked your browser to save", the box names the last part after a full save, and a number past the end
+is clamped and said so. **Count what was offered by the set of indexes offered, not by a position**, so a part sent again
+is not counted twice, and **put a typed value's meaning on one control** (the "Save from this part" button; "again"
+reads it only for the same kind of set) instead of letting three buttons each half-honour the box.

@@ -284,7 +284,7 @@
     "openOsmObjectCard", "openPalette", "openPlaceCard", "openSettingsAgenda", "openSettingsOsm", "openSourcesForKeyword", "openSupergroup",
     "openTaskManager", "openTour", "openUnifiedExport", "openUnifiedImport", "openWikiTC", "openWorldMapAt",
     "openWorldMapHazards", "osmCountAdmin1", "osmHistoryDownload", "osmHistoryReadSize", "osmMove", "osmPickAdd", "osmPickAddCode", "osmPickRemove", "overlayAdopt", "overlayExport", "overlayMerge",
-    "overlayRevert", "palKey", "panicWipe", "partsSaveNext", "partsSaveRest", "pauseDump", "pauseOsm", "pickLang",
+    "overlayRevert", "palKey", "panicWipe", "partsSaveFrom", "partsSaveNext", "partsSaveRest", "pauseDump", "pauseOsm", "pickLang",
     "pickTerm", "prepareOllamaInstall", "previewTargets", "promoteCitedSources", "pullMailbox",
     "pullModelFromBox", "qualSaveScope", "qualSaveToggle", "qualifyAssist", "qualifyBulkCancel",
     "qualifyBulkStart", "recheckOllama", "refreshDumpSizes", "refreshStatSubs", "releaseRunCancel",

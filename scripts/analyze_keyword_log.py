@@ -155,6 +155,7 @@ def _load_zip_log(path: Path) -> dict[str, Any]:
 
 _PART_RE = re.compile(r"^(?P<stem>.+)-part-(?P<i>\d+)-of-(?P<n>\d+)\.zip$")
 _MANIFEST_RE = re.compile(r"^(?P<stem>.+)-manifest\.zip$")
+_KEYWORD_SET_STEM = "oo-keyword-log-"  # what the app's keyword export names its sets
 
 
 def _join_json_pieces(pieces: list[dict]) -> Any:
@@ -196,7 +197,10 @@ def _find_set(path: Path) -> tuple[str, list[Path], Path | None] | None:
         stems: dict[str, float] = {}
         for f in folder.iterdir():
             m = _PART_RE.match(f.name) or _MANIFEST_RE.match(f.name)
-            if m:
+            # A folder may also hold a diagnostics bundle's numbered set (same naming), whose
+            # parts carry no keywords: only a KEYWORD LOG's stem is read from a folder. A file
+            # named on the command line is read whatever its stem.
+            if m and m["stem"].startswith(_KEYWORD_SET_STEM):
                 stems[m["stem"]] = max(stems.get(m["stem"], 0.0), f.stat().st_mtime)
         if not stems:
             raise SystemExit(f"{path}: no numbered keyword-log parts (…-part-NN-of-MM.zip) in this folder")
@@ -281,6 +285,7 @@ def _load_parts_log(stem: str, parts: list[Path], manifest: Path | None) -> dict
     doc: dict[str, Any] = {}
     pieces: list[dict] = []
     shards: list[tuple[str, int, list]] = []
+    oversize: set[str] = set()
     for part in parts:
         for name, raw in _readable_members(part):
             try:
@@ -292,8 +297,13 @@ def _load_parts_log(stem: str, parts: list[Path], manifest: Path | None) -> dict
                     shard = json.loads(raw)
                     lang = name[len("keywords/"):].split(".from-")[0].removesuffix(".json")
                     shards.append((lang, int(shard.get("slice_from", 0)), shard.get("keywords", [])))
+                elif ".oversize" in name:
+                    oversize.add(name.split(".oversize")[0])
             except ValueError as exc:
                 print(f"warning: {part.name}: {name} is not readable JSON ({exc}); skipped", file=sys.stderr)
+    for big in sorted(oversize):
+        print(f"warning: {big} was too large for one file and went out as numbered pieces; this "
+              "script does not rejoin them (the manifest's oversize_records names it)", file=sys.stderr)
     if pieces:
         pieces.sort(key=lambda d: d.get("oo_part", {}).get("slice") is not None)  # shells first
         doc = _join_json_pieces([{**d["oo_part"], "value": d["value"]} for d in pieces])

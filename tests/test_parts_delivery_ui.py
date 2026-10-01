@@ -38,9 +38,14 @@ _STRINGS = [
     "Save the first {n}",
     "Save the last {n}",
     "Save the next {n}",
-    "Saved {done} of {n} files.",
-    "All {n} files saved. Send them all together: the manifest lists every file with its size and checksum.",
-    "{n} files of at most 1 MB each are ready: the manifest and {parts} numbered parts.",
+    "Save the last file",
+    "Save from this part",
+    "Asked your browser to save {done} of {n} files.",
+    "Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
+    "{n} files of at most 1 MB each are ready (manifest: {m}, numbered parts: {parts}).",
+    "There are only {n} parts, so saving starts at the last part.",
+    "Type a part number from 1 to {n}.",
+    "Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.",
     "Could not build the keyword files: {why}",
 ]
 
@@ -78,15 +83,20 @@ def test_the_buttons_and_the_bar_exist_and_use_no_inline_handlers() -> None:
         "runAllDiagnostics(this)",
         "partsSaveNext()",
         "partsSaveRest()",
+        "partsSaveFrom()",
     ):
         assert f'data-on-click="{call}"' in html, call
-    for ident in ("parts-bar", "parts-status", "parts-next", "parts-rest", "parts-from", "parts-from-wrap"):
+    for ident in ("parts-bar", "parts-status", "parts-next", "parts-rest", "parts-from", "parts-from-wrap",
+                  "parts-from-go"):
         assert f'id="{ident}"' in html, ident
-    bar = html[html.index('id="parts-bar"'): html.index('id="parts-from"')]
+    # the status line is a live region: "N files are ready" and the progress are announced
+    status = html[html.index('id="parts-status"'): html.index("</span>", html.index('id="parts-status"'))]
+    assert 'role="status"' in status and 'aria-live="polite"' in status
+    bar = html[html.index('id="parts-bar"'): html.index("</div>", html.index('id="parts-from-go"'))]
     assert not re.search(r"\son(click|input|change)=", bar), "the CSP has no 'unsafe-inline'"
     # The names the page calls are registered with the dispatcher.
     on = (_STATIC / "oo-on.js").read_text(encoding="utf-8")
-    for name in ("downloadKeywordParts", "partsSaveNext", "partsSaveRest"):
+    for name in ("downloadKeywordParts", "partsSaveNext", "partsSaveRest", "partsSaveFrom"):
         assert f'"{name}"' in on, name
 
 

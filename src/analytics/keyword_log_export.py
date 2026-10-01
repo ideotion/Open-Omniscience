@@ -162,13 +162,13 @@ def sweep_stale_scratch(d: Path) -> None:
         pass
 
 
-def retire_old_parts_sets(d: Path, keep: Path | None = None) -> None:
-    """Remove the sets of parts left by earlier builds (not ``keep``, and not one built in the
-    last ``_PARTS_GRACE_S`` seconds: its files may still be on their way to the browser)."""
+def retire_old_parts_sets(d: Path) -> None:
+    """Remove the sets of parts left by earlier builds (not one built in the last
+    ``_PARTS_GRACE_S`` seconds: its files may still be on their way to the browser)."""
     now = time.time()
     try:
         for p in d.iterdir():
-            if p.name.startswith(PARTS_DIR_PREFIX) and p.is_dir() and p != keep:
+            if p.name.startswith(PARTS_DIR_PREFIX) and p.is_dir():
                 with contextlib.suppress(OSError):
                     if now - p.stat().st_mtime > _PARTS_GRACE_S:
                         shutil.rmtree(p, ignore_errors=True)
@@ -675,10 +675,14 @@ class ZipJob:
             self.basis_counts = {}
         try:
             order = sorted((lang for lang in keep if keep[lang] > 0), key=lambda lg: (-keep[lg], lg))
+            # A page after the first starts at its own rank, and its members say so (the file name
+            # and slice_from are the RANK of the first record inside), so two pages of one corpus
+            # never share a member name when their parts are unzipped into one folder.
+            first_rank = self.ranker.window_start
             groups = {
                 lang: RecordGroup(
                     f"keywords/{self.hooks.safe_lang_filename(lang)}.json",
-                    {"language": lang}, "keywords", keep[lang],
+                    {"language": lang}, "keywords", first_rank + keep[lang], first_rank,
                 )
                 for lang in order
             }
@@ -818,8 +822,9 @@ def finish_parts(
             try:
                 job.write_parts(writer, keep, omitted)
                 manifest = writer.finish()
-            except OSError as exc:
-                refusal = no_room_refusal(exc, "writing the parts")
+            except BaseException as exc:
+                writer.abort()  # the open part's file is closed before the folder is removed
+                refusal = no_room_refusal(exc, "writing the parts") if isinstance(exc, OSError) else None
                 if refusal is None:
                     raise
                 raise refusal from exc

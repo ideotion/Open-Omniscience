@@ -156,10 +156,11 @@ def test_no_volume_exceeds_the_cap_and_every_byte_round_trips(tmp_path, cap):
         rebuilt[Path(path).name] = Path(path).read_bytes()
 
     assert set(rebuilt) == set(original), "every member must survive the split"
+    cut = set(manifest["cut_members"])
     for name, data in original.items():
-        if name.endswith(".json"):  # a cut JSON document is put back by value, not by its spacing
+        if name in cut and name.endswith(".json"):  # a cut JSON document is put back by value, not by its spacing
             assert json.loads(rebuilt[name]) == json.loads(data), name
-        else:
+        else:  # a whole member, and a split or byte-cut one, comes back byte for byte
             assert rebuilt[name] == data, name
 
 
@@ -281,6 +282,23 @@ def test_verify_catches_a_truncated_volume(tmp_path):
     assert res["ok"] is False
     assert victim.name in res["bad"]
     assert res["missing"] == [], "truncated is not the same fact as absent"
+
+
+def test_verify_catches_a_damaged_manifest_zip(tmp_path):
+    """The manifest zip is a file of the set like any volume: a truncated one is what a person
+    would send, so it is checked against the checksum recorded for it."""
+    src = _build_bundle(tmp_path)
+    vol_dir = tmp_path / "vols"
+    manifest = dv.write_volume_set(src, vol_dir, cap=100_000)
+    (mf,) = manifest["manifest_files"]
+    path = vol_dir / mf["name"]
+    assert dv.verify_volume_set(vol_dir)["ok"] is True
+    path.write_bytes(path.read_bytes()[:-8])
+    res = dv.verify_volume_set(vol_dir)
+    assert res["ok"] is False and mf["name"] in res["bad"]
+    path.unlink()
+    res = dv.verify_volume_set(vol_dir)
+    assert mf["name"] in res["missing"]
 
 
 def test_verify_names_a_missing_volume_as_missing(tmp_path):
