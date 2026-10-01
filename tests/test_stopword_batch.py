@@ -93,7 +93,7 @@ def test_a_log_without_source_spread_is_not_judged_and_says_so(ctx, capsys, tmp_
         z.writestr("summary.json", json.dumps({"kind": "keyword-diagnostics", "data": {}}))
         z.writestr("keywords/en.json", json.dumps({"keywords": LOG}))
     words = tmp_path / "w.txt"
-    words.write_text("permalink\nfacebook  # a platform\n")
+    words.write_text("permalink\nfacebook  # a platform\n", "utf-8")
     assert sb.main([str(zpath), "--language", "en", "--words", str(words)]) == 0
     out = capsys.readouterr().out
     assert "1 addable, 1 refused" in out and "platform_name" in out
@@ -102,37 +102,37 @@ def test_a_log_without_source_spread_is_not_judged_and_says_so(ctx, capsys, tmp_
 
 
 def test_apply_appends_a_batch_that_still_loads_and_quotes_yaml_words(tmp_path, monkeypatch, capsys):
-    (tmp_path / "en.yml").write_text("# header\nstopwords:\n  - alpha\n  - beta\n")
+    (tmp_path / "en.yml").write_text("# header\nstopwords:\n  - alpha\n  - beta\n", "utf-8")
     monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
     path = sb.append_batch("en", ["yes", "null", "permalink", "123"], "en-test", ["pie"], "log.zip")
-    doc = yaml.safe_load(path.read_text())
+    doc = yaml.safe_load(path.read_text("utf-8"))
     assert doc["stopwords"][:2] == ["alpha", "beta"]
     assert doc["stopwords"][2:] == sorted(["yes", "null", "permalink", "123"])
-    assert "batch en-test" in path.read_text() and "pie" in path.read_text()
+    assert "batch en-test" in path.read_text("utf-8") and "pie" in path.read_text("utf-8")
 
 
 def test_apply_writes_nothing_when_the_file_has_no_list(tmp_path, monkeypatch):
-    (tmp_path / "xx.yml").write_text("other: 1\n")
+    (tmp_path / "xx.yml").write_text("other: 1\n", "utf-8")
     monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
     with pytest.raises(SystemExit):
         sb.append_batch("xx", ["word"], "xx-1", [], "log.json")
-    assert (tmp_path / "xx.yml").read_text() == "other: 1\n"
+    assert (tmp_path / "xx.yml").read_text("utf-8") == "other: 1\n"
 
 
 def test_apply_creates_the_file_for_a_language_that_has_none(tmp_path, monkeypatch):
     monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
     path = sb.append_batch("ja", ["サイト"], "ja-1", [], "log.zip")
-    assert yaml.safe_load(path.read_text())["stopwords"] == ["サイト"]
+    assert yaml.safe_load(path.read_text("utf-8"))["stopwords"] == ["サイト"]
 
 
 @pytest.mark.parametrize("layout", ["stopwords:\n- a\n- b\n", "stopwords: [a, b]\n"])
 def test_an_unusual_file_layout_is_a_clear_refusal_and_nothing_is_written(tmp_path, monkeypatch, layout):
-    (tmp_path / "xx.yml").write_text(layout)
+    (tmp_path / "xx.yml").write_text(layout, "utf-8")
     monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
     with pytest.raises(SystemExit) as exc:
         sb.append_batch("xx", ["word"], "xx-1", [], "log.json")
     assert "Nothing written" in str(exc.value) or "refusing" in str(exc.value)
-    assert (tmp_path / "xx.yml").read_text() == layout
+    assert (tmp_path / "xx.yml").read_text("utf-8") == layout
 
 
 def test_a_final_sigma_word_already_listed_is_seen_as_listed_and_written_as_extraction_reads_it():
@@ -145,7 +145,7 @@ def test_a_final_sigma_word_already_listed_is_seen_as_listed_and_written_as_extr
 
 def test_read_words_keeps_c_sharp_and_refuses_a_tab_separated_phrase(tmp_path):
     f = tmp_path / "w.txt"
-    f.write_text("c#\nread\tmore\npermalink  # a trailing comment\n# a whole-line comment\n")
+    f.write_text("c#\nread\tmore\npermalink  # a trailing comment\n# a whole-line comment\n", "utf-8")
     words = sb.read_words(f)
     assert words == ["c#", "read more", "permalink"]
     ev = sb.evidence("read more", "en", [], frozenset())
@@ -170,10 +170,10 @@ def test_the_platform_keep_list_ships_and_reads():
 
 
 def test_the_tool_is_offline_and_outside_the_app():
-    src = (ROOT / "scripts" / "stopword_batch.py").read_text()
+    src = (ROOT / "scripts" / "stopword_batch.py").read_text("utf-8")
     for banned in ("import requests", "import httpx", "urllib.request", "socket"):
         assert banned not in src
-    app_main = (ROOT / "src" / "api" / "main.py").read_text()
+    app_main = (ROOT / "src" / "api" / "main.py").read_text("utf-8")
     assert "stopword_batch" not in app_main
 
 
