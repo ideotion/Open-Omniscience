@@ -334,7 +334,9 @@ def _db_stats_latency() -> dict[str, Any]:
     try:
         from src.monitoring.latency import summary as _summary
 
-        rows = (_summary() or {}).get("routes") or []
+        summ = _summary() or {}
+        rows = summ.get("routes") or []
+        dropped = int((summ.get("route_keyspace") or {}).get("dropped_requests") or 0)
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
         _LOG.debug("latency summary unavailable", exc_info=True)
         return {"measured": False, "reason": f"latency summary unavailable: {exc}"}
@@ -350,7 +352,20 @@ def _db_stats_latency() -> dict[str, Any]:
     }
     if row is None:
         base["measured"] = False
-        base["reason"] = "this route has not been called in this process"
+        # The latency summary now lists EVERY route it recorded. It used to cut the list at 60
+        # rows, slowest first, and was exactly 60 rows long on all 16 field instances; on 5 of
+        # them this block read "not called" with the route missing from it, which a cut list
+        # cannot tell apart from a route nobody called. The one way a called route can still have
+        # no row is a full keyspace, and that is counted, so say it rather than call it uncalled.
+        base["reason"] = (
+            "this route has not been called in this process"
+            if not dropped
+            else (
+                "this route has no recorded row: the latency log's route keyspace was full and "
+                f"{dropped} request(s) to routes first seen after that were not recorded, so it "
+                "may have been called"
+            )
+        )
         return base
     base.update(
         {
