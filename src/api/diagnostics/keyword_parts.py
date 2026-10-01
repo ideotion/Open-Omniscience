@@ -1,9 +1,10 @@
 """One file of a numbered set of keyword-log parts, by name (1 MB parts, 2026-10-01).
 
-A NEW slice imported LAST, for the reason ``qualification_merge.py`` and ``country_codes.py`` give:
+A NEW slice imported late, for the reason ``qualification_merge.py`` and ``country_codes.py`` give:
 the split guard pins every earlier route's POSITION, so a route is added by a file imported at the
-end, which appends one entry and moves nothing. The set is BUILT by ``/keywords?format=parts``
-(``keywords.py``); this serves what that listed.
+end, which appends entries and moves nothing. It sits just BEFORE ``release_run.py``, whose eight
+routes ``test_release_run`` pins as the package's last. The set is BUILT by
+``/keywords?format=parts`` (``keywords.py``); this serves what that listed.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.

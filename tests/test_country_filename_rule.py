@@ -65,6 +65,12 @@ _NON_COUNTRY_FILENAME_HELPERS = {
     # `.json`), which is why the extension-based sweep cannot see it and the NAME
     # sweep is what registers it.
     ("src/api/diagnostics/keywords.py", "_safe_lang_filename"),
+    # The numbered files of a diagnostics export (2026-10-01, 1 MB parts): the stem is
+    # "oo-keyword-log-<timestamp>" or "oo-all-diagnostics-<timestamp>", then a position and a
+    # total. A set spans every language and country the corpus holds, so no code of either
+    # appears in a file name (a language appears only inside a part, as a member's name).
+    ("src/analytics/upload_parts.py", "part_file_name"),
+    ("src/analytics/upload_parts.py", "manifest_file_name"),
     # A SANITISER, not a builder: it takes a name somebody else composed and makes it
     # safe. It never chooses a code, so it can never choose the wrong one.
     ("src/utils/security.py", "validate_and_sanitize_filename"),

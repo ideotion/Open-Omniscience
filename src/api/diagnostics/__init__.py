@@ -355,6 +355,14 @@ from .qualification_merge import (
     _MAX_MERGE_UPLOADS,
     source_qualification_merge,
 )
+# One file of a numbered keyword-log set (1 MB parts, 2026-10-01): appended after the merge
+# action, and BEFORE the release run -- test_release_run pins that run's eight routes as the
+# package's last, so a slice added later goes in front of them rather than behind.
+from .keyword_parts import (
+    _KEYWORD_PARTS_GONE,
+    keyword_parts_latest,
+    keyword_part_download,
+)
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -371,12 +379,6 @@ from .release_run import (
     release_run_resume,
     chronology_report,
     ResumeBody,
-)
-# One file of a numbered keyword-log set (1 MB parts, 2026-10-01) -- last, for the same reason.
-from .keyword_parts import (
-    _KEYWORD_PARTS_GONE,
-    keyword_parts_latest,
-    keyword_part_download,
 )
 
 __all__ = [

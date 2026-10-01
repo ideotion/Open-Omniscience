@@ -138,7 +138,9 @@ def test_an_ordinary_zip_and_a_json_export_are_still_read_as_before(tmp_path):
         z.writestr("keywords/en.json", json.dumps({"keywords": [_kw(1, "en")]}))
     assert an.load_log(zpath)["data"]["keywords"] == [_kw(1, "en")]
     jpath = tmp_path / "log.json"
-    jpath.write_text(json.dumps({"kind": "keyword-diagnostics", "data": {"keywords": [_kw(2, "en")]}}))
+    jpath.write_text(
+        json.dumps({"kind": "keyword-diagnostics", "data": {"keywords": [_kw(2, "en")]}}), encoding="utf-8"
+    )
     assert an.load_log(jpath)["data"]["keywords"] == [_kw(2, "en")]
 
 
