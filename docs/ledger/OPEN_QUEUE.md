@@ -16233,7 +16233,7 @@ maintainer as a card.
   ordinary queue, one try at a time; budget 0 switches it off), so a measured disagreement waits for the first passes rather than
   a re-check interval. It changes no verdict, an entry leaves the list when the row is no longer inverted or is no longer a
   judging verdict, an entry the pass has tried `MAX_FORCED_TRIES` (3) times without settling it stops being forced (the
-  ordinary queue still reaches it; the count restarts when a newer attempt disagrees), and an unreadable stored list skips the step. The Settings queue view shows how
+  ordinary queue still reaches it; the count restarts when a newer attempt disagrees), and an unreadable stored list, or one of a shape the step did not write, skips the step. The list holds the measured-here inversions only (the count `not_auto_repaired_measured_here_total` reports), not the backlog, and it does not tell an inversion an import made from one a local judgement made. A pass reads three columns per entry and loads only the sources it can use; it still rewrites the whole stored list after the pass, which is fine at that size and is the place to change (a per-entry store) if that count ever runs to many thousands. The Settings queue view shows how
   many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.
 

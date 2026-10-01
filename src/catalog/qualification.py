@@ -677,8 +677,9 @@ def record_forced_tries(ids: set[int], *, now: datetime | None = None, odd_budge
         _LOG.warning("could not record the forced re-check tries", exc_info=True)
 
 
-def pending_forced_rechecks(session: Session) -> list[Source]:
-    """The flagged sources still waiting for their local re-check, LEAST RECENTLY TRIED FIRST.
+def pending_forced(session: Session, limit: int | None = None) -> tuple[list[Source], list[int]]:
+    """``(sources, ids)``: the first ``limit`` flagged sources still waiting for their local
+    re-check, LEAST RECENTLY TRIED FIRST, and the ids of ALL of them in the same order.
 
     An entry is pending while the source exists and is still inverted (its live status differs
     from its newest judging attempt). A local re-check that judges the source settles that --
@@ -693,13 +694,17 @@ def pending_forced_rechecks(session: Session) -> list[Source]:
     cannot hold the head of the line; after ``MAX_FORCED_TRIES`` tries that did not settle it the
     entry stops being forced at all. Read-only; the stored list is rewritten only by the boot
     step and, after a pass has committed, by :func:`record_forced_tries`.
+
+    Only the three columns that decide the order are read for every entry; the ``Source`` rows
+    themselves are loaded for the ``limit`` a pass can use, so a long list costs ids, not rows
+    (a cap would hide entries; this just does not load what it will not use).
     """
     from src.database.models import Source
     from src.database.models import SourceQualificationAttempt as A
 
     flagged, _turn = _load_recheck_first()
     if not flagged:
-        return []
+        return [], []
     newest_verdict = (
         session.query(A.verdict)
         .filter(A.source_id == Source.id, A.verdict.in_(JUDGING_VERDICTS))
@@ -708,21 +713,32 @@ def pending_forced_rechecks(session: Session) -> list[Source]:
         .correlate(Source)
         .scalar_subquery()
     )
-    pending: list[tuple[tuple, Source]] = []
+    pending: list[tuple[tuple, int]] = []
     for chunk in _id_chunks(sorted(flagged)):
-        for source, verdict in (
-            session.query(Source, newest_verdict).filter(Source.id.in_(chunk)).all()
+        for sid, status, verdict in (
+            session.query(Source.id, Source.status, newest_verdict).filter(Source.id.in_(chunk)).all()
         ):
-            at, tried, tries = flagged[int(source.id)]
-            if verdict is None or source.status == verdict:
+            at, tried, tries = flagged[int(sid)]
+            if verdict is None or status == verdict:
                 continue  # no longer inverted: nothing left to settle
-            if source.status not in JUDGING_VERDICTS:
+            if status not in JUDGING_VERDICTS:
                 continue  # reset to unqualified since: the new-candidate queue owns it
             if tries >= MAX_FORCED_TRIES:
                 continue  # tried here repeatedly without settling: the ordinary ladder takes over
-            pending.append(((tried is not None, tried or datetime.min, at, int(source.id)), source))
+            pending.append(((tried is not None, tried or datetime.min, at, int(sid)), int(sid)))
     pending.sort(key=lambda item: item[0])
-    return [source for _key, source in pending]
+    ids = [sid for _key, sid in pending]
+    take = ids if limit is None else ids[: max(0, int(limit))]
+    by_id: dict[int, Source] = {}
+    for chunk in _id_chunks(sorted(take)):
+        for source in session.query(Source).filter(Source.id.in_(chunk)).all():
+            by_id[int(source.id)] = source
+    return [by_id[sid] for sid in take if sid in by_id], ids
+
+
+def pending_forced_rechecks(session: Session, limit: int | None = None) -> list[Source]:
+    """:func:`pending_forced` without the full id list (the first ``limit`` sources, in order)."""
+    return pending_forced(session, limit)[0]
 
 
 def allocate_rechecks(
@@ -849,7 +865,7 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
     next_new = [s.domain for s in select_unqualified(session, limit=nxt)]
     # The "next" list is what a pass with `nxt` re-check slots WOULD take: the pass's own pool
     # (the oldest-tried few, not the whole due count) and its own split between the two kinds.
-    forced = pending_forced_rechecks(session) if ql_on else []
+    forced, forced_all = pending_forced(session, nxt) if ql_on else ([], [])
     nxt_pool = nxt + ((nxt + 1) // 2 if forced else 0)
     dq_pool = select_due_disqualified(session, now=now, limit=nxt_pool)
     ql_pool = select_due_qualified(session, now=now, limit=nxt_pool) if ql_on else []
@@ -868,7 +884,7 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
             "disqualified_due_capped": len(dq_due) >= _QUEUE_COUNT_CAP,
             "qualified_due": ql_due if ql_on else 0,
             "qualified_rechecks_on": ql_on,
-            "flagged": len(forced),
+            "flagged": len(forced_all),
             "next": next_rechecks,
         },
         "waiting": {
@@ -1619,7 +1635,7 @@ def run_qualification_pass(
     # THE FORCED LIST (see RECHECK_FIRST_KEY) rides the same re-check budget, so `reserved == 0`
     # (re-checks switched off) switches it off too. The ordinary pools are queried a share deeper,
     # because a flagged source can also sit in one of them and is taken from the list instead.
-    forced = pending_forced_rechecks(session) if reserved > 0 and total > 0 else []
+    forced, forced_all = pending_forced(session, total) if reserved > 0 and total > 0 else ([], [])
     odd_to_list = _load_recheck_first()[1] == "list" if forced else False
     pool_limit = total + ((total + 1) // 2 if forced else 0)
     if total > 0:
@@ -1641,7 +1657,7 @@ def run_qualification_pass(
     # configuration where the split cannot be fair to both.
     rechecks, slot_contested = allocate_rechecks_detail(
         forced, dq_pool, ql_pool, total, odd_to_list=odd_to_list)
-    forced_ids = {int(x.id) for x in forced}
+    forced_ids = set(forced_all)
 
     # One source is evaluated once per pass: a row reset to unqualified can be both a new
     # candidate and (stale) on the forced list, and a flagged one can also be due in a pool.
