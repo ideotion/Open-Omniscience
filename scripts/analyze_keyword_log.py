@@ -67,6 +67,7 @@ import json
 import re
 import sys
 import zipfile
+import zlib
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -252,6 +253,26 @@ def _check_set(stem: str, parts: list[Path], manifest: Path | None) -> None:
         )
 
 
+def _readable_members(part: Path):
+    """``(name, bytes)`` for each member of one part that can be read. A part cut short in the
+    upload or damaged on the way is the likeliest thing to go wrong with a set sent in many files,
+    so a part that does not open, or a member that fails its checksum, is named on stderr and
+    skipped: the rest of the set is still read."""
+    try:
+        z = zipfile.ZipFile(part)
+    except (zipfile.BadZipFile, OSError) as exc:
+        print(f"warning: {part.name} cannot be opened ({exc}); skipped", file=sys.stderr)
+        return
+    with z:
+        for name in z.namelist():
+            try:
+                raw = z.read(name)
+            except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as exc:
+                print(f"warning: {part.name}: {name} is damaged ({exc}); skipped", file=sys.stderr)
+                continue
+            yield name, raw
+
+
 def _load_parts_log(stem: str, parts: list[Path], manifest: Path | None) -> dict[str, Any]:
     """Reassemble a numbered set into the one in-memory doc the analyzer expects: the summary
     (whole, or joined from its pieces) and every keyword slice, languages in name order and each
@@ -261,16 +282,18 @@ def _load_parts_log(stem: str, parts: list[Path], manifest: Path | None) -> dict
     pieces: list[dict] = []
     shards: list[tuple[str, int, list]] = []
     for part in parts:
-        with zipfile.ZipFile(part) as z:
-            for name in z.namelist():
+        for name, raw in _readable_members(part):
+            try:
                 if name == "summary.json":
-                    doc = json.loads(z.read(name))
+                    doc = json.loads(raw)
                 elif re.fullmatch(r"summary\.s\d+\.json", name):
-                    pieces.append(json.loads(z.read(name)))
+                    pieces.append(json.loads(raw))
                 elif name.startswith("keywords/") and name.endswith(".json"):
-                    shard = json.loads(z.read(name))
+                    shard = json.loads(raw)
                     lang = name[len("keywords/"):].split(".from-")[0].removesuffix(".json")
                     shards.append((lang, int(shard.get("slice_from", 0)), shard.get("keywords", [])))
+            except ValueError as exc:
+                print(f"warning: {part.name}: {name} is not readable JSON ({exc}); skipped", file=sys.stderr)
     if pieces:
         pieces.sort(key=lambda d: d.get("oo_part", {}).get("slice") is not None)  # shells first
         doc = _join_json_pieces([{**d["oo_part"], "value": d["value"]} for d in pieces])

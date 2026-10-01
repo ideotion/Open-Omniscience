@@ -13,7 +13,6 @@ holds that copy to the app's answers.
 
 from __future__ import annotations
 
-import contextlib
 import importlib.util
 import json
 import random
@@ -88,17 +87,38 @@ def test_a_missing_part_is_named_and_the_rest_is_still_read(tmp_path, capsys):
     assert all(k in _expected(data) for k in got), "nothing invented, only fewer"
 
 
-def test_a_damaged_part_is_named(tmp_path, capsys):
-    _data, manifest = _build(tmp_path)
-    bad = tmp_path / manifest["parts"][1]["name"]
-    raw = bytearray(bad.read_bytes())
-    raw[len(raw) // 2] ^= 0xFF  # one flipped byte: the size is unchanged, the checksum is not
-    bad.write_bytes(bytes(raw))
-    # a flipped byte may also break the part itself; the warning is what is asserted
-    with contextlib.suppress(zipfile.BadZipFile, ValueError, OSError):
-        _analyzer().load_log(tmp_path)
+def test_a_damaged_part_is_named_and_the_rest_is_still_read(tmp_path, capsys):
+    """A flipped byte (its CRC fails) and a part cut in half (it is not a zip any more) are what a
+    set sent in many uploads is likeliest to suffer. Each is named, and every OTHER part's keywords
+    come back: the analyzer says "Reading what is there" and then does."""
+    data, manifest = _build(tmp_path)
+    flipped = tmp_path / manifest["parts"][1]["name"]
+    cut = tmp_path / manifest["parts"][3]["name"]
+    raw = bytearray(flipped.read_bytes())
+    raw[len(raw) // 2] ^= 0xFF  # the size is unchanged, the checksum is not
+    flipped.write_bytes(bytes(raw))
+    cut.write_bytes(cut.read_bytes()[: cut.stat().st_size // 2])
+    doc = _analyzer().load_log(tmp_path)
     err = capsys.readouterr().err
-    assert bad.name in err and "differing from the manifest 1" in err
+    assert flipped.name in err and cut.name in err and "differing from the manifest 2" in err
+    assert "cannot be opened" in err, "the cut part is named as unreadable"
+    got = doc["data"]["keywords"]
+    intact = [
+        k for p in manifest["parts"] if p["name"] not in (flipped.name, cut.name)
+        for k in _part_keywords(tmp_path / p["name"])
+    ]
+    assert intact, "the other parts must have held keywords for this to test anything"
+    assert got and all(k in _expected(data) for k in got), "nothing invented"
+    assert all(k in got for k in intact), "every keyword of an undamaged part is still read"
+
+
+def _part_keywords(part: Path) -> list[dict]:
+    out: list[dict] = []
+    with zipfile.ZipFile(part) as z:
+        for name in z.namelist():
+            if name.startswith("keywords/"):
+                out.extend(json.loads(z.read(name))["keywords"])
+    return out
 
 
 def test_without_a_manifest_the_part_names_still_say_how_many_there_should_be(tmp_path, capsys):

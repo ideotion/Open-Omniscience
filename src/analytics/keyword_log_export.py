@@ -454,41 +454,73 @@ class ZipJob:
             },
         }
 
-    def _entry_batches(self, lang: str, n: int, first_round: bool, sw, ring, fam: list):
-        """The JSON text of this language's first ``n`` entries, one list per batch.
+    def _texts_for(
+        self, lang: str, chunk: list, pos: int, first_round: bool, sw, ring, fam: list
+    ) -> list[str]:
+        """The JSON text of one batch of this language's entries, ``pos`` being the rank (from 0)
+        of the batch's first row.
 
         The single place an entry is built, so the one archive and the numbered parts carry the
         same bytes. On the first round it also feeds the stop-word and ring digests and the
         families' basis, which is why it is one pass and not two."""
+        self.check()
+        self.disk_watch()
+        kids = [r[0] for r in chunk]
+        meta = fetch_meta(self.db, kids)
+        sigs = fetch_signatures(self.db, self.maps, kids)
+        parts = []
+        for r in chunk:
+            e = entry_for(r, meta, sigs, self.is_hidden)
+            parts.append(json.dumps(e, ensure_ascii=False, separators=(",", ":")))
+            if first_round:
+                kid, m, a, _f, _l, dom = r[:6]
+                okey = order_key(kid, m, dom is not None)
+                mt = meta.get(kid, ("?", "?", None, False, None))
+                assert sw is not None and ring is not None
+                sw.feed(okey, m, a, dom, mt)
+                ring.feed(okey, m, a, dom, mt)
+                if self.basis_per_language is None or pos < self.basis_per_language:
+                    self.basis_counts[lang] = self.basis_counts.get(lang, 0) + 1
+                    if not e["hidden"]:
+                        fam.append((okey, {
+                            "term": e["term"], "normalized": e["normalized"],
+                            "kind": e["kind"], "mentions": e["mentions"],
+                            "articles": e["articles"],
+                        }))
+            pos += 1
+        return parts
+
+    def _entry_batches(self, lang: str, n: int, first_round: bool, sw, ring, fam: list):
+        """The JSON text of this language's first ``n`` entries, one list per batch."""
         pos = 0
         rows = itertools.islice(self.ranker.rows(lang), n)
         for chunk in batched(rows, self.batch):
-            self.check()
-            self.disk_watch()
-            kids = [r[0] for r in chunk]
-            meta = fetch_meta(self.db, kids)
-            sigs = fetch_signatures(self.db, self.maps, kids)
-            parts = []
-            for r in chunk:
-                e = entry_for(r, meta, sigs, self.is_hidden)
-                parts.append(json.dumps(e, ensure_ascii=False, separators=(",", ":")))
-                if first_round:
-                    kid, m, a, _f, _l, dom = r[:6]
-                    okey = order_key(kid, m, dom is not None)
-                    mt = meta.get(kid, ("?", "?", None, False, None))
-                    assert sw is not None and ring is not None
-                    sw.feed(okey, m, a, dom, mt)
-                    ring.feed(okey, m, a, dom, mt)
-                    if self.basis_per_language is None or pos < self.basis_per_language:
-                        self.basis_counts[lang] = self.basis_counts.get(lang, 0) + 1
-                        if not e["hidden"]:
-                            fam.append((okey, {
-                                "term": e["term"], "normalized": e["normalized"],
-                                "kind": e["kind"], "mentions": e["mentions"],
-                                "articles": e["articles"],
-                            }))
-                pos += 1
+            parts = self._texts_for(lang, chunk, pos, first_round, sw, ring, fam)
+            pos += len(chunk)
             yield parts
+
+    def _round_texts(self, lang: str, cur: _LangCursor, k: int, first_round: bool, sw, ring, fam: list):
+        """The next ``k`` entries of this language, as JSON text, one batch at a time.
+
+        Called once per language per ROUND of the rank-major set and consumed to the end before
+        the next call, so no frame of this generator (and none of its batch, metadata or
+        signatures) stays suspended between rounds: all that a language keeps from one round to
+        the next is ``cur``, a row cursor and a count. That is what keeps the numbered set's
+        memory at ONE batch however many languages it spans (the single archive writes the
+        languages one after another and has always held one)."""
+        left = min(k, cur.n - cur.pos)
+        while left > 0:
+            chunk = list(itertools.islice(cur.rows, min(self.batch, left)))
+            if not chunk:
+                cur.done = True
+                return
+            parts = self._texts_for(lang, chunk, cur.pos, first_round, sw, ring, fam)
+            cur.pos += len(chunk)
+            left -= len(chunk)
+            del chunk
+            yield from parts
+        if cur.pos >= cur.n:
+            cur.done = True
 
     def _summary_and_manifest(
         self, keep: dict[str, int], omitted: dict[str, int], first_round: bool, sw, ring,
@@ -650,15 +682,15 @@ class ZipJob:
                 )
                 for lang in order
             }
-            streams = {
-                lang: _RoundStream(self._entry_batches(lang, keep[lang], first_round, sw, ring, fam))
-                for lang in order
-            }
-            while any(not streams[lang].done for lang in order):
+            cursors = {lang: _LangCursor(self.ranker.rows(lang), keep[lang]) for lang in order}
+            while any(not cursors[lang].done for lang in order):
                 for lang in order:
-                    stream = streams[lang]
-                    if not stream.done:
-                        writer.add_records(groups[lang], stream.take(PARTS_ROUND_RECORDS))
+                    cur = cursors[lang]
+                    if not cur.done:
+                        writer.add_records(
+                            groups[lang],
+                            self._round_texts(lang, cur, PARTS_ROUND_RECORDS, first_round, sw, ring, fam),
+                        )
             summary_doc, manifest = self._summary_and_manifest(
                 keep, omitted, first_round, sw, ring, fam, parts=True
             )
@@ -671,27 +703,15 @@ class ZipJob:
         writer.add_front_json_document("summary.json", summary_doc)
 
 
-class _RoundStream:
-    """One language's entry batches, handed out ``k`` records at a time: the rounds of the
-    rank-major set. Holds at most one batch, so the set's memory is a batch however many rounds."""
+class _LangCursor:
+    """Where one language stands in the rank-major set: its ranked rows, how many of its first
+    ``n`` have been written, and whether it is finished. A cursor and two integers is all a
+    language holds between rounds."""
 
-    def __init__(self, batches) -> None:
-        self._it = iter(batches)
-        self._left: list[str] = []
-        self.done = False
+    __slots__ = ("rows", "n", "pos", "done")
 
-    def take(self, k: int):
-        taken = 0
-        while taken < k:
-            if not self._left:
-                try:
-                    self._left = next(self._it)
-                except StopIteration:
-                    self.done = True
-                    return
-            chunk, self._left = self._left[: k - taken], self._left[k - taken:]
-            taken += len(chunk)
-            yield from chunk
+    def __init__(self, rows, n: int) -> None:
+        self.rows, self.n, self.pos, self.done = rows, n, 0, n <= 0
 
 
 def unlink_quietly(path: Path) -> None:

@@ -426,6 +426,42 @@ def test_building_a_set_holds_a_batch_in_memory_not_the_window(tmp_path_factory,
     assert big < 10_000_000, (small, big)
 
 
+def test_building_a_set_holds_one_batch_however_many_languages_it_spans(tmp_path_factory, monkeypatch):
+    """The set is written rank-major, a round of every language in turn, so a language's stream
+    is alive for the whole export. If each kept a batch (its rows, metadata and signatures)
+    between rounds, memory would grow with the number of LANGUAGES (about 1.5 MB each at a batch
+    of 2,000, so ~500 MB for the largest instance's 82 languages at the production batch): the
+    Opus review of the first version measured exactly that. This holds the per-language size
+    fixed and varies how many languages there are."""
+    import src.api.diagnostics.keywords as kw_mod
+    from src.analytics import keyword_log_scan as kls
+    from tests import test_keyword_export_bounded as tkeb
+
+    root = tmp_path_factory.mktemp("kw-parts-langs")
+    monkeypatch.setenv("OO_DATA_DIR", str(root))
+    monkeypatch.setattr(
+        kls, "memory_plan", lambda _a: {"heap_rows": 500, "batch": 800, "family_rows": 900}
+    )
+    monkeypatch.setattr(kw_mod, "memory_plan", kls.memory_plan)
+    monkeypatch.setattr(kle, "PARTS_ROUND_RECORDS", 500)  # five rounds at 2,400 keywords a language
+
+    def peak_for(n_langs: int) -> int:
+        monkeypatch.setattr(tkeb, "LANGS", [f"l{i:02d}" for i in range(n_langs)])
+        p = root / f"l{n_langs}.db"
+        _build(p, 3, articles=3_000, keywords=n_langs * 2_400, with_boilerplate=False)
+        db = _session(p)
+        try:
+            _call_with(db, fmt="parts")  # warm the imports, so the first measure is not charged for them
+            return tkeb._peak_python_bytes(lambda: _call_with(db, fmt="parts"))
+        finally:
+            db.close()
+
+    few, many = peak_for(4), peak_for(20)
+    # Sixteen more languages cost the old shape ~25 MB; the cursor shape costs what the extra
+    # keywords' own digests cost, well under a megabyte a language.
+    assert many < few + 6_000_000, (few, many)
+
+
 def _call_with(db, **kw):
     from src.api.diagnostics.keywords import keyword_log
 
