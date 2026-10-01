@@ -79,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     from src.database.session import session_scope
 
     if args.revert_repairs:
+        if args.ignore_hold:
+            print("--ignore-hold has no effect with --revert-repairs", file=sys.stderr)
         result = revert_repairs(dry_run=not args.apply)
         print(json.dumps(result, indent=2))
         print(
@@ -91,13 +93,19 @@ def main(argv: list[str] | None = None) -> int:
 
     held: set[str] = set()
     if not args.ignore_hold:
-        from src.catalog.qualification_integrity import _read_repair_index
+        from src.catalog.qualification_integrity import held_domains
 
-        held = set(_read_repair_index(strict=True)["reverted_domains"])
+        held = held_domains(strict=True)
     with session_scope() as session:
         report = repair_inversions(session, dry_run=not args.apply, skip_domains=held)
 
     print(json.dumps(report, indent=2))
+    if held:
+        print(
+            f"\n{report['held_by_operator_revert']} source(s) held out because a maintainer "
+            "reverted their repair (--ignore-hold touches them too)",
+            file=sys.stderr,
+        )
     if args.apply:
         print(
             f"\nreconciled {report['reconciled_total']} source(s) "

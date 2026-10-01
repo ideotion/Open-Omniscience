@@ -16093,8 +16093,11 @@ maintainer as a card.
   earlier import) is reported (`not_auto_repaired_measured_here_total`, each row's `live_stamp`) and never changed by an
   imported history on its own. **KNOWN LIMIT, until the follow-up lands:** nothing brings a re-check forward (a
   copied-in attempt resets the re-verification clock), so the unsafe order of that class (live qualified, newer
-  imported disqualification) can keep collecting for up to three months, and the safe order (live disqualified, newer
-  imported qualification) waits on the disqualified ladder. The follow-up (PR 3, plan to the coordinator first) is a
+  imported disqualification) keeps collecting for AT LEAST the re-check interval counted from the imported attempt's own
+  date (three months, which is only when the source JOINS the re-check line) and then until the qualification pass
+  reaches it (oldest clock first, inside the per-pass re-check budget, so on an install whose catalogue was stamped all
+  at once the line can be long: months, not weeks, is the honest expectation), and the safe order (live disqualified,
+  newer imported qualification) waits on the disqualified ladder. The follow-up (PR 3, plan to the coordinator first) is a
   forced re-check list in `app_state`, read by the qualification pass ahead of its two pools within the existing
   per-pass budget and cleared once a newer attempt exists. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.

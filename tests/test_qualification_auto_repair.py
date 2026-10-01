@@ -507,6 +507,57 @@ def test_the_confirmation_records_what_was_applied_not_what_was_planned(env, mon
     assert [r["domain"] for r in run["repairs"]] == ["stays.example"]
 
 
+def test_a_row_that_turns_measured_between_the_plan_and_the_apply_is_not_withdrawn(
+        env, monkeypatch) -> None:
+    """The apply re-checks the LIVE stamp (rule 12 = b against a concurrent local pass): a row the
+    plan saw as the catalogue's stamp, which a local re-check then qualified for real, is left."""
+    with env.scope() as s:
+        _add(s, "stays.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+        _add(s, "measured-meanwhile.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    import src.config.kv_store as kv
+
+    real = kv.kv_set_json
+    fired: list[int] = []
+
+    def spy(key, obj):
+        real(key, obj)
+        if key.startswith(qi.REPAIR_RUN_PREFIX) and not obj.get("applied") and not fired:
+            fired.append(1)       # right after the plan is recorded, before it is applied
+            with env.scope() as s:
+                row = s.query(Source).filter_by(domain="measured-meanwhile.example").one()
+                row.status = STATUS_QUALIFIED
+                row.qualification_criteria_version = "oo-source-qualification-3"
+
+    monkeypatch.setattr(kv, "kv_set_json", spy)
+    out = qi.auto_repair_inversions(now=NOW)
+
+    assert out["repaired"] == 1
+    assert _status(env, "measured-meanwhile.example").status == STATUS_QUALIFIED
+    assert _status(env, "stays.example").status == STATUS_DISQUALIFIED
+    run = env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]
+    assert [r["domain"] for r in run["repairs"]] == ["stays.example"]
+
+
+def test_a_qualified_row_with_no_criteria_version_is_measured_and_left_alone(env) -> None:
+    """``none`` means status unqualified; a qualified row WITHOUT a version is an anomaly and is
+    classed with the measured rows, the side the ruling leaves alone, and reported as such."""
+    with env.scope() as s:
+        s.add(Source(name="nov.example", domain="nov.example", status=STATUS_QUALIFIED,
+                     qualification_criteria_version=None))
+        s.flush()
+        sid = s.query(Source).filter_by(domain="nov.example").one().id
+        s.add(SourceQualificationAttempt(source_id=sid, attempted_at=T0,
+                                         verdict=STATUS_DISQUALIFIED, criteria_version="v1"))
+        _add(s, "cat.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    with env.scope() as s:
+        assert qi.live_stamp_class(s.query(Source).filter_by(domain="nov.example").one()) == "measured"
+    out = qi.auto_repair_inversions(now=NOW)
+
+    assert out["repaired"] == 1
+    assert _status(env, "nov.example").status == STATUS_QUALIFIED
+    assert _status(env, "cat.example").status == STATUS_DISQUALIFIED
+
+
 def test_a_plan_that_fails_to_apply_at_every_boot_does_not_grow_the_record(env, monkeypatch) -> None:
     with env.scope() as s:
         _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
@@ -526,6 +577,29 @@ def test_a_plan_that_fails_to_apply_at_every_boot_does_not_grow_the_record(env, 
     assert len(runs) == 1 and len(qi._read_repair_index()["runs"]) == 1
     summary = qi.repair_summary()
     assert summary["repairs_unconfirmed"] == 1 and summary["repaired_total"] == 0
+
+
+def test_a_replaced_plan_reports_the_time_it_was_applied_not_the_first_attempt(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    real = qi.repair_inversions
+    broken = {"on": True}
+
+    def flaky_apply(session, **kw):
+        if broken["on"] and not kw.get("dry_run", True):
+            raise RuntimeError("disk full")
+        return real(session, **kw)
+
+    monkeypatch.setattr(qi, "repair_inversions", flaky_apply)
+    with pytest.raises(RuntimeError):
+        qi.auto_repair_inversions(now=NOW)
+    broken["on"] = False
+    later = NOW + timedelta(hours=5)
+    qi.auto_repair_inversions(now=later)
+
+    run = env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]
+    assert run["applied"] is True and run["applied_at"] == qi._iso(later)
+    assert qi.repair_summary()["repairs"][0]["applied_at"] == qi._iso(later)
 
 
 def test_the_boot_repair_can_be_switched_off_for_the_test_suite(env, monkeypatch) -> None:

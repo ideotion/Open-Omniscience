@@ -54,11 +54,12 @@ import contextlib
 import logging
 import os
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func
 
 from src.catalog.qualification import (
+    CURATED_CRITERIA_VERSION,
     JUDGING_VERDICTS,
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
@@ -67,6 +68,8 @@ from src.catalog.qualification import (
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from src.database.models import Source
 
 _LOG = logging.getLogger("catalog.qualification_integrity")
 
@@ -101,7 +104,11 @@ def _iso(value: datetime | None) -> str | None:
     return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
 
 
-def live_stamp_class(source) -> str:
+StampClass = Literal["none", "catalogue", "measured"]
+STAMP_MEASURED: StampClass = "measured"
+
+
+def live_stamp_class(source: Source) -> StampClass:
     """What stands behind a row's LIVE verdict, by its stamp.
 
     ``none`` (status unqualified), ``catalogue`` (qualified with the shipped catalogue's own
@@ -110,10 +117,10 @@ def live_stamp_class(source) -> str:
     a verdict this instance's engine reached, or one adopted from an import). Only the first two
     are rows whose live verdict is not data this install produced, so only they may be changed
     without anyone's say-so (rule 12 = b); a ``measured`` row is reported and left for a local
-    re-check.
+    re-check. ``none`` means status unqualified: a qualified row with NO criteria version is an
+    anomaly (every writer stamps status and version together) and counts as ``measured``, the
+    side that is left alone.
     """
-    from src.catalog.qualification import CURATED_CRITERIA_VERSION
-
     if (source.status or "") == STATUS_UNQUALIFIED:
         return "none"
     if (
@@ -121,11 +128,18 @@ def live_stamp_class(source) -> str:
         and (source.qualification_criteria_version or "") == CURATED_CRITERIA_VERSION
     ):
         return "catalogue"
-    return "measured"
+    return STAMP_MEASURED
 
 
-def _held_domains() -> set[str]:
-    """Domains a maintainer reverted and held out of the boot repair (empty if unreadable)."""
+def held_domains(*, strict: bool = False) -> set[str]:
+    """Domains a maintainer reverted and held out of the boot repair.
+
+    A report asks with ``strict=False`` (empty if unreadable: it must never fail for want of its
+    side record); anything that WRITES asks with ``strict=True``, which raises instead, because an
+    unreadable record read as "nothing held" would repair a source a maintainer held.
+    """
+    if strict:
+        return set(_read_repair_index(strict=True)["reverted_domains"])
     try:
         return set(_read_repair_index()["reverted_domains"])
     except Exception:  # noqa: BLE001 - a report must never fail for want of its side record
@@ -224,7 +238,7 @@ def qualification_integrity_report(
     demoted: list[dict[str, Any]] = []
     other: list[dict[str, Any]] = []
     n_laundered = n_demoted = n_other = n_auto_repairable = n_kept_measured = n_held = 0
-    held_domains = _held_domains()
+    held = held_domains()
     resolved_by_tie = 0
     for (sid,) in candidates:
         attempt = _newest_judging(session, int(sid))
@@ -247,9 +261,9 @@ def qualification_integrity_report(
         }
         if attempt.verdict == STATUS_DISQUALIFIED:
             n_laundered += 1
-            if row["live_stamp"] == "measured":
+            if row["live_stamp"] == STAMP_MEASURED:
                 n_kept_measured += 1
-            elif source.domain in held_domains:
+            elif source.domain in held:
                 n_held += 1
             else:
                 n_auto_repairable += 1
@@ -483,7 +497,7 @@ def repair_inversions(
             continue
         if only_source_ids is not None and int(source.id) not in only_source_ids:
             continue
-        if only_without_own_verdict and live_stamp_class(source) == "measured":
+        if only_without_own_verdict and live_stamp_class(source) == STAMP_MEASURED:
             continue
         row = {
             "domain": source.domain,
@@ -550,8 +564,10 @@ def repair_inversions(
             "for -- a source with no judging attempt on record is outside this repair by "
             "construction (see qualification_integrity_report's own caveat). "
             "dry_run=True changes nothing; the restore-to-disqualified direction runs at boot "
-            "(auto_repair_inversions), the restore-to-qualified direction only when an "
-            "operator runs scripts/repair_qualification_inversions.py --apply."
+            "(auto_repair_inversions) for rows whose live verdict is the catalogue's stamp or "
+            "nothing, a row measured here only when an operator runs "
+            "scripts/repair_qualification_inversions.py --apply, and the restore-to-qualified "
+            "direction likewise only then."
         ),
     }
 
@@ -615,6 +631,7 @@ def repair_summary() -> dict[str, Any]:
                 repairs.append({
                     "domain": r.get("domain"),
                     "run_at": run_at,
+                    "applied_at": run.get("applied_at") or (run_at if done else None),
                     "confirmed": done,
                     "was_status": r.get("was"),
                     "restored_to": r.get("restored_to"),
@@ -730,7 +747,9 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
         )
     applied_rows = done["restored_to_disqualified"]
     # 4. what was REALLY applied replaces the plan
-    kv_set_json(run_key, {"run_at": run_at, "applied": True, "repairs": applied_rows})
+    # applied_at is THIS boot's time: after a replaced plan run_at names the first attempt.
+    kv_set_json(run_key, {"run_at": run_at, "applied": True, "applied_at": _iso(now) or run_at,
+                          "repairs": applied_rows})
     return {"repaired": len(applied_rows), "run_at": run_at,
             "held_by_operator_revert": done["held_by_operator_revert"]}
 
