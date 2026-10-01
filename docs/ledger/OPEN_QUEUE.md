@@ -29,7 +29,7 @@
   thread, 2026-09-30; the maintainer's message 20:13 UTC; the mechanism is in `LESSONS.md`).** The export no longer holds the
   corpus in memory: `src/analytics/keyword_log_scan.py` (the scan and the per-language ranking, heaps that spill to SQLite
   under a budget taken from the memory available at the start) and `src/analytics/keyword_log_export.py` (the archive,
-  streamed to a scratch file next to the data a batch at a time). One function serves all three forms (the JSON stream,
+  streamed to a scratch file next to the data, or in the OS temp folder when there is no data folder, a batch at a time). One function serves all three forms (the JSON stream,
   the bundle's `keyword-log-digest.json`, the zip), so all three are fixed. Peak RSS on synthetic databases with the field's
   shape, old code then new (this box had 15 GB free): **digest** 776 MB then 267 MB at 2 M keywords, 2.2 GB then 273 MB at
   6 M (flat in keywords); **the zip with a 9 MB cap asked for every keyword** 4.4 GB then 1.8 GB at 2 M, 10.6 GB then 2.2 GB at
@@ -39,7 +39,7 @@
   The zip figures are large on a big box on purpose: the families' grouping may use up to a tenth of the memory available at
   the start (see (4)), so a 6-8 GB machine uses a few hundred MB for it, never a fixed number. json, digest and zip shards were
   compared byte for byte against the code this replaces on random databases. **Open, in the order they matter:**
-  (1) **DECIDED BY THE STANDING «NO FIXED CAPS» RULE (the coordinator's reading, 2026-10-01; not a separate question to the
+  (1) **DECIDED BY THE STANDING «NO FIXED CAPS» RULE (R95, R77; the coordinator's reading, 2026-10-01; not a separate question to the
   maintainer): the "All keywords (.zip)" button now asks for NO size cap** (`max_mb=0`), because
   a button named "All" that kept the top 9 MB was the other half of the report and the file is streamed to disk anyway.
   The consequence is a big file on a big corpus (46 MB at 6 M synthetic keywords; the real size is unmeasured) that the
@@ -56,7 +56,7 @@
   (3) **`_LIGHT_DECLINED` still skips `keyword-log-digest.json`**, and its reason says why: the bounded export was measured only
   on synthetic corpora. **`R27`'s TEXT IS KEPT (half of total RAM; ACK R27, R28 in the commit record that the rulings were read
   before their file was touched, which is not permission), AND ONE BRANCH IS ADDED ON TOP OF IT, following the standing «size from
-  the machine» rule (the coordinator's reading, 2026-10-01; not a separate question to the maintainer): the gate also
+  the machine» rule (R95, R77; the coordinator's reading, 2026-10-01; not a separate question to the maintainer): the gate also
   declines the digest when the memory available NOW minus the memory stop's floor cannot take the estimated need.** That goes
   beyond R27's «half the machine's RAM» and sits beside R28 and the 2026-09-02 «the bundle runs every member» ruling; it is one
   branch in `ram_declined_reason` to remove. **What it protects, stated exactly:** a machine that is busy at the moment the digest
@@ -86,8 +86,8 @@
   the numbers (HTTP 507). The ranking's spill is bounded like its heaps (a language never keeps more than twice its window on disk;
   what ranks beyond it is deleted and never written again), is sized up front from the keyword table's id range and the
   languages' windows, is watched after every 20,000 rows, and a full-disk error from SQLite itself is the same 507. With no data
-  folder both the spill and the archive go to the OS temp folder (after a sweep of stale scratch files) and ONE watch covers
-  that folder for both, between batches too; the texts say «the drive the export writes to». Creating a scratch file on a full
+  folder both the spill and the archive go to the OS temp folder (after a sweep of stale scratch files) and a watch on that ONE
+  drive covers both (the ranker's and the archive's), between batches too; the texts say «the drive the export writes to». Creating a scratch file on a full
   drive, a disk quota (`EDQUOT`) or a read-only drive (`EROFS`), and the same errors in the middle of writing the archive, are a
   507 (the full-drive and quota texts say to ask for a smaller window; the read-only text says the folder must be writable), not a
   500. SQLite reports a quota that fails while it writes the ranking's spill as a bare «disk I/O error», which cannot be told from
@@ -870,7 +870,7 @@
   instance's OWN counts times per-row costs that are each MEASURED (`EXPORT_ENTRY_BYTES`,
   `EXPORT_FIXED_BYTES`, pinned by value against the resident-size measurement and bounded from below by tracemalloc tests), held against half of total RAM as before
   AND against the memory available now minus the memory stop's floor (that second branch follows the standing «size from the machine»
-  rule and protects a busy machine, not bundle `091717`'s own: see the "All keywords" zip entry, item 3). The rule above stands
+  rule (R95, R77) and protects a busy machine, not bundle `091717`'s own: see the "All keywords" zip entry, item 3). The rule above stands
   for every other member: one that is not measured never declines; an estimator is added only
   to a member whose per-row costs have been measured and pinned.
 

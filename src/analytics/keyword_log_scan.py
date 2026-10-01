@@ -108,8 +108,8 @@ FAMILY_SHARE = 0.10
 SPILL_CACHE_KIB = 32 * 1024
 
 #: Ids per ``IN (...)`` list in the export's queries. What it protects: a statement stays near
-#: 8 KB of SQL (ids of up to nine digits), far under SQLite's statement-length limit (1 MB by
-#: default). It is the length
+#: 8 KB of SQL (ids of up to nine digits), far under SQLite's statement-length limit (``getlimit(SQLITE_LIMIT_SQL_LENGTH)`` reads it:
+#: 1,000,000,000 bytes on SQLite 3.45.1). It is the length
 #: every reader of this file used before the export was sized, and ``in_batches`` always cuts to it
 #: whatever the batch is: a larger batch changes how many entries are held between two checks,
 #: never how long a statement is.
@@ -215,16 +215,17 @@ class _SparseArr:
         self._d[i] = v
 
 
+#: Slots of headroom when a flat array is extended. What it protects: a collection pass runs beside
+#: the export and inserts articles in bursts, and growing by one slot each time would copy the array
+#: per article. The headroom costs 4 KB in the language array and 8 KB in the source array, nothing
+#: at the scale of the arrays.
 _GROW_HEADROOM = 1024
 
 
 def _grow(arr: Any, aid: int, fill: int) -> None:
     """Extend a flat array so index ``aid`` exists (an article inserted after the id bounds
     were read, on a connection that holds no snapshot)."""
-    # 1,024 slots of headroom: a collection pass runs beside the export and inserts articles in
-    # bursts, and growing by one slot each time would copy the array per article. The headroom
-    # costs 1,024 slots (4 KB in the language array, 8 KB in the source array), nothing at the
-    # scale of the arrays.
+    # The headroom and what it protects are stated at ``_GROW_HEADROOM``.
     arr.extend(array(arr.typecode, [fill]) * (aid + 1 - len(arr) + _GROW_HEADROOM))
 
 
@@ -559,14 +560,14 @@ def no_room_refusal(exc: OSError, doing: str) -> ExportRefused | None:
     if code == errno.EROFS:
         return ExportRefused(
             f"the drive the export writes to turned out to be read-only while the export was "
-            f"{doing}, so it stopped and removed what it had written. The data folder (or the "
+            f"{doing}, so it stopped and left nothing behind. The data folder (or the "
             "system's temp folder, when there is none) has to be writable for an export.",
             status=507,
         )
     why = "has no room left in your disk quota" if code != errno.ENOSPC else "ran out of room"
     return ExportRefused(
         f"the drive the export writes to {why} while the export was {doing}, so it stopped and "
-        "removed what it had written. Free some space, or ask for a smaller window (per_lang=...).",
+        "left nothing behind. Free some space, or ask for a smaller window (per_lang=...).",
         status=507,
     )
 

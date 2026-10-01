@@ -896,7 +896,7 @@ def _digest_peak(tmp_path, monkeypatch, *, keywords: int, seed: int) -> tuple[in
 def digest_peaks(tmp_path_factory):
     """The two measured digest runs (12,000 and 30,000 keywords), made once for the two tests that
     fit a slope and an intercept through them: each run builds a database and traces a digest, so
-    measuring them twice was the dearest part of this file in CI for no extra evidence."""
+    measuring them twice would have cost two more database builds for no extra evidence."""
     with pytest.MonkeyPatch.context() as mp:
         base = tmp_path_factory.mktemp("digest_peaks")
         return (
