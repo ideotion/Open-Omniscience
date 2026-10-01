@@ -1565,10 +1565,11 @@ Official **figures** are not here at all — they are data, so they live under
 
   | Export | What it is |
   |---|---|
-  | **All diagnostics (.zip)** | every log below in one archive |
-  | **All diagnostics (split)** | the same finished archive, cut into several smaller .zip files so it can be attached where one big file cannot. Each piece opens on its own in any unzip tool. If a single log is too large to fit one piece, it is cut into numbered parts and `volumes.json` says which, and how to rejoin them (`cat <name>.part* > <name>`). It only splits an archive you have already built — it never starts a new build |
-  | **Keyword log (.zip)** | the top keywords per language with real counts, families, your corrections and super-groups |
-  | **All keywords (.zip)** | every keyword in the corpus (not just the top per language), with no size cap. It is written to disk a batch at a time, so the app's memory stays flat whatever the corpus size; a big corpus makes a big file and takes minutes, and the export stops with a clear message (and deletes its partial file) if memory or disk runs short. The `Keyword log (.zip)` button keeps the 9 MB cap so it can be attached |
+  | **All diagnostics (1 MB files)** | every log below, built into one archive in the background and then handed over as **numbered files of at most 1 MB each** (`…-part-03-of-12.zip`), plus a small `…-manifest.zip` that lists every file with its size and SHA-256. Each file opens on its own in any unzip tool. See "Saving the numbered files" below |
+  | **All diagnostics, again (last build, 1 MB files)** | the same finished archive, saved again as numbered files (it starts at the part number you type, so you can resend only the ones that failed to upload). It only reuses an archive you have already built — it never starts a new build. If a single log is too large to fit one file it is cut on record boundaries into numbered pieces, and the manifest says which (a byte cut, `.part0001of0003`, is the last resort and is named in `volumes.json`) |
+  | **Keyword log (1 MB files)** | the top 5,000 keywords per language with real counts, families, your corrections and super-groups, as numbered files of at most 1 MB (about ten at most; the default aims under 9 MB in all) |
+  | **All keywords (1 MB files)** | every keyword in the corpus (not just the top per language), with no total size cap, as numbered files of at most 1 MB each. The first files hold every language's top 5,000, so if you cannot send them all, send them in number order. It is written to disk a batch at a time, so the app's memory stays flat whatever the corpus size; a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message (and deletes its partial files) if memory or disk runs short |
+  | **Last keyword files, again** | saves the numbered keyword files built last time again, without rebuilding them. They stay on this machine until the next build, or twelve hours after you last saved one |
   | **Keyword self-test (.json)** | a golden-case check that keyword pre-selection still behaves (e.g. *WHO* ≠ *who*) |
   | **Keyword-engine report (.json)** | composition, entity precision, translation/tag coverage, per-language status |
   | **Keyword-growth curve / (.json)** | cumulative distinct keywords vs words added (is the vocabulary saturating?) |
@@ -1578,6 +1579,14 @@ Official **figures** are not here at all — they are data, so they live under
   | **Network log (.json)** | fetch outcomes with transport-aware verdicts |
   | **Performance report / Scaling benchmark / Rollup benchmark (.json)** | timings and scaling checks |
   | **Debug bundle (.json)** | a consolidated support bundle |
+
+  **Saving the numbered files.** The page says how many files are ready ("220 files of at most 1 MB each …") and saves them **five to a click**, the
+  manifest first, because five is what one upload message takes and a click is what makes a browser accept a download. Your browser may ask once to
+  allow several downloads: allow them. After the first five the button says "Save the next 5" (and "Save all the rest" if you want one click for
+  everything). Every file is at most 1,000,000 bytes (files of about 1.2 MB and up failed to upload) and opens on its own, so you can send some now and
+  the rest later. To start again from a given file, type its number in "Start at part number". A set is complete when every name from `…-part-01-of-NN`
+  to `…-part-NN-of-NN` is present and its SHA-256 matches the manifest. To read a set with the analysis script, give it the folder (or any one file of it):
+  `python scripts/analyze_keyword_log.py <folder>` — it names the parts that are missing or differ from the manifest and reads the rest.
 
   The same panel also runs local **source enrichment** (deduce topic tags from your
   corpus) and consented **Wikidata** passes (source types, new-source discovery).

@@ -62,6 +62,9 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "chronology_report",
     "release_run_last",
     "release_run_download",
+    # 2026-10-01, the 1 MB parts of the keyword log: one file of a numbered set, by name.
+    "keyword_parts_latest",
+    "keyword_part_download",
 )
 
 

@@ -44,6 +44,7 @@ from src.analytics.keyword_log_scan import (
     order_key,
     scratch_file,
 )
+from src.analytics.upload_parts import UPLOAD_PART_BYTES, PartWriter
 from src.utils.export_envelope import envelope
 
 
@@ -94,6 +95,35 @@ _DISK_NEED_MARGIN = 1.2
 
 ZIP_TMP_PREFIX = "oo-keyword-log-part-"
 
+#: A numbered set of parts lives in a folder of its own (``oo-keyword-parts-<set id>-<random>``)
+#: under the same scratch folder, until the next build retires it or the 12-hour sweep does.
+PARTS_DIR_PREFIX = "oo-keyword-parts-"
+
+#: A previous set is kept this long after its last build OR DOWNLOAD (each download touches the
+#: folder) when a new one is built: the page saves a set's files five to a click, so a person
+#: takes minutes over hundreds of files, and a second build from another tab must not delete the
+#: files the first is still handing over. What it protects is a download in progress, not disk
+#: space: ten minutes is longer than the gap between two clicks of a person who is saving files.
+_PARTS_GRACE_S = 600
+
+#: How many records of one language go out before the next language's turn in the numbered set.
+#: The set is written RANK-MAJOR, so a partial upload is the most useful slice: round one is every
+#: language's top 5,000 keywords (largest language first), which is exactly what the default
+#: export holds (``_MAX_KEYWORDS_PER_LANG`` in the route; a test pins the two together), round two
+#: is ranks 5,001-10,000 of the languages that have them, and so on. It protects the reader who
+#: can only send the first few files; it does not size anything on disk.
+PARTS_ROUND_RECORDS = 5_000
+
+PARTS_ORDER_NOTE = (
+    f"Rank-major: the files after the orientation file(s) hold every language's top "
+    f"{PARTS_ROUND_RECORDS:,} keywords first (the largest language first), then ranks "
+    f"{PARTS_ROUND_RECORDS + 1:,}-{2 * PARTS_ROUND_RECORDS:,} of each language that has them, and "
+    "so on to the last. A language's records are in keywords/<language>.from-NNNNNN.json, NNNNNN "
+    "being the rank of the first record inside (0 = the top); each file names slice_from, "
+    "slice_to and slice_of, so the files of a language put back end to end are its whole list. "
+    "The first files are the most useful to send if you cannot send them all."
+)
+
 #: A scratch file older than this has no export writing to it (every write refreshes its
 #: mtime), so the next export may delete it.
 _STALE_SCRATCH_S = 12 * 3600
@@ -124,6 +154,24 @@ def sweep_stale_scratch(d: Path) -> None:
                         p.unlink()
                 except OSError:
                     pass
+            elif p.name.startswith(PARTS_DIR_PREFIX) and p.is_dir():
+                with contextlib.suppress(OSError):
+                    if now - p.stat().st_mtime > _STALE_SCRATCH_S:
+                        shutil.rmtree(p, ignore_errors=True)
+    except OSError:
+        pass
+
+
+def retire_old_parts_sets(d: Path, keep: Path | None = None) -> None:
+    """Remove the sets of parts left by earlier builds (not ``keep``, and not one built in the
+    last ``_PARTS_GRACE_S`` seconds: its files may still be on their way to the browser)."""
+    now = time.time()
+    try:
+        for p in d.iterdir():
+            if p.name.startswith(PARTS_DIR_PREFIX) and p.is_dir() and p != keep:
+                with contextlib.suppress(OSError):
+                    if now - p.stat().st_mtime > _PARTS_GRACE_S:
+                        shutil.rmtree(p, ignore_errors=True)
     except OSError:
         pass
 
@@ -406,6 +454,120 @@ class ZipJob:
             },
         }
 
+    def _entry_batches(self, lang: str, n: int, first_round: bool, sw, ring, fam: list):
+        """The JSON text of this language's first ``n`` entries, one list per batch.
+
+        The single place an entry is built, so the one archive and the numbered parts carry the
+        same bytes. On the first round it also feeds the stop-word and ring digests and the
+        families' basis, which is why it is one pass and not two."""
+        pos = 0
+        rows = itertools.islice(self.ranker.rows(lang), n)
+        for chunk in batched(rows, self.batch):
+            self.check()
+            self.disk_watch()
+            kids = [r[0] for r in chunk]
+            meta = fetch_meta(self.db, kids)
+            sigs = fetch_signatures(self.db, self.maps, kids)
+            parts = []
+            for r in chunk:
+                e = entry_for(r, meta, sigs, self.is_hidden)
+                parts.append(json.dumps(e, ensure_ascii=False, separators=(",", ":")))
+                if first_round:
+                    kid, m, a, _f, _l, dom = r[:6]
+                    okey = order_key(kid, m, dom is not None)
+                    mt = meta.get(kid, ("?", "?", None, False, None))
+                    assert sw is not None and ring is not None
+                    sw.feed(okey, m, a, dom, mt)
+                    ring.feed(okey, m, a, dom, mt)
+                    if self.basis_per_language is None or pos < self.basis_per_language:
+                        self.basis_counts[lang] = self.basis_counts.get(lang, 0) + 1
+                        if not e["hidden"]:
+                            fam.append((okey, {
+                                "term": e["term"], "normalized": e["normalized"],
+                                "kind": e["kind"], "mentions": e["mentions"],
+                                "articles": e["articles"],
+                            }))
+                pos += 1
+            yield parts
+
+    def _summary_and_manifest(
+        self, keep: dict[str, int], omitted: dict[str, int], first_round: bool, sw, ring,
+        fam: list, *, parts: bool = False,
+    ) -> tuple[dict, dict]:
+        """``(summary document, export manifest)`` once every entry has been streamed."""
+        total_kw = sum(keep.values())
+        if first_round:
+            assert sw is not None and ring is not None
+            self.summary_payload = self._build_summary(sw, ring, fam, total_kw)
+        summary_doc = envelope(
+            kind="keyword-diagnostics", query={"format": "parts" if parts else "zip"},
+            count=total_kw, payload=self.summary_payload,
+        )
+        langs_meta: list[dict[str, Any]] = [
+            {"code": lang, "keywords": keep[lang], "omitted_to_fit": omitted.get(lang, 0)}
+            for lang in sorted(keep)
+        ]
+        if parts and self.max_bytes is not None:
+            lead = (
+                ", as numbered files of at most 1,000,000 bytes each (the first file(s) hold the "
+                "manifest and summary.json), trimmed to aim under max_bytes in TOTAL (the "
+                "default, 9 MB, holds that button to about ten files; summary.json is never "
+                "trimmed). "
+            )
+        elif parts:
+            lead = (
+                ", as numbered files of at most 1,000,000 bytes each (the first file(s) hold the "
+                "manifest and summary.json), written with NO byte cap (max_mb=0): every keyword "
+                "of the requested window, in as many files as that takes. "
+            )
+        elif self.max_bytes is not None:
+            lead = (
+                ", zipped and trimmed to aim under max_bytes (the default, 9 MB, keeps a shared "
+                "file under the common 10 MB attachment limit; summary.json is never trimmed, so "
+                "a summary alone larger than the cap leaves the file over it). "
+            )
+        else:
+            lead = (
+                ", written with NO byte cap (max_mb=0): every keyword of the requested window, "
+                "however large the file. "
+            )
+        manifest = {
+            "export_schema": "oo-export-1",
+            "kind": "keyword-diagnostics-archive",
+            "app_version": summary_doc.get("app_version"),
+            "generated_at": summary_doc.get("generated_at"),
+            "corpus": self.corpus,
+            "languages": sorted(langs_meta, key=lambda m: -m["keywords"]),
+            "keywords_in_archive": total_kw,
+            "keywords_omitted_to_fit": sum(omitted.values()),
+            # None = no byte cap was asked for (max_mb=0): the archive is whole.
+            "max_bytes": self.max_bytes,
+            # Paging: per_lang/page/pages_total/has_more let the caller export the
+            # WHOLE corpus across several files when one page would exceed the cap.
+            **self.page_info,
+            "ranking_spilled_to_disk": self.ranker.spilled,
+            **({"window_clamped_to_fit_cap": self.window_note} if self.window_note else {}),
+            "note": (
+                "Per-language split of the keyword diagnostics log"
+                + lead
+                + "Read summary.json for the corpus-wide aggregates (top families, "
+                "super-groups, per-source concentration; families_provenance records "
+                "the family cap and basis) and "
+                + ("keywords/<lang>.from-NNNNNN.json" if parts else "keywords/<lang>.json")
+                + " for each language's keywords (same per-keyword fields as the single-file log). "
+                + (
+                    "scripts/analyze_keyword_log.py reads a set of parts (a folder of the files, "
+                    "or the files named on its command line) as well as one .zip. "
+                    if parts else
+                    "scripts/analyze_keyword_log.py reads this .zip directly. "
+                )
+                + "keywords_omitted_to_fit > 0 means the lowest-mention keywords per "
+                "language were dropped to fit max_bytes — never silently; see the "
+                "per-language counts."
+            ),
+        }
+        return summary_doc, manifest
+
     def write(self, keep: dict[str, int], omitted: dict[str, int]) -> Path:
         """Write one complete archive with at most ``keep[lang]`` keywords per language."""
         first_round = self.summary_payload is None
@@ -435,89 +597,14 @@ class ZipJob:
                                 + f',"count":{n},"keywords":['
                             ).encode("utf-8")
                         )
-                        pos = 0
-                        rows = itertools.islice(self.ranker.rows(lang), n)
-                        for chunk in batched(rows, self.batch):
-                            self.check()
-                            self.disk_watch()
-                            kids = [r[0] for r in chunk]
-                            meta = fetch_meta(self.db, kids)
-                            sigs = fetch_signatures(self.db, self.maps, kids)
-                            parts = []
-                            for r in chunk:
-                                e = entry_for(r, meta, sigs, self.is_hidden)
-                                parts.append(
-                                    json.dumps(e, ensure_ascii=False, separators=(",", ":"))
-                                )
-                                if first_round:
-                                    kid, m, a, _f, _l, dom = r[:6]
-                                    okey = order_key(kid, m, dom is not None)
-                                    mt = meta.get(kid, ("?", "?", None, False, None))
-                                    assert sw is not None and ring is not None
-                                    sw.feed(okey, m, a, dom, mt)
-                                    ring.feed(okey, m, a, dom, mt)
-                                    if self.basis_per_language is None or pos < self.basis_per_language:
-                                        self.basis_counts[lang] = self.basis_counts.get(lang, 0) + 1
-                                        if not e["hidden"]:
-                                            fam.append((okey, {
-                                                "term": e["term"], "normalized": e["normalized"],
-                                                "kind": e["kind"], "mentions": e["mentions"],
-                                                "articles": e["articles"],
-                                            }))
-                                pos += 1
-                            fh.write(
-                                (("," if pos > len(chunk) else "") + ",".join(parts)).encode("utf-8")
-                            )
+                        first_batch = True
+                        for parts in self._entry_batches(lang, n, first_round, sw, ring, fam):
+                            fh.write((("" if first_batch else ",") + ",".join(parts)).encode("utf-8"))
+                            first_batch = False
                         fh.write(b"]}")
-                total_kw = sum(keep.values())
-                if first_round:
-                    assert sw is not None and ring is not None
-                    self.summary_payload = self._build_summary(sw, ring, fam, total_kw)
-                summary_doc = envelope(
-                    kind="keyword-diagnostics", query={"format": "zip"}, count=total_kw,
-                    payload=self.summary_payload,
+                summary_doc, manifest = self._summary_and_manifest(
+                    keep, omitted, first_round, sw, ring, fam
                 )
-                langs_meta: list[dict[str, Any]] = [
-                    {"code": lang, "keywords": keep[lang], "omitted_to_fit": omitted.get(lang, 0)}
-                    for lang in sorted(keep)
-                ]
-                manifest = {
-                    "export_schema": "oo-export-1",
-                    "kind": "keyword-diagnostics-archive",
-                    "app_version": summary_doc.get("app_version"),
-                    "generated_at": summary_doc.get("generated_at"),
-                    "corpus": self.corpus,
-                    "languages": sorted(langs_meta, key=lambda m: -m["keywords"]),
-                    "keywords_in_archive": total_kw,
-                    "keywords_omitted_to_fit": sum(omitted.values()),
-                    # None = no byte cap was asked for (max_mb=0): the archive is whole.
-                    "max_bytes": self.max_bytes,
-                    # Paging: per_lang/page/pages_total/has_more let the caller export the
-                    # WHOLE corpus across several files when one page would exceed the cap.
-                    **self.page_info,
-                    "ranking_spilled_to_disk": self.ranker.spilled,
-                    **({"window_clamped_to_fit_cap": self.window_note} if self.window_note else {}),
-                    "note": (
-                        "Per-language split of the keyword diagnostics log"
-                        + (
-                            ", zipped and trimmed to aim under max_bytes (the default, 9 MB, "
-                            "keeps a shared file under the common 10 MB attachment limit; "
-                            "summary.json is never trimmed, so a summary alone larger than "
-                            "the cap leaves the file over it). "
-                            if self.max_bytes is not None else
-                            ", written with NO byte cap (max_mb=0): every keyword of the "
-                            "requested window, however large the file. "
-                        )
-                        + "Read summary.json for the corpus-wide aggregates (top families, "
-                        "super-groups, per-source concentration; families_provenance records "
-                        "the family cap and basis) and keywords/<lang>.json for each "
-                        "language's keywords (same per-keyword fields as the single-file log). "
-                        "scripts/analyze_keyword_log.py reads this .zip directly. "
-                        "keywords_omitted_to_fit > 0 means the lowest-mention keywords per "
-                        "language were dropped to fit max_bytes — never silently; see the "
-                        "per-language counts."
-                    ),
-                }
                 z.writestr(
                     "summary.json",
                     json.dumps(summary_doc, ensure_ascii=False, separators=(",", ":")),
@@ -537,6 +624,75 @@ class ZipJob:
             if not ok:
                 unlink_quietly(path)
 
+    def write_parts(
+        self, writer, keep: dict[str, int], omitted: dict[str, int]
+    ) -> None:
+        """The same export as :meth:`write`, as numbered parts through ``writer`` (a
+        :class:`~src.analytics.upload_parts.PartWriter`), RANK-MAJOR: every language's first
+        ``PARTS_ROUND_RECORDS`` entries (largest language first), then the next round, and so on,
+        so the files a person sends first are the most useful. Every entry is the very text
+        :meth:`write` would have put in the archive; the summary and the export's manifest are
+        written last and numbered first."""
+        from src.analytics.upload_parts import RecordGroup
+
+        first_round = self.summary_payload is None
+        sw = self.hooks.new_stopword_acc(self.is_hidden) if first_round else None
+        ring = self.hooks.new_ring_acc(self.is_hidden) if first_round else None
+        fam: list = []
+        if first_round:
+            self.basis_counts = {}
+        try:
+            order = sorted((lang for lang in keep if keep[lang] > 0), key=lambda lg: (-keep[lg], lg))
+            groups = {
+                lang: RecordGroup(
+                    f"keywords/{self.hooks.safe_lang_filename(lang)}.json",
+                    {"language": lang}, "keywords", keep[lang],
+                )
+                for lang in order
+            }
+            streams = {
+                lang: _RoundStream(self._entry_batches(lang, keep[lang], first_round, sw, ring, fam))
+                for lang in order
+            }
+            while any(not streams[lang].done for lang in order):
+                for lang in order:
+                    stream = streams[lang]
+                    if not stream.done:
+                        writer.add_records(groups[lang], stream.take(PARTS_ROUND_RECORDS))
+            summary_doc, manifest = self._summary_and_manifest(
+                keep, omitted, first_round, sw, ring, fam, parts=True
+            )
+        except OSError as exc:
+            refusal = no_room_refusal(exc, "writing the parts")
+            if refusal is None:
+                raise
+            raise refusal from exc
+        writer.add_front_json_document("export-manifest.json", manifest)
+        writer.add_front_json_document("summary.json", summary_doc)
+
+
+class _RoundStream:
+    """One language's entry batches, handed out ``k`` records at a time: the rounds of the
+    rank-major set. Holds at most one batch, so the set's memory is a batch however many rounds."""
+
+    def __init__(self, batches) -> None:
+        self._it = iter(batches)
+        self._left: list[str] = []
+        self.done = False
+
+    def take(self, k: int):
+        taken = 0
+        while taken < k:
+            if not self._left:
+                try:
+                    self._left = next(self._it)
+                except StopIteration:
+                    self.done = True
+                    return
+            chunk, self._left = self._left[: k - taken], self._left[k - taken:]
+            taken += len(chunk)
+            yield from chunk
+
 
 def unlink_quietly(path: Path) -> None:
     with contextlib.suppress(OSError):
@@ -551,7 +707,7 @@ def resolve_max_bytes(fmt: str, max_mb: Any, default_bytes: int) -> int | None:
     applies, exactly as before. A non-number is "left out": called directly, a ``Query(None)``
     default arrives as the Query sentinel object, not as ``None`` (this code base's
     recurring trap)."""
-    if fmt != "zip":
+    if fmt not in ("zip", "parts"):
         return None
     if isinstance(max_mb, (int, float)) and not isinstance(max_mb, bool):
         if max_mb <= 0:
@@ -613,3 +769,57 @@ def finish_zip(
             keep[lang] = new
         path = job.write(keep, omitted)
     return path
+
+
+def finish_parts(
+    job: ZipJob, keep: dict[str, int], omitted: dict[str, int] | None = None, *,
+    scratch_dir: Path, stem: str,
+) -> tuple[Path, dict]:
+    """Build the export as numbered parts of at most ``UPLOAD_PART_BYTES`` each; return the folder
+    that holds them and the set's manifest.
+
+    The cap here is on EACH FILE. A cap on the TOTAL (``max_bytes``, the 9 MB default) still
+    trims the lowest-mention keywords per language exactly as :func:`finish_zip` does, measured
+    on the sum of the parts; ``max_mb=0`` writes every keyword of the window, as many parts as
+    that takes. The folder is removed on every path that does not end in a finished set.
+    """
+    keep = dict(keep)
+    omitted = dict(omitted or {})
+    retire_old_parts_sets(scratch_dir)
+    set_dir = Path(tempfile.mkdtemp(prefix=f"{PARTS_DIR_PREFIX}{stem}-", dir=scratch_dir))
+    ok = False
+    try:
+        for _ in range(_MAX_TRIM_ROUNDS):
+            writer = PartWriter(
+                set_dir, stem=stem, cap=UPLOAD_PART_BYTES, check=job.check,
+                disk_watch=job.disk_watch, order_note=PARTS_ORDER_NOTE,
+                describe={"export": "keyword-log", "max_total_bytes": job.max_bytes},
+            )
+            try:
+                job.write_parts(writer, keep, omitted)
+                manifest = writer.finish()
+            except OSError as exc:
+                refusal = no_room_refusal(exc, "writing the parts")
+                if refusal is None:
+                    raise
+                raise refusal from exc
+            size = sum(p["bytes"] for p in manifest["parts"])
+            max_bytes = job.max_bytes
+            if max_bytes is None or size <= max_bytes:
+                ok = True
+                return set_dir, manifest
+            ratio = max_bytes / size * _TRIM_AIM
+            trimmed = {lang: new for lang, n in keep.items() if (new := max(1, int(n * ratio))) < n}
+            if not trimmed:
+                ok = True  # nothing left to drop: what is over the cap is the summary
+                return set_dir, manifest
+            for f in set_dir.iterdir():
+                unlink_quietly(f)
+            for lang, new in trimmed.items():
+                omitted[lang] = omitted.get(lang, 0) + (keep[lang] - new)
+                keep[lang] = new
+        ok = True
+        return set_dir, manifest
+    finally:
+        if not ok:
+            shutil.rmtree(set_dir, ignore_errors=True)

@@ -59,6 +59,10 @@ def _members_from_volumes(vol_dir: Path, manifest: dict) -> dict[str, bytes]:
                 if n == dv.README_NAME or ".part" in n:
                     continue
                 out[n] = z.read(n)
+    # a member cut on record boundaries is read as its pieces; the pieces are not whole members
+    for m in manifest["members"]:
+        if m.get("cut"):
+            out.pop(m["entry"], None)
     return out
 
 
@@ -148,9 +152,15 @@ def test_no_volume_exceeds_the_cap_and_every_byte_round_trips(tmp_path, cap):
     dest = tmp_path / "rebuilt"
     for path in dv.reassemble_split_members(vol_dir, dest):
         rebuilt[Path(path).name] = Path(path).read_bytes()
+    for path in dv.reassemble_cut_members(vol_dir, dest):
+        rebuilt[Path(path).name] = Path(path).read_bytes()
 
     assert set(rebuilt) == set(original), "every member must survive the split"
-    assert rebuilt == original, "and survive it byte-for-byte"
+    for name, data in original.items():
+        if name.endswith(".json"):  # a cut JSON document is put back by value, not by its spacing
+            assert json.loads(rebuilt[name]) == json.loads(data), name
+        else:
+            assert rebuilt[name] == data, name
 
 
 def test_every_volume_opens_alone_and_says_what_is_missing(tmp_path):
@@ -168,7 +178,8 @@ def test_every_volume_opens_alone_and_says_what_is_missing(tmp_path):
         assert readme["volume_count"] == len(manifest["volumes"])
         assert readme["volume_index"] == i
         assert readme["volume_name"] == v["name"]
-        assert "NNNof" in readme["volume_name_pattern"], "the rest are nameable from here"
+        assert "-part-NN-of-" in readme["volume_name_pattern"], "the rest are nameable from here"
+        assert readme["volume_name"].endswith(f"-part-{i:02d}-of-{len(manifest['volumes']):02d}.zip")
         assert {m["entry"] for m in readme["members_in_this_volume"]} == present
 
 
@@ -321,7 +332,9 @@ def test_the_cap_is_env_tunable_and_floored_against_a_zero(monkeypatch):
     monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "0")
     assert dv.volume_max_bytes() == 4096
     monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "not-a-number")
-    assert dv.volume_max_bytes() == 9 * 1024 * 1024, "a bad value falls back, never crashes"
+    assert dv.volume_max_bytes() == 1_000_000, "a bad value falls back, never crashes"
+    monkeypatch.delenv("OO_DIAG_VOLUME_MAX_MB")
+    assert dv.volume_max_bytes() == dv.UPLOAD_PART_BYTES == 1_000_000
 
 
 # --------------------------------------------------------------------------- #
@@ -411,7 +424,9 @@ def test_a_second_call_reuses_the_set_and_a_new_archive_replaces_it(_diag_dir):
     newer.rename(_diag_dir / "oo-all-diagnostics-20260912-090000.zip")
     m3 = json.loads(bytes(d.all_diagnostics_volumes().body))
     assert m3["source"] == "oo-all-diagnostics-20260912-090000.zip"
-    assert set(vol_dir.glob("*.zip")) == {vol_dir / v["name"] for v in m3["volumes"]}
+    assert {p.name for p in vol_dir.glob("*.zip")} == (
+        {v["name"] for v in m3["volumes"]} | {f["name"] for f in m3["manifest_files"]}
+    )
 
 
 def test_volumes_live_below_the_archive_dir_so_the_sweep_cannot_eat_them(_diag_dir):
@@ -435,24 +450,24 @@ def test_volumes_live_below_the_archive_dir_so_the_sweep_cannot_eat_them(_diag_d
 
 def test_two_split_members_with_the_same_basename_do_not_overwrite_each_other(tmp_path):
     """Flattening a rebuilt member by Path(...).name alone keeps it out of a directory
-    it should not reach, but makes 'a/x.json' and 'b/x.json' land on one file -- trading
+    it should not reach, but makes 'a/x.bin' and 'b/x.bin' land on one file -- trading
     a traversal for a silently lost member, which is the failure this module is least
     allowed to have."""
     src = tmp_path / "oo-all-diagnostics-20260911-1200.zip"
     with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        z.writestr("a/x.json", os.urandom(120_000))
-        z.writestr("b/x.json", os.urandom(120_000))
+        z.writestr("a/x.bin", os.urandom(120_000))
+        z.writestr("b/x.bin", os.urandom(120_000))
 
     vol_dir = tmp_path / "vols"
     manifest = dv.write_volume_set(src, vol_dir, cap=40_000)
-    assert sorted(manifest["split_members"]) == ["a/x.json", "b/x.json"]
+    assert sorted(manifest["split_members"]) == ["a/x.bin", "b/x.bin"]
 
     dest = tmp_path / "rebuilt"
     written = dv.reassemble_split_members(vol_dir, dest)
     assert len(set(written)) == 2, "each member keeps its own file"
 
     with zipfile.ZipFile(src) as s:
-        for base in ("a/x.json", "b/x.json"):
+        for base in ("a/x.bin", "b/x.bin"):
             assert (dest / base.replace("/", "__")).read_bytes() == s.read(base)
     for path in written:
         assert Path(path).resolve().parent == dest.resolve(), "nothing escapes dest"
@@ -479,3 +494,157 @@ def test_a_running_build_refuses_the_split_rather_than_serving_the_previous_bund
     assert exc.value.status_code == 409
     assert "running" in exc.value.detail
     assert not list(d._all_diagnostics_volumes_dir().glob("*.zip")), "nothing was split"
+
+
+# --------------------------------------------------------------------------- #
+# 2026-10-01: 1,000,000-byte volumes, numbered names, a manifest zip, cuts on record boundaries.
+# --------------------------------------------------------------------------- #
+
+
+def _noisy_json_member(n: int) -> str:
+    import random
+
+    rnd = random.Random(5)
+    return json.dumps({"rows": [{"id": i, "t": "".join(rnd.choice("0123456789abcdef") for _ in range(60))}
+                                for i in range(n)], "meta": {"kind": "test"}})
+
+
+def test_the_default_cap_is_one_million_bytes_and_volumes_carry_position_and_total(tmp_path):
+    src = tmp_path / "oo-all-diagnostics-20261001-010000.zip"
+    with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.json", "{}")
+        for i in range(5):
+            z.writestr(f"big-{i}.bin", os.urandom(500_000))
+    manifest = dv.write_volume_set(src, tmp_path / "v")
+    assert manifest["volume_max_bytes"] == 1_000_000
+    n = len(manifest["volumes"])
+    assert n > 2
+    assert [v["name"] for v in manifest["volumes"]] == [
+        f"oo-all-diagnostics-20261001-010000-part-{i:02d}-of-{n:02d}.zip" for i in range(1, n + 1)
+    ]
+    assert all(v["bytes"] <= 1_000_000 for v in manifest["volumes"])
+    assert [f["name"] for f in manifest["manifest_files"]] == [
+        "oo-all-diagnostics-20261001-010000-manifest.zip"
+    ]
+
+
+def test_the_manifest_zip_lists_every_volume_with_its_size_and_checksum(tmp_path):
+    import hashlib
+
+    src = _build_bundle(tmp_path)
+    vol_dir = tmp_path / "v"
+    manifest = dv.write_volume_set(src, vol_dir, cap=100_000)
+    (mf,) = manifest["manifest_files"]
+    assert (vol_dir / mf["name"]).stat().st_size <= 100_000
+    assert hashlib.sha256((vol_dir / mf["name"]).read_bytes()).hexdigest() == mf["sha256"]
+    with zipfile.ZipFile(vol_dir / mf["name"]) as z:
+        inner = json.loads(z.read(dv.MANIFEST_NAME))
+    assert inner["volumes"] == manifest["volumes"]
+    assert inner["volume_names"] == manifest["volume_names"]
+
+
+def test_a_json_member_larger_than_a_volume_is_cut_into_pieces_each_valid_alone(tmp_path):
+    src = tmp_path / "oo-all-diagnostics-20261001-020000.zip"
+    doc = _noisy_json_member(40_000)
+    with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.json", "{}")
+        z.writestr("report.json", doc)
+    vol_dir = tmp_path / "v"
+    manifest = dv.write_volume_set(src, vol_dir)  # the real 1,000,000
+    assert manifest["cut_members"] == ["report.json"] and manifest["split_members"] == []
+    pieces = [m for m in manifest["members"] if m.get("cut")]
+    assert len(pieces) > 2 and [m["cut"]["piece"] for m in pieces] == list(range(1, len(pieces) + 1))
+    for v in manifest["volumes"]:
+        assert v["bytes"] <= 1_000_000
+        with zipfile.ZipFile(vol_dir / v["name"]) as z:
+            assert z.testzip() is None
+            for name in z.namelist():
+                json.loads(z.read(name))  # every file of every volume parses on its own
+    (dest,) = [Path(p) for p in dv.reassemble_cut_members(vol_dir, tmp_path / "back")]
+    assert json.loads(dest.read_text(encoding="utf-8")) == json.loads(doc)
+    assert "report.json" in manifest["note"] and "cut on record boundaries" in manifest["note"].lower()
+
+
+def test_a_log_member_is_cut_between_lines_and_a_table_repeats_its_header(tmp_path):
+    src = tmp_path / "oo-all-diagnostics-20261001-030000.zip"
+    import random
+
+    rnd = random.Random(6)
+    log = "".join(
+        json.dumps({"i": i, "x": "".join(rnd.choice("0123456789abcdef") for _ in range(80))}) + "\n"
+        for i in range(30_000)
+    )
+    table = "id,value\n" + "".join(
+        f"{i},{''.join(rnd.choice('0123456789abcdef') for _ in range(60))}\n" for i in range(30_000)
+    )
+    with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("bundle-journal.jsonl", log)
+        z.writestr("table.csv", table)
+    vol_dir = tmp_path / "v"
+    manifest = dv.write_volume_set(src, vol_dir)
+    assert sorted(manifest["cut_members"]) == ["bundle-journal.jsonl", "table.csv"]
+    assert all(v["bytes"] <= 1_000_000 for v in manifest["volumes"])
+    for v in manifest["volumes"]:
+        with zipfile.ZipFile(vol_dir / v["name"]) as z:
+            for name in z.namelist():
+                if name.endswith(".csv"):
+                    assert z.read(name).startswith(b"id,value\n"), "every table piece has the header"
+                elif name.endswith(".jsonl"):
+                    for line in z.read(name).decode().splitlines():
+                        json.loads(line)  # no line is ever cut through
+    back = {Path(p).name: Path(p).read_text(encoding="utf-8")
+            for p in dv.reassemble_cut_members(vol_dir, tmp_path / "back")}
+    assert back["bundle-journal.jsonl"] == log
+    assert back["table.csv"] == table
+
+
+def test_a_member_that_is_neither_a_document_nor_a_log_keeps_the_stated_byte_cut(tmp_path):
+    src = tmp_path / "oo-all-diagnostics-20261001-040000.zip"
+    with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("blob.bin", os.urandom(2_500_000))
+    manifest = dv.write_volume_set(src, tmp_path / "v")
+    assert manifest["split_members"] == ["blob.bin"] and manifest["cut_members"] == []
+    assert "SPLIT BY BYTES" in manifest["note"]
+    assert all(v["bytes"] <= 1_000_000 for v in manifest["volumes"])
+
+
+def test_a_cut_json_member_too_large_to_parse_safely_here_falls_back_to_the_byte_cut(
+    tmp_path, monkeypatch
+):
+    import src.analytics.keyword_log_scan as kls
+
+    monkeypatch.setattr(kls, "available_bytes_now", lambda: 1_000_000)  # a machine with no room
+    src = tmp_path / "oo-all-diagnostics-20261001-050000.zip"
+    with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("report.json", _noisy_json_member(40_000))
+    manifest = dv.write_volume_set(src, tmp_path / "v")
+    assert manifest["split_members"] == ["report.json"], "never parsed what this machine cannot hold"
+    assert all(v["bytes"] <= 1_000_000 for v in manifest["volumes"])
+
+
+def test_the_route_lists_files_in_the_page_shape_manifest_first_and_serves_the_manifest_zip(_diag_dir):
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-060000.zip")
+    listing = json.loads(bytes(d.all_diagnostics_volumes().body))
+    kinds = [f["kind"] for f in listing["files"]]
+    assert kinds[0] == "manifest" and set(kinds[1:]) == {"part"}
+    assert listing["download_base"] == "/api/diagnostics/all-job/volumes/"
+    assert listing["part_count"] == len(listing["volumes"])
+    assert all(f["bytes"] <= listing["part_max_bytes"] for f in listing["files"])
+    for f in listing["files"]:
+        resp = d.all_diagnostics_volume_download(f["name"])
+        assert Path(resp.path).stat().st_size == f["bytes"]
+
+
+def test_a_set_built_under_another_cap_is_rebuilt_not_re_served(_diag_dir, monkeypatch):
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-070000.zip")
+    first = json.loads(bytes(d.all_diagnostics_volumes().body))
+    monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "0.2")
+    second = json.loads(bytes(d.all_diagnostics_volumes().body))
+    assert first["volume_max_bytes"] == 1_000_000 and second["volume_max_bytes"] == int(0.2 * 1024 * 1024)
+    assert second["volume_count"] > first["volume_count"]

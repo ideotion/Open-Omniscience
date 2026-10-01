@@ -12888,3 +12888,38 @@ a helper call breaks every harness that extracts it without the helper**: grep `
 function's name and run ALL the node-wrapped tests, not the ones whose name sounds related; and run the repo-wide
 guard tests (slicing budget, ruff ratchet, i18n gates, inline-handler ratchet, planned index, repo invariants)
 before saying a change is verified.
+
+### A PART OF A SPLIT EXPORT IS FILLED BY MEASURING IT ON A COPY OF THE COMPRESSOR, NEVER BY PREDICTING A RATIO (1 MB parts, 2026-10-01, `src/analytics/upload_parts.py`)
+
+The maintainer's channel refuses files of about 1.2 MB and up, so "every file at most 1,000,000 bytes" is a correctness
+property of the export. A builder that guessed how many records fit from a deflate ratio filled real keyword parts only
+52-74% (and one wrong guess means a part over the cap, the one thing that must not happen). What works is one deflate
+stream per member and, before a chunk of 500 records is committed, compressing it on `compressobj.copy()` with
+`Z_SYNC_FLUSH` so the size the part would have if closed now is exact: if bytes so far + chunk + the zip directory +
+the `part.json` appended at the end fit, the copy becomes the compressor, otherwise the part closes and the chunk
+opens the next. Measured on a 2 M-keyword synthetic corpus, every part reached 998-999 KB (99.8%), the front part and
+the last being short by design. `zipfile` cannot snapshot its compressor, so the writer is ours (about a hundred lines)
+and every part is checked against `zipfile.testzip` AND `unzip -t` in the tests, because a hand-written zip that only
+its own reader opens is not a zip. A record larger than a part is never written whole: it goes out as numbered byte
+pieces named in the manifest, so the cap holds for any input.
+
+### TWO PARTS OF ONE SET MUST NEVER SHARE A MEMBER NAME, AND A READER MUST CHECK THAT THE SLICES FOLLOW EACH OTHER (1 MB parts, 2026-10-01)
+
+Rank-major order (rounds of 5,000 keywords per language, largest language first) puts the same language into several
+parts, and two members called `keywords/en.json` in different parts collide the moment a person unzips two parts
+into one folder, one overwriting the other without a word. Members are therefore `keywords/<lang>.from-NNNNNN.json`
+carrying `slice_from`, `slice_to` and `count`, and `read_group_records` raises when a slice does not start where the
+last one ended or its tail does not match: **a missing part must be an error, not a shorter list**, because a
+half-uploaded set that reads as a complete smaller one is how a diagnosis goes wrong. The only gap that is not an
+error is a record listed under `oversize_records`; the analyzer script (which must run without the app) names a
+missing or differing part on stderr and reads on, since evidence that arrived is not thrown away for evidence that did not.
+
+### AN AUTHOR `display` RULE BEATS THE `hidden` ATTRIBUTE, AND ONLY A REAL BROWSER SEES IT (1 MB parts walk, 2026-10-01, `src/static/app.css`)
+
+The Chromium walk of the new "Save the next 5" bar found a box labelled "Start at part number" visible at boot,
+before any set existed: `#parts-from-wrap` carried a `display:` rule, and an author `display` beats the user-agent's
+`[hidden]{display:none}`, so setting `hidden` did nothing. Every unit and node test passed, because they read the
+attribute, not the layout. **Any element that is toggled by `hidden` and also has its own `display` needs an explicit
+`X[hidden]{display:none}`**, and the test that pins it must read the CSS, not the DOM. Generally: a surface with a
+state machine (nothing built, built, partly saved, all saved, nothing kept) is walked in a browser through EVERY state
+including the empty ones, with each drop-down opened and an option picked, before it is called done.

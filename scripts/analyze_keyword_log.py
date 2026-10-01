@@ -146,7 +146,150 @@ def _load_zip_log(path: Path) -> dict[str, Any]:
     return doc
 
 
+# --- A numbered set of parts (``?format=parts``, the Diagnostics "1 MB files" buttons) ------------ #
+# The files are named ``<stem>-part-NN-of-MM.zip`` plus ``<stem>-manifest.zip`` (the sizes and
+# SHA-256 of every part). ``load_log`` takes the FOLDER holding a set, any one file of it, or the
+# manifest: it reads every part it finds, says (on stderr) which parts are missing or differ from
+# the manifest, and goes on with what is there, because a half-uploaded set is still evidence.
+
+_PART_RE = re.compile(r"^(?P<stem>.+)-part-(?P<i>\d+)-of-(?P<n>\d+)\.zip$")
+_MANIFEST_RE = re.compile(r"^(?P<stem>.+)-manifest\.zip$")
+
+
+def _join_json_pieces(pieces: list[dict]) -> Any:
+    """Put the pieces of one JSON document that was cut to fit a part back together (a copy of
+    ``src.analytics.upload_parts.join_json_pieces``: this script runs without the app installed,
+    and ``tests/test_analyze_keyword_log_parts.py`` holds the two to the same answers)."""
+    holder: dict[str, Any] = {}
+    for piece in pieces:
+        path, sl, value = piece["path"], piece.get("slice"), piece["value"]
+        parent: Any = holder
+        key = "root"
+        for step in path:
+            child = parent.setdefault(key, {})
+            if not isinstance(child, dict):
+                raise ValueError(f"piece path {path!r} crosses a non-object")
+            parent, key = child, step
+        if sl is not None:
+            target = parent.setdefault(key, [])
+            if not isinstance(target, list):
+                raise ValueError(f"piece at {path!r} is a list slice into a non-list")
+            if sl["from"] != len(target):
+                raise ValueError(f"slices of {path!r} do not follow each other")
+            target.extend(value)
+        elif isinstance(value, dict):
+            target = parent.setdefault(key, {})
+            if not isinstance(target, dict):
+                raise ValueError(f"piece at {path!r} is an object piece into a non-object")
+            target.update(value)
+        else:
+            parent[key] = value
+    return holder.get("root")
+
+
+def _find_set(path: Path) -> tuple[str, list[Path], Path | None] | None:
+    """``(stem, parts in order, manifest or None)`` when ``path`` is a folder holding a numbered
+    set or one of its files; ``None`` for anything else (an ordinary zip or JSON export)."""
+    if path.is_dir():
+        folder = path
+        stems: dict[str, float] = {}
+        for f in folder.iterdir():
+            m = _PART_RE.match(f.name) or _MANIFEST_RE.match(f.name)
+            if m:
+                stems[m["stem"]] = max(stems.get(m["stem"], 0.0), f.stat().st_mtime)
+        if not stems:
+            raise SystemExit(f"{path}: no numbered keyword-log parts (…-part-NN-of-MM.zip) in this folder")
+        stem = max(stems, key=lambda k: stems[k])
+        if len(stems) > 1:
+            print(f"warning: {len(stems)} sets in {path}; reading the newest, {stem}", file=sys.stderr)
+    else:
+        m = _PART_RE.match(path.name) or _MANIFEST_RE.match(path.name)
+        if not m:
+            return None
+        folder, stem = path.parent, m["stem"]
+    found = []
+    for f in folder.iterdir():
+        m = _PART_RE.match(f.name)
+        if m and m["stem"] == stem:
+            found.append((int(m["i"]), f))
+    manifest = folder / f"{stem}-manifest.zip"
+    return stem, [f for _, f in sorted(found)], manifest if manifest.is_file() else None
+
+
+def _check_set(stem: str, parts: list[Path], manifest: Path | None) -> None:
+    """Warn on stderr about parts that are missing or differ from the manifest."""
+    import hashlib
+
+    have = {f.name: f for f in parts}
+    if manifest is None:
+        n = int(_PART_RE.match(parts[0].name)["n"]) if parts else 0  # type: ignore[index]
+        if len(parts) < n:
+            print(f"warning: {stem}: {len(parts)} of {n} parts found and no manifest to check them against",
+                  file=sys.stderr)
+        return
+    try:
+        with zipfile.ZipFile(manifest) as z:
+            listed = json.loads(z.read("manifest.json"))["parts"]
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
+        print(f"warning: {manifest.name} could not be read ({exc}); parts not checked", file=sys.stderr)
+        return
+    missing = [p["name"] for p in listed if p["name"] not in have]
+    changed = []
+    for p in listed:
+        f = have.get(p["name"])
+        if f is None:
+            continue
+        if f.stat().st_size != p["bytes"] or hashlib.sha256(f.read_bytes()).hexdigest() != p["sha256"]:
+            changed.append(p["name"])
+    if missing or changed:
+        print(
+            f"warning: {stem}: {len(listed) - len(missing) - len(changed)} of {len(listed)} parts intact; "
+            f"missing {len(missing)}{(' (' + ', '.join(missing[:4]) + (', …' if len(missing) > 4 else '') + ')') if missing else ''}"
+            f"; differing from the manifest {len(changed)}"
+            f"{(' (' + ', '.join(changed[:4]) + (', …' if len(changed) > 4 else '') + ')') if changed else ''}."
+            " Reading what is there.",
+            file=sys.stderr,
+        )
+
+
+def _load_parts_log(stem: str, parts: list[Path], manifest: Path | None) -> dict[str, Any]:
+    """Reassemble a numbered set into the one in-memory doc the analyzer expects: the summary
+    (whole, or joined from its pieces) and every keyword slice, languages in name order and each
+    language's slices by position."""
+    _check_set(stem, parts, manifest)
+    doc: dict[str, Any] = {}
+    pieces: list[dict] = []
+    shards: list[tuple[str, int, list]] = []
+    for part in parts:
+        with zipfile.ZipFile(part) as z:
+            for name in z.namelist():
+                if name == "summary.json":
+                    doc = json.loads(z.read(name))
+                elif re.fullmatch(r"summary\.s\d+\.json", name):
+                    pieces.append(json.loads(z.read(name)))
+                elif name.startswith("keywords/") and name.endswith(".json"):
+                    shard = json.loads(z.read(name))
+                    lang = name[len("keywords/"):].split(".from-")[0].removesuffix(".json")
+                    shards.append((lang, int(shard.get("slice_from", 0)), shard.get("keywords", [])))
+    if pieces:
+        pieces.sort(key=lambda d: d.get("oo_part", {}).get("slice") is not None)  # shells first
+        doc = _join_json_pieces([{**d["oo_part"], "value": d["value"]} for d in pieces])
+    data = doc.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    keywords: list[dict] = []
+    for _lang, _start, recs in sorted(shards, key=lambda t: (t[0], t[1])):
+        keywords.extend(recs)
+    data["keywords"] = keywords
+    doc["data"] = data
+    doc.setdefault("kind", "keyword-diagnostics")
+    return doc
+
+
 def load_log(path: Path) -> dict[str, Any]:
+    found = _find_set(path)
+    if found is not None:
+        return _load_parts_log(*found)
     if path.suffix == ".zip" or zipfile.is_zipfile(path):
         return _load_zip_log(path)
     doc = json.loads(path.read_text(encoding="utf-8"))
@@ -850,7 +993,11 @@ def print_generic_terms(cand: dict[str, list[dict]], top: int) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("log", type=Path, help="keyword-diagnostics export (oo-export-1) JSON")
+    ap.add_argument(
+        "log", type=Path,
+        help="keyword-diagnostics export (oo-export-1) JSON, the per-language zip, or a numbered set "
+             "of 1 MB files (the folder holding it, or any one file or the manifest of it)",
+    )
     ap.add_argument("--top", type=int, default=24, help="max items per section (0 = all)")
     ap.add_argument(
         "--stoplist",

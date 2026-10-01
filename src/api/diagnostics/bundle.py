@@ -1384,6 +1384,8 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
         "attachment-sized zips, never a separate report that could disagree with it"
     ),
     "/all-job/volumes/{name}": "job control — one volume of the split bundle",
+    "/keywords/parts/{set_id}/{name}": "download — one file of a numbered keyword-log set",
+    "/keywords/parts/latest": "download — the listing of the newest numbered keyword-log set on disk",
     "/p0-validation/status": "job control", "/p0-validation/download": "job control",
     "/release-run/status": "job control", "/release-run/download": "job control",
     "/discover-world/status": "job control",
@@ -2389,7 +2391,7 @@ def _all_diagnostics_volumes_dir():
 
     Load-bearing, not tidiness: the worker sweeps old archives with a non-recursive
     ``glob("oo-all-diagnostics-*.zip")`` over the parent, and volume files are named
-    ``oo-all-diagnostics.001of003.zip``. Beside the archives they would match that glob
+    ``oo-all-diagnostics-<stamp>-part-01-of-03.zip``. Beside the archives they would match that glob
     and be deleted by the next build -- or, worse, be picked up by
     ``_newest_all_diagnostics_archive`` and served as if one volume were the bundle.
     """
@@ -2421,7 +2423,13 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
     with _ALL_DIAG_VOLUMES_LOCK:
         with contextlib.suppress(Exception):
             current = dvol.load_manifest(out)
-            if current.get("source") == src.name and dvol.verify_volume_set(out)["ok"]:
+            # The cap is part of what makes it "the current set": one built under another cap
+            # (OO_DIAG_VOLUME_MAX_MB changed, or the 9 MiB default this replaced) is rebuilt.
+            if (
+                current.get("source") == src.name
+                and current.get("volume_max_bytes") == dvol.volume_max_bytes()
+                and dvol.verify_volume_set(out)["ok"]
+            ):
                 return current
         for stale in out.iterdir():
             with contextlib.suppress(OSError):
@@ -2477,14 +2485,27 @@ def all_diagnostics_volumes() -> JSONResponse:
         manifest = _ensure_volume_set(src)
     except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500
         raise HTTPException(status_code=500, detail=f"could not split the archive: {exc}") from exc
-    return JSONResponse(manifest)
+    # The same listing shape as a numbered keyword set (``files`` + ``download_base``), so the one
+    # page routine that saves five files per click serves both; the manifest's own fields stay.
+    files = [
+        {"name": f["name"], "bytes": f["bytes"], "sha256": f["sha256"], "kind": "manifest"}
+        for f in manifest.get("manifest_files", [])
+    ] + [
+        {"name": v["name"], "bytes": v["bytes"], "sha256": v["sha256"], "kind": "part"}
+        for v in manifest["volumes"]
+    ]
+    return JSONResponse({
+        **manifest, "files": files, "part_count": manifest["volume_count"],
+        "part_max_bytes": manifest["volume_max_bytes"],
+        "download_base": "/api/diagnostics/all-job/volumes/",
+    })
 
 
 @router.get("/all-job/volumes/{name}")
 def all_diagnostics_volume_download(name: str) -> FileResponse:
-    """Serve ONE volume of the current set by name.
+    """Serve ONE file of the current set by name: a volume, or the manifest zip that lists them.
 
-    The name is resolved against the MANIFEST's volume list rather than against the
+    The name is resolved against the MANIFEST's own list rather than against the
     filesystem, so a caller cannot reach a path the set does not name -- no traversal,
     and no serving of a leftover file that happens to sit in the directory.
     """
@@ -2498,8 +2519,11 @@ def all_diagnostics_volume_download(name: str) -> FileResponse:
             status_code=404,
             detail="no volume set is ready — call GET /api/diagnostics/all-job/volumes first",
         ) from exc
-    if name not in {v["name"] for v in manifest["volumes"]}:
-        raise HTTPException(status_code=404, detail=f"{name!r} is not a volume of this set")
+    named = {v["name"] for v in manifest["volumes"]} | {
+        f["name"] for f in manifest.get("manifest_files", [])
+    }
+    if name not in named:
+        raise HTTPException(status_code=404, detail=f"{name!r} is not a file of this set")
     path = out / name
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"{name!r} is missing from the volume set")

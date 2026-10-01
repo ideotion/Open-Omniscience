@@ -839,28 +839,176 @@
     // reports one, and the advice is true at that moment: the job is still registered and
     // RUNNING, so /api/jobs lists it and the task manager shows its live progress.
     const _ALL_DIAG_POLL_CEILING_MS = 6 * 60 * 60 * 1000;
-    // THE ARCHIVE IN PIECES (field session 2026-09-11). The bundle exists to carry
-    // evidence from the operator to whoever is diagnosing, and it had outgrown the
-    // channel: neither the archive nor its largest single log would upload. This splits
-    // the ALREADY-BUILT archive into attachment-sized zips that each open on their own.
+    // NUMBERED FILE SETS, FIVE TO A CLICK (maintainer-asked 2026-10-01: «cap the size of each zip
+    // to 1MB (same for diagnostics), by splitting and numbering the files adequately»).
     //
-    // It deliberately does NOT start a build. "Split" and "spend the next few hours
-    // rebuilding" are different asks, and a button that quietly did the second when the
-    // operator meant the first would be the worst moment to surprise them -- they are
-    // already trying to report a problem. With no archive built, it says so and names
-    // the button that builds one.
-    async function downloadDiagnosticsVolumes(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      // TEMPLATES, not concatenated fragments. "Downloading " + n + " pieces" bakes
-      // English word order into a string no translator can fix; the frame translates
-      // and the count substitutes into it (the same discipline as everywhere else).
+    // WHY THESE NUMBERS. The maintainer's uploads take FIVE files per message and fail from about
+    // 1.2 MB a file, so every set is files of at most 1,000,000 bytes (the server's
+    // UPLOAD_PART_BYTES), each opening on its own, and the page saves them five to a click: a
+    // click is what makes a browser treat a download as user-started (the build that produced the
+    // set was asynchronous and had already spent the click that started it), and five is what one
+    // message takes. The set can be hundreds of files, so there is deliberately NO background
+    // loop of hundreds: "Save all the rest" is one explicit click for a person who wants it.
+    // The MANIFEST is saved first (it names every file with its size and SHA-256), and a typed
+    // part number restarts from there, e.g. after a few files failed to upload.
+    const _PARTS_PER_CLICK = 5;
+    let _partsSet = null;   // {files, base, pos, mcount, pcount, shown}: the set the bar is offering
+
+    // The manifest first, then the numbered parts in order (the listing carries both kinds).
+    function _partsFiles(listing) {
+      const all = (listing && listing.files) || [];
+      return all.filter((f) => f.kind === "manifest").concat(all.filter((f) => f.kind !== "manifest"));
+    }
+
+    // What the next click saves: files [from, to) of the set, `count` of them, clamped.
+    function _partsWindow(total, pos, count) {
+      const from = Math.max(0, Math.min(pos, total));
+      return {from, to: Math.min(total, from + Math.max(0, count))};
+    }
+
+    // The label of the Save button: what ONE click will do from here.
+    function _partsNextLabel(total, pos) {
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
-      const el = $("all-diag-status");
-      const set = (msg) => { if (el) el.textContent = msg; };
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const n = Math.min(_PARTS_PER_CLICK, total - pos);
+      if (pos === 0 && total <= _PARTS_PER_CLICK) return tf("Save all {n} files", {n});
+      if (pos === 0) return tf("Save the first {n}", {n});
+      if (total - pos <= _PARTS_PER_CLICK) return tf("Save the last {n}", {n});
+      return tf("Save the next {n}", {n});
+    }
+
+    function _partsStatus(msg) {
+      const bar = $("parts-bar"), el = $("parts-status");
+      if (bar) bar.hidden = false;
+      if (el) el.textContent = msg;
+    }
+
+    function _partsRender() {
+      const set = _partsSet;
+      const next = $("parts-next"), rest = $("parts-rest"), from = $("parts-from"), box = $("parts-from-wrap");
+      const left = set ? set.files.length - set.pos : 0;
+      if (next) { next.hidden = left <= 0; if (set) next.textContent = _partsNextLabel(set.files.length, set.pos); }
+      if (rest) rest.hidden = left <= _PARTS_PER_CLICK;
+      if (box) box.hidden = !set || set.pcount < 2;
+      if (from && set) { from.value = String(Math.max(1, set.pos - set.mcount + 1)); set.shown = from.value; }
+    }
+
+    function _partsOffer(listing) {
+      const files = _partsFiles(listing);
+      const pcount = files.filter((f) => f.kind !== "manifest").length;
+      _partsSet = {files, base: listing.download_base, pos: 0, mcount: files.length - pcount, pcount};
+      _partsRender();
+      return _partsSet;
+    }
+
+    async function _partsSave(count) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const set = _partsSet;
+      if (!set) return;
+      const typed = $("parts-from");
+      const want = typed ? parseInt(typed.value, 10) : NaN;
+      // A part number TYPED in the box (one that differs from what the page last wrote there)
+      // moves the position; the manifest is not saved again.
+      if (typed && typed.value !== set.shown && isFinite(want) && want >= 1) {
+        set.pos = Math.min(set.files.length, set.mcount + want - 1);
+      }
+      const win = _partsWindow(set.files.length, set.pos, count);
+      for (let i = win.from; i < win.to; i++) {
+        const f = set.files[i];
+        const a = document.createElement("a");
+        a.href = set.base + encodeURIComponent(f.name);
+        a.download = f.name;
+        a.hidden = true;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Staggered: a browser drops concurrent downloads opened in one tick, and a silently
+        // missing file is exactly the incomplete set this exists to avoid handing someone.
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      set.pos = win.to;
+      _partsRender();
+      if (set.pos >= set.files.length) {
+        _partsStatus(tf("All {n} files saved. Send them all together: the manifest lists every file with its size and checksum.",
+                        {n: set.files.length}));
+      } else {
+        _partsStatus(tf("Saved {done} of {n} files.", {done: set.pos, n: set.files.length}));
+      }
+    }
+
+    function partsSaveNext() { return _partsSave(_PARTS_PER_CLICK); }
+    function partsSaveRest() { return _partsSave(_partsSet ? _partsSet.files.length : 0); }
+
+    // The set is ready: say how many files, and wait for the click that saves the first five.
+    function _partsReady(listing) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const set = _partsOffer(listing);
+      _partsStatus(tf("{n} files of at most 1 MB each are ready: the manifest and {parts} numbered parts.",
+                      {n: set.files.length, parts: set.pcount})
+        + " " + t("Your browser may ask once to allow several downloads: allow them."));
+      return set;
+    }
+
+    // The keyword log as numbered files. mode: "default" (top 5,000 per language, aims under 9 MB
+    // in all), "all" (every keyword, no total cap) or "again" (the newest set still on this
+    // machine, saved again without rebuilding it, starting at the typed part number).
+    async function downloadKeywordParts(btn, mode) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const urls = {
+        "default": "/api/diagnostics/keywords?format=parts",
+        "all": "/api/diagnostics/keywords?format=parts&per_lang=1000000000&max_mb=0",
+        "again": "/api/diagnostics/keywords/parts/latest",
+      };
+      if (!urls[mode]) return;
       if (btn) btn.disabled = true;
-      set(t("Splitting the archive…"));
+      _partsSet = null;
+      _partsRender();
+      _partsStatus(mode === "again" ? t("Looking for the last keyword files…")
+        : t("Building the numbered keyword files… a large corpus takes minutes; the app stays usable."));
+      try {
+        let listing;
+        try {
+          listing = await api(urls[mode]);
+        } catch (e) {
+          const why = (e && (e.detail || e.message)) || t("unknown error");
+          _partsStatus(e && e.status === 404 && mode === "again"
+            ? t("No keyword files are kept on this machine yet — build them with one of the keyword buttons.")
+            : tf("Could not build the keyword files: {why}", {why}));
+          return;
+        }
+        if (mode === "again") {
+          _partsOffer(listing);
+          await _partsSave(_PARTS_PER_CLICK);   // the click that asked is still alive
+        } else {
+          _partsReady(listing);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // THE ARCHIVE AS NUMBERED FILES, AGAIN (field session 2026-09-11, reshaped 2026-10-01).
+    // It splits the ALREADY-BUILT archive into files of at most 1 MB that each open on their own
+    // and saves them from the typed part number on. It deliberately does NOT start a build:
+    // "send it again" and "spend the next few hours rebuilding" are different asks, and a button
+    // that quietly did the second when the operator meant the first would be the worst moment to
+    // surprise them -- they are already trying to report a problem. With no archive built, it
+    // says so and names the button that builds one.
+    async function downloadDiagnosticsVolumes(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // TEMPLATES, not concatenated fragments (the frame translates, the value substitutes).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      if (btn) btn.disabled = true;
+      _partsSet = null;
+      _partsRender();
+      _partsStatus(t("Splitting the archive…"));
       try {
         let m;
         try {
@@ -874,30 +1022,20 @@
           const status = e && e.status;
           const why = (e && (e.detail || e.message)) || t("unknown error");
           if (status === 404) {
-            set(t("No archive to split yet — build one with the All diagnostics button first."));
+            _partsStatus(t("No archive to split yet — build one with the All diagnostics button first."));
           } else if (status === 409) {
-            set(t("A build is running — wait for it, then split the archive it produces."));
+            _partsStatus(t("A build is running — wait for it, then split the archive it produces."));
           } else {
-            set(tf("Could not split the archive: {why}", { why }));
+            _partsStatus(tf("Could not split the archive: {why}", { why }));
           }
           return;
         }
-        const vols = (m && m.volumes) || [];
-        if (!vols.length) {
-          set(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
+        if (!((m && m.files) || []).length) {
+          _partsStatus(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
           return;
         }
-        const split = ((m && m.split_members) || []).length;
-        set(tf("Downloading {n} pieces…", { n: vols.length })
-            + (split ? " · " + t("one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them") : ""));
-        for (const v of vols) {
-          window.open("/api/diagnostics/all-job/volumes/" + encodeURIComponent(v.name), "_blank");
-          // Staggered: a browser drops concurrent downloads opened in one tick, and a
-          // silently missing volume is exactly the incomplete set this feature exists
-          // to avoid handing someone.
-          await sleep(400);
-        }
-        set(tf("Sent {n} pieces — send them all together.", { n: vols.length }));
+        _partsOffer(m);
+        await _partsSave(_PARTS_PER_CLICK);   // the click that asked is still alive
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -905,6 +1043,8 @@
 
     async function runAllDiagnostics(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const el = $("all-diag-status");
       const set = (msg) => { if (el) el.textContent = msg; };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -938,10 +1078,18 @@
           }
           const state = s && s.state;
           if (state === "done" && s.ready) {
-            const sz = s.download_bytes ? " · " + _fmtBytes(s.download_bytes) : "";
-            set(t("Ready — downloading…") + sz);
-            window.open("/api/diagnostics/all-job/download", "_blank");
+            // The build is done: offer it as numbered files of at most 1 MB (five to a click),
+            // not as one download. The single archive is still served by /all-job/download for
+            // API callers; the page no longer hands a person one big file.
             settled = true;
+            set(t("Ready — preparing the numbered files…"));
+            try {
+              const m = await api("/api/diagnostics/all-job/volumes");
+              set("");
+              _partsReady(m);
+            } catch (e) {
+              set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
+            }
             break;
           }
           if (state === "error") { settled = true; set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
 from datetime import datetime
@@ -30,6 +31,7 @@ from src.analytics import queries as q
 from src.analytics.families import build_families
 from src.analytics.keyword_log_export import (
     MIN_ENTRY_BYTES,
+    PARTS_DIR_PREFIX,
     ZipHooks,
     ZipJob,
     batched,
@@ -39,9 +41,11 @@ from src.analytics.keyword_log_export import (
     export_dir,
     fetch_meta,
     fetch_signatures,
+    finish_parts,
     finish_zip,
     fit_window,
     resolve_max_bytes,
+    retire_old_parts_sets,
     sweep_stale_scratch,
     unlink_quietly,
     zip_disk_preflight,
@@ -58,6 +62,7 @@ from src.analytics.keyword_log_scan import (
     order_key,
     scan_keywords,
 )
+from src.analytics.upload_parts import sha256_file
 from src.database.maintenance import (
     StatementTimeout,
     raise_if_memory_short,
@@ -367,6 +372,54 @@ def _keyword_zip(
     )
 
 
+#: Next to the set's files: what the page was told (names, sizes, checksums), so a part is served
+#: only if the set names it. A caller never supplies a path.
+_SET_LISTING = "set.json"
+
+_PARTS_SET_RE = re.compile(re.escape(PARTS_DIR_PREFIX) + r"[A-Za-z0-9._-]+")
+
+
+def _parts_root() -> Path:
+    """Where sets of parts are kept: the export's scratch folder, else the OS temp folder (the
+    same fallback the archive itself uses when there is no data folder)."""
+    return export_dir() or Path(tempfile.gettempdir())
+
+
+def _keyword_parts(
+    *, job: ZipJob, keep: dict[str, int], omitted: dict[str, int] | None, scratch_dir: Path
+) -> Response:
+    """Build the export as a numbered set of parts of at most 1,000,000 bytes (see
+    ``finish_parts``) and answer with the listing the page downloads from: every file's name,
+    size and SHA-256 and the URL base. The files stay until the next build retires them."""
+    stem = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    set_dir, manifest = finish_parts(job, keep, omitted, scratch_dir=scratch_dir, stem=stem)
+    files = [
+        {"name": p["name"], "bytes": p["bytes"], "sha256": p["sha256"], "kind": "part"}
+        for p in manifest["parts"]
+    ]
+    for name in manifest["manifest_files"]:
+        f = set_dir / name
+        files.append({
+            "name": name, "bytes": f.stat().st_size, "sha256": sha256_file(f), "kind": "manifest",
+        })
+    listing = {
+        "set": set_dir.name,
+        "stem": stem,
+        "part_count": manifest["part_count"],
+        "part_max_bytes": manifest["part_max_bytes"],
+        "total_bytes": sum(f["bytes"] for f in files),
+        "files": files,
+        "download_base": f"/api/diagnostics/keywords/parts/{set_dir.name}/",
+        "note": (
+            "Save every file listed, the manifest last: each part opens on its own, and the "
+            "manifest lists every part with its size and SHA-256 so a set can be confirmed "
+            "complete."
+        ),
+    }
+    (set_dir / _SET_LISTING).write_text(json.dumps(listing), encoding="utf-8")
+    return JSONResponse(listing)
+
+
 class _ScratchFileResponse(FileResponse):
     """A file response that deletes its scratch file however the exchange ends.
 
@@ -425,11 +478,14 @@ def keyword_log(
         "json",
         alias="format",
         description=(
-            "'json' (default — the full single-file stream, byte-for-byte unchanged) "
-            "or 'zip' — a per-language split archive (summary.json + keywords/<lang>.json "
+            "'json' (default — the full single-file stream, byte-for-byte unchanged), "
+            "'zip' — a per-language split archive (summary.json + keywords/<lang>.json "
             "+ manifest.json) that by default aims under 9 MB, so it fits a typical "
-            "attachment limit (`max_mb=0` lifts the cap). The recommended share format: "
-            "every keyword, no huge single blob."
+            "attachment limit (`max_mb=0` lifts the cap), or 'parts' — the same export as a "
+            "NUMBERED SET of zips of at most 1,000,000 bytes each, every one valid on its own, "
+            "with a manifest listing each part's size and SHA-256 (the answer is that "
+            "listing; each file is served from /keywords/parts/<set>/<name>). `max_mb` still "
+            "bounds the TOTAL when given; `0` is every keyword, as many parts as that takes."
         ),
     ),
     per_lang: int = Query(
@@ -503,6 +559,8 @@ def keyword_log(
     check_every = 2_000
 
     plan = memory_plan(available_bytes_now())
+    # One archive ("zip") or a numbered set of small ones ("parts"): the same scan and window.
+    archive = fmt in ("zip", "parts")
     max_bytes = resolve_max_bytes(fmt, max_mb, _keyword_zip_max_bytes())
     out_dir = export_dir()
     # Where the ranking spills when it must: the data folder, else the OS temp folder, never
@@ -534,8 +592,8 @@ def keyword_log(
             # _MAX_KEYWORDS_PER_LANG cap (lo=0); the ZIP path can raise per_lang and
             # page through the WHOLE corpus in digestible chunks (maintainer 2026-06-21:
             # "export more keywords — there were 200k+").
-            eff_per_lang = per_lang if fmt == "zip" else _MAX_KEYWORDS_PER_LANG
-            lo = (page - 1) * eff_per_lang if fmt == "zip" else 0
+            eff_per_lang = per_lang if archive else _MAX_KEYWORDS_PER_LANG
+            lo = (page - 1) * eff_per_lang if archive else 0
             hi = asked_hi = lo + eff_per_lang
             if max_bytes is not None:
                 # A capped archive can never hold more than the cap allows at the smallest
@@ -660,7 +718,7 @@ def keyword_log(
                 "200 — flagged with real counts, never auto-hidden. No scores, no inference."
             )
 
-            if fmt == "zip":
+            if archive:
                 exported = sum(ranker.taken(lg) for lg in languages)
                 # The per-language taken counts, in the order each language FIRST appears in
                 # the global survivor order (what the dict has always looked like).
@@ -694,7 +752,11 @@ def keyword_log(
                 basis_c = fit_window(
                     {lg: ranker.taken(lg) for lg in languages}, plan["family_rows"]
                 )
-                # Refuse an archive the drive cannot take BEFORE writing any of it.
+                # Refuse an archive the drive cannot take BEFORE writing any of it. A numbered set
+                # replaces the previous one, so the old set is retired first and the room it held
+                # counts as free (a set built in the last few minutes stays, see _PARTS_GRACE_S).
+                if fmt == "parts":
+                    retire_old_parts_sets(scratch_dir)
                 zip_disk_preflight(scratch_dir, exported, max_bytes)
                 job = ZipJob(
                     hooks=_ZIP_HOOKS,
@@ -709,11 +771,12 @@ def keyword_log(
                     disk_watch=disk_watch_for(scratch_dir), window_note=window_note,
                     basis_per_language=basis_c, basis_budget_rows=plan["family_rows"],
                 )
-                return _keyword_zip(
-                    job=job,
-                    keep={lg: ranker.taken(lg) for lg in languages},
-                    omitted=clamp_omitted,
-                )
+                keep_now = {lg: ranker.taken(lg) for lg in languages}
+                if fmt == "parts":
+                    return _keyword_parts(
+                        job=job, keep=keep_now, omitted=clamp_omitted, scratch_dir=scratch_dir,
+                    )
+                return _keyword_zip(job=job, keep=keep_now, omitted=clamp_omitted)
 
             # ---- json / digest: the window is at most _MAX_KEYWORDS_PER_LANG per language,
             # so the survivors (and what is needed to describe them) are bounded by the
