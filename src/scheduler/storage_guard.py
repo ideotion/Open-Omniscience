@@ -138,10 +138,11 @@ and the step that ends an override (``observe``) take no pooled connection, so n
 setting can leave the floor unread (pinned by a test that makes every connection request fail).
 So the gap between two readings is 5 s plus the reading. At 1.4 MB/s of log growth, the figure the
 sampling comment below uses (its original source is not in the repo; the nearest measured one is
-instance 090243's 2026-09-30 diagnostics, 1.48 to 25.41 GB in five hours = 4.8 GB/h, about
-1.3 MB/s, kept in the project files), 5 s is about 7 MB: 5% of the smallest floor (128 MiB) and
-less of any larger one; that rate is the log's growth, not everything a pass writes. What is NOT covered: a drive that does not answer a
-statvfs stalls the reading itself, and the floor reserves room to write the log back and finish a
+instance 090243's 2026-09-30 diagnostics, 1.48 to 25.41 GB in five hours = 4.8 GB/h = 1.33 MB/s,
+the mean of five hours that ranged 0.83 to 1.87 MB/s, kept in the project files), 5 s is about
+7 MB: 5% of the smallest floor (128 MiB), and 9.4 MB, 7%, at that peak hour; less of any larger
+floor. That rate is the log's growth, not everything a pass writes. What is NOT covered: a drive
+that does not answer a statvfs stalls the reading itself, and the floor reserves room to write the log back and finish a
 write, NOT the pass tail written after a withdrawal (a measured tail is what would size that, and
 it is not a fixed number). The write error above is the last net and it does not wait for a
 reading.
@@ -588,6 +589,7 @@ class StorageGuard:
             self._history.clear()
             self._last_hist_mono = None
             self._last_drain = self._last_drain_mono = None
+            self._drain_inflight = False
             self._last_pin_report = self._last_pin_mono = None
             self._override = self._withdrawn = None
             self._overrides = 0
@@ -1075,7 +1077,7 @@ class StorageGuard:
         also gives its disk back), at most every :data:`DRAIN_EVERY_S`; name the holders when
         TRUNCATE is busy.
 
-        Returns the drain record when one ran. Never while an exclusive operation owns the
+        Returns the drain record when one ran (``{"error": <type>}`` for one that failed). Never while an exclusive operation owns the
         machine (an import, a restore's swap: the drain opens connections to the live corpus
         and must not do so between a restore's dispose and its replace), and under a corpus
         lease, so a restore that starts during a drain waits for it. At most one drain runs at a
@@ -1111,18 +1113,16 @@ class StorageGuard:
                 self._drain_inflight = False
 
     def _run_drain(self, now_mono: float) -> dict | None:
-        """The drain a caller has claimed (:meth:`drain_if_due`): stamp, lease, checkpoint,
-        record and the pin report. ``_drain_inflight`` is the caller's to release."""
+        """The drain a caller has claimed (:meth:`drain_if_due`): lease, checkpoint, the stamp
+        when it ends, record and the pin report. ``_drain_inflight`` is the caller's to release."""
         from src.database.corpus_lease import corpus_lease
 
-        with self._lock:
-            self._last_drain_mono = now_mono  # claimed before it runs: no second drain starts
         try:
             with corpus_lease("storage-guard-drain"):
                 rec = self._drain()
-        except Exception:  # noqa: BLE001 - the drain must never kill the supervisor
-            _LOG.debug("storage guard: drain failed", exc_info=True)
-            rec = None
+        except Exception as exc:  # noqa: BLE001 - the drain must never kill the supervisor
+            _LOG.warning("storage guard: the drain failed", exc_info=True)
+            rec = {"error": type(exc).__name__}
         # Paced from when the drain ENDED: one that queued 30 s on the write gate must not be
         # followed five seconds later by the next, the permanent waiter this cadence exists to
         # prevent.
@@ -1403,11 +1403,17 @@ storage_guard = StorageGuard()
 #: How often the supervisor samples the drive. File sizes and a statvfs: cheap enough that
 #: five seconds is not a cost, and short enough that a WAL growing at 1.4 MB/s moves under 10 MB
 #: between samples (the figure's original source is not in the repo; the nearest measured one is
-#: instance 090243's 2026-09-30 diagnostics: 4.8 GB in an hour, about 1.3 MB/s, kept in the project
-#: files). The drain never delays a sample: it runs on its own thread (``_supervise``).
+#: instance 090243's 2026-09-30 diagnostics: 4.8 GB an hour (the mean of five), 1.33 MB/s, 1.87 MB/s in
+#: its peak hour, kept in the project files). The drain never delays a sample: it runs on its own thread
+#: (``_supervise``).
 POLL_EVERY_S = 5.0
 
-#: How long ``stop()`` waits, in all, for the supervisor and its drain thread to end.
+#: How long ``stop()`` waits, in all, for the supervisor and its drain thread to end. It protects shutdown
+#: from two opposite harms: hanging on a drain that is waiting for a pooled connection or the write gate
+#: (up to ``OO_DB_POOL_TIMEOUT`` plus ``DRAIN_GATE_TIMEOUT_S``, or minutes for an operator's setting), and
+#: disposing the engine under a checkpoint that would have finished in milliseconds. A checkpoint of a
+#: small log ends well inside it; a big one is abandoned (crash-safe: the next open recovers the log).
+#: Two seconds is chosen, not measured.
 STOP_JOIN_S = 2.0
 
 _THREAD: threading.Thread | None = None
@@ -1422,7 +1428,7 @@ def _drain_in_background(g: StorageGuard, stop: threading.Event) -> None:
     try:
         g.drain_if_due()
     except Exception:  # noqa: BLE001 - the drain must never kill anything but itself
-        _LOG.debug("storage guard: background drain failed", exc_info=True)
+        _LOG.warning("storage guard: the background drain failed", exc_info=True)
 
 
 def _supervise(stop: threading.Event) -> None:
@@ -1439,7 +1445,7 @@ def _supervise(stop: threading.Event) -> None:
                 # connection before the write gate (a wait ``OO_DB_POOL_TIMEOUT`` sets, which an
                 # operator may raise to minutes), then queues on the gate, then runs a checkpoint.
                 # Run inline, any of the three would leave the override's floor unread.
-                if g.engaged and (drain is None or not drain.is_alive()):
+                if g.engaged and not stop.is_set() and (drain is None or not drain.is_alive()):
                     drain = threading.Thread(
                         target=_drain_in_background, args=(g, stop), name="oo-storage-guard-drain", daemon=True
                     )

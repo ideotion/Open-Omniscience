@@ -361,8 +361,8 @@ def test_a_drain_that_raises_never_kills_the_supervisor():
 
     g = _guard(drain_fn=boom)
     _feed(g, wal=2 * GIB, n=2)
-    assert g.drain_if_due() is None
-    assert g.state()["last_drain"]["ran"] is False
+    assert g.drain_if_due() == {"error": "RuntimeError"}, "its own outcome, not None (\"not due\")"
+    assert g.state()["last_drain"]["ran"] is False and g.state()["last_drain"]["error"] == "RuntimeError"
 
 
 def test_the_drain_never_runs_while_an_exclusive_operation_owns_the_machine(monkeypatch):
@@ -1498,6 +1498,7 @@ def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypat
     connection is held (the wait ``raw_connection()`` makes)."""
     from sqlalchemy.pool import QueuePool
 
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)  # the real supervisor sets it
     g = _engaged("wal")
     started: list[int] = []
     polls: list[int] = []
@@ -1577,7 +1578,7 @@ def test_the_reading_and_the_step_that_ends_an_override_take_no_pooled_connectio
     real = _guard(readings_fn=storage_guard.read_storage)
     real.poll()
     assert asked == [], "the guard's own reading takes no connection"
-    assert set(storage_guard.read_storage()) >= {"wal_bytes", "disk_free_bytes"}
+    assert storage_guard.read_storage()["disk_free_bytes"] is not None, "the real reading read something"
 
     g = _overridable(wal=20 * GIB, free=100 * GIB)
     assert g.override(reason="test")["overridden"] is True
@@ -1707,6 +1708,219 @@ def test_a_drain_that_failed_is_recorded_as_its_own_outcome_not_as_not_due(monke
     last = g.state()["last_drain"]
     assert last["error"] == "TimeoutError" and last["ran"] is False and last["skipped"] is None
     assert last["checkpoint_disabled"] is False
+
+
+def test_a_drain_that_raised_outside_the_checkpoint_is_recorded_as_its_own_outcome_and_the_flag_is_released(caplog):
+    """A custom drain, or anything between the claim and the checkpoint, may raise: the record
+    says so (``error``, ``ran`` False) rather than reading as "not due", it is logged at WARNING
+    (degrade loudly), and the in-flight flag is released so the next drain can run."""
+    import logging
+
+    g = _overridable()
+
+    def broken():
+        raise ValueError("the drain broke")
+
+    g._drain = broken
+    with caplog.at_level(logging.WARNING, logger="scheduler.storage_guard"):
+        assert g.drain_if_due() == {"error": "ValueError"}
+    assert any(r.levelno == logging.WARNING and "the drain failed" in r.getMessage() for r in caplog.records)
+    last = g.state()["last_drain"]
+    assert last["error"] == "ValueError" and last["ran"] is False
+    g._last_drain_mono = None
+    g._drain = lambda: {"busy": 0}
+    assert g.drain_if_due() == {"busy": 0}, "the in-flight flag was released after the failure"
+
+
+def test_an_exception_that_escapes_the_background_drain_is_logged_at_warning(monkeypatch, caplog):
+    import logging
+
+    g = _engaged("wal")
+
+    def boom():
+        raise RuntimeError("outside the drain")
+
+    monkeypatch.setattr(g, "drain_if_due", boom)
+    with caplog.at_level(logging.WARNING, logger="scheduler.storage_guard"):
+        storage_guard._drain_in_background(g, threading.Event())  # must not raise
+    assert any(r.levelno == logging.WARNING and "background drain failed" in r.getMessage() for r in caplog.records)
+
+
+def test_the_supervisor_starts_no_drain_thread_once_it_is_stopped(monkeypatch):
+    """A supervisor that outlives ``stop()`` must not start a drain thread (it would overwrite
+    ``_DRAIN_THREAD``, and the next ``stop()`` would not join the live one)."""
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)
+    g = _engaged("wal")
+    stop = threading.Event()
+    real_poll = g.poll
+    g.poll = lambda: (stop.set(), real_poll())[1]  # stopped during the tick
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    storage_guard._supervise(stop)  # one tick, then the loop ends
+    assert storage_guard._DRAIN_THREAD is None, "no drain thread was started after the stop"
+
+
+def _run_the_real_supervisor(monkeypatch, g):
+    """Start the REAL supervisor (``storage_guard.start()``) on the guard ``g``, quickly."""
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(storage_guard, "POLL_EVERY_S", 0.02)
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)
+    monkeypatch.setattr(storage_guard, "_STOP", threading.Event())
+    assert storage_guard.start() is True
+
+
+def test_stop_waits_for_the_drain_the_real_supervisor_started(monkeypatch):
+    """The wait at shutdown (the engine is disposed right after) is only worth anything if the
+    supervisor registers the thread it starts: the stop/join test above sets ``_DRAIN_THREAD``
+    itself, so it proves ``stop()`` joins what is in the variable, not that ``_supervise`` puts
+    the drain there."""
+    g = _engaged("wal")
+    started = threading.Event()
+    done = threading.Event()
+
+    def drain():
+        started.set()
+        time.sleep(0.5)
+        done.set()
+        return {"busy": 0}
+
+    g._drain = drain
+    _run_the_real_supervisor(monkeypatch, g)
+    try:
+        assert started.wait(10), "the supervisor started the drain"
+        storage_guard.stop()
+        assert done.is_set(), "stop() returned while the drain it had to wait for was still running"
+    finally:
+        done.wait(10)
+        storage_guard.stop()
+
+
+def test_the_drain_thread_is_a_daemon_so_a_stuck_drain_cannot_keep_the_process_alive(monkeypatch):
+    """A drain that waits for a pooled connection or the write gate for minutes is abandoned at
+    exit (stated in the module docstring): that holds only while its thread is a daemon."""
+    g = _engaged("wal")
+    started = threading.Event()
+    release = threading.Event()
+
+    def drain():
+        started.set()
+        release.wait(20)
+        return {"busy": 0}
+
+    g._drain = drain
+    _run_the_real_supervisor(monkeypatch, g)
+    try:
+        assert started.wait(10)
+        threads = [t for t in threading.enumerate() if t.name == "oo-storage-guard-drain"]
+        assert threads and all(t.daemon for t in threads)
+    finally:
+        release.set()
+        storage_guard.stop()
+
+
+def test_the_in_flight_flag_is_claimed_under_the_lock_that_made_the_cadence_checks():
+    """A guard lock that yields right after it is released lets a second caller in before any
+    statement that follows the check-and-claim block: the flag must already be set by then, or
+    two drains run (and each holds a pooled connection and a corpus lease)."""
+    running = [0]
+    most = [0]
+    started = [0]
+    mu = threading.Lock()
+
+    def drain():
+        with mu:
+            running[0] += 1
+            started[0] += 1
+            most[0] = max(most[0], running[0])
+        time.sleep(0.3)
+        with mu:
+            running[0] -= 1
+        return {"busy": 0}
+
+    class YieldingLock:
+        def __init__(self):
+            self._l = threading.Lock()
+
+        def __enter__(self):
+            self._l.acquire()
+
+        def __exit__(self, *exc):
+            self._l.release()
+            if threading.current_thread().name == "A":
+                time.sleep(0.03)  # A yields right after it let go of the lock
+
+    g = _engaged("wal")
+    g._drain = drain
+    g._lock = YieldingLock()
+    a = threading.Thread(target=g.drain_if_due, name="A")
+    b = threading.Thread(target=g.drain_if_due, name="B")
+    a.start()
+    time.sleep(0.01)
+    b.start()
+    a.join(10)
+    b.join(10)
+    assert started[0] == 1 and most[0] == 1, "a second drain started between the checks and the claim"
+
+
+def test_stop_waits_for_both_threads_within_one_budget_not_one_budget_each(monkeypatch):
+    """A supervisor stuck in its reading AND a drain stuck on the pool or the gate cost
+    ``STOP_JOIN_S`` in all: shutdown must not wait twice that."""
+    release = threading.Event()
+    sup = threading.Thread(target=lambda: release.wait(20), daemon=True)
+    drn = threading.Thread(target=lambda: release.wait(20), daemon=True)
+    sup.start()
+    drn.start()
+    monkeypatch.setattr(storage_guard, "_STOP", threading.Event())
+    monkeypatch.setattr(storage_guard, "_THREAD", sup)
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", drn)
+    monkeypatch.setattr(storage_guard, "STOP_JOIN_S", 0.5)
+    t0 = time.monotonic()
+    try:
+        storage_guard.stop()
+        elapsed = time.monotonic() - t0
+        assert 0.4 <= elapsed < 0.9, f"stop() took {elapsed:.2f} s for a 0.5 s budget in all"
+    finally:
+        release.set()
+        sup.join(5)
+        drn.join(5)
+
+
+def test_the_shutdown_wait_neither_skips_the_drain_nor_hangs_on_it():
+    """The real constant, not the shrunk one the tests above use: a checkpoint of a small log must
+    have room to finish (a millisecond-short wait disposes the engine under it), and a drain
+    waiting for the pool or the write gate must not hold shutdown for more than a few seconds."""
+    assert 1.0 <= storage_guard.STOP_JOIN_S <= 5.0
+
+
+def test_the_supervisor_starts_a_drain_thread_only_while_a_latch_is_engaged(monkeypatch):
+    """A healthy guard has no drain to run: a thread started every tick for nothing would last as
+    long as the app does."""
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)
+    fake = {"wal_bytes": 0, "disk_free_bytes": _FREE_OK}
+    g = _guard(
+        readings_fn=lambda: {"corpus_bytes": _CORPUS, "disk_total_bytes": _TOTAL, "lane_wal_bytes": {}, **fake}
+    )
+    g.poll()
+    assert not g.engaged
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(storage_guard, "POLL_EVERY_S", 0.01)
+    stop = threading.Event()
+    sup = threading.Thread(target=storage_guard._supervise, args=(stop,), daemon=True)
+    sup.start()
+    try:
+        time.sleep(0.2)  # about twenty ticks
+        assert storage_guard._DRAIN_THREAD is None, "a drain thread was started with nothing engaged"
+        assert not any(t.name == "oo-storage-guard-drain" for t in threading.enumerate())
+    finally:
+        stop.set()
+        sup.join(5)
+
+
+def test_the_test_reset_also_clears_the_in_flight_flag():
+    g = _engaged("wal")
+    g._drain_inflight = True  # a test that abandoned a stuck drain
+    g._reset_for_tests()
+    assert g._drain_inflight is False
 
 
 def test_an_override_does_not_stop_the_drain_and_the_drain_ends_the_cause():

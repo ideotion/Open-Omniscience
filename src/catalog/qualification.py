@@ -584,6 +584,201 @@ def select_due_qualified(
     return due
 
 
+# THE FORCED RE-CHECK LIST (PR 3 of the rank 14 fix, 2026-10-01). A source whose live verdict was
+# MEASURED here (or taken from an import) but whose newest JUDGING attempt now disagrees with it --
+# typically a verdict another instance reached later, merged in beside ours -- is never changed by
+# that history on its own (rule 12 = b). Its own re-check would be due only a re-verification
+# interval after the OTHER instance's attempt, because a copied-in attempt resets this instance's
+# re-verification clock (``CLOCK_VERDICTS``). So the boot integrity step lists such sources here and
+# the pass takes them ahead of the two ordinary pools, within the existing re-check budget: the
+# install's own measurement then settles the disagreement.
+RECHECK_FIRST_KEY = "qualification.recheck_first"
+
+
+def _naive_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):     # a stored value of the wrong shape reads as absent
+        return None
+    return parsed.astimezone(UTC).replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+# A flagged source whose local re-check keeps NOT settling it (no articles, no feed or sitemap to
+# judge it on, an imported attempt dated after this machine's clock) would otherwise be forced
+# again whenever it reaches the head of the line, each time with a trial fetch against its host.
+# After this many forced tries the entry stays listed (so it is still counted and not re-flagged
+# from scratch at boot) but is no longer taken ahead of the queue: the ordinary ladder handles it.
+MAX_FORCED_TRIES = 3
+
+
+def _load_recheck_first() -> tuple[dict[int, tuple[datetime, datetime | None, int]], str]:
+    """``({source_id: (flagged_at, last_tried_at, tries)}, turn)`` from the stored list.
+
+    ``last_tried_at`` is when THIS install last tried the entry (stamped by the pass, never taken
+    from the attempt log, whose newest row for a flagged source is usually the copied-in one that
+    inverted it and carries another machine's clock). ``turn`` is which side gets the odd slot of
+    an odd budget this pass. An unreadable or absent store reads as empty, which means today's
+    order: a pass never fails for want of this list.
+    """
+    from src.config.kv_store import kv_get_json
+
+    try:
+        raw = kv_get_json(RECHECK_FIRST_KEY) or {}
+    except Exception:  # noqa: BLE001 - the list is an optimisation of ORDER, never a dependency
+        return {}, "ordinary"
+    out: dict[int, tuple[datetime, datetime | None, int]] = {}
+    flagged_raw = raw.get("flagged")
+    for key, entry in (flagged_raw.items() if isinstance(flagged_raw, dict) else ()):
+        try:
+            sid = int(key)
+        except (TypeError, ValueError):
+            continue
+        tries = 0
+        if isinstance(entry, dict):
+            flagged, tried = _naive_utc(entry.get("flagged_at")), _naive_utc(entry.get("last_tried_at"))
+            raw_tries = entry.get("tries")
+            tries = raw_tries if isinstance(raw_tries, int) and not isinstance(raw_tries, bool) else 0
+        else:
+            flagged, tried = _naive_utc(entry if isinstance(entry, str) else None), None
+        out[sid] = (flagged or datetime.min, tried, max(0, tries))
+    return out, ("list" if raw.get("turn") == "list" else "ordinary")
+
+
+def record_forced_tries(ids: set[int], *, now: datetime | None = None, odd_budget: bool = False) -> None:
+    """Stamp ``last_tried_at`` on the flagged sources a pass just tried, and hand the odd slot to
+    the other side next pass. Called AFTER the pass committed (``kv_set_json`` must never run
+    inside an open ORM write transaction). Fails closed and quietly: an unreadable list is left
+    exactly as it was, because rewriting it from a failed read would lose the flags."""
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    if not ids and not odd_budget:
+        return
+    try:
+        raw = dict(kv_get_json_strict(RECHECK_FIRST_KEY) or {})
+        flagged = {str(k): (dict(v) if isinstance(v, dict) else {"flagged_at": v})
+                   for k, v in (raw.get("flagged") or {}).items()}
+        moment = now or datetime.now(UTC)
+        stamp = (moment if moment.tzinfo else moment.replace(tzinfo=UTC)).astimezone(UTC).replace(
+            tzinfo=None).isoformat()
+        for sid in ids:
+            if str(sid) in flagged:
+                flagged[str(sid)]["last_tried_at"] = stamp
+                done = flagged[str(sid)].get("tries")
+                flagged[str(sid)]["tries"] = (done if isinstance(done, int) else 0) + 1
+        raw["flagged"] = flagged
+        if odd_budget:
+            raw["turn"] = "ordinary" if raw.get("turn") == "list" else "list"
+        kv_set_json(RECHECK_FIRST_KEY, raw)
+    except Exception:  # noqa: BLE001 - bookkeeping for an ORDER hint never fails a pass
+        _LOG.warning("could not record the forced re-check tries", exc_info=True)
+
+
+def pending_forced_rechecks(session: Session) -> list[Source]:
+    """The flagged sources still waiting for their local re-check, LEAST RECENTLY TRIED FIRST.
+
+    An entry is pending while the source exists and is still inverted (its live status differs
+    from its newest judging attempt). A local re-check that judges the source settles that --
+    ``evaluate_and_stamp`` writes the verdict and the status together -- so the entry clears
+    itself, whatever the re-check decided, with no separate bookkeeping.
+
+    THE ORDER is the instant this install last TRIED the entry (``last_tried_at``, stamped by the
+    pass after each forced try), never-tried first, then the flag time, then the id. It is not the
+    attempt log's newest row: for a flagged source that row is usually the copied-in one that
+    inverted it, carrying another machine's clock. A host that stays unreachable writes
+    ``no_evidence`` every pass and is stamped each time, so it moves to the back and a dead host
+    cannot hold the head of the line; after ``MAX_FORCED_TRIES`` tries that did not settle it the
+    entry stops being forced at all. Read-only; the stored list is rewritten only by the boot
+    step and, after a pass has committed, by :func:`record_forced_tries`.
+    """
+    from src.database.models import Source
+    from src.database.models import SourceQualificationAttempt as A
+
+    flagged, _turn = _load_recheck_first()
+    if not flagged:
+        return []
+    newest_verdict = (
+        session.query(A.verdict)
+        .filter(A.source_id == Source.id, A.verdict.in_(JUDGING_VERDICTS))
+        .order_by(A.attempted_at.desc(), A.id.desc())
+        .limit(1)
+        .correlate(Source)
+        .scalar_subquery()
+    )
+    pending: list[tuple[tuple, Source]] = []
+    for chunk in _id_chunks(sorted(flagged)):
+        for source, verdict in (
+            session.query(Source, newest_verdict).filter(Source.id.in_(chunk)).all()
+        ):
+            at, tried, tries = flagged[int(source.id)]
+            if verdict is None or source.status == verdict:
+                continue  # no longer inverted: nothing left to settle
+            if source.status not in JUDGING_VERDICTS:
+                continue  # reset to unqualified since: the new-candidate queue owns it
+            if tries >= MAX_FORCED_TRIES:
+                continue  # tried here repeatedly without settling: the ordinary ladder takes over
+            pending.append(((tried is not None, tried or datetime.min, at, int(source.id)), source))
+    pending.sort(key=lambda item: item[0])
+    return [source for _key, source in pending]
+
+
+def allocate_rechecks(
+    forced: list[Source], dq_pool: list[Source], ql_pool: list[Source], total: int,
+    *, odd_to_list: bool = False,
+) -> list[Source]:
+    """Split ``total`` re-check slots between the forced list and the two ordinary pools.
+
+    THE SHARE. The forced list takes half of the slots (plus any the ordinary queue cannot use),
+    and the ordinary queue keeps the rest. A CONTESTED slot goes to each side in turn, pass by
+    pass (``odd_to_list`` says whose turn it is; :func:`record_forced_tries` flips it): with an
+    ODD budget the extra slot is contested between the list and the ordinary queue (rounding it up
+    for the list would hand a budget of one slot to the list every pass), and when the ordinary
+    side is left ONE slot with both its pools due (the default budget of 2) that slot is
+    contested between the disqualified and the qualified side, the list's turn giving it to the
+    qualified one -- otherwise qualified re-verification would stop while the list has entries
+    and a disqualified re-check is due (R94: each queue keeps moving). Both draw on the one budget
+    the operator set, and a bulk import can flag thousands. Neither side wastes a slot: what one
+    cannot fill goes to the other, and no source is taken twice. Without a forced list this is
+    exactly the ordinary split (disqualified first, half each while both are due).
+    """
+    return allocate_rechecks_detail(forced, dq_pool, ql_pool, total, odd_to_list=odd_to_list)[0]
+
+
+def allocate_rechecks_detail(
+    forced: list[Source], dq_pool: list[Source], ql_pool: list[Source], total: int,
+    *, odd_to_list: bool = False,
+) -> tuple[list[Source], bool]:
+    """:func:`allocate_rechecks` plus whether a CONTESTED slot was decided this pass (the caller
+    then hands the turn to the other side, see :func:`record_forced_tries`)."""
+    if total <= 0:
+        return [], False
+    share = (total // 2 + (1 if odd_to_list and total % 2 else 0)) if forced else 0
+    taken = forced[:share]
+    taken_ids = {int(x.id) for x in taken}
+    dq = [x for x in dq_pool if int(x.id) not in taken_ids]
+    ql = [x for x in ql_pool if int(x.id) not in taken_ids]
+    room = total - len(taken)
+    contested = bool(forced) and (total % 2 == 1)
+    if room <= 0:
+        take_dq = take_ql = 0
+    elif forced and room == 1 and dq and ql:
+        take_dq, take_ql = (0, 1) if odd_to_list else (1, 0)
+        contested = True
+    else:
+        take_dq = min(len(dq), max(1, room // 2) if ql else room)
+        take_ql = min(len(ql), room - take_dq)
+        take_dq = min(len(dq), room - take_ql)
+    chosen = taken + dq[:take_dq] + ql[:take_ql]
+    # slots the ordinary pools could not use go back to the forced list; a source already chosen
+    # (a flagged one can also be due in an ordinary pool) is never taken twice
+    spare = total - len(chosen)
+    if spare > 0:
+        chosen_ids = {int(x.id) for x in chosen}
+        chosen += [x for x in forced[share:] if int(x.id) not in chosen_ids][:spare]
+    return chosen, contested
+
+
 # How far down the due-disqualified pool the queue view counts. Each one costs a ladder read,
 # so a count past this says "at least" rather than walking an unbounded pool on a panel load.
 _QUEUE_COUNT_CAP = 200
@@ -652,14 +847,15 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
     next_new = [s.domain for s in select_unqualified(session, limit=nxt)]
     # The "next" list is what a pass with `nxt` re-check slots WOULD take: the pass's own pool
     # (the oldest-tried few, not the whole due count) and its own split between the two kinds.
-    dq_pool = select_due_disqualified(session, now=now, limit=nxt)
-    ql_pool = select_due_qualified(session, now=now, limit=nxt) if ql_on else []
-    take_dq = min(len(dq_pool), max(1, nxt // 2) if ql_pool else nxt)
-    take_ql = min(len(ql_pool), nxt - take_dq)
-    take_dq = min(len(dq_pool), nxt - take_ql)
+    forced = pending_forced_rechecks(session) if ql_on else []
+    nxt_pool = nxt + ((nxt + 1) // 2 if forced else 0)
+    dq_pool = select_due_disqualified(session, now=now, limit=nxt_pool)
+    ql_pool = select_due_qualified(session, now=now, limit=nxt_pool) if ql_on else []
     next_rechecks = [
         {"domain": s.domain, "status": s.status}
-        for s in dq_pool[:take_dq] + ql_pool[:take_ql]
+        for s in allocate_rechecks(
+            forced, dq_pool, ql_pool, nxt,
+            odd_to_list=bool(forced) and _load_recheck_first()[1] == "list")
     ]
     return {
         "order": ["new", "rechecks"],
@@ -670,6 +866,7 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
             "disqualified_due_capped": len(dq_due) >= _QUEUE_COUNT_CAP,
             "qualified_due": ql_due if ql_on else 0,
             "qualified_rechecks_on": ql_on,
+            "flagged": len(forced),
             "next": next_rechecks,
         },
         "waiting": {
@@ -1417,10 +1614,16 @@ def run_qualification_pass(
     total = reserved + spill
     dq_pool: list[Source] = []
     ql_pool: list[Source] = []
+    # THE FORCED LIST (see RECHECK_FIRST_KEY) rides the same re-check budget, so `reserved == 0`
+    # (re-checks switched off) switches it off too. The ordinary pools are queried a share deeper,
+    # because a flagged source can also sit in one of them and is taken from the list instead.
+    forced = pending_forced_rechecks(session) if reserved > 0 and total > 0 else []
+    odd_to_list = _load_recheck_first()[1] == "list" if forced else False
+    pool_limit = total + ((total + 1) // 2 if forced else 0)
     if total > 0:
         # Each pool is queried once at the budget it could possibly use, then allocated, so
         # an empty or short pool gives its slots to the other rather than wasting them.
-        dq_pool = select_due_disqualified(session, now=now, limit=total)
+        dq_pool = select_due_disqualified(session, now=now, limit=pool_limit)
     if reserved > 0:
         # R94 (2026-09-29, «a queue, not a calendar»): once the new candidates are served,
         # their unused slots go on down the queue to EITHER kind of re-check, so a drained
@@ -1428,18 +1631,24 @@ def run_qualification_pass(
         # `recheck_per_pass = 0` still turns qualified re-verification OFF: the spill reaches
         # this query only when the operator has it on, so "off" keeps meaning off. Querying
         # only when it may be used also means an install with it off never pays for it.
-        ql_pool = select_due_qualified(session, now=now, limit=total)
+        ql_pool = select_due_qualified(session, now=now, limit=pool_limit)
 
     # Disqualified re-checks keep the priority they have today. At a reserved budget of 1
     # with a disqualified source always due, qualified re-verification therefore only runs
     # when none is -- stated rather than hidden; the default is 2, and 1 is the single
     # configuration where the split cannot be fair to both.
-    take_dq = min(len(dq_pool), max(1, total // 2) if ql_pool else total)
-    take_ql = min(len(ql_pool), total - take_dq)
-    take_dq = min(len(dq_pool), total - take_ql)
-    rechecks: list[Source] = dq_pool[:take_dq] + ql_pool[:take_ql]
+    rechecks, slot_contested = allocate_rechecks_detail(
+        forced, dq_pool, ql_pool, total, odd_to_list=odd_to_list)
+    forced_ids = {int(x.id) for x in forced}
 
-    candidates = new_candidates + rechecks
+    # One source is evaluated once per pass: a row reset to unqualified can be both a new
+    # candidate and (stale) on the forced list, and a flagged one can also be due in a pool.
+    candidates: list[Source] = []
+    _seen_ids: set[int] = set()
+    for _cand in [*new_candidates, *rechecks]:
+        if int(_cand.id) not in _seen_ids:
+            _seen_ids.add(int(_cand.id))
+            candidates.append(_cand)
     if not candidates:
         return {"enabled": True, "evaluated": 0}
 
@@ -1541,6 +1750,9 @@ def run_qualification_pass(
         session, judged, fails_by_source, now=now, criteria_version=criteria_version,
     )
     log_no_evidence_attempts(session, no_evidence, now=now, criteria_version=criteria_version)
+    # Plain ints, read before the commit: reading ``.id`` off an expired row afterwards would
+    # begin a new transaction on the session just before the key-value write below.
+    forced_tried = {int(x.id) for x in rechecks if int(x.id) in forced_ids} if forced else set()
     session.commit()
 
     # C15 (2026-07-24 throughput brief, S-E slice 2): auto-enqueue a BOUNDED
@@ -1550,6 +1762,12 @@ def run_qualification_pass(
     # full_history=False here: the automatic path never requests full
     # history, which is an explicit, separately-invoked per-source action.
     # Best-effort -- a queueing hiccup must never fail a qualification pass.
+    # The forced re-checks this pass tried are stamped now that the pass has committed (the list
+    # lives in the key-value store, which must not be written inside an open ORM transaction),
+    # and the odd slot of an odd budget changes hands.
+    if forced:
+        record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
+
     for sid in tally.get("qualified_ids", []):
         try:
             from src.ingest.archive_backfill import enqueue_source
@@ -1569,6 +1787,9 @@ def run_qualification_pass(
         # and it was precisely the absence of the second that hid a ladder that never ran.
         "new_candidates": len(new_candidates),
         "rechecks": len(rechecks),
+        # Of those, the ones taken from the forced list (a measured verdict an imported history
+        # disagrees with): reported apart so a reader can see the list draining.
+        "forced_rechecks": sum(1 for x in rechecks if int(x.id) in forced_ids),
         # S5.1 staleness disclosure: WHICH corpus state the baseline reflects and how much of
         # it. Reported per pass rather than folded into the criteria version, because an age
         # is a measurement -- and because a reader must be able to tell a fresh baseline from

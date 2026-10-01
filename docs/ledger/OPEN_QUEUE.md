@@ -16211,7 +16211,7 @@ maintainer as a card.
   only a source whose live verdict is the catalogue's own stamp (`oo-curated-catalog-1`) or nothing; the field's own
   inversions (085639, 091717) are all of that kind. A source whose live verdict was MEASURED here (or taken from an
   earlier import) is reported (`not_auto_repaired_measured_here_total`, each row's `live_stamp`) and never changed by an
-  imported history on its own. **KNOWN LIMIT, until the follow-up lands:** nothing brings a re-check forward (a
+  imported history on its own. **KNOWN LIMIT, REDUCED BY THE FORCED RE-CHECK LIST (see the end of this note):** without it nothing brings a re-check forward (a
   copied-in attempt resets the re-verification clock), so the unsafe order of that class (live qualified, newer
   imported disqualification) keeps collecting for AT LEAST the re-check interval counted from the imported attempt's own
   date (three months, which is only when the source JOINS the re-check line) and then until the qualification pass
@@ -16223,7 +16223,12 @@ maintainer as a card.
   (`apply_overlay` runs earlier in the same boot and does not look at local judging history): "measured here" is the name of the
   class, not a claim about every row in it. The revert record fails CLOSED: a run record that
   is present but unparseable stops the boot repair, the report's repair list and `--revert-repairs` until a maintainer fixes
-  the store by hand (reading it as empty would let a new plan overwrite a confirmed repair's revert record). The follow-up (PR 3, plan to the coordinator first) is a
-  forced re-check list in `app_state`, read by the qualification pass ahead of its two pools within the existing
-  per-pass budget and cleared once a newer attempt exists. RC06 itself (how far back a re-check looks) is still the
+  the store by hand (reading it as empty would let a new plan overwrite a confirmed repair's revert record). THE FORCED RE-CHECK LIST (PR 3, built): the boot lists these sources (`qualification.recheck_first` in `app_state`,
+  never merged on restore) and the qualification pass takes them ahead of its two pools, least recently tried first, in half
+  of the per-pass re-check slots plus any the ordinary queue cannot use (the odd slot alternates between the list and the
+  ordinary queue, one try at a time; budget 0 switches it off), so a measured disagreement waits for the first passes rather than
+  a re-check interval. It changes no verdict, an entry leaves the list when the row is no longer inverted or is no longer a
+  judging verdict, an entry the pass has tried `MAX_FORCED_TRIES` (3) times without settling it stops being forced (the
+  ordinary queue still reaches it), and an unreadable stored list skips the step. The Settings queue view shows how
+  many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.
