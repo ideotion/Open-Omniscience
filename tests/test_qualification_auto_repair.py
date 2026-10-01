@@ -32,11 +32,15 @@ from src.catalog.qualification import (
 from src.database.models import Base, Source, SourceQualificationAttempt
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+CURATED = "oo-curated-catalog-1"
+MEASURED = "oo-source-qualification-3"
 T0 = datetime(2026, 8, 1, 9, 0)  # naive UTC, as every writer stores it
 
 
 @pytest.fixture()
 def env(monkeypatch):
+    # the suite-wide conftest switches the boot repair off; these tests are about it
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
                            poolclass=StaticPool)
     Base.metadata.create_all(engine)
@@ -75,6 +79,8 @@ def env(monkeypatch):
 
 def _add(s: Session, domain: str, live: str, judged: str, *, at: datetime = T0,
          live_version: str | None = None, live_at: datetime | None = None) -> int:
+    if live == STATUS_QUALIFIED and live_version is None:
+        live_version = CURATED  # a catalogue stamp is the class the boot repair may withdraw
     src = Source(name=domain, domain=domain, status=live,
                  qualification_criteria_version=live_version, qualified_at=live_at)
     s.add(src)
@@ -301,14 +307,14 @@ def test_only_the_planned_sources_are_applied(env, monkeypatch) -> None:
 def test_a_domain_repaired_twice_reverts_to_its_newest_record(env) -> None:
     with env.scope() as s:
         _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED,
-             live_version="stampA", live_at=T0)
+             live_version=CURATED, live_at=T0)
     qi.auto_repair_inversions(now=NOW)
     # re-qualified later by a real judgement (attempt + stamp together), then inverted again
     t1 = T0 + timedelta(days=9)
     with env.scope() as s:
         src = s.query(Source).filter_by(domain="x.example").one()
         src.status, src.qualification_criteria_version, src.qualified_at = (
-            STATUS_QUALIFIED, "stampB", t1)
+            STATUS_QUALIFIED, CURATED, t1)
         s.add(SourceQualificationAttempt(
             source_id=src.id, attempted_at=t1, verdict=STATUS_QUALIFIED, criteria_version="v1"))
     t2 = t1 + timedelta(days=9)
@@ -318,7 +324,7 @@ def test_a_domain_repaired_twice_reverts_to_its_newest_record(env) -> None:
     result = qi.revert_repairs(dry_run=False)
     assert result["reverted"] == 1, "one domain, one revert, never two"
     got = _status(env, "x.example")
-    assert got.qualification_criteria_version == "stampB" and got.qualified_at == t1
+    assert got.qualification_criteria_version == CURATED and got.qualified_at == t1
 
 
 def test_a_revert_never_undoes_a_later_judgement_that_agrees_with_the_repair(env) -> None:
@@ -401,3 +407,165 @@ def test_boot_swallows_a_failed_repair_and_is_not_gated_by_autoseed() -> None:
     for node in chain:
         if isinstance(node, ast.If):
             assert "OO_AUTOSEED" not in ast.unparse(node.test), "a reconciliation is not a seed"
+
+
+# --------------------------------------------------------------------------- #
+#  Which rows the boot repair may touch (rule 12 = b), and the Opus re-review's notes
+# --------------------------------------------------------------------------- #
+def test_a_verdict_measured_here_is_never_changed_by_the_boot_repair(env) -> None:
+    """The coordinator's 12 = b objection: an imported history must not demote, by itself, a
+    row whose live verdict this install produced. It is reported and left for a local re-check."""
+    with env.scope() as s:
+        _add(s, "mine.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED,
+             live_version=MEASURED, live_at=T0)
+        _add(s, "catalogue.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)   # curated stamp
+        _add(s, "never.example", "unqualified", STATUS_DISQUALIFIED)         # no verdict at all
+        _add(s, "s7a.example", STATUS_DISQUALIFIED, STATUS_QUALIFIED)        # the safe order
+    out = qi.auto_repair_inversions(now=NOW)
+
+    assert out["repaired"] == 2
+    assert _status(env, "mine.example").status == STATUS_QUALIFIED
+    assert _status(env, "mine.example").qualification_criteria_version == MEASURED
+    assert _status(env, "catalogue.example").status == STATUS_DISQUALIFIED
+    assert _status(env, "never.example").status == STATUS_DISQUALIFIED
+    assert _status(env, "s7a.example").status == STATUS_DISQUALIFIED
+    with env.scope() as s:
+        rep = qi.qualification_integrity_report(s)
+    assert rep["inversions_total"] == 2          # mine.example and s7a.example remain, reported
+    assert rep["auto_repairable_total"] == 0 and rep["left_for_local_recheck_total"] == 2
+    assert {r["domain"]: r["live_stamp"] for r in rep["laundered"]} == {"mine.example": "measured"}
+
+
+def test_the_report_counts_what_the_boot_repair_would_take(env) -> None:
+    with env.scope() as s:
+        _add(s, "mine.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED,
+             live_version=MEASURED, live_at=T0)
+        _add(s, "catalogue.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+        _add(s, "never.example", "unqualified", STATUS_DISQUALIFIED)
+        rep = qi.qualification_integrity_report(s)
+    assert rep["auto_repairable_total"] == 2 and rep["left_for_local_recheck_total"] == 1
+    stamps = {r["domain"]: r["live_stamp"] for r in rep["laundered"]}
+    assert stamps == {"mine.example": "measured", "catalogue.example": "catalogue",
+                      "never.example": "none"}
+
+
+def test_an_older_record_is_not_eligible_once_the_newer_one_was_reverted(env) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED, live_version=CURATED, live_at=T0)
+    qi.auto_repair_inversions(now=NOW)
+    # a write that is not a judgement re-inverts the row (no new attempt), then a second repair
+    t1 = T0 + timedelta(days=5)
+    with env.scope() as s:
+        src = s.query(Source).filter_by(domain="x.example").one()
+        src.status, src.qualification_criteria_version, src.qualified_at = (
+            STATUS_QUALIFIED, CURATED, t1)
+    # the hold from nothing yet: the second repair is a new run for the same domain
+    qi.auto_repair_inversions(now=NOW + timedelta(days=1))
+    assert len(qi._read_repair_index()["runs"]) == 2
+    assert qi.revert_repairs(dry_run=False)["reverted"] == 1
+    assert _status(env, "x.example").qualified_at == t1
+    # an operator withdraws it again; the older record must not be the one a second revert uses
+    with env.scope() as s:
+        qi.repair_inversions(s, dry_run=False)
+    assert qi.revert_repairs(dry_run=False)["reverted"] == 0
+    assert _status(env, "x.example").status == STATUS_DISQUALIFIED
+
+
+def test_the_confirmation_records_what_was_applied_not_what_was_planned(env, monkeypatch) -> None:
+    """A planned row that resolves itself between the plan and the apply must not be recorded
+    as a repair that happened."""
+    with env.scope() as s:
+        _add(s, "stays.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+        _add(s, "resolves.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    import src.config.kv_store as kv
+
+    real = kv.kv_set_json
+    fired: list[int] = []
+
+    def spy(key, obj):
+        real(key, obj)
+        if key.startswith(qi.REPAIR_RUN_PREFIX) and not obj.get("applied") and not fired:
+            fired.append(1)       # right after the plan is recorded, before it is applied
+            with env.scope() as s:
+                s.query(Source).filter_by(domain="resolves.example").one().status = (
+                    STATUS_DISQUALIFIED)
+
+    monkeypatch.setattr(kv, "kv_set_json", spy)
+    out = qi.auto_repair_inversions(now=NOW)
+
+    assert out["repaired"] == 1
+    run = env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]
+    assert run["applied"] is True
+    assert [r["domain"] for r in run["repairs"]] == ["stays.example"]
+
+
+def test_a_plan_that_fails_to_apply_at_every_boot_does_not_grow_the_record(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    real = qi.repair_inversions
+
+    def failing_apply(session, **kw):
+        if not kw.get("dry_run", True):
+            raise RuntimeError("disk full")
+        return real(session, **kw)
+
+    monkeypatch.setattr(qi, "repair_inversions", failing_apply)
+    for hours in range(4):
+        with pytest.raises(RuntimeError):
+            qi.auto_repair_inversions(now=NOW + timedelta(hours=hours))
+
+    runs = [k for k in env.store if k.startswith(qi.REPAIR_RUN_PREFIX)]
+    assert len(runs) == 1 and len(qi._read_repair_index()["runs"]) == 1
+    summary = qi.repair_summary()
+    assert summary["repairs_unconfirmed"] == 1 and summary["repaired_total"] == 0
+
+
+def test_the_boot_repair_can_be_switched_off_for_the_test_suite(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "0")
+    out = qi.auto_repair_inversions(now=NOW)
+    assert out["repaired"] == 0 and "skipped" in out
+    assert _status(env, "x.example").status == STATUS_QUALIFIED and not env.store
+
+
+def test_the_conftest_switches_it_off_for_the_whole_suite() -> None:
+    from pathlib import Path
+
+    src = (Path(__file__).parent / "conftest.py").read_text(encoding="utf-8")
+    assert 'os.environ.setdefault("OO_QUALIFICATION_AUTO_REPAIR", "0")' in src
+
+
+def test_the_operator_script_honours_the_hold_unless_told_not_to(env) -> None:
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "repair_script", Path(__file__).resolve().parents[1] / "scripts"
+        / "repair_qualification_inversions.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    assert qi.revert_repairs(dry_run=False)["reverted"] == 1     # back to qualified, and held
+    assert _status(env, "x.example").status == STATUS_QUALIFIED
+
+    script.main(["--apply"])
+    assert _status(env, "x.example").status == STATUS_QUALIFIED, "the hold is honoured"
+    script.main(["--apply", "--ignore-hold"])
+    assert _status(env, "x.example").status == STATUS_DISQUALIFIED
+
+
+def test_the_summary_forgets_its_cached_keys_so_an_out_of_process_revert_shows(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    import src.config.kv_store as kv
+
+    forgotten: list[str] = []
+    monkeypatch.setattr(kv, "kv_invalidate", lambda key=None: forgotten.append(key))
+    qi.repair_summary()
+    assert qi.REPAIR_INDEX_KEY in forgotten
+    assert qi.REPAIR_RUN_PREFIX + qi._iso(NOW) in forgotten

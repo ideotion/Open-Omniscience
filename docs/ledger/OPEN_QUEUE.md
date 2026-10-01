@@ -16087,4 +16087,14 @@ maintainer as a card.
   over `unqualified`, so the live status stayed curated while the attempts arrived). Fixed in two steps: the merge now
   lets a curated stamp give way to a measured one (PR #1278), and the export/report count a live curated stamp as
   `curated` whatever history sits beside it, name the attempt timestamps, and withdraw (never re-admit) inversions at
-  boot with a revert record. RC06 itself (how far back a re-check looks) is still the maintainer's call.
+  boot with a revert record. **WHICH ROWS THE BOOT REPAIR MAY TOUCH (coordinator ruling on rule 12 = b, 2026-10-01):**
+  only a source whose live verdict is the catalogue's own stamp (`oo-curated-catalog-1`) or nothing; the field's own
+  inversions (085639, 091717) are all of that kind. A source whose live verdict was MEASURED here (or taken from an
+  earlier import) is reported (`left_for_local_recheck_total`, each row's `live_stamp`) and never changed by an
+  imported history on its own. **KNOWN LIMIT, until the follow-up lands:** nothing brings a re-check forward (a
+  copied-in attempt resets the re-verification clock), so the unsafe order of that class (live qualified, newer
+  imported disqualification) can keep collecting for up to three months, and the safe order (live disqualified, newer
+  imported qualification) waits on the disqualified ladder. The follow-up (PR 3, plan to the coordinator first) is a
+  forced re-check list in `app_state`, read by the qualification pass ahead of its two pools within the existing
+  per-pass budget and cleared once a newer attempt exists. RC06 itself (how far back a re-check looks) is still the
+  maintainer's call.

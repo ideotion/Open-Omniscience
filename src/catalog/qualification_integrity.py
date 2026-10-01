@@ -50,6 +50,7 @@ Read-only. Counts and names only -- never a score, never a percentage of anythin
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -85,12 +86,38 @@ NAME_CAP = 200
 # is disqualified.
 REPAIR_INDEX_KEY = "qualification.repairs"
 REPAIR_RUN_PREFIX = "qualification.repairs.run."
+# Set to 0 ONLY by the test conftest (the way OO_STORAGE_GUARD=0 is): the boot repair writes to
+# the corpus, so a test that boots the app must not have it as a side effect.
+AUTO_REPAIR_ENV = "OO_QUALIFICATION_AUTO_REPAIR"
 
 
 def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
+
+
+def live_stamp_class(source) -> str:
+    """What stands behind a row's LIVE verdict, by its stamp.
+
+    ``none`` (status unqualified), ``catalogue`` (qualified with the shipped catalogue's own
+    stamp: nothing was measured here, and a local pass that qualifies a row replaces that stamp
+    with the real criteria version, see ``evaluate_and_stamp``), or ``measured`` (anything else:
+    a verdict this instance's engine reached, or one adopted from an import). Only the first two
+    are rows whose live verdict is not data this install produced, so only they may be changed
+    without anyone's say-so (rule 12 = b); a ``measured`` row is reported and left for a local
+    re-check.
+    """
+    from src.catalog.qualification import CURATED_CRITERIA_VERSION
+
+    if (source.status or "") == STATUS_UNQUALIFIED:
+        return "none"
+    if (
+        (source.status or "") == STATUS_QUALIFIED
+        and (source.qualification_criteria_version or "") == CURATED_CRITERIA_VERSION
+    ):
+        return "catalogue"
+    return "measured"
 
 
 def _newest_judging(session: Session, source_id: int):
@@ -184,7 +211,7 @@ def qualification_integrity_report(
     laundered: list[dict[str, Any]] = []
     demoted: list[dict[str, Any]] = []
     other: list[dict[str, Any]] = []
-    n_laundered = n_demoted = n_other = 0
+    n_laundered = n_demoted = n_other = n_auto_repairable = 0
     resolved_by_tie = 0
     for (sid,) in candidates:
         attempt = _newest_judging(session, int(sid))
@@ -200,12 +227,15 @@ def qualification_integrity_report(
         row = {
             "domain": source.domain,
             "live_status": source.status,
+            "live_stamp": live_stamp_class(source),
             "last_judged": attempt.verdict,
             "judged_at": _iso(attempt.attempted_at),
             "criteria_version": attempt.criteria_version,
         }
         if attempt.verdict == STATUS_DISQUALIFIED:
             n_laundered += 1
+            if row["live_stamp"] != "measured":
+                n_auto_repairable += 1
             if len(laundered) < NAME_CAP:
                 laundered.append(row)
         elif attempt.verdict == STATUS_QUALIFIED:
@@ -285,6 +315,12 @@ def qualification_integrity_report(
         },
         "consistent": consistent,
         "inversions_total": inversions_total,
+        # Of those, the ones the boot repair may withdraw by itself (judged disqualified, and the
+        # live verdict is the catalogue's own stamp or nothing). The REST are left alone on
+        # purpose: a verdict measured here (or taken from an import) is data, and an imported
+        # history never overrides it by itself (rule 12 = b). They wait for a local re-check.
+        "auto_repairable_total": n_auto_repairable,
+        "left_for_local_recheck_total": inversions_total - n_auto_repairable,
         # THE DIRECTION ROW A NAMES: judged disqualified, no longer disqualified -- a
         # known-bad source back in the trial queue with its backoff ladder reset.
         "laundered_total": n_laundered,
@@ -323,6 +359,7 @@ def repair_inversions(
     session: Session, *, dry_run: bool = True, only_to: str | None = None,
     skip_domains: frozenset[str] | set[str] = frozenset(), name_cap: int | None = NAME_CAP,
     only_source_ids: frozenset[int] | set[int] | None = None,
+    only_without_own_verdict: bool = False,
 ) -> dict[str, Any]:
     """Reconcile every inversion :func:`qualification_integrity_report` finds: for a
     source whose ``Source.status`` no longer agrees with its own newest JUDGING attempt,
@@ -362,6 +399,10 @@ def repair_inversions(
     automatic repair passes ``None`` because its revert record must name every source.
     ``only_source_ids`` limits the repair to exactly the sources a previous (dry-run) call
     planned, each re-checked against the live state, so what is recorded is what is applied.
+    ``only_without_own_verdict`` keeps only rows whose live verdict is not data this install
+    produced (live stamp ``none`` or ``catalogue``, see :func:`live_stamp_class`): the automatic
+    repair passes it, because a verdict measured here is never changed by an imported history
+    on its own (rule 12 = b); the operator script does not.
 
     Both directions are reconciled, and named apart, for the same reason the report keeps
     them apart: restoring a recorded ``disqualified`` (a known-bad source that was
@@ -414,6 +455,8 @@ def repair_inversions(
             held_by_revert += 1
             continue
         if only_source_ids is not None and int(source.id) not in only_source_ids:
+            continue
+        if only_without_own_verdict and live_stamp_class(source) == "measured":
             continue
         row = {
             "domain": source.domain,
@@ -519,10 +562,16 @@ def repair_summary() -> dict[str, Any]:
     (``repairs_unconfirmed``) rather than in ``repaired_total``. Read-only, and it degrades to an
     empty, zero-count summary where the key-value store is unavailable.
     """
-    from src.config.kv_store import kv_get_json
+    from src.config.kv_store import kv_get_json, kv_invalidate
 
     try:
+        # The maintainer's revert tool runs in ANOTHER process and writes these keys there, and
+        # kv_store caches per process: forget them so a report never shows a repair that has
+        # since been reverted. The report is a rare, read-only call, so the extra reads are cheap.
+        kv_invalidate(REPAIR_INDEX_KEY)
         idx = _read_repair_index()
+        for _run_at in idx["runs"]:
+            kv_invalidate(REPAIR_RUN_PREFIX + _run_at)
         repairs: list[dict[str, Any]] = []
         confirmed = unconfirmed = 0
         for run_at in idx["runs"]:
@@ -551,9 +600,11 @@ def repair_summary() -> dict[str, Any]:
             "repairs_held_by_revert": idx["reverted_domains"],
             "repairs_note": (
                 "Only the SAFE direction (restore to disqualified, a withdrawal from collection) "
-                "runs by itself; each repair follows the newest judging attempt in this "
-                "instance's own history, is listed here with the status it replaced, and can be "
-                "reverted by the maintainer tool. Restoring to qualified is operator-run."
+                "runs by itself, and only for a source whose live verdict is the shipped "
+                "catalogue's own stamp or nothing; each repair follows the newest judging attempt "
+                "in this instance's own history, is listed here with the status it replaced, and "
+                "can be reverted by the maintainer tool. A verdict measured here is never changed "
+                "by an imported history on its own, and restoring to qualified is operator-run."
             ),
         }
     except Exception:  # noqa: BLE001 - a report must never fail for want of its side record
@@ -567,6 +618,12 @@ def repair_summary() -> dict[str, Any]:
 def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     """The boot-time reconciliation: restore every source the integrity check finds LIVE-not-
     disqualified although its newest judging attempt says DISQUALIFIED, to disqualified.
+
+    WHICH ROWS: only a source whose LIVE verdict is the shipped catalogue's own stamp or nothing
+    (:func:`live_stamp_class`). A verdict measured here is data this install produced, and an
+    imported history does not override it by itself (rule 12 = b, ruled for the restore merge);
+    such rows stay in the integrity report as ``left_for_local_recheck_total`` and wait for the
+    install's own re-check. The field's own inversions (085639, 091717) are all catalogue-stamped.
 
     WHY THIS DIRECTION AND ONLY THIS ONE. It withdraws a known-bad source from collection, so
     it cannot spend bandwidth or politeness the operator did not expect; the opposite direction
@@ -585,32 +642,48 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     Returns counts only. A failure anywhere raises to the caller, which logs it: a repair that
     could not run must never block startup.
     """
-    from src.config.kv_store import kv_set_json
+    from src.config.kv_store import kv_get_json, kv_set_json
     from src.database.session import session_scope
 
+    if os.getenv(AUTO_REPAIR_ENV, "1") == "0":
+        return {"repaired": 0, "skipped": f"disabled by {AUTO_REPAIR_ENV}=0"}
     now = now or datetime.now(UTC)
     idx = _read_repair_index()
     skip = set(idx["reverted_domains"])
     with session_scope() as session:
         plan = repair_inversions(
             session, dry_run=True, only_to=STATUS_DISQUALIFIED, skip_domains=skip, name_cap=None,
+            only_without_own_verdict=True,
         )
     rows = plan["restored_to_disqualified"]
     if not rows:
         return {"repaired": 0, "held_by_operator_revert": plan["held_by_operator_revert"]}
 
+    planned_ids = {int(r["source_id"]) for r in rows}
     run_at = _iso(now) or ""
+    # An apply that keeps failing must not add a record per boot: when the newest run is still
+    # unconfirmed and planned exactly these sources, nothing was applied, so this attempt
+    # REPLACES its plan instead of appending a second one. (A run that applied but could not
+    # confirm leaves different sources to plan, so it is never overwritten here.)
+    last = idx["runs"][-1] if idx["runs"] else None
+    prior = (kv_get_json(REPAIR_RUN_PREFIX + last) or {}) if last else {}
+    if (
+        last is not None and not prior.get("applied")
+        and {int(r.get("source_id", -1)) for r in prior.get("repairs") or []} == planned_ids
+    ):
+        run_at = last
     run_key = REPAIR_RUN_PREFIX + run_at
     # 2. record and index the intent (outside any ORM write transaction: kv_set_json's contract)
     kv_set_json(run_key, {"run_at": run_at, "applied": False, "repairs": rows})
-    idx["runs"] = [*idx["runs"], run_at]
+    if run_at != last:
+        idx["runs"] = [*idx["runs"], run_at]
     idx["last_run_at"] = run_at
     _write_repair_index(idx)
     # 3. the planned sources, re-checked, in one transaction
     with session_scope() as session:
         done = repair_inversions(
             session, dry_run=False, only_to=STATUS_DISQUALIFIED, skip_domains=skip,
-            name_cap=None, only_source_ids={int(r["source_id"]) for r in rows},
+            name_cap=None, only_source_ids=planned_ids, only_without_own_verdict=True,
         )
     applied_rows = done["restored_to_disqualified"]
     # 4. what was REALLY applied replaces the plan
@@ -646,9 +719,13 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
             runs[run_at] = run
             for r in run.get("repairs") or []:
                 domain = r.get("domain")
-                if r.get("reverted_at") or domain in seen:
+                # `seen` first: once a domain's NEWEST record is reverted, an older record of it
+                # must not become eligible (it would put back a stamp that is not the latest).
+                if domain in seen:
                     continue
                 seen.add(domain)
+                if r.get("reverted_at"):
+                    continue
                 source = session.query(Source).filter(Source.domain == domain).first()
                 newest = _newest_judging(session, int(source.id)) if source is not None else None
                 if (

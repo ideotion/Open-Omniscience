@@ -306,8 +306,11 @@ def _run_startup_upkeep() -> None:
     # rank 14): a source whose live status is not 'disqualified' although its newest judging
     # attempt says so goes back to disqualified. LOCAL DATABASE ONLY, so airplane mode does
     # not stop it, and only the direction that takes a source OUT of collection -- restoring
-    # 'qualified' stays an operator's call. Every change is kept in a revert record. Not gated
-    # by OO_AUTOSEED: it is a reconciliation of history, not a seed.
+    # 'qualified' stays an operator's call. ONLY a source whose live verdict is the shipped
+    # catalogue's own stamp (or nothing) is touched: a verdict measured here is never changed
+    # by an imported history on its own (rule 12 = b). Every change is kept in a revert
+    # record. Not gated by OO_AUTOSEED: it is a reconciliation of history, not a seed;
+    # OO_QUALIFICATION_AUTO_REPAIR=0 (set only by the test conftest) switches it off.
     try:
         from src.catalog.qualification_integrity import auto_repair_inversions
 
