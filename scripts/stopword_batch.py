@@ -28,8 +28,8 @@ thread's decision rows as tab-separated text, one per line, ``#`` comments allow
 
 with ``verdict`` N (or ``junk``), ``confidence`` H, and ``flags`` a comma list that may hold
 ``unstable`` (the triage converter sets it on a verdict that did not reproduce between runs or that
-sits on an open rubric boundary), ``not_repeated`` (no repeat run read the row) or ``single_reader``; the layout is the triage thread's
-decision-file format. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool trusts the ``unstable`` and
+sits on an open rubric boundary), ``not_repeated`` (no repeat run read the row) or
+``single_reader``; the layout is the triage thread's decision-file format. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool trusts the ``unstable`` and
 ``not_repeated`` flags the converter sets and counts no runs itself. Only
 ``single_reader`` is an accepted flag; ANY OTHER flag blocks the word (an unknown flag is a
 reading this tool does not understand, and it must not pass), and a line the reader cannot parse
@@ -259,8 +259,9 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
                                     "models": set()})
         row["junk"] &= verdict in ("N", "JUNK")
         # A flag in the MODEL column (that column omitted, the flags shifted left) is still a flag, in
-        # whatever spelling: a model id has no underscore, comma or space, so anything else there is
-        # read as flags, and a row whose model column holds no model id is never high confidence.
+        # whatever spelling: a model id is ASCII letters, digits, dot and hyphen, so anything else there is
+        # read as flags, so is a model column whose letters spell a converter flag (a lost tab: fused
+        # ``claude-sonnet-5-5unstable``), and a row whose model column holds no model id is never high confidence.
         model = cols[5]
         letters = re.sub(r"[^a-z]", "", model.lower())
         flag_shift = bool(model) and (not MODEL_ID.fullmatch(model) or any(f in letters for f in FLAG_STEMS))
@@ -555,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
                 or target.is_relative_to((ROOT / "configs").resolve())):
             raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
         inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
+        if target.is_dir():
+            raise SystemExit("--json must name a file, not a directory")
         if target in inputs or (target.exists() and (target.is_relative_to(ROOT) or target.stat().st_nlink > 1 or any(
                 p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words) if p))):
             raise SystemExit("--json would overwrite an input file (the log, the verdicts or the words) or an existing file in the checkout "

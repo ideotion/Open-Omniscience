@@ -987,7 +987,7 @@ def test_json_naming_a_directory_or_a_missing_folder_is_a_message_not_a_tracebac
             target.mkdir()
         with pytest.raises(SystemExit) as exc:
             sb.main([str(log), "--language", "en", "--json", str(target)])
-        assert str(exc.value).startswith("--json")  # a message either way: a directory is refused, a missing folder cannot be written
+        assert "not a directory" in str(exc.value) if target.name == "somedir.json" else "cannot write" in str(exc.value)
 
 
 def test_the_summary_line_for_a_one_language_file_names_no_skipped_rows(tmp_path, capsys):
