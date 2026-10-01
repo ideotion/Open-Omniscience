@@ -161,7 +161,20 @@ def source_provenance(session, source_id: int) -> dict:
         "citing_trail": citing_trail,
         "qualification_status": source.status,
         "qualification_basis": _qualification_basis(session, source),
+        # True when the repair record could not be read in full: a withdrawn row may then read
+        # `measured` although its verdict came from an imported history (the export says the same).
+        "qualification_basis_unverified": _repair_record_unverified(),
     }
+
+
+def _repair_record_unverified() -> bool:
+    """True when the boot repair's record could not be read in full (index or any run)."""
+    try:
+        from src.catalog.qualification_integrity import repaired_rows
+
+        return bool(repaired_rows()[1])
+    except Exception:  # noqa: BLE001 - the answer IS "could not be read"
+        return True
 
 
 def _qualification_basis(session, source) -> str | None:
@@ -187,6 +200,21 @@ def _qualification_basis(session, source) -> str | None:
     # attempts copied in beside a still-curated stamp do not make the stamp a measurement.
     if source.qualification_criteria_version == CURATED_CRITERIA_VERSION:
         return "curated"
+    # A row the boot repair withdrew on an imported history's say reads `inherited` while its
+    # newest judging attempt is still that imported one, exactly as the export labels it (and, like
+    # the export, only a row that still carries a judging verdict).
+    try:
+        from src.catalog.qualification_integrity import repair_still_followed, repaired_rows
+
+        repaired, _unreadable = repaired_rows()
+        if (
+            source.status in JUDGING_VERDICTS
+            and source.domain in repaired
+            and repair_still_followed(session, source, repaired[source.domain])
+        ):
+            return "inherited"
+    except Exception:  # noqa: BLE001 - an unreadable record leaves the basis as it was read; the page says so
+        pass
     if verdicts & set(JUDGING_VERDICTS):
         return "measured"
     if VERDICT_CURATED in verdicts:

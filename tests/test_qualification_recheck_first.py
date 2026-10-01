@@ -537,6 +537,44 @@ def test_only_the_slice_a_pass_can_use_is_loaded_but_every_entry_is_counted(db, 
     assert view["rechecks"]["flagged"] == 5
 
 
+def test_a_flagged_source_past_the_slice_that_is_due_in_a_pool_still_has_its_try_recorded(db, store):
+    """pending_forced loads only the slice a pass can use (here the first two), but a flagged source
+    beyond it that the pass takes from an ordinary pool instead is still tried here and counted."""
+    head = [_inverted_qualified(db, f"head{i}.example") for i in range(2)]
+    past = _inverted_qualified(db, "past.example", newest_disq_days_ago=200)   # its clock is due too
+    _flag(store, *head, past, tried={"past.example": NOW - timedelta(days=1)})   # tried => last in line
+    before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+    sources, ids = q.pending_forced(db, 2)
+    assert [s.domain for s in sources] == ["head0.example", "head1.example"] and len(ids) == 3
+    q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_COHORT)
+    judged = {db.get(Source, x.source_id).domain for x in _new_attempts(db, before)}
+    assert "past.example" in judged, "the pool must have handed it to the pass"
+    assert store[q.RECHECK_FIRST_KEY]["flagged"][str(past.id)]["tries"] == 1
+
+
+def test_the_same_disagreement_keeps_the_count_across_boots(db, store, monkeypatch):
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    import contextlib
+
+    import src.database.session as sess
+
+    @contextlib.contextmanager
+    def scope():
+        yield db
+
+    monkeypatch.setattr(sess, "session_scope", scope)
+    qi.flag_inversions_for_recheck(now=NOW)
+    entry = store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]
+    judged_at = entry["judged_at"]
+    assert judged_at and entry["tries"] == 0
+    entry["tries"] = 2
+    qi.flag_inversions_for_recheck(now=NOW + timedelta(days=1))
+    kept = store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]
+    assert kept["tries"] == 2 and kept["judged_at"] == judged_at
+
+
 def test_a_newer_disagreement_starts_the_count_again(db, store, monkeypatch):
     monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
     a = _inverted_qualified(db, "a.example")

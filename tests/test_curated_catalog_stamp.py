@@ -373,6 +373,71 @@ def test_a_repaired_row_this_install_re_judged_reads_measured_again(db, monkeypa
         assert export["basis"]["repaired_exported_as_inherited"] == 0, verdict
 
 
+def test_a_repair_record_without_judged_at_reads_inherited_conservatively(db, monkeypatch):
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({s.domain: None}, []))
+    export = build_overlay_export(db, now=NOW + timedelta(days=6))
+    assert [(v["domain"], v["basis"]) for v in export["verdicts"]] == [(s.domain, "inherited")]
+
+
+def test_the_overlay_file_carries_the_warning_when_the_repair_record_was_unreadable(db, monkeypatch):
+    """The flag in the basis block never reached the YAML a maintainer merges; now a comment does."""
+    import src.catalog.qualification_integrity as qi
+    from src.catalog.qualification_export import to_overlay_yaml
+
+    _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, []))
+    assert "WARNING" not in to_overlay_yaml(build_overlay_export(db, now=NOW + timedelta(days=6)))
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    text = to_overlay_yaml(build_overlay_export(db, now=NOW + timedelta(days=6)))
+    assert "WARNING" in text and "2026-09-30T00:00:00+00:00" in text
+    import yaml
+    assert yaml.safe_load(text)["verdicts"] is not None, "still a valid overlay file"
+
+
+def test_the_provenance_basis_reads_a_repaired_row_as_the_export_does(db, monkeypatch):
+    """GET /api/sources/{id}/provenance must not call an imported verdict `measured` either."""
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    assert source_provenance(db, s.id)["qualification_basis"] == "measured"
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    assert source_provenance(db, s.id)["qualification_basis"] == "inherited"
+    _attempt(db, s, STATUS_DISQUALIFIED, at=NOW + timedelta(days=40), criteria_version=CRITERIA_VERSION)
+    db.commit()
+    assert source_provenance(db, s.id)["qualification_basis"] == "measured", "judged again here"
+
+
+def test_the_provenance_page_says_when_the_repair_record_could_not_be_read(db, monkeypatch):
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({s.domain: None}, []))
+    assert source_provenance(db, s.id)["qualification_basis_unverified"] is False
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    assert source_provenance(db, s.id)["qualification_basis_unverified"] is True
+
+    def boom():
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(qi, "repaired_rows", boom)
+    assert source_provenance(db, s.id)["qualification_basis_unverified"] is True
+
+
+def test_the_provenance_basis_leaves_a_row_that_is_no_longer_judged_alone(db, monkeypatch):
+    """The export ships only judged rows; a repaired row reset to unqualified is not labelled
+    inherited by the page either."""
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    s.status = "unqualified"
+    db.commit()
+    assert source_provenance(db, s.id)["qualification_basis"] != "inherited"
+
+
 def test_an_unreadable_repair_record_is_said_not_read_as_none_repaired(db, monkeypatch):
     import src.catalog.qualification_integrity as qi
 
