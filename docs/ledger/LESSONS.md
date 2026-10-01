@@ -12956,13 +12956,16 @@ on it has been begun to save, or a press made since the build was asked for hold
 (the marker is the newest request's generation, cleared only by it; it stays set until that request's save ends, so a
 press that has already landed is told apart by the bar holding its set); a diagnostics set on the bar is of the
 previous archive and dead, unless it has this archive's own file NAMES (never just the same count: consecutive builds
-of one corpus have the same count), in which case it is already the answer. A split that FAILS after the server swept
-the previous files (a full disk, an answer lost on the way) empties such a bar too, except a 409, which sweeps nothing.
-The orderings are a table in `tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails
-without it, and the two mutants that survive cannot differ (the generation bump when a failed split empties the bar,
-and the order of the deferral and the same-archive clauses, which "has not landed yet" made equivalent). **State that
-a server action replaces (here the split's files) must be compared with what the server now holds, not assumed alive
-because the page remembers it.**
+of one corpus usually have the same count), in which case it is already the answer. A split that FAILS may have swept the
+previous files (a full disk, an answer lost on the way), and the page cannot tell a failure before the sweep from one
+after it, so it empties such a bar too (a set still being saved included: the loop would ask for dead files), except
+after a 404 or a 409, which the route refuses before it sweeps anything; the price is a live set dropped when the answer
+of a split that swept nothing is lost, in a window of about two seconds. The orderings are a table in
+`tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails without it, and the mutants that
+survive cannot change what a person sees (the generation bump when a failed split empties the bar, since the button allows
+one build per page; the re-render of a bar that is then hidden; and the order of the deferral and the same-archive
+clauses, which "has not landed yet" made equivalent). **State that a server action replaces (here the split's files)
+must be compared with what the server now holds, not assumed alive because the page remembers it.**
 
 ### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)
 

@@ -782,7 +782,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
 
   // ---- the split sweeps the previous archive's files BEFORE it writes the new ones: a failed or lost split leaves no dead set on the bar
   {
-    for (const failure of ["500", "network", "409"]) {
+    for (const failure of ["500", "network", "409", "404"]) {
       const page = makePage(); let failNow = false;
       const api = load(page, {api: (url) => {
         if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
@@ -799,8 +799,8 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
       assert.strictEqual(old.offered.size, 5);
       failNow = true;
       await api.runAllDiagnostics({disabled: false});
-      if (failure === "409") {
-        assert.strictEqual(api.state(), old, "409 (another build is running) swept nothing: the set stays");
+      if (failure === "409" || failure === "404") {
+        assert.strictEqual(api.state(), old, failure + " is refused before anything is swept: the set stays");
       } else {
         assert.strictEqual(api.state(), null, failure + ": the swept archive's set is off the bar");
         assert.strictEqual(page.els["parts-bar"].hidden, true, failure + ": and the bar is hidden, not left empty");
@@ -823,6 +823,32 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     failNow = true;
     await api.runAllDiagnostics({disabled: false});
     assert.strictEqual(api.state().kind, "keywords", "a failed split does not touch a keyword set");
+  }
+
+  // ---- a dead set whose save is still GOING when the split fails is dropped too, and its loop stops
+  {
+    const page = makePage(); const hold = []; let failNow = false;
+    const api = load(page, {hold, api: (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
+      if (failNow) { const e = new Error("split failed"); e.status = 500; return Promise.reject(e); }
+      return Promise.resolve(listing(8, 1));
+    }});
+    const release = async () => { for (let k = 0; k < 60; k++) { if (hold.length) hold.shift()(); await Promise.resolve(); } };
+    const first = api.downloadDiagnosticsVolumes({disabled: false});
+    await release(); await first;
+    const next = api.partsSaveNext();                                   // the next five, held between two files
+    for (let spin = 0; spin < 5; spin++) await Promise.resolve();
+    assert.ok(api.state() && api.state().saving, "setup: the old set is mid-save");
+    assert.strictEqual(page.clicked.length, 6, "setup: five handed over, then the first of the next five");
+    const clicksBefore = page.clicked.length;
+    failNow = true;
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(api.state(), null, "a set mid-save is dropped like any other: its files were swept");
+    await release(); await next;
+    assert.strictEqual(page.clicked.length, clicksBefore, "the dropped set's loop asked for no more dead files");
+    assert.strictEqual(page.els["parts-status"].textContent, "", "and wrote no status for a set that is gone");
+    assert.strictEqual(page.els["parts-bar"].hidden, true);
   }
 
   console.log("all assertions passed");
