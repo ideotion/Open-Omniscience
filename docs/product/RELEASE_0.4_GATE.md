@@ -58,7 +58,7 @@ step: a session never moves a tag). Row G records it, and the release published 
 | A | A committed full import that re-checks **all** sources | operator | ruled 2026-08-13, moved from 0.3 row 4 | **OPEN — the button exists (2026-09-18):** Settings → Advanced → Diagnostics → *0.4 release run*; its report's row A is the committed fresh-install restore + the integrity reading. Pressing it is the operator's; reading its report is the maintainer's · **Field evidence 2026-09-30 (§2):** two instances already read `inversions-found`, three named domains; the merge fix is on `main` (PR #1278), its field proof is this row's |
 | B | A multi-day (≥72 h) collector soak | operator | ruled 2026-08-23, moved from 0.3 row 7b | **CLOSED 2026-10-01 (`R113`, «17a»)** on instance 090243's 72 h run of 19–22 September, its 73 hourly readings as the memory evidence; §2 says what the close does not claim. (The button of 2026-09-18, which arms the unattended kit and heartbeats hourly, is how that run was made) |
 | C | Diagnostics on the ~1M-article instance | operator | ruled 2026-08-23, moved from 0.3 row 3's earlier bar | **OPEN — the button exists (2026-09-18):** the second button (*Run as the ~1M-article instance*) makes the end-of-run all-diagnostics bundle the REQUIRED artifact and reads its coverage block and zero-byte members into the report |
-| D | Row B's evidence is readable from one artifact | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **BUILT, and DRIVEN end to end at fixture scale 2026-09-15** — four of six blocks measured, the other two `measured: false` with a reason; still awaiting a ≥ 72 h run to read |
+| D | Row B's evidence is readable from one artifact | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **BUILT, and DRIVEN end to end at fixture scale 2026-09-15** — four of six blocks measured, the other two `measured: false` with a reason · **CLOSED 2026-10-01** on its own exit text: instance 090243's 72 h release run (`20260919T043901Z`) carries the six-block soak-window report of its window (80.46 h, `reaches_bar: true`) and the P0.3 collector check re-taken in the same `collect` phase; §2 records both, and what the close does not claim |
 | E | Row A's demonstration has tooling that can state its own result | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **PARTIAL** — built, riding the bundle, and driven end to end 2026-09-15 in BOTH directions (clean → `consistent`; seeded laundering → `inversions-found`, named); the RUN is Row A's |
 | F | The browser bar reaches a human, a second engine, or is closed as-is | shared | *proposed* → **closed as-is, ruled 2026-09-15 (Q117 = a on Q1128 = a)** | **CLOSED 2026-09-15** — the bar is Chromium-in-sandbox + the maintainer's click-through; Gecko best-effort. The citable sentence lives in §2 row F behind `<!-- release-notes: verification-bar -->`, and the release notes quote it from there |
 | G | `0.3` closed and the version flipped | operator | ruled 2026-09-15 (Q109 = a); 2026-09-27 (`RC01` = a) · brief `S03-01` | **CLOSED 2026-09-28 — `main` reads `0.4.0` (PR #1195).** `RC01` ANSWERED (a) 2026-09-27: the existing `v0.3.0` pre-release is the `0.3` close and `0.3`'s row 5 moved to row W. The flip came after the `v0.4.0` tag, which was cut while the version read `0.3.0`; the tag moves onto the flip's merge (the maintainer's step) |
@@ -296,7 +296,7 @@ writing a letter at `ANSWER RC08.3`.
 
 ---
 
-### Row D — row B's evidence is readable from one artifact · *proposed* · BUILT
+### Row D — row B's evidence is readable from one artifact · *proposed* · BUILT · CLOSED 2026-10-01
 
 **Why it is a row.** Row B's bar is a property of a three-day window, and until now no single
 artifact answered *"did the soak pass"*. The instruments existed — `collect_perf`, the memory
@@ -331,7 +331,7 @@ RSS verdict — that stays P0's — and it publishes no composite.
 
 **Closes when:** one soak-window report from a run of ≥ 72 h exists and is read alongside the
 P0.3 report. Until a real soak happens, this row is *built, unread* — the honest state, and
-not the same as closed.
+not the same as closed. **Met 2026-10-01: see «READ ON A REAL RUN AND CLOSED» below.**
 
 **DRIVEN END TO END AT FIXTURE SCALE (2026-09-15).** A synthetic corpus seeded through the real
 `index_article` (`scripts/ui_clickthrough_seed.py`, 440 articles), the app served on loopback,
@@ -352,6 +352,38 @@ So **the mechanism is proven and the window is not**: nothing in the tree can ma
 `reaches_bar` true, and `memory_guard` / `wal` leave `unmeasured` for the same reason —
 elapsed time on the operator's machine. The two blocks that report `measured: false` do so with
 a reason and are listed in `unmeasured`, which is the honest shape and not a reading of zero.
+
+**READ ON A REAL RUN AND CLOSED (2026-10-01).** The row's exit text is «one soak-window report from a
+run of ≥ 72 h exists and is read alongside the P0.3 report». Instance `090243`'s release run
+`20260919T043901Z` is that run, and the artifact is its own report: the `collect` phase of
+`release-run.json` (taken 2026-09-22T15:03:36 +02:00, the moment the run's 72.0 h `soak` phase ended)
+holds the six blocks of the table above (`phase_results.collect.soak_window`) and, in the same phase,
+the P0.3 collector check re-taken (`phase_results.collect.collector`). Side by side, with no verdict
+attached (the report is verdict-free on purpose):
+
+| Block | What the soak's own process (`pid 3266`) read |
+|---|---|
+| `window` | 80.46 h of process uptime from 2026-09-19T04:36:14Z, `reaches_bar: true` (the run's `soak` phase is the last 72.0 h of it, from 2026-09-19T15:03:34 +02:00; the first hours were the run's preflight, row 5, P0 and restore phases) |
+| `memory_guard` | 0 engagements, 0.0 s engaged, over 3.35 days |
+| `wal` | 63 hourly points inside the window; maximum 1,499,707,640 bytes, minimum 18,508,256 |
+| `write_gate` | 11,851 grants, 6,841 contended; `busy_share` 0.9402; longest hold 500.25 s (`oo-collect_4`); longest wait 902.76 s; 0 timeouts |
+| `database_stats_latency` | 4 requests, p95 4,796.8 ms — the route's last ≤ 512 requests, **not** the soak |
+| `interrupted` | 0 this session; the log is at its 2,000-record cap, so the count is a floor |
+| P0.3 (`collector`), same phase | `pass`: +79 MB over 2 passes (1,718 → 1,797 MB) in the retained window, about 2 h |
+
+**What this close does not claim.** It claims that the report is READABLE from one artifact, which is
+what the row is for; it does not say the figures are good (`write_gate`'s 0.9402 busy share and 6,841
+contended grants are for the collector's own work to read, not for this row). The P0.3 line covers the
+retained ~2 h, so it is not the multi-day memory evidence: the 73 hourly heartbeats are, in row B's
+section. `database_stats_latency` describes four calls, not the window. The seventh block of the report,
+`wiki_lane` (the Wikipedia lane, row P's), is not one of the table's six and reads `measured: false`
+here — `OperationalError: no such table: versioned_changes`, listed in `unmeasured`, «not a reading of
+zero»; the lane's own 72 h run is row P, still open. The standalone `p0-validation.json` in the same
+bundle is NOT what row D reads: it is the P0 report the run took at its start (created
+2026-09-19T14:22:40 +02:00, 41 minutes before the run armed its soak at 15:03:34, with one collector pass
+in its window: its `p0_3_collector` is `not-measurable-here`). The same instance's later process
+(`pid 2093`, started 2026-09-25T07:38:00Z) has a second report in `soak-window.json` (119.69 h); row B's
+section records that process, and this close does not rest on it.
 
 ---
 
@@ -1094,6 +1126,7 @@ The `0.3` gate's own log is the format.
 
 | Date | Change | Source |
 |---|---|---|
+| 2026-10-01 | **Row D CLOSED on its own exit text.** The report row D asks for exists: instance 090243's 72 h release run (`20260919T043901Z`) holds the six-block soak-window report of its window (80.46 h, `reaches_bar: true`, all six blocks measured) and the P0.3 collector check re-taken in the same `collect` phase (`pass`, +79 MB over 2 passes in the retained ~2 h), so «one soak-window report from a run of ≥ 72 h exists and is read alongside the P0.3 report» is met on one artifact. §2 records the six blocks and what the close does not claim: the figures are not judged, the P0.3 line is not multi-day evidence, `wiki_lane` (the seventh block) is unmeasured and is row P's, and the standalone `p0-validation.json` is the P0 report taken at the run's start, which is not what the row reads. No new ruling: this reads the exit text as written, in a draft PR for the maintainer, and under `Q117` a row closes on the maintainer's reading of its report, so merging is that reading and reverting this hunk reopens the row. | session (project thread «Release candidate diagnostics»; the coordinator's reading, 2026-10-01 02:44 UTC) |
 | 2026-10-01 | **Row B CLOSED (`R113`, «17a»); row A gains the field evidence of the 16-instance diagnostics.** Row B closes on instance 090243's 72-hour run of 19 to 22 September with its 73 hourly readings as the memory evidence (the built-in memory check keeps about two hours, so no P0.3 reading can span 72 h). §2 records what the close does not claim: `soak-window.json`'s `reaches_bar` is the later process's (the release run's own soak-window block, taken by the soak process, reads 80.46 h), that later process engaged the memory guard 76 times, which process «ended cleanly» reads, and why the other windows of the round (085214 climbing, 085218's missing final report, 085230 at 30 h) do not close it. Row A stays OPEN and its bar is unchanged: §2 now records `inversions-found` on two instances (three named domains), the merge fix on `main` (PR #1278, unit-proved; its field proof is this row's), the two import shapes that still arrive inverted (a row holding the instance's own measured verdict beside a newer, disagreeing incoming attempt, and a backup from an instance that is itself inverted; both reproduced with the real merge, no test covers either), and the repair script that was on `main` since PR #1117 but named in no gate file. **A date corrected:** no release run started on 2026-09-26. The eight runs in the 16 bundles (five with a report file, three interrupted in the `row5_quarantine` phase (0.3's row 5, row W here) with no heartbeat) all started on 2026-09-19 (run ids `20260919T04…Z`; `085218` and `085230` were resumed on 2026-09-22, `085230` again on 2026-09-26, and armed their soaks on 2026-09-26: `soak.started_at` 15:23:51 and 15:07:57, +02:00). The «release run of 2026-09-26» of the 2026-09-28 entry below, and the sentence of `docs/CHANGES.md` that repeated it (replaced in this PR), therefore do not name the date a run started. | maintainer (project chat, 2026-10-01 00:12 UTC, «17a») · diagnostics ranks 13 and 14 · recorded by the session |
 | 2026-09-30 | **The older-rounds list, answered in the thread (03:35 UTC; recorded without code changes).** Rows carried onto the 0.5 list by `R92`: **row H** `PF07` = a (the three ride-along opt-outs fixed now, in their own small PR); **row T** `PF08` = a (the knob's words become kbit/s ×12 and invariant #4 is amended in that PR); **row U** `R99` = with eclipses (the eclipse canon is no longer unstated). | maintainer (project thread «Record the 37 answers», 2026-09-30 03:35 UTC) · recorded by the session |
 | 2026-09-29 | **The 37-question list, answered in chat (19:55 UTC; recorded without code changes).** **`R92` («21=b», over the recommended «keep them here»): every row still open at the `v0.4.0` tag — A, B, C, D, E and H to W — is now also a condition of the 0.5 exit** (`RELEASE_0.5_GATE.md` §1b); each keeps its text, bar and status HERE and closes here on its named artifact. **`R91` («20=a»): row H's 15 lane names, three headings and the 16th lane «Places and people» are kept** (H9 answered). **Q925 = a** (row Q: legislation.gov.uk → gesetze-im-internet → e-Gov → EUR-Lex → LEGI last); **Q1113 = a** (row S: the embassy platforms stay excluded, nothing published, nobody contacted — the status quo, confirmed). From the RC round: `RC02` = a (row K keeps the legacy single-file restore forever), `RC08` = a (`RC08.3` row C and `RC08.6` row U confirmed), `RC13` = b with eclipses (row U: the religious dates researched by a networked session and shipped PREINSTALLED, every religion covered, each shown or hidden by the user — the maintainer's note; the eclipse half is the recorded default), `RC15` = c (row T: Q1148's loopback figures stand AND the per-host egress politeness is to be adapted — no figure was written, so it is proposed and asked), `RC17` = a (row U, as built). **Still open, with the maintainer's words on their `RULINGS_INDEX.md` rows:** `RC05` and `D47` (to the thread «Keyword working session»), `RC06` (row S's re-check window — waits on the thread «Fix source qualification»: no source was added in 72 hours on eight instances despite more than 80,000 candidates, and re-qualification is to run as a queue), `RC16` (a later discussion). **No row changed status.** | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
