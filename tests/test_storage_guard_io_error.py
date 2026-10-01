@@ -20,7 +20,14 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import OperationalError
 
 from src.scheduler import storage_guard as sg
-from src.scheduler.storage_guard import GIB, MIB, StorageGuard, disk_reserve_bytes, is_disk_full, is_io_error
+from src.scheduler.storage_guard import (
+    GIB,
+    MIB,
+    StorageGuard,
+    disk_reserve_bytes,
+    is_disk_full,
+    is_io_error,
+)
 
 _TOTAL = 500 * GIB
 _RESERVE = disk_reserve_bytes(_TOTAL)  # max(1 GiB, 2% of 500 GiB) = 10 GiB
@@ -160,9 +167,8 @@ def test_the_corpus_engines_hook_latches_on_a_real_failed_statement_and_lets_the
     eng = dbsession.engine
     boom = _fail_every_statement(eng, lambda: sqlite3.OperationalError("disk I/O error"))
     try:
-        with pytest.raises(OperationalError, match="disk I/O error"):
-            with eng.connect() as conn:
-                conn.execute(text("SELECT 1"))
+        with pytest.raises(OperationalError, match="disk I/O error"), eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
     finally:
         event.remove(eng, "do_execute", boom)
     assert g.engaged and g.kind() == "disk"
@@ -177,9 +183,8 @@ def test_the_corpus_engines_hook_leaves_an_io_error_on_a_drive_with_room_alone(m
     eng = dbsession.engine
     boom = _fail_every_statement(eng, lambda: sqlite3.OperationalError("disk I/O error"))
     try:
-        with pytest.raises(OperationalError):
-            with eng.connect() as conn:
-                conn.execute(text("SELECT 1"))
+        with pytest.raises(OperationalError), eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
     finally:
         event.remove(eng, "do_execute", boom)
     assert not g.engaged and g.state()["io_errors"] == 1
@@ -193,9 +198,8 @@ def test_the_corpus_engines_hook_still_latches_on_the_full_message(monkeypatch):
     eng = dbsession.engine
     boom = _fail_every_statement(eng, lambda: sqlite3.OperationalError("database or disk is full"))
     try:
-        with pytest.raises(OperationalError):
-            with eng.connect() as conn:
-                conn.execute(text("SELECT 1"))
+        with pytest.raises(OperationalError), eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
     finally:
         event.remove(eng, "do_execute", boom)
     assert g.engaged and g.kind() == "disk"
@@ -215,9 +219,8 @@ def test_a_lane_engine_carries_the_same_hook(monkeypatch, tmp_path):
         eng = store.lane_engine("wiki", create=True)
         boom = _fail_every_statement(eng, lambda: sqlite3.OperationalError("database or disk is full"))
         try:
-            with pytest.raises(OperationalError):
-                with eng.connect() as conn:
-                    conn.execute(text("SELECT 1"))
+            with pytest.raises(OperationalError), eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
         finally:
             event.remove(eng, "do_execute", boom)
         assert g.engaged and g.kind() == "disk"
@@ -225,9 +228,8 @@ def test_a_lane_engine_carries_the_same_hook(monkeypatch, tmp_path):
         _swap_in(monkeypatch, g2)
         boom = _fail_every_statement(eng, lambda: sqlite3.OperationalError("disk I/O error"))
         try:
-            with pytest.raises(OperationalError):
-                with eng.connect() as conn:
-                    conn.execute(text("SELECT 1"))
+            with pytest.raises(OperationalError), eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
         finally:
             event.remove(eng, "do_execute", boom)
         assert g2.engaged and g2.state()["last_io_error"]["latched"] is True
