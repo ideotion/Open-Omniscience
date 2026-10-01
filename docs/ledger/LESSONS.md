@@ -12967,6 +12967,19 @@ one build per page; the re-render of a bar that is then hidden; and the order of
 clauses, which "has not landed yet" made equivalent). **State that a server action replaces (here the split's files)
 must be compared with what the server now holds, not assumed alive because the page remembers it.**
 
+**AMENDED 2026-10-01 (R115 follow-ups S1 and S4, and a survivor named).** The split no longer sweeps first: the new set is
+built in a folder beside the live one and moved in whole (the sidecar last, because it is what makes a set exist), so a
+split that fails leaves the PREVIOUS set serving on the server, and a refused one (507, no room) changes nothing. The page
+still empties a diagnostics set after a failure other than 404 and 409, and the reason changed with the premise: the files
+are not gone, but the set is of the previous archive and the person asked for the new one, so showing it beside "Could not
+split the archive" would offer last bundle's files as this bundle's, the fabricated answer wearing a fresh timestamp that
+the route's 409 exists to refuse. **When a fix removes the reason a guard was written, find out whether the guard has
+another one before keeping or deleting it.** One mutant of the deferral clause was named only in review and is recorded
+here so nobody rediscovers it: `_partsBusy !== 0` for `_partsBusy === _partsGen` survives, and differs only while
+`_partsBusy` holds an OLDER press's generation with the bar empty, which takes a press in flight, a split that fails and
+drops the bar, and then a second finished build, two builds finishing in one page session, which the button's one-build-per-page
+rule rules out. A test for it would stand on a state the page cannot reach; if a path ever empties the bar without a press, pin it first.
+
 ### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)
 
 The first build of the storage guard's button cleared the latch and let the next two samples re-trip it, and was

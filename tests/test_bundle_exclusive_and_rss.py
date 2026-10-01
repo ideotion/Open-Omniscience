@@ -175,9 +175,12 @@ def test_a_failure_inside_the_bundle_propagates_as_itself_not_as_a_failed_claim(
     ``try``, so an exception raised by the bundle's own body was caught, logged as "could not claim
     the machine" and turned into ``RuntimeError: generator didn't stop after throw()``. Whatever
     actually went wrong was hidden in every in-body failure."""
-    with caplog.at_level("WARNING"), pytest.raises(KeyError, match="the real cause"):
-        with d._bundle_exclusive_window():
-            raise KeyError("the real cause")
+    with (
+        caplog.at_level("WARNING"),
+        pytest.raises(KeyError, match="the real cause"),
+        d._bundle_exclusive_window(),
+    ):
+        raise KeyError("the real cause")
     assert "could not claim the machine" not in caplog.text
     assert R.exclusive_window_open() is False, "the hold is released on the way out"
 
