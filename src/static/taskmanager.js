@@ -410,7 +410,7 @@
     if ((g.kinds || []).indexOf("override-withdrawn") >= 0) return "";
     var vars = {};
     Object.keys(rf.vars || {}).forEach(function (k) { vars[k] = fmtBytes(rf.vars[k]); });
-    return '<div class="tiny secondary">' + esc(tf(rf.frame, vars)) + "</div>";
+    return '<div class="vnote">' + esc(tf(rf.frame, vars)) + "</div>";
   }
 
   // ---- Schedule — the scheduler's own facts, AIRPLANE-AWARE ---- //

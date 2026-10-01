@@ -421,7 +421,7 @@ def storage_guard_resume() -> dict:
 
     Collection continues although the WAL limit or the drive reserve is still exceeded. It
     ends by itself when the cause clears, when a limit it was not granted for trips (a second
-    limit), when free space cannot be read for two samples in a row, when free space falls to
+    limit), when free space cannot be read for ``trip_after`` samples in a row, when free space falls to
     the override floor (``max(128 MiB, the log's size)``) and when a write fails for want of
     space. It is REFUSED (with a sentence frame, nothing changes) while a write has just
     failed, when free space cannot be read, or when it is already at or below the floor; the

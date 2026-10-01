@@ -1162,6 +1162,68 @@ def test_the_start_and_run_now_retry_leaves_an_override_that_holds_alone():
     assert g2.admit() == "wal", "a retry that finds the limit still exceeded pauses again"
 
 
+def test_start_and_run_now_end_an_override_whose_cause_is_already_back_under_the_limit():
+    """The latch can hold below the limit (hysteresis: it releases at the resume level, not the
+    limit). An override kept there would have no exit short of quitting the app, and the log could
+    then grow to the floor with no pause: the retry must run as the retry it is, re-arming the
+    limit."""
+    g = _overridable(wal=2 * GIB, free=100 * GIB)  # limit 1 GiB, resume level 0.5 GiB
+    g.override(reason="test")
+    g.fake["wal_bytes"] = int(0.8 * GIB)  # under the limit, above the resume level: the latch holds
+    g.poll()
+    assert g.engaged and g.state()["overridden"] is True
+    g.reset(reason="operator started collection")
+    assert g.engaged is False and g.state()["overridden"] is False
+    g.fake["wal_bytes"] = 24 * GIB  # grows again: the limit is back, no override left to ride on
+    g.poll()
+    g.poll()
+    assert g.admit() == "wal", "the ordinary pause is back"
+    # the drive, the same way: free space between the reserve and the resume level
+    d = _overridable(wal=100 * MIB, free=1 * GIB, kind="disk")
+    d.override(reason="test")
+    d.fake["disk_free_bytes"] = 12 * GIB  # reserve 10 GiB, resume 15 GiB
+    d.poll()
+    assert d.engaged and d.state()["overridden"] is True
+    d.reset(reason="operator ran collection now")
+    assert d.engaged is False and d.state()["overridden"] is False
+    # an unreadable figure is not evidence that the cause cleared: the override stays
+    u = _overridable(wal=2 * GIB, free=100 * GIB)
+    u.override(reason="test")
+    u.fake["wal_bytes"] = None
+    u.poll()
+    u.reset(reason="operator started collection")
+    assert u.state()["overridden"] is True
+
+
+def test_an_unreadable_sample_between_readable_ones_does_not_age_a_floor_note():
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    _withdraw(g)  # the floor note, free 20 GiB
+    for free in (None, 18 * GIB, None):
+        g.fake["disk_free_bytes"] = free
+        g.poll()
+    note = g.state()["notes"][0]
+    assert note["frame"] == storage_guard.FRAME_OVERRIDE_STOPPED and note["vars"]["free"] == 18 * GIB, (
+        "a readable sample between two misses restarts the count: one miss is no information"
+    )
+    g.poll()  # the second miss in a row
+    assert g.state()["notes"][0]["frame"] == storage_guard.FRAME_OVERRIDE_UNREADABLE
+
+
+def test_a_latch_a_measurement_set_never_reads_as_a_refused_write_even_after_a_lapsed_hold():
+    """A write failed on an already-short drive, hours ago: the override note says what the
+    measurement says, not that a write was refused."""
+    clock = Clock()
+    g = _overridable(wal=100 * MIB, free=1 * GIB, kind="disk", clock=clock)  # a measured shortage
+    g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    clock.advance(6 * 3600)
+    g.fake["disk_free_bytes"] = 12 * GIB  # recovered into the band between the reserve and the resume level
+    g.poll()
+    assert g.engaged
+    assert g.override(reason="test")["overridden"] is True
+    notes = {n["kind"]: n for n in g.state()["notes"]}
+    assert notes["override-disk"]["frame"] == storage_guard.FRAME_OVERRIDE_DISK
+
+
 def test_starting_collection_starts_the_supervisor_so_an_override_is_always_bounded(monkeypatch):
     """The supervisor's ticks are what read the floor; a boot with OO_NO_SCHEDULER=1 starts none,
     so the scheduler's start and a manual run do (idempotently)."""
@@ -1551,6 +1613,7 @@ def test_no_sentence_the_guard_sends_tells_the_user_to_do_anything():
         storage_guard.FRAME_DISK_ERROR,
         storage_guard.FRAME_OVERRIDE_WAL,
         storage_guard.FRAME_OVERRIDE_DISK,
+        storage_guard.FRAME_OVERRIDE_DISK_ERROR,
         storage_guard.FRAME_OVERRIDE_STOPPED,
         storage_guard.FRAME_OVERRIDE_HELD,
         storage_guard.FRAME_OVERRIDE_UNREADABLE,
@@ -1566,7 +1629,12 @@ def test_the_floors_reason_holds_for_both_terms_of_the_max_and_no_refusal_promis
     """Review of #1283: the floor is max(128 MiB, the log's size). "The least the file needs to be
     written back" is false when the 128 MiB term is the one that bites, and "resumes once the drive
     has room" is false for a log-only pause (it resumes when the log resets)."""
-    for f in (storage_guard.FRAME_OVERRIDE_WAL, storage_guard.FRAME_OVERRIDE_DISK, storage_guard.FRAME_OVERRIDE_STOPPED):
+    for f in (
+        storage_guard.FRAME_OVERRIDE_WAL,
+        storage_guard.FRAME_OVERRIDE_DISK,
+        storage_guard.FRAME_OVERRIDE_DISK_ERROR,
+        storage_guard.FRAME_OVERRIDE_STOPPED,
+    ):
         assert "write" in f and "finish a write" in f and "the least" not in f, f
     assert "resumes" not in storage_guard.FRAME_OVERRIDE_STOPPED
     assert "room again" not in storage_guard.FRAME_OVERRIDE_STOPPED
@@ -1794,6 +1862,7 @@ def test_every_storage_string_is_in_the_twelve_locales():
         "Collection resumed although the limit is still exceeded. It stops again by itself if free space falls too low.",
         storage_guard.FRAME_OVERRIDE_WAL,
         storage_guard.FRAME_OVERRIDE_DISK,
+        storage_guard.FRAME_OVERRIDE_DISK_ERROR,
         storage_guard.FRAME_OVERRIDE_STOPPED,
         storage_guard.FRAME_OVERRIDE_HELD,
         storage_guard.FRAME_OVERRIDE_UNREADABLE,

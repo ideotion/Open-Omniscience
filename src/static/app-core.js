@@ -2027,7 +2027,7 @@
       if ((g.kinds || []).indexOf("override-withdrawn") >= 0) return "";
       const vars = {};
       Object.keys(rf.vars || {}).forEach((k) => { vars[k] = _fmtBytes(rf.vars[k]); });
-      return `<div class="tiny secondary">${esc(tf(rf.frame, vars))}</div>`;
+      return `<div class="vnote">${esc(tf(rf.frame, vars))}</div>`;
     }
     // The two paused phases the storage guard sets, as the labels the panels show.
     // None while the operator's override holds: the loop's phase can still read paused for up to

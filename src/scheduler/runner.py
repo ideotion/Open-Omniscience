@@ -1839,10 +1839,10 @@ class BackgroundScheduler:
         Returns at once when the guard is disabled or healthy, or while the operator's
         override ("Resume anyway", R112) holds: ``admit()`` is None then.
 
-        The supervisor is what RELEASES the latch (fresh readings, the drain). When it is not
-        running -- the scheduler started over the API after a boot with ``OO_NO_SCHEDULER=1``
-        -- this loop takes the readings and the drain itself, so a pause can never outlive
-        the condition that caused it.
+        The supervisor is what RELEASES the latch (fresh readings, the drain), and starting
+        collection starts it (:func:`_ensure_storage_supervisor`). Should it not be running (it
+        failed to start), this loop takes the readings and the drain itself, so a pause can never
+        outlive the condition that caused it.
         """
         waited = False
         shown: str | None = None
