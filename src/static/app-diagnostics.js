@@ -865,6 +865,9 @@
     // Every action that replaces the bar's set takes a number; one that finds a newer number after
     // an await was overtaken and leaves the bar to the newer one.
     let _partsGen = 0;
+    // How many keyword or diagnostics-split requests are in flight: the finished diagnostics build
+    // must know whether a newer request is still on its way to the bar.
+    let _partsBusy = 0;
 
     // The manifest first, then the numbered parts in order (the listing carries both kinds).
     function _partsFiles(listing) {
@@ -1039,6 +1042,7 @@
       _partsRender();
       _partsStatus(mode === "again" ? t("Looking for the last keyword files…")
         : t("Building the numbered keyword files… a large corpus takes minutes; the app stays usable."));
+      _partsBusy++;
       try {
         let listing;
         try {
@@ -1059,6 +1063,7 @@
           _partsReady(listing, "keywords");
         }
       } finally {
+        _partsBusy--;
         if (btn) btn.disabled = false;
       }
     }
@@ -1081,6 +1086,7 @@
       _partsSet = null;
       _partsRender();
       _partsStatus(t("Splitting the archive…"));
+      _partsBusy++;
       try {
         let m;
         try {
@@ -1108,9 +1114,12 @@
           _partsStatus(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
           return;
         }
+        const ready = $("all-diag-status");
+        if (ready) ready.textContent = "";   // "the archive is ready, press again" is answered by this press
         _partsOffer(m, "diagnostics");
         await _partsSave(_PARTS_PER_CLICK, startAt || null);   // the click that asked is still alive
       } finally {
+        _partsBusy--;
         if (btn) btn.disabled = false;
       }
     }
@@ -1161,12 +1170,15 @@
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
               // A finished build replaces the bar's set like any other button, so it takes a
-              // number (a keyword build asked for BEFORE this one was started, still on its way,
-              // then leaves the bar to it), and a click that is handing files over is let finish
-              // first: never cut after two of five. A button pressed while this build ran is the
-              // newer request and keeps the bar: the archive then waits for its own "again" button.
-              while (_partsSet && _partsSet.saving) await sleep(250);
-              if (_partsGen !== askedAt) {
+              // number. It does NOT take the bar from the person's own work: a set they have
+              // begun to save (a click handing files over included) is never cut, and a button
+              // pressed while this build ran is the newer request, so its set (landed or still on
+              // its way) keeps the bar. A press that ended with nothing to show (no archive yet,
+              // a refusal) leaves the bar free for the finished archive. Otherwise the archive
+              // waits for its own "again" button. Everything from here to the take is one tick.
+              const begunSaving = !!(_partsSet && _partsSet.offered.size > 0);
+              const pressedSince = _partsGen !== askedAt;
+              if (begunSaving || (pressedSince && (_partsBusy > 0 || _partsSet))) {
                 set(t("The archive is ready. Press “All diagnostics, again” to save it as numbered files."));
               } else {
                 ++_partsGen;

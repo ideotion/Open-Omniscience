@@ -70,7 +70,7 @@ function install() {
   global._fmtBytes = (n) => n + " B";
   readyListings = [];
   global._partsReady = (m) => readyListings.push(m);   // the numbered-files bar, defined elsewhere
-  global._partsSet = null; global._partsGen = 0;       // the bar's state: a finished build takes a number
+  global._partsSet = null; global._partsGen = 0; global._partsBusy = 0;       // the bar's state: a finished build takes a number
   global.api = async (url) => { apiCalls.push(url); return respond(url); };
 }
 

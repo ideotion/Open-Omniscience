@@ -61,7 +61,7 @@ function load(page, opts) {
   opts = opts || {};
   const src = [
     constLine("_PARTS_PER_CLICK"), constLine("_ALL_DIAG_POLL_CEILING_MS"),
-    "let _partsSet = null;", "let _partsGen = 0;",
+    "let _partsSet = null;", "let _partsGen = 0;", "let _partsBusy = 0;",
     extract("_partsFiles"), extract("_partsWindow"), extract("_partsNextLabel"),
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
@@ -97,6 +97,8 @@ function listing(parts, manifests) {
   }
   return {files, download_base: "/api/diagnostics/keywords/parts/set1/"};
 }
+
+const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again” to save it as numbered files.";
 
 (async () => {
   // ---- the order: manifest first, then the parts in order, whatever order the listing came in
@@ -505,7 +507,7 @@ function listing(parts, manifests) {
     assert.ok(/numbered parts: 3\)/.test(page.els["parts-status"].textContent) === false, page.els["parts-status"].textContent);
   }
   {
-    // a click that is handing files over is let finish: the archive takes the bar only after the fifth file
+    // a set the person has begun to save is never cut: the finished archive waits, and the five files all go out
     const page = makePage(); const hold = [];
     const api = load(page, {hold, api: buildApi(null)});
     api._partsOffer(listing(30, 1), "keywords");
@@ -518,14 +520,62 @@ function listing(parts, manifests) {
     }
     assert.strictEqual(finished, 2, "both finished");
     assert.strictEqual(page.clicked.length, 5, "the save in flight was not cut");
-    assert.strictEqual(api.state().kind, "diagnostics", "and the finished archive then took the bar");
-    assert.strictEqual(api.state().pcount, 4);
+    assert.strictEqual(api.state().kind, "keywords", "and the archive did not take the bar from it");
+    assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE);
+  }
+  {
+    // a keyword set landed earlier and the person saved five of its files: the finished archive waits too
+    const page = makePage();
+    const api = load(page, {api: buildApi(null)});
+    await api.downloadKeywordParts({disabled: false}, "default");      // before the build was asked for
+    await api.partsSaveNext();
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(api.state().kind, "keywords", "five files handed over: the person's work stays");
+    assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE);
+    // ...while an unsaved older set is simply replaced by the archive that was asked for later
+    const pg2 = makePage(); const a2 = load(pg2, {api: buildApi(null)});
+    await a2.downloadKeywordParts({disabled: false}, "default");
+    await a2.runAllDiagnostics({disabled: false});
+    assert.strictEqual(a2.state().kind, "diagnostics", "an unsaved set asked for before the build gives way to it");
+    assert.strictEqual(pg2.els["all-diag-status"].textContent, "");
+  }
+  {
+    // a press made while the build ran that ended with NOTHING to show leaves the bar to the archive
+    for (const press of ["again-409", "keyword-refused", "keyword-404"]) {
+      const page = makePage(); const statusHeld = []; let volumeCalls = 0;
+      const api = load(page, {api: (url) => {
+        if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+        if (url === "/api/diagnostics/all-job/status") return new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})));
+        if (url === "/api/diagnostics/all-job/volumes") {
+          volumeCalls++;
+          if (volumeCalls === 1 && press === "again-409") { const e = new Error("build running"); e.status = 409; return Promise.reject(e); }
+          return Promise.resolve(listing(4, 1));
+        }
+        const e = new Error("refused"); e.status = press === "keyword-404" ? 404 : 500; return Promise.reject(e);
+      }});
+      const diag = api.runAllDiagnostics({disabled: false});
+      for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+      if (press === "again-409") await api.downloadDiagnosticsVolumes({disabled: false});
+      else await api.downloadKeywordParts({disabled: false}, press === "keyword-404" ? "again" : "default");
+      assert.strictEqual(api.state(), null, press + ": the press left no set on the bar");
+      statusHeld[0]();
+      await diag;
+      assert.strictEqual(api.state().kind, "diagnostics", press + ": the finished archive took the free bar");
+      assert.strictEqual(api.state().pcount, 4);
+    }
+  }
+  {
+    // "All diagnostics, again" answers the "archive is ready, press again" line: it is cleared
+    const page = makePage();
+    const api = load(page, {api: async () => listing(4, 1)});
+    page.els["all-diag-status"].textContent = READY_SENTENCE;
+    await api.downloadDiagnosticsVolumes({disabled: false});
+    assert.strictEqual(page.els["all-diag-status"].textContent, "");
   }
 
 
   // ---- a button pressed WHILE the diagnostics build runs is the newer request: the finished archive does not take the bar from it
   {
-    const READY = "The archive is ready. Press “All diagnostics, again” to save it as numbered files.";
     for (const keywordFinishesFirst of [false, true]) {
       const page = makePage(); const statusHeld = []; const keywordHeld = [];
       const api = load(page, {api: (url) => {
@@ -542,7 +592,7 @@ function listing(parts, manifests) {
       if (keywordFinishesFirst) { keywordHeld[0](); await keyword; }
       statusHeld[0]();
       await diag;
-      assert.strictEqual(page.els["all-diag-status"].textContent, READY, "the archive says it is ready and what to press");
+      assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE, "the archive says it is ready and what to press");
       if (!keywordFinishesFirst) { keywordHeld[0](); await keyword; }
       assert.strictEqual(api.state().kind, "keywords", "the keyword set the person asked for last has the bar");
       assert.ok(/numbered parts: 3\)/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);

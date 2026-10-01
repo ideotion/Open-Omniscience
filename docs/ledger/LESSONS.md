@@ -12940,3 +12940,12 @@ messages now say "asked your browser to save", the box names the last part after
 is clamped and said so. **Count what was offered by the set of indexes offered, not by a position**, so a part sent again
 is not counted twice, and **put a typed value's meaning on one control** (the "Save from this part" button; "again"
 reads it only for the same kind of set) instead of letting three buttons each half-honour the box.
+
+**A generation number orders presses, not requests, and a fix for one ordering moves the damage to the next.** The
+diagnostics build runs for hours and finishes after buttons pressed beside it, so "the last action to arrive wins the
+bar" drops the NEWER request (a keyword set pressed while it ran) and, in the first fix, also left a press that ended
+with nothing (a 409 or 404) holding a bar that no set would ever fill. Three review passes each found the next ordering.
+The rule that holds: the finished build takes the bar unless the person has begun to save the set on it or a press made
+since it was asked for holds a set or still has one on its way; a press that left nothing leaves the bar free. The
+orderings are a table in `tests/parts_delivery_node_test.js` and each row is mutation-checked. A typed number that
+sends files again is a SIDE TRIP: the position the ordinary button continues from is the furthest file reached, never the typed one.
