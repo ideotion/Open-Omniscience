@@ -11903,9 +11903,12 @@
   the pass that was in flight when the guard first refused, the drive's loss until the pass's end (an upper
   bound: it counts every writer) as `last_tail` in the polled state and `tails` plus
   `max_tail_drive_free_drop_bytes` in the bundle's `storage_guard` block. **Still to come from the same
-  thread:** PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
-  machine's measured recovery rate), PR D (rank 9's browse query). PR B (the pool: rank 12's endpoint on a standing row; rank 7's
-  last-good activity preview, which is NOT the ruling-gated 429 cap; the tail measure) is the PR that carries this note.
+  thread, as of 2026-10-01:** PR D (rank 9's browse query) and the backup PR (the corpus-wal member of a backup). PR B (#1289: the pool, rank 12's
+  endpoint on a standing row, rank 7's last-good activity preview, which is NOT the ruling-gated 429 cap, and the tail measure; this ruling is `R118`)
+  and PR C (#1293: unlock phase 0) are MERGED. PR C CONCLUDED that the 2 GiB ceiling is NOT derived from a recovery rate: the only honest
+  predictor of a machine's unlock is THAT MACHINE'S own last measured recovery (`forensics.last_recovery`), which the page states with its basis,
+  and the only lever on the cost is the log's size at boot, which the guard's bound already is (`LESSONS.md`, "THE UNLOCK'S WAL COST IS TWO COSTS").
+  The findings of the reviews of #1287, #1289 and #1293 ride the follow-up PR on this branch.
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
   anything marked in the memory as something to do later. Sort everything into a detailed action plan

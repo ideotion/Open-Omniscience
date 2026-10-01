@@ -13043,7 +13043,6 @@ draws an old plan as a live one. It refuses two things: a preview for settings t
 says "computing"), and a silent failure (a failed refresh is recorded and the age keeps growing). This is NOT the
 ruling-gated 429 cap on polled GETs: nothing is rejected.
 
-
 ### A MESSAGE TWO DIFFERENT FAILURES SHARE MUST NEVER LATCH A SAFETY STOP ON ITS OWN: SQLite's "disk I/O error" IS A FULL DRIVE AND A DYING ONE (WAL / disk thread, PR B, 2026-10-01, `src/scheduler/storage_guard.py`)
 
 The guard latched DISK at once on "database or disk is full" (SQLITE_FULL / ENOSPC). A full drive can also reach SQLite as
@@ -13159,3 +13158,29 @@ the change.** `insights._detachable` now gates the detach on a queue pool or a n
 probe in production is a `ReservingQueuePool`, and every other engine the app builds is a queue or null pool too, so
 production behaviour is unchanged); `tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its
 tables; the five pool classes answer as expected) and each mutant (always detach; allow `StaticPool`) fails them.
+
+### SEVEN SMALL RULES FROM THE THREE REVIEWS OF THE POOL / DISK / UNLOCK WORK (WAL / disk thread, the findings PR on #1287, #1289 and #1293, 2026-10-01)
+
+Each was found by a read-only review or the coordinator's check of a merged PR, reproduced, fixed and pinned by a test that fails under its mutant.
+(1) **Classify a database error on the DRIVER's exception, never on SQLAlchemy's wrapper text, and keep only its first line.** The wrapper's text
+carries the SQL statement and its bound parameters: an `IntegrityError` whose bound title said "disk I/O error" was counted as an I/O error, and the
+guard's `last_io_error.detail` put a bound URL into the polled status payload and the diagnostics bundle (`storage_guard._is_dbapi_error`,
+`_io_error_detail`; the module test is the exception's own `__module__`, `sqlite3` or `sqlcipher3`). (2) **A watched pool's rows carry the pool they
+came from.** `pool_watch.standing_holders` counted every registered engine, and the read-snapshot export engine (a NullPool whose read lasts
+minutes by design) took a slot off the CORPUS pool's headroom: four became three and `sufficient` flipped to False on a healthy medium tier
+(`register(engine, label=...)`; only "corpus" rows count). (3) **A note drawn from a cache says nothing while the entry is merely between cycles,
+and says the failure when the first computation keeps failing.** The poll that finds a preview older than 15 s is the one that starts its refresh, so
+"being refreshed" appeared on one poll in eight on a healthy machine (37 of 300 simulated), and a preview that was never computed and kept failing
+read "being computed" for ever while its `refresh_error` sat unread in the payload; the note now appears only past the stale line or on an error.
+(4) **A TRUNCATE checkpoint inherits the connection's `busy_timeout` and holds the WAL write lock while it waits**: with any other reader on the
+file it waited 30 s where the old `close()` skipped the checkpoint (0.00 s), so set `busy_timeout = 0` first; and **a size floor equal to the
+resting ceiling of the thing measured records noise as a rate**: a log that ever grew rests at `journal_size_limit` (64 MiB) holding about one valid
+frame, which equalled the 64 MiB recovery floor, so the page said "applying 64 MB of writes" and stored key-derivation time as a recovery rate (the floor
+is now strictly above the limit in force, `forensics.recovery_floor_bytes`). (5) **Two overlapping attempts of a slow step that writes one
+process-global record must run one after the other**: a second unlock attempt replaced the first's recovery notice, read the log the first was still
+recovering and recorded a rate several times too fast; it now waits and finds an empty log. (6) **A label set before routing can resolve the route
+TEMPLATE at the moment it is read** if it keeps the request's ASGI `scope` (routing fills `scope["route"]` in place), so a raw path with an article
+id or an edition's file name never reaches a bundle. (7) **A failure that repeats on a timer is loud once and quiet after**: the unsupervised drain's
+twin logged at DEBUG while the supervised one logged a traceback every ten seconds into the 2,000-record error ring; `log_failure_once` keys on the
+exception type and first line. Also: format a foreign exception's text BEFORE taking a lock (a raising `__str__` lost 4 of 6 hostile invalidations), and
+give a bounded ring the reason for its bound.
