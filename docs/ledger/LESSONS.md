@@ -13142,7 +13142,7 @@ there, so emptying it changed nothing a test could see), which is the order that
 
 ### A POOL-SLOT FIX IS ONLY VALID FOR A POOL OF INTERCHANGEABLE CONNECTIONS, AND A FOCUSED TEST SET DID NOT SAY SO (WAL / disk thread, 2026-10-01)
 
-#1289 detached the status probe's connection from the pool (`conn.detach()`) so it stopped holding one of the real
+PR #1289 detached the status probe's connection from the pool (`conn.detach()`) so it stopped holding one of the real
 pool's slots. On a `StaticPool` or a `SingletonThreadPool` (what an in-memory test engine uses) the one pooled
 connection IS the database, so detaching it empties the pool's record of that connection and the next checkout
 reconnects to a new, empty `:memory:` database: eleven existing tests (`test_search_sort` 4, `test_top_keyword_sort` 4,
