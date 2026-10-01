@@ -1361,6 +1361,8 @@ def _python_sort_key(sort_by: str):
         # A never-indexed article has no top keyword at all. It sorts as 0 rather than
         # being dropped -- the list is a corpus, not a leaderboard, and an article the
         # re-index has not reached yet is missing a MEASUREMENT, not missing keywords.
+        # (Sorts by the STORED count: a row whose stored top word is now stoplisted reports no top
+        # keyword but still sorts by that count until the T3 recompute, R111.)
         return lambda a: (a.top_keyword_count or 0)
     if sort_by == "title":
         return lambda a: (a.title or "").casefold()
