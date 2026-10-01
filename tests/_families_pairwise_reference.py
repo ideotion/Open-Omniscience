@@ -1,0 +1,224 @@
+"""The PAIRWISE ``build_families`` this repository had until 2026-09-30, kept verbatim as the
+reference the token-indexed one is proven against.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+``build_families`` compared every multi-token entity with every other (and every single-token
+entity with every multi-token one): ~4x the time per doubling, 267 s for 16,000 multi-token
+entities, which is why the keyword export could not group a whole window. The containment step
+now goes through a token index. The edges it draws are the same ones, so the families must be
+identical, and ``tests/test_families_token_index.py`` checks that on random entity sets. Do not
+"fix" or modernise this file: its whole value is that it is the old behaviour, untouched, apart
+from its name and the helpers it imports from the module it is checking.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from typing import Any
+
+from src.analytics.families import (
+    _PLURAL_DENYLIST,
+    Family,
+    _is_contiguous_sub,
+    _lemma,
+    _lemma_enabled,
+    _norm,
+    _plural_bases,
+    canonical_key,
+    strip_honorifics,
+)
+
+
+def build_families_pairwise(items: list[dict], overrides: dict[str, dict] | None = None) -> list[Family]:
+    """Group keyword rows into families. ``items`` carry normalized/term/kind/mentions
+    (and optionally articles). Returns families sorted by total mentions, descending.
+
+    ``overrides`` maps a normalised term to ``{"family_key", "label", "kind"}`` — a
+    user's manual decision that is *authoritative* over the automatic rules: forms
+    sharing a ``family_key`` are forced together (a merge), and a form keyed to its
+    own normalised term is pinned standalone (a split). Overridden forms never take
+    part in the automatic possessive/containment grouping.
+    """
+    overrides = overrides or {}
+    recs = []
+    for it in items:
+        norm = it.get("normalized") or _norm(it.get("term", ""))
+        recs.append(
+            {
+                "it": it,
+                "norm": norm,
+                "kind": it.get("kind", "term"),
+                "ckey": canonical_key(norm),
+                "match": strip_honorifics(norm).split(),
+                "mentions": int(it.get("mentions", it.get("count", 0)) or 0),
+                "articles": int(it.get("articles", 0) or 0),
+                "lang": (it.get("language") or "").lower(),
+                "lemma_merged": False,
+                "ov": overrides.get(norm),
+            }
+        )
+
+    parent = list(range(len(recs)))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    auto = [i for i, r in enumerate(recs) if r["ov"] is None]
+
+    # 1) Possessive / exact collapse: same (kind, canonical key) — auto items only.
+    by_ckey: dict[tuple[str, str], int] = {}
+    for i in auto:
+        key = (recs[i]["kind"], recs[i]["ckey"])
+        if key in by_ckey:
+            union(by_ckey[key], i)
+        else:
+            by_ckey[key] = i
+
+    # 1.5) Singular/plural collapse for single-token TERMS (auto only): a regular
+    # -s/-es/-ies plural joins its singular family (state/states, country/countries)
+    # ONLY when BOTH are plain terms (never entity NAMES — a name plural is a
+    # different referent) and the base is not a known meaning-changer
+    # (_PLURAL_DENYLIST). The base must EXIST as a same-kind term, so a non-plural
+    # word that merely ends in -s won't merge unless its stem is also a real
+    # keyword. Reversible via a split override; OO_FAMILY_PLURALS=0 disables.
+    if os.getenv("OO_FAMILY_PLURALS", "1") != "0":
+        term_by_norm: dict[str, int] = {}
+        for i in auto:
+            if recs[i]["kind"] == "term" and " " not in recs[i]["norm"]:
+                term_by_norm.setdefault(recs[i]["norm"], i)
+        for i in auto:
+            if recs[i]["kind"] != "term" or " " in recs[i]["norm"]:
+                continue
+            for base in _plural_bases(recs[i]["norm"]):
+                if base in _PLURAL_DENYLIST:
+                    break
+                j = term_by_norm.get(base)
+                if j is not None and j != i:
+                    union(j, i)  # plural i -> singular j (the base)
+                    break
+
+    # 1.6) Lemma collapse for single-token TERMS (auto only; ON BY DEFAULT since 2026-07-18
+    # — see _lemma_enabled). Groups morphological variants a plural heuristic MISSES — verb
+    # forms and irregulars (study/studied, run/running, child/children, mouse/mice) — via
+    # simplemma, per (kind, language) so an en term never merges a fr one. Same guards as the
+    # plural rule (terms only, never entity NAMES; a meaning-changing norm is denylisted;
+    # reversible via a split override) PLUS a visible ``conflated_by=["lemma"]`` on the family.
+    # OO_FAMILY_LEMMA=0 (or no simplemma) + this skip => byte-identical to the pre-lemma grouping.
+    if _lemma_enabled():
+        lemma_first: dict[tuple, int] = {}
+        for i in auto:
+            r = recs[i]
+            if r["kind"] != "term" or " " in r["norm"]:
+                continue
+            lkey = (r["kind"], r["lang"], _lemma(r["norm"], r["lang"]))
+            j = lemma_first.get(lkey)
+            if j is None:
+                lemma_first[lkey] = i
+            elif j != i:
+                union(j, i)  # variant i -> the lemma's representative j
+                recs[i]["lemma_merged"] = True
+                recs[j]["lemma_merged"] = True
+
+    # 2) Containment among entities of the same kind (plain terms excluded) — auto only.
+    # Guards added from the 2026-06-11 field log (the maintainer's first keyword
+    # batch exposed transitive over-merges like security+national+social and
+    # "Deep Dive: Iran" absorbing Israel):
+    #   G-parent: only CLEAN phrases of 2–3 tokens may act as merge parents —
+    #     headline-ish extractions (4+ tokens like "Climate Change and Cities",
+    #     or anything containing :;"()') were the hubs that chained unrelated
+    #     terms together in the field log.
+    #   G-ambiguous: a SINGLE-token form joins only when, after the multi-token
+    #     phrases have grouped among themselves, ALL the phrases containing it
+    #     share one family. "trump" (only Donald-Trump-rooted parents) merges;
+    #     "security" (national security / Social Security / Security Council…)
+    #     is ambiguous and honestly stays standalone.
+    _JUNK = re.compile(r"[:;()\"«»]|\.{3}")
+    ents = [i for i in auto if recs[i]["kind"] != "term" and recs[i]["match"]]
+
+    def _clean_parent(i: int) -> bool:
+        return 2 <= len(recs[i]["match"]) <= 3 and not _JUNK.search(recs[i]["it"].get("term", ""))
+
+    # Honorific equivalence merges DIRECTLY (President Donald Trump ≡ Donald
+    # Trump): same stripped match + same kind. The old code relied on a shared
+    # single token bridging them — the very mechanism the guards remove.
+    by_match: dict[tuple, int] = {}
+    for i in ents:
+        key = (recs[i]["kind"], tuple(recs[i]["match"]))
+        if key in by_match:
+            union(by_match[key], i)
+        else:
+            by_match[key] = i
+
+    multi = [i for i in ents if len(recs[i]["match"]) >= 2]
+    for a in multi:  # phrase ⊂ longer phrase (both multi-token, parent clean)
+        for b in multi:
+            if a == b or recs[a]["kind"] != recs[b]["kind"] or not _clean_parent(b):
+                continue
+            if len(recs[a]["match"]) < len(recs[b]["match"]) and _is_contiguous_sub(
+                recs[a]["match"], recs[b]["match"]
+            ):
+                union(b, a)
+    singles = [i for i in ents if len(recs[i]["match"]) == 1]
+    for a in singles:
+        parents = {
+            find(b)
+            for b in multi
+            if recs[a]["kind"] == recs[b]["kind"]
+            and _clean_parent(b)
+            and _is_contiguous_sub(recs[a]["match"], recs[b]["match"])
+        }
+        if len(parents) == 1:  # unambiguous → join; 0 or 2+ → stay standalone
+            union(parents.pop(), a)
+
+    # Final grouping: overridden forms group by family_key; the rest by auto-union.
+    # tuple[str, Any]: the key is ("ov", family_key) or ("auto", <root index>), so the
+    # second slot is a str in one construction and an int in the other.
+    groups: dict[tuple[str, Any], list[dict]] = {}
+    for i, r in enumerate(recs):
+        gkey: tuple[str, Any] = (
+            ("ov", r["ov"]["family_key"]) if r["ov"] else ("auto", find(i))
+        )
+        groups.setdefault(gkey, []).append(r)
+
+    families: list[Family] = []
+    for gkey, members in groups.items():
+        if gkey[0] == "ov":
+            label = next((m["ov"].get("label") for m in members if m["ov"].get("label")), None)
+            canon = max(members, key=lambda r: (len(r["match"]), r["mentions"]))
+            canonical = label or canon["it"].get("term") or " ".join(canon["match"])
+            normalized, kind, manual = gkey[1], canon["kind"], True
+        else:
+            def _label_rank(r):
+                toks = len(r["match"])
+                clean = 2 <= toks <= 4 and not _JUNK.search(r["it"].get("term", ""))
+                return (clean, r["mentions"], min(toks, 3))
+
+            canon = max(members, key=_label_rank)
+            canonical = canon["it"].get("term") or " ".join(canon["match"])
+            normalized, kind, manual = canon["ckey"], canon["kind"], False
+        conflated_by = ["lemma"] if any(r.get("lemma_merged") for r in members) else []
+        families.append(
+            Family(
+                canonical=canonical,
+                normalized=normalized,
+                kind=kind,
+                manual=manual,
+                mentions=sum(r["mentions"] for r in members),
+                articles=max((r["articles"] for r in members), default=0),
+                members=[r["it"] for r in members],
+                conflated_by=conflated_by,
+            )
+        )
+    families.sort(key=lambda f: -f.mentions)
+    return families

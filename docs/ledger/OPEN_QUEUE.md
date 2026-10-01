@@ -25,6 +25,96 @@
 - **THE STOPLIST IS OURS TO GROW, AND USERS ARE NEVER ASKED (`R111`, maintainer, 2026-09-30 21:23 UTC, the maintainer's correction, about the review screen of the closed PR #1275, of a 21:22 message whose first sentence had dropped a «NOT»; amends `R98`/`D11`):** «We should NOT have users decide or work for us. The app should be functional "as is". The list of stopwords should be automatically updated by us with each app update. Let's add this to the diagnostics that I'll send over to you so that the stopword list increments itself as the app updates. Users shouldnt be asked for those inner workings.» The Settings review screen is NOT shipped. **Our reading, not the maintainer's words:** the same principle is applied to other internal settings a user would otherwise be asked about (the kinds ambiguity list is the first). **What holds today, and what does not yet:** a shipped stopword reaches the list at the restart an update brings and hides existing stored keywords at read time ONLY on the paths that read the hidden predicate (top terms, corpus keywords, trending, associations, the map, concentration, emergence, story propagation, supply-chain ripple, ring loading, and the diagnostics keyword log, which FLAGS a hidden keyword rather than dropping it; columnar rollups keep raw counts with the hidden layer on top). The read-time test that ships with the batch tool (`tests/test_stopword_batch.py`) proves that path and nothing wider. **PENDING: R111 step T2**, routing through the same predicate the surfaces that never consult the stoplist (at least bulletin coverage, stories and articles; feed card keywords; link preview; the omnibar; did-you-mean; concept arms; the keyword-tags explorer; AI keywords, `supergroup_rising`, `supergroup_stats`, `source_topics`; its first step is a complete inventory), and **R111 step T3**, a stoplist fingerprint at boot that drops the Home briefing cache and recomputes the stored `top_keyword_*` columns once when the shipped list changes, through the existing job machinery. **Done:** this ruling's docs, and the offline maintainer tool with the read-time test above (PR #1280: it turns a decided word list plus a diagnostics keyword log into a batch, refuses what would hide signal, and `--apply` requires the triage thread's verdict file). **Pending work, in order:** R111 steps T2 and T3; the keyword log's `stopword_candidates` digest gaining per-candidate source spread and corpus-scaled thresholds instead of the fixed 60 and 5 (owned by the keyword-export thread, not this one); English and French batches as the triage thread's decisions arrive. **Not done:** any batch; no stoplist file has changed.
 - **A DEDICATED KEYWORD-ENGINE SESSION IS PLANNED, AND STARTS AFTER v0.5.0 SHIPS (`R110`, answer 11 = c, 2026-09-30 18:50 UTC; the planning ruling is maintainer, 2026-09-30 17:06 UTC, with `R107`: «the keyword engine is still very buggy, it doesn't sort keywords as it should … plan a dedicated session to address the keyword engine's inner workings, logics and defaults, to optimize them significantly. Keywords are at the core of the app»).** NOT STARTED; it begins after v0.5.0 ships (`R110`). No measured example of a wrong SORT has been found yet, so the session's first input is a concrete screen where the order looks wrong; the orderings read the incremental counters, so what they rank is what is counted. **Known problems, for its brief** (each with where it lives): ~13% of articles have keywords on the largest instance, so ranks describe a sample (`src/analytics/reindex_job.py`); quarantined articles still count everywhere (`R101`, `docs/design/KEYWORD_QUARANTINE_EXCLUSION_2026-09-30.md`); 13.3% of a 60k sample is noise, markup, digits, code, elisions (`src/analytics/extract.py`); 83% of rows were orphans (`#1246` prunes them, its timer unverified); per-source boilerplate kept as keywords; 40 of 75 languages with no stoplist and `sr`/`az` on the English fallback, with the stoplist branch order load-bearing (`src/services/stopwords.py`); one global union of every `stopwords_extra` file (`R102` fixed 30 of 38 collisions; 8 stay hidden because their own language's list holds them, four of them by `R109`); English month names banned globally (`src/analytics/month_occupancy.py`); `ja`/`th` degraded without the splitter and `janome` vs `sudachipy` (`R105`); Hindi and Bengali vowel signs split search words (`R39`, row B's window); 17% of the top 500 linked across languages and 0.2% tagged, the ring runner reading English only (`src/analytics/equivalence.py`, `wikidata_rings.py`, Q410); kinds are extractor guesses, 46.7% of entities acronyms (`R97` builds sourced kinds); lemma keys re-key stored rows when changed (`lemma_key`); the ten-index write cost of a mention (`#1271`'s measurement, D47). The fixes are that session's, not the keyword-working session's. **ALSO BEFORE v0.7 ROLLS OUT (maintainer, 2026-09-30 20:13 UTC: «I'd prefer to send you the keyword log from my largest instance and database, currently at roughly 2M articles. If we don't do this now, it's OK, as long as it is planned before version 0.7 roll out and we don't forget about it»):** the keyword-log triage on the largest instance (about 2 million articles) must be done before 0.7 ships. It waits on the keyword export no longer crashing on a large corpus (the diagnostics «all keywords» zip crashes the app after a while, even with 6 to 8 GB of RAM; the «Keyword export crash» thread owns that fix) and on a way to get the file in (uploads of the earlier ~5 MB logs failed; the Claude CLI is the planned route). The earlier 18:55 triage thread's method (scripts, then a Haiku triage, then a Sonnet confirmation per language) carries over.
 - **THE KEYWORD SESSION'S FIVE QUESTIONS, ANSWERED (2026-09-30 15:34 UTC, in the project chat; recorded the same turn as `R97`, `R98`, `R101`, `R102`, `R103`; their full wording is on `RULINGS_INDEX.md`).** (1) `RC05` = a (`R97`): a keyword's kind comes from Wikidata through the entity spine, source and date attached, «unknown» when there is no match, about 300 checked by hand — with the maintainer's condition «we should make plans for autonomy and complete independence», so the design owes a plan for kinds without Wikidata or the network; (2) `D11` = a (`R98`): the stoplist grows in reviewed batches, English and French first, then the 40 languages with none, through a review screen in Settings (**AMENDED 2026-09-30 by `R111`:** no review screen, the batches are curated by us and ship with updates) — which releases 0.4 row M; (3) `D22` = a (`R101`): quarantined articles leave the keyword aggregates, the language series and the equilibrium lever in ONE slice, `furniture_share` measured first; (4) `D24` = a (`R102`): the 38 concepts are shown again (ring members exempt from `global_stopwords()`), the 38 listed in the PR; (5) `D33` = a (`R103`): the three rewrites are fused into one pass in row B's window (the question named the wrong three; recorded in `D33`'s terms). **ANSWERED 2026-09-30 17:06 UTC, the same day, as `R104` to `R108` (full wording on `RULINGS_INDEX.md`):** `PRH-13` = a (`R104`: platform names count as keywords; page words go through `R98`'s batches); the Japanese splitter = a (`R105`: keep `janome`, and a `sudachipy`-for-keywords evaluation is a recorded future item); the kinds questions: independence = a (`R106`: all no-network parts now, the offline resolver measured before it is promised), hand-set kinds = b (`R107`: NO, kinds come only from sources, the «operator» source is dropped), Wikipedia edition = a (`R108`: the keyword's own language when it is one of the twelve, English otherwise). **CORRECTED 2026-09-30:** the Hindi and Bengali tokenizer fix is not «waiting on a ruling»: `R39` already places it inside row B's window.
+- **THE "ALL KEYWORDS" ZIP CRASH: WHAT SHIPPED, THE DEFAULTS TAKEN ON ITS FORKS, AND WHAT IS STILL OPEN (keyword-export
+  thread, 2026-09-30; the maintainer's message 20:13 UTC; the mechanism is in `LESSONS.md`).** The export no longer holds the
+  corpus in memory: `src/analytics/keyword_log_scan.py` (the scan and the per-language ranking, heaps that spill to SQLite
+  under a budget taken from the memory available at the start) and `src/analytics/keyword_log_export.py` (the archive,
+  streamed to a scratch file next to the data, or in the OS temp folder when there is no data folder, a batch at a time). One function serves all three forms (the JSON stream,
+  the bundle's `keyword-log-digest.json`, the zip), so all three are fixed. Peak RSS on synthetic databases with the field's
+  shape, old code then new (this box had 15 GB free): **digest** 776 MB then 267 MB at 2 M keywords, 2.2 GB then 273 MB at
+  6 M (flat in keywords); **the zip with a 9 MB cap asked for every keyword** 4.4 GB then 1.8 GB at 2 M, 10.6 GB then 2.2 GB at
+  6 M; **the button's uncapped zip** 2.2 GB at 6 M for a 46 MB file; the same uncapped zip with only 700 MB pretended free (the
+  plan spills the ranking to disk and cuts the families' basis to its floor, and says so): 253 MB, an archive of the same size
+  to within a few bytes.
+  The zip figures are large on a big box on purpose: the families' grouping may use up to a tenth of the memory available at
+  the start (see (4)), so a 6-8 GB machine uses a few hundred MB for it, never a fixed number. json, digest and zip shards were
+  compared byte for byte against the code this replaces on random databases. **Open, in the order they matter:**
+  (1) **DECIDED BY THE STANDING «NO FIXED CAPS» RULE (R95, R77; the coordinator's reading, 2026-10-01; not a separate question to the
+  maintainer): the "All keywords (.zip)" button now asks for NO size cap** (`max_mb=0`), because
+  a button named "All" that kept the top 9 MB was the other half of the report and the file is streamed to disk anyway.
+  The consequence is a big file on a big corpus (46 MB at 6 M synthetic keywords; the real size is unmeasured) that the
+  maintainer cannot attach to Claude, which is why the "Keyword log (.zip)" button keeps the 9 MB cap. **What the 9 MB
+  protects is the ATTACHMENT CHANNEL** (the common 10 MB limit; `keywords.py`), not memory and not the disk. Reverting is one
+  attribute in `index.html` and the assertion in `test_diagnostics_panel_button_consolidation`. **A cap per FILE (1 MB parts,
+  each uploadable as it is) is the next PR, and leaves the total uncapped.** The trim loop now trims until the archive fits or every language is down to one
+  keyword, and says that `summary.json` is never trimmed (it used to stop after nine builds and its docstring called the cap
+  guaranteed).
+  (2) **A COMPACT, ATTACHABLE EXPORT is NOT BUILT, by the coordinator's ruling for this PR** (per language: the top keywords
+  by mentions plus a seeded random sample of the rest, sampling fraction disclosed). It falls out of the ranker naturally
+  (one reservoir per language fed from `Ranker.add`, about 40 lines); it stays an option if the maintainer's uploads of the
+  full file keep failing.
+  (3) **`_LIGHT_DECLINED` still skips `keyword-log-digest.json`**, and its reason says why: the bounded export was measured only
+  on synthetic corpora. **`R27`'s TEXT IS KEPT (half of total RAM; ACK R27, R28 in the commit record that the rulings were read
+  before their file was touched, which is not permission), AND ONE BRANCH IS ADDED ON TOP OF IT, following the standing «size from
+  the machine» rule (R95, R77; the coordinator's reading, 2026-10-01; not a separate question to the maintainer): the gate also
+  declines the digest when the memory available NOW minus the memory stop's floor cannot take the estimated need.** That goes
+  beyond R27's «half the machine's RAM» and sits beside R28 and the 2026-09-02 «the bundle runs every member» ruling; it is one
+  branch in `ram_declined_reason` to remove. **What it protects, stated exactly:** a machine that is busy at the moment the digest
+  starts, where the memory available now, not the total, is what the export competes for. It would NOT have declined bundle
+  `091717`'s own machine under the bounded code (need about 1,170 MiB plus the floor, about 1,426 MiB, against 2,280 MiB available):
+  that kill was the OLD, unbounded builder, which needed more than the machine had (the old gate's 3,322.8 MiB was one 4 GB
+  instance's reading at 11 M keywords, under half of `091717`'s 6,773 MiB (3,386 MiB), so the gate admitted it; the second check is new in this
+  PR), and the bounded code is what answers it. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
+  (`EXPORT_ENTRY_BYTES` 2,750 B = the 2,500 B per exported keyword MEASURED by peak resident size on synthetic databases of 100,000,
+  205,000 and 410,000 entries, the last being the shape of the largest instance's export, plus ten per cent;
+  `EXPORT_FIXED_BYTES` 60 MiB against a measured intercept of 38 MiB; both are pinned BY VALUE against that resident-size measurement, and tracemalloc tests bound them from below, because tracemalloc cannot see the allocator's overhead);
+  the static 200.0 MiB (was 3,322.8, the unbounded code) is the fallback without a session and is a 13-language reading. The
+  field case behind the bounding: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read 6,773 MiB,
+  above the line the old number implied. The performance report's `keyword_export_streamed` probe passes every argument itself and goes through
+  the same gate (it reports `skipped` with the reason, a third honest state beside measured and failed). No bundle member was
+  added. Whether the light profile should run the member again after the operator's own `rss_peak_rise_kb` arrives is the
+  maintainer's call (R28 owns the profile).
+  (4) **The zip's families are grouped over the WHOLE window unless memory says otherwise.** `build_families` was quadratic
+  (267 s for 16,000 multi-word entities, which is what had made the export group only the top 5,000); it now finds containment
+  through a token index and is linear, compared with the old form on random entity sets (`tests/_families_pairwise_reference.py`).
+  Its limit is memory, about 2 KB per keyword, a tenth of what is available when the export starts (floor 50,000 keywords), and
+  `families_provenance` says how many keywords were grouped, whether that is the whole window, the budget, and what the limit
+  protects. A window clamped by a byte cap feeds the summary's stop-word and ring digests from the clamped window, not from
+  millions of tail entries; the manifest carries `window_clamped_to_fit_cap`.
+  (5) **Disk.** The zip refuses, before writing a byte, an archive the drive cannot take (the window's keywords times a
+  conservative zipped entry cost, 64 B against 9-15 B measured and 18-41 B in the maintainer's own logs, plus the reserve), with
+  the numbers (HTTP 507). The ranking's spill is bounded like its heaps (a language never keeps more than twice its window on disk;
+  what ranks beyond it is deleted and never written again), is sized up front from the keyword table's id range and the
+  languages' windows, is watched after every 20,000 rows, and a full-disk error from SQLite itself is the same 507. With no data
+  folder both the spill and the archive go to the OS temp folder (after a sweep of stale scratch files) and a watch on that ONE
+  drive covers both (the ranker's and the archive's), between batches too; the texts say «the drive the export writes to». Creating a scratch file on a full
+  drive, a disk quota (`EDQUOT`) or a read-only drive (`EROFS`), and the same errors in the middle of writing the archive, are a
+  507 (the full-drive and quota texts say to ask for a smaller window; the read-only text says the folder must be writable), not a
+  500. SQLite reports a quota that fails while it writes the ranking's spill as a bare «disk I/O error», which cannot be told from
+  a failing drive, so that one case stays a 500 (a drive that is read-only is recognised from the drive itself). Scratch
+  names come from `mkstemp` (two exports in one millisecond used to share one), a spill that fails while being set up removes its
+  file and closes its connection, and the archive response deletes its file however the exchange ends (a malformed or unsatisfiable
+  `Range` request made Starlette skip its background task and left the archive on disk). A 12 h sweep removes a killed
+  process's leftovers, and nothing goes through the main database or its log.
+  (6) **D22 (quarantined articles leave the counts):** the scan names its mention table in ONE constant
+  (`MENTIONS_TABLE`); moving this export onto `KeywordMentionRead` is the keyword thread's one-line change there. The seam ratchet
+  (`tests/test_derived_read_seam.py`) now also counts the constant BY NAME, so a read spelled `{MENTIONS_TABLE}`,
+  `{kls.MENTIONS_TABLE}`, `+ MENTIONS_TABLE` or `.format(MENTIONS_TABLE)` is counted (its literal regex could not see them):
+  `keyword_log_scan.py` 4, `keyword_log_export.py` 2, `keywords.py` from 3 to 1. Those ceilings count every MENTION, and only
+  one slot in the scan and one in the export is a read (the rest are a docstring line, the constant's definition, the import
+  and a docstring word), so `_EXPORT_REAL_READS` pins the READS of those three files exactly (docstrings, comments, imports and
+  the definition not counted): a read that appears where a docstring slot vanished changes it. A read through an import alias
+  (`MENTIONS_TABLE as T`) is still invisible to both.
+  (6b) **After the scan the export is under the memory stop too.** The phase that holds every survivor, its metadata, the
+  families' grouping and the digests (about 1.1 GiB on the largest instance: 410,000 entries) reads the stop every 2,000
+  entries and between its steps, and answers 503 with the numbers, so a bundle records the digest as skipped and the route does
+  not get the machine killed; the plain JSON form writes its families a slice at a time (the same bytes as one `json.dumps`,
+  no second copy of them). `per_lang` no longer stops at 1,000,000 (the button sends a billion): a language with more keywords
+  than that came out partial from "All keywords", with only the manifest saying so.
+  (7) **What is NOT covered:** the keyword-engine report (a 315 MB rise on the operator's 2026-09-11 bundle) and the
+  keyword-growth member are not changed here and are not yet re-measured; the digest's real memory on the operator's own
+  instance is unmeasured until their next FULL bundle; a page >= 2 of a capped, clamped window reports `continue_with: null`
+  because there is no single `per_lang` that continues it.
 
 - **THE OLDER-ROUNDS LIST, ANSWERED IN THE THREAD (2026-09-30 03:35 UTC; recorded the same turn; `PF07`, `PF08`,
   `PF10`, `PF11`, `D44`, `D45`, `D46` on their own rows, `R99`, `R100`).** Ten still-live questions from the
@@ -634,7 +724,10 @@
   decided, unbuilt, and belong to PRs 2 and 4–7 of that plan. **AMENDED 2026-09-22 (same
   day, later):** `R28` — the FULL/LIGHT diagnostics toggle — shipped as the first half of
   PR 2 and is a SEPARATE instruction, not one of the seven; `R27` itself is still unbuilt
-  (see its own entry below).
+  (see its own entry below). **CORRECTED 2026-09-30:** that was true for one day; `R27` was built
+  in PR #1166 (`ram_declined_reason`, outcome `declined-ram`) and, on 2026-09-30, is also sized
+  from the instance's own counts for the one member it covers (see the keyword-export entry at
+  the head of this queue).
 
   **What PR 1 does build, and what it deliberately leaves alone.** The drain inherits the
   import's commit batch when the scheduler loop is not alive (R21), publishes the
@@ -768,6 +861,18 @@
   declines — an unmeasured cost is neither small nor large, and guessing either way is
   worse than running it. Every bundle already records `rss_peak_rise_kb` per member, so
   the evidence arrives on its own; the map grows from runs, never from estimates.
+  **AMENDED 2026-09-30 (keyword-export thread, `R27` ACKNOWLEDGED):** the digest's 3,322.8 MiB was
+  the UNBOUNDED builder, and a total-RAM-only line could not see the instance: bundle `091717`
+  (14.65 M keywords, 1.83 M articles) was SIGKILLed inside the digest member while its total read
+  6,773 MiB, above the 6,645.6 line that 3,322.8 implies, with 2,280 MiB available, so the gate
+  admitted it. The code is now bounded, the static
+  reading is 200.0 MiB (a synthetic corpus), and the gate for this member is sized from the
+  instance's OWN counts times per-row costs that are each MEASURED (`EXPORT_ENTRY_BYTES`,
+  `EXPORT_FIXED_BYTES`, pinned by value against the resident-size measurement and bounded from below by tracemalloc tests), held against half of total RAM as before
+  AND against the memory available now minus the memory stop's floor (that second branch follows the standing «size from the machine»
+  rule (R95, R77) and protects a busy machine, not bundle `091717`'s own: see the "All keywords" zip entry, item 3). The rule above stands
+  for every other member: one that is not measured never declines; an estimator is added only
+  to a member whose per-row costs have been measured and pinned.
 
 - **THE PLANNED-WORK REVERSE INDEX, AND THE DECISIONS ROUND IT CAME WITH (2026-09-22, rulings
   `R29` and `R30`).** The maintainer asked for two things in one turn: a numbered decisions list
@@ -853,6 +958,10 @@
   makes the confusion available: a future session reading `_LIGHT_DECLINED` and finding
   `keyword-log-digest.json` in it could close `R27` on work that never reads a RAM figure.
   Nothing in the tree reads the floor for a bundle member yet. `R27` stays open.
+  **CORRECTED 2026-09-30: stale since 2026-09-23.** `R27` was built in PR #1166: `ram_declined_reason`
+  reads total RAM, declines above half of it, and lifts on `OO_ALLOW_BIG_SCANS`; the overlap
+  with `_LIGHT_DECLINED` this paragraph warns about is still real and is what
+  `tests/test_diagnostics_bundle_profile.py` pins.
 
   **(2) WHY A TOGGLE AT ALL — a tension that had stood unnoticed since 2026-09-02.** The
   crash brief of that date ruled, in its own §3 item 4, that the bundle «still runs **every**
@@ -921,7 +1030,9 @@
   (5) **the indexing session's inputs** (report §3.2 and the paste-ready §5.3): F4's checkout
   dates from the UNLOCK on all six; the slow INSERTs are execution, not lock waits; `R27`'s one
   constant declines the keyword-log digest on every machine under ~6.6 GB although it cost 434
-  to 874 MiB here (~317 B per keyword fits all six); `api_headroom_for` counts only collector
+  to 874 MiB here (~317 B per keyword fits all six) **[AMENDED 2026-09-30, #1277: the gate no
+  longer uses one constant; it is sized from the instance's own counts, see the "All keywords" zip entry
+  above]**; `api_headroom_for` counts only collector
   workers; Asus is a 67 % backlog machine for `D43` and `D46`; Insights reads take 15 to 86 s
   with collection paused. Handed over as evidence, not tasks;
   (6) **the temp directory was full during the bundle on Asus and the NUC** — cause unproven,

@@ -21,6 +21,8 @@ from fastapi import APIRouter
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 _LOG = logging.getLogger("api.diagnostics")
 
+# 5,000 bounds the REPORT (how many keywords a file prints per language), never the counting:
+# every keyword is scanned and ranked, and the zip form's per_lang raises this without limit.
 # Bounded scan — PER LANGUAGE (maintainer-ruled 2026-06-11): a single global
 # mentions-ranked cap structurally anglicised the export (English keywords
 # crowded out every other language, excluding them from the equivalence/family
