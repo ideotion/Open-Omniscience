@@ -619,7 +619,8 @@ def include_term(body: TermBody) -> dict:
 # reference is held alongside so ``id(engine)`` cannot be recycled onto a stale probe
 # connection (the test-fixture hazard); tests clear it via ``_reset_status_probe_for_tests``.
 #
-# THE PROBE IS DETACHED FROM THE POOL (2026-09-30, field diagnostics rank 12). It used to stay
+# THE PROBE IS DETACHED FROM THE POOL (2026-09-30, field diagnostics rank 12; only for a pool of
+# interchangeable connections, see ``_detachable``). It used to stay
 # a pooled checkout for the life of the process: all 16 field instances showed "one API-thread
 # checkout held for the whole process life", which hands-on on the real app turned out to be
 # exactly this connection (GET /api/articles -> _browse_total_cached -> here). It is idle and
@@ -632,9 +633,27 @@ def include_term(body: TermBody) -> dict:
 # restore's swap, a shutdown all dispose), so a replaced store file is never read through a
 # stale handle and Windows is not left holding the old file.
 _PROBE_LOCK = _threading.Lock()
-_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> dedicated raw DBAPI connection (detached from the pool)
+_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> dedicated raw DBAPI connection (detached from the pool when ``_detachable``)
 _PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id() against recycle)
 _PROBE_CLOSE_WAIT_S = 5.0  # how long a dispose waits for a probe read in flight before leaving it to rebuild
+
+
+def _detachable(bind) -> bool:
+    """Whether the engine's pool may give up the probe's connection for good.
+
+    A queue pool (the app's own, file-backed) and a null pool hand out interchangeable
+    connections, so a detached one is simply a connection that is the pool's no more. A
+    ``StaticPool`` or ``SingletonThreadPool`` (an in-memory test engine) owns ONE connection that
+    IS the database: detaching it empties the pool's record and the next checkout opens a new,
+    empty ``:memory:`` database ("no such table"; #1289 broke three tests this way). Those keep
+    the probe pooled, as before; the app never builds one.
+    """
+    try:
+        from sqlalchemy.pool import NullPool, QueuePool
+
+        return isinstance(bind.pool, (QueuePool, NullPool))
+    except Exception:  # noqa: BLE001 - unknown pool -> keep the safe, pooled behaviour
+        return False
 
 
 def _data_version(bind) -> str | None:
@@ -650,8 +669,10 @@ def _data_version(bind) -> str | None:
                 if conn is None:
                     conn = bind.raw_connection()  # held, never .close()d on success -> pinned
                     # Out of the pool's accounting: the pool's slot is free again and the
-                    # dispose listener below owns this connection's end of life.
-                    conn.detach()
+                    # dispose listener below owns this connection's end of life. Only for a
+                    # pool that hands out interchangeable connections (see _detachable).
+                    if _detachable(bind):
+                        conn.detach()
                     _PROBE_CONNS[eid] = conn
                     _PROBE_ENGINES[eid] = bind
                     _close_probe_on_dispose(bind, eid)
