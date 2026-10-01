@@ -225,3 +225,64 @@ def test_a_word_shipped_in_a_stoplist_hides_in_the_stored_keywords_with_no_user_
         finally:
             monkeypatch.undo()
             _recache()
+
+
+def test_an_eszett_word_is_not_refused_as_already_hidden_when_only_the_ss_spelling_is_listed():
+    # the German list holds "heisst"; extraction keeps "heißt" (a different token), so it is addable
+    hidden, _ring = sb.app_context("de")
+    assert "heisst" in hidden and "heißt" not in hidden
+    assert sb.evidence(sb.spelling("heißt"), "de", [], hidden)["already_hidden"] is False
+    assert sb.evidence("heisst", "de", [], hidden)["already_hidden"] is True
+
+
+def test_candidate_mode_prints_the_surface_form_not_the_casefold_key():
+    log = {"data": {"keywords": [
+        {"term": "όσος", "normalized": "όσοσ", "language": "el", "kind": "term", "articles": 80,
+         "mentions": 200, "sources": 9},
+    ]}}
+    shown = sb.candidates_to_read(log, "el", frozenset())
+    assert shown and all(w == "όσος" for w in shown)
+    assert [sb.spelling(w) for w in shown] == ["όσος"]
+
+
+@pytest.mark.parametrize("bad", ["../escaped", "/etc/x", "a/b", "", "EN ", "x.y"])
+def test_a_language_code_cannot_carry_a_path(tmp_path, monkeypatch, bad):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path / "extra")
+    (tmp_path / "extra").mkdir()
+    with pytest.raises(SystemExit):
+        sb.append_batch(bad, ["word"], "b-1", [], "log.zip")
+    assert not (tmp_path / "escaped.yml").exists()
+    assert list((tmp_path / "extra").iterdir()) == []
+
+
+def test_a_curly_apostrophe_is_written_straight_and_meets_a_log_spelt_either_way(tmp_path):
+    f = tmp_path / "w.txt"
+    f.write_text("y’all\n", "utf-8")
+    assert sb.read_words(f) == ["y'all"]
+    idx = sb.index_log([_kw("y’all", "en", 50)])
+    assert "y'all" in idx
+
+
+def test_the_last_page_of_a_paged_export_is_announced_too(tmp_path):
+    z = tmp_path / "last.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"page": 3, "pages_total": 3, "has_more": False,
+                                                   "keywords_omitted_to_fit": 0}))
+    note = sb.trimmed_log_notice(z)
+    assert note and "page" in note
+    only = tmp_path / "only.zip"
+    with zipfile.ZipFile(only, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"page": 1, "pages_total": 1, "has_more": False}))
+    assert sb.trimmed_log_notice(only) is None
+
+
+def test_apply_hints_the_curly_copy_and_the_script_guard_for_a_new_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": [_kw("y'all", "xx", 50, sources=9)]}}), "utf-8")
+    words = tmp_path / "w.txt"
+    words.write_text("y'all\n", "utf-8")
+    assert sb.main([str(log), "--language", "xx", "--words", str(words), "--apply", "--batch-id", "xx-1"]) == 0
+    out = capsys.readouterr().out
+    assert '"y’all"' in out and '"y\'all"' in out
+    assert "_NON_LATIN_FILES" in out

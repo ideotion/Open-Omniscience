@@ -71,15 +71,25 @@ KEEP_FILE = ROOT / "configs" / "stopword_batches" / "_keep_platform_names.yml"
 ELSEWHERE_MIN_ARTICLES = 3
 # A source holding at least this share of a term's mentions makes it that source's boilerplate.
 SINGLE_SOURCE_SHARE = 0.5
+# A language code names a file in configs/stopwords_extra, so it may never carry a path.
+LANGUAGE_CODE = re.compile(r"[a-z][a-z0-9_-]{0,15}")
 
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
+def _straight(term: object) -> str:
+    """NFC with the curly apostrophe written straight: the loader derives the curly spelling of
+    every listed contraction itself (``extract._EXTRA_STOPWORDS``) and never the reverse, so a
+    file holds the straight form and a curly one in a words file or a log means the same word."""
+    return unicodedata.normalize("NFC", str(term or "")).replace("\u2019", "'")
+
+
 def norm(term: object) -> str:
     """The app's KEY for a term (whitespace collapsed, casefolded): how the log, rings and
-    platform names are matched."""
-    return " ".join(unicodedata.normalize("NFC", str(term or "")).split()).casefold()
+    platform names are matched. The curly apostrophe is folded to the straight one so a log row
+    spelt either way meets the same word."""
+    return " ".join(_straight(term).split()).casefold()
 
 
 def spelling(term: object) -> str:
@@ -88,7 +98,7 @@ def spelling(term: object) -> str:
     Extraction compares each ``.lower()`` token with the stop set, so a Greek word with a final
     sigma (casefold turns ς into σ) or a German one with ß must be written, and recognised as
     already listed, in this form."""
-    return " ".join(unicodedata.normalize("NFC", str(term or "")).split()).lower()
+    return " ".join(_straight(term).split()).lower()
 
 
 def platform_names(path: Path = KEEP_FILE) -> frozenset[str]:
@@ -152,7 +162,7 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
         "top_source_share": max((float(k["top_source_share"]) for k in spreads), default=None),
         "content_elsewhere": elsewhere,
         "entities": entities,
-        "already_hidden": word in hidden_in_lang or norm(word) in hidden_in_lang,
+        "already_hidden": spelling(word) in hidden_in_lang,
     }
 
 
@@ -192,11 +202,13 @@ def trimmed_log_notice(path: Path) -> str | None:
         return None
     omitted = int(manifest.get("keywords_omitted_to_fit") or 0)
     paged = bool(manifest.get("has_more"))
-    if not (omitted or paged):
+    # The LAST page of a paged export holds only the lowest-ranked keywords, so it is partial too.
+    later_page = int(manifest.get("page") or 1) > 1 or int(manifest.get("pages_total") or 1) > 1
+    if not (omitted or paged or later_page):
         return None
     return (
         f"NOTICE: this log is incomplete ({omitted} keywords omitted to fit its size cap"
-        f"{'; more pages exist' if paged else ''}). \"Not found elsewhere / not an entity\" below only "
+        f"{'; this is one page of a paged export' if (paged or later_page) else ''}). \"Not found elsewhere / not an entity\" below only "
         "means not found IN WHAT THE LOG HOLDS; read the rows with that in mind."
     )
 
@@ -226,8 +238,9 @@ def candidates_to_read(log_doc: dict, lang: str, existing: frozenset[str]) -> li
 
     kws = log_doc.get("data", {}).get("keywords", [])
     by = akl.stopword_candidates(kws, set(existing), 0)
-    return [c["normalized"] for c in by.get(lang, []) if c["bucket"] == "high_confidence"] + [
-        c["normalized"] for c in by.get(lang, []) if c["bucket"] != "high_confidence"
+    # ``term`` keeps the surface form; the casefold key cannot give back a final sigma or an eszett.
+    return [c["term"] for c in by.get(lang, []) if c["bucket"] == "high_confidence"] + [
+        c["term"] for c in by.get(lang, []) if c["bucket"] != "high_confidence"
     ]
 
 
@@ -239,6 +252,8 @@ def yaml_scalar(term: str) -> str:
 
 def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str], source: str) -> Path:
     """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads."""
+    if not LANGUAGE_CODE.fullmatch(lang):
+        raise SystemExit(f"{lang!r} is not a language code; refusing to build a path from it")
     path = EXTRA_DIR / f"{lang}.yml"
     new_file = not path.exists()
     before = "stopwords:\n" if new_file else path.read_text("utf-8")
@@ -284,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
     import analyze_keyword_log as akl
 
     lang = args.language.strip().lower()
+    if not LANGUAGE_CODE.fullmatch(lang):
+        raise SystemExit(f"--language {args.language!r} is not a language code (letters, digits, - or _)")
     doc = akl.load_log(args.log)
     keywords = doc.get("data", {}).get("keywords", [])
     index = index_log(keywords)
@@ -324,10 +341,16 @@ def main(argv: list[str] | None = None) -> int:
             print("nothing addable; nothing written")
             return 0
         used_allow = [w for w in addable if norm(w) in allow]
+        existed = (EXTRA_DIR / f"{lang}.yml").exists()
         path = append_batch(lang, addable, args.batch_id, used_allow, args.log.name)
-        print(f"\nappended {len(addable)} words to {path.relative_to(ROOT)}")
+        print(f"\nappended {len(addable)} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+        # The loader adds a curly copy of every listed contraction, so the digest test needs both.
+        declare = sorted(set(addable) | {w.replace("'", "\u2019") for w in addable if "'" in w})
         print("next: declare them in tests/test_analytics_extract.py::added_since_migration:")
-        print("        " + ", ".join(f'"{w}"' for w in sorted(addable)) + ",")
+        print("        " + ", ".join(f'"{w}"' for w in declare) + ",")
+        if not existed:
+            print(f"{path.name} is a NEW file: if its script is not Latin, also add it to "
+                  "_NON_LATIN_FILES in tests/test_stopword_file_scripts.py (that guard fails until it is).")
         print("and add a section to configs/stopwords_extra/PROVENANCE.md with the evidence above.")
     return 0
 
