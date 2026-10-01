@@ -117,21 +117,35 @@ def test_get_db_dependency_yields_and_closes():
     assert closed
 
 
-def test_the_pool_timeout_setting_refuses_a_non_finite_value_and_keeps_every_finite_one(monkeypatch, caplog):
-    """nan makes SQLAlchemy's pool spin a core for ever, inf raises OverflowError from the first
-    checkout that has to wait, and an unparseable value used to stop the app at import: all fall
-    back to the default 30 s with a log line. This is not a clamp: every finite value an operator
-    sets, a long one included, is kept."""
+def test_the_pool_timeout_setting_refuses_a_value_the_pool_cannot_use_and_keeps_every_other(monkeypatch, caplog):
+    """nan makes SQLAlchemy's pool spin a core for ever, inf and anything above threading.TIMEOUT_MAX
+    raise OverflowError from the first checkout that has to wait, a negative number raises
+    ValueError there, and an unparseable value used to stop the app at import: all fall back to
+    the default 30 s with a log line. This is not a clamp: every value the pool can use, 0 and a
+    wait of minutes included, is kept."""
     import logging
 
     monkeypatch.delenv("OO_DB_POOL_TIMEOUT", raising=False)
     assert session_module._pool_timeout_s() == 30.0
-    for raw, want in (("45", 45.0), ("600", 600.0), ("0", 0.0), ("2.5", 2.5)):
+    for raw, want in (("45", 45.0), ("600", 600.0), ("86400", 86400.0), ("0", 0.0), ("2.5", 2.5), ("9000000000", 9e9)):
         monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
         assert session_module._pool_timeout_s() == want, raw
-    for raw in ("nan", "inf", "-inf", "Infinity", "NaN", "abc", ""):
+    for raw in ("nan", "inf", "-inf", "Infinity", "NaN", "abc", "", "-1", "-0.5", "1e10", "9300000000"):
         monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="database.session"):
             assert session_module._pool_timeout_s() == 30.0, raw
         assert any("OO_DB_POOL_TIMEOUT" in r.getMessage() and repr(raw) in r.getMessage() for r in caplog.records), raw
+
+
+def test_the_engine_is_built_with_the_checked_pool_timeout_not_the_raw_setting(monkeypatch):
+    """``_pool_timeout_s`` has one caller. The test above proves the function; this one proves the
+    engine uses it, by reading the timeout off the pool the engine really has: a one-line revert
+    to ``float(os.getenv(...))`` would put ``nan`` (a core spinning for ever) back in the pool."""
+    for raw, want in (("nan", 30.0), ("inf", 30.0), ("45", 45.0), ("0", 0.0)):
+        monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
+        eng = session_module._build_engine()
+        try:
+            assert eng.pool._timeout == want, raw
+        finally:
+            eng.dispose()

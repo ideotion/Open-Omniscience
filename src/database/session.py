@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -62,21 +63,22 @@ _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 def _pool_timeout_s() -> float:
     """``OO_DB_POOL_TIMEOUT``: how long a checkout waits for a pooled connection (default 30 s).
 
-    A value that is not a finite number (``nan``, ``inf``, ``abc``, empty) is refused and the
-    default used, with a log line: SQLAlchemy's pool spins a core at full speed for ever on
-    ``nan``, raises ``OverflowError`` from the first checkout that has to wait on ``inf`` (or
-    anything past about 9e9), and an unparseable value used to stop the app at import. Every
-    finite number the operator sets is kept as it is; this is not a clamp."""
+    A value the pool cannot use is refused and the default used, with a log line: ``nan`` (it
+    spins a core at full speed for ever), ``inf`` or anything above ``threading.TIMEOUT_MAX``
+    (``OverflowError`` from the first checkout that has to wait), a negative number
+    (``ValueError``, there as well), and an unparseable value (``abc``, empty), which used to stop
+    the app at import. Every value the pool CAN use, ``0`` (fail at once) and a wait of minutes
+    included, is kept as it is: this is not a clamp."""
     raw = os.getenv("OO_DB_POOL_TIMEOUT", "30")
     try:
         value = float(raw)
     except ValueError:
         value = float("nan")
-    if not math.isfinite(value):
+    if not math.isfinite(value) or value < 0 or value > threading.TIMEOUT_MAX:
         # Resolved by NAME: this runs inside the module-level ``_build_engine()`` call, above the
         # module's ``_LOG``.
         logging.getLogger("database.session").warning(
-            "OO_DB_POOL_TIMEOUT=%r is not a finite number of seconds; using the default, 30 s", raw
+            "OO_DB_POOL_TIMEOUT=%r is not a number of seconds the pool can wait; using the default, 30 s", raw
         )
         return 30.0
     return value
