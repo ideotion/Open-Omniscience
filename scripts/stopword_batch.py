@@ -28,13 +28,15 @@ thread's decision rows as tab-separated text, one per line, ``#`` comments allow
 
 with ``verdict`` N (or ``junk``), ``confidence`` H, and ``flags`` a comma list that may hold
 ``unstable`` (the triage converter sets it on a verdict that did not reproduce between runs or that
-sits on an open rubric boundary) or ``single_reader``; the layout is the triage thread's
-decision-file format. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool trusts the ``unstable``
-flag the converter sets and counts no runs itself. Only
+sits on an open rubric boundary), ``not_repeated`` (no repeat run read the row) or ``single_reader``; the layout is the triage thread's
+decision-file format. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool trusts the ``unstable`` and
+``not_repeated`` flags the converter sets and counts no runs itself. Only
 ``single_reader`` is an accepted flag; ANY OTHER flag blocks the word (an unknown flag is a
 reading this tool does not understand, and it must not pass), and a line the reader cannot parse
 (no tab, a language column that is not a code, a row of another language with no verdict in its
-third column) stops the whole file. A word with no verdict row for the language, a verdict other than N, a confidence other than H, or a blocking flag is refused, and the batch comment records the verdict file's hash and the models named in it.
+third column) stops the whole file. A word with no verdict row for the language, a verdict other
+than N, a confidence other than H, or a blocking flag is refused, and the batch comment records the
+verdict file's hash and the models named in it.
 Without ``--verdicts`` the tool only REPORTS, says so, and its table is not a decision.
 
 WHY THE REFUSALS EXIST. ``configs/stopwords_extra`` is a LANGUAGE-AGNOSTIC union
@@ -106,8 +108,12 @@ RESERVED_NAMES = frozenset({"con", "prn", "aux", "nul", *(f"com{i}" for i in ran
 # letters, an optional script or region part), or the "?" / unknown bucket. A word in this column
 # (its language column missing) must stop the file, not be read as a row for another language.
 VERDICT_LANGUAGE = re.compile(r"[a-z]{2,3}(?:[-_][a-z0-9]{2,8})?|\?|unknown")
-# A model id as the converter writes it (claude-sonnet-5-5, sonnet-5.5): no underscore, comma or space.
+# A model id as the converter writes it (claude-sonnet-5-5, sonnet-5.5): ASCII letters, digits, dot and
+# hyphen only (the converter refuses any other --model), so anything else in that column is read as flags.
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
+# The converter's three flags as bare letters: a model column whose letters spell one of them is a flag
+# that lost its tab (``unstable.``, ``claude-sonnet-5-5unstable``), never a model id.
+FLAG_STEMS = ("unstable", "notrepeated", "singlereader")
 # What the third column of any row must hold (the triage converter writes K, N, W or U).
 VERDICT_TOKENS = frozenset({"N", "K", "W", "U", "JUNK"})
 # The only verdict flag that does not block a word. Anything else, spelt however, is a reading
@@ -256,7 +262,8 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
         # whatever spelling: a model id has no underscore, comma or space, so anything else there is
         # read as flags, and a row whose model column holds no model id is never high confidence.
         model = cols[5]
-        flag_shift = bool(model) and (not MODEL_ID.fullmatch(model) or model.lower() == "unstable")
+        letters = re.sub(r"[^a-z]", "", model.lower())
+        flag_shift = bool(model) and (not MODEL_ID.fullmatch(model) or any(f in letters for f in FLAG_STEMS))
         if flag_shift:
             flags |= {t for t in re.split(r"[,;\s]+", model.lower()) if t}
         row["high"] &= cols[4].upper() == HIGH and bool(model) and not flag_shift
@@ -534,7 +541,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="append the addable words to the language's file")
     ap.add_argument("--batch-id", help="the batch's id, e.g. en-2026-10 (required with --apply)")
     ap.add_argument("--json", type=Path,
-                    help="also write the full evidence report here: a NEW .json file, outside configs/, never the input log")
+                    help="also write the full evidence report here: a .json file outside configs/ (overwritten if it exists; never an input file or a file in the checkout)")
     args = ap.parse_args(argv)
 
     import analyze_keyword_log as akl
@@ -548,7 +555,7 @@ def main(argv: list[str] | None = None) -> int:
                 or target.is_relative_to((ROOT / "configs").resolve())):
             raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
         inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
-        if target in inputs or (target.exists() and (target.is_relative_to(ROOT) or any(
+        if target in inputs or (target.exists() and (target.is_relative_to(ROOT) or target.stat().st_nlink > 1 or any(
                 p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words) if p))):
             raise SystemExit("--json would overwrite an input file (the log, the verdicts or the words) or an existing file in the checkout "
                              "(a tracked file is one); name a new file or one outside the checkout")
@@ -562,8 +569,9 @@ def main(argv: list[str] | None = None) -> int:
     if verdicts is not None:
         rows_read = seen.pop("\0read")
         others = ", ".join(f"{k} {v}" for k, v in seen.most_common(6))
-        print(f"verdicts: read {rows_read} rows for {lang}; skipped {sum(seen.values())} rows for "
-              f"{len(seen)} other languages ({others}{', ...' if len(seen) > 6 else ''}).")
+        skipped_note = (f"; skipped {sum(seen.values())} rows for {len(seen)} other languages "
+                        f"({others}{', ...' if len(seen) > 6 else ''})") if seen else ""
+        print(f"verdicts: read {rows_read} rows for {lang}{skipped_note}.")
     note = trimmed_log_notice(args.log)
     if note:
         print(note)
@@ -598,7 +606,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {tag} {r['term']:<24} articles {r['articles']:>6} mentions {r['mentions']:>7}"
               f"{'  ' + ','.join(r['refused']) if r['refused'] else ''}{extra}")
     if args.json:
-        args.json.write_text(json.dumps({"language": lang, "rows": rows}, ensure_ascii=False, indent=2), "utf-8")
+        try:
+            args.json.write_text(json.dumps({"language": lang, "rows": rows}, ensure_ascii=False, indent=2), "utf-8")
+        except OSError as exc:
+            raise SystemExit(f"--json: cannot write {args.json}: {exc.strerror or exc}") from exc
 
     if args.apply:
         if not addable:

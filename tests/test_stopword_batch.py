@@ -27,6 +27,9 @@ def _load():
 
 
 sb = _load()
+
+# The link tests need symlink and hard-link rights, which a plain Windows runner does not grant.
+NEEDS_LINKS = pytest.mark.skipif(sys.platform == "win32", reason="symlinks and hard links need rights a Windows runner lacks")
 _REAL_APP_CONTEXT = sb.app_context
 REAL_KEEP_FILE = sb.KEEP_FILE
 
@@ -486,6 +489,7 @@ def test_the_round_trip_compares_the_whole_list(tmp_path, monkeypatch):
     assert loaded == ["alpha", "permalink"]
 
 
+@NEEDS_LINKS
 def test_a_symlink_in_the_directory_is_never_written_through(tmp_path, monkeypatch):
     outside = tmp_path / "outside.yml"
     outside.write_text("stopwords:\n  - keep\n", "utf-8")
@@ -640,6 +644,7 @@ def test_a_verdict_file_with_no_row_for_the_language_stops_the_tool(tmp_path):
         sb.read_verdicts(f, "en")
 
 
+@NEEDS_LINKS
 def test_a_symlinked_directory_above_the_file_is_refused(tmp_path, monkeypatch):
     real = tmp_path / "real"
     real.mkdir()
@@ -652,6 +657,7 @@ def test_a_symlinked_directory_above_the_file_is_refused(tmp_path, monkeypatch):
     assert list(real.iterdir()) == []
 
 
+@NEEDS_LINKS
 def test_json_report_never_overwrites_the_input_log_or_a_file_in_the_checkout(tmp_path, monkeypatch):
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
@@ -747,6 +753,7 @@ def test_json_report_never_overwrites_the_verdicts_or_words_file(tmp_path):
     assert w.read_text("utf-8") == "permalink\n"
 
 
+@NEEDS_LINKS
 def test_a_json_symlink_is_refused_on_its_own(tmp_path):
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
@@ -769,6 +776,7 @@ def test_a_row_that_lost_its_language_column_stops_the_file(tmp_path):
     assert "zq" in sb.read_verdicts(f, "en")
 
 
+@NEEDS_LINKS
 def test_a_symlink_to_a_sibling_file_is_refused(tmp_path, monkeypatch):
     (tmp_path / "de.yml").write_text("stopwords:\n  - alpha\n", "utf-8")
     (tmp_path / "en.yml").symlink_to("de.yml")
@@ -778,6 +786,7 @@ def test_a_symlink_to_a_sibling_file_is_refused(tmp_path, monkeypatch):
     assert (tmp_path / "de.yml").read_text("utf-8") == "stopwords:\n  - alpha\n"
 
 
+@NEEDS_LINKS
 def test_a_symlink_further_above_the_file_inside_the_checkout_is_refused(tmp_path, monkeypatch):
     real = tmp_path / "real"
     (real / "extra").mkdir(parents=True)
@@ -789,6 +798,7 @@ def test_a_symlink_further_above_the_file_inside_the_checkout_is_refused(tmp_pat
     assert list((real / "extra").iterdir()) == []
 
 
+@NEEDS_LINKS
 def test_outside_the_checkout_only_the_files_own_directory_is_checked(tmp_path, monkeypatch):
     real = tmp_path / "real"
     (real / "extra").mkdir(parents=True)
@@ -798,6 +808,7 @@ def test_outside_the_checkout_only_the_files_own_directory_is_checked(tmp_path, 
     assert "permalink" in (real / "extra" / "en.yml").read_text("utf-8")
 
 
+@NEEDS_LINKS
 def test_a_hard_linked_stoplist_file_is_refused(tmp_path, monkeypatch):
     outside = tmp_path / "outside.yml"
     outside.write_text("stopwords:\n  - keep\n", "utf-8")
@@ -818,6 +829,7 @@ def test_the_comment_names_the_right_hash_for_each_file(tmp_path, monkeypatch):
     assert sb.file_hash(tmp_path / "log.json") != sb.file_hash(tmp_path / "v.tsv")
 
 
+@NEEDS_LINKS
 def test_json_never_overwrites_the_input_log_however_the_path_is_spelled(tmp_path, monkeypatch):
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
@@ -900,3 +912,89 @@ def test_a_real_model_id_in_the_model_column_is_a_model(tmp_path, model):
     f.write_text(f"en\tzzalpha\tN\tfn\tH\t{model}\t\n", "utf-8")
     v = sb.read_verdicts(f, "en")
     assert sb.verdict_refusals("zzalpha", v) == [] and v["zzalpha"]["models"] == {model}
+
+
+# ---- coordinator check 4: pins for the guards that survived mutation, and the flag spellings -----------------
+
+@pytest.mark.parametrize("verdict", ["K", "k", "W", "U", "N", "junk", "JUNK"])
+def test_a_row_of_another_language_with_any_known_verdict_is_skipped(tmp_path, verdict):
+    f = tmp_path / "v.tsv"
+    f.write_text(PASS_ROW + f"fr\tlundi\t{verdict}\tcal\tH\tsonnet\t\n", "utf-8")
+    assert "zzalpha" in sb.read_verdicts(f, "en")
+
+
+@pytest.mark.parametrize("verdict", ["X", "", "?", "NA", "Y"])
+def test_a_row_of_another_language_with_an_unknown_verdict_stops_the_file(tmp_path, verdict):
+    f = tmp_path / "v.tsv"
+    f.write_text(PASS_ROW + f"fr\tlundi\t{verdict}\tcal\tH\tsonnet\t\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
+
+
+def test_a_dissenting_row_written_with_a_capital_language_is_still_a_row_for_that_language(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text(PASS_ROW + "EN\tzzalpha\tK\t\t\tsonnet\t\n", "utf-8")
+    assert "not_junk" in sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en"))
+
+
+@pytest.mark.parametrize("shifted", ["Unstable", "UNSTABLE", "unstable,x", "unstable x", "unstable.", "unstable-1", "un.stable",
+                                     "not-repeated", "notrepeated", "claude-sonnet-5-5unstable"])
+def test_a_flag_in_the_model_column_blocks_in_more_spellings(tmp_path, shifted):
+    f = tmp_path / "v.tsv"
+    f.write_text(f"en\tzzalpha\tN\tfn\tH\t{shifted}\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("zzalpha", v) != []
+    assert v["zzalpha"]["models"] == set()
+
+
+@NEEDS_LINKS
+@pytest.mark.parametrize("src", ["v.tsv", "w.txt"])
+def test_json_never_overwrites_a_hard_link_to_the_verdicts_or_words_file(tmp_path, src):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    (tmp_path / "v.tsv").write_text(PASS_ROW, "utf-8")
+    (tmp_path / "w.txt").write_text("zzalpha\n", "utf-8")
+    (tmp_path / "hard.json").hardlink_to(tmp_path / src)
+    before = (tmp_path / src).read_bytes()
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--words", str(tmp_path / "w.txt"), "--verdicts", str(tmp_path / "v.tsv"),
+                 "--json", str(tmp_path / "hard.json")])
+    assert (tmp_path / src).read_bytes() == before
+
+
+@NEEDS_LINKS
+def test_json_never_overwrites_a_checkout_file_through_a_hard_link_outside_it(tmp_path, monkeypatch):
+    checkout = tmp_path / "checkout"
+    (checkout / "configs").mkdir(parents=True)
+    tracked = checkout / "tracked.txt"
+    tracked.write_text("tracked\n", "utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "report.json").hardlink_to(tracked)
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    monkeypatch.setattr(sb, "ROOT", checkout)
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--json", str(outside / "report.json")])
+    assert tracked.read_text("utf-8") == "tracked\n"
+
+
+def test_json_naming_a_directory_or_a_missing_folder_is_a_message_not_a_traceback(tmp_path, capsys):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    for target in (tmp_path / "somedir.json", tmp_path / "missing" / "report.json"):
+        if target.name == "somedir.json":
+            target.mkdir()
+        with pytest.raises(SystemExit) as exc:
+            sb.main([str(log), "--language", "en", "--json", str(target)])
+        assert str(exc.value).startswith("--json")  # a message either way: a directory is refused, a missing folder cannot be written
+
+
+def test_the_summary_line_for_a_one_language_file_names_no_skipped_rows(tmp_path, capsys):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    (tmp_path / "v.tsv").write_text(PASS_ROW, "utf-8")
+    sb.main([str(log), "--language", "en", "--verdicts", str(tmp_path / "v.tsv")])
+    out = capsys.readouterr().out
+    assert "verdicts: read 1 rows for en." in out
+    assert "skipped" not in out.split("verdicts:")[1].splitlines()[0]
