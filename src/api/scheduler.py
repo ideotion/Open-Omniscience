@@ -367,7 +367,8 @@ def scheduler_start() -> dict:
     memguard.memory_guard.reset(reason="operator started collection")
     # Likewise the storage guard: a RETRY -- it re-trips after fresh over-limit samples if the
     # WAL is still pinned or the drive still nearly full. The button that FORCES collection on
-    # while a limit holds is /storage-guard/resume (R112), not this.
+    # while a limit holds is /storage-guard/resume (R112), not this; an override that already
+    # holds is left alone (collection runs under it, there is nothing to retry).
     storage_guard.storage_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}
@@ -419,12 +420,15 @@ def storage_guard_resume() -> dict:
     """The operator's override of the storage guard's pause ("Resume anyway", R112).
 
     Collection continues although the WAL limit or the drive reserve is still exceeded. It
-    ends by itself when the cause clears, stops again if free space falls to the override
-    floor (``max(128 MiB, the log's size)``) or a write fails for want of space, and is
-    REFUSED (with a sentence frame, nothing changes) while a write has just failed, when free
-    space cannot be read, or when it is already at or below the floor. Loopback only, no
-    egress. The response carries the status payload and ``storage_guard_override`` =
-    ``{engaged, overridden, refused}``.
+    ends by itself when the cause clears, when a limit it was not granted for trips (a second
+    limit), when free space cannot be read for two samples in a row, when free space falls to
+    the override floor (``max(128 MiB, the log's size)``) and when a write fails for want of
+    space. It is REFUSED (with a sentence frame, nothing changes) while a write has just
+    failed, when free space cannot be read, or when it is already at or below the floor; the
+    status payload's ``storage_guard.override_refusal`` previews that answer so the page
+    offers the button only when it would be granted. Loopback only, no egress. The response
+    carries the status payload and ``storage_guard_override`` = ``{engaged, overridden,
+    refused}``.
     """
     result = storage_guard.storage_guard.override(reason="operator resumed via the API")
     return {**_status_payload(), "storage_guard_override": result}

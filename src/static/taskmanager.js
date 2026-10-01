@@ -398,7 +398,19 @@
       return '<div class="vwarn">' + esc(tf(n.frame, vars)) + "</div>";
     }).join("");
     return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer).")) + '">' +
-      lines + (g.overridden ? "" : '<button class="tiny secondary" data-tm="storage-resume">' + esc(t("Resume anyway")) + "</button>") + "</div>";
+      lines + storageGuardTail(g) + "</div>";
+  }
+  // What stands under the notice (see app-core.js _storageGuardTail): the button when a click
+  // would be granted, the server's own refusal sentence in its place when it would not, nothing
+  // while an override holds; a withdrawal note already says the refusal.
+  function storageGuardTail(g) {
+    if (g.overridden) return "";
+    var rf = g.override_refusal;
+    if (!rf) return '<button class="tiny secondary" data-tm="storage-resume">' + esc(t("Resume anyway")) + "</button>";
+    if ((g.kinds || []).indexOf("override-withdrawn") >= 0) return "";
+    var vars = {};
+    Object.keys(rf.vars || {}).forEach(function (k) { vars[k] = fmtBytes(rf.vars[k]); });
+    return '<div class="tiny secondary">' + esc(tf(rf.frame, vars)) + "</div>";
   }
 
   // ---- Schedule — the scheduler's own facts, AIRPLANE-AWARE ---- //

@@ -81,9 +81,10 @@ the sampling and the drain, so no worker does I/O on the guard's behalf. Where n
 runs (the scheduler started over the API after an ``OO_NO_SCHEDULER=1`` boot) the places
 that WAIT on the latch, the pass loop and :meth:`StorageGuard.wait_if_engaged`, take the
 readings and the drain themselves (:meth:`StorageGuard.poll_and_drain_unsupervised`): a
-pause must never outlive its cause. Such a machine is therefore sampled only at pass
-boundaries and while paused, not every five seconds; a real instance runs the supervisor
-(``OO_NO_SCHEDULER`` is the tests' and the headless switch).
+pause must never outlive its cause. That is a fallback and not a state a running instance is
+left in: starting collection (the scheduler's start, a manual run) starts the supervisor when
+it is not running (``runner._ensure_storage_supervisor``), so an override is always bounded by
+the sampling below, and ``OO_NO_SCHEDULER=1`` only means the supervisor is not started at boot.
 The drain never runs while an exclusive operation (an import, a restore) owns the machine, and
 holds a corpus lease while it runs, so a restore's file swap waits for it.
 
@@ -102,20 +103,28 @@ What then stops the drive from filling, in order:
   that is how one machine failed fourteen passes on one full disk);
 * the button is refused when free space is already at or below the floor, or cannot be read
   (an override that cannot be bounded is not granted), and a granted one is withdrawn the same
-  way when free space then stays unreadable for ``trip_after`` samples;
-* it covers the limits that were exceeded WHEN IT WAS GRANTED and nothing else: a second limit
-  that trips later (the drive's reserve while the log was overridden, or the other way round)
-  ends it, the ordinary pause shows with the new numbers, and the button offers it again with
-  that limit in view;
+  way when free space then stays unreadable for ``trip_after`` samples. The page does not offer
+  a button that would be refused: ``state()["override_refusal"]`` is the answer a click would
+  get (from the last sample, decided by the same code as the click), and the page says it
+  instead of drawing the button;
+* it covers the limits that were exceeded WHEN IT WAS GRANTED (the latch's, read under the lock
+  at the click) and nothing else: a second limit that trips later (the drive's reserve while the
+  log was overridden, or the other way round) ends it, the ordinary pause shows with the new
+  numbers, and the button offers it again with that limit in view. A limit that tripped
+  between the page's last refresh (2 to 6 s) and the click is therefore covered, and the note
+  that replaces the pause names it;
 * it ends when both causes are gone (the next trip pauses normally again), and it lives in
   memory only: quitting the app ends it.
 
-This is a bound, not a promise that the drive can never fill. The floor is read every
-``POLL_EVERY_S`` (5 s) while the supervisor runs (without one, at each pass boundary), and a pass
-can write between two readings; the floor reserves room to write the log back and finish a
-write, NOT the pass tail written after a withdrawal (a measured tail is what would size that, and
-it is not a fixed number). The write error above is the last net and it does not wait for a
-reading.
+This is a bound, not a promise that the drive can never fill. The floor is read on every
+supervisor tick, ``POLL_EVERY_S`` (5 s) apart, but a tick also runs the drain, which can wait up
+to 30 s for the write gate that running collectors keep busy: while overridden, the gap between
+two readings is 5 s to about 40 s. At the 1.4 MB/s the log was measured to grow while collecting,
+that is under 60 MB, small against a floor of at least 128 MiB; that rate is the log's growth,
+not a measurement of everything a pass writes. The floor reserves room to write the log back and
+finish a write, NOT the pass tail written after a withdrawal (a measured tail is what would size
+that, and it is not a fixed number). The write error above is the last net and it does not wait
+for a reading.
 
 The drain keeps running while the override holds, so the WAL still resets the moment its reader
 lets go, and the notice says that the override is on, what bounds it, and that the next start
@@ -156,7 +165,11 @@ DISK_RESERVE_FRACTION = 0.02
 DISK_RESUME_FACTOR = 1.5
 #: After a write FAILED for want of space, hold the stop at least this long even if the free
 #: figure looks healthy (quota, inode exhaustion, a figure that lags the failure): otherwise a
-#: drive that says "free" but refuses writes would flap at pass cadence.
+#: drive that says "free" but refuses writes would flap at pass cadence. The 300 s is NOT a
+#: measurement: it was chosen in #1279 as a few minutes, long enough that the pass cadence cannot
+#: re-try a refused write many times over (one machine failed fourteen passes on one full disk)
+#: and short enough that a transient refusal costs minutes, not hours; the same hold keeps the
+#: override button refused. A new failed write re-arms it.
 ERROR_HOLD_S = 300.0
 #: The in-memory history: one sample a minute for six hours. Process-scoped, never persisted
 #: (the hourly ``disk_free_mib`` and ``wal_bytes`` gauges carry the long series).
@@ -217,14 +230,23 @@ FRAME_OVERRIDE_WAL = (
     "Collection was resumed by you although the database's working file (its write-ahead log) "
     "is {size} (this machine's limit is {limit}). It stops again by itself if free space falls "
     "to {floor}, the room the database needs to write that file back into place and finish a "
-    "write, or if a write fails for lack of space. The next start will spend longer "
-    "recovering it."
+    "write, if a write fails for lack of space, or if another limit is crossed. The next "
+    "start will spend longer recovering it."
 )
 FRAME_OVERRIDE_DISK = (
     "Collection was resumed by you although only {free} is free on the data drive (this "
     "machine's reserve is {reserve}). It stops again by itself if free space falls to {floor}, "
     "the room the database needs to write its working file back into place and finish a "
-    "write, or if a write fails for lack of space."
+    "write, if a write fails for lack of space, or if another limit is crossed."
+)
+#: The drive's latch was set by a refused write and the drive still reports room (see
+#: FRAME_DISK_ERROR): "only X is free ... reserve Y" would imply a reserve that is not exceeded.
+FRAME_OVERRIDE_DISK_ERROR = (
+    "Collection was resumed by you although the drive refused a write for lack of space a "
+    "short while ago and has not yet reported healthy free space (free space reported: "
+    "{free}; this machine's reserve: {reserve}). It stops again by itself if free space falls "
+    "to {floor}, the room the database needs to write its working file back into place and "
+    "finish a write, if a write fails for lack of space, or if another limit is crossed."
 )
 #: Both a refusal at the click and an override that ended: the same fact either way. It does
 #: not say WHEN collection resumes: that depends on which limit holds, and the pause note
@@ -689,15 +711,24 @@ class StorageGuard:
 
         A withdrawal note belongs to the episode that withdrew it, and to the time free space
         stays at or below the floor: it goes with the episode, and goes once free space reads
-        above the floor again (the button is offered then, and would be granted)."""
+        above the floor again (the button is offered then, and would be granted). While it
+        stays it says what is true NOW: each readable sample refreshes its numbers, and free
+        space unreadable for ``trip_after`` samples turns it into the unreadable note."""
         floor = override_floor_bytes(self._wal_seen)
         if self._override is None:
             w = self._withdrawn
             if w is not None:
                 if not engaged or (disk_free_bytes is not None and disk_free_bytes > floor):
                     self._withdrawn = None
-                elif disk_free_bytes is not None and w.get("kind") == "unreadable":
+                    self._override_blind = 0
+                elif disk_free_bytes is not None:
+                    self._override_blind = 0
                     self._withdrawn = {"kind": "floor", "disk_free_bytes": disk_free_bytes, "floor_bytes": floor}
+                elif w.get("kind") == "floor":
+                    self._override_blind += 1
+                    if self._override_blind >= self.trip_after:
+                        self._withdrawn = {"kind": "unreadable"}
+                        self._override_blind = 0
             return None
         if not engaged:
             self._override = self._withdrawn = None
@@ -831,10 +862,17 @@ class StorageGuard:
         """Explicit start or run-now: a RETRY, never an override. The latches are cleared and
         the guard re-trips after ``trip_after`` fresh over-threshold samples if the WAL is still
         pinned or the drive still full. The button that FORCES collection on is
-        :meth:`override`."""
+        :meth:`override`.
+
+        An override that HOLDS is left alone: collection already runs, so there is nothing to
+        retry, and clearing the latches under it would only end it and re-pause collection after
+        ``trip_after`` samples, which is none of the ways R112 lets an override end (the cause
+        clearing, the floor, a failed write, a second limit, free space unreadable)."""
         was = False
         now_mono = self._clock()
         with self._lock:
+            if self._override is not None and (self._wal or self._disk):
+                return
             was = self._wal or self._disk
             self._wal = self._disk = False
             self._wal_over = self._wal_under = self._disk_over = self._disk_under = 0
@@ -845,6 +883,20 @@ class StorageGuard:
             self._account_locked(was, now_mono)
         if was:
             _LOG.warning("storage guard released (%s) -- collection resumes", reason)
+
+    def _override_refusal_locked(
+        self, free: int | None, floor: int, now_mono: float
+    ) -> dict[str, Any] | None:
+        """What a click on "Resume anyway" would be answered with right now, or None when it
+        would be granted: the ONE place the three refusals are decided, so the button that is
+        offered and the click that is answered cannot disagree. Caller holds the lock."""
+        if self._hold_until is not None and now_mono < self._hold_until:
+            return {"kind": "held", "frame": FRAME_OVERRIDE_HELD, "vars": {}}
+        if free is None:
+            return {"kind": "unreadable", "frame": FRAME_OVERRIDE_UNREADABLE, "vars": {}}
+        if free <= floor:
+            return {"kind": "floor", "frame": FRAME_OVERRIDE_STOPPED, "vars": {"free": free, "floor": floor}}
+        return None
 
     def override(self, *, reason: str = "operator override") -> dict[str, Any]:
         """The operator's "Resume anyway" (R112, question 18 = a): let collection continue while
@@ -870,16 +922,7 @@ class StorageGuard:
                 self._override = self._withdrawn = None  # nothing left to override
                 return out
             floor = override_floor_bytes(wal if wal is not None else self._wal_seen)
-            if self._hold_until is not None and now_mono < self._hold_until:
-                refused = {"kind": "held", "frame": FRAME_OVERRIDE_HELD, "vars": {}}
-            elif free is None:
-                refused = {"kind": "unreadable", "frame": FRAME_OVERRIDE_UNREADABLE, "vars": {}}
-            elif free <= floor:
-                refused = {
-                    "kind": "floor",
-                    "frame": FRAME_OVERRIDE_STOPPED,
-                    "vars": {"free": free, "floor": floor},
-                }
+            refused = self._override_refusal_locked(free, floor, now_mono)
             if refused is None:
                 self._override = {
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1083,15 +1126,22 @@ class StorageGuard:
             notes: list[dict[str, Any]] = []
             overridden = self._override is not None and (wal or disk)
             floor_now = override_floor_bytes(self._wal_seen)
+            # A write-error latch on a drive that still reports room says so, instead of
+            # "only X is free" about a healthy X (the override's note included).
+            free_now = last.get("disk_free_bytes")
+            reserve_now = thr.get("disk_reserve_bytes")
+            by_error = self._hold_until is not None and (
+                free_now is None or reserve_now is None or free_now >= reserve_now
+            )
             if overridden:
                 if disk:
                     notes.append(
                         {
                             "kind": "override-disk",
-                            "frame": FRAME_OVERRIDE_DISK,
+                            "frame": FRAME_OVERRIDE_DISK_ERROR if by_error else FRAME_OVERRIDE_DISK,
                             "vars": {
-                                "free": last.get("disk_free_bytes"),
-                                "reserve": thr.get("disk_reserve_bytes"),
+                                "free": free_now,
+                                "reserve": reserve_now,
                                 "floor": floor_now,
                             },
                         }
@@ -1125,13 +1175,6 @@ class StorageGuard:
                         }
                     )
             if disk and not overridden:
-                # A write-error latch on a drive that still reports room says so, instead of
-                # "only X is free" about a healthy X.
-                free_now = last.get("disk_free_bytes")
-                reserve_now = thr.get("disk_reserve_bytes")
-                by_error = self._hold_until is not None and (
-                    free_now is None or reserve_now is None or free_now >= reserve_now
-                )
                 notes.append(
                     {
                         "kind": "disk",
@@ -1160,6 +1203,14 @@ class StorageGuard:
                 # An operator's override (R112): collection runs although the latch holds. The
                 # button is offered only while it does not.
                 "overridden": bool(overridden),
+                # What a click on the button would be refused with right now (the same decision
+                # override() makes, from the last sample), or None when it would be granted: the
+                # page offers the button only then, and says the refusal otherwise.
+                "override_refusal": (
+                    self._override_refusal_locked(free_now, floor_now, self._clock())
+                    if (wal or disk) and not overridden
+                    else None
+                ),
                 "override": (
                     {
                         "since": self._override["at"],

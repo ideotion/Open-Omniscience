@@ -56,14 +56,17 @@ const frame = (prefix) => {
 };
 const FRAME_WAL = frame("Collection is paused: the database's working file (its write-ahead log) has grown to {size}");
 const GUARD = { engaged: true, notes: [{ kind: "wal", frame: FRAME_WAL, vars: { size: 3221225472, limit: 1073741824 } }] };
+const FRAME_STOPPED = frame("Collection cannot be kept running against this limit: free space is {free}, at or below {floor}");
+const FRAME_HELD = frame("The drive refused a write for lack of space a short while ago, so collection cannot be forced on yet");
+const FRAME_UNREADABLE = frame("Free space on the data drive cannot be read, so a forced resume could not be kept within");
 const FRAME_OVERRIDE_WAL = frame("Collection was resumed by you although the database's working file");
 const OVERRIDDEN = { engaged: true, overridden: true, notes: [{ kind: "override-wal", frame: FRAME_OVERRIDE_WAL, vars: { size: 3221225472, limit: 1073741824, floor: 3221225472 } }] };
 const ok = (over) => Object.assign({ running: true, online: true, storage_guard: GUARD }, over || {});
 
 const app = new Function("esc", "_fmtBytes",
-  extract(APP, "_storageGuardHtml") + "return _storageGuardHtml;")(esc, bytes);
+  extract(APP, "_storageGuardTail") + extract(APP, "_storageGuardHtml") + "return _storageGuardHtml;")(esc, bytes);
 const tm = new Function("esc", "fmtBytes", "tf", "t",
-  extract(TM, "storageGuardHtml") + "return storageGuardHtml;")(esc, bytes, tf, (s) => s);
+  extract(TM, "storageGuardTail") + extract(TM, "storageGuardHtml") + "return storageGuardHtml;")(esc, bytes, tf, (s) => s);
 const render = {
   "the app": (a) => app(a, (s) => s, tf),
   "/tasks": (a) => tm(a),
@@ -98,6 +101,31 @@ for (const [ui, draw] of Object.entries(render)) {
     assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), html);
     assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
   });
+  check(ui + ": a click that the server would refuse gets the refusal sentence, not a button", () => {
+    const refusal = (kind, frame, vars) => ({ kind, frame, vars });
+    for (const rf of [
+      refusal("floor", FRAME_STOPPED, { free: 104857600, floor: 134217728 }),
+      refusal("held", FRAME_HELD, {}),
+      refusal("unreadable", FRAME_UNREADABLE, {}),
+    ]) {
+      const html = draw(ok({ storage_guard: Object.assign({}, GUARD, { kinds: ["wal"], override_refusal: rf }) }));
+      assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), "button drawn beside a refusal: " + html);
+      assert.ok(html.includes(tf(rf.frame, { free: "100 MB", floor: "128 MB" })), "the refusal is not said: " + html);
+      assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
+    }
+  });
+  check(ui + ": a withdrawal note already says the refusal, so it is not said twice and no button is drawn", () => {
+    const g = { engaged: true, kinds: ["wal", "override-withdrawn"],
+      override_refusal: { kind: "floor", frame: FRAME_STOPPED, vars: { free: 104857600, floor: 134217728 } },
+      notes: [GUARD.notes[0], { kind: "override-withdrawn", frame: FRAME_STOPPED, vars: { free: 104857600, floor: 134217728 } }] };
+    const html = draw(ok({ storage_guard: g }));
+    assert.strictEqual(html.split("cannot be kept running against this limit").length - 1, 1, html);
+    assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), html);
+  });
+  check(ui + ": a payload without the preview (an older server) keeps the button", () => {
+    const html = draw(ok({ storage_guard: Object.assign({}, GUARD, { override_refusal: undefined }) }));
+    assert.ok(/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), html);
+  });
   check(ui + ": nothing is drawn while the scheduler is stopped", () => {
     assert.strictEqual(draw(ok({ running: false })), "");
   });
@@ -113,7 +141,6 @@ for (const [ui, draw] of Object.entries(render)) {
 
 // The click: the server grants the override, or refuses with a sentence frame whose sizes are
 // written through the page's own formatter -- and a refusal is an error toast, never a success.
-const FRAME_STOPPED = frame("Collection cannot be kept running against this limit: free space is {free}, at or below {floor}");
 function handlerSource(src, marker) {
   const at = src.indexOf(marker);
   assert.ok(at !== -1, marker + " not found -- was it renamed?");
@@ -165,6 +192,21 @@ for (const [ui, make] of Object.entries(clicks)) {
     });
   })());
 }
+
+// A page whose i18n engine has no tf (it loads late, or not at all) still fills the refusal's
+// placeholders: the toast must never show "{free}".
+pending.push((async () => {
+  const noTf = { t: (s) => s };
+  const handler = (api, toast) => new Function("api", "toast", "_fmtBytes", "window", "OOI18N", "_pollVitals",
+    handlerSource(APP, "async function storageGuardResume(") + "return _h;")(api, toast, bytes, { OOI18N: noTf }, noTf, undefined);
+  const t = await clickCase(handler, { storage_guard_override: { engaged: true, overridden: false,
+    refused: { kind: "floor", frame: FRAME_STOPPED, vars: { free: 104857600, floor: 134217728 } } } });
+  check("the app: a refusal toast fills its placeholders without OOI18N.tf", () => {
+    assert.strictEqual(t.length, 1);
+    assert.ok(t[0][0].includes("free space is 100 MB, at or below 128 MB"), t[0][0]);
+    assert.ok(!/\{\w+\}/.test(t[0][0]), t[0][0]);
+  });
+})());
 
 // The loop's phase can read paused for up to one poll after "Resume anyway": no "Paused" label may
 // sit beside the "resumed by you" note while an override holds.

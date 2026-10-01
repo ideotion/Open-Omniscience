@@ -1547,6 +1547,19 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
     return out
 
 
+def _ensure_storage_supervisor() -> None:
+    """Make sure the storage guard's supervisor runs whenever collection can (R112 review S7).
+
+    A boot with ``OO_NO_SCHEDULER=1`` starts none, and collection started afterwards over the
+    API would then be sampled only at pass boundaries: an operator's override must be bounded by
+    the floor, which only the supervisor's own ticks read, so it is started here. Idempotent,
+    zero network, and a failure to start it never stops collection from starting."""
+    try:
+        storage_guard.start()
+    except Exception:  # noqa: BLE001 - the guard is a safety net, never a reason not to start
+        _LOG.warning("storage guard supervisor could not be started", exc_info=True)
+
+
 class BackgroundScheduler:
     """Daemon-thread scheduler with explicit start/stop and non-overlapping run-now.
 
@@ -1637,6 +1650,7 @@ class BackgroundScheduler:
         """Start the scheduling loop. Returns False if it was already running."""
         if self.is_running():
             return False
+        _ensure_storage_supervisor()
         self._stop.clear()
         self._started_at = datetime.now(UTC)
         self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
@@ -1694,6 +1708,7 @@ class BackgroundScheduler:
         with self._state_lock:
             if self._active or self._exclusive_hold:
                 return False
+        _ensure_storage_supervisor()
         threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
         return True
 

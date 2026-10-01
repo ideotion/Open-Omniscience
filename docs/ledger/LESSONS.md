@@ -12890,13 +12890,23 @@ fails for want of space ends it at once and latches the hold during which the bu
 says "free" and refuses writes cannot be forced); (4) an end when the cause clears, kept in memory only. **Keep the
 latch's truth apart from the permission:** `engaged` stays the condition (the drain, the maintenance block and a
 background `wait_if_engaged` read it: forcing COLLECTION on does not force a rewrite on), `admit()` is whether new
-collection may start. **An override covers what the operator SAW when they chose, and nothing else:** the first build let a
+collection may start. **An override covers the limits that were exceeded when the operator chose, and nothing else:** the first build let a
 disk latch that tripped later ride on a log-only override, which put the user past a limit they had never been shown
 (the independent review of #1283 caught it); the override now records the limits exceeded at the grant and a later
-one ends it, the ordinary pause shows with the new numbers, and the button offers it again. **A sentence that describes an
+one ends it, the ordinary pause shows with the new numbers, and the button offers it again. (It reads the latch at the
+click, not what the page drew: a limit that tripped inside the page's 2 to 6 s refresh is covered, and the note that
+replaces the pause names it.) **Offer the button only when its answer would be a grant:** the build drew it beside
+"Collection stays paused" and answered the click with that same sentence as an error toast; the three refusals are now
+decided in one place, previewed in the status payload (`override_refusal`) and said in place of the button. **A sentence that describes an
 EVENT needs an owner and an end:** the "withdrawn at the floor" note was cleared only while an override existed, so after a
 withdrawal it outlived its episode and came back, with its frozen numbers, as a present-tense sentence about a drive that
-had 300 GB free; it now goes with the episode and once free space reads above the floor. And an override that can no longer
-be bounded (free space unreadable for `trip_after` samples) is withdrawn like one that could not be granted. Test numbers
+had 300 GB free; it now goes with the episode and once free space reads above the floor, and while it stays its numbers
+follow each reading. And an override that can no longer be bounded (free space unreadable for `trip_after` samples) is withdrawn like one that could not be granted. **A bound is only a bound while whatever reads it is running:** after an `OO_NO_SCHEDULER=1` boot the scheduler
+started over the API had no supervisor, so the floor was read only at pass boundaries (hours apart), and the guard's own
+rule "an override that cannot be bounded is not granted" was kept at the click and broken for the whole pass; starting
+collection now starts the supervisor (`runner._ensure_storage_supervisor`), and even then the real gap between two
+readings is 5 to about 40 s, because the tick also runs a drain that can wait 30 s for the write gate. **A retry button
+must not end what it did not start:** Start and Run now cleared the latches under an override and so ended it, which
+R112 does not list; they now leave an override that holds alone. Test numbers
 must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not
 the floor, is what a naive test sees).
