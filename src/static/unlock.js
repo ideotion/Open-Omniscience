@@ -335,6 +335,67 @@
     // this, invisible). We show the preparing view + a ticking elapsed clock the MOMENT
     // the passphrase is submitted — never a fabricated percent, just real elapsed time
     // and the honest one-time-migration explanation.
+    // What the passphrase check is doing when a large log is being recovered (rank 5, phase 0).
+    // The check runs inside the unlock POST and the app is still locked while it does, so this
+    // polls the one progress path a locked app serves; the sentence carries numbers the server
+    // measured -- the log's size, and this machine's own last recovery as the basis of the
+    // estimate -- and says so when there is no earlier measurement rather than inventing one.
+    function _recSize(bytes) {
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", o.n));
+      let v = Number(bytes), i = 0;
+      if (bytes == null || !isFinite(v)) return "\u2014";
+      while (v >= 1024 && i < 3) { v /= 1024; i++; }
+      const num = v.toFixed(i === 0 || v >= 100 ? 0 : 1);
+      const key = i === 0 ? "{n} B" : i === 1 ? "{n} KB" : i === 2 ? "{n} MB" : "{n} GB";
+      return "\u2068" + TF(key, { n: num }).replace(/ /g, "\u00a0") + "\u2069";
+    }
+    function _recClock(sec) {
+      const s = Math.max(0, Math.round(Number(sec) || 0));
+      return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    }
+    function recoveryLines(p) {
+      if (!p || !p.active) return [];
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s);
+      const lines = [TF("Applying {size} of writes the last session had not yet moved into your database. Nothing is downloaded.",
+        { size: _recSize(p.wal_bytes) })];
+      const b = p.basis;
+      if (p.eta_s != null && b && Number(b.wal_bytes) > 0 && Number(b.seconds) > 0) {
+        lines.push(TF("Last time on this machine, {past_size} took {past_time}, so this should take about {eta_time}.",
+          { past_size: _recSize(b.wal_bytes), past_time: _recClock(b.seconds), eta_time: _recClock(p.eta_s) }));
+        if (Number(p.elapsed_s) > Number(p.eta_s))
+          lines.push(t("That estimate has passed; the step is still running."));
+      } else {
+        lines.push(t("There is no earlier measurement on this machine to compare with. A large log can take several minutes."));
+      }
+      return lines;
+    }
+    let _recTimer = null;
+    function _stopRecoveryPoll() {
+      if (_recTimer) { clearInterval(_recTimer); _recTimer = null; }
+      const box = $("prep-recovery");
+      if (box) box.classList.add("hidden");
+    }
+    function _startRecoveryPoll() {
+      _stopRecoveryPoll();
+      let busy = false;
+      const poll = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const lines = recoveryLines(await (await fetch("/api/system/unlock-progress")).json());
+          const box = $("prep-recovery");
+          if (!box || _recTimer === null) return;
+          if (!lines.length) { box.classList.add("hidden"); return; }
+          $("prep-rec-1").textContent = lines[0];
+          $("prep-rec-2").textContent = lines.slice(1).join(" ");
+          box.classList.remove("hidden");
+        } catch (e) { /* the elapsed clock still runs; a missed poll only skips a sentence */ }
+        finally { busy = false; }
+      };
+      _recTimer = setInterval(poll, 1000);
+      poll();
+    }
+
     let _prepTimer = null, _prepStart = 0, _prepPriorView = null;
     function _stopPrep() { if (_prepTimer) { clearInterval(_prepTimer); _prepTimer = null; } }
     function _startPrep(priorView) {
@@ -364,8 +425,10 @@
       // synchronous init_db that runs inside fn() -- but tell _startPrep which view is
       // being hidden (btn.id says which form this is) so a failure can restore it.
       _startPrep(btn.id === "btn-unlock" ? "view-unlock" : "view-create");
-      try { await fn(); await waitReadyThenEnter(btn.id === "btn-create"); }
+      _startRecoveryPoll();
+      try { await fn(); _stopRecoveryPoll(); await waitReadyThenEnter(btn.id === "btn-create"); }
       catch (e) {
+        _stopRecoveryPoll();
         _stopPrep();
         const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
         // e.message is the backend's raw detail string ("passphrases do not match",
