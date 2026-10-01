@@ -954,7 +954,7 @@
         }
         const first = Math.min(fromPart, set.pcount);
         if (first < fromPart) {
-          note = tf("There are only {n} parts, so saving starts at part {n}.", {n: set.pcount}) + " ";
+          note = tf("There are only {n} parts, so saving starts at the last part.", {n: set.pcount}) + " ";
         }
         set.pos = set.mcount + first - 1;
       }

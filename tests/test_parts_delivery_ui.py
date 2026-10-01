@@ -74,6 +74,22 @@ def test_every_delivery_string_is_keyed_in_all_twelve_locales() -> None:
     assert not missing, "\n".join(missing)
 
 
+def test_the_page_uses_every_string_the_locales_carry() -> None:
+    """A key in 12 locale files that the page never says is a string nobody translated for the
+    page's real text: the clamp note was keyed as "...starts at the last part." while the page
+    said "...starts at part {n}.", so the i18n gate failed and eleven languages read English.
+    Keying and using are two facts; the test above pins the first, this one the second."""
+    import html as _html
+
+    page = (_STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
+    index = (_STATIC / "index.html").read_text(encoding="utf-8")
+    unused = [
+        s for s in _STRINGS
+        if s not in page and _html.escape(s, quote=False) not in index and _html.escape(s) not in index
+    ]
+    assert not unused, "keyed but never used by the page or its markup:\n" + "\n".join(unused)
+
+
 def test_the_buttons_and_the_bar_exist_and_use_no_inline_handlers() -> None:
     html = (_STATIC / "index.html").read_text(encoding="utf-8")
     for call in (

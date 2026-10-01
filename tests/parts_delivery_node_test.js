@@ -235,7 +235,7 @@ function listing(parts, manifests) {
     await api.partsSaveFrom();
     assert.deepStrictEqual(page.clicked.map((c) => c.download), [partName(30, 30)],
       "40 on a 30-part set starts at the last part and saves only it");
-    assert.ok(/^There are only 30 parts, so saving starts at part 30\. /.test(page.els["parts-status"].textContent),
+    assert.ok(/^There are only 30 parts, so saving starts at the last part\. /.test(page.els["parts-status"].textContent),
       page.els["parts-status"].textContent);
     for (const bad of ["", "0", "-4", "abc"]) {
       const before = page.clicked.length;
