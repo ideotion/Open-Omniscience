@@ -269,7 +269,7 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
                 f"- **{_fmt_count(gained_q)} qualified sources** arrived with this import "
                 f"({_fmt_count(qual.get('introduced_qualified'))} on sources it added, "
                 f"{_fmt_count(qual.get('adopted_qualified'))} on sources already here that "
-                "had never been judged)."
+                "had never been judged or carried only the shipped catalogue's own stamp)."
             )
             if gained_d:
                 lines.append(
