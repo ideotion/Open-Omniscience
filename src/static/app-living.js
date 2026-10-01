@@ -234,9 +234,11 @@
       ];
       if (run.idle_now) {
         facts.push({ label: t("Stopped"),
-          value: tf("No sign of life for {h} hours, since {when}",
-            { h: _livingCount(Math.round(run.idle_now.hours)), when: livingWhen(run.idle_now.since, t) }),
+          value: tf("No sign of life for {h} hours", { h: _livingCount(Math.round(run.idle_now.hours)) }),
           hover: t("After a restart the app starts offline and the lane waits. Go online with the airplane button to resume it: your place and your counts are kept.") });
+        // The time is its own figure, so a narrow card never breaks a date across two lines.
+        facts.push({ label: t("Last sign of life"), value: livingWhen(run.last_activity_at, t),
+          hover: t("The newest hour in which this install stored or requested something for the lane.") });
       }
       return facts;
     }
