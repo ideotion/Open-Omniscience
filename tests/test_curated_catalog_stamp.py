@@ -395,6 +395,34 @@ def test_the_provenance_basis_reads_a_repaired_row_as_the_export_does(db, monkey
     assert source_provenance(db, s.id)["qualification_basis"] == "measured", "judged again here"
 
 
+def test_the_provenance_page_says_when_the_repair_record_could_not_be_read(db, monkeypatch):
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({s.domain: None}, []))
+    assert source_provenance(db, s.id)["qualification_basis_unverified"] is False
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    assert source_provenance(db, s.id)["qualification_basis_unverified"] is True
+
+    def boom():
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(qi, "repaired_rows", boom)
+    assert source_provenance(db, s.id)["qualification_basis_unverified"] is True
+
+
+def test_the_provenance_basis_leaves_a_row_that_is_no_longer_judged_alone(db, monkeypatch):
+    """The export ships only judged rows; a repaired row reset to unqualified is not labelled
+    inherited by the page either."""
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    s.status = "unqualified"
+    db.commit()
+    assert source_provenance(db, s.id)["qualification_basis"] != "inherited"
+
+
 def test_an_unreadable_repair_record_is_said_not_read_as_none_repaired(db, monkeypatch):
     import src.catalog.qualification_integrity as qi
 
