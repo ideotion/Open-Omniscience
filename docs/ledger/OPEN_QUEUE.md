@@ -16097,7 +16097,11 @@ maintainer as a card.
   date (three months, which is only when the source JOINS the re-check line) and then until the qualification pass
   reaches it (oldest clock first, inside the per-pass re-check budget, so on an install whose catalogue was stamped all
   at once the line can be long: months, not weeks, is the honest expectation), and the safe order (live disqualified,
-  newer imported qualification) waits on the disqualified ladder. The follow-up (PR 3, plan to the coordinator first) is a
+  newer imported qualification) waits on the disqualified ladder. With `qualification_recheck_per_pass` at 0 qualified re-checks
+  are off and the unsafe order keeps collecting until the setting changes. `not_auto_repaired_measured_here_total` counts every
+  row whose live stamp is not the catalogue's, so it also holds verdicts adopted from an import or from the shipped overlay
+  (`apply_overlay` runs earlier in the same boot and does not look at local judging history): "measured here" is the name of the
+  class, not a claim about every row in it. The follow-up (PR 3, plan to the coordinator first) is a
   forced re-check list in `app_state`, read by the qualification pass ahead of its two pools within the existing
   per-pass budget and cleared once a newer attempt exists. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.

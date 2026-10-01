@@ -118,7 +118,7 @@ def live_stamp_class(source: Source) -> StampClass:
     are rows whose live verdict is not data this install produced, so only they may be changed
     without anyone's say-so (rule 12 = b); a ``measured`` row is reported and left for a local
     re-check. ``none`` means status unqualified: a qualified row with NO criteria version is an
-    anomaly (every writer stamps status and version together) and counts as ``measured``, the
+    anomaly (every current writer stamps status and version together) and counts as ``measured``, the
     side that is left alone.
     """
     if (source.status or "") == STATUS_UNQUALIFIED:
@@ -138,6 +138,9 @@ def held_domains(*, strict: bool = False) -> set[str]:
     side record); anything that WRITES asks with ``strict=True``, which raises instead, because an
     unreadable record read as "nothing held" would repair a source a maintainer held.
     """
+    from src.config.kv_store import kv_invalidate
+
+    kv_invalidate(REPAIR_INDEX_KEY)   # a revert run in another process must show
     if strict:
         return set(_read_repair_index(strict=True)["reverted_domains"])
     try:
@@ -631,7 +634,8 @@ def repair_summary() -> dict[str, Any]:
                 repairs.append({
                     "domain": r.get("domain"),
                     "run_at": run_at,
-                    "applied_at": run.get("applied_at") or (run_at if done else None),
+                    # a reconciled run says "applied, time unknown": never the time it was only planned
+                    "applied_at": run.get("applied_at"),
                     "confirmed": done,
                     "was_status": r.get("was"),
                     "restored_to": r.get("restored_to"),
@@ -722,14 +726,14 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     planned_ids = {int(r["source_id"]) for r in rows}
     run_at = _iso(now) or ""
     # An apply that keeps failing must not add a record per boot: when the newest run is still
-    # unconfirmed and planned exactly these sources, nothing was applied, so this attempt
+    # unconfirmed and planned only sources this plan also lists, nothing was applied, so this attempt
     # REPLACES its plan instead of appending a second one. (A run that applied but could not
     # confirm leaves different sources to plan, so it is never overwritten here.)
     last = idx["runs"][-1] if idx["runs"] else None
     prior = (kv_get_json(REPAIR_RUN_PREFIX + last) or {}) if last else {}
     if (
         last is not None and not prior.get("applied")
-        and {int(r.get("source_id", -1)) for r in prior.get("repairs") or []} == planned_ids
+        and {int(r.get("source_id", -1)) for r in prior.get("repairs") or []} <= planned_ids
     ):
         run_at = last
     run_key = REPAIR_RUN_PREFIX + run_at
@@ -766,10 +770,22 @@ def _confirm_applied_runs(idx: dict[str, Any]) -> None:
     from src.database.models import Source
     from src.database.session import session_scope
 
-    for run_at in idx["runs"]:
+    runs = list(idx["runs"])
+    listed_later: dict[str, set[int]] = {}
+    seen_later: set[int] = set()
+    for run_at in reversed(runs):                     # which sources a LATER run also plans
+        listed_later[run_at] = set(seen_later)
+        for r in (kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}).get("repairs") or []:
+            if "source_id" in r:
+                seen_later.add(int(r["source_id"]))
+    for run_at in runs:
         run = kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}
         rows = run.get("repairs") or []
         if run.get("applied") or not rows:
+            continue
+        if any(int(r.get("source_id", -1)) in listed_later[run_at] for r in rows):
+            # a later run planned one of these sources, so it was NOT withdrawn when this run
+            # was written: reading the withdrawn state now would credit this run with a later run's work
             continue
         with session_scope() as session:
             statuses = {
@@ -780,7 +796,8 @@ def _confirm_applied_runs(idx: dict[str, Any]) -> None:
         if all(statuses.get(int(r.get("source_id", -1))) == r.get("restored_to") for r in rows):
             # closing an old record never blocks the new plan
             with contextlib.suppress(Exception):
-                kv_set_json(REPAIR_RUN_PREFIX + run_at, {**run, "applied": True})
+                kv_set_json(REPAIR_RUN_PREFIX + run_at,
+                            {**run, "applied": True, "applied_at": None, "reconciled": True})
 
 
 def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:

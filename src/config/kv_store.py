@@ -137,7 +137,9 @@ def kv_get_json_strict(key: str) -> dict | None:
     """Like :func:`kv_get_json`, but an UNREADABLE store raises instead of reading as absent.
 
     ``None`` here means the key is genuinely not there (or the table does not exist yet, which is
-    the same fact on a fresh file). Use it where a caller will REWRITE what it read: treating a
+    the same fact on a fresh file); a value that IS there but cannot be parsed as a JSON object
+    raises too, since reading corruption as "no record" is the same silent replacement. Use it
+    where a caller will REWRITE what it read: treating a
     locked or failing database as "no record" and then writing would silently replace a record the
     caller was meant to extend. Bypasses the cache on a miss only, like :func:`kv_get_json`.
     """
@@ -147,7 +149,7 @@ def kv_get_json_strict(key: str) -> dict | None:
     ck = (path, key)
     with _lock:
         if ck in _cache:
-            return _loads(_cache[ck])
+            return _loads_strict(_cache[ck])
     conn = _open(path)
     try:
         try:
@@ -164,7 +166,7 @@ def kv_get_json_strict(key: str) -> dict | None:
         conn.close()
     with _lock:
         _cache[ck] = raw
-    return _loads(raw)
+    return _loads_strict(raw)
 
 
 def kv_set_json(key: str, obj: dict) -> None:
@@ -240,6 +242,16 @@ def kv_invalidate(key: str | None = None) -> None:
         else:
             for ck in [ck for ck in _cache if ck[1] == key]:
                 _cache.pop(ck, None)
+
+
+def _loads_strict(raw: str | None) -> dict | None:
+    """``None`` only for an absent value; a value that is there but is not a JSON object raises."""
+    if raw is None:
+        return None
+    val = json.loads(raw)  # ValueError on a truncated or corrupt value
+    if not isinstance(val, dict):
+        raise ValueError("stored value is not a JSON object")
+    return val
 
 
 def _loads(raw: str | None) -> dict | None:

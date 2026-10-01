@@ -95,7 +95,15 @@ def main(argv: list[str] | None = None) -> int:
     if not args.ignore_hold:
         from src.catalog.qualification_integrity import held_domains
 
-        held = held_domains(strict=True)
+        try:
+            held = held_domains(strict=True)
+        except Exception as exc:  # noqa: BLE001 - say why, never a traceback, and change nothing
+            print(
+                f"cannot read the revert record ({exc}); nothing was changed. "
+                "Retry, or use --ignore-hold to proceed without it.",
+                file=sys.stderr,
+            )
+            return 2
     with session_scope() as session:
         report = repair_inversions(session, dry_run=not args.apply, skip_domains=held)
 

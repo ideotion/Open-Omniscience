@@ -869,6 +869,129 @@ def test_the_strict_reader_tells_an_unreadable_store_from_an_absent_key(tmp_path
         kv.kv_get_json_strict("k")
 
 
+def test_the_strict_reader_raises_on_a_query_time_failure_and_on_a_corrupt_value(
+        tmp_path, monkeypatch) -> None:
+    import sqlite3
+
+    import src.config.kv_store as kv
+
+    db = tmp_path / "open_omniscience.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    kv.kv_invalidate()
+    kv.kv_set_json("k", {"a": 1})
+    kv.kv_invalidate()
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE app_state SET value = ? WHERE key = 'k'", ('{"a": 1',))   # truncated
+    with pytest.raises(ValueError):
+        kv.kv_get_json_strict("k")                      # present but unparseable is NOT absent
+    assert kv.kv_get_json("k") is None                  # the lenient reader still says absent
+    kv.kv_invalidate()
+
+    class Locked:
+        def execute(self, *_a, **_k):
+            raise sqlite3.OperationalError("database is locked")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(kv, "_open", lambda _p: Locked())
+    with pytest.raises(sqlite3.OperationalError):
+        kv.kv_get_json_strict("k")                      # a failure at QUERY time, not only at open
+
+
+def test_the_report_summary_reads_the_index_strictly(env, monkeypatch) -> None:
+    import src.config.kv_store as kv
+
+    def locked(_key):
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", locked)   # the lenient reader still answers
+    summary = qi.repair_summary()
+    assert "could not be read" in summary["repairs_note"], "an unreadable index is said, not read as empty"
+
+
+def test_the_operator_script_stops_when_the_revert_record_is_unreadable(env, monkeypatch, capsys) -> None:
+    import importlib.util
+    from pathlib import Path
+
+    import src.config.kv_store as kv
+
+    spec = importlib.util.spec_from_file_location(
+        "repair_script2", Path(__file__).resolve().parents[1] / "scripts"
+        / "repair_qualification_inversions.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+
+    def locked(_key):
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", locked)
+    assert script.main(["--apply"]) == 2
+    assert _status(env, "x.example").status == STATUS_QUALIFIED
+    assert "cannot read the revert record" in capsys.readouterr().err
+
+
+def test_a_later_plan_that_includes_the_failed_sources_replaces_the_failed_record(env, monkeypatch) -> None:
+    """Boot 1 plans {x} and fails to apply; an import adds y; boot 2 plans {x, y}: one record,
+    not an unconfirmed run for x beside a confirmed one that also lists it."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    real = qi.repair_inversions
+    broken = {"on": True}
+
+    def flaky_apply(session, **kw):
+        if broken["on"] and not kw.get("dry_run", True):
+            raise RuntimeError("disk full")
+        return real(session, **kw)
+
+    monkeypatch.setattr(qi, "repair_inversions", flaky_apply)
+    with pytest.raises(RuntimeError):
+        qi.auto_repair_inversions(now=NOW)
+    broken["on"] = False
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+    qi.auto_repair_inversions(now=NOW + timedelta(hours=2))
+
+    summary = qi.repair_summary()
+    assert summary["repair_runs"] == 1
+    assert summary["repaired_total"] == 2 and summary["repairs_unconfirmed"] == 0
+
+
+def test_a_run_is_not_reconciled_by_a_later_runs_work(env) -> None:
+    """R1 lists x and was never applied; R2 lists x and y and was applied but never confirmed.
+    Both rows now read withdrawn, but only R2 can claim them."""
+    with env.scope() as s:
+        x = _add(s, "x.example", STATUS_DISQUALIFIED, STATUS_DISQUALIFIED)
+        y = _add(s, "y.example", STATUS_DISQUALIFIED, STATUS_DISQUALIFIED)
+    r1, r2 = "2026-09-30T12:00:00+00:00", "2026-09-30T13:00:00+00:00"
+    row = lambda sid, dom: {"source_id": sid, "domain": dom, "restored_to": STATUS_DISQUALIFIED}  # noqa: E731
+    env.store[qi.REPAIR_RUN_PREFIX + r1] = {"run_at": r1, "applied": False, "repairs": [row(x, "x.example")]}
+    env.store[qi.REPAIR_RUN_PREFIX + r2] = {"run_at": r2, "applied": False, "repairs": [
+        row(x, "x.example"), row(y, "y.example")]}
+    env.store[qi.REPAIR_INDEX_KEY] = {"runs": [r1, r2], "last_run_at": r2, "reverted_domains": []}
+
+    qi._confirm_applied_runs(qi._read_repair_index())
+
+    assert env.store[qi.REPAIR_RUN_PREFIX + r2]["applied"] is True
+    assert env.store[qi.REPAIR_RUN_PREFIX + r1]["applied"] is False
+    summary = qi.repair_summary()
+    assert summary["repaired_total"] == 2 and summary["repairs_unconfirmed"] == 1
+    assert {r["applied_at"] for r in summary["repairs"] if r["confirmed"]} == {None}
+
+
+def test_the_held_domain_read_forgets_the_per_process_cache(env, monkeypatch) -> None:
+    """A revert run in another process must show in the report's held count."""
+    import src.config.kv_store as kv
+
+    forgotten: list[str | None] = []
+    monkeypatch.setattr(kv, "kv_invalidate", lambda key=None: forgotten.append(key))
+    qi.held_domains()
+    assert qi.REPAIR_INDEX_KEY in forgotten
+
+
 def test_a_restore_does_not_carry_the_repair_record(tmp_path) -> None:
     from src.backup.merge import merge_corpus
     from src.database.models import AppState
