@@ -331,6 +331,13 @@ def _withdrawn_row(db):
     return s
 
 
+def _repair_record(s):
+    """What repaired_rows reports for ``_withdrawn_row``: the imported attempt it followed."""
+    import src.catalog.qualification_integrity as qi
+
+    return {s.domain: qi._iso(NOW + timedelta(days=5))}
+
+
 def test_a_row_the_boot_repair_withdrew_exports_as_inherited_not_measured(db, monkeypatch):
     """Rank 14 follow-up: its disqualification came from an imported history, so it must never ship
     as this install's own measurement (or come back as corroboration after the next import)."""
@@ -340,7 +347,7 @@ def test_a_row_the_boot_repair_withdrew_exports_as_inherited_not_measured(db, mo
     before = build_overlay_export(db, now=NOW + timedelta(days=6))
     assert before["basis"]["measured"] == 1, "without the repair record the history reads as measured"
 
-    monkeypatch.setattr(qi, "repaired_domains", lambda: {s.domain})
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
     export = build_overlay_export(db, now=NOW + timedelta(days=6))
     assert export["basis"]["measured"] == 0 and export["basis"]["inherited"] == 1
     assert export["basis"]["repaired_exported_as_inherited"] == 1
@@ -348,14 +355,22 @@ def test_a_row_the_boot_repair_withdrew_exports_as_inherited_not_measured(db, mo
 
 
 def test_a_repaired_row_this_install_re_judged_reads_measured_again(db, monkeypatch):
+    """Either direction: a local qualification stamps a version, a local DISQUALIFICATION stamps
+    none (the usual path, a month on), and the attempt is what tells the two apart."""
     import src.catalog.qualification_integrity as qi
 
-    s = _withdrawn_row(db)
-    s.qualification_criteria_version = CRITERIA_VERSION          # what evaluate_and_stamp writes
-    db.commit()
-    monkeypatch.setattr(qi, "repaired_domains", lambda: {s.domain})
-    export = build_overlay_export(db, now=NOW + timedelta(days=6))
-    assert export["basis"]["measured"] == 1 and export["basis"]["repaired_exported_as_inherited"] == 0
+    for verdict, version in ((STATUS_QUALIFIED, CRITERIA_VERSION), (STATUS_DISQUALIFIED, None)):
+        s = _withdrawn_row(db) if not db.query(Source).filter_by(domain="withdrawn.example").count() else (
+            db.query(Source).filter_by(domain="withdrawn.example").one())
+        record = _repair_record(s)
+        _attempt(db, s, verdict, at=NOW + timedelta(days=40), criteria_version=CRITERIA_VERSION)
+        s.status = verdict
+        s.qualification_criteria_version = version               # what evaluate_and_stamp writes
+        db.commit()
+        monkeypatch.setattr(qi, "repaired_rows", lambda record=record: (record, []))
+        export = build_overlay_export(db, now=NOW + timedelta(days=41))
+        assert export["basis"]["measured"] == 1, verdict
+        assert export["basis"]["repaired_exported_as_inherited"] == 0, verdict
 
 
 def test_an_unreadable_repair_record_is_said_not_read_as_none_repaired(db, monkeypatch):
@@ -366,9 +381,20 @@ def test_an_unreadable_repair_record_is_said_not_read_as_none_repaired(db, monke
     def boom():
         raise OSError("database is locked")
 
-    monkeypatch.setattr(qi, "repaired_domains", boom)
+    monkeypatch.setattr(qi, "repaired_rows", boom)
     export = build_overlay_export(db, now=NOW + timedelta(days=6))
     assert export["basis"]["repair_record_unreadable"] is True
+
+
+def test_an_unreadable_run_makes_the_export_say_so_and_name_it(db, monkeypatch):
+    """Its domains are unknown, so a repaired row may read measured; the basis block says that."""
+    import src.catalog.qualification_integrity as qi
+
+    _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    export = build_overlay_export(db, now=NOW + timedelta(days=6))
+    assert export["basis"]["repair_record_unreadable"] is True
+    assert export["basis"]["repair_runs_unreadable"] == ["2026-09-30T00:00:00+00:00"]
 
 
 def test_a_curated_stamp_with_copied_in_judging_history_still_reads_curated(db):

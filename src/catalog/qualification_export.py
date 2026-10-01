@@ -110,6 +110,18 @@ def _curated_stamp_ids(session: Session) -> set[int]:
     }
 
 
+
+def _still_follows_the_repair(session, source, judged_at) -> bool:
+    """True while the source's newest judging attempt is the one a boot repair followed (the check
+    ``revert_repairs`` makes too). A repair record without a ``judged_at`` cannot be compared and is
+    read as still followed."""
+    if not judged_at:
+        return True
+    from src.catalog.qualification_integrity import _iso, _newest_judging
+
+    newest = _newest_judging(session, int(source.id))
+    return newest is not None and _iso(newest.attempted_at) == judged_at
+
 def build_overlay_export(session: Session, *, now: datetime | None = None) -> dict:
     """The exportable record of what this instance knows about its shipped sources."""
     from src.database.models import Source
@@ -130,12 +142,14 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
     # stamp: the verdict they now carry came from another instance's attempt, so they are
     # `inherited`, never this install's own measurement. An unreadable record is said so, not
     # read as "none repaired".
-    repaired: set[str] = set()
+    repaired: dict[str, str | None] = {}
     repair_record_unreadable = False
+    repair_runs_unreadable: list[str] = []
     try:
-        from src.catalog.qualification_integrity import repaired_domains
+        from src.catalog.qualification_integrity import repaired_rows
 
-        repaired = repaired_domains()
+        repaired, repair_runs_unreadable = repaired_rows()
+        repair_record_unreadable = bool(repair_runs_unreadable)
     except Exception:  # noqa: BLE001 - the export still runs; the flag below says what was not checked
         repair_record_unreadable = True
     verdicts = []
@@ -155,10 +169,10 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             basis = BASIS_CURATED
             if s.id in measured:
                 curated_stamp_with_judging_history += 1
-        elif s.domain in repaired and not s.qualification_criteria_version:
-            # withdrawn by the boot repair on an imported history's say (a repaired row keeps no
-            # criteria version until this install judges it itself): inherited, whatever its
-            # history holds, and shipped as such
+        elif s.domain in repaired and _still_follows_the_repair(session, s, repaired[s.domain]):
+            # withdrawn by the boot repair on an imported history's say and not judged again here
+            # since (its newest judging attempt is still the imported one the repair followed):
+            # inherited, whatever its history holds, and shipped as such
             basis = BASIS_INHERITED
             repaired_exported_as_inherited += 1
         elif s.id in measured:
@@ -259,6 +273,9 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             # `measured`. If the repair record could not be read this is 0 and says why.
             "repaired_exported_as_inherited": repaired_exported_as_inherited,
             "repair_record_unreadable": repair_record_unreadable,
+            # Runs whose record could not be read: the rows they withdrew cannot be named, so such a
+            # row may read `measured` here although the verdict came from an imported history.
+            "repair_runs_unreadable": repair_runs_unreadable,
             "note": (
                 "'measured' means this instance judged the source itself; 'inherited' means "
                 "it adopted the verdict from a backup or an earlier overlay; 'curated' means "
