@@ -3922,6 +3922,11 @@ def keywords_by_tag(
             }
             for kid, norm, term, lang, m, a in rows
         ]
+        # Stoplisted words are hidden at read time like every other listing (R111 step T2).
+        from src.analytics.queries import _hidden_predicate
+
+        is_hidden = _hidden_predicate()
+        items = [it for it in items if not is_hidden(it["normalized"])]
         items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
         return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
 

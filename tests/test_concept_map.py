@@ -295,3 +295,19 @@ def test_every_string_these_two_surfaces_render_is_keyed_in_all_twelve_locales()
         table = json.loads(path.read_text(encoding="utf-8"))
         for key in ui_keys + server_keys:
             assert key in table, f"{path.name} has no entry for {key[:60]!r}"
+
+
+def test_the_arms_drop_a_stoplisted_association(corpus, monkeypatch):
+    """R111 step T2: an association hanging off an arm is a keyword listing, so a word the
+    stoplist holds is not drawn, whatever was stored."""
+    from src.analytics import filters
+
+    ck = q.resolve_concept_keywords(corpus, "climate", ui_lang="en")
+    before = {x["term"] for a in q.concept_arms(corpus, ck, min_cooccur=1)["arms"] for x in a["associations"]}
+    assert before, "the fixture yields no associations; the rest proves nothing"
+    victim = sorted(before)[0]
+    real = filters.hidden_set
+    monkeypatch.setattr(filters, "hidden_set", lambda *a, **k: frozenset(real(*a, **k)) | {victim.casefold()})
+    after = {x["term"] for a in q.concept_arms(corpus, ck, min_cooccur=1)["arms"] for x in a["associations"]}
+    assert victim not in after, "the stoplisted association is still drawn"
+    assert after, "stoplisting one word emptied the map"
