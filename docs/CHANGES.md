@@ -105,8 +105,9 @@ this section were still open.
 The gate's operator runs were open at the tag. Row **B** (the ≥ 72 h soak) has since closed: on
 2026-10-01 the maintainer accepted instance 090243's 72-hour run of 19 to 22 September, with its
 hourly memory readings as the evidence (the gate records what that close does not claim). Row **A**
-(the committed full import that re-checks every source) ran in the release run of 2026-09-26 and
-closes once the maintainer has read its report. Row **C** (diagnostics on the ~1M-article instance), row
+(the committed full import that re-checks every source) was attempted in the same round of release
+runs, all started on 19 September, and stays open; the gate records the field evidence the
+2026-09-30 diagnostics add. Row **C** (diagnostics on the ~1M-article instance), row
 **W** (the Tier-A quarantine run) and the operator halves of rows **H** to **V** (the maintainer's
 own click-through, the real restores, the removable-drive export, the keyword and search reports,
 the encrypted-install upgrade, the law vetting board, the source shortlist run and the session

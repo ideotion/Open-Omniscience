@@ -142,7 +142,8 @@ other eleven carry no judging attempt at all, so their member reads `not-measura
 and a curated stamp is `qualified`, so another instance's measured disqualification landed in
 the attempt history beside a live `qualified`. The merge now lets a curated stamp give way to an
 incoming measured verdict when that is the newest judging evidence either side holds (a locally
-measured verdict still wins, an incoming curated stamp replaces nothing), pinned by
+measured verdict still wins, and an incoming curated stamp never replaces a curated stamp or a
+measured verdict this instance already holds), pinned by
 `tests/test_merge_source_qualification.py`. **That fix is unit-proved; its field proof is this
 row.**
 
@@ -150,17 +151,23 @@ What this adds to the clause, none of it a new bar:
 
 1. The spot-check is answered by `inversions_total` in the integrity member, with
    `checked.with_judging_attempt` as the denominator, as row E states — and an instance whose
-   member reads `inversions-found` with `laundered_total` above 0 cannot answer it, because a
+   member reads `inversions-found` with `laundered_total` above 0 fails it, because a
    laundered row is a previously-disqualified source that is not still disqualified there (all
    five inversions of the round are laundered; `demoted_total` is 0 on both instances).
 2. PR #1278 stops a merge from turning another instance's measured verdict into a new
-   inversion. It does not rewrite rows that are already inverted, and a backup from an instance
-   that is itself inverted still carries its inversions in: an incoming curated stamp replaces
-   nothing while its attempt rows are copied unchanged, so a curated instance that imports
-   `085639`'s shape (curated `qualified` beside a newer `disqualified` attempt) reads
-   `inversions-found` afterwards (reproduced 2026-10-01 with the real `merge_corpus`; no test
-   covers it). A later import that carries the agreeing measured stamp heals an inverted row,
-   per the merge's own comment. The direct way is `scripts/repair_qualification_inversions.py`,
+   inversion on a row that carries only the catalogue's curated stamp, which is the case the
+   field showed. It does not rewrite rows that are already inverted, and two shapes still arrive
+   inverted (both reproduced 2026-10-01 with the real `merge_corpus`; no test covers either).
+   A row holding THIS instance's own measured verdict keeps it while a newer, disagreeing
+   attempt from the backup is copied beside it, which reads `inversions-found` (laundered when
+   the local verdict is `qualified`, demoted when it is `disqualified`). And a backup from an
+   instance that is itself inverted carries its inversions in, because an incoming curated
+   stamp replaces neither a curated stamp nor a measured verdict while its attempt rows are
+   copied unchanged: a curated instance that imports `085639`'s shape (a live curated
+   `qualified` stamp whose newest judging attempt is `disqualified`; there the stamps are dated
+   2026-09-25 and the attempts 2026-09-03 and 04) reads `inversions-found` afterwards. A later
+   import that carries the agreeing measured verdict heals such a curated row, per the merge's
+   own comment. The direct way is `scripts/repair_qualification_inversions.py`,
    on `main` since 2026-09-12 (PR #1117): operator-run, a dry run unless `--apply`, it sets
    `Source.status` back to what the instance's own newest judging attempt recorded. Until this
    entry no gate file named it (the ledger had it only in PR #1117's `shipped.csv` row).
@@ -1079,7 +1086,7 @@ The `0.3` gate's own log is the format.
 
 | Date | Change | Source |
 |---|---|---|
-| 2026-10-01 | **Row B CLOSED (`R113`, «17a»); row A gains the field evidence of the 16-instance diagnostics.** Row B closes on instance 090243's 72-hour run of 19 to 22 September with its 73 hourly readings as the memory evidence (the built-in memory check keeps about two hours, so no P0.3 reading can span 72 h). §2 records what the close does not claim: `soak-window.json`'s `reaches_bar` is the later process's (the release run's own soak-window block, taken by the soak process, reads 80.46 h), that later process engaged the memory guard 76 times, which process «ended cleanly» reads, and why the other windows of the round (085214 climbing, 085218's missing final report, 085230 at 30 h) do not close it. Row A stays OPEN and its bar is unchanged: §2 now records `inversions-found` on two instances (three named domains), the merge fix on `main` (PR #1278, unit-proved; its field proof is this row's), that a backup from an instance that is itself inverted still carries its inversions in (reproduced with the real merge; no test covers it), and the repair script that was on `main` since PR #1117 but named in no gate file. | maintainer (project chat, 2026-10-01 00:12 UTC, «17a») · diagnostics ranks 13 and 14 · recorded by the session |
+| 2026-10-01 | **Row B CLOSED (`R113`, «17a»); row A gains the field evidence of the 16-instance diagnostics.** Row B closes on instance 090243's 72-hour run of 19 to 22 September with its 73 hourly readings as the memory evidence (the built-in memory check keeps about two hours, so no P0.3 reading can span 72 h). §2 records what the close does not claim: `soak-window.json`'s `reaches_bar` is the later process's (the release run's own soak-window block, taken by the soak process, reads 80.46 h), that later process engaged the memory guard 76 times, which process «ended cleanly» reads, and why the other windows of the round (085214 climbing, 085218's missing final report, 085230 at 30 h) do not close it. Row A stays OPEN and its bar is unchanged: §2 now records `inversions-found` on two instances (three named domains), the merge fix on `main` (PR #1278, unit-proved; its field proof is this row's), the two import shapes that still arrive inverted (a row holding the instance's own measured verdict beside a newer, disagreeing incoming attempt, and a backup from an instance that is itself inverted; both reproduced with the real merge, no test covers either), and the repair script that was on `main` since PR #1117 but named in no gate file. **A date corrected:** no release run started on 2026-09-26. The five runs of the round all started on 2026-09-19 (run ids `20260919T04…Z`), so the «release run of 2026-09-26» of the 2026-09-28 entry below, and the sentence of `docs/CHANGES.md` that repeated it, do not name the date of a run. | maintainer (project chat, 2026-10-01 00:12 UTC, «17a») · diagnostics ranks 13 and 14 · recorded by the session |
 | 2026-09-30 | **The older-rounds list, answered in the thread (03:35 UTC; recorded without code changes).** Rows carried onto the 0.5 list by `R92`: **row H** `PF07` = a (the three ride-along opt-outs fixed now, in their own small PR); **row T** `PF08` = a (the knob's words become kbit/s ×12 and invariant #4 is amended in that PR); **row U** `R99` = with eclipses (the eclipse canon is no longer unstated). | maintainer (project thread «Record the 37 answers», 2026-09-30 03:35 UTC) · recorded by the session |
 | 2026-09-29 | **The 37-question list, answered in chat (19:55 UTC; recorded without code changes).** **`R92` («21=b», over the recommended «keep them here»): every row still open at the `v0.4.0` tag — A, B, C, D, E and H to W — is now also a condition of the 0.5 exit** (`RELEASE_0.5_GATE.md` §1b); each keeps its text, bar and status HERE and closes here on its named artifact. **`R91` («20=a»): row H's 15 lane names, three headings and the 16th lane «Places and people» are kept** (H9 answered). **Q925 = a** (row Q: legislation.gov.uk → gesetze-im-internet → e-Gov → EUR-Lex → LEGI last); **Q1113 = a** (row S: the embassy platforms stay excluded, nothing published, nobody contacted — the status quo, confirmed). From the RC round: `RC02` = a (row K keeps the legacy single-file restore forever), `RC08` = a (`RC08.3` row C and `RC08.6` row U confirmed), `RC13` = b with eclipses (row U: the religious dates researched by a networked session and shipped PREINSTALLED, every religion covered, each shown or hidden by the user — the maintainer's note; the eclipse half is the recorded default), `RC15` = c (row T: Q1148's loopback figures stand AND the per-host egress politeness is to be adapted — no figure was written, so it is proposed and asked), `RC17` = a (row U, as built). **Still open, with the maintainer's words on their `RULINGS_INDEX.md` rows:** `RC05` and `D47` (to the thread «Keyword working session»), `RC06` (row S's re-check window — waits on the thread «Fix source qualification»: no source was added in 72 hours on eight instances despite more than 80,000 candidates, and re-qualification is to run as a queue), `RC16` (a later discussion). **No row changed status.** | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 | 2026-09-28 | **`v0.4.0` PUBLISHED from the moved tag (row G; no other row changed).** With the GitHub release deleted, the maintainer moved `v0.4.0` onto `00af1d9c`, the PR #1195 merge, from a GitHub Codespace at 10:13 UTC; a website attempt before it had re-published the release on the old tag without a run, since GitHub's website cannot move or delete a tag. `release.yml` run 36408430314 passed its full-suite job and the tag-matches-version step, then created the pre-release with the generated notes (no-telemetry re-check passing), the wheel, the sdist and `SHA256SUMS` at 11:00 UTC. The rows open at the tag are unchanged. | maintainer (Codespace, 10:13 UTC) · `release.yml` run 36408430314 · recorded by the session |
