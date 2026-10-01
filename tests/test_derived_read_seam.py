@@ -24,6 +24,7 @@ prevents is the seam eroding by addition, which is how a seam dies.
 
 from __future__ import annotations
 
+import ast
 import re
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -222,10 +223,12 @@ _RAW_CEILING: dict[str, int] = {
     "src/analytics/keyword_growth.py": 6,
     # The keyword-log export reads the mention rows through ONE constant (MENTIONS_TABLE), so
     # D22's move onto KeywordMentionRead is a one-line change there; it is a reader that has not
-    # moved yet, owned by the keyword thread. The count is EVERY mention of that name, however a
-    # read is spelled around it: in keyword_log_scan.py its docstring line, its definition (which
-    # also carries the literal table name) and the scan's one ordered pass; in
-    # keyword_log_export.py its import and the language-signature probe.
+    # moved yet, owned by the keyword thread. This table counts EVERY mention of the name, so for
+    # these three files it counts slots that are not reads: keyword_log_scan.py 4 = a docstring
+    # line, the constant's definition (two matches: the constant and the literal table name) and
+    # the scan's one ordered pass; keyword_log_export.py 2 = the import and the language-signature
+    # probe; keywords.py 1 = a docstring sentence. A slot that vanishes could hide a real read that
+    # appeared, so _EXPORT_REAL_READS below pins the READS of those three files exactly.
     "src/analytics/keyword_log_export.py": 2,
     "src/analytics/keyword_log_scan.py": 4,
     "src/analytics/latest.py": 2,
@@ -327,6 +330,70 @@ def test_the_raw_ceiling_is_not_left_above_the_real_count():
     actual = _actual_raw()
     slack = {f: (c, actual.get(f, 0)) for f, c in _RAW_CEILING.items() if actual.get(f, 0) < c}
     assert not slack, f"lower the raw ceiling to the real count (ceiling, actual): {slack}"
+
+
+# The three files that carry the keyword-log export's mention reads, counted as READS ONLY -- not
+# the docstring sentence, the import or the constant's definition the table above also counts --
+# so a read that appears where a docstring slot vanished (or the reverse) changes this number
+# instead of cancelling out. Exact on purpose: zero slack, like the ceilings.
+_EXPORT_REAL_READS: dict[str, int] = {
+    "src/analytics/keyword_log_scan.py": 1,  # the ordered pass over the mention rows
+    "src/analytics/keyword_log_export.py": 1,  # the language-signature probe
+    "src/api/diagnostics/keywords.py": 0,
+}
+
+
+def _real_reads(source: str) -> int:
+    """Names of the mentions table in ``source`` that are neither in a docstring, a comment, an
+    import nor the right-hand side of the ``MENTIONS_TABLE = ...`` definition."""
+    tree = ast.parse(source)
+    skip: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                skip.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+        elif isinstance(node, ast.Import | ast.ImportFrom) or (
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "MENTIONS_TABLE" for t in node.targets)
+        ):
+            skip.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return sum(
+        len(_RAW_RE.findall(line))
+        for number, line in enumerate(source.splitlines(), start=1)
+        if number not in skip and not line.lstrip().startswith("#")
+    )
+
+
+def test_the_real_read_counter_skips_what_is_not_a_read():
+    source = (
+        '"""Reads ``keyword_mentions`` (docstring)."""\n'
+        "from m import MENTIONS_TABLE\n"
+        'MENTIONS_TABLE = "keyword_mentions"\n'
+        "# a comment naming keyword_mentions\n"
+        "def read(c):\n"
+        '    """Docstring naming MENTIONS_TABLE."""\n'
+        '    return c.execute(f"SELECT 1 FROM {MENTIONS_TABLE}")\n'
+        'def raw(c):\n'
+        '    return c.execute("SELECT 1 FROM keyword_mentions")\n'
+    )
+    assert _real_reads(source) == 2
+
+
+def test_the_export_files_carry_exactly_the_reads_recorded():
+    actual = {
+        f: _real_reads((_SRC.parent / f).read_text(encoding="utf-8"))
+        for f in _EXPORT_REAL_READS
+    }
+    assert actual == _EXPORT_REAL_READS, (
+        "the keyword-log export's reads of the mentions table changed (file: recorded, now). A "
+        "new read joins D22's move onto KeywordMentionRead, so say so here with its reason: "
+        f"{actual}"
+    )
 
 
 # ------------------------------------------------- migrations, ordering, a missing view

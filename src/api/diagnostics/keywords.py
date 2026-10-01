@@ -47,6 +47,7 @@ from src.analytics.keyword_log_export import (
     zip_disk_preflight,
 )
 from src.analytics.keyword_log_scan import (
+    IN_LIST_IDS,
     ArticleMaps,
     ExportRefused,
     Ranker,
@@ -329,6 +330,14 @@ def _safe_lang_filename(lang: str) -> str:
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in (lang or ""))
     return safe or "unknown"
 
+
+#: Entries per ``json.dumps`` call when the JSON form streams its keywords and its families.
+#: What it protects: one ``dumps`` of the whole list built a second copy of it (the string); a
+#: slice holds a few hundred KB (an entry is 200-300 bytes of JSON in the field's logs), so
+#: streaming costs one slice, never the window. It is also the cadence of the memory stop's check
+#: between slices (a read of available memory per thousand entries, far finer than the stop's
+#: margin). The bytes written are the same as one ``dumps``.
+_JSON_SLICE = 1_000
 
 # What the archive writer borrows from this route (built after the names it lends exist).
 _ZIP_HOOKS = ZipHooks(
@@ -685,15 +694,18 @@ def keyword_log(
                     {lg: ranker.taken(lg) for lg in languages}, plan["family_rows"]
                 )
                 # Refuse an archive the drive cannot take BEFORE writing any of it.
-                zip_disk_preflight(out_dir, exported, max_bytes)
+                zip_disk_preflight(scratch_dir, exported, max_bytes)
                 job = ZipJob(
                     hooks=_ZIP_HOOKS,
-                    db=db, maps=maps, ranker=ranker, out_dir=out_dir, is_hidden=is_hidden,
+                    db=db, maps=maps, ranker=ranker, out_dir=scratch_dir, is_hidden=is_hidden,
                     overrides=overrides, supergroups=supergroups, corpus=corpus, method=method,
                     per_source_concentration=per_source_concentration,
                     suspects_total=suspects_total, suspects_capped=suspects_capped,
                     page_info=page_info, max_bytes=max_bytes, batch=plan["batch"], check=check,
-                    disk_watch=disk_watch_for(out_dir), window_note=window_note,
+                    # The drive the archive is WRITTEN to: the data folder, or the OS temp folder
+                    # when there is none. (It was watched through ``out_dir``, which is None in
+                    # exactly the case where the archive goes to the temp folder: no watch at all.)
+                    disk_watch=disk_watch_for(scratch_dir), window_note=window_note,
                     basis_per_language=basis_c, basis_budget_rows=plan["family_rows"],
                 )
                 return _keyword_zip(
@@ -724,7 +736,7 @@ def keyword_log(
             # Metadata + full language signatures for SURVIVORS only.
             meta: dict[int, tuple] = {}
             lang_sig: dict[int, dict[str, int]] = {}
-            for batch in batched(iter([s[0] for s in survivors]), 800):
+            for batch in batched(iter([s[0] for s in survivors]), IN_LIST_IDS):
                 check()
                 meta.update(fetch_meta(db, batch))
                 lang_sig.update(fetch_signatures(db, maps, batch))
@@ -818,9 +830,11 @@ def keyword_log(
             )
         else:
             yield ', "keywords": ['
-            for i in range(0, len(survivors), 1000):
+            for i in range(0, len(survivors), _JSON_SLICE):
+                # As the families loop below: a stop raised here ends a stream whose headers are
+                # sent already, which the reader sees as an incomplete download.
                 check()
-                chunk = survivors[i : i + 1000]
+                chunk = survivors[i : i + _JSON_SLICE]
                 prefix = "" if i == 0 else ","
                 yield prefix + ",".join(
                     json.dumps(_entry(s), separators=(",", ":")) for s in chunk
@@ -907,11 +921,11 @@ def keyword_log(
             # A memory stop raised here ends the stream (the headers are sent already), which
             # the reader sees as an incomplete download rather than a killed app.
             yield ', "families": ['
-            for i in range(0, len(families), 1000):
+            for i in range(0, len(families), _JSON_SLICE):
                 check()
                 prefix = "" if i == 0 else ","
                 yield prefix + ",".join(
-                    json.dumps(f, separators=(",", ":")) for f in families[i : i + 1000]
+                    json.dumps(f, separators=(",", ":")) for f in families[i : i + _JSON_SLICE]
                 )
             yield "]"
         yield ', "overrides": ' + json.dumps(

@@ -90,7 +90,29 @@ HEAP_SHARE = 0.10
 FAMILY_ROW_BYTES = 2000
 
 #: The share of AVAILABLE memory the family grouping may use, on top of the ranker's own tenth.
+#: What it protects: the grouping runs after the scan, while the process still holds its own
+#: baseline, the article arrays, the ranker's heaps (``HEAP_SHARE``) and the archive's buffers, and
+#: the rest of the machine is the operator's other programs. A tenth, like ``HEAP_SHARE``, is a
+#: DEFAULT chosen for that margin, not a measurement: the memory stop, not this number, is what
+#: ends a run that still runs short, and a machine with more free memory groups more.
 FAMILY_SHARE = 0.10
+
+#: The most page cache the spill file's connection may hold, in KiB (SQLite reads a negative
+#: ``cache_size`` as KiB). What it protects: the ranking's prune and per-language reads are ordered
+#: scans of the file, and SQLite's own default (2 MiB) makes each one re-read the pages from disk;
+#: more than this would add to a working set the plan has already sized. The cache is allocated
+#: as pages are touched, so a spill that stays small uses less. It is a ceiling chosen for that
+#: margin, not a separately measured figure: ``EXPORT_FIXED_BYTES`` (60 MiB) is the room it sits
+#: in.
+SPILL_CACHE_KIB = 32 * 1024
+
+#: Ids per ``IN (...)`` list in the export's queries. What it protects: a statement stays near
+#: 8 KB of SQL (ids of up to nine digits), far under SQLite's statement-length limit (1 MB by
+#: default) and short enough that the planner keeps using the primary-key index. It is the length
+#: every reader of this file used before the export was sized, and ``in_batches`` always cuts to it
+#: whatever the batch is: a larger batch changes how many entries are held between two checks,
+#: never how long a statement is.
+IN_LIST_IDS = 800
 
 #: Floor on the family basis, in entries. What it protects: the default export (5,000 keywords
 #: per language over a dozen or so languages) must still be grouped WHOLE on a machine so small
@@ -148,16 +170,18 @@ def memory_plan(available_bytes: float | None) -> dict[str, int]:
     """
     if available_bytes is None or available_bytes <= 0:
         rows = MIN_HEAP_ROWS
-        batch = 800
+        batch = IN_LIST_IDS
         family_rows = MIN_FAMILY_ROWS
     else:
         rows = max(MIN_HEAP_ROWS, int(available_bytes * HEAP_SHARE / ROW_BYTES))
         # An entry is about 2 KB once it is a dict and a JSON string; a batch may use ~0.2 % of
-        # what is available. 800 is what every reader of this file used before it was sized, and
-        # 8,000 is the ceiling that keeps one ``IN (...)`` list near 80 KB of SQL (ids of up to
-        # nine digits) -- a batch is one query per table, and a larger one saves no round trips
-        # worth a longer statement.
-        batch = max(800, min(8000, int(available_bytes * 0.002 / 2048)))
+        # what is available. A batch is the unit between two checks of the memory stop and the
+        # disk watch, and the number of entries held at once. The floor is one full IN list. The
+        # 8,000 ceiling holds a batch to about 16 MB of entries and keeps a check coming every
+        # few thousand entries on any machine, so a run is stopped within about a second of the
+        # machine running short. It has nothing to do with the length of an IN list, which
+        # ``in_batches`` cuts to ``IN_LIST_IDS`` whatever the batch is.
+        batch = max(IN_LIST_IDS, min(8000, int(available_bytes * 0.002 / 2048)))
         family_rows = max(MIN_FAMILY_ROWS, int(available_bytes * FAMILY_SHARE / FAMILY_ROW_BYTES))
     return {"heap_rows": rows, "batch": batch, "family_rows": family_rows}
 
@@ -191,10 +215,17 @@ class _SparseArr:
         self._d[i] = v
 
 
+_GROW_HEADROOM = 1024
+
+
 def _grow(arr: Any, aid: int, fill: int) -> None:
     """Extend a flat array so index ``aid`` exists (an article inserted after the id bounds
     were read, on a connection that holds no snapshot)."""
-    arr.extend(array(arr.typecode, [fill]) * (aid + 1 - len(arr) + 1024))
+    # 1,024 slots of headroom: a collection pass runs beside the export and inserts articles in
+    # bursts, and growing by one slot each time would copy the array per article. The headroom
+    # costs 1,024 slots (4 KB in the language array, 8 KB in the source array), nothing at the
+    # scale of the arrays.
+    arr.extend(array(arr.typecode, [fill]) * (aid + 1 - len(arr) + _GROW_HEADROOM))
 
 
 class ArticleMaps:
@@ -456,38 +487,74 @@ class SuspectBoard:
 
 @contextlib.contextmanager
 def _refuse_when_the_disk_is_full():
-    """SQLite's own "database or disk is full" is the drive answering, not a fault of ours: say
-    so, as the same refusal (HTTP 507) the free-space checks give."""
+    """SQLite's own "database or disk is full" (and "attempt to write a readonly database") is the
+    drive answering, not a fault of ours: say so, as the same refusal (HTTP 507) the free-space
+    checks give. Any other SQLite error is raised as itself."""
     try:
         yield
     except sqlite3.OperationalError as exc:
-        if "full" not in str(exc).lower():
+        said = str(exc).lower()
+        if "full" in said:
+            code = errno.ENOSPC
+        elif "readonly" in said or "read-only" in said:
+            code = errno.EROFS
+        else:
             raise
-        raise ExportRefused(
-            "the drive holding your data ran out of room while the export was ranking keywords, "
-            "so it stopped and removed its scratch file. Free some space, or ask for a smaller "
-            "window (per_lang=...).",
+        refusal = no_room_refusal(OSError(code, str(exc)), "ranking keywords")
+        if refusal is None:
+            raise
+        raise refusal from exc
+
+
+#: The OS errors that all say "the drive will not take what the export is writing": a full disk
+#: (ENOSPC), a user's quota (EDQUOT, which Windows does not define), and a read-only file system
+#: (EROFS, for instance a data folder on a drive the system remounted read-only after errors).
+#: What they protect: each is a fact about the operator's machine to be told with the way out, and
+#: not a 500 that reads as a bug in the app.
+_NO_ROOM_ERRNOS = frozenset(
+    code for code in (errno.ENOSPC, getattr(errno, "EDQUOT", None), errno.EROFS) if code is not None
+)
+
+
+def no_room_refusal(exc: OSError, doing: str) -> ExportRefused | None:
+    """The 507 for an OS error that means the drive will not take the write, or ``None`` for any
+    other error (which the caller raises as itself: it may be a bug, and a bug must stay visible).
+
+    ``doing`` finishes "while the export was ...". The text says "the drive the export writes to"
+    because that is the data folder, or the system's temp folder when there is none."""
+    code = getattr(exc, "errno", None)
+    if code not in _NO_ROOM_ERRNOS:
+        return None
+    if code == errno.EROFS:
+        return ExportRefused(
+            f"the drive the export writes to is read-only while the export was {doing}, so it "
+            "stopped and removed its scratch file. The data folder (or the system's temp folder, "
+            "when there is none) has to be writable for an export.",
             status=507,
-        ) from exc
+        )
+    why = "has no room left in your disk quota" if code != errno.ENOSPC else "ran out of room"
+    return ExportRefused(
+        f"the drive the export writes to {why} while the export was {doing}, so it stopped and "
+        "removed its scratch file. Free some space, or ask for a smaller window (per_lang=...).",
+        status=507,
+    )
 
 
 def scratch_file(prefix: str, suffix: str, directory: Path | str) -> Path:
     """Create an empty scratch file with a name no other export can share (``mkstemp``).
 
     A full drive answers here too: creating the file is the first write the export makes, and on
-    a drive with no room it raises ``ENOSPC`` from the OS, not from SQLite. That is the same
-    refusal (HTTP 507) the free-space checks give, never a 500 that reads as a bug in the app.
+    a drive with no room it raises ``ENOSPC`` from the OS, not from SQLite. A quota and a
+    read-only drive answer the same way. All are the same refusal (HTTP 507) the free-space
+    checks give (see :func:`no_room_refusal`), never a 500 that reads as a bug in the app.
     """
     try:
         fd, name = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=str(directory))
     except OSError as exc:
-        if exc.errno != errno.ENOSPC:
+        refusal = no_room_refusal(exc, "creating its scratch file")
+        if refusal is None:
             raise
-        raise ExportRefused(
-            "the drive holding your data has no room for the export's scratch file. Free some "
-            "space, or ask for a smaller window (per_lang=...).",
-            status=507,
-        ) from exc
+        raise refusal from exc
     os.close(fd)
     return Path(name)
 
@@ -590,7 +657,7 @@ class Ranker:
             with _refuse_when_the_disk_is_full():
                 con = sqlite3.connect(name, isolation_level=None, check_same_thread=False)
                 for pragma in ("journal_mode=OFF", "synchronous=OFF", "locking_mode=EXCLUSIVE",
-                               "cache_size=-32768"):
+                               f"cache_size=-{SPILL_CACHE_KIB}"):
                     con.execute(f"PRAGMA {pragma}")
                 con.execute(
                     "CREATE TABLE kw (kid INTEGER PRIMARY KEY, lang TEXT NOT NULL, has_m INTEGER NOT NULL,"
@@ -753,15 +820,20 @@ def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
     of the memory available at the start and spill to disk past that, so it cannot be what
     makes the export too big for the machine.
 
-    Four cheap reads (two index scans and two aggregates); ``None`` for a count that cannot be
-    read is treated as zero by the caller's fallback, never guessed.
+    Three statements: one aggregate over the articles' ids (COUNT, MIN and MAX in one pass), the
+    keyword table's highest id (a primary-key read), and the number of distinct languages the
+    articles carry (one pass over their language column; its cost on a 1.8 M-article instance is
+    not measured here, and it is a single pass beside an export that reads every mention).
+    ``None`` for a count that cannot be read is treated as zero by the caller's fallback, never
+    guessed.
 
     What it does not see, and which way it errs: the languages are the ARTICLES' (plus one for
     "?"), because counting the keyword table's own languages would scan the whole table, which has
     no index on it. A mention-bearing keyword always lands in one of its articles' languages, so
-    only ORPHANS in a language no article carries are missed (a few thousand entries at worst,
-    tens of MiB); an instance with many thin languages is over-counted, since each is priced at a
-    full window. The error is on the side of declining a machine slightly early.
+    only ORPHANS in a language no article carries are missed (at most one window for each such
+    language: 5,000 entries, about 13 MiB at the default, and how many such languages there are is
+    not measured); an instance with many thin languages is over-counted, since each is priced at
+    a full window. The error is on the side of declining a machine slightly early.
     """
     n_art, min_art, max_art = (int(v or 0) for v in db.execute(
         text("SELECT COUNT(*), COALESCE(MIN(id), 0), COALESCE(MAX(id), 0) FROM articles")

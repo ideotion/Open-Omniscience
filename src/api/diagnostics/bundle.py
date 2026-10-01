@@ -659,8 +659,14 @@ _MEMBER_RSS_NEED_MB: dict[str, float] = {
 #: exported keyword (2.5 KB measured at up to 410,000 entries, plus ten per cent). On the largest
 #: instance seen (14.65 M keywords, 1.83 M articles, about 82 languages) that is about 1,170 MiB,
 #: so a 4 GB machine with 2.5 GB free is admitted where the old 3,322.8 MiB (the unbounded
-#: builder, code that no longer exists) declined it. The "below the floor" shape the ruling asks
-#: for is still one threshold: half of total RAM, and then what is available now.
+#: builder, code that no longer exists) declined it. The ruling's "below the floor" shape is TWO
+#: checks, in this order (``ram_declined_reason``): the need against half of total RAM (R27's own
+#: text), and, for an ESTIMATED need only, the need plus the memory stop's floor against the memory
+#: available NOW. The second is a default taken under "size from the machine", not ruled by R27
+#: (OPEN_QUEUE): it is for a machine busier than its total says. On bundle 091717's own numbers it
+#: ADMITS the digest (1,426 MiB needed against 2,280 MiB available): that run was killed because
+#: the old builder needed 3,322.8 MiB, which the first check admitted and the second never saw (a
+#: fixed constant is not an estimate).
 _MEMBER_RAM_SHARE = 0.5
 
 

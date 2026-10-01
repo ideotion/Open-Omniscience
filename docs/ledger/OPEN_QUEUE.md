@@ -39,13 +39,14 @@
   The zip figures are large on a big box on purpose: the families' grouping may use up to a tenth of the memory available at
   the start (see (4)), so a 6-8 GB machine uses a few hundred MB for it, never a fixed number. json, digest and zip shards were
   compared byte for byte against the code this replaces on random databases. **Open, in the order they matter:**
-  (1) **DEFAULT TAKEN, NOT YET RULED: the "All keywords (.zip)" button now asks for NO size cap** (`max_mb=0`), because
+  (1) **DECIDED BY THE STANDING «NO FIXED CAPS» RULE (the coordinator's reading, 2026-10-01; not a separate question to the
+  maintainer): the "All keywords (.zip)" button now asks for NO size cap** (`max_mb=0`), because
   a button named "All" that kept the top 9 MB was the other half of the report and the file is streamed to disk anyway.
   The consequence is a big file on a big corpus (46 MB at 6 M synthetic keywords; the real size is unmeasured) that the
   maintainer cannot attach to Claude, which is why the "Keyword log (.zip)" button keeps the 9 MB cap. **What the 9 MB
   protects is the ATTACHMENT CHANNEL** (the common 10 MB limit; `keywords.py`), not memory and not the disk. Reverting is one
-  attribute in `index.html` and the assertion in `test_diagnostics_panel_button_consolidation`. **If the maintainer wants the
-  capped behaviour back, it is one word.** The trim loop now trims until the archive fits or every language is down to one
+  attribute in `index.html` and the assertion in `test_diagnostics_panel_button_consolidation`. **A cap per FILE (1 MB parts,
+  each uploadable as it is) is the next PR, and leaves the total uncapped.** The trim loop now trims until the archive fits or every language is down to one
   keyword, and says that `summary.json` is never trimmed (it used to stop after nine builds and its docstring called the cap
   guaranteed).
   (2) **A COMPACT, ATTACHABLE EXPORT is NOT BUILT, by the coordinator's ruling for this PR** (per language: the top keywords
@@ -54,17 +55,21 @@
   full file keep failing.
   (3) **`_LIGHT_DECLINED` still skips `keyword-log-digest.json`**, and its reason says why: the bounded export was measured only
   on synthetic corpora. **`R27`'s TEXT IS KEPT (half of total RAM; ACK R27, R28 in the commit record that the rulings were read
-  before their file was touched, which is not permission), AND ONE DEFAULT IS TAKEN ON TOP OF IT, NOT YET RULED: the gate also
+  before their file was touched, which is not permission), AND ONE BRANCH IS ADDED ON TOP OF IT, following the standing «size from
+  the machine» rule (the coordinator's reading, 2026-10-01; not a separate question to the maintainer): the gate also
   declines the digest when the memory available NOW minus the memory stop's floor cannot take the estimated need.** That goes
   beyond R27's «half the machine's RAM» and sits beside R28 and the 2026-09-02 «the bundle runs every member» ruling; it is one
-  branch in `ram_declined_reason` to remove, and it exists because the field's killed bundle (`091717`) had 6,773 MiB of RAM but
-  2,280 MiB available. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
+  branch in `ram_declined_reason` to remove. **What it protects, stated exactly:** a machine that is busy at the moment the digest
+  starts, where the memory available now, not the total, is what the export competes for. It would NOT have declined bundle
+  `091717`'s own machine under the bounded code (need about 1,170 MiB plus the floor, about 1,426 MiB, against 2,280 MiB available):
+  that kill was the OLD builder, a static 3,322.8 MiB constant which the second check never applied to, and the bounded code is
+  what answers it. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
   (`EXPORT_ENTRY_BYTES` 2,750 B = the 2,500 B per exported keyword MEASURED by peak resident size on synthetic databases of 100,000,
   205,000 and 410,000 entries, the last being the shape of the largest instance's export, plus ten per cent;
   `EXPORT_FIXED_BYTES` 60 MiB against a measured intercept of 38 MiB; both are pinned BY VALUE against that resident-size measurement, and tracemalloc tests bound them from below, because tracemalloc cannot see the allocator's overhead);
   the static 200.0 MiB (was 3,322.8, the unbounded code) is the fallback without a session and is a 13-language reading. The
-  field reason: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read 6,773 MiB, above the line
-  the old number implied. The performance report's `keyword_export_streamed` probe passes every argument itself and goes through
+  field case behind the bounding: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read 6,773 MiB,
+  above the line the old number implied. The performance report's `keyword_export_streamed` probe passes every argument itself and goes through
   the same gate (it reports `skipped` with the reason, a third honest state beside measured and failed). No bundle member was
   added. Whether the light profile should run the member again after the operator's own `rss_peak_rise_kb` arrives is the
   maintainer's call (R28 owns the profile).
@@ -79,16 +84,24 @@
   conservative zipped entry cost, 64 B against 9-15 B measured and 18-41 B in the maintainer's own logs, plus the reserve), with
   the numbers (HTTP 507). The ranking's spill is bounded like its heaps (a language never keeps more than twice its window on disk;
   what ranks beyond it is deleted and never written again), is sized up front from the keyword table's id range and the
-  languages' windows, is watched after every 20,000 rows, and a full-disk error from SQLite itself is the same 507. Scratch
+  languages' windows, is watched after every 20,000 rows, and a full-disk error from SQLite itself is the same 507. With no data
+  folder both the spill and the archive go to the OS temp folder (after a sweep of stale scratch files) and ONE watch covers
+  that folder for both, between batches too; the texts say «the drive the export writes to». Creating a scratch file on a full
+  drive, a disk quota (`EDQUOT`) or a read-only drive (`EROFS`), and the same errors in the middle of writing the archive, are a
+  507 that names the window to ask for, not a 500. Scratch
   names come from `mkstemp` (two exports in one millisecond used to share one), a spill that fails while being set up removes its
   file and closes its connection, and the archive response deletes its file however the exchange ends (a malformed or unsatisfiable
   `Range` request made Starlette skip its background task and left the archive on disk). A 12 h sweep removes a killed
   process's leftovers, and nothing goes through the main database or its log.
   (6) **D22 (quarantined articles leave the counts):** the scan names its mention table in ONE constant
   (`MENTIONS_TABLE`); moving this export onto `KeywordMentionRead` is the keyword thread's one-line change there. The seam ratchet
-  (`tests/test_derived_read_seam.py`) now also counts a read written through the constant (`{MENTIONS_TABLE}`), which its literal
-  regex could not see: `keyword_log_scan.py` at 2 (the definition and the scan), `keyword_log_export.py` at 1 (the signature
-  probe), `keywords.py` from 3 to 1.
+  (`tests/test_derived_read_seam.py`) now also counts the constant BY NAME, so a read spelled `{MENTIONS_TABLE}`,
+  `{kls.MENTIONS_TABLE}`, `+ MENTIONS_TABLE` or `.format(MENTIONS_TABLE)` is counted (its literal regex could not see them):
+  `keyword_log_scan.py` 4, `keyword_log_export.py` 2, `keywords.py` from 3 to 1. Those ceilings count every MENTION, and only
+  one slot in the scan and one in the export is a read (the rest are a docstring line, the constant's definition, the import
+  and a docstring word), so `_EXPORT_REAL_READS` pins the READS of those three files exactly (docstrings, comments, imports and
+  the definition not counted): a read that appears where a docstring slot vanished changes it. A read through an import alias
+  (`MENTIONS_TABLE as T`) is still invisible to both.
   (6b) **After the scan the export is under the memory stop too.** The phase that holds every survivor, its metadata, the
   families' grouping and the digests (about 1.1 GiB on the largest instance: 410,000 entries) reads the stop every 2,000
   entries and between its steps, and answers 503 with the numbers, so a bundle records the digest as skipped and the route does
@@ -853,8 +866,8 @@
   reading is 200.0 MiB (a synthetic corpus), and the gate for this member is sized from the
   instance's OWN counts times per-row costs that are each MEASURED (`EXPORT_ENTRY_BYTES`,
   `EXPORT_FIXED_BYTES`, pinned by value against the resident-size measurement and bounded from below by tracemalloc tests), held against half of total RAM as before
-  AND against the memory available now minus the memory stop's floor (that second branch is a DEFAULT TAKEN, not
-  yet ruled: see the "All keywords" zip entry, item 3). The rule above stands
+  AND against the memory available now minus the memory stop's floor (that second branch follows the standing «size from the machine»
+  rule and protects a busy machine, not bundle `091717`'s own: see the "All keywords" zip entry, item 3). The rule above stands
   for every other member: one that is not measured never declines; an estimator is added only
   to a member whose per-row costs have been measured and pinned.
 

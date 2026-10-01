@@ -523,6 +523,7 @@ def test_performance_report_says_so_when_the_keyword_export_is_declined(client, 
     row = [x for x in rows if x["probe"] == "keyword_export_streamed"]
     assert len(row) == 1 and "declined for the test" in row[0]["skipped"]
     assert "ms" not in row[0] and "bytes" not in row[0] and ran == []
+    assert row[0]["run"] == 0, "the row says the probe did not run, not only that it was skipped"
 
 
 def test_performance_report_selftest_can_be_skipped(client):

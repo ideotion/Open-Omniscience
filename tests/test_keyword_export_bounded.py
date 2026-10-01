@@ -355,8 +355,9 @@ def test_the_floor_and_the_prune_hold_when_ids_arrive_out_of_order(tmp_path):
     keywords`` off a covering index that orders by language and then id, and a NULL and an empty
     language both land in "?", so inside "?" the ids arrive 4, 8, 12, then 1, 5, 9. The floor's
     tie-break (a row that ties on mentions ranks by LOWER id) was only ever fed ascending ids
-    here, so a floor one id too high passed. Heavy ties and shuffled ids make the tie-break the
-    deciding factor."""
+    here. Heavy ties and shuffled ids exercise that tie-break against the reference window; they
+    do NOT catch a floor one id too high (that needs a row landing exactly at the cut, which
+    shuffled ids rarely produce): the directed test below pins it."""
     for seed in range(8):
         rnd = random.Random(700 + seed)
         lo, hi = (0, 5) if seed % 2 == 0 else (2, 9)
@@ -411,6 +412,28 @@ def test_a_row_ranking_just_ahead_of_the_cut_is_kept_after_a_prune(tmp_path):
         r.close()
 
 
+def test_a_row_at_or_below_the_floor_is_never_written_after_a_prune(tmp_path):
+    """The floor is what keeps the on-disk bound: once a language has been pruned, a row that
+    does not beat the cut is outside its window for good, so it must not reach the buffer (it
+    would be written and pruned again). The directed case from above, then rows that tie on
+    mentions with a HIGHER id than the cut's, one with fewer mentions and an orphan."""
+    r = kls.Ranker(0, 3, heap_rows=2, spill_dir=tmp_path, disk_check=None)
+    for kid in (10, 20, 30, 40, 50, 60):
+        r.add("en", kid, 5, 1, None, None, "en")
+    try:
+        assert r.spilled and "en" in r._floor, "the prune must have run for this to test anything"
+        buffered, on_disk = list(r._buf), r._on_disk["en"]
+        for kid, m in ((70, 5), (35, 5), (31, 4), (5, 0)):
+            r.add("en", kid, m, 1, None, None, "en" if m else None)
+        assert r._buf == buffered and r._on_disk["en"] == on_disk
+        assert r._seen["en"] == 10, "a row that cannot rank is still COUNTED, only never written"
+        r.add("en", 29, 5, 1, None, None, "en")  # beats the cut: this one is written
+        assert len(r._buf) == len(buffered) + 1 and r._on_disk["en"] == on_disk + 1
+        assert [row[0] for row in r.rows("en")] == [10, 20, 29]
+    finally:
+        r.close()
+
+
 def test_the_disk_is_watched_while_the_ranking_spills_not_only_before_it(tmp_path):
     flushes = {"n": 0}
 
@@ -442,11 +465,79 @@ def test_a_drive_with_no_room_for_the_scratch_file_is_a_507_for_the_spill_and_th
     with pytest.raises(kls.ExportRefused) as err:
         for kid in range(1, 10):
             r.add("en", kid, 1, 1, None, None, "en")
-    assert err.value.status == 507 and "no room" in str(err.value)
+    assert err.value.status == 507 and "ran out of room" in str(err.value)
     r.close()
     with pytest.raises(kls.ExportRefused) as err2:
         kle.ZipJob._path(types.SimpleNamespace(out_dir=tmp_path))
     assert err2.value.status == 507
+
+
+_NO_ROOM_CASES = [
+    pytest.param(errno.ENOSPC, "ran out of room", id="full"),
+    pytest.param(getattr(errno, "EDQUOT", None), "quota", id="quota"),
+    pytest.param(errno.EROFS, "read-only", id="read-only"),
+]
+
+
+@pytest.mark.parametrize(("code", "words"), _NO_ROOM_CASES)
+def test_a_quota_and_a_read_only_drive_are_the_same_refusal_as_a_full_one(
+    tmp_path, monkeypatch, code, words
+):
+    """Each of these is a fact about the operator's drive, with a way out, not a bug in the app:
+    a 507 that says which. (EDQUOT does not exist on Windows; the case is skipped there.)"""
+    if code is None:
+        pytest.skip("this platform has no EDQUOT")
+
+    def _refuse(*_a, **_k):
+        raise OSError(code, "refused by the drive")
+
+    monkeypatch.setattr(tempfile, "mkstemp", _refuse)
+    with pytest.raises(kls.ExportRefused) as err:
+        kls.scratch_file("p-", ".x", tmp_path)
+    assert err.value.status == 507 and words in str(err.value)
+    assert "the drive the export writes to" in str(err.value)
+    assert isinstance(err.value.__cause__, OSError), "the original error stays attached"
+
+
+@pytest.mark.parametrize(
+    ("message", "words"),
+    [("database or disk is full", "ran out of room"),
+     ("attempt to write a readonly database", "read-only")],
+)
+def test_sqlite_saying_the_drive_is_full_or_read_only_is_a_507(message, words):
+    with pytest.raises(kls.ExportRefused) as err, kls._refuse_when_the_disk_is_full():
+        raise sqlite3.OperationalError(message)
+    assert err.value.status == 507 and words in str(err.value)
+    # Any other SQLite error is raised as itself: it may be a bug, and a bug must stay visible.
+    with pytest.raises(sqlite3.OperationalError, match="no such table"), kls._refuse_when_the_disk_is_full():
+        raise sqlite3.OperationalError("no such table: kw")
+
+
+@pytest.mark.parametrize(("code", "words"), _NO_ROOM_CASES)
+def test_the_drive_filling_in_the_middle_of_the_archive_is_a_507_and_leaves_nothing(
+    dbs, data_dir, monkeypatch, code, words
+):
+    """The between-batches watch is a guard, not a guarantee: a write can fail first. That used to
+    be a 500 (and the same for a quota or a read-only drive)."""
+    if code is None:
+        pytest.skip("this platform has no EDQUOT")
+    real = zipfile.ZipFile.writestr
+    wrote = {"n": 0}
+
+    def _fails_on_the_summary(self, name, *a, **k):
+        if name == "summary.json":
+            wrote["n"] += 1
+            raise OSError(code, "refused by the drive")
+        return real(self, name, *a, **k)
+
+    monkeypatch.setattr(zipfile.ZipFile, "writestr", _fails_on_the_summary)
+    db = _session(dbs[0])
+    with pytest.raises(HTTPException) as err:
+        _call(db)
+    db.close()
+    assert wrote["n"] == 1, "the write that failed is one the archive really makes"
+    assert err.value.status_code == 507 and words in str(err.value.detail)
+    assert _leftovers(data_dir) == [], "the partial archive is removed"
 
 
 def test_an_error_creating_the_scratch_file_that_is_not_a_full_drive_is_not_renamed(tmp_path, monkeypatch):
@@ -471,6 +562,39 @@ def test_the_disk_watch_says_what_the_export_was_doing_when_it_stopped(tmp_path,
     assert "stopped ranking and removed its scratch file" in str(spill.value)
     assert "writing the archive" not in str(spill.value)
     assert spill.value.status == 507
+
+
+def test_with_no_data_folder_the_archive_is_watched_on_the_temp_folders_drive(
+    dbs, tmp_path, monkeypatch
+):
+    """The archive goes to the OS temp folder when there is no data folder, and that drive is the
+    one to watch. It was watched through the data folder, which is None in exactly this case: no
+    watch at all. The drive below is at its reserve for the temp folder only, and the up-front
+    check is off, so only the between-batches watch can stop the archive."""
+    import collections
+
+    import src.api.diagnostics.keywords as kw_mod
+
+    Usage = collections.namedtuple("Usage", "total used free")
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    monkeypatch.setattr(kw_mod, "export_dir", lambda: None)
+    monkeypatch.setattr(kw_mod, "zip_disk_preflight", lambda *_a: None)
+    watched: list[str] = []
+
+    def _usage(path):
+        watched.append(str(path))
+        return Usage(10**12, 10**12 - 1000, 1000)
+
+    monkeypatch.setattr(kle.shutil, "disk_usage", _usage)
+    db = _session(dbs[0])
+    with pytest.raises(HTTPException) as err:
+        _call(db)
+    db.close()
+    assert err.value.status_code == 507 and "the drive the export writes to" in str(err.value.detail)
+    assert str(temp) in watched, "the watch looked at the temp folder's drive"
+    assert sorted(p.name for p in temp.iterdir()) == [], "the partial archive is removed"
 
 
 def test_with_no_data_folder_the_temp_folders_stale_scratch_is_swept_too(dbs, tmp_path, monkeypatch):
@@ -730,7 +854,20 @@ def _digest_peak(tmp_path, monkeypatch, *, keywords: int, seed: int) -> tuple[in
     return peak, exported
 
 
-def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
+@pytest.fixture(scope="module")
+def digest_peaks(tmp_path_factory):
+    """The two measured digest runs (12,000 and 30,000 keywords), made once for the two tests that
+    fit a slope and an intercept through them: each run builds a database and traces a digest, so
+    measuring them twice was the dearest part of this file in CI for no extra evidence."""
+    with pytest.MonkeyPatch.context() as mp:
+        base = tmp_path_factory.mktemp("digest_peaks")
+        return (
+            _digest_peak(base, mp, keywords=12_000, seed=9),
+            _digest_peak(base, mp, keywords=30_000, seed=10),
+        )
+
+
+def test_export_entry_constant_matches_the_measured_size(digest_peaks):
     """EXPORT_ENTRY_BYTES turns an instance's keyword count into the memory the digest needs, which
     the bundle gate compares with the machine (R27). Measured here on the digest path, the one the
     bundle runs, as the SLOPE between two corpus sizes (so the fixed part does not hide in it): the
@@ -738,8 +875,7 @@ def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
     gate refuses machines that could run the export. This is the LOWER bound: tracemalloc misses the
     allocator's overhead, so the window is wide on purpose; the resident size at 100k-410k entries,
     measured out of process, is what pins the value (the test below)."""
-    small_peak, small_n = _digest_peak(tmp_path, monkeypatch, keywords=12_000, seed=9)
-    big_peak, big_n = _digest_peak(tmp_path, monkeypatch, keywords=30_000, seed=10)
+    (small_peak, small_n), (big_peak, big_n) = digest_peaks
     assert small_n > 8_000 and big_n > small_n * 1.5
     slope = (big_peak - small_peak) / (big_n - small_n)
     assert slope <= kls.EXPORT_ENTRY_BYTES, slope
@@ -775,15 +911,14 @@ def test_export_fixed_constant_covers_the_measured_intercept():
     assert kls.EXPORT_FIXED_BYTES <= 2 * _MEASURED_RSS_INTERCEPT_BYTES
 
 
-def test_no_python_structure_that_grows_with_the_corpus_hides_in_the_fixed_constant(tmp_path, monkeypatch):
+def test_no_python_structure_that_grows_with_the_corpus_hides_in_the_fixed_constant(digest_peaks):
     """The part of the export's memory that does not grow with the corpus (EXPORT_FIXED_BYTES) is
     the intercept of the same two-size fit. On the Python-allocation basis it is about zero (the
     export's own structures all scale with the entries); the 38 MiB the RESIDENT size shows is the
     SQLite page cache, the allocator's arenas and the interpreter, which tracemalloc cannot see and
     which the test above pins. What this test keeps is the half it can see: no Python structure
     that grows with the corpus hides in the constant."""
-    small_peak, small_n = _digest_peak(tmp_path, monkeypatch, keywords=12_000, seed=9)
-    big_peak, big_n = _digest_peak(tmp_path, monkeypatch, keywords=30_000, seed=10)
+    (small_peak, small_n), (big_peak, big_n) = digest_peaks
     slope = (big_peak - small_peak) / (big_n - small_n)
     intercept = small_peak - slope * small_n
     assert intercept <= kls.EXPORT_FIXED_BYTES, intercept

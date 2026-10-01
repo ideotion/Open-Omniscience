@@ -32,6 +32,7 @@ from sqlalchemy import text
 
 from src.analytics.families import build_families
 from src.analytics.keyword_log_scan import (
+    IN_LIST_IDS,
     MENTIONS_TABLE,
     SPILL_PREFIX,
     ArticleMaps,
@@ -39,6 +40,7 @@ from src.analytics.keyword_log_scan import (
     Ranker,
     RingAcc,
     StopwordAcc,
+    no_room_refusal,
     order_key,
     scratch_file,
 )
@@ -58,7 +60,7 @@ class ZipHooks:
     ring_doc: Callable[[dict], dict]
 
 
-def in_batches(ids: list[int], size: int = 800):
+def in_batches(ids: list[int], size: int = IN_LIST_IDS):
     for i in range(0, len(ids), size):
         yield ids[i : i + size]
 
@@ -105,7 +107,7 @@ def export_dir() -> Path | None:
 
         d = data_dir() / "diagnostics"
         d.mkdir(parents=True, exist_ok=True)
-    except Exception:  # noqa: BLE001 - no writable data dir: the export stays in memory
+    except Exception:  # noqa: BLE001 - no writable data dir: the caller falls back to the OS temp folder
         return None
     sweep_stale_scratch(d)
     return d
@@ -148,8 +150,8 @@ def disk_check_for(d: Path | None):
         reserve = disk_reserve(d)
         if free < need * _DISK_NEED_MARGIN + reserve:
             raise ExportRefused(
-                f"the export needs about {need / 2**30:.1f} GiB of scratch space next to "
-                f"your data, and only {free / 2**30:.1f} GiB is free on that drive "
+                f"the export needs about {need / 2**30:.1f} GiB of scratch space on the drive it "
+                f"writes to, and only {free / 2**30:.1f} GiB is free on it "
                 f"(it keeps {reserve / 2**30:.1f} GiB free for the database's own log). "
                 "Free some space, or ask for a smaller window (per_lang=...).",
                 status=507,
@@ -175,7 +177,7 @@ def disk_watch_for(d: Path | None, *, stopped: str = "stopped writing the archiv
         reserve = disk_reserve(d)
         if free < reserve:
             raise ExportRefused(
-                f"the drive holding your data is down to {free / 2**30:.2f} GiB free "
+                f"the drive the export writes to is down to {free / 2**30:.2f} GiB free "
                 f"(the export keeps {reserve / 2**30:.1f} GiB free for the database's own "
                 f"log), so it {stopped}.",
                 status=507,
@@ -522,6 +524,14 @@ class ZipJob:
                 z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             ok = True
             return path
+        except OSError as exc:
+            # The drive filled (or became read-only, or hit a quota) in the MIDDLE of the archive:
+            # the between-batches watch is a guard, not a guarantee, and a write can fail first.
+            # The finally below removes the partial file; this says why, as the 507 it is.
+            refusal = no_room_refusal(exc, "writing the archive")
+            if refusal is None:
+                raise
+            raise refusal from exc
         finally:
             if not ok:
                 unlink_quietly(path)
