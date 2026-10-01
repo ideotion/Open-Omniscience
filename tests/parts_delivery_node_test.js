@@ -484,7 +484,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     }
   }
 
-  // ---- a finished All diagnostics build replaces the bar like any other button: it takes a number, and waits for a click in flight
+  // ---- a finished All diagnostics build replaces the bar like any other button: it takes a number, and who keeps the bar is ONE rule (cases below)
   // The fake api answers the build's start, one "done" poll and the split; `holdKeyword` holds a keyword build.
   function buildApi(holdKeyword) {
     return (url) => {
@@ -597,6 +597,121 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
       assert.strictEqual(api.state().kind, "keywords", "the keyword set the person asked for last has the bar");
       assert.ok(/numbered parts: 3\)/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
     }
+  }
+
+
+  // ---- a diagnostics set on the bar when the build finishes is of the PREVIOUS archive, whose files the new split replaced: dead, so the archive takes the bar
+  {
+    const page = makePage(); let current = listing(8, 1); const statusHeld = [];
+    const api = load(page, {api: (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
+      return Promise.resolve(current);
+    }});
+    await api.downloadDiagnosticsVolumes({disabled: false});            // "again" on the old archive: five of nine files handed over
+    assert.strictEqual(api.state().offered.size, 5);
+    current = listing(6, 1);                                           // a new build: other files, the old ones are gone
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(api.state().kind, "diagnostics");
+    assert.strictEqual(api.state().pcount, 6, "the bar offers the new archive, not the old set's dead files");
+    assert.strictEqual(page.els["all-diag-status"].textContent, "");
+    // and when the bar already holds THIS archive (the person pressed "again" before the page noticed) it is left alone
+    const pg2 = makePage(); const a2 = load(pg2, {api: (url) => url.startsWith("/api/diagnostics/all-job?")
+      ? Promise.resolve({started: true}) : url === "/api/diagnostics/all-job/status"
+        ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(listing(8, 1))});
+    await a2.downloadDiagnosticsVolumes({disabled: false});
+    const same = a2.state();
+    pg2.els["all-diag-status"].textContent = "stale";
+    await a2.runAllDiagnostics({disabled: false});
+    assert.strictEqual(a2.state(), same, "the same set stays: its position and what was handed over are kept");
+    assert.strictEqual(a2.state().offered.size, 5);
+    assert.strictEqual(pg2.els["all-diag-status"].textContent, "", "and no 'press again' line is written for an archive already fetched");
+  }
+
+  // ---- a newer press that an even newer press overtook does not keep the archive off a bar that ended up empty
+  {
+    const page = makePage(); const statusHeld = []; const keywordHeld = []; let volumeCalls = 0;
+    const api = load(page, {api: (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})));
+      if (url === "/api/diagnostics/all-job/volumes") {
+        volumeCalls++;
+        if (volumeCalls === 1) { const e = new Error("build running"); e.status = 409; return Promise.reject(e); }
+        return Promise.resolve(listing(4, 1));
+      }
+      return new Promise((resolve) => keywordHeld.push(() => resolve(listing(3, 1))));
+    }});
+    const diag = api.runAllDiagnostics({disabled: false});
+    for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+    const keyword = api.downloadKeywordParts({disabled: false}, "all");           // slow, still in flight...
+    for (let spin = 0; spin < 10 && keywordHeld.length === 0; spin++) await Promise.resolve();
+    await api.downloadDiagnosticsVolumes({disabled: false});                        // ...overtaken by an "again" that is refused (409)
+    assert.strictEqual(api.state(), null, "the bar is empty");
+    statusHeld[0]();
+    await diag;
+    assert.strictEqual(api.state().kind, "diagnostics", "the finished archive took the empty bar");
+    keywordHeld[0]();
+    await keyword;
+    assert.strictEqual(api.state().kind, "diagnostics", "and the overtaken keyword build did not take it back");
+  }
+
+
+  // ---- an OLDER request ending while the newest is still on its way does not clear the newest's marker
+  {
+    const page = makePage(); const statusHeld = []; const againHeld = []; const keywordHeld = []; let volumeCalls = 0;
+    const api = load(page, {api: (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})));
+      if (url === "/api/diagnostics/all-job/volumes") {
+        volumeCalls++;
+        if (volumeCalls === 1) return new Promise((resolve) => againHeld.push(() => resolve(listing(4, 1))));
+        return Promise.resolve(listing(4, 1));
+      }
+      return new Promise((resolve) => keywordHeld.push(() => resolve(listing(3, 1))));
+    }});
+    const diag = api.runAllDiagnostics({disabled: false});
+    for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+    const again = api.downloadDiagnosticsVolumes({disabled: false});                   // the older press, in flight
+    for (let spin = 0; spin < 10 && againHeld.length === 0; spin++) await Promise.resolve();
+    const keyword = api.downloadKeywordParts({disabled: false}, "all");              // the newest press, in flight
+    for (let spin = 0; spin < 10 && keywordHeld.length === 0; spin++) await Promise.resolve();
+    againHeld[0]();
+    await again;                                                                      // the older one ends, overtaken
+    statusHeld[0]();
+    await diag;
+    assert.strictEqual(api.state(), null, "the build deferred: the newest press (the keyword build) is still on its way");
+    keywordHeld[0]();
+    await keyword;
+    assert.strictEqual(api.state().kind, "keywords", "and the keyword set it asked for then took the bar");
+  }
+
+  {
+    // the same with the roles swapped: an older KEYWORD build ends, the newest press is an "again" still on its way
+    const page = makePage(); const statusHeld = []; const againHeld = []; const keywordHeld = []; let volumeCalls = 0;
+    const api = load(page, {api: (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})));
+      if (url === "/api/diagnostics/all-job/volumes") {
+        volumeCalls++;
+        if (volumeCalls === 1) return new Promise((resolve) => againHeld.push(() => resolve(listing(4, 1))));
+        return Promise.resolve(listing(4, 1));
+      }
+      return new Promise((resolve) => keywordHeld.push(() => resolve(listing(3, 1))));
+    }});
+    const diag = api.runAllDiagnostics({disabled: false});
+    for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+    const keyword = api.downloadKeywordParts({disabled: false}, "all");              // the older press, in flight
+    for (let spin = 0; spin < 10 && keywordHeld.length === 0; spin++) await Promise.resolve();
+    const again = api.downloadDiagnosticsVolumes({disabled: false});                   // the newest press, in flight
+    for (let spin = 0; spin < 10 && againHeld.length === 0; spin++) await Promise.resolve();
+    keywordHeld[0]();
+    await keyword;                                                                    // the older one ends, overtaken
+    statusHeld[0]();
+    await diag;
+    assert.strictEqual(api.state(), null, "the build deferred: the newest press (an 'again') is still on its way");
+    againHeld[0]();
+    await again;
+    assert.strictEqual(api.state().kind, "diagnostics");
   }
 
   console.log("all assertions passed");

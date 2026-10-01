@@ -12941,11 +12941,20 @@ is clamped and said so. **Count what was offered by the set of indexes offered, 
 is not counted twice, and **put a typed value's meaning on one control** (the "Save from this part" button; "again"
 reads it only for the same kind of set) instead of letting three buttons each half-honour the box.
 
+**A typed number that sends files again is a side trip.** The position the ordinary button continues from is the
+furthest file any click reached, never the typed one: setting it to the typed part sent "Save the next 5" back over
+files already handed to the browser, while on an untouched set the typed number still moves it on (a person resuming
+after a crash).
+
 **A generation number orders presses, not requests, and a fix for one ordering moves the damage to the next.** The
 diagnostics build runs for hours and finishes after buttons pressed beside it, so "the last action to arrive wins the
-bar" drops the NEWER request (a keyword set pressed while it ran) and, in the first fix, also left a press that ended
-with nothing (a 409 or 404) holding a bar that no set would ever fill. Three review passes each found the next ordering.
-The rule that holds: the finished build takes the bar unless the person has begun to save the set on it or a press made
-since it was asked for holds a set or still has one on its way; a press that left nothing leaves the bar free. The
-orderings are a table in `tests/parts_delivery_node_test.js` and each row is mutation-checked. A typed number that
-sends files again is a SIDE TRIP: the position the ordinary button continues from is the furthest file reached, never the typed one.
+bar" drops the NEWER request (a keyword set pressed while it ran), and each patch for one ordering broke another: a
+press that ended with nothing (a 409 or 404) holding a bar no set would ever fill, a half-saved set protected although
+the finishing split had just deleted its files on the server, an overtaken request still counted as in flight. Four
+review passes each found the next ordering. The rule that holds: the finished build takes the bar unless a KEYWORD set
+on it has been begun to save, or a press made since the build was asked for holds a keyword set or is still the newest
+request on its way (the marker is that request's generation, cleared only by it); a diagnostics set on the bar is of
+the previous archive and dead, unless it has this archive's own file names, in which case it is already the answer.
+The orderings are a table in `tests/parts_delivery_node_test.js` and each row is mutation-checked. **State that a
+server action replaces (here the split's files) must be compared with what the server now holds, not assumed alive
+because the page remembers it.**

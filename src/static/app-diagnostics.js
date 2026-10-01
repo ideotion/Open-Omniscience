@@ -865,8 +865,9 @@
     // Every action that replaces the bar's set takes a number; one that finds a newer number after
     // an await was overtaken and leaves the bar to the newer one.
     let _partsGen = 0;
-    // How many keyword or diagnostics-split requests are in flight: the finished diagnostics build
-    // must know whether a newer request is still on its way to the bar.
+    // The generation of the NEWEST keyword or diagnostics-split request still on its way to the bar,
+    // 0 when none is: the finished diagnostics build must know whether the newest press is still
+    // coming (an older one that a newer press overtook is dropped when it lands, so it never counts).
     let _partsBusy = 0;
 
     // The manifest first, then the numbered parts in order (the listing carries both kinds).
@@ -1042,7 +1043,7 @@
       _partsRender();
       _partsStatus(mode === "again" ? t("Looking for the last keyword files…")
         : t("Building the numbered keyword files… a large corpus takes minutes; the app stays usable."));
-      _partsBusy++;
+      _partsBusy = gen;
       try {
         let listing;
         try {
@@ -1063,7 +1064,7 @@
           _partsReady(listing, "keywords");
         }
       } finally {
-        _partsBusy--;
+        if (_partsBusy === gen) _partsBusy = 0;   // an older request a newer press overtook never counts
         if (btn) btn.disabled = false;
       }
     }
@@ -1086,7 +1087,7 @@
       _partsSet = null;
       _partsRender();
       _partsStatus(t("Splitting the archive…"));
-      _partsBusy++;
+      _partsBusy = gen;
       try {
         let m;
         try {
@@ -1119,7 +1120,7 @@
         _partsOffer(m, "diagnostics");
         await _partsSave(_PARTS_PER_CLICK, startAt || null);   // the click that asked is still alive
       } finally {
-        _partsBusy--;
+        if (_partsBusy === gen) _partsBusy = 0;   // an older request a newer press overtook never counts
         if (btn) btn.disabled = false;
       }
     }
@@ -1170,15 +1171,24 @@
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
               // A finished build replaces the bar's set like any other button, so it takes a
-              // number. It does NOT take the bar from the person's own work: a set they have
-              // begun to save (a click handing files over included) is never cut, and a button
+              // number. It does NOT take the bar from the person's own work: a KEYWORD set they
+              // have begun to save (a click handing files over included) is never cut, and a button
               // pressed while this build ran is the newer request, so its set (landed or still on
-              // its way) keeps the bar. A press that ended with nothing to show (no archive yet,
-              // a refusal) leaves the bar free for the finished archive. Otherwise the archive
-              // waits for its own "again" button. Everything from here to the take is one tick.
-              const begunSaving = !!(_partsSet && _partsSet.offered.size > 0);
+              // its way) keeps the bar. A press that ended with nothing to show (no archive yet, a
+              // refusal) leaves the bar free for the finished archive. A DIAGNOSTICS set already on
+              // the bar is another matter: this split has just replaced the previous archive's
+              // files on the server, so an older set is dead and the bar is taken, and a set with
+              // THIS archive's own files (the person pressed "again" between the server finishing
+              // and this page noticing) is already the answer. Otherwise the archive waits for its
+              // own "again" button. Everything from here to the take is one tick.
+              const bar = _partsSet;
+              const filesOf = (files) => (files || []).map((f) => f.name).sort().join("\n");
+              const keywordsOnBar = !!bar && bar.kind === "keywords";
               const pressedSince = _partsGen !== askedAt;
-              if (begunSaving || (pressedSince && (_partsBusy > 0 || _partsSet))) {
+              if (bar && bar.kind === "diagnostics" && filesOf(bar.files) === filesOf(m && m.files)) {
+                set("");   // already on the bar: the earlier press fetched this very archive
+              } else if ((keywordsOnBar && bar.offered.size > 0)
+                         || (pressedSince && (_partsBusy === _partsGen || keywordsOnBar))) {
                 set(t("The archive is ready. Press “All diagnostics, again” to save it as numbered files."));
               } else {
                 ++_partsGen;
