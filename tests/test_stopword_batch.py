@@ -119,6 +119,52 @@ def test_apply_writes_nothing_when_the_file_has_no_list(tmp_path, monkeypatch):
     assert (tmp_path / "xx.yml").read_text() == "other: 1\n"
 
 
+def test_apply_creates_the_file_for_a_language_that_has_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    path = sb.append_batch("ja", ["サイト"], "ja-1", [], "log.zip")
+    assert yaml.safe_load(path.read_text())["stopwords"] == ["サイト"]
+
+
+@pytest.mark.parametrize("layout", ["stopwords:\n- a\n- b\n", "stopwords: [a, b]\n"])
+def test_an_unusual_file_layout_is_a_clear_refusal_and_nothing_is_written(tmp_path, monkeypatch, layout):
+    (tmp_path / "xx.yml").write_text(layout)
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        sb.append_batch("xx", ["word"], "xx-1", [], "log.json")
+    assert "Nothing written" in str(exc.value) or "refusing" in str(exc.value)
+    assert (tmp_path / "xx.yml").read_text() == layout
+
+
+def test_a_final_sigma_word_already_listed_is_seen_as_listed_and_written_as_extraction_reads_it():
+    # extraction compares .lower() tokens; casefold would turn the final sigma into a medial one
+    assert sb.spelling("ΈΝΑΣ") == "ένας" and sb.norm("ένας") == "ένασ"
+    hidden, _ring = sb.app_context("el")
+    ev = sb.evidence(sb.spelling("ένας"), "el", [], hidden)
+    assert ev["already_hidden"] is True
+
+
+def test_read_words_keeps_c_sharp_and_refuses_a_tab_separated_phrase(tmp_path):
+    f = tmp_path / "w.txt"
+    f.write_text("c#\nread\tmore\npermalink  # a trailing comment\n# a whole-line comment\n")
+    words = sb.read_words(f)
+    assert words == ["c#", "read more", "permalink"]
+    ev = sb.evidence("read more", "en", [], frozenset())
+    assert "phrase" in sb.refusals("read more", ev, ring_words=frozenset(), platforms=frozenset(),
+                                   allow=frozenset())
+
+
+def test_a_trimmed_or_paged_log_is_announced(tmp_path):
+    z = tmp_path / "log.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"keywords_omitted_to_fit": 120, "has_more": True}))
+    note = sb.trimmed_log_notice(z)
+    assert note and "120" in note and "incomplete" in note
+    full = tmp_path / "full.zip"
+    with zipfile.ZipFile(full, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"keywords_omitted_to_fit": 0}))
+    assert sb.trimmed_log_notice(full) is None
+
+
 def test_the_platform_keep_list_ships_and_reads():
     assert {"facebook", "twitter", "youtube"} <= sb.platform_names()
 
@@ -133,7 +179,12 @@ def test_the_tool_is_offline_and_outside_the_app():
 
 def test_a_word_shipped_in_a_stoplist_hides_in_the_stored_keywords_with_no_user_step(monkeypatch):
     """R111's premise on the main path: a stored keyword disappears from the top list the moment
-    the shipped stoplist holds it (after the restart an update brings); nothing is recomputed."""
+    the shipped stoplist holds it (after the restart an update brings); nothing is recomputed.
+
+    SCOPE, stated plainly: it patches the in-memory extra stoplist, so it proves READ-TIME hiding on
+    ``top_terms`` and nothing else. That a word written to a YAML file reaches the loader is
+    ``tests/test_analytics_extract.py``'s job; extraction-time dropping and the surfaces that never
+    consult the stoplist are not covered here (R111 steps T2 and T3)."""
     from datetime import UTC, datetime
 
     from sqlalchemy import create_engine
