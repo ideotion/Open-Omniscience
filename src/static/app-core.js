@@ -1970,6 +1970,20 @@
       if (s < 90) return "~" + TF("{n} s", {n: fmtNum(Math.max(1, Math.round(s)), 0)});
       return "~" + TF("{n} min", {n: fmtNum(Math.round(s / 60), 0)});
     }
+    // The next-pass preview is served from the last good computation (the poll never waits on
+    // the database pool): say so, with its age, rather than drawing an old plan as a live one.
+    // Nothing is said while it is fresh. "computing" = nothing has been computed yet for the
+    // current settings (never a preview for settings the operator has since changed).
+    function _planNoteHtml(plan, t, tf) {
+      if (!plan || !plan.state || plan.state === "fresh") return "";
+      if (plan.state === "computing") {
+        return `<div class="vnote">${esc(t("The next-pass preview is being computed."))}</div>`;
+      }
+      const age = _fmtDur(plan.age_s);
+      return `<div class="vnote">${esc((plan.stale || plan.refresh_error)
+        ? tf("This preview is {age} old: the last refresh has not completed, so the figures may no longer be true.", {age})
+        : tf("This preview is {age} old and is being refreshed in the background.", {age}))}</div>`;
+    }
     // The pair the panel was last drawn from, so a language switch redraws it at once
     // (app-boot.js's oo:langchange listener) rather than on the next 2 s poll -- and from
     // the SAME two samples: re-rendering the last sample against ITSELF would compute a
@@ -2109,9 +2123,9 @@
       // -- Next pass: targets as domain chips + the honest estimate --------- //
       const chips = (plan.next_targets || []).map(d => `<span class="cap-chip">${esc(d)}</span>`).join("");
       const extra = Math.max(0, (plan.planned_total || 0) - (plan.next_targets || []).length);
-      const planHtml = (plan.planned_total || plan.estimated_seconds != null) ?
-        sect(esc(t9("Next pass"))) +
-        row(esc(t9("Targets")), `${plan.planned_total || 0}`) +
+      const planHtml = (plan.planned_total || plan.estimated_seconds != null || plan.state === "computing") ?
+        sect(esc(t9("Next pass"))) + _planNoteHtml(plan, t9, tf) +
+        (plan.state === "computing" ? "" : row(esc(t9("Targets")), `${plan.planned_total || 0}`)) +
         (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
         (plan.estimated_seconds != null
           ? row(esc(t9("Estimated duration")), `${_fmtDur(plan.estimated_seconds)}`) +
@@ -2458,9 +2472,12 @@
         // /api/scheduler/activity the window polls — no new endpoint, no new poll).
         const plan = (_actData && _actData.plan) || {};
         const ups = plan.next_targets || [];
+        const tfQ = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((f, v) => String(f).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
         if (ups.length) {
           const more = Math.max(0, (plan.planned_total || 0) - ups.length);
           qHtml += `<div class="vsect">${esc(t("Up next this pass"))}</div>` +
+            _planNoteHtml(plan, t, tfQ) +
             `<div class="cap-chips">` +
             ups.map(d => `<span class="cap-chip">${esc(d)}</span>`).join("") +
             (more ? `<span class="cap-chip muted">+${more}</span>` : "") + `</div>` +

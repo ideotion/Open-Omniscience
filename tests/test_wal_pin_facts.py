@@ -182,3 +182,37 @@ def test_once_the_reader_ends_one_truncate_resets_and_the_next_write_does_not_re
     assert _wal(path) == 0, "the reset is complete, not partial"
     _burst(w)
     assert _wal(path) < pinned, "a write after the reset restarts the log instead of regrowing it"
+
+
+# --------------------------------------------------------------------------- #
+#  5. The status probe's pinned connection (insights._data_version) is idle, not a pin
+# --------------------------------------------------------------------------- #
+def test_an_idle_data_version_probe_connection_does_not_pin_the_wal(store):
+    """The standing "one API-thread checkout held for the whole process life" on all 16
+    field instances is ``insights._data_version``'s deliberately pinned probe connection
+    (``PRAGMA data_version`` only reports other connections' commits on a LONG-LIVED
+    connection). The suspicion was that it pins the WAL. It does not: after the pragma's one
+    row is read and its cursor closed, the connection holds no read snapshot, so writers
+    keep committing, the probe still sees them, and TRUNCATE is not busy. Real SQLite, the
+    probe's own calls, default pysqlite isolation (the probe never sets one)."""
+    path, w = store
+    probe = sqlite3.connect(path, check_same_thread=False)  # default isolation, like the probe
+    probe.execute("PRAGMA busy_timeout=0")
+
+    def read_version() -> int:
+        cur = probe.cursor()
+        try:
+            cur.execute("PRAGMA data_version")
+            return cur.fetchone()[0]
+        finally:
+            cur.close()
+
+    v0 = read_version()
+    for _ in range(3):
+        _burst(w)
+    assert _wal(path) > 1 * 1024 * 1024
+    assert read_version() != v0, "the probe must still observe another connection's commits"
+    busy, _log, _ck = _truncate(w)
+    assert busy == 0, "an idle probe connection must not make TRUNCATE busy"
+    assert _wal(path) == 0
+    probe.close()

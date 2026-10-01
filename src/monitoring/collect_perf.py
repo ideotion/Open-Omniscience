@@ -842,6 +842,7 @@ class CollectionMonitor:
                     # could not be read -- `n` carries that denominator.
                     "oldest_age_s": rows[0]["age_s"] if rows else None,
                     "oldest_thread": rows[0]["thread"] if rows else None,
+                    "oldest_endpoint": rows[0].get("endpoint") if rows else None,
                 }
         except Exception:  # noqa: BLE001
             pass
@@ -1013,14 +1014,23 @@ class CollectionMonitor:
                 # when the engine's pool really is the reserving one, so the verdict is
                 # asked for with `reserved` only in that case and never claims a
                 # guarantee nothing enforces.
+                from src.database import pool_watch as _pw
                 from src.database.pool_reserve import ReservingQueuePool
                 from src.database.session import engine as _pool_engine
 
-                out["api_headroom"] = api_headroom_for(
+                # The slots the app's own threads are sitting on, measured (pool_watch), so
+                # "sufficient" is a statement about what is really free, not only about what
+                # the reservation promises. None (not attached) counts as 0 and says so.
+                _standing = _pw.standing_holders()
+                _verdict = api_headroom_for(
                     w_max,
                     pool_bound=out["pool_bound"],
                     reserved=isinstance(_pool_engine.pool, ReservingQueuePool),
+                    standing=_standing or 0,
                 )
+                if _standing is None:
+                    _verdict["standing_unmeasured"] = "pool_watch is not attached"
+                out["api_headroom"] = _verdict
             else:
                 out["page_cache_ceiling_mb_unavailable"] = "no governor w_max"
             # D44 = a: what the reservation at checkout actually did this process --

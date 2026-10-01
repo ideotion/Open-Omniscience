@@ -11896,10 +11896,16 @@
   with the drive, so a 4 TB volume pauses at about 80 GB free. It STAYS as built; a ceiling is written only once the pass tail is MEASURED
   (the most bytes written between the guard's first refusal and the pass's end on the largest instance; PR B adds the
   measurement), never a fixed 10 GiB. **"BY ITSELF" MEANS "FOR AS LONG AS THE HOLDER LIVES":** a reader the app itself holds open
-  never ends on its own, so the exits are "Resume anyway", a restart, or the holder ending (stated in the guard's docstring). **Still to come from the same
-  thread:** PR B (the pool: rank 12's endpoint on a standing row; rank 7's last-good activity preview, which is
-  NOT the ruling-gated 429 cap; the tail measure), PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
-  machine's measured recovery rate), PR D (rank 9's browse query).
+  never ends on its own, so the exits are "Resume anyway", a restart, or the holder ending (stated in the guard's docstring).
+  **RULED (coordinator, 2026-09-30, on the user's rule to size from the machine): leave the formula as written, add the measure, and
+  when it exists size the reserve from the instance's OWN measured tail plus a stated margin, not from the
+  drive; no fixed cap.** THE MEASURE SHIPPED with the pool PR (PR B): `StorageGuard.note_pass_ended` records, for
+  the pass that was in flight when the guard first refused, the drive's loss until the pass's end (an upper
+  bound: it counts every writer) as `last_tail` in the polled state and `tails` plus
+  `max_tail_drive_free_drop_bytes` in the bundle's `storage_guard` block. **Still to come from the same
+  thread:** PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
+  machine's measured recovery rate), PR D (rank 9's browse query). PR B (the pool: rank 12's endpoint on a standing row; rank 7's
+  last-good activity preview, which is NOT the ruling-gated 429 cap; the tail measure) is the PR that carries this note.
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
   anything marked in the memory as something to do later. Sort everything into a detailed action plan

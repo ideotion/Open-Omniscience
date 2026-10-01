@@ -109,6 +109,18 @@
     if (s < 5400) return "~" + tf("{n} min", { n: fmtNum(Math.round(s / 60), 0) });
     return "~" + tf("{n} h", { n: fmtNum(s / 3600, 1) });
   }
+  // The next-pass preview is served from the last good computation (the poll never waits on
+  // the database pool): say so, with its age (mirrors app-core.js _planNoteHtml).
+  function planNoteHtml(plan) {
+    if (!plan || !plan.state || plan.state === "fresh") return "";
+    if (plan.state === "computing") {
+      return '<div class="vnote">' + esc(t("The next-pass preview is being computed.")) + "</div>";
+    }
+    var age = fmtDur(plan.age_s);
+    return '<div class="vnote">' + esc((plan.stale || plan.refresh_error)
+      ? tf("This preview is {age} old: the last refresh has not completed, so the figures may no longer be true.", { age: age })
+      : tf("This preview is {age} old and is being refreshed in the background.", { age: age })) + "</div>";
+  }
   // A relative time as the locale writes it (click-through B19, Q3): the span is a keyed
   // unit frame, the direction a keyed frame around it ("in {t}", "{t} ago"), so neither
   // the English "in"/"ago" nor a welded "7m" reaches another language.
@@ -349,7 +361,7 @@
       // A FULL vertical list (P2-12), numbered, not a wrapped chip cloud — it reads
       // as the actual upcoming order. The trailing "+N more" is the honest remainder
       // the backend didn't enumerate, never a fabricated row.
-      qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" +
+      qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" + planNoteHtml(plan) +
         '<ol class="tm-upnext">' + ups.map(function (d) { return "<li>" + esc(d) + "</li>"; }).join("") +
         (more ? '<li class="muted">+' + fmtNum(more, 0) + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
         '<div class="vnote">' + esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) + "</div>";
