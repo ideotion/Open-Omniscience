@@ -134,6 +134,15 @@ def _articles(k: dict) -> int:
     return int(k.get("articles") or 0)
 
 
+def _is_listed(word: str, hidden_in_lang: frozenset[str]) -> bool:
+    """Whether extraction already drops ``word``. The loader gives only the extras a curly copy,
+    so a contraction listed in a vendored list with a straight apostrophe still lets the curly
+    token through: it counts as listed only when both forms are."""
+    if word not in hidden_in_lang:
+        return False
+    return "'" not in word or word.replace("'", "\u2019") in hidden_in_lang
+
+
 def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[str]) -> dict[str, Any]:
     """What the log says about one spelling, with nothing decided."""
     own = [k for k in rows if (k.get("language") or "?") == lang and k.get("kind") == "term"]
@@ -162,7 +171,7 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
         "top_source_share": max((float(k["top_source_share"]) for k in spreads), default=None),
         "content_elsewhere": elsewhere,
         "entities": entities,
-        "already_hidden": spelling(word) in hidden_in_lang,
+        "already_hidden": _is_listed(spelling(word), hidden_in_lang),
     }
 
 
@@ -224,7 +233,7 @@ def app_context(lang: str) -> tuple[frozenset[str], frozenset[str]]:
     from src.analytics.extract import _stopset
 
     ring = {
-        (term or "").casefold()
+        norm(term)
         for r in shipped_rings()
         for _lang, term in r.members
         if term and " " not in term

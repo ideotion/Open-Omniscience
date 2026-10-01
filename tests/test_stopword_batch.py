@@ -286,3 +286,11 @@ def test_apply_hints_the_curly_copy_and_the_script_guard_for_a_new_file(tmp_path
     out = capsys.readouterr().out
     assert '"y’all"' in out and '"y\'all"' in out
     assert "_NON_LATIN_FILES" in out
+
+
+def test_a_contraction_listed_only_with_a_straight_apostrophe_is_not_already_hidden():
+    # ca "li'n" sits in a vendored list (no curly copy), so extraction still keeps "li’n"
+    hidden, _ring = sb.app_context("ca")
+    assert "li'n" in hidden and "li’n" not in hidden
+    assert sb.evidence("li'n", "ca", [], hidden)["already_hidden"] is False
+    assert sb.evidence("l", "ca", [], frozenset({"l"}))["already_hidden"] is True
