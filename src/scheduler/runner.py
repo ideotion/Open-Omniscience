@@ -30,6 +30,7 @@ from datetime import UTC, datetime, timedelta
 
 from src.database.query import capped
 from src.ingest.tor_throughput import KindLadder
+from src.scheduler import storage_guard
 from src.scheduler.settings import SchedulerSettings, load_settings
 
 _LOG = logging.getLogger(__name__)
@@ -202,6 +203,8 @@ class _PassWindDown:
     ``"stopping"`` (an explicit stop was requested — checked FIRST, see below),
     ``"memory"`` (the RSS memory guard engaged — P0.3 E3:
     new work must never start under proven memory pressure),
+    ``"storage_wal"`` / ``"storage_disk"`` (the storage guard engaged: the WAL is
+    pinned past this machine's limit, or the drive is nearly full),
     ``"budget"`` (wall-clock budget expired), ``"work"`` (per-pass source cap
     reached). ``now`` is injectable for deterministic tests. Thread-safe.
 
@@ -253,6 +256,12 @@ class _PassWindDown:
                 _LOG.debug("wind-down stop predicate raised; pass continues", exc_info=True)
         if memguard.memory_guard.engaged:
             return "memory"
+        # The storage guard (WAL pinned past this machine's limit, or the drive nearly full):
+        # likewise NO forward-progress floor -- one more source on a full drive is the failure
+        # the guard exists to stop, and on a pinned WAL it is one more append to the file.
+        _storage = storage_guard.storage_guard.admit()
+        if _storage is not None:
+            return f"storage_{_storage}"
         with self._lock:
             # Forward-progress floor (skeptic-hardened): a pathologically small
             # budget (an env typo) must never yield zero progress forever — the
@@ -1513,6 +1522,10 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
         if memguard.memory_guard.engaged:
             out["_paused"] = {"reason": "memory pressure", "remaining": order[i:]}
             break
+        _storage = storage_guard.storage_guard.admit()
+        if _storage is not None:
+            out["_paused"] = {"reason": f"storage ({_storage})", "remaining": order[i:]}
+            break
         step = _LANE_STEPS.get(kind)
         if step is None:
             continue  # a reserved-but-not-yet-runnable kind (e.g. "crawl" pre-C3)
@@ -1560,6 +1573,9 @@ class BackgroundScheduler:
         self._continuous_gap_s = _CONTINUOUS_GAP_S
         # How often a memory pause re-polls the guard (instance attr for tests).
         self._mem_pause_poll_s = 5.0
+        # The storage pause re-reads the (non-blocking) latch this often; the guard's own
+        # supervisor is what samples the drive, so this only bounds how soon a release shows.
+        self._storage_pause_poll_s = 2.0
         # How often, WHILE paused, to actively reclaim memory (gc + malloc_trim +
         # library caches) so a pause caused by allocator retention resumes instead
         # of sticking until restart (instance attr for tests). 0 = every poll.
@@ -1715,6 +1731,12 @@ class BackgroundScheduler:
             self._wait_while_memory_paused()
             if self._stop.is_set():
                 break
+            # The storage guard, the same way: a pinned WAL or a nearly full drive pauses
+            # BETWEEN passes (in-flight work finished already), visibly, and it resumes by
+            # itself when the supervisor sees the log reset or space return.
+            self._wait_while_storage_paused()
+            if self._stop.is_set():
+                break
             self._do_run()
             if self._stop.is_set():
                 break
@@ -1793,6 +1815,50 @@ class BackgroundScheduler:
             # Guarded clear: never wipe a phase a just-started pass owns.
             _phase_set(None)
 
+    def _wait_while_storage_paused(self) -> None:
+        """Block (interruptibly) while the storage guard is engaged.
+
+        Holds nothing: no session, gate or permit (the drain runs on the guard's own
+        supervisor thread, never here). The paused state is visible as phase
+        ``paused-wal-pinned`` or ``paused-low-disk`` and in ``status()['storage_guard']``.
+        Returns at once when the guard is disabled or healthy.
+
+        The supervisor is what RELEASES the latch (fresh readings, the drain). When it is not
+        running -- the scheduler started over the API after a boot with ``OO_NO_SCHEDULER=1``
+        -- this loop takes the readings and the drain itself, so a pause can never outlive
+        the condition that caused it.
+        """
+        waited = False
+        shown: str | None = None
+        while not self._stop.is_set():
+            g = storage_guard.storage_guard
+            g.poll_and_drain_unsupervised()  # a no-op while the supervisor thread runs
+            kind = g.admit()
+            if kind is None:
+                break
+            phase = storage_guard.PHASE_DISK if kind == "disk" else storage_guard.PHASE_WAL
+            if not waited:
+                waited = True
+                # No pass will start while paused: a stale next_run would render as a
+                # live countdown in the UI (honesty).
+                with self._state_lock:
+                    self._next_run = None
+                _LOG.warning(
+                    "collection paused (storage, %s): %s -- resumes by itself, or on operator "
+                    "action",
+                    kind,
+                    storage_guard.storage_guard.state().get("reason") or "storage pressure",
+                )
+            # Re-asserted EVERY iteration: a concurrently finishing run-now pass clears the
+            # phase in its finally, which would otherwise leave an hours-long pause
+            # looking like idle (the memory pause's own lesson).
+            _phase_set(phase)
+            shown = phase
+            self._stop.wait(max(0.01, self._storage_pause_poll_s))
+        if waited and current_phase() == shown:
+            # Guarded clear: never wipe a phase a just-started pass owns.
+            _phase_set(None)
+
     def _do_run(self) -> None:
         # Skip if another run holds the lock (manual + scheduled racing).
         if not self._run_lock.acquire(blocking=False):
@@ -1813,6 +1879,9 @@ class BackgroundScheduler:
             report["result"] = result
         except Exception as exc:  # noqa: BLE001 - record, never crash the thread
             _LOG.warning("scheduled scrape run failed", exc_info=True)
+            # A pass that died of a FULL DRIVE latches the storage guard now, instead of the
+            # next pass starting into the same failure (one machine logged fourteen in a row).
+            storage_guard.storage_guard.note_error(exc, "collect pass")
             with self._state_lock:
                 self._last_run = datetime.now(UTC)
                 self._last_error = str(exc)
@@ -1911,6 +1980,11 @@ class BackgroundScheduler:
             if memguard.memory_guard.engaged:  # property, not a call
                 self._note_maint_skip("memory_pressure")
                 return False  # under memory pressure — do not add write-gate work now
+            if storage_guard.storage_guard.admit() is not None:
+                # A pinned WAL or a nearly full drive: maintenance writes are exactly the
+                # work that must not start (they append to the file the guard is bounding).
+                self._note_maint_skip("storage_pressure")
+                return False
         except Exception:  # noqa: BLE001 - guard read must never block maintenance
             pass
         if not self._run_lock.acquire(blocking=False):
@@ -2307,6 +2381,7 @@ class BackgroundScheduler:
         s = self._settings_provider()
         # Read outside the state lock (the guard has its own lock; no nesting).
         guard_state = memguard.memory_guard.state()
+        storage_state = storage_guard.storage_guard.state()
         with self._state_lock:
             return {
                 "running": self.is_running(),
@@ -2331,6 +2406,10 @@ class BackgroundScheduler:
                 # RSS memory guard (P0.3 E3): the loud paused-low-memory state
                 # with the real numbers — never a silent stall.
                 "memory_guard": guard_state,
+                # The storage guard (2026-09-30, ranks 1/2/6): the WAL pinned past this
+                # machine's limit, or the drive nearly full, with the real numbers and the
+                # plain-words reason -- a collection pause must never read as idle.
+                "storage_guard": storage_state,
                 # A10 off-peak maintenance: the last idle-window keyword-maintenance
                 # tally (reconcile + cleanup), so its complete:false disclosure is
                 # visible in the scheduler status. None until it first runs.

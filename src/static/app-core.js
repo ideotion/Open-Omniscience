@@ -1991,6 +1991,41 @@
         sources: fmtNum(v.sources, 0), delay: fmtNum(v.delay, 1), fetches: fmtNum(v.fetches, 1),
       });
     }
+    // The storage guard's notice (2026-09-30, ranks 1/2/6): collection is PAUSED because the
+    // database's write-ahead log is held open past this machine's limit, or the data drive is
+    // nearly full. The server sends each sentence as a FRAME with its numbers (bytes) apart
+    // (the estimate_method_i18n pattern), so the sentence is written in the UI language and the
+    // sizes through the one byte formatter. The caveat IS the notice -- visible by default,
+    // never behind a toggle -- with the method one hover away; the button is a RETRY (the guard
+    // re-engages on fresh over-limit samples), never an override of the measurement.
+    function _storageGuardHtml(a, t, tf) {
+      // Only while collection is meant to be running: "Collection is paused" about a stopped
+      // scheduler or airplane mode would be a claim about a state that is not the case.
+      const g = a && a.storage_guard;
+      if (!g || !g.engaged || !Array.isArray(g.notes) || !g.notes.length) return "";
+      if (!a.running || a.online === false) return "";
+      const lines = g.notes.map((n) => {
+        const vars = {};
+        Object.keys(n.vars || {}).forEach((k) => { vars[k] = _fmtBytes(n.vars[k]); });
+        return `<div class="vwarn">${esc(tf(n.frame, vars))}</div>`;
+      }).join("");
+      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look. If the log does not clear by itself, quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
+        lines +
+        `<button class="tiny secondary" data-on-click="storageGuardResume()">${esc(t("Try again now"))}</button></div>`;
+    }
+    // The two paused phases the storage guard sets, as the labels the panels show.
+    function _storagePausedText(phase) {
+      return { "paused-wal-pinned": "Paused: the database log has grown too large",
+               "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
+    }
+    async function storageGuardResume() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      try {
+        await api("/api/scheduler/storage-guard/resume", {method: "POST"});
+        toast(t("Trying again. Collection pauses again by itself if the limit is still exceeded."));
+        if (typeof _pollVitals === "function") _pollVitals();
+      } catch (e) { toast(e.message, "err"); }
+    }
     function _renderVitals(v, prev = _vitalsPrev) {
       _vitalsLast = {v, prev};
       const p = v.process || {}, sc = v.scraping || {};
@@ -2028,8 +2063,11 @@
           background: "Background tasks (markets · calendars · checks)",
           briefing: "Building the briefing",
         }[a.phase];
+        const _pausedTxt = _storagePausedText(a.phase);
         nowHtml = row(esc(t9("Now collecting")), a.active
           ? `<span class="muted">${esc(t9(_phaseTxt || "Collecting…"))}</span>`
+          : _pausedTxt
+            ? `<span class="pill warn">${esc(t9(_pausedTxt))}</span>`
           : a.running
             ? `<span class="muted">${esc(t9("idle"))}</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${esc(tf("{n} min", {n: mins}))}</span>` : ""}`
             : `<span class="muted">${esc(t9("scheduler stopped"))}</span>`);
@@ -2062,7 +2100,7 @@
         row(esc(t9("Memory")), _fmtBytes(p.rss_bytes)) +
         row(esc(t9("Scraping ↓")), (dl == null ? "—" : esc(perSec(dl))) +
             ` <span class="muted">· ${esc(tf("total {size}", { size: _fmtBytes(sc.bytes_total) }))} · ${sc.fetches_total||0}×</span>`);
-      $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
+      $("vitals-body").innerHTML = _storageGuardHtml(a, t9, tf) + nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
       $("vitals-note").innerHTML = "";
     }
     // The session line (2026-09-18, maintainer-asked with the chronology): the three
@@ -2482,8 +2520,11 @@
       const sect = (x) => `<div class="vsect">${x}</div>`;
       // -- State: the real thread state, never a simulated "healthy" ---------- //
       let stateHtml;
+      const pausedTxt = _storagePausedText(a.phase);
       if (a.active) {
         stateHtml = `<span class="pill ok">${esc(t("running — collection in progress"))}</span>`;
+      } else if (pausedTxt) {
+        stateHtml = `<span class="pill warn">${esc(t(pausedTxt))}</span>`;
       } else if (a.running) {
         stateHtml = `<span class="pill ok">${esc(t("running"))}</span>`;
       } else {
@@ -2546,6 +2587,7 @@
       el.innerHTML =
         sect(t("Collection")) +
         `<div class="vr"><span>${esc(t("State"))}</span><b>${stateHtml}</b></div>` +
+        _storageGuardHtml(a, t, tf) +
         pendingHtml +
         nowHtml +
         _concurrencyHtml(a.concurrency, pg, t, row, sect) +
