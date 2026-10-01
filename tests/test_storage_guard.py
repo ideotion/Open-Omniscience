@@ -1162,7 +1162,7 @@ def test_the_start_and_run_now_retry_leaves_an_override_that_holds_alone():
     assert g2.admit() == "wal", "a retry that finds the limit still exceeded pauses again"
 
 
-def test_start_and_run_now_end_an_override_whose_cause_is_already_back_under_the_limit():
+def test_start_and_run_now_end_an_override_whose_cause_is_already_back_under_the_limit(caplog):
     """The latch can hold below the limit (hysteresis: it releases at the resume level, not the
     limit). An override kept there would have no exit short of quitting the app, and the log could
     then grow to the floor with no pause: the retry must run as the retry it is, re-arming the
@@ -1172,8 +1172,10 @@ def test_start_and_run_now_end_an_override_whose_cause_is_already_back_under_the
     g.fake["wal_bytes"] = int(0.8 * GIB)  # under the limit, above the resume level: the latch holds
     g.poll()
     assert g.engaged and g.state()["overridden"] is True
+    caplog.set_level("WARNING", logger="scheduler.storage_guard")
     g.reset(reason="operator started collection")
     assert g.engaged is False and g.state()["overridden"] is False
+    assert "OVERRIDE ENDED (operator started collection)" in caplog.text, "an override's end is logged"
     g.fake["wal_bytes"] = 24 * GIB  # grows again: the limit is back, no override left to ride on
     g.poll()
     g.poll()
@@ -1195,6 +1197,64 @@ def test_start_and_run_now_end_an_override_whose_cause_is_already_back_under_the
     assert u.state()["overridden"] is True
 
 
+def test_a_retry_keeps_an_override_over_a_drive_still_short_or_unreadable_and_ends_it_at_the_reserve():
+    """The disk side of the retry rule, with the boundary where the latch itself trips
+    (``free < reserve``): at exactly the reserve the cause is gone, one byte under it is not."""
+    g = _overridable(wal=100 * MIB, free=1 * GIB, kind="disk")
+    g.override(reason="test")
+    reserve = g.state()["thresholds"]["disk_reserve_bytes"]
+    g.fake["disk_free_bytes"] = 5 * GIB  # still short
+    g.poll()
+    g.reset(reason="operator started collection")
+    assert g.engaged and g.state()["overridden"] is True, "still short: nothing to retry"
+    g.fake["disk_free_bytes"] = None  # unreadable once: not evidence that the cause cleared
+    g.poll()
+    g.reset(reason="operator started collection")
+    assert g.state()["overridden"] is True
+    g.fake["disk_free_bytes"] = reserve - 1
+    g.poll()
+    g.reset(reason="operator started collection")
+    assert g.state()["overridden"] is True, "one byte under the reserve is still short"
+    g.fake["disk_free_bytes"] = reserve  # the latch itself trips only below the reserve
+    g.poll()
+    assert g.engaged and g.state()["overridden"] is True  # the latch holds until the resume level
+    g.reset(reason="operator started collection")
+    assert g.engaged is False and g.state()["overridden"] is False
+
+
+def test_a_retry_keeps_an_override_while_the_log_is_at_the_limit_and_ends_it_one_byte_under():
+    g = _overridable(wal=2 * GIB, free=100 * GIB)
+    g.override(reason="test")
+    limit = g.state()["thresholds"]["wal_high_bytes"]
+    resume = g.state()["thresholds"]["wal_resume_bytes"]
+    assert resume < limit - 1
+    g.fake["wal_bytes"] = limit  # the latch trips at the limit itself (>=)
+    g.poll()
+    g.reset(reason="operator started collection")
+    assert g.state()["overridden"] is True
+    g.fake["wal_bytes"] = limit - 1
+    g.poll()
+    assert g.engaged and g.state()["overridden"] is True
+    g.reset(reason="operator started collection")
+    assert g.engaged is False and g.state()["overridden"] is False
+
+
+def test_an_unreadable_free_figure_does_not_let_a_retry_end_a_log_override_it_cannot_judge(monkeypatch):
+    """The WAL limit carries a free-space term (a tenth of the free space) that is dropped when
+    free space cannot be read, so the stored limit then reads too high: a log 700 MiB big over a
+    512 MiB limit looks "back under" a 1 GiB limit the drive never set."""
+    monkeypatch.setenv("OO_DISK_RESERVE_MB", "1024")  # keep the drive's own latch out of the way
+    g = _overridable(wal=700 * MIB, free=5 * GIB)
+    assert g.state()["thresholds"]["wal_high_bytes"] == 512 * MIB
+    assert g.override(reason="test")["overridden"] is True
+    g.fake["disk_free_bytes"] = None
+    g.poll()
+    assert g.state()["thresholds"]["wal_high_bytes"] > 700 * MIB, "the premise: the limit rose"
+    assert g.state()["overridden"] is True  # one blind sample does not withdraw it
+    g.reset(reason="operator started collection")
+    assert g.state()["overridden"] is True, "no evidence the log is under its real limit"
+
+
 def test_an_unreadable_sample_between_readable_ones_does_not_age_a_floor_note():
     g = _overridable(wal=20 * GIB, free=100 * GIB)
     _withdraw(g)  # the floor note, free 20 GiB
@@ -1209,9 +1269,12 @@ def test_an_unreadable_sample_between_readable_ones_does_not_age_a_floor_note():
     assert g.state()["notes"][0]["frame"] == storage_guard.FRAME_OVERRIDE_UNREADABLE
 
 
-def test_a_latch_a_measurement_set_never_reads_as_a_refused_write_even_after_a_lapsed_hold():
-    """A write failed on an already-short drive, hours ago: the override note says what the
-    measurement says, not that a write was refused."""
+def test_the_override_note_and_the_pause_note_agree_about_a_refused_write_however_long_ago():
+    """A write failed during this latch and the drive now reports room (12 GiB against a 10 GiB
+    reserve): the pause note says the drive refused a write, and the override note must not
+    contradict it with "only 12 GB is free (reserve 10 GB)". The frame states no time, so it
+    stays true hours later. While the drive is still measured short, the plain sentence is the
+    true one."""
     clock = Clock()
     g = _overridable(wal=100 * MIB, free=1 * GIB, kind="disk", clock=clock)  # a measured shortage
     g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
@@ -1219,8 +1282,18 @@ def test_a_latch_a_measurement_set_never_reads_as_a_refused_write_even_after_a_l
     g.fake["disk_free_bytes"] = 12 * GIB  # recovered into the band between the reserve and the resume level
     g.poll()
     assert g.engaged
+    pause = {n["kind"]: n for n in g.state()["notes"]}
+    assert pause["disk"]["frame"] == storage_guard.FRAME_DISK_ERROR
     assert g.override(reason="test")["overridden"] is True
     notes = {n["kind"]: n for n in g.state()["notes"]}
+    assert notes["override-disk"]["frame"] == storage_guard.FRAME_OVERRIDE_DISK_ERROR
+    # still short: a write failed, but the measurement agrees the drive is short
+    clock2 = Clock()
+    s2 = _overridable(wal=100 * MIB, free=1 * GIB, kind="disk", clock=clock2)
+    s2.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    clock2.advance(ERROR_HOLD_S + 1)
+    assert s2.override(reason="test")["overridden"] is True
+    notes = {n["kind"]: n for n in s2.state()["notes"]}
     assert notes["override-disk"]["frame"] == storage_guard.FRAME_OVERRIDE_DISK
 
 

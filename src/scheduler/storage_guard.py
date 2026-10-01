@@ -78,7 +78,7 @@ run past it but resets nothing.
 NEVER BLOCKS. Consumers call :meth:`StorageGuard.admit` (a non-blocking read of the latch)
 BEFORE taking on new work; in-flight work always finishes. The supervisor thread normally does
 the sampling and the drain, so no worker does I/O on the guard's behalf. Where no supervisor
-runs (the scheduler started over the API after an ``OO_NO_SCHEDULER=1`` boot) the places
+runs (a start that failed to launch it, which is logged) the places
 that WAIT on the latch, the pass loop and :meth:`StorageGuard.wait_if_engaged`, take the
 readings and the drain themselves (:meth:`StorageGuard.poll_and_drain_unsupervised`): a
 pause must never outlive its cause. That is a fallback and not a state a running instance is
@@ -124,7 +124,8 @@ This is a bound, not a promise that the drive can never fill. The floor is read 
 supervisor tick, ``POLL_EVERY_S`` (5 s) apart, but a tick also runs the drain, which can wait up
 to 30 s for the write gate that running collectors keep busy: while overridden, the gap between
 two readings is 5 s to about 40 s plus the checkpoint's own run (which nothing bounds), and
-without bound if ``OO_CKPT_GATE_TIMEOUT_S=0`` restores the old unbounded wait. At the 1.4 MB/s of
+longer for every second a larger ``OO_CKPT_GATE_TIMEOUT_S`` adds beyond 30 and without bound if
+``OO_CKPT_GATE_TIMEOUT_S=0`` restores the old unbounded wait. At the 1.4 MB/s of
 log growth the sampling comment below records (its source is not in the repo), 40 s is under
 60 MB, small against a floor of at least 128 MiB; that rate is the log's growth, not everything
 a pass writes. The floor reserves room to write the log back and
@@ -245,8 +246,10 @@ FRAME_OVERRIDE_DISK = (
     "the room the database needs to write its working file back into place and finish a "
     "write, if a write fails for lack of space, or if another limit is crossed."
 )
-#: The drive's latch was set by a refused write and the drive still reports room (see
-#: FRAME_DISK_ERROR): "only X is free ... reserve Y" would imply a reserve that is not exceeded.
+#: A write was refused during this latch and the drive now reports room (the same test as
+#: FRAME_DISK_ERROR, so the pause note and this one never disagree about it): "only X is free
+#: ... reserve Y" would imply a reserve that is not exceeded. It states no time, so it stays true
+#: however long ago the write failed.
 FRAME_OVERRIDE_DISK_ERROR = (
     "Collection was resumed by you although the drive refused a write for lack of space and "
     "has not yet reported healthy free space (free space reported: "
@@ -881,11 +884,13 @@ class StorageGuard:
         runs as usual: it ends the override and re-arms the limit, so no override outlives its cause
         for want of an exit."""
         was = False
+        had_override = False
         now_mono = self._clock()
         with self._lock:
             if self._override is not None and (self._wal or self._disk) and self._override_needed_locked():
                 return
             was = self._wal or self._disk
+            had_override = self._override is not None
             self._wal = self._disk = False
             self._wal_over = self._wal_under = self._disk_over = self._disk_under = 0
             self._hold_until = None
@@ -895,6 +900,12 @@ class StorageGuard:
             self._account_locked(was, now_mono)
         if was:
             _LOG.warning("storage guard released (%s) -- collection resumes", reason)
+        if had_override:
+            _LOG.warning(
+                "STORAGE GUARD OVERRIDE ENDED (%s) -- the last reading is already back under the limit, "
+                "so the retry re-armed it.",
+                reason,
+            )
 
     def _override_needed_locked(self) -> bool:
         """Whether the last reading still exceeds (or cannot be read against) a limit the override
@@ -903,7 +914,9 @@ class StorageGuard:
         kinds = set((self._override or {}).get("kinds", ()))
         wal, free = last.get("wal_bytes"), last.get("disk_free_bytes")
         wal_high, reserve = thr.get("wal_high_bytes"), thr.get("disk_reserve_bytes")
-        if "wal" in kinds and self._wal and (wal is None or wal_high is None or wal >= wal_high):
+        # The WAL limit has a free-space term that is dropped when free space cannot be read, so
+        # an unreadable figure leaves the stored limit too high: no evidence the log is under it.
+        if "wal" in kinds and self._wal and (wal is None or wal_high is None or free is None or wal >= wal_high):
             return True
         return bool("disk" in kinds and self._disk and (free is None or reserve is None or free < reserve))
 
@@ -1161,7 +1174,7 @@ class StorageGuard:
                     notes.append(
                         {
                             "kind": "override-disk",
-                            "frame": FRAME_OVERRIDE_DISK_ERROR if self._disk_by_error else FRAME_OVERRIDE_DISK,
+                            "frame": FRAME_OVERRIDE_DISK_ERROR if by_error else FRAME_OVERRIDE_DISK,
                             "vars": {
                                 "free": free_now,
                                 "reserve": reserve_now,

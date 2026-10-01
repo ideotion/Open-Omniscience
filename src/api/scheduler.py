@@ -367,8 +367,9 @@ def scheduler_start() -> dict:
     memguard.memory_guard.reset(reason="operator started collection")
     # Likewise the storage guard: a RETRY -- it re-trips after fresh over-limit samples if the
     # WAL is still pinned or the drive still nearly full. The button that FORCES collection on
-    # while a limit holds is /storage-guard/resume (R112), not this; an override that already
-    # holds is left alone (collection runs under it, there is nothing to retry).
+    # while a limit holds is /storage-guard/resume (R112), not this; an override that is still
+    # needed (its cause is still over the limit) is left alone: collection runs under it and there
+    # is nothing to retry.
     storage_guard.storage_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}

@@ -12907,6 +12907,6 @@ rule "an override that cannot be bounded is not granted" was kept at the click a
 collection now starts the supervisor (`runner._ensure_storage_supervisor`), and even then the real gap between two
 readings is 5 to about 40 s, because the tick also runs a drain that can wait 30 s for the write gate. **A retry button
 must not end what it did not start:** Start and Run now cleared the latches under an override and so ended it, which
-R112 does not list; they now leave an override that holds alone. Test numbers
+R112 does not list; they now leave an override alone while its cause is still over the limit (and end one whose cause is already under it, so no override outlives its cause for want of an exit). Test numbers
 must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not
 the floor, is what a naive test sees).
