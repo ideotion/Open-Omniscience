@@ -619,7 +619,8 @@ def include_term(body: TermBody) -> dict:
 # reference is held alongside so ``id(engine)`` cannot be recycled onto a stale probe
 # connection (the test-fixture hazard); tests clear it via ``_reset_status_probe_for_tests``.
 #
-# THE PROBE IS DETACHED FROM THE POOL (2026-09-30, field diagnostics rank 12). It used to stay
+# THE PROBE IS DETACHED FROM THE POOL (2026-09-30, field diagnostics rank 12; only for a pool of
+# interchangeable connections, see ``_detachable``). It used to stay
 # a pooled checkout for the life of the process: all 16 field instances showed "one API-thread
 # checkout held for the whole process life", which hands-on on the real app turned out to be
 # exactly this connection (GET /api/articles -> _browse_total_cached -> here). It is idle and
@@ -632,7 +633,7 @@ def include_term(body: TermBody) -> dict:
 # restore's swap, a shutdown all dispose), so a replaced store file is never read through a
 # stale handle and Windows is not left holding the old file.
 _PROBE_LOCK = _threading.Lock()
-_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> dedicated raw DBAPI connection (detached from the pool)
+_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> dedicated raw DBAPI connection (detached from the pool when ``_detachable``)
 _PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id() against recycle)
 _PROBE_CLOSE_WAIT_S = 5.0  # how long a dispose waits for a probe read in flight before leaving it to rebuild
 

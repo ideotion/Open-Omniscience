@@ -13098,16 +13098,17 @@ no way to skip the close-time backfill, so deferring it was not available either
 
 #1289 detached the status probe's connection from the pool (`conn.detach()`) so it stopped holding one of the real
 pool's slots. On a `StaticPool` or a `SingletonThreadPool` (what an in-memory test engine uses) the one pooled
-connection IS the database, so detaching it left the pool with no record and the next checkout opened a new, empty
-`:memory:` database: ten existing tests (`test_search_sort`, `test_top_keyword_sort`,
-`test_seeded_corpus_reaches_articles`, `test_search_timing_wired`) failed with "no such table: articles" on main from
+connection IS the database, so detaching it empties the pool's record of that connection and the next checkout
+reconnects to a new, empty `:memory:` database: eleven existing tests (`test_search_sort` 4, `test_top_keyword_sort` 4,
+`test_seeded_corpus_reaches_articles` 2, `test_search_timing_wired` 1) failed with "no such table: articles" on main from
 the merge on. The coordinator's reading check of the merged PR found three of them (0 of 3 failing with the old
-`insights.py`) and the release-candidate thread's run of its own PR found all ten; the author's own focused run passed
-because it named the PR's new tests and the pool tests, and none of the tests that reach `_data_version` through the
-article list. The rule for the next such change:
-**before pushing a change to a helper many routes call, grep the tests for what reaches it (`rg "_data_version"
-tests/` finds none of the ten; the endpoint they call does), or run the whole directory of tests the helper's
-callers live in, not the set named after the change.** `insights._detachable` now gates the detach on a queue pool or
-a null pool (the app only ever builds `ReservingQueuePool`, so production behaviour is unchanged);
-`tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its tables; the five pool classes
-answer as expected) and each mutant (always detach; allow `StaticPool`) fails one of them.
+`insights.py`), the release-candidate thread's run of its own PR found ten, and the Opus read of this fix counted
+eleven by running the four files on main itself; the author's own focused run passed because it named the PR's new
+tests and the pool tests, and none of the tests that reach `_data_version` through the article list. The rule for the
+next such change: **before pushing a change to a helper many routes call, grep the tests for what reaches it
+(`rg "_data_version" tests/` finds none of the eleven: three reach it through the endpoint, eight through
+`_query_articles` directly), or run the whole directory of tests the helper's callers live in, not the set named after
+the change.** `insights._detachable` now gates the detach on a queue pool or a null pool (the only engine that reaches the
+probe in production is a `ReservingQueuePool`, and every other engine the app builds is a queue or null pool too, so
+production behaviour is unchanged); `tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its
+tables; the five pool classes answer as expected) and each mutant (always detach; allow `StaticPool`) fails them.
