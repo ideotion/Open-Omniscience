@@ -13090,3 +13090,19 @@ here against the field's 5.0 to 39.2 s per GiB, so the only honest predictor of 
 last measured one (`forensics.last_recovery`, kept apart from `last_unlock`, which an unlock with no log
 overwrites) and the only lever on the cost is the log's size at boot (the storage guard's bound). The driver offers
 no way to skip the close-time backfill, so deferring it was not available either.
+
+### A POOL-SLOT FIX IS ONLY VALID FOR A POOL OF INTERCHANGEABLE CONNECTIONS, AND A FOCUSED TEST SET DID NOT SAY SO (WAL / disk thread, 2026-10-01)
+
+#1289 detached the status probe's connection from the pool (`conn.detach()`) so it stopped holding one of the real
+pool's slots. On a `StaticPool` or a `SingletonThreadPool` (what an in-memory test engine uses) the one pooled
+connection IS the database, so detaching it left the pool with no record and the next checkout opened a new, empty
+`:memory:` database: three existing tests failed with "no such table: articles" on main from the merge on. The
+coordinator's check of the merged PR found it (a reading check at the same head, 3 of 3 failing and 0 of 3 with the
+old `insights.py`); the author's own focused run passed because it named the PR's new tests and the pool tests, and
+none of the three tests that reach `_data_version` through the article list. The rule for the next such change:
+**before pushing a change to a helper many routes call, grep the tests for what reaches it (`rg "_data_version"
+tests/` finds none of the three; the endpoint they call does), or run the whole directory of tests the helper's
+callers live in, not the set named after the change.** `insights._detachable` now gates the detach on a queue pool or
+a null pool (the app only ever builds `ReservingQueuePool`, so production behaviour is unchanged);
+`tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its tables; the five pool classes
+answer as expected) and each mutant (always detach; allow `StaticPool`) fails one of them.

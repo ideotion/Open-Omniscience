@@ -119,3 +119,47 @@ def test_a_probe_read_in_flight_does_not_hang_a_dispose(eng, monkeypatch):
         insights._PROBE_LOCK.release()
         t.join(3.0)
     assert id(eng) not in insights._PROBE_CONNS
+
+
+@pytest.mark.parametrize("pool_name", ["StaticPool", "SingletonThreadPool"])
+def test_an_in_memory_engine_keeps_its_database_when_the_probe_reads(pool_name):
+    """#1289 detached the probe from EVERY pool and broke three tests: a ``StaticPool`` (and a
+    ``SingletonThreadPool``) owns one connection that IS the in-memory database, so detaching it
+    left the pool with no record and the next checkout opened a new, empty ``:memory:`` database
+    ("no such table"). Only a pool of interchangeable connections may give the probe up."""
+    from sqlalchemy import pool as sa_pool
+
+    insights._reset_status_probe_for_tests()
+    e = create_engine(
+        "sqlite://",
+        future=True,
+        poolclass=getattr(sa_pool, pool_name),
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        with e.begin() as c:
+            c.execute(text("CREATE TABLE t(x INTEGER)"))
+            c.execute(text("INSERT INTO t VALUES (7)"))
+        assert insights._data_version(e) is not None
+        with e.connect() as c:
+            assert c.execute(text("SELECT x FROM t")).scalar() == 7
+    finally:
+        insights._reset_status_probe_for_tests()
+        e.dispose()
+
+
+def test_only_queue_and_null_pools_are_detachable(tmp_path):
+    from sqlalchemy import pool as sa_pool
+
+    for cls, expected in (
+        (sa_pool.QueuePool, True),
+        (sa_pool.NullPool, True),
+        (ReservingQueuePool, True),
+        (sa_pool.StaticPool, False),
+        (sa_pool.SingletonThreadPool, False),
+    ):
+        e = create_engine(f"sqlite:///{tmp_path / (cls.__name__ + '.db')}", future=True, poolclass=cls)
+        try:
+            assert insights._detachable(e) is expected, cls.__name__
+        finally:
+            e.dispose()

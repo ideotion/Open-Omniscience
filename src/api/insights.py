@@ -637,6 +637,24 @@ _PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id(
 _PROBE_CLOSE_WAIT_S = 5.0  # how long a dispose waits for a probe read in flight before leaving it to rebuild
 
 
+def _detachable(bind) -> bool:
+    """Whether the engine's pool may give up the probe's connection for good.
+
+    A queue pool (the app's own, file-backed) and a null pool hand out interchangeable
+    connections, so a detached one is simply a connection that is the pool's no more. A
+    ``StaticPool`` or ``SingletonThreadPool`` (an in-memory test engine) owns ONE connection that
+    IS the database: detaching it empties the pool's record and the next checkout opens a new,
+    empty ``:memory:`` database ("no such table"; #1289 broke three tests this way). Those keep
+    the probe pooled, as before; the app never builds one.
+    """
+    try:
+        from sqlalchemy.pool import NullPool, QueuePool
+
+        return isinstance(bind.pool, (QueuePool, NullPool))
+    except Exception:  # noqa: BLE001 - unknown pool -> keep the safe, pooled behaviour
+        return False
+
+
 def _data_version(bind) -> str | None:
     """The SQLite ``PRAGMA data_version`` read on a PINNED probe-only connection for ``bind``
     (an Engine) — a value that bumps whenever ANY other connection commits, and is stable
@@ -650,8 +668,10 @@ def _data_version(bind) -> str | None:
                 if conn is None:
                     conn = bind.raw_connection()  # held, never .close()d on success -> pinned
                     # Out of the pool's accounting: the pool's slot is free again and the
-                    # dispose listener below owns this connection's end of life.
-                    conn.detach()
+                    # dispose listener below owns this connection's end of life. Only for a
+                    # pool that hands out interchangeable connections (see _detachable).
+                    if _detachable(bind):
+                        conn.detach()
                     _PROBE_CONNS[eid] = conn
                     _PROBE_ENGINES[eid] = bind
                     _close_probe_on_dispose(bind, eid)
