@@ -1186,6 +1186,53 @@ def test_the_revert_refuses_naming_an_unreadable_run_and_changes_nothing(env, mo
     assert qi._iso(NOW) in err and "nothing was changed" in err
 
 
+def test_repaired_rows_names_the_unreadable_runs_instead_of_dropping_them(env, monkeypatch) -> None:
+    """An unreadable run's domains are unknown; the export must be told, not read "none repaired"."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    rows, unreadable = qi.repaired_rows()
+    assert list(rows) == ["x.example"] and rows["x.example"] and unreadable == []
+    import src.config.kv_store as kv
+
+    strict = kv.kv_get_json_strict
+
+    def flaky(key):
+        if key == run_key:
+            raise OSError("database is locked")
+        return strict(key)
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", flaky)
+    assert qi.repaired_rows() == ({}, [qi._iso(NOW)])
+
+
+def test_an_unreadable_newest_run_at_the_same_instant_is_not_overwritten(env, monkeypatch) -> None:
+    """A clock stepped back gives the new run the unreadable run's own key; writing it would
+    replace the record byte for byte kept elsewhere."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    before = dict(env.store[run_key])
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    import src.config.kv_store as kv
+
+    strict = kv.kv_get_json_strict
+
+    def flaky(key):
+        if key == run_key:
+            raise OSError("database is locked")
+        return strict(key)
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", flaky)
+    out = qi.auto_repair_inversions(now=NOW)
+    assert out["repaired"] == 0 and "skipped" in out
+    assert env.store[run_key] == before
+    assert _status(env, "y.example").status == STATUS_QUALIFIED
+
+
 def test_repaired_domains_lists_applied_unreverted_repairs_only(env) -> None:
     with env.scope() as s:
         _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
