@@ -2373,7 +2373,9 @@ def _merge_keyword_categories(con, batch_id, results) -> None:
     results["keyword_categories"] = r
 
 
-def _qualification_tally(con, *, kept: int, disagreed: int) -> dict:
+def _qualification_tally(
+    con, *, kept: int, disagreed: int, catalogue_kept: int = 0
+) -> dict:
     """What this import contributed to source QUALIFICATION, read off temp.qual_landed.
 
     Counts only -- never a score, and never a percentage of anything. Every figure is
@@ -2405,14 +2407,23 @@ def _qualification_tally(con, *, kept: int, disagreed: int) -> dict:
 
     introduced = landed.get("introduced", {})
     adopted = landed.get("adopted", {})
+    # A catalogue-stamped row that was ALREADY qualified and received a measured `qualified`
+    # was collectable before and after: it gained a measurement, not a source, so it is not
+    # counted among the qualified sources that "arrived".
+    confirmed = landed.get("confirmed", {})
     return {
         "introduced_qualified": introduced.get("qualified", 0),
         "introduced_disqualified": introduced.get("disqualified", 0),
         "adopted_qualified": adopted.get("qualified", 0),
         "adopted_disqualified": adopted.get("disqualified", 0),
-        # Local-wins: verdicts this instance had already reached itself, left untouched.
+        "confirmed_qualified": confirmed.get("qualified", 0),
+        # Local-wins: verdicts this instance already held beyond the shipped catalogue's own
+        # stamp (reached here, or adopted from an earlier import), left untouched.
         "local_verdict_kept": int(kept),
         "local_verdict_disagreed": int(disagreed),
+        # Rows that carry only the shipped catalogue's stamp and were left alone: nothing was
+        # measured here, so these are not "verdicts reached on this machine".
+        "catalogue_stamp_kept": int(catalogue_kept),
         "engines": engines,
         "qualified_at_min": str(stamped_from) if stamped_from else None,
         "qualified_at_max": str(stamped_to) if stamped_to else None,
@@ -2536,19 +2547,28 @@ def _merge_sources(con, batch_id, results) -> None:
     con.execute(
         "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
         " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
-        " 'adopted' FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        " CASE WHEN m.status = 'qualified' AND i.status = 'qualified'"
+        "      THEN 'confirmed' ELSE 'adopted' END"
+        " FROM inc.sources i JOIN sources m ON m.domain = i.domain"
         f" WHERE {_adopts}"  # nosec B608 - constant-only predicate built above, no input
     )
     _kept = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}",  # nosec B608 - constant-only predicate built above, no input
+        f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
+        f"   AND (NOT {_local_curated} OR {_local_newer_judging})",  # nosec B608 - constant-only predicate built above, no input
+    )
+    _catalogue_kept = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        f" WHERE i.status <> 'unqualified' AND NOT {_adopts}"
+        f"   AND {_local_curated} AND NOT {_local_newer_judging}",  # nosec B608 - constant-only predicate built above, no input
     )
     _disagreed = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
         f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
-        "   AND i.status <> m.status",  # nosec B608 - constant-only predicate built above, no input
+        f"   AND (NOT {_local_curated} OR {_local_newer_judging}) AND i.status <> m.status",  # nosec B608 - constant-only predicate built above, no input
     )
     r.new = _insert_tracked(
         con, batch_id, "sources",
@@ -2606,7 +2626,9 @@ def _merge_sources(con, batch_id, results) -> None:
         " WHERE EXISTS (SELECT 1 FROM inc.sources i JOIN sources m ON m.id = sources.id"
         f"               WHERE i.domain = sources.domain AND {_adopts})"  # nosec B608 - constant-only predicate built above, no input
     )
-    results["_source_qualification"] = _qualification_tally(con, kept=_kept, disagreed=_disagreed)
+    results["_source_qualification"] = _qualification_tally(
+        con, kept=_kept, disagreed=_disagreed, catalogue_kept=_catalogue_kept
+    )
 
     _build_map(
         con, "map_sources",

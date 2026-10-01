@@ -133,6 +133,42 @@ def kv_get_json(key: str) -> dict | None:
     return _loads(raw)
 
 
+def kv_get_json_strict(key: str) -> dict | None:
+    """Like :func:`kv_get_json`, but an UNREADABLE store raises instead of reading as absent.
+
+    ``None`` here means the key is genuinely not there (or the table does not exist yet, which is
+    the same fact on a fresh file); a value that IS there but cannot be parsed as a JSON object
+    raises too, since reading corruption as "no record" is the same silent replacement. Use it
+    where a caller will REWRITE what it read: treating a
+    locked or failing database as "no record" and then writing would silently replace a record the
+    caller was meant to extend. Bypasses the cache on a miss only, like :func:`kv_get_json`.
+    """
+    path = _db_path()
+    if path is None:
+        return None
+    ck = (path, key)
+    with _lock:
+        if ck in _cache:
+            return _loads_strict(_cache[ck])
+    conn = _open(path)
+    try:
+        try:
+            row = conn.execute(
+                f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                (key,),
+            ).fetchone()
+        except Exception as exc:  # noqa: BLE001 - only "no such table" means absent
+            if "no such table" in str(exc).lower():
+                return None
+            raise
+        raw = row[0] if row else None
+    finally:
+        conn.close()
+    with _lock:
+        _cache[ck] = raw
+    return _loads_strict(raw)
+
+
 def kv_set_json(key: str, obj: dict) -> None:
     """Upsert ``obj`` (as JSON) under ``key`` transactionally, under the write gate.
 
@@ -206,6 +242,16 @@ def kv_invalidate(key: str | None = None) -> None:
         else:
             for ck in [ck for ck in _cache if ck[1] == key]:
                 _cache.pop(ck, None)
+
+
+def _loads_strict(raw: str | None) -> dict | None:
+    """``None`` only for an absent value; a value that is there but is not a JSON object raises."""
+    if raw is None:
+        return None
+    val = json.loads(raw)  # ValueError on a truncated or corrupt value
+    if not isinstance(val, dict):
+        raise ValueError("stored value is not a JSON object")
+    return val
 
 
 def _loads(raw: str | None) -> dict | None:

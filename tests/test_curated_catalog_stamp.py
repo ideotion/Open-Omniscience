@@ -308,10 +308,30 @@ def test_a_re_verified_catalogue_row_reads_measured(db):
     s = _src(db, "curated.example")
     stamp_curated_catalog(db, now=NOW)
     _attempt(db, s, STATUS_QUALIFIED, at=NOW + timedelta(days=200), criteria_version=CRITERIA_VERSION)
+    # What evaluate_and_stamp does with a real judgement: the attempt AND the live stamp move
+    # together. The basis follows the LIVE stamp (2026-09-30), so this is what makes it measured.
+    s.qualification_criteria_version = CRITERIA_VERSION
+    s.qualified_at = NOW + timedelta(days=200)
+    db.commit()
     export = build_overlay_export(db, now=NOW + timedelta(days=201))
     assert export["basis"][BASIS_CURATED] == 0
     assert {v["domain"] for v in export["verdicts"]} == {s.domain}
     assert source_provenance(db, s.id)["qualification_basis"] == "measured"
+
+
+def test_a_curated_stamp_with_copied_in_judging_history_still_reads_curated(db):
+    """Diagnostics rank 14: a restore copied another instance's judging attempts beside a
+    still-curated stamp, and ~2,000 rows per instance then read 'measured' and shipped as this
+    instance's own verdict. The LIVE stamp decides; the mismatch is counted apart."""
+    s = _src(db, "curated.example")
+    stamp_curated_catalog(db, now=NOW)
+    _attempt(db, s, STATUS_QUALIFIED, at=NOW + timedelta(days=5), criteria_version=CRITERIA_VERSION)
+
+    export = build_overlay_export(db, now=NOW + timedelta(days=6))
+    assert export["basis"][BASIS_CURATED] == 1 and export["basis"]["measured"] == 0
+    assert export["basis"]["curated_stamp_with_judging_history"] == 1
+    assert export["verdicts"] == [], "a catalogue default is never shipped as a verdict"
+    assert source_provenance(db, s.id)["qualification_basis"] == "curated"
 
 
 # ------------------------------------------------------------------ the surface

@@ -97,8 +97,9 @@ def _locally_measured_ids(session: Session) -> set[int]:
 
 def _curated_stamp_ids(session: Session) -> set[int]:
     """Sources whose stamp came from the curated catalogue by ruling (2026-09-10) -- an
-    attempt row reading ``curated``. A later real judgement outranks it (``measured`` is
-    tested first by the caller), so this only labels rows nothing has measured yet."""
+    attempt row reading ``curated``. A row whose LIVE stamp is still the catalogue's reads
+    curated whatever its history holds (tested first by the caller); otherwise a real
+    judgement outranks this, so it only labels rows nothing has measured yet."""
     from src.database.models import SourceQualificationAttempt as A
 
     return {
@@ -130,10 +131,20 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
     past_recheck = 0
     basis_counts = {BASIS_MEASURED: 0, BASIS_INHERITED: 0, BASIS_CURATED: 0}
     status_counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
+    curated_stamp_with_judging_history = 0
     for s in judged:
-        if s.id in measured:
+        if s.qualification_criteria_version == CURATED_CRITERIA_VERSION:
+            # THE LIVE STAMP DECIDES (2026-09-30, diagnostics rank 14). A row still stamped by
+            # the curated catalogue is a catalogue default whatever its history holds: judging
+            # attempts copied in from another instance's backup made ~2,000 curated rows read
+            # "measured" on two field instances, which then shipped as this instance's own
+            # verdict and counted as corroboration. Counted apart so the mismatch is visible.
+            basis = BASIS_CURATED
+            if s.id in measured:
+                curated_stamp_with_judging_history += 1
+        elif s.id in measured:
             basis = BASIS_MEASURED
-        elif s.id in curated_ids or s.qualification_criteria_version == CURATED_CRITERIA_VERSION:
+        elif s.id in curated_ids:
             basis = BASIS_CURATED
         else:
             basis = BASIS_INHERITED
@@ -222,12 +233,16 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
         },
         "basis": {
             **basis_counts,
+            # Rows whose LIVE stamp is the curated catalogue's although they carry judging
+            # attempts (copied from a backup, or from before the stamp): read as `curated`.
+            "curated_stamp_with_judging_history": curated_stamp_with_judging_history,
             "note": (
                 "'measured' means this instance judged the source itself; 'inherited' means "
                 "it adopted the verdict from a backup or an earlier overlay; 'curated' means "
                 "the row is stamped qualified because it ships in the curated catalogue "
                 "(ruling 2026-09-10) and nothing has measured it yet -- counted here, never "
-                "exported as a verdict. Two instances agreeing about an inherited verdict "
+                "exported as a verdict; a row whose live stamp is the catalogue's reads "
+                "'curated' even when judging attempts were copied in beside it. Two instances agreeing about an inherited verdict "
                 "is one measurement seen twice, not two."
             ),
         },

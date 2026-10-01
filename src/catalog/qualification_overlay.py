@@ -26,12 +26,18 @@ basis a restored backup's stamp already travels on, and the same basis the recei
 install's own first pass would eventually have produced. What changes is only that the
 measurement no longer has to be repeated from scratch on every install.
 
-ADOPTION IS THE MERGE'S RULE, DELIBERATELY IDENTICAL (see ``_merge_sources``): a verdict is
-adopted only where the local row reads ``unqualified``, which means "no verdict has been
-reached here" -- there is nothing to overwrite, so adopting is pure information gain. A local
-verdict always wins, in BOTH directions: a local ``disqualified`` can never be laundered to
-``qualified`` by a shipped file, and a local ``qualified`` is never downgraded by one. Two
-paths that adopt the same kind of evidence must not disagree about who wins.
+ADOPTION IS THE MERGE'S RULE, DELIBERATELY ALIGNED (see ``_merge_sources``): a verdict is
+adopted where the local row reads ``unqualified`` ("no verdict has been reached here", so
+adopting is pure information gain) OR carries only the shipped catalogue's own stamp
+(``qualified`` + the curated criteria version: nothing was measured here, so a measured
+verdict outranks it). A verdict MEASURED here always wins, in BOTH directions: a local
+``disqualified`` can never be laundered to ``qualified`` by a shipped file, and a local
+measured ``qualified`` is never downgraded by one. Two paths that adopt the same kind of
+evidence must not disagree about who wins. (The merge adds one guard this loader does not have:
+it also copies the incoming attempt history, so it will not adopt a stamp over a local history
+holding a newer judging attempt that disagrees. The loader adopts over a catalogue stamp
+without looking at local judging attempts, so it can leave the safe-direction inversion the
+merge guard avoids; that behaviour is older than the guard and is left as it was.)
 
 DISQUALIFIED VERDICTS SHIP TOO (ruled): a fresh install skips a known-broken source instead
 of spending Tor bandwidth rediscovering that it is broken, and the re-qualification ladder
