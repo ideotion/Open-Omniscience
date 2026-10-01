@@ -137,21 +137,12 @@ def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
             "stay pending and visible", articles_pending,
         )
         return
-    import threading
+    # Not started here: the drain is the LAST of the three heavy start-up jobs (the cache warm-up
+    # and the rollup's first build go first), so it is only asked for, and the boot sequence
+    # starts it. See src/api/boot_sequence.py.
+    from src.api import boot_sequence
 
-    def _start() -> None:
-        try:
-            from src.backup.volume_job import start_reindex_drain
-
-            started, detail = start_reindex_drain()
-            logger.info(
-                "boot re-index auto-resume: %s (%s article(s) pending)",
-                "started" if started else f"not started ({detail})", articles_pending,
-            )
-        except Exception:  # noqa: BLE001 - a resume must never affect the app
-            logger.warning("boot re-index auto-resume failed", exc_info=True)
-
-    threading.Thread(target=_start, name="oo-reindex-resume-boot", daemon=True).start()
+    boot_sequence.request_reindex(articles_pending)
 
 
 def _run_startup_upkeep() -> None:
@@ -365,7 +356,13 @@ def _run_startup_upkeep() -> None:
             except Exception:  # noqa: BLE001 - a cache warm must never affect the app
                 logger.warning("boot-time insights cache warm failed", exc_info=True)
 
-        threading.Thread(target=_warm_insights_cache, name="oo-warm-cache", daemon=True).start()
+        # The warm-up, the rollup's first build and the re-index resume run one after the other
+        # in this one thread (diagnostics cause C: all three at once got the process killed).
+        from src.api import boot_sequence
+
+        threading.Thread(
+            target=boot_sequence.run, args=(_warm_insights_cache,), name="oo-boot-sequence", daemon=True
+        ).start()
 
     # Content-first (maintainer 2026-06-13): the app BOOTS IN AIRPLANE MODE
     # (offline) every time — nothing scrapes until the operator crosses online

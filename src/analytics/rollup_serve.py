@@ -300,6 +300,29 @@ def _memory_verdict() -> dict | None:
         return None
 
 
+def _boot_order_verdict() -> dict | None:
+    """Decline while the boot's cache warm-up runs: the three heavy start-up jobs go one after
+    the other (``src.api.boot_sequence``), and the sequence builds the rollup itself right after.
+    The serve falls back to live queries meanwhile, as it does for memory."""
+    from src.api import boot_sequence
+
+    if boot_sequence.warm_running():
+        return {"reason": "boot_order", "detail": "the start-up cache warm-up is running; the rollup is built right after it"}
+    return None
+
+
+def build_now_and_wait() -> None:
+    """Build the rollup in the CALLING thread and return when it is done (the boot sequence).
+
+    If a build is already running (a serve kicked it) this waits for that one instead of starting a
+    second. A declined build (memory, an import's exclusive window) returns at once, exactly as the
+    background kick does: the serve keeps falling back to live queries and retries on its next check."""
+    if not _BUILD_LOCK.acquire(blocking=False):
+        with _BUILD_LOCK:  # the running build releases it in its own finally
+            return
+    _build_and_swap()  # releases _BUILD_LOCK
+
+
 def _build_and_swap() -> None:
     """Background (re)build dispatcher: the PERSISTED store when D1 is active, else the
     in-memory store. Always releases the build lock; a failure never crashes the app.
@@ -318,7 +341,7 @@ def _build_and_swap() -> None:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip = exclusive_verdict() or _memory_verdict()
+        skip = exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
         if skip is not None:
             with _LOCK:
                 _STATE["last_skip"] = skip
