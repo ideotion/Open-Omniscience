@@ -13184,3 +13184,22 @@ id or an edition's file name never reaches a bundle. (7) **A failure that repeat
 twin logged at DEBUG while the supervised one logged a traceback every ten seconds into the 2,000-record error ring; `log_failure_once` keys on the
 exception type and first line. Also: format a foreign exception's text BEFORE taking a lock (a raising `__str__` lost 4 of 6 hostile invalidations), and
 give a bounded ring the reason for its bound.
+
+### A PLATEAU UNDER THE MEMORY LINE WAS UNRECORDED BY DESIGN, SO THE 17 MINUTES BEFORE A KILL HAD NO WITNESS (WAL / disk thread, 2026-10-01)
+
+The 091717 instance's pass was killed at 6.65 GB after sitting at 44-60 MB available for 17 minutes with the memory guard engaged. The coordinator's brief for
+the crash fix said the guard "reads total RAM only, so it never held the pass"; reading `memguard.py` first showed otherwise: it trips on RSS at 85% of
+total OR available memory at 256 MB or less (3 consecutive samples), the bundle shows it DID engage at 18:50:50 on "only 168 MB available", and new sources were
+deferred from then on (`_PassWindDown.admit`). What failed is that holding frees nothing: a source is at most 50 items, so in-flight collection cannot account
+for 17 M more Python blocks (about 3 GB), and the holder is not in any bundle. **Check the premise of a fix against the code and the evidence before building it**:
+the cheapest wrong fix is one for a defect the instrument never showed. The gap the evidence DID show was the recorder's own rule: `session_hwm` snapshots every
+thread at the crossing below the line and at each new low a step further down, and "none while memory sits on a plateau", so the slide had witnesses and the
+plateau, where the holder can still be read, had none. Two triggers were added: the moment the guard engages (with the guard's own reason), and a re-snapshot
+every `_PLATEAU_INTERVAL_S` (300 s) while memory is below the line or the guard is engaged; every snapshot now also says whether the guard was engaged. The
+cost is bounded and each bound says what it protects: 300 s (a snapshot is 0.3-0.6 s of the liveness thread under a GIL-holding burst), the existing stack
+caps (`_STACK_APP_FRAMES`, `_STACK_WALK_MAX`), the newest 8 kept on disk, kernel counters and `sys.getallocatedblocks()` only (never `gc.get_objects()`, at 90 M
+blocks the very work that could end the process; pinned by a test that makes `gc.get_objects` raise). **A trigger's baseline must be read on every tick, not only
+when no other trigger fires**: the guard's "was engaged" flag read only in the fallback branch went stale whenever the memory-short trigger took the tick, and
+the next tick reported a five-second-old pause as a new engagement (a mutant the suite now catches). What this does NOT do: it names the holder in the NEXT
+bundle, it does not stop the kill. Stopping cleanly when the guard stays engaged and memory does not recover is the user's open question 22, and a clean stop
+alone would not resume the run, because a relaunch starts offline under R117 (one click brings it online), so that choice has to be made with the launcher.

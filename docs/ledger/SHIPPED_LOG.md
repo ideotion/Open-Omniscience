@@ -10403,3 +10403,13 @@ keeps its first line, the drive is read once per second at most per incident, a 
 Page: the preview note is silent between refresh cycles and says a computation keeps failing. Diagnostics: route
 templates in the pool listing, the pool's invalidations in the write-gate member. Lesson: `LESSONS.md`, the entry
 "SEVEN SMALL RULES FROM THE THREE REVIEWS". Recorded beside it: `R118` (the reserve follows the measured tail).
+
+- **2026-10-01 · monitoring/session-hwm-plateau (WAL / disk thread, the crash fix for the 72 h run).**
+The pressure recorder (`session_hwm`) now records a machine that STAYS short: a snapshot at the moment the memory guard
+engages, and one every five minutes while memory is below the line or the guard is engaged, each saying whether the guard
+was engaged and rendered in the diagnostics report. The crash that this answers sat 17 minutes at 44-60 MB available with the
+guard engaged and left no witness for the plateau. Built after checking the brief's premise: the guard already reads
+available memory and engaged in that crash, so no gate change was made. Cost bounds named in the code (300 s, the existing
+stack caps, 8 kept, counters only, never `gc.get_objects`). Lesson: `LESSONS.md`, the entry "A PLATEAU UNDER THE MEMORY
+LINE WAS UNRECORDED BY DESIGN". Stopping cleanly when memory does not recover stays the user's question 22; a relaunch
+starts offline under R117, so a clean stop alone would not resume the run.

@@ -35,6 +35,14 @@ with ``MALLOC_ARENA_MAX=2``, only instances launched since an update carry it, a
 "freed but held" memory (``heap_free_held_mb``) can only be read against the setting the
 process started with.
 
+Since 2026-10-01 a machine that STAYS short is recorded too. The crash that began 091717's
+last night was a 17-minute plateau at 44-60 MB available with the memory guard engaged: the
+slide into it was snapshotted (one per new low), the plateau -- where whatever was holding
+the memory could be read -- was not, by design ("none while memory sits on a plateau"). So
+the moment the memory guard engages is its own snapshot, and a machine that is still below
+the line, or still engaged, is snapshotted again every ``_PLATEAU_INTERVAL_S``. Every
+snapshot also says whether the guard was engaged when it was taken.
+
 HONESTY RULES BAKED IN
 - A field that cannot be measured is OMITTED, never written as 0. ``rss_max_mb: 0``
   would read as "the process used no memory", which is the opposite of unmeasured
@@ -99,6 +107,16 @@ _PRESSURE_KEEP = 8
 _BURST_BLOCKS = 1_000_000
 # A burst that recurs every 40 s is one burst: at most one snapshot of it this often.
 _BURST_MIN_INTERVAL_S = 300.0
+# A machine that STAYS below the line (or with the memory guard engaged) is snapshotted again
+# this often. A snapshot is 0.3-0.6 s of the liveness thread when a burst holds the GIL, plus a
+# write-through of a small file, and a machine can sit short for days: every few seconds would
+# make the instrument a load source on exactly the machine it watches, and one a day would miss
+# a plateau of 17 minutes (the 091717 kill came 19 minutes after the guard engaged). Five minutes
+# gives that plateau three snapshots and a day-long one a bounded 288, of which the newest
+# ``_PRESSURE_KEEP`` stay on disk. Only the readings that already cost nothing are taken here:
+# the kernel's counters and ``sys.getallocatedblocks()`` (a counter); never a walk of the
+# heap's objects, which at 90 million blocks is the very work that could end the process.
+_PLATEAU_INTERVAL_S = 300.0
 # A thread whose innermost frame is in one of these is waiting, not working: a lock, a
 # queue, a socket, the event loop's select.
 _WAITING_IN = ("threading.py", "queue.py", "selectors.py", "socket.py", "ssl.py")
@@ -124,6 +142,7 @@ _PRESSURE_TAKEN = 0
 _EPISODE_LOW: float | None = None  # lowest available at a snapshot; None = no episode
 _LAST_BLOCKS: tuple[float, int] | None = None  # (monotonic, blocks) at the last liveness read
 _LAST_BURST = _NEVER
+_GUARD_WAS_ENGAGED = False  # the memory guard's state at the previous liveness reading
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
 
@@ -543,6 +562,64 @@ def _pressure_due(readings: dict[str, float], now: float) -> bool:
         return True
 
 
+def _guard_view() -> dict[str, Any] | None:
+    """The memory guard's state in four fields, or None when it is off or unreadable.
+
+    One short lock hold inside the guard and no I/O. Imported here, not at the top: the guard
+    is the scheduler's, and a forensic sidecar must import without it."""
+    try:
+        from src.scheduler import memguard
+
+        st = memguard.memory_guard.state()
+    except Exception:  # noqa: BLE001 - the guard is optional context, never a failure
+        return None
+    if not st.get("enabled"):
+        return None
+    return {
+        "engaged": bool(st.get("engaged")),
+        "since": st.get("since"),
+        "reason": st.get("reason"),
+        "engagements": st.get("engagements"),
+    }
+
+
+def _guard_rose(guard: dict[str, Any] | None) -> bool:
+    """True when the memory guard has engaged since the previous liveness reading.
+
+    Evaluated on EVERY reading, whichever trigger claims the snapshot, so its baseline is
+    never stale and an engagement is not reported twice."""
+    global _GUARD_WAS_ENGAGED
+    engaged = bool(guard and guard.get("engaged"))
+    with _LOCK:
+        was, _GUARD_WAS_ENGAGED = _GUARD_WAS_ENGAGED, engaged
+    return engaged and not was
+
+
+def _held_due(
+    readings: dict[str, float], guard: dict[str, Any] | None, rose: bool, now: float
+) -> str | None:
+    """Why a machine that is ALREADY short earns a snapshot, or None; CLAIMED under the lock.
+
+    ``"memory guard engaged"`` at the moment the guard engages (``rose``), and ``"memory still
+    short"`` every ``_PLATEAU_INTERVAL_S`` after the previous snapshot while memory is below the
+    line or the guard stays engaged. The moment of engaging respects ``_PRESSURE_MIN_INTERVAL_S``
+    like every other trigger, so a guard that flaps cannot make a snapshot a second."""
+    global _LAST_PRESSURE
+    avail = readings.get("avail_mb")
+    total = readings.get("total_mb")
+    below = bool(avail is not None and total and avail <= _pressure_line_mb(total))
+    held = bool(guard and guard.get("engaged")) or below
+    with _LOCK:
+        since = now - _LAST_PRESSURE
+        if rose and since >= _PRESSURE_MIN_INTERVAL_S:
+            _LAST_PRESSURE = now
+            return "memory guard engaged"
+        if held and since >= _PLATEAU_INTERVAL_S:
+            _LAST_PRESSURE = now
+            return "memory still short"
+    return None
+
+
 def _burst_due(now: float) -> dict[str, Any] | None:
     """``{"blocks_gained": n, "over_s": t}`` when the Python heap grew by a burst since
     the previous call, CLAIMED under the lock; else None. Called by the liveness thread
@@ -562,10 +639,17 @@ def _burst_due(now: float) -> dict[str, Any] | None:
     return {"blocks_gained": blocks - before[1], "over_s": round(now - before[0], 1)}
 
 
-def _pressure_snapshot(readings: dict[str, float], why: str) -> dict[str, Any]:
+def _pressure_snapshot(
+    readings: dict[str, float], why: str, guard: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """What every thread was doing, with the memory readings it was taken at and WHY it
-    was taken: ``memory short`` (below the line) or ``allocation burst``."""
+    was taken: ``memory short`` (below the line), ``allocation burst``, ``memory guard
+    engaged`` or ``memory still short`` (a plateau). ``guard`` is the memory guard's state
+    at that moment; it is kept when the guard was engaged, so a snapshot says whether the
+    pause was already in force while it was being taken."""
     snap: dict[str, Any] = {"at": _now(), "why": why}
+    if guard and guard.get("engaged"):
+        snap["guard"] = guard
     for key in ("avail_mb", "total_mb", "rss_mb", "swap_used_mb"):
         if readings.get(key) is not None:
             snap[key] = readings[key]
@@ -581,8 +665,9 @@ def _pressure_snapshot(readings: dict[str, float], why: str) -> dict[str, Any]:
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
+    global _GUARD_WAS_ENGAGED
     _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
-    _LAST_BLOCKS, _LAST_BURST = None, _NEVER
+    _LAST_BLOCKS, _LAST_BURST, _GUARD_WAS_ENGAGED = None, _NEVER, False
 
 
 def capture_previous() -> dict[str, Any] | None:
@@ -633,10 +718,14 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
             # The burst reading is taken on every call, so its baseline is always the
             # previous 5 s reading, even when this call is a memory-short snapshot.
             burst = _burst_due(now)
+            guard = _guard_view()
+            rose = _guard_rose(guard)
             if _pressure_due(readings, now):
-                pressure = _pressure_snapshot(readings, "memory short")
+                pressure = _pressure_snapshot(readings, "memory short", guard)
+            elif (held := _held_due(readings, guard, rose, now)) is not None:
+                pressure = _pressure_snapshot(readings, held, guard)
             elif burst is not None:
-                pressure = _pressure_snapshot(readings, "allocation burst")
+                pressure = _pressure_snapshot(readings, "allocation burst", guard)
             if pressure is not None and burst is not None:
                 pressure.update(burst)
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
