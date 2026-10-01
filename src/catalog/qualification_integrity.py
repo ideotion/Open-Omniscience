@@ -149,6 +149,29 @@ def held_domains(*, strict: bool = False) -> set[str]:
         return set()
 
 
+def repaired_domains() -> set[str]:
+    """Domains the boot repair withdrew and nobody has reverted (read-only; raises if the index
+    cannot be read, so a caller says so rather than read "none repaired").
+
+    A row in this set carries a verdict taken from an imported history, not one this install
+    measured, so the qualification export labels it ``inherited``. A run record that cannot be
+    read is skipped (its domains are unknown) and named by :func:`repair_summary`.
+    """
+    from src.config.kv_store import kv_invalidate
+
+    kv_invalidate(REPAIR_INDEX_KEY)
+    idx = _read_repair_index(strict=True)
+    records, _unreadable = _read_runs(list(idx["runs"]))
+    domains: set[str] = set()
+    for run in records.values():
+        if not run.get("applied"):
+            continue                       # planned but never applied: nothing was repaired
+        for r in run.get("repairs") or []:
+            if r.get("domain") and not r.get("reverted_at"):
+                domains.add(str(r["domain"]))
+    return domains
+
+
 def _newest_judging(session: Session, source_id: int):
     """The one attempt that decides what this source was last JUDGED to be.
 
@@ -622,16 +645,28 @@ def repair_summary() -> dict[str, Any]:
         idx = _read_repair_index(strict=True)
         for _run_at in idx["runs"]:
             kv_invalidate(REPAIR_RUN_PREFIX + _run_at)
+        records, unreadable = _read_runs(list(idx["runs"]))
+        # PER DOMAIN, from the NEWEST record (the way the revert reads): a source a later run also
+        # lists is superseded in the earlier record, so one confirmed by a later run is never also
+        # counted as unconfirmed by the earlier one.
+        newest_run_of: dict[str, str] = {}
+        for run_at in reversed(idx["runs"]):
+            for r in (records.get(run_at) or {}).get("repairs") or []:
+                newest_run_of.setdefault(str(r.get("domain")), run_at)
         repairs: list[dict[str, Any]] = []
         confirmed = unconfirmed = 0
         for run_at in idx["runs"]:
-            run = _read_run(run_at)
+            if run_at in unreadable:
+                continue
+            run = records[run_at]
             done = bool(run.get("applied"))
             for r in run.get("repairs") or []:
-                if done:
-                    confirmed += 1
-                else:
-                    unconfirmed += 1
+                superseded = newest_run_of.get(str(r.get("domain"))) != run_at
+                if not superseded:
+                    if done:
+                        confirmed += 1
+                    else:
+                        unconfirmed += 1
                 repairs.append({
                     "domain": r.get("domain"),
                     "run_at": run_at,
@@ -639,6 +674,7 @@ def repair_summary() -> dict[str, Any]:
                     "applied_at": run.get("applied_at"),
                     "reconciled": bool(run.get("reconciled")),
                     "confirmed": done,
+                    "superseded": superseded,
                     "was_status": r.get("was"),
                     "restored_to": r.get("restored_to"),
                     "judged_at": r.get("judged_at"),
@@ -648,6 +684,9 @@ def repair_summary() -> dict[str, Any]:
             "repaired_total": confirmed,
             "repairs_unconfirmed": unconfirmed,
             "repair_runs": len(idx["runs"]),
+            # records that exist but cannot be read: kept as they are, never replaced or
+            # confirmed, left out of the counts above and named here
+            "repair_runs_unreadable": unreadable,
             "last_repair_at": idx["last_run_at"],
             "repairs": repairs,
             "repairs_held_by_revert": idx["reverted_domains"],
@@ -664,6 +703,7 @@ def repair_summary() -> dict[str, Any]:
         return {
             "repaired_total": 0, "repairs_unconfirmed": 0, "repair_runs": 0,
             "last_repair_at": None, "repairs": [], "repairs_held_by_revert": [],
+            "repair_runs_unreadable": [],
             "repairs_note": "the repair record could not be read on this instance",
         }
 
@@ -728,14 +768,18 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     planned_ids = {int(r["source_id"]) for r in rows}
     run_at = _iso(now) or ""
     # An apply that keeps failing must not add a record per boot: when the newest run is still
-    # unconfirmed and planned only sources this plan also lists, nothing was applied, so this attempt
-    # REPLACES its plan instead of appending a second one. (A run that applied but could not
-    # confirm leaves different sources to plan, so it is never overwritten here.)
+    # unconfirmed and provably changed nothing (none of its sources reads what it would have
+    # written), this attempt REPLACES its plan instead of appending a second one, whatever part of
+    # it the new plan still lists. A run that may have applied (a source reads its restored state)
+    # is never overwritten here, and a record that cannot be read is left byte for byte: the new
+    # plan is appended as its own run, so the repair carries on without it.
     last = idx["runs"][-1] if idx["runs"] else None
-    prior = _read_run(last) if last else {}      # strict: an unreadable record must not read as empty
-    prior_ids = {int(r.get("source_id", -1)) for r in prior.get("repairs") or []}
-    if last is not None and not prior.get("applied") and prior_ids and prior_ids <= planned_ids:
-        run_at = last
+    if last is not None:
+        try:
+            if _changed_nothing(_read_run(last)):
+                run_at = last
+        except UnreadableRunRecord:
+            _LOG.warning("qualification repair: run %s cannot be read, kept as it is", last)
     run_key = REPAIR_RUN_PREFIX + run_at
     # 2. record and index the intent (outside any ORM write transaction: kv_set_json's contract)
     kv_set_json(run_key, {"run_at": run_at, "applied": False, "repairs": rows})
@@ -758,12 +802,39 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
             "held_by_operator_revert": done["held_by_operator_revert"]}
 
 
+class UnreadableRunRecord(RuntimeError):
+    """A run's stored record is there but cannot be read (a locked store, a corrupt value).
+
+    Never the same as ``{}``: an absent record reads as empty, an unreadable one is left byte for
+    byte as it is, never replaced, never confirmed, and named wherever it matters.
+    """
+
+    def __init__(self, run_at: str) -> None:
+        super().__init__(f"the repair record of run {run_at} cannot be read")
+        self.run_at = run_at
+
+
 def _read_run(run_at: str) -> dict[str, Any]:
-    """One run's record, read strictly: an unreadable store or value raises (the callers skip
-    the boot or refuse the revert) instead of reading as "no such run"."""
+    """One run's record, read strictly: an absent key reads as empty, an unreadable store or value
+    raises :class:`UnreadableRunRecord` (callers either carry on without that run or refuse)."""
     from src.config.kv_store import kv_get_json_strict
 
-    return kv_get_json_strict(REPAIR_RUN_PREFIX + run_at) or {}
+    try:
+        return kv_get_json_strict(REPAIR_RUN_PREFIX + run_at) or {}
+    except Exception as exc:  # noqa: BLE001 - re-raised as the one named failure
+        raise UnreadableRunRecord(run_at) from exc
+
+
+def _read_runs(run_ats: list[str]) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Every readable run record by key, and the keys of those that cannot be read."""
+    records: dict[str, dict[str, Any]] = {}
+    unreadable: list[str] = []
+    for run_at in run_ats:
+        try:
+            records[run_at] = _read_run(run_at)
+        except UnreadableRunRecord:
+            unreadable.append(run_at)
+    return records, unreadable
 
 
 def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any]:
@@ -824,22 +895,35 @@ def _confirm_applied_runs(idx: dict[str, Any]) -> None:
     A run still marked ``applied: false`` was either never applied (its sources are re-planned and
     the record replaced) or applied without its confirmation: then every source it lists already
     reads what it restored, nothing is left to plan for it, and without this it would read
-    "unconfirmed" for good. Only a run whose EVERY row reads its ``restored_to`` is confirmed.
+    "unconfirmed" for good. Only a run whose EVERY row reads its ``restored_to`` is confirmed, and
+    never one that a LATER run also lists a source of (that run's work would be credited to this
+    one) or that has an unreadable later run (what it lists is unknown). An unreadable run is
+    left exactly as it is.
     """
     from src.config.kv_store import kv_set_json
     from src.database.models import Source
     from src.database.session import session_scope
 
     runs = list(idx["runs"])
+    records, unreadable = _read_runs(runs)
     listed_later: dict[str, set[int]] = {}
     seen_later: set[int] = set()
+    unknown_later = False
+    blocked: set[str] = set()
     for run_at in reversed(runs):                     # which sources a LATER run also plans
         listed_later[run_at] = set(seen_later)
-        for r in _read_run(run_at).get("repairs") or []:
+        if unknown_later:
+            blocked.add(run_at)
+        if run_at in unreadable:
+            unknown_later = True
+            continue
+        for r in records[run_at].get("repairs") or []:
             if "source_id" in r:
                 seen_later.add(int(r["source_id"]))
     for run_at in runs:
-        run = _read_run(run_at)
+        if run_at in unreadable or run_at in blocked:
+            continue
+        run = records[run_at]
         rows = run.get("repairs") or []
         if run.get("applied") or not rows:
             continue
@@ -860,6 +944,23 @@ def _confirm_applied_runs(idx: dict[str, Any]) -> None:
                             {**run, "applied": True, "applied_at": None, "reconciled": True})
 
 
+def _changed_nothing(prior: dict[str, Any]) -> bool:
+    """True when a recorded, unapplied run provably changed no source: none of the sources it lists
+    reads the status that run would have written. A source that does (a local judgement may have
+    reached the same status, or the apply landed and its confirmation did not) keeps the record."""
+    from src.database.models import Source
+    from src.database.session import session_scope
+
+    rows = prior.get("repairs") or []
+    ids = [int(r["source_id"]) for r in rows if "source_id" in r]
+    if prior.get("applied") or not ids or len(ids) != len(rows):
+        return False
+    with session_scope() as session:
+        statuses = {int(i): st for i, st in session.query(Source.id, Source.status).filter(
+            Source.id.in_(ids)).all()}
+    return all(statuses.get(int(r["source_id"])) != r.get("restored_to") for r in rows)
+
+
 def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     """MAINTAINER TOOL: put every automatically repaired source back exactly as it was.
 
@@ -878,11 +979,15 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
 
     idx = _read_repair_index(strict=True)   # raises rather than rewrite an index it could not read
     plan: list[tuple[str, dict[str, Any]]] = []
+    already: list[tuple[str, dict[str, Any]]] = []
+    held = set(idx["reverted_domains"])
     moved_on = 0
     runs: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
     with session_scope() as session:
         for run_at in reversed(idx["runs"]):                      # newest run first
+            # FAIL CLOSED, before any write: a revert cannot know which rows an unreadable run
+            # touched, so it refuses and names the run (UnreadableRunRecord).
             run = _read_run(run_at)
             runs[run_at] = run
             for r in run.get("repairs") or []:
@@ -897,6 +1002,15 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
                 source = session.query(Source).filter(Source.domain == domain).first()
                 newest = _newest_judging(session, int(source.id)) if source is not None else None
                 if (
+                    source is not None and domain in held
+                    and source.status == (r.get("was") or STATUS_UNQUALIFIED)
+                    and (source.qualification_criteria_version or None) == (r.get("was_criteria_version") or None)
+                ):
+                    # a revert that stopped before it marked its records: the row is already back
+                    # and held, only the record still reads "not reverted"
+                    already.append((run_at, r))
+                    continue
+                if (
                     source is None or newest is None
                     or source.status != r.get("restored_to")
                     or _iso(newest.attempted_at) != r.get("judged_at")
@@ -906,10 +1020,11 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
                 plan.append((run_at, r))
     result = {
         "dry_run": dry_run, "reverted": len(plan), "moved_on_since_repair": moved_on,
+        "already_reverted_unmarked": len(already),
         "sources": [{"domain": r["domain"], "to": r.get("was"), "run_at": run_at}
                     for run_at, r in plan],
     }
-    if dry_run or not plan:
+    if dry_run or not (plan or already):
         return result
 
     # 1. the hold, BEFORE the change. It covers every planned domain, including one whose row
@@ -928,8 +1043,10 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
             source.qualified_at = _parse_iso(r.get("was_qualified_at"))
             source.qualification_criteria_version = r.get("was_criteria_version")
             r["reverted_at"] = stamp
-    # 3. mark the records
-    for run_at in {run_at for run_at, _ in plan}:
+    # 3. mark the records (also those a stopped earlier revert left unmarked)
+    for _run_at, r in already:
+        r["reverted_at"] = stamp
+    for run_at in {run_at for run_at, _ in [*plan, *already]}:
         kv_set_json(REPAIR_RUN_PREFIX + run_at, runs[run_at])
     return result
 

@@ -81,8 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.revert_repairs:
         if args.ignore_hold:
             print("--ignore-hold has no effect with --revert-repairs", file=sys.stderr)
+        from src.catalog.qualification_integrity import UnreadableRunRecord
+
         try:
             result = revert_repairs(dry_run=not args.apply)
+        except UnreadableRunRecord as exc:
+            # raised while reading, before any write: a revert cannot know which rows that run touched
+            print(f"refused: {exc}; nothing was changed. Repair the stored record first.",
+                  file=sys.stderr)
+            return 2
         except Exception as exc:  # noqa: BLE001 - say why, never a traceback
             print(
                 f"the revert stopped ({exc}). The hold and some sources may already be written: "
