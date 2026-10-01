@@ -301,6 +301,8 @@ def record_session_start() -> dict[str, Any] | None:
         # carry the last unlock record forward so one boot's timing survives
         # into the next export even if the next unlock is fast
         "last_unlock": (prev or {}).get("last_unlock"),
+        # and the last large-log recovery, which an unlock with no log would otherwise erase
+        "last_recovery": (prev or {}).get("last_recovery"),
     }
     # The two handles the NEXT boot needs to find this session's death in the host's
     # journal (2026-09-26): the machine boot it runs in, so the right boot is read by
@@ -455,9 +457,26 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
     return None
 
 
+#: The unlock step that holds the verify connection's recovery and its checkpoint-on-close. The
+#: phase's name is the record's key, so the writer (``api/unlock.py``) and the reader below use ONE
+#: constant.
+UNLOCK_VERIFY_PHASE = "passphrase verify + WAL recovery + checkpoint-on-close"
+
+#: The smallest log whose unlock is read as a RATE. Below it the keyed open's own fixed cost (the key
+#: derivation alone measured 0.2 to 0.4 s here) is most of the step, so seconds per GiB would be a
+#: statement about the KDF, not about the log; it is also about the smallest log a person could
+#: watch (a recovery that ends within a second or two is gone before the sentence can be read).
+RECOVERY_RATE_MIN_BYTES = 64 * 1024 * 1024
+
+
 def record_unlock_timing(record: dict[str, Any]) -> None:
     """Persist the unlock path's own timing record (wal bytes before open,
     per-phase ms, total) into the sentinel file. Best-effort.
+
+    Also keeps ``last_recovery``: the most recent unlock that actually recovered a log of at
+    least ``RECOVERY_RATE_MIN_BYTES``. ``last_unlock`` is overwritten by every unlock, including
+    the ones with no log, so on its own it could not answer "how long did this machine take the
+    last time it had a large log to recover".
 
     It also stamps WHEN the unlock finished (``unlock_marker``): every finished unlock passes
     through here, and the request-latency and search-timing logs measure each call's distance
@@ -471,7 +490,54 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
         _LOG.debug("could not stamp the unlock", exc_info=True)
     state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
     state["last_unlock"] = {**record, "at": _now()}
+    recovery = _recovery_from_record(record)
+    if recovery is not None:
+        state["last_recovery"] = {**recovery, "at": _now()}
     _write_state(state)
+
+
+def _recovery_from_record(record: dict[str, Any]) -> dict[str, Any] | None:
+    """The measured recovery inside an unlock timing record, or None when the record has no log
+    of at least ``RECOVERY_RATE_MIN_BYTES`` or no verify step to time it by."""
+    wal = record.get("wal_bytes_before_open")
+    if not isinstance(wal, (int, float)) or isinstance(wal, bool) or wal < RECOVERY_RATE_MIN_BYTES:
+        return None
+    for ph in record.get("phases") or []:
+        if not isinstance(ph, dict) or ph.get("phase") != UNLOCK_VERIFY_PHASE:
+            continue
+        ms = ph.get("ms")
+        if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms > 0:
+            gib = float(wal) / (1024**3)
+            return {"wal_bytes": int(wal), "seconds": round(float(ms) / 1000.0, 1),
+                    "seconds_per_gib": round(float(ms) / 1000.0 / gib, 2)}
+    return None
+
+
+def last_recovery() -> dict[str, Any] | None:
+    """This machine's last measured recovery of a large log (see ``record_unlock_timing``), or
+    None when it has none. Read from the plaintext sentinel, so it is available while the store is
+    still locked."""
+    rec = (_read_state() or {}).get("last_recovery")
+    if not isinstance(rec, dict):
+        return None
+    per_gib = rec.get("seconds_per_gib")
+    if not isinstance(per_gib, (int, float)) or isinstance(per_gib, bool) or per_gib <= 0:
+        return None
+    return rec
+
+
+def recovery_estimate(wal_bytes: int) -> tuple[float | None, dict[str, float] | None]:
+    """``(eta_s, basis)`` for recovering a ``wal_bytes`` log on THIS machine, from its own last
+    measured recovery: that recovery's seconds per GiB times this log's GiB. ``(None, None)`` when
+    the machine has no earlier measurement -- an estimate from another machine's speed would be a
+    guess with a number on it (the field's own per-GiB figures ran from 5.0 to 39.2 s, so no
+    constant is honest). ``basis`` is the measurement it came from, so the page can say so."""
+    rec = last_recovery()
+    if rec is None or wal_bytes <= 0:
+        return None, None
+    per_gib = float(rec["seconds_per_gib"])
+    basis = {"wal_bytes": float(rec.get("wal_bytes") or 0), "seconds": float(rec.get("seconds") or 0)}
+    return round(per_gib * (float(wal_bytes) / (1024**3)), 1), basis
 
 
 def wal_bytes_before_open() -> int | None:
@@ -1421,6 +1487,9 @@ def session_forensics() -> dict[str, Any]:
         "data_dir_persistence": data_dir_persistence(),
         "previous_session": previous_session_report(),
         "last_unlock": cur.get("last_unlock"),
+        # The speed of this machine's last large-log recovery: the estimate the next unlock page
+        # shows is built from it, so a report that explains a slow unlock carries it too.
+        "last_recovery": cur.get("last_recovery"),
         # Where a pass got to in its tail (S0.5) — the window the field's S2 session
         # died in, from which nothing survived because record_run sits below it.
         "pass_tail_journal": pass_tail_journal(),

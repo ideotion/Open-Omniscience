@@ -16227,7 +16227,7 @@ maintainer as a card.
   are off and the unsafe order keeps collecting until the setting changes. `not_auto_repaired_measured_here_total` counts the
   judged-disqualified inversions whose live row is qualified with a stamp that is not the catalogue's, so it also holds verdicts adopted from an import or from the shipped overlay
   (`apply_overlay` runs earlier in the same boot and does not look at local judging history): "measured here" is the name of the
-  class, not a claim about every row in it. The revert record degrades PER RUN (follow-up PR): an index that cannot be read still stops the boot repair (reading it as empty would drop earlier runs and the maintainer's holds), but a RUN record that is present and unreadable is kept byte for byte, never replaced or confirmed, left out of the counts and named in the report (`repair_runs_unreadable`), and the repair carries on with the readable runs; `--revert-repairs` stays fail closed and refuses naming the run, because it cannot know which rows that run touched. THE FORCED RE-CHECK LIST (PR 3, built): the boot lists these sources (`qualification.recheck_first` in `app_state`,
+  class, not a claim about every row in it. The revert record degrades PER RUN (follow-up PR): an index that cannot be read still stops the boot repair (reading it as empty would drop earlier runs and the maintainer's holds), but a RUN record that is present and unreadable is kept byte for byte, never replaced or confirmed, left out of the counts and named in the report (`repair_runs_unreadable`), and the repair carries on with the readable runs; `--revert-repairs` stays fail closed and refuses naming the run, because it cannot know which rows that run touched. A repaired row exports as `inherited` only while its newest judging attempt is still the imported one the repair followed (a later local judgement in EITHER direction makes it this install's own, `measured`); the live-stamp class reads the same row as `measured` (it is protected from imports and goes on the forced re-check list), and both choices are the conservative one. An unreadable run's rows cannot be named, so the export says so (`basis.repair_runs_unreadable`) and such a row may read `measured`. KNOWN LIMIT: a run whose apply landed but whose confirmation write failed, and whose every source then moved off disqualified, is replaced by the next repair like a run that never applied; its audit record is lost, and the revert is unaffected. THE FORCED RE-CHECK LIST (PR 3, built): the boot lists these sources (`qualification.recheck_first` in `app_state`,
   never merged on restore) and the qualification pass takes them ahead of its two pools, least recently tried first, in half
   of the per-pass re-check slots plus any the ordinary queue cannot use (the odd slot alternates between the list and the
   ordinary queue, one try at a time; budget 0 switches it off), so a measured disagreement waits for the first passes rather than
@@ -16236,3 +16236,18 @@ maintainer as a card.
   ordinary queue still reaches it; the count restarts when a newer attempt disagrees), and an unreadable stored list skips the step. The Settings queue view shows how
   many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.
+
+- **ROW F'S 72-HOUR RUN: GROWTH CLOSES AT 72 H (`R116`, 2026-10-01, answer 20b) AND THE RUN MUST SURVIVE CRASHES (PLAN-V05
+  THREAD).** The clause «the budget surface (Q1006) shows the lane's growth» is replaced by «the lane's growth is read at 72
+  hours of the run from its own counters»; the Q1006 surface keeps its seven-day rule and the day-7 `GET /api/storage/lanes`
+  sample is no longer asked of the operator. **Measured on main 74b7fb5d, 2026-10-01 (fixture harness, 36 random kill -9
+  moments and one v0.4.0-lane-file upgrade; scripts and results under `/mnt/project-files/plan-v05/crash-survival-2026-10-01/`):**
+  the lane's data survives a crash and an update (integrity ok every time, nothing lost or duplicated, the walk's bookmark equal
+  to its stored pages, the stream resumed from the newest stored token). **What restarts:** the soak window's clock
+  (`src/monitoring/soak_window.py`, process uptime) and its process-cumulative blocks, and the lane itself, because the app boots
+  offline (airplane mode at boot, a non-negotiable) and the operator crosses online again with the one consent. **STILL OWED:** a
+  run clock read from the lane's own rows (active hours counted by when this install stored or requested something, never by a
+  change's own timestamp, so a replay after downtime cannot mark offline hours active; the stretches between restarts listed; no
+  verdict), shown in what the operator already sends at 72 hours, plus a visible «the Wikipedia run stopped at the restart» line.
+  **OPEN, put to the maintainer as question 21:** whether the run goes back online by itself after an abnormal restart (an opt-in
+  setting amending the airplane-at-boot ruling) or keeps one click per restart; the build is for the second until it is answered.

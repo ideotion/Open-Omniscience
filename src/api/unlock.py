@@ -83,6 +83,9 @@ ALLOWED_WHILE_LOCKED = (
     "/api/system/lock-state",
     "/api/system/unlock",
     "/api/system/create-db",
+    # What the verify connection is doing while a passphrase is being checked (rank 5, phase 0):
+    # numbers only, and ``{"active": false}`` whenever no unlock attempt is running.
+    "/api/system/unlock-progress",
     "/api/health",
     # The data-drive countdown (R86) must reach a LOCKED app too: a drive can be pulled
     # while the unlock screen is up. It answers a phase and a number of seconds, never
@@ -384,7 +387,9 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
     # next diagnostics export instead of needing the maintainer's stopwatch.
     _t = _forensic_timer(wal_state=wal_state)
     if verify_ms is not None:
-        _t.add_phase("passphrase verify + WAL recovery + checkpoint-on-close", verify_ms)
+        from src.monitoring.forensics import UNLOCK_VERIFY_PHASE
+
+        _t.add_phase(UNLOCK_VERIFY_PHASE, verify_ms)
     init_db()  # schema self-heal — fast on an existing store; makes the DB queryable
     _t.phase("init_db (schema self-heal + migrations + WAL recovery)")
     # The corpus is now fully usable — everything the background thread does below
@@ -495,6 +500,72 @@ class _forensic_timer:
             _LOG.debug("could not record unlock timing", exc_info=True)
 
 
+# A log smaller than ``forensics.RECOVERY_RATE_MIN_BYTES`` is recovered before anyone could read
+# a sentence about it (the keyed open's own key derivation is 0.2 to 0.4 s of it), so the page
+# says nothing; the same bound decides which unlocks count as a measured rate.
+def _begin_recovery_notice(wal_state: dict | None) -> int | None:
+    """Tell the unlock page what the verify connection is about to do, when it has a large log to
+    recover. Never raises: a progress sentence must not be able to refuse an unlock."""
+    try:
+        from src.api.startup_status import begin_recovery
+        from src.monitoring.forensics import RECOVERY_RATE_MIN_BYTES, recovery_estimate
+
+        if not wal_state or wal_state.get("state") != "present":
+            return None
+        wal = wal_state.get("bytes")
+        if not isinstance(wal, int) or wal < RECOVERY_RATE_MIN_BYTES:
+            return None
+        eta_s, basis = recovery_estimate(wal)
+        return begin_recovery(wal, eta_s, basis)
+    except Exception:  # noqa: BLE001 - a notice never blocks an unlock
+        _LOG.debug("could not record the recovery notice", exc_info=True)
+        return None
+
+
+def _close_after_checkpoint(conn) -> None:
+    """Close the verify connection, writing the recovered log back into the database FIRST, through
+    ``execute``.
+
+    MEASURED (sandbox, 600 MiB log, a ticker thread timing its own wake-ups): sqlcipher3's
+    ``Connection.close()`` holds the GIL for the whole checkpoint it runs when it closes the last
+    connection (2.1 s, worst gap between the ticker's wake-ups 2.1 s), while the same checkpoint
+    run as ``execute("PRAGMA wal_checkpoint(TRUNCATE)")`` releases it (1.7 s, worst gap 0.01 s), and
+    so does stdlib sqlite3's own ``close()``. So an encrypted store whose last session left a large
+    log froze the whole process -- the event loop included, so not even the unlock page's progress
+    poll could be answered -- for exactly as long as the backfill took, and the field's 24.7 s unlock
+    was 24.7 s of that. With the log already written back, ``close()`` has nothing left to hold the
+    GIL for. A busy or failed checkpoint (a second instance holding the file) falls back to what
+    ``close()`` always did, so this can only make the step answer other requests while it runs."""
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    except Exception:  # noqa: BLE001 - the close below still checkpoints, as it always did
+        _LOG.debug("verify checkpoint before close failed", exc_info=True)
+    conn.close()
+
+
+def _end_recovery_notice(token: int | None) -> None:
+    try:
+        from src.api.startup_status import end_recovery
+
+        end_recovery(token)
+    except Exception:  # noqa: BLE001 - as above
+        _LOG.debug("could not clear the recovery notice", exc_info=True)
+
+
+@router.get("/unlock-progress")
+def unlock_progress() -> dict:
+    """While a passphrase is being checked: the size of the log the verify connection is
+    recovering, this machine's estimate for it with the measurement that estimate came from, and
+    the seconds elapsed -- numbers only, and ``{"active": false}`` when no attempt is running.
+
+    It is served while the app is locked (the page that calls it IS the lock screen), so it says
+    nothing a locked app may not: no path, no name, and nothing at all outside an attempt the
+    caller is itself making."""
+    from src.api.startup_status import get_recovery
+
+    return get_recovery()
+
+
 @router.post("/unlock")
 def unlock(body: PassphraseBody) -> dict:
     """Unlock an existing encrypted store. Loud on a wrong passphrase;
@@ -522,12 +593,15 @@ def unlock(body: PassphraseBody) -> dict:
         _wal_state = wal_state_before_open()
     except Exception:  # noqa: BLE001 - forensics never blocks an unlock
         _wal_state = None
+    _recovery_token = _begin_recovery_notice(_wal_state)
     _verify_t0 = time.monotonic()
     try:
         conn = connect(p, key=body.passphrase, check_same_thread=False)
-        conn.close()
+        _close_after_checkpoint(conn)
     except WrongPassphraseError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    finally:
+        _end_recovery_notice(_recovery_token)
     _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
     set_passphrase(body.passphrase)
     _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
