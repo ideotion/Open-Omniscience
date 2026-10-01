@@ -315,7 +315,11 @@ def refresh_briefing(session, on_progress=None) -> dict:
             # value) can say that the feed it shows is the previous one and why. The next
             # refresh that completes replaces the whole payload, marker included.
             try:
-                _write_cache(kept)
+                # Only if no full refresh landed since this one read the cache: it must not be
+                # overwritten with the feed it just replaced.
+                current = _read_cache()
+                if current and current.get("generated_at") == existing.get("generated_at"):
+                    _write_cache(kept)
             except OSError:
                 _LOG.warning("could not record that the briefing refresh kept the cache", exc_info=True)
             return kept

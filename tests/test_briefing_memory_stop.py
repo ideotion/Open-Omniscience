@@ -205,6 +205,8 @@ def test_a_partial_run_stopped_by_a_spent_budget_is_not_widened_by_this_change(m
 
 def test_a_completed_run_carries_no_stop_marker(monkeypatch, tmp_path):
     path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a"}])
+    stale = json.loads(path.read_text("utf-8"))
+    path.write_text(json.dumps({**stale, "kept_reason": "memory_short", "incomplete_reason": "deadline"}), "utf-8")
     monkeypatch.setattr(service, "run_all_bounded", lambda *a, **k: ([_Card("new")], {"truncated": False}))
     out = service.refresh_briefing(object())
     assert "incomplete_reason" not in out and "kept_reason" not in out

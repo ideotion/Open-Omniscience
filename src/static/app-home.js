@@ -1117,7 +1117,7 @@
         // "unchanged" data and leave every card title in whichever locale painted it
         // first. That is the recorded payload-fingerprint defect, and the repair is the
         // recorded one: put the thing that changed into the key.
-        const stamp = String(data.generated_at) + "|" + uiLangCode();
+        const stamp = _briefStamp(data);
         if (stamp !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
       try { await loadHomeTrends(); } catch (e) {}
@@ -1129,7 +1129,13 @@
     // them and lets the user triage (dismiss / add to draft). It never computes a
     // verdict. The full method + caveat for every figure is one toggle away.
     let _briefCards = {};   // id -> card (so "Add to draft" has the full card)
-    let _lastBriefGen = null;  // last rendered "generated_at|locale" (live-refresh guard)
+    let _lastBriefGen = null;  // last rendered "generated_at|locale|stop markers" (live-refresh guard)
+    // The stop markers belong in the key: a refresh that kept the cached feed leaves
+    // generated_at untouched, and a guard on that alone would never repaint the new line.
+    function _briefStamp(data) {
+      return String(data.generated_at || "") + "|" + uiLangCode()
+        + "|" + (data.kept_reason || "") + "|" + (data.incomplete_reason || "");
+    }
 
     async function loadBriefing(force) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1219,7 +1225,7 @@
       // Same key shape as the guard that reads it, or the two describe different
       // things and the guard never matches (a repaint on every poll) or never
       // misses (a repaint on none).
-      _lastBriefGen = String(data.generated_at || "") + "|" + uiLangCode();
+      _lastBriefGen = _briefStamp(data);
       const feed = $("briefing-feed");
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
@@ -1232,7 +1238,7 @@
       // The last refresh stopped early (diagnostics rank 4): say whether cards are missing
       // from this feed or whether this is the previous feed, and why -- a short or old feed
       // must not read as a complete, current one. Absent when the last refresh finished.
-      const stopWhy = (r) => t(r === "memory_short" ? "the machine was short of memory" : "it ran out of time");
+      const stopWhy = (r) => (r === "memory_short" ? t("the machine was short of memory") : t("it ran out of time"));
       const stopNote = data.kept_reason
         ? tf("This is the previous feed: the last refresh stopped early because {why}.", {why: stopWhy(data.kept_reason)})
         : data.incomplete_reason
@@ -1242,6 +1248,9 @@
         + (stopNote ? `<p class="card-caveat" id="brief-stopped">${esc(stopNote)}</p>` : "");
       if (!data.buckets || !data.buckets.length) {
         if (refreshing) { feed.innerHTML = banner; return; }
+        // The stop line stays above the empty-state frame: an empty feed from a refresh that
+        // stopped early must not be read as "nothing to lead with".
+        const stopLine = banner;
         // ONE frame, not nine fragments. This paragraph was nine text nodes, because
         // seven <b> Lead-type names cut it into pieces, and the i18n walker keys whole
         // text nodes -- so the connective prose ("As the corpus grows you'll see:", "on
@@ -1258,7 +1267,7 @@
         // would hide all seven from both gates again -- the greppability rule _failMsg
         // states in app-core.js.
         const b = (s) => `<b>${esc(s)}</b>`;
-        feed.innerHTML = `<div class="card">
+        feed.innerHTML = stopLine + `<div class="card">
           <h4>${esc(t("No Leads yet — that's expected on a young corpus"))}</h4>
           <p class="sum">${tf("Leads are computed from YOUR collected material; an empty feed means the signals haven't accumulated, never that the engine is gone. As the corpus grows you'll see: {rising} (terms accelerating vs their own baseline), {overtold}, {framing}, {promises} (a mentioned future date arrives), {editwar} on tracked Wikipedia pages, {quiet}, and {candidates} from offline discovery.", {
             rising: b(t("Rising now")),
