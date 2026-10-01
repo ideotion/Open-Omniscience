@@ -60,6 +60,8 @@ from .keywords import (
     _ScratchFileResponse,
     _DIGEST_SAMPLE,
     _JSON_SLICE,
+    _PARTS_SET_RE,
+    _SET_LISTING,
     _RING_CAND_MIN_ARTICLES,
     _RING_CAND_PER_LANG,
     _SW_CAND_MAX_LEN,
@@ -67,11 +69,13 @@ from .keywords import (
     _SW_CAND_PER_LANG,
     _export_deadline_seconds,
     _families_summary,
+    _keyword_parts,
     _keyword_zip,
     _keyword_zip_families_cap,
     _keyword_zip_max_bytes,
     _new_ring_acc,
     _new_stopword_acc,
+    _parts_root,
     _quantiles,
     _ring_candidates,
     _ring_doc,
@@ -351,6 +355,14 @@ from .qualification_merge import (
     _MAX_MERGE_UPLOADS,
     source_qualification_merge,
 )
+# One file of a numbered keyword-log set (1 MB parts, 2026-10-01): appended after the merge
+# action, and BEFORE the release run -- test_release_run pins that run's eight routes as the
+# package's last, so a slice added later goes in front of them rather than behind.
+from .keyword_parts import (
+    _KEYWORD_PARTS_GONE,
+    keyword_parts_latest,
+    keyword_part_download,
+)
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -399,6 +411,9 @@ __all__ = [
     "_MEMBER_RSS_NEED_MB",
     "_DIGEST_SAMPLE",
     "_JSON_SLICE",
+    "_KEYWORD_PARTS_GONE",
+    "_PARTS_SET_RE",
+    "_SET_LISTING",
     "_ENRICH_JOB",
     "_FrontendError",
     "_GoldBuilderSaveBody",
@@ -447,11 +462,13 @@ __all__ = [
     "_hardware_profile",
     "_keyword_digest_need_mb",
     "_keyword_triage_worker",
+    "_keyword_parts",
     "_keyword_zip",
     "_keyword_zip_families_cap",
     "_keyword_zip_max_bytes",
     "_new_ring_acc",
     "_new_stopword_acc",
+    "_parts_root",
     "_leads_quality_budget_s",
     "_member_bytes",
     "_member_default",
@@ -536,6 +553,8 @@ __all__ = [
     "keyword_engine",
     "keyword_growth",
     "keyword_log",
+    "keyword_parts_latest",
+    "keyword_part_download",
     "keyword_selftest",
     "keyword_triage_cancel",
     "keyword_triage_download",

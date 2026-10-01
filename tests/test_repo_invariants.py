@@ -3188,12 +3188,19 @@ def test_diagnostics_panel_button_consolidation():
     #   - the full keyword-corpus dump (both size variants): the manifest's own
     #     'excluded' block says the bundle carries only the bounded DIGEST, so these
     #     buttons are each report's ONLY full-dump access, not a redundant download.
-    assert "ooOpenUrl('/api/diagnostics/keywords?format=zip')" in html
-    assert "per_lang=1000000" in html and "All keywords (.zip)" in html
+    # Both keyword buttons build a NUMBERED SET of files of at most 1 MB (2026-10-01; the
+    # maintainer's uploads fail from about 1.2 MB a file), five to a click, so neither is a
+    # plain download any more: they call downloadKeywordParts with the mode that picks the URL.
+    assert "downloadKeywordParts(this, 'default')" in html and "Keyword log (1 MB files)" in html
+    assert "downloadKeywordParts(this, 'all')" in html and "All keywords (1 MB files)" in html
+    assert "downloadKeywordParts(this, 'again')" in html and "Last keyword files, again" in html
     # The "All keywords" button asks for NO size cap (2026-09-30): the archive is streamed to
     # disk a batch at a time, and a button called "All" that silently kept the top 9 MB was the
-    # other half of the crash report.
-    assert "per_lang=1000000000&amp;max_mb=0" in html  # a billion: every keyword of any language
+    # other half of the crash report. The URLs live in the one routine that serves the buttons.
+    ui_js = _ui_source()
+    assert "format=parts&per_lang=1000000000&max_mb=0" in ui_js  # a billion: every keyword of any language
+    assert "/api/diagnostics/keywords?format=parts" in ui_js
+    assert "/api/diagnostics/keywords/parts/latest" in ui_js
     #   - source-quality + rollup-benchmark: explicitly named as surviving ACTIONS in
     #     the AMENDED ruling despite living in the same button row.
     assert "ooOpenUrl('/api/diagnostics/source-quality?download=1')" in html
@@ -6586,8 +6593,9 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # when ready.
     assert 'data-on-click="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
     assert '@router.post("/all-job")' in diag  # the non-blocking background-job endpoint
-    assert ">All diagnostics (.zip)<" in html
-    assert ">Keyword log (.zip)<" in html  # kept -- the FULL dump, exempt from the bundle
+    assert ">All diagnostics (1 MB files)<" in html
+    assert ">All diagnostics, again (last build, 1 MB files)<" in html
+    assert ">Keyword log (1 MB files)<" in html  # kept -- the FULL dump, exempt from the bundle
     assert "/api/diagnostics/home-cards?download=1" not in html, (
         "the standalone home-cards download button must be gone (bundle carries it)"
     )
@@ -6779,7 +6787,10 @@ def test_all_diagnostics_runs_as_a_background_job():
     assert "async function runAllDiagnostics" in ui, "the handler must be defined"
     assert "/api/diagnostics/all-job" in ui, "it must start the background job"
     assert "/api/diagnostics/all-job/status" in ui, "it must poll job status"
-    assert "/api/diagnostics/all-job/download" in ui, "it must download when ready"
+    # Ready = offered as numbered files of at most 1 MB, five to a click (2026-10-01), not opened as
+    # one big download; the single archive is still served for API callers.
+    assert "/api/diagnostics/all-job/volumes" in ui, "it must offer the numbered files when ready"
+    assert 'window.open("/api/diagnostics/all-job/download"' not in ui, "no one-big-file download"
     assert 'id="all-diag-status"' in ui, "a live-progress status element must exist"
     assert "Connection hiccup" in ui, "a dropped poll must degrade honestly, not say 'failed'"
     # The old synchronous window.open('/api/diagnostics/all') blocking click is gone.
@@ -8333,7 +8344,7 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
 #: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
 #: appends a lesson raises this number in the same diff (rule (5a)(b)); re-measure at the merge
 #: point if another PR appended first, the recorded 2026-09-08 precedent.
-_LESSONS_LINE_CEILING = 12924
+_LESSONS_LINE_CEILING = 12999
 
 
 def _lessons_md_lines() -> int:

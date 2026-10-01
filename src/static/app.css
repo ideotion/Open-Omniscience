@@ -375,6 +375,11 @@
       border-bottom:1px solid var(--border);
       box-shadow:inset 3px 0 0 0 var(--caveat); font-size:12.5px; }
     .egress-bar[hidden] { display:none; }
+    /* The numbered-files bar (Settings > Advanced > Diagnostics). `label { display:block }` and `.row`
+       are author rules, and an author `display` beats the browser's `[hidden]`, so without these two
+       lines the "Start at part number" box showed on a page that had built nothing (found in the
+       Chromium walk of 2026-10-01; the unit tests read attributes, not what the browser draws). */
+    #parts-bar[hidden], #parts-from-wrap[hidden] { display:none; }
     .egress-bar .egress-msg { flex:1 1 260px; }
     /* Inherits --caveat from .egress-bar deliberately. This span carries the
        HONEST LIMIT ("which hosts the installer contacts is not restricted"),
