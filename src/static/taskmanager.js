@@ -110,14 +110,19 @@
     return "~" + tf("{n} h", { n: fmtNum(s / 3600, 1) });
   }
   // The next-pass preview is served from the last good computation (the poll never waits on
-  // the database pool): say so, with its age (mirrors app-core.js _planNoteHtml).
+  // the database pool): say so, with its age (mirrors app-core.js _planNoteHtml, including the
+  // silence while the preview is merely between refresh cycles).
   function planNoteHtml(plan) {
     if (!plan || !plan.state || plan.state === "fresh") return "";
     if (plan.state === "computing") {
-      return '<div class="vnote">' + esc(t("The next-pass preview is being computed.")) + "</div>";
+      // see app-core.js: a computation that keeps failing is said, never "being computed" for ever
+      return '<div class="vnote">' + esc(plan.refresh_error
+        ? t("The next-pass preview could not be computed: the last attempt failed. It is tried again at the next refresh.")
+        : t("The next-pass preview is being computed.")) + "</div>";
     }
+    if (!plan.stale && !plan.refresh_error) return "";
     var age = fmtDur(plan.age_s);
-    return '<div class="vnote">' + esc((plan.stale || plan.refresh_error)
+    return '<div class="vnote">' + esc((plan.refresh_error || plan.state !== "refreshing")
       ? tf("This preview is {age} old: the last refresh has not completed, so the figures may no longer be true.", { age: age })
       : tf("This preview is {age} old and is being refreshed in the background.", { age: age })) + "</div>";
   }
@@ -383,6 +388,9 @@
         qHtml += '<div class="vrow"><span class="vk">' + esc(t("Tags")) +
           '</span><span class="vv cap-chips">' + stratHtml(st.tags) + "</span></div>";
       }
+    } else if (plan.state === "computing") {
+      // Nothing computed yet (or the settings just changed): say so under the same heading.
+      qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" + planNoteHtml(plan);
     }
     $("queue-body").innerHTML = qHtml;
   }

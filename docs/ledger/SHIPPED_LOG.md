@@ -10393,3 +10393,13 @@ list's browse is timed per phase into the search-timing record, whose self-test 
 durable logs are cut by a copy swapped in with os.replace. The same PR closes 0.4 row D on instance 090243's
 release-run report and records PR #1281 in row A. Lesson: `LESSONS.md`, the entry "A LIST THE PRODUCER CUT CANNOT BE
 LOOKED UP IN".
+
+- **2026-10-01 · scheduler/pool-disk-unlock-findings (WAL / disk thread, the follow-up to #1287, #1289 and #1293).**
+Every finding of the Opus reads and the coordinator's checks of the three merged PRs. Unlock: the verify
+checkpoint no longer waits for a reader (the TRUNCATE inherited a 30 s busy timeout), the recovery floor sits above the
+journal-size limit and the sentence says "up to", attempts run one at a time, a failed write-back is a WARNING.
+Pool and guard: standing holders count the corpus pool only, an I/O error is classified on the driver's exception and
+keeps its first line, the drive is read once per second at most per incident, a repeating drain failure is loud once.
+Page: the preview note is silent between refresh cycles and says a computation keeps failing. Diagnostics: route
+templates in the pool listing, the pool's invalidations in the write-gate member. Lesson: `LESSONS.md`, the entry
+"SEVEN SMALL RULES FROM THE THREE REVIEWS". Recorded beside it: `R118` (the reserve follows the measured tail).

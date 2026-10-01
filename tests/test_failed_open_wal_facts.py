@@ -8,7 +8,7 @@ connection learned that sqlcipher3's ``close()`` of the LAST connection runs the
 GIL (so it is written back through ``execute`` first, ``src/api/unlock.py``). The obvious next thought
 is to do the same for a failed candidate. It cannot be done, and these are the measured reasons
 (2026-10-01, 300 MiB log, ticker thread timing its own wake-ups; the numbers are in
-``/mnt/project-files/wal-disk-pool/unlock-recovery-measure.md``), pinned deterministically so a later
+``docs/ledger/LESSONS.md``, "sqlcipher3's ``Connection.close()`` holds the GIL"), pinned deterministically so a later
 session does not "fix" a failed open the wrong way, and so a change in the library that makes a fix
 possible fails here and says so:
 

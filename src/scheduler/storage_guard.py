@@ -142,8 +142,10 @@ So the gap between two readings is 5 s plus the reading. At 1.4 MB/s of log grow
 sampling comment below uses (its original source is not in the repo; the nearest measured one is
 instance 090243's 2026-09-30 diagnostics, 1.48 to 25.41 GB in five hours = 4.8 GB/h = 1.33 MB/s,
 the mean of five hours that ranged 0.83 to 1.87 MB/s, kept in the project files), 5 s is about
-7 MB: 5% of the smallest floor (128 MiB), and 9.4 MB, 7%, at that peak hour; less of any larger
-floor. That rate is the log's growth, not everything a pass writes. What is NOT covered: a drive
+7 MB: 5% of the smallest floor (128 MiB), and 9.4 MB, 7%, at the highest of those five hours. That
+instance's own hourly series has worse ones (3.27 MB/s over 2026-09-28T23:00 to 2026-09-29T00:00,
++11.79 GB, where 5 s is 16.4 MB, 12%), so this margin is for a typical collecting hour, not a bound
+on the worst; less of any larger floor. That rate is the log's growth, not everything a pass writes. What is NOT covered: a drive
 that does not answer a statvfs stalls the reading itself, and the floor reserves room to write the log back and finish a
 write, NOT the pass tail written after a withdrawal (a measured tail is what would size that, and
 it is not a fixed number). The write error above is the last net and it does not wait for a
@@ -203,6 +205,13 @@ DISK_RESUME_FACTOR = 1.5
 #: and short enough that a transient refusal costs minutes, not hours; the same hold keeps the
 #: override button refused. A new failed write re-arms it.
 ERROR_HOLD_S = 300.0
+#: A drive reading taken for one I/O error is reused by the next one for this long. An incident
+#: fails many statements in the same second, and each used to read the drive (a statvfs and the
+#: WAL files' stats) on its own failing thread: cheap on a full disk, but on a hung one every
+#: failing statement waited on its own read. One second is shorter than the 5 s sample the guard
+#: already lives with, so a figure this old is never staler than the sample the guard acts on;
+#: chosen, not measured.
+IO_READING_REUSE_S = 1.0
 #: The in-memory history: one sample a minute for six hours. Process-scoped, never persisted
 #: (the hourly ``disk_free_mib`` and ``wal_bytes`` gauges carry the long series).
 HISTORY_EVERY_S = 60.0
@@ -381,6 +390,28 @@ def is_disk_full(exc: BaseException | None) -> bool:
     return False
 
 
+_DBAPI_MODULES = ("sqlite3", "sqlcipher3")
+
+
+def _is_dbapi_error(exc: BaseException) -> bool:
+    """Whether ``exc`` is the DRIVER's own exception (sqlite3 or sqlcipher3), not SQLAlchemy's
+    wrapper around it: the wrapper's text carries the SQL statement and its bound parameters."""
+    return type(exc).__module__.split(".")[0] in _DBAPI_MODULES
+
+
+def _dbapi_cause(exc: BaseException | None) -> BaseException | None:
+    """The driver's exception behind ``exc`` (SQLAlchemy's ``.orig``, ``__cause__`` or
+    ``__context__``), or ``None``."""
+    seen: set[int] = set()
+    cur = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if _is_dbapi_error(cur):
+            return cur
+        cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
+    return None
+
+
 def is_io_error(exc: BaseException | None) -> bool:
     """Whether an exception (or anything in its chain) is SQLite's plain "disk I/O error"
     (``SQLITE_IOERR`` and its extended codes).
@@ -392,7 +423,10 @@ def is_io_error(exc: BaseException | None) -> bool:
     SQLite then says "disk I/O error" instead of "database or disk is full". The two are
     told apart by one measurement, the drive's free space at that moment
     (:meth:`StorageGuard.note_io_error`), never by the message. A driver that carries
-    ``sqlite_errorcode`` (Python 3.11 and later) is matched on it; the message is the fallback."""
+    ``sqlite_errorcode`` (Python 3.11 and later) is matched on it; the message is the fallback,
+    and only for the DRIVER's own exception: SQLAlchemy's wrapper text carries the statement and
+    its bound parameters, so an ``IntegrityError`` whose bound title happened to say "disk I/O
+    error" was counted as one (the Opus read of #1289)."""
     seen: set[int] = set()
     cur = exc
     while cur is not None and id(cur) not in seen:
@@ -400,10 +434,21 @@ def is_io_error(exc: BaseException | None) -> bool:
         code = getattr(cur, "sqlite_errorcode", None)
         if isinstance(code, int) and (code & 0xFF) == 10:  # SQLITE_IOERR
             return True
-        if "disk i/o error" in str(cur).lower():
+        if _is_dbapi_error(cur) and "disk i/o error" in str(cur).lower():
             return True
         cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
     return False
+
+
+def _io_error_detail(exc: BaseException | None) -> str:
+    """What the guard keeps of the error: the DRIVER's exception class and FIRST line of its
+    message (``OperationalError: disk I/O error``), never SQLAlchemy's wrapper text, which carries
+    the SQL and its bound parameters into a status payload the page polls and the bundle ships."""
+    orig = _dbapi_cause(exc)
+    if orig is None:
+        return type(exc).__name__ if exc is not None else ""
+    first = (str(orig).splitlines() or [""])[0]
+    return f"{type(orig).__name__}: {first}"[:200]
 
 
 def _size_text(n: float | int | None) -> str:
@@ -580,6 +625,9 @@ class StorageGuard:
         self._last_disk_full: dict[str, Any] | None = None
         self._io_errors = 0
         self._last_io_error: dict[str, Any] | None = None
+        self._io_reading: tuple[float, dict[str, Any]] | None = None
+        self._io_reading_busy = False
+        self._failure_key: str | None = None
         self._hold_until: float | None = None
         self._last: dict[str, Any] = {}
         self._thresholds: dict[str, Any] = {}
@@ -621,6 +669,8 @@ class StorageGuard:
             self._last_disk_full = None
             self._io_errors = 0
             self._last_io_error = None
+            self._io_reading, self._io_reading_busy = None, False
+            self._failure_key = None
             self._hold_until = None
             self._last, self._thresholds = {}, {}
             self._history.clear()
@@ -975,6 +1025,31 @@ class StorageGuard:
             pass
         return False
 
+    def _io_error_reading(self) -> dict[str, Any]:
+        """The drive reading an I/O error is classified by: a fresh one, or the last one taken
+        within :data:`IO_READING_REUSE_S`, and never two at once (a caller that finds a reading in
+        flight takes the last one, or none, rather than queue behind a drive that may be hung).
+        An unreadable drive is ``{}``: "not classified"."""
+        now = self._clock()
+        with self._lock:
+            cached = self._io_reading
+            if cached is not None and now - cached[0] < IO_READING_REUSE_S:
+                return cached[1]
+            if self._io_reading_busy:
+                return cached[1] if cached is not None else {}
+            self._io_reading_busy = True
+        try:
+            try:
+                reading = self._readings() or {}
+            except Exception:  # noqa: BLE001 - an unreadable drive is the answer "not classified"
+                reading = {}
+            with self._lock:
+                self._io_reading = (self._clock(), reading)
+            return reading
+        finally:
+            with self._lock:
+                self._io_reading_busy = False
+
     def note_io_error(self, exc: BaseException | None, where: str = "") -> bool:
         """SQLite's plain "disk I/O error" (:func:`is_io_error`): latch DISK only when the drive's
         own free space, read NOW, is below the reserve (the condition the guard's samples trip
@@ -988,10 +1063,7 @@ class StorageGuard:
         try:
             if not is_io_error(exc):
                 return False
-            try:
-                reading = self._readings() or {}
-            except Exception:  # noqa: BLE001 - an unreadable drive is the answer "not classified"
-                reading = {}
+            reading = self._io_error_reading()
             free, total = reading.get("disk_free_bytes"), reading.get("disk_total_bytes")
             reserve = disk_reserve_bytes(total)
             full = free is not None and free < reserve
@@ -1000,7 +1072,7 @@ class StorageGuard:
                 self._last_io_error = {
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
                     "where": where or None,
-                    "detail": f"{type(exc).__name__}: {exc}"[:200],
+                    "detail": _io_error_detail(exc),
                     "disk_free_bytes": free,
                     "disk_reserve_bytes": reserve,
                     "latched": bool(full),
@@ -1213,6 +1285,24 @@ class StorageGuard:
             lane_wal_bytes=r.get("lane_wal_bytes"),
         )
 
+    def log_failure_once(self, what: str, exc: BaseException) -> None:
+        """Log a failure of the guard's own work at WARNING with its traceback the FIRST time it
+        happens (and when it changes), and at DEBUG while it repeats: a drain that raises on every
+        tick would otherwise write a traceback every ten seconds into the 2,000-record error ring
+        the diagnostics bundle carries (the pin report has the same once-per-change rule). The key
+        is the exception type and its first line; it never reaches a log line."""
+        try:
+            first = (str(exc).splitlines() or [""])[0][:80]
+        except Exception:  # noqa: BLE001 - a hostile __str__ is just a different key
+            first = ""
+        key = f"{what}|{type(exc).__name__}|{first}"
+        with self._lock:
+            changed = key != self._failure_key
+            self._failure_key = key
+        (_LOG.warning if changed else _LOG.debug)(
+            "storage guard: %s failed%s", what, "" if changed else " again", exc_info=exc
+        )
+
     def poll_and_drain_unsupervised(self) -> None:
         """Sample and drain on the CALLER's thread when no supervisor thread is running.
 
@@ -1225,8 +1315,8 @@ class StorageGuard:
         try:
             self.poll()
             self.drain_if_due()
-        except Exception:  # noqa: BLE001 - a waiter must never die of the guard's own reading
-            _LOG.debug("storage guard: unsupervised poll failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a waiter must never die of the guard's own reading
+            self.log_failure_once("the unsupervised poll", exc)
 
     def drain_if_due(self) -> dict | None:
         """While a latch is engaged, try to reset the WAL (the boundary's own call; a reset WAL
@@ -1276,8 +1366,10 @@ class StorageGuard:
         try:
             with corpus_lease("storage-guard-drain"):
                 rec = self._drain()
-        except Exception as exc:  # noqa: BLE001 - the drain must never kill the supervisor
-            _LOG.warning("storage guard: the drain failed", exc_info=True)
+            with self._lock:
+                self._failure_key = None  # a failure after this success is news again
+        except Exception as exc:  # noqa: BLE001 - the drain's own thread must not die of it
+            self.log_failure_once("the drain", exc)
             rec = {"error": type(exc).__name__}
         finally:
             # Paced from when the drain ENDED, however it ended: one that queued 30 s on the write
@@ -1596,9 +1688,10 @@ def on_engine_error(context) -> None:
 #: How often the supervisor samples the drive. File sizes and a statvfs: cheap enough that
 #: five seconds is not a cost, and short enough that a WAL growing at 1.4 MB/s moves under 10 MB
 #: between samples (the figure's original source is not in the repo; the nearest measured one is
-#: instance 090243's 2026-09-30 diagnostics: 4.8 GB an hour (the mean of five), 1.33 MB/s, 1.87 MB/s in
-#: its peak hour, kept in the project files). The drain never delays a sample: it runs on its own thread
-#: (``_supervise``).
+#: instance 090243's 2026-09-30 diagnostics: 4.8 GB an hour (the mean of five), 1.33 MB/s, 1.87 MB/s
+#: in the highest of those five hours; the same instance's series has a worse hour at 3.27 MB/s,
+#: where five seconds is 16 MB; kept in the project files). The drain never delays a sample: it runs
+#: on its own thread (``_supervise``).
 POLL_EVERY_S = 5.0
 
 #: How long ``stop()`` waits, in all, for the supervisor and its drain thread to end. It protects shutdown
@@ -1620,8 +1713,8 @@ def _drain_in_background(g: StorageGuard, stop: threading.Event) -> None:
         return  # shutting down: a drain that has not started must not reach the engine now
     try:
         g.drain_if_due()
-    except Exception:  # noqa: BLE001 - the drain must never kill anything but itself
-        _LOG.warning("storage guard: the background drain failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the drain must never kill anything but itself
+        g.log_failure_once("the background drain", exc)
 
 
 def _supervise(stop: threading.Event) -> None:

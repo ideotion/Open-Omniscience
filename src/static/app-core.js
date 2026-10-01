@@ -1972,15 +1972,24 @@
     }
     // The next-pass preview is served from the last good computation (the poll never waits on
     // the database pool): say so, with its age, rather than drawing an old plan as a live one.
-    // Nothing is said while it is fresh. "computing" = nothing has been computed yet for the
-    // current settings (never a preview for settings the operator has since changed).
+    // Nothing is said while it is fresh, NOR while it is merely between cycles: the poll that
+    // finds the preview older than 15 s is the one that starts the refresh, so on a healthy
+    // machine one poll in roughly eight would have read "being refreshed" for a figure that is
+    // about to be replaced. The note appears once the age passes the server's "stale" line (60 s)
+    // or a refresh has failed. "computing" = nothing has been computed yet for the current
+    // settings (never a preview for settings the operator has since changed).
     function _planNoteHtml(plan, t, tf) {
       if (!plan || !plan.state || plan.state === "fresh") return "";
       if (plan.state === "computing") {
-        return `<div class="vnote">${esc(t("The next-pass preview is being computed."))}</div>`;
+        // Nothing has ever been computed for these settings: if the attempts keep failing (the
+        // pool is exhausted, the case this cache exists for) say THAT, not "being computed" for ever.
+        return `<div class="vnote">${esc(plan.refresh_error
+          ? t("The next-pass preview could not be computed: the last attempt failed. It is tried again at the next refresh.")
+          : t("The next-pass preview is being computed."))}</div>`;
       }
+      if (!plan.stale && !plan.refresh_error) return "";
       const age = _fmtDur(plan.age_s);
-      return `<div class="vnote">${esc((plan.stale || plan.refresh_error)
+      return `<div class="vnote">${esc((plan.refresh_error || plan.state !== "refreshing")
         ? tf("This preview is {age} old: the last refresh has not completed, so the figures may no longer be true.", {age})
         : tf("This preview is {age} old and is being refreshed in the background.", {age}))}</div>`;
     }
@@ -2502,6 +2511,10 @@
             qHtml += `<div class="vrow"><span class="vk">${esc(t("Tags"))}</span>` +
               `<span class="vv cap-chips">${_stratHtml(st.tags)}</span></div>`;
           }
+        } else if (plan.state === "computing") {
+          // Nothing has been computed yet (or the settings just changed): say so under the same
+          // heading rather than drawing nothing, as the Next pass section already does.
+          qHtml += `<div class="vsect">${esc(t("Up next this pass"))}</div>` + _planNoteHtml(plan, t, tfQ);
         }
         elQ.innerHTML = qHtml;
       }

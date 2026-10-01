@@ -1821,20 +1821,17 @@ def test_the_drain_thread_is_a_daemon_so_a_stuck_drain_cannot_keep_the_process_a
 def test_the_in_flight_flag_is_claimed_under_the_lock_that_made_the_cadence_checks():
     """A guard lock that yields right after it is released lets a second caller in before any
     statement that follows the check-and-claim block: the flag must already be set by then, or
-    two drains run (and each holds a pooled connection and a corpus lease)."""
-    running = [0]
-    most = [0]
+    two drains run (and each holds a pooled connection and a corpus lease). Handshakes, not
+    sleeps: A is held inside the release until B has made its whole attempt, so the second caller
+    gets exactly the window the defect needs on any machine (the coordinator's check of #1287
+    measured the sleep version catching its mutant 4 times in 15 under load)."""
     started = [0]
     mu = threading.Lock()
+    a_released, b_done = threading.Event(), threading.Event()
 
     def drain():
         with mu:
-            running[0] += 1
             started[0] += 1
-            most[0] = max(most[0], running[0])
-        time.sleep(0.3)
-        with mu:
-            running[0] -= 1
         return {"busy": 0}
 
     class YieldingLock:
@@ -1847,19 +1844,28 @@ def test_the_in_flight_flag_is_claimed_under_the_lock_that_made_the_cadence_chec
         def __exit__(self, *exc):
             self._l.release()
             if threading.current_thread().name == "A":
-                time.sleep(0.03)  # A yields right after it let go of the lock
+                a_released.set()  # A has let go of the lock ...
+                assert b_done.wait(10)  # ... and does not go on until B has made its attempt
 
     g = _engaged("wal")
     g._drain = drain
     g._lock = YieldingLock()
+
+    def run_b():
+        try:
+            assert a_released.wait(10)
+            g.drain_if_due()
+        finally:
+            b_done.set()
+
     a = threading.Thread(target=g.drain_if_due, name="A")
-    b = threading.Thread(target=g.drain_if_due, name="B")
+    b = threading.Thread(target=run_b, name="B")
     a.start()
-    time.sleep(0.01)
     b.start()
-    a.join(10)
-    b.join(10)
-    assert started[0] == 1 and most[0] == 1, "a second drain started between the checks and the claim"
+    a.join(20)
+    b.join(20)
+    assert not a.is_alive() and not b.is_alive()
+    assert started[0] == 1, "a second drain started between the checks and the claim"
 
 
 def test_stop_waits_for_both_threads_within_one_budget_not_one_budget_each(monkeypatch):
@@ -1885,10 +1891,11 @@ def test_stop_waits_for_both_threads_within_one_budget_not_one_budget_each(monke
         drn.join(5)
 
 
-def test_the_shutdown_wait_neither_skips_the_drain_nor_hangs_on_it():
-    """The real constant, not the shrunk one the tests above use: a checkpoint of a small log must
-    have room to finish (a millisecond-short wait disposes the engine under it), and a drain
-    waiting for the pool or the write gate must not hold shutdown for more than a few seconds."""
+def test_the_shutdown_wait_constant_is_within_the_bounds_it_was_chosen_for():
+    """The real constant, not the shrunk one the tests above use: a number pin, nothing more (the
+    behaviour is pinned by the two tests above). A checkpoint of a small log must have room to
+    finish (a millisecond-short wait disposes the engine under it), and a drain waiting for the pool
+    or the write gate must not hold shutdown for more than a few seconds."""
     assert 1.0 <= storage_guard.STOP_JOIN_S <= 5.0
 
 
@@ -2267,7 +2274,7 @@ def test_the_engine_hook_and_the_read_engine_registration_exist():
         "the global engine must carry the full-disk listener (a substring check would pass "
         "with the decorator removed)"
     )
-    assert "_pool_watch.register(eng)" in _src("src/database/read_snapshot.py")
+    assert '_pool_watch.register(eng, label="read_snapshot")' in _src("src/database/read_snapshot.py")
 
 
 # --------------------------------------------------------------------------- #
@@ -2632,3 +2639,33 @@ def test_the_stop_check_and_the_publishing_of_the_drain_thread_are_one_step_unde
     assert not sup.is_alive()
     assert storage_guard._DRAIN_THREAD is None and ran == [], "no drain thread was started after the stop"
 
+
+
+def test_a_failure_of_the_unsupervised_path_is_a_warning_and_a_repeat_is_not(monkeypatch, caplog):
+    """The coordinator's check of #1287 (nit 9) and the Opus read of #1289: the unsupervised twin
+    of the background drain logged at DEBUG, so an exception escaping it stayed silent; and a
+    failure that repeats every tick must not write a traceback per tick into the 2,000-record error
+    ring (the pin report has the same once-per-change rule)."""
+    import logging
+
+    g = _engaged("wal")
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: False)
+
+    def boom():
+        raise RuntimeError("outside the drain")
+
+    monkeypatch.setattr(g, "drain_if_due", boom)
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        g.poll_and_drain_unsupervised()  # must not raise
+        g.poll_and_drain_unsupervised()
+        g.poll_and_drain_unsupervised()
+    warns = [r for r in caplog.records if r.levelno == logging.WARNING and "unsupervised poll failed" in r.getMessage()]
+    assert len(warns) == 1, "the first failure is loud, the repeats are not"
+    assert warns[0].exc_info is not None, "the first carries its traceback"
+    assert sum("failed again" in r.getMessage() for r in caplog.records) == 2
+    # a DIFFERENT failure is news again
+    monkeypatch.setattr(g, "drain_if_due", lambda: (_ for _ in ()).throw(ValueError("something else")))
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        g.poll_and_drain_unsupervised()
+    assert any(r.levelno == logging.WARNING for r in caplog.records)

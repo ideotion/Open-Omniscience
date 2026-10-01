@@ -178,12 +178,15 @@ def test_the_scheduler_measures_the_tail_at_the_end_of_a_pass_that_was_in_flight
         reading.update(disk_free_bytes=700 * MIB)
         return {"ok": True}
 
-    # the scheduler's monotonic start is the REAL clock; line the injected clock up with it
-    monkeypatch.setattr(runner.time, "monotonic", lambda: clock.t)
+    # the scheduler's monotonic start is the REAL clock; line the injected clock up with it.
+    # ``runner.time`` IS the ``time`` module, so the patch is process-wide: scope it to the one
+    # call that needs it (the coordinator's check of #1289), never the rest of the test.
     sched = runner.BackgroundScheduler(
         run_once_fn=one_pass, settings_provider=lambda: SchedulerSettings(continuous=False)
     )
-    sched._do_run()
+    with monkeypatch.context() as scoped:
+        scoped.setattr(runner.time, "monotonic", lambda: clock.t)
+        sched._do_run()
     tail = g.state()["last_tail"]
     assert tail is not None and tail["drive_free_drop_bytes"] == 100 * MIB
 

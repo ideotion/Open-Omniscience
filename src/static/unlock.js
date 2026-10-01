@@ -356,7 +356,7 @@
     function recoveryLines(p) {
       if (!p || !p.active) return [];
       const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s);
-      const lines = [TF("Applying {size} of writes the last session had not yet moved into your database. Nothing is downloaded.",
+      const lines = [TF("Applying up to {size} of writes the last session had not yet moved into your database. Nothing is downloaded.",
         { size: _recSize(p.wal_bytes) })];
       const b = p.basis;
       if (p.eta_s != null && b && Number(b.wal_bytes) > 0 && Number(b.seconds) > 0) {

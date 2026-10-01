@@ -4,8 +4,10 @@
 //
 // The activity poll is answered from the last good preview (it never waits on the database
 // pool), so a preview that is not fresh must SAY so, with its age: nothing while fresh, a
-// "being computed" line when nothing exists yet for the current settings, a refresh line
-// while it ages, and a plain warning once the last refresh has not completed.
+// "being computed" line when nothing exists yet for the current settings, nothing again while it
+// is merely between refresh cycles (the poll that finds it older than 15 s starts the refresh, so
+// a note there would flicker on a healthy machine), a refresh line once it has aged past the
+// stale line, and a plain warning once the last refresh has not completed.
 
 "use strict";
 
@@ -54,9 +56,19 @@ for (const [ui, draw] of Object.entries(render)) {
   check(ui + ": nothing computed yet for these settings says so", () => {
     assert.ok(draw({ state: "computing", age_s: null }).includes("The next-pass preview is being computed."));
   });
-  check(ui + ": an ageing preview names its age and the background refresh", () => {
-    const h = draw({ state: "refreshing", age_s: 22, stale: false });
-    assert.ok(h.includes("This preview is ~22 s old and is being refreshed in the background."), h);
+  check(ui + ": a computation that keeps failing says so, not 'being computed' for ever", () => {
+    const h = draw({ state: "computing", age_s: null, refresh_error: { type: "TimeoutError" } });
+    assert.ok(h.includes("could not be computed: the last attempt failed"), h);
+    assert.ok(!h.includes("is being computed"), h);
+  });
+  check(ui + ": a preview between refresh cycles says nothing (no flicker on a healthy machine)", () => {
+    assert.strictEqual(draw({ state: "refreshing", age_s: 22, stale: false }), "");
+    assert.strictEqual(draw({ state: "refreshing", age_s: 59.9, stale: false }), "");
+    assert.strictEqual(draw({ state: "stale", age_s: 30, stale: false }), "");
+  });
+  check(ui + ": an ageing preview past the stale line names its age and the background refresh", () => {
+    const h = draw({ state: "refreshing", age_s: 75, stale: true });
+    assert.ok(h.includes("This preview is ~75 s old and is being refreshed in the background."), h);
   });
   check(ui + ": a preview whose refresh has not completed says the figures may no longer be true", () => {
     const h = draw({ state: "stale", age_s: 130, stale: true });
@@ -66,15 +78,25 @@ for (const [ui, draw] of Object.entries(render)) {
     assert.ok(e.includes("has not completed"), "a recorded refresh failure reads as not completed: " + e);
   });
   check(ui + ": no placeholder survives", () => {
-    for (const p of [{ state: "refreshing", age_s: 22 }, { state: "stale", age_s: 90, stale: true }]) {
+    for (const p of [{ state: "refreshing", age_s: 75, stale: true }, { state: "stale", age_s: 90, stale: true }]) {
       assert.ok(!/\{\w+\}/.test(draw(p)), draw(p));
     }
   });
 }
 
+check("the queue panels say 'computing' too, not only when there are targets to list", () => {
+  // The note used to sit inside `if (ups.length)`, which a not-yet-computed preview (no
+  // next_targets) never enters, so the Queue panel drew nothing while Next pass said "computing".
+  for (const [name, src] of [["the app", APP], ["/tasks", TM]]) {
+    assert.ok(/else if \(plan\.state === "computing"\)\s*\{[\s\S]{0,400}?Up next this pass[\s\S]{0,120}?[pP]lanNoteHtml\(plan/.test(src),
+      name + ": the queue panel has no 'computing' branch");
+  }
+});
+
 check("every sentence is a locale key", () => {
   for (const k of [
     "The next-pass preview is being computed.",
+    "The next-pass preview could not be computed: the last attempt failed. It is tried again at the next refresh.",
     "This preview is {age} old and is being refreshed in the background.",
     "This preview is {age} old: the last refresh has not completed, so the figures may no longer be true.",
   ]) {

@@ -235,3 +235,19 @@ def test_the_preview_label_runs_as_real_code_under_node_in_both_uis():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "all checks ok" in proc.stdout
+
+
+def test_nothing_ever_computed_and_a_failing_refresh_is_computing_with_the_error():
+    """The coordinator's check of #1289 (S2c): the payload keeps both facts so the page can say the
+    attempts are failing (``state == "computing"`` alone reads as "wait a moment" for ever)."""
+    cache = PlanPreviewCache(clock=Clock())
+
+    def broken():
+        raise RuntimeError("QueuePool limit of size 12 overflow 0 reached")
+
+    cache.get(S, broken)
+    _settled(cache)
+    out = cache.get(S, broken)
+    assert out["state"] == "computing" and out["as_of"] is None and out["age_s"] is None
+    assert out["refresh_error"]["type"] == "RuntimeError"
+    assert "planned_total" not in out
