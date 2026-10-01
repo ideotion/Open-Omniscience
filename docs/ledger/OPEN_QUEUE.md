@@ -117,6 +117,19 @@
   keyword-growth member are not changed here and are not yet re-measured; the digest's real memory on the operator's own
   instance is unmeasured until their next FULL bundle; a page >= 2 of a capped, clamped window reports `continue_with: null`
   because there is no single `per_lang` that continues it.
+  (8) **THE WITNESSES (plan item 2, no behaviour change; diagnostics 2026-09-30, B4, B19 and rank 4):** (a) a gated bundle
+  member records what the gate read, whether it ran or was declined (`gate`: total, available, floor and need in MiB, whether
+  the need was estimated from the instance's own counts or is the static constant, and when it read the machine), because the
+  last sample in a run's own pressure log is not the one the gate read; (b) a run that died leaves its journal, and the next
+  bundle carries it as a small member (each line marked `previous_run`, newest ten, read and folded under byte, line and
+  character bounds, the rest named in the manifest), so the member running at the kill is no longer lost; (c) `rss_peak_rise_kb`
+  is ABSENT, with the reason, when the process's high-water mark did not move (it never falls, so a member smaller than the
+  peak already set read 0, and a 0 reads as "allocated nothing"), beside `rss_delta_kb` and `rss_peak_rise_at_most_kb` (an
+  upper bound, never a measurement), and `rss_peak_above_start_kb` where the mark moved; (d) the crash witnesses time-stamp
+  `avail_min_mb` and the other lifetime marks, show RSS and swapped-out pages apart (the "96.6 %" summed them), and the kernel
+  and userspace journal readers now read journalctl's "not seeing messages from other users" notice the same way, so one
+  unreadable journal no longer produces "the kernel log was read, no OOM" beside "this user cannot read the journal". The
+  R27/R28 wording and the gate's decisions are untouched: this only records what the next bundle needs to answer.
 
 - **THE OLDER-ROUNDS LIST, ANSWERED IN THE THREAD (2026-09-30 03:35 UTC; recorded the same turn; `PF07`, `PF08`,
   `PF10`, `PF11`, `D44`, `D45`, `D46` on their own rows, `R99`, `R100`).** Ten still-live questions from the

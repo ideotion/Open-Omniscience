@@ -1111,3 +1111,392 @@ def test_glibc_reports_heap_in_use_and_free_but_held():
         pytest.skip("not glibc 2.33+ (musl, or an older glibc)")
     assert got["heap_in_use_mb"] > 0
     assert got["heap_free_held_mb"] >= 0
+
+
+# --------------------------------------------------------------------------- #
+#  The two journal witnesses agree (field diagnostics 2026-09-30, rank 4)
+# --------------------------------------------------------------------------- #
+
+_NO_ACCESS = (
+    "-- No entries --\n"
+    "Hint: You are currently not seeing messages from other users and the system.\n"
+    "      Users in groups 'adm', 'systemd-journal' can see all messages.\n"
+    "      Pass -q to turn off this notice.\n"
+)
+
+
+def _same_journal_for_both_readers(monkeypatch, text: str) -> None:
+    """The field setup: ONE journal, one user, both readers."""
+    monkeypatch.setattr(ee, "_run", lambda cmd: (0, text))
+    monkeypatch.setattr(kernel_log, "_run", lambda cmd: (0, text))
+    monkeypatch.setattr(ee.shutil, "which", lambda _n: "/usr/bin/journalctl")
+    monkeypatch.setattr(kernel_log.shutil, "which", lambda _n: "/usr/bin/journalctl")
+    monkeypatch.delenv("OO_NO_KERNEL_LOG", raising=False)
+
+
+def test_an_unreadable_journal_reads_the_same_to_the_kernel_and_the_userspace_witness(monkeypatch):
+    """THE DEFECT, on 10 of 10 field pairs: journalctl's own notice ("not seeing messages from
+    other users and the system") was counted as a KERNEL LINE, so the kernel witness said "the
+    kernel log was read ... rules out an OOM kill" while the userspace witness, reading the very
+    same journal, said "this user cannot read the system journal". One journal, one verdict."""
+    _same_journal_for_both_readers(monkeypatch, _NO_ACCESS)
+    kernel = kernel_log.read_kernel_evidence(216352)
+    killers = ee.read_userspace_killers(216352)
+    assert killers["verdict"] == "no-journal"
+    assert kernel["verdict"] == "no-journal", (
+        "the notice is journalctl talking; counting it made an unreadable journal look read"
+    )
+    assert "rules out" not in kernel["reason"]
+    assert "cannot read the system journal" in kernel["reason"]
+    assert kernel.get("permission_note")
+
+
+def test_the_hint_block_is_not_a_kernel_line_but_the_line_after_it_is():
+    text = _NO_ACCESS + "Sep 02 09:00:00 box kernel: Linux version 6.1.0\n"
+    assert kernel_log._kernel_lines(text) == ["Sep 02 09:00:00 box kernel: Linux version 6.1.0"]
+    assert kernel_log._kernel_lines(_NO_ACCESS) == []
+    # An indented line NOT under a hint is still a line (the rule is the block, not the indent).
+    assert kernel_log._kernel_lines("  indented real line") == ["indented real line"]
+
+
+def test_nothing_printed_beside_the_notice_counts_as_the_kernels_log(monkeypatch):
+    """journalctl said it is hiding the system's messages from this user: whatever else came back
+    with that sentence is not the system journal, so BOTH readers call the journal unread -- the
+    kernel reader used to call it "partially read" (and so ruled out an OOM kill) while the
+    userspace reader, reading the same text, called it unreadable. One rule, one answer."""
+    noise = "Sep 02 09:00:00 box kernel: Linux version 6.1.0\nSep 02 09:00:01 box kernel: ACPI: x\n"
+    _same_journal_for_both_readers(monkeypatch, noise + _NO_ACCESS)
+    kernel = kernel_log.read_kernel_evidence(216352)
+    killers = ee.read_userspace_killers(216352)
+    assert kernel["verdict"] == killers["verdict"] == "no-journal"
+    assert "rules out" not in kernel["reason"]
+    assert any("cannot read the system journal" in u for u in kernel["unread"])
+    assert kernel["lines"] == []
+
+
+def test_an_older_journalctl_header_beside_the_notice_is_not_a_kernel_line_either(monkeypatch):
+    """Older systemd prints a header line first (`-- Logs begin at ... --`). The deny-list of
+    banners did not know it, so it survived as the "one real line" that turned an unreadable
+    journal into a read one -- the same defect through a different sentence."""
+    older = (
+        "-- Logs begin at Mon 2026-09-28 06:00:01 UTC, end at Wed 2026-09-30 23:40:00 UTC. --\n"
+        "-- No entries --\n" + _NO_ACCESS
+    )
+    _same_journal_for_both_readers(monkeypatch, older)
+    assert kernel_log.read_kernel_evidence(216352)["verdict"] == "no-journal"
+    assert ee.read_userspace_killers(216352)["verdict"] == "no-journal"
+
+
+def test_journalctl_separators_are_not_kernel_lines_but_a_line_that_resembles_one_is():
+    headers = [
+        "-- Logs begin at Mon 2026-09-28 06:00:01 UTC, end at Wed 2026-09-30 23:40:00 UTC. --",
+        "-- Journal begins at Mon 2026-09-28 06:00:01 UTC. --",
+        "-- Boot 6f1c0e0a7b9f4b6f --",
+        "-- Reboot --",
+    ]
+    assert kernel_log._kernel_lines("\n".join(headers)) == []
+    keep = ["-- oops, a message that does not end like a banner", "kernel: -- x -- y", "ends with a dash --"]
+    assert kernel_log._kernel_lines("\n".join(keep)) == keep
+
+
+def test_no_journal_files_is_unread_for_both_witnesses_and_is_not_blamed_on_a_group(monkeypatch):
+    """Measured: `journalctl -k -b 0` as a user with no readable journal prints `No journal files
+    were found.` and `-- No entries --` and exits 0. The userspace reader called that "the journal
+    was read ... rules out a kill they LOGGED", and the combined account blamed group membership
+    for it, when the cause is that there were no files."""
+    text = "No journal files were found.\n-- No entries --\n"
+    _same_journal_for_both_readers(monkeypatch, text)
+    monkeypatch.setattr(kernel_log, "_in_journal_group", lambda: False)
+    kernel = kernel_log.read_kernel_evidence(216352)
+    killers = ee.read_userspace_killers(216352)
+    assert kernel["verdict"] == killers["verdict"] == "no-journal"
+    assert "rules out" not in killers.get("reason", "")
+    assert "no journal file" in killers["reason"]
+    assert "permission_note" not in kernel, "group membership is not the evidence here"
+    said = ee.how_it_ended(launcher=None, trace=None, killers=killers, kernel=kernel)
+    assert "'adm' or 'systemd-journal'" not in said["summary"]
+    assert "neither the kernel log nor the memory killers' log was read" in said["summary"]
+
+
+def test_the_permission_gap_is_named_when_the_notice_was_seen_whatever_the_groups(monkeypatch):
+    _same_journal_for_both_readers(monkeypatch, _NO_ACCESS)
+    monkeypatch.setattr(kernel_log, "_in_journal_group", lambda: True)  # the groups say "allowed"
+    kernel = kernel_log.read_kernel_evidence(216352)
+    assert kernel["verdict"] == "no-journal" and kernel.get("permission_note"), (
+        "journalctl's own sentence outranks a guess from the group list"
+    )
+
+
+def test_a_failed_read_from_a_user_outside_the_groups_still_names_the_permission_gap(monkeypatch):
+    monkeypatch.setattr(kernel_log, "_run", lambda cmd: (1, ""))
+    monkeypatch.setattr(kernel_log.shutil, "which", lambda _n: "/usr/bin/journalctl")
+    monkeypatch.setattr(kernel_log, "_in_journal_group", lambda: False)
+    monkeypatch.delenv("OO_NO_KERNEL_LOG", raising=False)
+    assert kernel_log.read_kernel_evidence(216352).get("permission_note")
+    monkeypatch.setattr(kernel_log, "_in_journal_group", lambda: True)
+    assert "permission_note" not in kernel_log.read_kernel_evidence(216352)
+
+
+def test_root_and_a_primary_group_count_as_able_to_read_the_journal(monkeypatch):
+    import grp
+    import types
+
+    names = {0: "root", 4: "adm", 1000: "plain"}
+    monkeypatch.setattr(grp, "getgrgid", lambda g: types.SimpleNamespace(gr_name=names[g]))
+    monkeypatch.setattr(kernel_log.os, "getgroups", lambda: [])  # root's list is often empty
+    # Root whose primary group is NOT a journal group: only the root rule can say yes here (the
+    # test box runs as root with egid 0, which would answer through the "root" GROUP otherwise).
+    monkeypatch.setattr(kernel_log.os, "getegid", lambda: 1000)
+    monkeypatch.setattr(kernel_log.os, "geteuid", lambda: 0)
+    assert kernel_log._in_journal_group() is True
+    monkeypatch.setattr(kernel_log.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(kernel_log.os, "getegid", lambda: 4)  # adm as the PRIMARY group
+    assert kernel_log._in_journal_group() is True
+    monkeypatch.setattr(kernel_log.os, "getegid", lambda: 1000)
+    assert kernel_log._in_journal_group() is False
+    monkeypatch.setattr(kernel_log.os, "getgroups", lambda: [4])  # adm as a supplementary group
+    assert kernel_log._in_journal_group() is True
+
+
+def test_why_unread_names_the_group_gap_only_on_evidence_of_it():
+    group = "this user is not in 'adm' or 'systemd-journal'"
+    assert ee._why_unread({"permission_note": "x", "reason": "r"}) == group
+    # The userspace witness carries no permission_note: its own words are the evidence.
+    assert ee._why_unread({"reason": "this user cannot read the system journal (not in 'adm')"}) == group
+    assert ee._why_unread({"reason": f"x {ee._HINT_NO_ACCESS} y"}) == group
+    assert ee._why_unread({"reason": "journalctl exited 1"}) == "journalctl exited 1"
+    assert ee._why_unread({"verdict": "no-journal"}) == "no reason recorded"
+    assert ee._why_unread(None, {"reason": "second witness"}) == "second witness"
+    # A group note anywhere wins over an earlier witness's plain reason.
+    assert ee._why_unread({"reason": "journalctl exited 1"}, {"permission_note": "x"}) == group
+    assert len(ee._why_unread({"reason": "q" * 500})) == 160
+
+
+def test_an_opted_out_read_is_a_gap_in_the_account_never_an_absence():
+    got = ee.how_it_ended(
+        launcher=None, trace=None, killers={"verdict": "no-userspace-evidence"},
+        kernel={"verdict": "disabled", "reason": "OO_NO_KERNEL_LOG=1 — the operator opted out"},
+    )
+    assert "the kernel log was not read (OO_NO_KERNEL_LOG=1" in got["summary"]
+    assert "no journal line from a memory killer or the kernel" not in got["summary"]
+
+
+def test_a_readable_empty_kernel_log_still_reads_as_looked_and_found_nothing(monkeypatch):
+    """The fix must not turn every clean read into a failure: no notice, real lines, no match."""
+    noise = "Sep 02 09:00:00 box kernel: Linux version 6.1.0\n"
+    _same_journal_for_both_readers(monkeypatch, noise)
+    got = kernel_log.read_kernel_evidence(216352)
+    assert got["verdict"] == "no-kernel-evidence" and "unread" not in got
+    assert "user-space memory killer" in got["reason"], "the scope of what it rules out is stated"
+
+
+def test_the_combined_account_says_once_that_neither_journal_could_be_read():
+    both = ee.how_it_ended(
+        launcher={"signal": "SIGKILL", "status": 137}, trace=None,
+        killers={"verdict": "no-journal", "reason": "this user cannot read the system journal"},
+        kernel={"verdict": "no-journal", "permission_note": "neither group"},
+    )
+    assert both["known"] is True
+    s = both["summary"]
+    assert "the launcher saw it end by SIGKILL" in s
+    assert s.count("neither the kernel log nor the memory killers' log was read") == 1
+    assert "'adm' or 'systemd-journal'" in s and "not evidence that nothing killed it" in s
+    assert "rules out" not in s
+
+    nothing = ee.how_it_ended(
+        launcher=None, trace=None,
+        killers={"verdict": "no-journal", "reason": "journalctl exited 1"},
+        kernel={"verdict": "no-journal", "reason": "journalctl exited 1"},
+    )
+    assert nothing["known"] is False, "a gap in the witnesses is not a witness"
+    assert nothing["summary"].startswith("no witness named how it ended")
+    assert "neither the kernel log nor the memory killers' log was read" in nothing["summary"]
+    assert "journalctl exited 1" in nothing["summary"]
+
+
+def test_one_blind_witness_is_named_and_the_other_is_not_blamed():
+    only_kernel = ee.how_it_ended(
+        launcher=None, trace=None, killers={"verdict": "no-userspace-evidence"},
+        kernel={"verdict": "no-journalctl", "reason": "journalctl is not installed"},
+    )
+    assert "the kernel log was not read (journalctl is not installed)" in only_kernel["summary"]
+    assert "memory killers' log was not" not in only_kernel["summary"]
+    only_killers = ee.how_it_ended(
+        launcher=None, trace=None, killers={"verdict": "no-journal", "reason": "journalctl exited 1"},
+        kernel={"verdict": "no-kernel-evidence"},
+    )
+    assert "the memory killers' log was not read (journalctl exited 1)" in only_killers["summary"]
+    assert "the kernel log was not" not in only_killers["summary"]
+
+
+def test_two_readable_journals_keep_the_old_summary_word_for_word():
+    """Nothing changes where both witnesses looked."""
+    got = ee.how_it_ended(
+        launcher=None, trace=None, killers={"verdict": "no-userspace-evidence"},
+        kernel={"verdict": "no-kernel-evidence"},
+    )
+    assert got["summary"] == (
+        "no witness named how it ended: no launcher record, no journal line from a memory "
+        "killer or the kernel, and no crash trace"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  The lifetime marks say WHEN, and RSS and swap are never one number
+# --------------------------------------------------------------------------- #
+
+
+def _prev_peaks_text(peaks: dict) -> str:
+    return forensics.render_text({"previous_session": {
+        "previous_session": "unclean-end", "previous_session_peaks": {"available": True, **peaks},
+    }})
+
+
+def test_each_lifetime_mark_carries_the_time_of_the_reading_that_set_it(monkeypatch):
+    """The 138.7 MB minimum of the 2026-09-29 crash had no time, so it could not be set beside
+    the burst or a snapshot (the lowest kept snapshot read 272.7 MB). The stamp is the time of the
+    READING that set the mark: taken the moment it was read, not when the mark was stored, because
+    the heap and thread walks between the two are slowest when memory is short (the second review
+    measured one reading dated five seconds apart in the snapshot and in the mark). It moves only
+    when the mark does."""
+    session_hwm.reset_for_tests()
+    clock = {"t": "unset"}
+    scripted = {
+        "R1": {"rss_mb": 1000.0, "avail_mb": 500.0, "swap_used_mb": 10.0},
+        "R2": {"rss_mb": 900.0, "avail_mb": 300.0, "swap_used_mb": 5.0},    # only avail's minimum moves
+        "R3": {"rss_mb": 1500.0, "avail_mb": 400.0, "swap_used_mb": 50.0},  # rss and swap maxima move
+    }
+    order = iter(scripted)
+
+    def _read() -> dict:
+        key = next(order)
+        clock["t"] = f"{key}-read"  # the instant of the reading
+        return dict(scripted[key])
+
+    def _slow_walk(walk_heap: bool = False) -> dict:
+        clock["t"] = clock["t"].replace("-read", "-LATE")  # the walk takes seconds, the clock moves
+        return {}
+
+    monkeypatch.setattr(session_hwm, "_readings", _read)
+    monkeypatch.setattr(session_hwm, "_now", lambda: clock["t"])
+    monkeypatch.setattr(session_hwm, "composition", _slow_walk)
+    monkeypatch.setattr(session_hwm, "_MIN_COMPOSITION_INTERVAL_S", 0)  # compose at every new peak
+    for _ in range(3):
+        session_hwm.observe()
+    marks = session_hwm.current()
+    assert marks["avail_min_mb"] == 300.0 and marks["avail_min_at"] == "R2-read", (
+        "the minimum was set by the SECOND reading and carries its time, not the first's and not the latest"
+    )
+    assert marks["rss_max_mb"] == 1500.0 and marks["rss_max_at"] == "R3-read", "not R3-LATE: the walk ran after"
+    assert marks["swap_used_max_mb"] == 50.0 and marks["swap_used_max_at"] == "R3-read"
+    assert marks["at_peak"]["at"] == "R3-read", "the composition is dated by its reading too"
+    session_hwm.reset_for_tests()
+
+
+def test_the_pressure_snapshot_carries_the_time_it_is_given():
+    snap = session_hwm._pressure_snapshot({"avail_mb": 100.0, "total_mb": 4000.0}, "memory short", "T-READ")
+    assert snap["at"] == "T-READ" and snap["why"] == "memory short"
+    assert session_hwm._pressure_snapshot({"avail_mb": 1.0}, "allocation burst")["at"], "no stamp given: now"
+
+
+def test_the_ledgers_end_record_carries_the_times_of_the_previous_peaks(tmp_path, monkeypatch):
+    from src.monitoring import session_history as sh
+
+    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev: {
+        "rss_max_mb": 3118.9, "rss_max_at": "2026-09-29T23:21:27+00:00",
+        "avail_min_mb": 138.7, "avail_min_at": "2026-09-29T23:03:10+00:00",
+        "swap_used_max_mb": 1024.0, "swap_used_max_at": "2026-09-29T22:28:21+00:00",
+        "phase": "import", "last_ts": "2026-09-29T23:30:00+00:00",
+    })
+    monkeypatch.setattr(sh, "_append", lambda rec: None)
+    src = sh.__file__
+    assert src  # the function under test is module-private; drive it through its public caller below
+    end = sh._seed_pre_ledger({"state": "running", "started_at": "2026-09-29T22:00:00+00:00", "pid": 1})
+    peaks = (end or {}).get("previous_peaks") or {}
+    assert peaks.get("avail_min_at") == "2026-09-29T23:03:10+00:00", (
+        "the chronology shows these beside dated events; a minimum with no time cannot be placed"
+    )
+    assert peaks["rss_max_at"] == "2026-09-29T23:21:27+00:00"
+    assert peaks["swap_used_max_at"] == "2026-09-29T22:28:21+00:00" and peaks["phase"] == "import"
+    assert "last_ts" not in peaks
+
+
+def test_a_mark_that_was_never_measured_has_no_time_either(monkeypatch):
+    session_hwm.reset_for_tests()
+    monkeypatch.setattr(session_hwm, "_readings", lambda: {"rss_mb": 800.0})
+    monkeypatch.setattr(session_hwm, "composition", lambda walk_heap=False: {})
+    session_hwm.observe()
+    marks = session_hwm.current()
+    assert "rss_max_at" in marks
+    assert "avail_min_mb" not in marks and "avail_min_at" not in marks
+    assert "swap_used_max_mb" not in marks and "swap_used_max_at" not in marks
+    session_hwm.reset_for_tests()
+
+
+def test_the_text_places_the_minimum_in_time_and_beside_the_lowest_kept_snapshot():
+    txt = _prev_peaks_text({
+        "rss_max_mb": 3118.9, "rss_max_at": "2026-09-29T23:21:27+00:00",
+        "avail_min_mb": 138.7, "avail_min_at": "2026-09-29T23:03:10+00:00",
+        "swap_used_max_mb": 1024.0, "swap_used_max_at": "2026-09-29T22:28:21+00:00",
+        "pressure": [
+            {"at": "2026-09-29T22:28:41+00:00", "avail_mb": 272.7, "why": "memory short"},
+            {"at": "2026-09-29T23:20:26+00:00", "avail_mb": 382.0, "why": "allocation burst"},
+        ],
+    })
+    assert "- peak RSS: 3118.9 MB at 2026-09-29T23:21:27+00:00" in txt
+    assert "- minimum available memory: 138.7 MB at 2026-09-29T23:03:10+00:00" in txt
+    assert "- peak swap used: 1024.0 MB at 2026-09-29T22:28:21+00:00" in txt
+    assert "lowest available memory inside the kept snapshots below: 272.7 MB at 2026-09-29T22:28:41+00:00" in txt
+    assert "may not be among them" in txt
+
+
+def test_a_record_from_a_build_that_did_not_stamp_says_so_rather_than_implying_the_end():
+    txt = _prev_peaks_text({"rss_max_mb": 2112.0, "avail_min_mb": 88.0})
+    assert "- minimum available memory: 88.0 MB (time not recorded: a record from a build that did not stamp it)" in txt
+    assert "lowest available memory inside the kept snapshots" not in txt, "no snapshots, no line"
+
+
+def test_rss_and_swapped_out_are_listed_apart_with_their_own_shares_and_never_summed():
+    """The field analysis wrote "footprint 96.6%": 3,118.9 MB RSS plus 671.9 MB swapped out over
+    3,924.7 MB. RSS alone was 79.5%; a swapped-out page has left RAM."""
+    txt = _prev_peaks_text({
+        "rss_max_mb": 3118.9,
+        "at_peak": {"rss_mb": 3118.9, "swapped_out_mb": 671.9, "total_mb": 3924.7,
+                    "rss_anon_mb": 3100.1, "at": "2026-09-29T23:21:27+00:00"},
+    })
+    assert "at that peak: RSS 3118.9 MB (79.5% of 3924.7 MB of RAM); separately, 671.9 MB swapped out -- kept apart" in txt
+    assert "never added into one footprint" in txt
+    assert "96.6" not in txt, "the sum must not be offered as a number"
+    # Swapped-out pages have LEFT RAM, so they get no "% of RAM": 79.5% + 17.1% invites the very
+    # 96.6% sum this line forbids.
+    assert "17.1" not in txt
+
+
+def test_without_the_machines_total_the_two_are_still_apart_and_no_share_is_invented():
+    txt = _prev_peaks_text({"at_peak": {"rss_mb": 3118.9, "swapped_out_mb": 671.9, "at": "t"}})
+    assert "at that peak: RSS 3118.9 MB; separately, 671.9 MB swapped out -- kept apart" in txt
+    assert "% of" not in txt.split("at that peak:")[1].splitlines()[0]
+
+
+def test_the_peak_composition_records_the_machines_total_beside_rss_and_swap(monkeypatch):
+    session_hwm.reset_for_tests()
+    monkeypatch.setattr(session_hwm, "_readings", lambda: {"rss_mb": 900.0, "total_mb": 3924.7, "avail_mb": 1000.0})
+    monkeypatch.setattr(session_hwm, "composition", lambda walk_heap=False: {"swapped_out_mb": 12.0})
+    session_hwm.observe()
+    at_peak = session_hwm.current()["at_peak"]
+    assert at_peak["rss_mb"] == 900.0 and at_peak["total_mb"] == 3924.7 and at_peak["swapped_out_mb"] == 12.0
+    session_hwm.reset_for_tests()
+
+
+def test_a_record_with_non_numeric_figures_renders_instead_of_raising():
+    """A forensic read degrades, never fails: the previous session's file can hold anything."""
+    txt = _prev_peaks_text({"at_peak": {"rss_mb": "lots", "swapped_out_mb": 5, "total_mb": 4000.0, "at": "t"}})
+    assert "at that peak:" not in txt, "no RSS number, so no RSS-and-swap line"
+    txt = _prev_peaks_text({"at_peak": {"rss_mb": 900.0, "swapped_out_mb": "x", "total_mb": "y", "at": "t"}})
+    assert "at that peak: RSS 900.0 MB; separately, x MB swapped out" in txt and "% of" not in txt
+
+
+def test_a_kept_snapshot_with_no_time_says_so_rather_than_printing_none():
+    txt = _prev_peaks_text({"avail_min_mb": 50.0, "pressure": [{"avail_mb": 60.0, "why": "memory short"}]})
+    assert "lowest available memory inside the kept snapshots below: 60.0 MB at a time that was not recorded" in txt
+    assert "at None" not in txt

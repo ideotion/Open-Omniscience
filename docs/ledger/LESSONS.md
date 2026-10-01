@@ -13143,3 +13143,18 @@ the change.** `insights._detachable` now gates the detach on a queue pool or a n
 probe in production is a `ReservingQueuePool`, and every other engine the app builds is a queue or null pool too, so
 production behaviour is unchanged); `tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its
 tables; the five pool classes answer as expected) and each mutant (always detach; allow `StaticPool`) fails them.
+
+### A HIGH-WATER MARK THAT DID NOT MOVE IS NOT "NO RISE", AND A READING THE GATE TOOK MUST BE KEPT WITH THE DECISION IT MADE (export witnesses, 2026-10-01, `bundle.py` and `src/monitoring/`)
+
+Three field findings had one shape: a record that could not say what it was asked. `ru_maxrss` never falls, so a bundle
+member smaller than the peak already set (the collector's, or an earlier member's) leaves no trace in it, and eleven paused
+exports read `rss_peak_rise_kb: 0`, which a reader takes as "allocated nothing". The record now leaves the number ABSENT with
+the reason and gives the two readings that CAN be made (the resident set's net change, and an upper bound on the peak above
+the start), because an honest gap is read as a gap and a zero is read as a measurement. The same applies to the gate: a
+decision ("declined", or silence) cannot be checked afterwards, and the last sample in the run's own log is not the one the
+gate read (6,907.7 MiB against the 6,773.0 it acted on), so the reading is stored beside the decision for a member that ran
+as well as for one that did not. And two witnesses of the SAME journal with the SAME permissions must not disagree: one counted
+journalctl's own "not seeing messages from other users" notice as a kernel line and said "read, rules out an OOM kill" beside
+the other's "this user cannot read the journal" on ten of ten pairs; the constant is now shared, and a witness that could not
+look is a gap in the evidence, never evidence of absence. A lifetime minimum or maximum also carries the time of its reading,
+taken at the moment it was read (the slow walks that follow are slowest exactly when memory is short).

@@ -168,6 +168,30 @@ def test_an_unreadable_scheduler_degrades_loudly_and_never_loses_the_bundle(monk
     assert results[0]["outcome"] == "ok"
 
 
+def test_a_failure_inside_the_bundle_propagates_as_itself_not_as_a_failed_claim(
+    clean_window, caplog
+):
+    """THE PRE-EXISTING DEFECT the second review found: the ``yield`` sat inside the claim's
+    ``try``, so an exception raised by the bundle's own body was caught, logged as "could not claim
+    the machine" and turned into ``RuntimeError: generator didn't stop after throw()``. Whatever
+    actually went wrong was hidden in every in-body failure."""
+    with caplog.at_level("WARNING"), pytest.raises(KeyError, match="the real cause"):
+        with d._bundle_exclusive_window():
+            raise KeyError("the real cause")
+    assert "could not claim the machine" not in caplog.text
+    assert R.exclusive_window_open() is False, "the hold is released on the way out"
+
+
+def test_a_failed_claim_still_degrades_to_a_bundle_without_the_hold(monkeypatch, caplog):
+    def _boom(*a, **k):
+        raise RuntimeError("the scheduler is wedged")
+
+    monkeypatch.setattr(R, "exclusive_window", _boom)
+    with caplog.at_level("WARNING"), d._bundle_exclusive_window() as excl:
+        assert excl == {"held": False, "reason": "could not claim the machine"}
+    assert "could not claim the machine" in caplog.text
+
+
 # --------------------------------------------------------------------------- #
 #  S6.1 -- the wiring, at BOTH entry points
 # --------------------------------------------------------------------------- #
@@ -338,9 +362,71 @@ def test_the_member_delta_is_current_rss_not_the_high_water_mark(monkeypatch):
 
     results = _run_bundle([("m.json", lambda: {"x": 1})])
     assert results[0]["rss_delta_kb"] == 500
-    assert results[0]["rss_peak_rise_kb"] == 0, (
-        "the high-water rise IS 0 here -- which is exactly why it cannot be the delta"
-    )
+
+
+def test_a_high_water_mark_that_did_not_move_is_absent_with_its_reason_never_zero(monkeypatch):
+    """THE FIELD DEFECT (2026-09-30, B19): ``ru_maxrss`` never falls, so every member after a
+    bigger one read ``rss_peak_rise_kb: 0`` -- and a 0 reads as "it allocated nothing". The
+    mark did not move; that is a statement about the mark, not about the member. The field is
+    ABSENT, the reason stands in its place and names the two readings that can be made, and the
+    upper bound is computed from the resident size at the member's start."""
+    probe = _ScriptedProbe([1_000, 1_500])
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 9_000_000)  # a peak already set
+
+    entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
+    assert "rss_peak_rise_kb" not in entry, "an unmoved mark must never be published as 0"
+    assert entry["rss_delta_kb"] == 500
+    assert entry["rss_peak_rise_at_most_kb"] == 9_000_000 - 1_000
+    reason = entry["rss_peak_rise_absent"]
+    assert "rss_delta_kb" in reason and "rss_peak_rise_at_most_kb" in reason
+    assert "high-water mark" in reason and "A 0 here would read as 'no rise'" in reason
+
+
+def test_a_mark_that_moved_keeps_its_rise_and_carries_no_absence_note(monkeypatch):
+    probe = _ScriptedProbe([1_000, 1_200])
+    peaks = iter([5_000, 5_300])
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: next(peaks))
+
+    entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
+    assert entry["rss_peak_rise_kb"] == 300
+    assert "rss_peak_rise_absent" not in entry and "rss_peak_rise_at_most_kb" not in entry
+    # THE MARK'S RISE IS NOT THE MEMBER'S PEAK: the process was already at 5,000 KB while this
+    # member started at 1,000 KB, so the member's own peak above its start is 5,300 - 1,000 = 4,300,
+    # and publishing 300 as the member's cost would admit a member on a machine it does not fit.
+    assert entry["rss_peak_above_start_kb"] == 4_300
+
+
+def test_the_member_peak_above_its_start_is_never_negative_and_needs_the_starting_size(monkeypatch):
+    probe = _ScriptedProbe([20_000, 20_000])
+    peaks = iter([5_000, 5_300])  # the mark moved, but sits below the resident size (a platform quirk)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: next(peaks))
+    assert _run_bundle([("m.json", lambda: {"x": 1})])[0]["rss_peak_above_start_kb"] == 0
+
+    blind = _ScriptedProbe([None, None])
+    blind.basis = "unavailable"
+    peaks = iter([5_000, 5_300])
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: blind)
+    entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
+    assert entry["rss_peak_rise_kb"] == 300 and "rss_peak_above_start_kb" not in entry
+
+
+def test_the_upper_bound_is_never_negative_and_needs_the_starting_size(monkeypatch):
+    """A peak below the current resident size (a platform quirk) clamps to 0 rather than
+    publishing a negative bound; with no current-RSS reading there is no bound at all."""
+    probe = _ScriptedProbe([20_000, 20_000])
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 9_000)
+    entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
+    assert entry["rss_peak_rise_at_most_kb"] == 0
+
+    blind = _ScriptedProbe([None, None])
+    blind.basis = "unavailable"
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: blind)
+    entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
+    assert "rss_peak_rise_absent" in entry and "rss_peak_rise_at_most_kb" not in entry
 
 
 def test_the_peak_rise_keeps_its_own_name(monkeypatch):
@@ -367,6 +453,7 @@ def test_an_unreadable_probe_omits_the_delta_rather_than_publishing_zero(monkeyp
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
     assert "rss_delta_kb" not in entry
     assert "rss_peak_rise_kb" not in entry
+    assert "rss_peak_rise_absent" not in entry, "an unreadable mark is not an unmoved one"
     assert entry["rss_basis"] == "unavailable", "the basis must NAME the absence"
 
 

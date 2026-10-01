@@ -562,10 +562,12 @@ def _burst_due(now: float) -> dict[str, Any] | None:
     return {"blocks_gained": blocks - before[1], "over_s": round(now - before[0], 1)}
 
 
-def _pressure_snapshot(readings: dict[str, float], why: str) -> dict[str, Any]:
+def _pressure_snapshot(readings: dict[str, float], why: str, at: str | None = None) -> dict[str, Any]:
     """What every thread was doing, with the memory readings it was taken at and WHY it
-    was taken: ``memory short`` (below the line) or ``allocation burst``."""
-    snap: dict[str, Any] = {"at": _now(), "why": why}
+    was taken: ``memory short`` (below the line) or ``allocation burst``. ``at`` is the time the
+    readings were read (``observe`` passes it, so the snapshot and the lifetime marks carry the
+    SAME stamp for the same reading); without it, now."""
+    snap: dict[str, Any] = {"at": at or _now(), "why": why}
     for key in ("avail_mb", "total_mb", "rss_mb", "swap_used_mb"):
         if readings.get(key) is not None:
             snap[key] = readings[key]
@@ -627,6 +629,11 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
     global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN
     try:
         readings = _readings()
+        # THE TIME OF THE READING, taken the moment it was read: the thread walk and the heap walk
+        # below are the slow part and are slowest exactly when memory is short, so a stamp taken
+        # after them (as it was) dates a minimum seconds later than the reading that set it, and
+        # the same 138.7 MB read as two readings in the text.
+        stamp = _now()
         now = time.monotonic()
         pressure = None
         if may_snapshot_threads:
@@ -634,9 +641,9 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
             # previous 5 s reading, even when this call is a memory-short snapshot.
             burst = _burst_due(now)
             if _pressure_due(readings, now):
-                pressure = _pressure_snapshot(readings, "memory short")
+                pressure = _pressure_snapshot(readings, "memory short", stamp)
             elif burst is not None:
-                pressure = _pressure_snapshot(readings, "allocation burst")
+                pressure = _pressure_snapshot(readings, "allocation burst", stamp)
             if pressure is not None and burst is not None:
                 pressure.update(burst)
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
@@ -659,7 +666,12 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 elif at_peak.get("heap_in_use_mb") is None:
                     at_peak["heap_skipped"] = "no glibc 2.33+ heap report on this system"
                 at_peak["rss_mb"] = rss
-                at_peak["at"] = _now()
+                # The machine's RAM at that moment, beside RSS and the swapped-out pages, so a
+                # share of RAM is computed from numbers that were read together -- and RSS and
+                # swap are never summed into one "footprint" (they are different things).
+                if readings.get("total_mb") is not None:
+                    at_peak["total_mb"] = readings["total_mb"]
+                at_peak["at"] = stamp
         with _LOCK:
             if not _MARKS:
                 _MARKS.update(_session_header())
@@ -685,20 +697,28 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                     "kept": _PRESSURE_KEEP,
                     "snapshots": list(_PRESSURE),
                 }
+            # Each lifetime mark carries the TIME it was set. A minimum or a maximum over a whole
+            # session with no time cannot be placed against anything else the session recorded
+            # (field diagnostics 2026-09-30, rank 4: a 138.7 MB minimum could not be set beside a
+            # burst, and the lowest reading in the kept snapshots was 272.7 MB). The stamp is the
+            # reading's own (above), never the time this block ran.
             if rss is not None:
                 prev = _MARKS.get("rss_max_mb")
                 if prev is None or rss > prev:
                     _MARKS["rss_max_mb"] = rss
+                    _MARKS["rss_max_at"] = stamp
             avail = readings.get("avail_mb")
             if avail is not None:
                 prev_a = _MARKS.get("avail_min_mb")
                 if prev_a is None or avail < prev_a:
                     _MARKS["avail_min_mb"] = avail
+                    _MARKS["avail_min_at"] = stamp
             swap = readings.get("swap_used_mb")
             if swap is not None:
                 prev_s = _MARKS.get("swap_used_max_mb")
                 if prev_s is None or swap > prev_s:
                     _MARKS["swap_used_max_mb"] = swap
+                    _MARKS["swap_used_max_at"] = stamp
             if phase:
                 _MARKS["phase"] = phase
             _MARKS["last_ts"] = _now()
