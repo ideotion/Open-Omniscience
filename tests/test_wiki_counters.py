@@ -403,3 +403,41 @@ def test_the_run_rides_the_soak_windows_lane_block_with_its_bar(lane, monkeypatc
     block = _wiki_lane(72.0)
     assert block["run"]["measured"] is True
     assert block["run"]["bar_hours"] == 72.0 and block["run"]["reaches_bar"] is False
+
+
+def test_the_idle_rule_is_the_stop_rule_three_WHOLE_silent_hours_after_the_last_hour(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=10, prefix="a")  # last evidence hour is 9 (09:17)
+        just_short = _clock(db, now=T0 + timedelta(hours=12, minutes=59))  # hours 10, 11, 12 -> not yet 3 whole
+        exactly = _clock(db, now=T0 + timedelta(hours=13))
+    assert just_short["idle_now"] is None, "two and a bit silent hours is not yet a stop"
+    assert exactly["idle_now"] == {"since": (T0 + timedelta(hours=10)).isoformat(), "hours": 3.0}
+
+
+def test_the_hour_in_progress_counts_only_up_to_now(lane):
+    with lane_session("wiki") as db:
+        db.add(VersionedSizeSample(measured_at=T0 + timedelta(hours=5, minutes=1), file_bytes=1))
+        db.flush()
+        out = _clock(db, now=T0 + timedelta(hours=5, minutes=2))
+    assert out["hours"] == 0.0 and out["span_hours"] == 0.0 and out["reaches_bar"] is False
+
+
+def test_evidence_older_than_the_window_is_NO_reading_and_says_the_window(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=5, prefix="a")
+        out = run_clock(db, window_days=7, now=T0 + timedelta(days=9), bar_hours=72.0)
+    assert out["measured"] is False and out["window_days"] == 7
+    assert "hours" not in out
+
+
+def test_a_failing_run_clock_blanks_itself_and_not_the_counters(lane, monkeypatch):
+    import src.wiki.counters as counters_mod
+
+    def boom(*a, **k):
+        raise RuntimeError("disk I/O error")
+
+    monkeypatch.setattr(counters_mod, "run_clock", boom)
+    with lane_session("wiki") as db:
+        out = lane_counters(db, now=NOW)
+    assert out["run"]["measured"] is False and "RuntimeError" in out["run"]["reason"]
+    assert out["rows_per_day"]["measured"] is False and "run" in out["unmeasured"]

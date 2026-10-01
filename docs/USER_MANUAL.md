@@ -1103,7 +1103,7 @@ it to slow down is asked again after a pause that doubles up to an hour.
 small all-or-nothing steps, so a crash (or killing the app) loses at most the step in progress; the
 walk resumes from its bookmark and the stream from the last position it stored. What does
 stop is the lane itself: the app always starts **offline**, so after a restart nothing is
-fetched until you go online again with the airplane button. Nothing is lost while it waits
+fetched until you go online again with the airplane button, which resumes the run if it was on and leaves it off if it was off (Home shows a line while the run waits). Nothing is lost while it waits
 (the stream's own history reaches back about a week). Living sources → Wikipedia → Live
 stream shows **Run so far** (hours in which this install stored or requested something,
 counted across restarts, with the number of stops) and, when the lane has gone quiet, a

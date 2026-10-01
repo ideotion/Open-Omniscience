@@ -69,7 +69,7 @@ def _wiki_stream(since: datetime) -> dict[str, Any]:
         VersionedGap,
     )
     from src.versioned.store import LaneAbsentError, lane_path, lane_session
-    from src.wiki.counters import DEFAULT_WINDOW_DAYS, run_clock
+    from src.wiki.counters import DEFAULT_WINDOW_DAYS, run_clock_or_absent
 
     if not lane_path("wiki").is_file():
         return {"measured": False, "reason": "lane-never-run"}
@@ -101,7 +101,9 @@ def _wiki_stream(since: datetime) -> dict[str, Any]:
             open_gaps = lane.execute(
                 select(func.count(VersionedGap.id)).where(VersionedGap.closed_at.is_(None))
             ).scalar_one()
-            clock = run_clock(lane, window_days=DEFAULT_WINDOW_DAYS, now=datetime.now(UTC))
+            clock = run_clock_or_absent(
+                lane, window_days=DEFAULT_WINDOW_DAYS, now=datetime.now(UTC)
+            )
     except LaneAbsentError:
         return {"measured": False, "reason": "lane-never-run"}
     except SQLAlchemyError:
@@ -131,7 +133,7 @@ def _wiki_stream(since: datetime) -> dict[str, Any]:
             for key in (
                 "measured", "reason", "hours", "stops_n", "idle_now", "first_activity_at",
                 "last_activity_at", "window_starts_at", "may_be_cut_by_window",
-                "quiet_hours_before_a_stop",
+                "quiet_hours_before_a_stop", "window_days",
             )
         },
     }

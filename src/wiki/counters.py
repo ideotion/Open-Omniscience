@@ -340,6 +340,7 @@ def run_clock(
 
     base: dict[str, Any] = {
         "bar_hours": bar_hours,
+        "window_days": window_days,
         "window_starts_at": start.isoformat(),
         "quiet_hours_before_a_stop": QUIET_HOURS_BEFORE_A_STOP,
         "evidence": sources,
@@ -351,8 +352,9 @@ def run_clock(
             "hours pass with none of these; the holes between stretches are the stops."
         ),
         "caveat": (
-            "A stretch is measured from its first evidence hour to the end of its last, so a "
-            "stop is only seen to within a few hours and a stop shorter than that is not seen. "
+            "A stretch is measured from its first evidence hour to the end of its last (or to "
+            "now), and it counts the short quiet spells inside it, so a stop is only seen to "
+            "within a few hours and a quiet spell shorter than that is not seen. "
             "The window reaches back a fixed number of days; a run older than that is cut at "
             "its start. A stop says the lane showed no sign of life, not why: a crash, an "
             "update, airplane mode and a closed app all look the same here."
@@ -378,6 +380,9 @@ def run_clock(
             begin = h
         prev = h
     stretches.append((begin, prev + one))
+    # The last stretch cannot end after NOW: an evidence hour still in progress is covered
+    # up to this instant, not to its end, or a sample a minute old would read as a full hour.
+    stretches[-1] = (stretches[-1][0], min(stretches[-1][1], max(now, stretches[-1][0])))
     stops = [
         {
             "from": a_end.isoformat(),
@@ -388,8 +393,10 @@ def run_clock(
     ]
     covered = sum((e - b).total_seconds() for b, e in stretches) / 3600.0
     last_end = stretches[-1][1]
-    silent_for = (now - last_end).total_seconds() / 3600.0
-    idle = silent_for > 0 and (now - prev).total_seconds() > limit.total_seconds()
+    # Gone quiet by the same rule as a stop: three or more whole silent hours since the end
+    # of the last evidence hour (never measured from its start, which counted the hour itself).
+    silent_for = (now - (prev + one)).total_seconds() / 3600.0
+    idle = silent_for >= QUIET_HOURS_BEFORE_A_STOP
     out: dict[str, Any] = {
         **base,
         "measured": True,
@@ -408,12 +415,28 @@ def run_clock(
         "span_hours": round((last_end - ordered[0]).total_seconds() / 3600.0, 1),
         "may_be_cut_by_window": ordered[0] <= _hour_floor(start) + one,
         "idle_now": (
-            {"since": last_end.isoformat(), "hours": round(silent_for, 1)} if idle else None
+            {"since": (prev + one).isoformat(), "hours": round(silent_for, 1)} if idle else None
         ),
     }
     if bar_hours is not None:
         out["reaches_bar"] = covered >= float(bar_hours)
     return out
+
+
+def run_clock_or_absent(lane: Any, **kwargs: Any) -> dict[str, Any]:
+    """``run_clock``, degrading to an absent block with a reason instead of raising.
+
+    A diagnostic read that fails must blank itself and not the whole counters block (or the
+    overview) it rides in: the soak report is read exactly when something is already wrong.
+    """
+    try:
+        return run_clock(lane, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - a read degrades, never raises
+        _LOG.warning("the lane run clock could not be read", exc_info=True)
+        return {
+            "measured": False,
+            "reason": f"the run clock could not be read: {type(exc).__name__}",
+        }
 
 
 def lane_counters(
@@ -441,7 +464,7 @@ def lane_counters(
         "gaps": gap_history(lane, window_days=window_days, now=at),
         # How long the lane has run, across restarts: the soak window's own clock is one
         # process's uptime, which a crash or an update resets while these rows carry on.
-        "run": run_clock(lane, window_days=window_days, now=at, bar_hours=bar_hours),
+        "run": run_clock_or_absent(lane, window_days=window_days, now=at, bar_hours=bar_hours),
         "entities": entity_counts(lane),
         # Q701 = c's walk: pages seen of each edition's own article count, and the
         # measured throughput per transport (S05-06's S2 + S3). The SAME artifact the

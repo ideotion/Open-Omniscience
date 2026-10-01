@@ -143,6 +143,16 @@ def test_the_stream_block_carries_the_run_and_says_when_the_lane_has_gone_quiet(
     assert run["quiet_hours_before_a_stop"] == 3
 
 
+def test_a_lane_that_stopped_longer_ago_than_the_window_names_the_window(lane):
+    """Eight days of silence must not read as an empty panel: the block says which window it read."""
+    with lane_session("wiki") as db:
+        db.add(VersionedChange(change_ref="old", feed="stream:en", change_kind="edit",
+                               recorded_at=NOW - timedelta(days=8)))
+        db.commit()
+    run = living._wiki_stream(SINCE)["run"]
+    assert run["measured"] is False and run["window_days"] == 7 and run["hours"] is None
+
+
 def test_a_lane_with_no_sign_of_life_has_a_run_that_says_it_has_no_reading(lane):
     out = living._wiki_stream(SINCE)
     assert out["run"]["measured"] is False and "reason" in out["run"]

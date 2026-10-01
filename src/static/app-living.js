@@ -226,10 +226,20 @@
     // from this process's uptime, which a crash or an update resets. A lane that has shown no
     // sign of life is not a "run of 0 hours": it has no reading and the row is not drawn.
     function livingRunFacts(run, t, tf) {
-      if (!run || run.measured !== true) return [];
+      if (!run) return [];
+      // A lane file that exists but shows no sign of life inside the window is NAMED, never
+      // left blank: an absence hidden is the case where the row matters most (a lane that
+      // stopped a week ago). An unreadable read is the same: it says so.
+      if (run.measured !== true) {
+        return [{ label: t("Run so far"),
+          value: run.window_days
+            ? tf("No sign of life in the last {n} days", { n: _livingCount(run.window_days) })
+            : t("Could not be read"),
+          hover: t("No change was recorded, no size sample taken and no walk request made in that time. This is not a run of zero hours; it is no reading.") }];
+      }
       const facts = [
         { label: t("Run so far"),
-          value: tf("{h} hours of activity · {n} stops", { h: _livingCount(Math.round(run.hours)), n: _livingCount(run.stops_n) }),
+          value: tf("{h} hours of activity, stops: {n}", { h: _livingCount(Math.round(run.hours)), n: _livingCount(run.stops_n) }),
           hover: t("Hours in which this install stored or requested something, counted across restarts. A stop is a hole of three or more silent hours; it says the lane showed no sign of life, not why.") },
       ];
       if (run.idle_now) {
