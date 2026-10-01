@@ -104,6 +104,10 @@ What then stops the drive from filling, in order:
 * it ends when both causes are gone (the next trip pauses normally again), and it lives in
   memory only: quitting the app ends it.
 
+This is a bound, not a promise that the drive can never fill: the floor is read every
+``POLL_EVERY_S`` (5 s) and a pass can write between two readings, so the write error above is the
+last net and it does not wait for a reading.
+
 The drain keeps running while the override holds, so the WAL still resets the moment its reader
 lets go, and the notice says that the override is on, what bounds it, and that the next start
 will spend longer recovering a large log.
