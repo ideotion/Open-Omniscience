@@ -565,3 +565,146 @@ def test_a_row_with_leading_blanks_or_a_mid_file_bom_still_votes(tmp_path):
     v = sb.read_verdicts(f, "en")
     assert "not_junk" in sb.verdict_refusals("rose", v)
     assert "not_junk" in sb.verdict_refusals("pie", v)
+
+
+# ---- fail closed on what the reader cannot read (coordinator check 2: S1-S6) -------------------
+
+PASS_ROW = "en\tzzalpha\tN\tbp\tH\tsonnet\n"
+
+
+@pytest.mark.parametrize("bad", [
+    "en zzalpha K\n",  # spaces instead of tabs
+    "en,zzalpha,K,,,\n",  # comma separated
+    "en zzalpha K\n",  # no-break spaces
+    '"en","zzalpha","K"\n',  # quoted CSV
+    "zzalpha\tK\n",  # the language column is missing
+    "en\t\tK\n",  # a row for the language with no word
+])
+def test_a_verdict_row_the_reader_cannot_parse_stops_the_whole_file(tmp_path, bad):
+    f = tmp_path / "v.tsv"
+    f.write_text(PASS_ROW + bad, "utf-8")
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
+    f.write_text(bad + PASS_ROW, "utf-8")  # and in the other order
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
+
+
+@pytest.mark.parametrize("flags", ["unstable;single_reader", "single_reader unstable", "single_reader|unstable",
+                                   "unstable?", "unstable=1", "disagree", "not_reproducible", "Unstable",
+                                   "single_reader,disagree"])
+def test_any_flag_the_tool_does_not_accept_blocks_the_word(tmp_path, flags):
+    f = tmp_path / "v.tsv"
+    f.write_text(f"en\tzzalpha\tN\tbp\tH\tsonnet\t{flags}\n", "utf-8")
+    assert sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en")) != []
+
+
+def test_single_reader_alone_passes_and_a_displaced_flags_column_blocks(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("en\tzzalpha\tN\tbp\tH\tsonnet\tsingle_reader\nen\tzzbeta\tN\tbp\tH\tsonnet\t\tunstable\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("zzalpha", v) == [] and v["zzalpha"]["single_reader"] is True
+    assert sb.verdict_refusals("zzbeta", v) == ["unknown_flag"]
+
+
+@pytest.mark.parametrize("rows", [
+    ["en\tzzalpha\tK\t\t\t\n", PASS_ROW],  # the dissent FIRST
+    [PASS_ROW, "en\tzzalpha\tK\t\t\t\n"],  # and last
+])
+def test_the_strictest_row_wins_in_either_order(tmp_path, rows):
+    f = tmp_path / "v.tsv"
+    f.write_text("".join(rows), "utf-8")
+    assert "not_junk" in sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en"))
+
+
+@pytest.mark.parametrize("rows,why", [
+    (["en\tzzalpha\tN\tbp\tL\tsonnet\n", PASS_ROW], "not_high_confidence"),
+    ([PASS_ROW, "en\tzzalpha\tN\tbp\tL\tsonnet\n"], "not_high_confidence"),
+    (["en\tzzalpha\tN\tbp\tH\tsonnet\tunstable\n", PASS_ROW], "unstable"),
+    ([PASS_ROW, "en\tzzalpha\tN\tbp\tH\tsonnet\tunstable\n"], "unstable"),
+])
+def test_low_confidence_and_unstable_rows_win_in_either_order(tmp_path, rows, why):
+    f = tmp_path / "v.tsv"
+    f.write_text("".join(rows), "utf-8")
+    assert why in sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en"))
+
+
+def test_a_verdict_file_with_no_row_for_the_language_stops_the_tool(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("fr\tlundi\tN\tcal\tH\tsonnet\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
+
+
+def test_a_symlinked_directory_above_the_file_is_refused(tmp_path, monkeypatch):
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(sb, "ROOT", tmp_path)
+    monkeypatch.setattr(sb, "EXTRA_DIR", link)
+    with pytest.raises(SystemExit):
+        sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert list(real.iterdir()) == []
+
+
+def test_json_report_never_overwrites_the_input_log_or_a_file_in_the_checkout(tmp_path, monkeypatch):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    before = log.read_text("utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--json", str(log)])
+    assert log.read_text("utf-8") == before
+    monkeypatch.setattr(sb, "ROOT", tmp_path)
+    tracked = tmp_path / "tracked.json"
+    tracked.write_text("{}", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--json", str(tracked)])
+    assert tracked.read_text("utf-8") == "{}"
+    link = tmp_path / "linked.json"
+    link.symlink_to(tracked)
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--json", str(link)])
+
+
+def test_the_comment_carries_the_log_hash_and_the_overrides_reach_it_through_main(tmp_path, monkeypatch):
+    rc = _apply(tmp_path, monkeypatch, "en", "pie\n", [("en", "pie", "N", "bp", "H", "sonnet-5.5")],
+                LOG, "--allow", "pie")
+    assert rc == 0
+    text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
+    assert "log sha256 " in text and "maintainer overrides" in text and "pie" in text
+
+
+def test_the_round_trip_alone_stops_a_word_that_smuggles_an_entry(tmp_path, monkeypatch):
+    (tmp_path / "en.yml").write_text("stopwords:\n  - alpha\n", "utf-8")
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    monkeypatch.setattr(sb, "yaml_scalar", lambda w: w + "\n  - facebook")
+    with pytest.raises(SystemExit) as exc:
+        sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert "exactly" in str(exc.value)
+    assert (tmp_path / "en.yml").read_text("utf-8") == "stopwords:\n  - alpha\n"
+
+
+def test_a_keep_file_missing_the_ambiguous_key_or_holding_non_strings_stops_the_tool(tmp_path, monkeypatch):
+    for content in ("platform_names: [facebook]\n", "platform_names: [1, 2]\nambiguous_platform_names: []\n",
+                    "platform_names: [facebook]\nambiguous_platform_names: [3]\n"):
+        keep = tmp_path / "k2.yml"
+        keep.write_text(content, "utf-8")
+        monkeypatch.setattr(sb, "KEEP_FILE", keep)
+        with pytest.raises(SystemExit):
+            sb.platform_names()
+    keep.write_text("platform_names: [facebook]\nambiguous_platform_names: []\n", "utf-8")
+    assert sb.platform_names(keep) == frozenset({"facebook"})  # an explicitly empty ambiguous list is fine
+
+
+def test_a_non_latin_single_reader_word_keeps_its_letters_in_the_comment(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    sb.append_batch("el", ["όσος"], "el-1", [], "single reader: όσος\nnewline")
+    text = (tmp_path / "el.yml").read_text("utf-8")
+    assert "single reader: όσος" in text and yaml.safe_load(text)["stopwords"] == ["όσος"]
+
+
+def test_a_bom_prefixed_words_file_keeps_its_first_word(tmp_path):
+    f = tmp_path / "w.txt"
+    f.write_text("﻿permalink\nfollow\n", "utf-8")
+    assert sb.read_words(f) == ["permalink", "follow"]

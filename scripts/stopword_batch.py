@@ -27,9 +27,13 @@ thread's decision rows as tab-separated text, one per line, ``#`` comments allow
     language <TAB> word <TAB> verdict <TAB> code <TAB> confidence <TAB> model [<TAB> flags]
 
 with ``verdict`` N (or ``junk``), ``confidence`` H, and ``flags`` a comma list that may hold
-``unstable`` (the verdict did not reproduce between runs) or ``single_reader``. A word with no
-verdict row for the language, a verdict other than N, a confidence other than H, or an ``unstable``
-flag is refused, and the batch comment records the verdict file's hash and the models named in it.
+``unstable`` (the verdict did not reproduce between runs) or ``single_reader``; the layout is
+``keyword-triage/DECISION-FILE-FORMAT.md``. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool
+trusts the ``unstable`` flag the triage's converter sets and counts no runs itself. Only
+``single_reader`` is an accepted flag; ANY OTHER flag blocks the word (an unknown flag is a
+reading this tool does not understand, and it must not pass), and a line the reader cannot parse
+(no tab, a language column that is not a code) stops the whole file. A word with no verdict row
+for the language, a verdict other than N, a confidence other than H, or a blocking flag is refused, and the batch comment records the verdict file's hash and the models named in it.
 Without ``--verdicts`` the tool only REPORTS, says so, and its table is not a decision.
 
 WHY THE REFUSALS EXIST. ``configs/stopwords_extra`` is a LANGUAGE-AGNOSTIC union
@@ -40,7 +44,7 @@ word is refused, with the reason, when adding it would hide signal:
 * ``platform_name``    facebook, twitter and kin COUNT as keywords (R104); the keep-file MUST load, and
                        empty or missing it stops the tool (a guard that fails open is not one);
 * ``not_in_log``       the log holds no article for it in this language: nothing was weighed;
-* ``no_verdict`` / ``not_junk`` / ``not_high_confidence`` / ``unstable``   the verdict gate above;
+* ``no_verdict`` / ``not_junk`` / ``not_high_confidence`` / ``unstable`` / ``unknown_flag``   the verdict gate above;
 * ``de_elided``        extraction strips ``d'`` / ``l'`` / ``qu'`` before the stop check, so an entry
                        for ``d'una`` could never match;
 * ``content_elsewhere`` another language stores it as a live keyword (evidence from THIS log);
@@ -95,8 +99,16 @@ SINGLE_SOURCE_SHARE = 0.5
 # the app stores, and short enough that a code can never be mistaken for a sentence.
 LANGUAGE_CODE = re.compile(r"[a-z][a-z0-9_-]{0,15}")
 # Windows treats these as devices whatever the extension, so ``con.yml`` is not a file there.
-RESERVED_NAMES = frozenset({"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)),
-                            *(f"lpt{i}" for i in range(1, 10))})
+RESERVED_NAMES = frozenset({"con", "prn", "aux", "nul", *(f"com{i}" for i in range(10)),
+                            *(f"lpt{i}" for i in range(10))})
+# The first column of a verdict row: a language code as the diagnostics logs write it (two or three
+# letters, an optional script or region part), or the "?" / unknown bucket. A word in this column
+# (its language column missing) must stop the file, not be read as a row for another language.
+VERDICT_LANGUAGE = re.compile(r"[a-z]{2,3}(?:[-_][a-z0-9]{2,8})?|\?|unknown")
+# The only verdict flag that does not block a word. Anything else, spelt however, is a reading
+# the tool does not understand, so it blocks: a flag list that lets unknown flags through would
+# batch the very rows the triage ruled out.
+ACCEPTED_FLAGS = frozenset({"single_reader"})
 # A batch id lands in a YAML comment; it must never be able to open a new line.
 BATCH_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # How many other-language / entity rows the table prints before saying "and N more": two lines of
@@ -143,6 +155,9 @@ def _read_keep(path: Path | None = None) -> tuple[frozenset[str], frozenset[str]
         raise SystemExit(f"the platform keep-file {path} is not a mapping; refusing to run without it")
     lists: list[frozenset[str]] = []
     for key in ("platform_names", "ambiguous_platform_names"):
+        if key not in data:
+            raise SystemExit(f"the platform keep-file {path} has no {key} key (it may be an empty list); "
+                             "refusing to run: a missing list would silently let its names through")
         value = data.get(key) or []
         if not isinstance(value, list) or not all(isinstance(n, str) for n in value):
             # a bare string would be walked letter by letter, and the guard would pass on single letters
@@ -166,7 +181,7 @@ def ambiguous_platform_names(path: Path | None = None) -> frozenset[str]:
 
 def read_words(path: Path) -> list[str]:
     words: list[str] = []
-    for line in path.read_text("utf-8").splitlines():
+    for line in path.read_text("utf-8").replace("\ufeff", "").splitlines():
         # A comment starts at a line-initial or space-preceded "#"; "c#" is a word.
         line = re.sub(r"(^|\s)#.*$", "", line).strip()
         w = spelling(line)  # also collapses inner whitespace, so "read<TAB>more" is a phrase
@@ -191,9 +206,11 @@ def file_hash(path: Path) -> str:
 
 def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
     """The triage decisions for ``lang``, keyed by spelling. Several rows for one word merge to the
-    STRICTEST reading (any row that is not a high-confidence N, or is unstable, spoils it)."""
+    STRICTEST reading (any row that is not a high-confidence N, or carries a flag the tool does not
+    accept, spoils it), whatever their order. A line the reader cannot parse stops the WHOLE file: a
+    row skipped in silence could be the one that dissents."""
     out: dict[str, dict[str, Any]] = {}
-    for line in path.read_text("utf-8").splitlines():
+    for number, line in enumerate(path.read_text("utf-8").splitlines(), 1):
         # A BOM can sit mid-file too (two exports joined with cat); leading blanks are not a column.
         line = line.replace("\ufeff", "").lstrip()
         if not line or line.startswith("#"):
@@ -201,23 +218,37 @@ def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
         # Split BEFORE trimming: stripping would eat the trailing tabs of a row whose last columns are
         # empty ("en rose K" + 3 tabs), and a row that goes missing loses its vote in the merge.
         cols = [c.strip() for c in line.split("\t")]
-        if len(cols) < 2 or cols[0].lower() != lang or not cols[1]:
+        if [c.lower() for c in cols[:2]] == ["language", "word"]:
+            continue  # the header row
+        if len(cols) < 2 or not VERDICT_LANGUAGE.fullmatch(cols[0].lower()):
+            raise SystemExit(f"{path}:{number}: not a verdict row (tab-separated, the first column a language "
+                             f"code); refusing to skip it, a skipped row could be the dissenting one: {line[:60]!r}")
+        if cols[0].lower() != lang:
             continue
+        if not cols[1]:
+            raise SystemExit(f"{path}:{number}: a verdict row for {lang!r} with no word; refusing to skip it")
         cols += [""] * (7 - len(cols))  # a short row is read as having empty columns: never high, never N
         word = spelling(cols[1])
         verdict = cols[2].upper()
         flags = {f.strip().lower() for f in cols[6].split(",") if f.strip()}
-        row = out.setdefault(word, {"junk": True, "high": True, "unstable": False, "single_reader": False,
+        if any(c for c in cols[7:]):  # a displaced flags column: unreadable, so blocking
+            flags.add("extra_columns")
+        row = out.setdefault(word, {"junk": True, "high": True, "flags": set(), "single_reader": False,
                                     "models": set()})
         row["junk"] &= verdict in ("N", "JUNK")
         row["high"] &= cols[4].upper() == HIGH
-        row["unstable"] |= "unstable" in flags
+        row["flags"] |= flags
         row["single_reader"] |= "single_reader" in flags
         if cols[5]:
             row["models"].add(cols[5])
     if not out:
         raise SystemExit(f"{path} holds no verdict rows for language {lang!r}")
     return out
+
+
+def blocking_flags(v: dict[str, Any]) -> set[str]:
+    """The flags on a word's verdict that keep it out: every one the tool does not accept."""
+    return set(v["flags"]) - ACCEPTED_FLAGS
 
 
 def index_log(keywords: list[dict]) -> dict[str, list[dict]]:
@@ -294,8 +325,11 @@ def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]]) -> list[str
         out.append("not_junk")
     if not v["high"]:
         out.append("not_high_confidence")
-    if v["unstable"]:
+    blocked = blocking_flags(v)
+    if "unstable" in blocked:
         out.append("unstable")
+    if blocked - {"unstable"}:
+        out.append("unknown_flag")
     return out
 
 
@@ -391,6 +425,18 @@ def yaml_scalar(term: str) -> str:
     return dumped.removesuffix("...").strip()
 
 
+def _symlink_on_path(path: Path) -> bool:
+    """A symlink on the file or any directory above it, up to the checkout (outside it, up to the
+    file's own directory: a system path such as /tmp may legitimately be a link)."""
+    stop = ROOT if path.is_relative_to(ROOT) else path.parent
+    for p in (path, *path.parents):
+        if p.is_symlink():
+            return True
+        if p == stop:
+            break
+    return False
+
+
 def check_language(lang: str) -> str:
     """A language code names a file in configs/stopwords_extra and nothing else."""
     if not LANGUAGE_CODE.fullmatch(lang) or lang in RESERVED_NAMES:
@@ -408,10 +454,10 @@ def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str],
     if not BATCH_ID.fullmatch(batch_id):
         raise SystemExit(f"--batch-id {batch_id!r} may hold only letters, digits, . _ - (1 to 64): it "
                          "is written into a YAML comment and must not be able to open a new line")
-    source = re.sub(r"[^A-Za-z0-9._ ;:,-]", "_", source)
+    source = re.sub(r"[^\w .;:,-]", "_", source)  # \w is unicode: a Greek word keeps its letters, a newline never survives
     path = EXTRA_DIR / f"{lang}.yml"
-    if path.is_symlink() or path.resolve().parent != EXTRA_DIR.resolve():
-        raise SystemExit(f"{path} is a symlink or leaves {EXTRA_DIR}; refusing to write through it")
+    if _symlink_on_path(path) or path.resolve().parent != EXTRA_DIR.resolve():
+        raise SystemExit(f"{path} is a symlink, sits behind one, or leaves {EXTRA_DIR}; refusing to write through it")
     new_file = not path.exists()
     before = "stopwords:\n" if new_file else path.read_text("utf-8")
     try:
@@ -458,7 +504,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="override content_elsewhere / also_an_entity / an ambiguous platform name for a word")
     ap.add_argument("--apply", action="store_true", help="append the addable words to the language's file")
     ap.add_argument("--batch-id", help="the batch's id, e.g. en-2026-10 (required with --apply)")
-    ap.add_argument("--json", type=Path, help="also write the full evidence report here (a .json file outside configs/)")
+    ap.add_argument("--json", type=Path,
+                    help="also write the full evidence report here: a NEW .json file, outside configs/, never the input log")
     args = ap.parse_args(argv)
 
     import analyze_keyword_log as akl
@@ -471,6 +518,9 @@ def main(argv: list[str] | None = None) -> int:
         if (target.suffix != ".json" or args.json.is_symlink()
                 or target.is_relative_to((ROOT / "configs").resolve())):
             raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
+        if target == args.log.resolve() or (target.exists() and target.is_relative_to(ROOT)):
+            raise SystemExit("--json would overwrite the input log or an existing file in the checkout "
+                             "(a tracked file is one); name a new file or one outside the checkout")
     doc = akl.load_log(args.log)
     keywords = log_keywords(doc)
     index = index_log(keywords)
@@ -487,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.words:
         words = read_words(args.words)
     elif verdicts is not None:
-        words = sorted(w for w, v in verdicts.items() if v["junk"] and v["high"] and not v["unstable"])
+        words = sorted(w for w, v in verdicts.items() if v["junk"] and v["high"] and not blocking_flags(v))
     else:
         words = [spelling(w) for w in candidates_to_read(doc, lang, hidden)]
     rows = []
