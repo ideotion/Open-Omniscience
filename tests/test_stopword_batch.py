@@ -579,7 +579,7 @@ PASS_ROW = "en\tzzalpha\tN\tbp\tH\tsonnet\n"
 @pytest.mark.parametrize("bad", [
     "en zzalpha K\n",  # spaces instead of tabs
     "en,zzalpha,K,,,\n",  # comma separated
-    "en zzalpha K\n",  # no-break spaces
+    "en\u00a0zzalpha\u00a0K\n",  # no-break spaces
     '"en","zzalpha","K"\n',  # quoted CSV
     "zzalpha\tK\n",  # the language column is missing
     "en\t\tK\n",  # a row for the language with no word
@@ -710,7 +710,7 @@ def test_a_non_latin_single_reader_word_keeps_its_letters_in_the_comment(tmp_pat
 
 def test_a_bom_prefixed_words_file_keeps_its_first_word(tmp_path):
     f = tmp_path / "w.txt"
-    f.write_text("﻿permalink\nfollow\n", "utf-8")
+    f.write_text("\ufeffpermalink\nfollow\n", "utf-8")
     assert sb.read_words(f) == ["permalink", "follow"]
 
 
@@ -755,3 +755,130 @@ def test_a_json_symlink_is_refused_on_its_own(tmp_path):
     with pytest.raises(SystemExit):
         sb.main([str(log), "--language", "en", "--json", str(link)])
     assert not (tmp_path / "dangling-target.json").exists()
+
+
+# ---- coordinator check 3: SF1-SF3 and the nits ------------------------------------------------
+
+def test_a_row_that_lost_its_language_column_stops_the_file(tmp_path):
+    f = tmp_path / "v.tsv"
+    for lost in ("zq\tK\t\t\tsonnet\t\n", "zq\tN\tfn\tL\tsonnet\t\n", "is\tK\n"):  # the word shifts left
+        f.write_text("en\tzq\tN\tbp\tH\tsonnet\n" + lost, "utf-8")
+        with pytest.raises(SystemExit):
+            sb.read_verdicts(f, "en")
+    f.write_text("en\tzq\tN\tbp\tH\tsonnet\npl\tw\tN\tfn\tH\tsonnet\t\n", "utf-8")  # a one-letter Polish word is a row
+    assert "zq" in sb.read_verdicts(f, "en")
+
+
+def test_a_symlink_to_a_sibling_file_is_refused(tmp_path, monkeypatch):
+    (tmp_path / "de.yml").write_text("stopwords:\n  - alpha\n", "utf-8")
+    (tmp_path / "en.yml").symlink_to("de.yml")
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert (tmp_path / "de.yml").read_text("utf-8") == "stopwords:\n  - alpha\n"
+
+
+def test_a_symlink_further_above_the_file_inside_the_checkout_is_refused(tmp_path, monkeypatch):
+    real = tmp_path / "real"
+    (real / "extra").mkdir(parents=True)
+    (tmp_path / "configs").symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(sb, "ROOT", tmp_path)
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path / "configs" / "extra")
+    with pytest.raises(SystemExit):
+        sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert list((real / "extra").iterdir()) == []
+
+
+def test_outside_the_checkout_only_the_files_own_directory_is_checked(tmp_path, monkeypatch):
+    real = tmp_path / "real"
+    (real / "extra").mkdir(parents=True)
+    (tmp_path / "var").symlink_to(real, target_is_directory=True)  # like macOS /var -> /private/var
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path / "var" / "extra")  # ROOT stays the real checkout
+    sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert "permalink" in (real / "extra" / "en.yml").read_text("utf-8")
+
+
+def test_a_hard_linked_stoplist_file_is_refused(tmp_path, monkeypatch):
+    outside = tmp_path / "outside.yml"
+    outside.write_text("stopwords:\n  - keep\n", "utf-8")
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    (extra / "en.yml").hardlink_to(outside)
+    monkeypatch.setattr(sb, "EXTRA_DIR", extra)
+    with pytest.raises(SystemExit):
+        sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert outside.read_text("utf-8") == "stopwords:\n  - keep\n"
+
+
+def test_the_comment_names_the_right_hash_for_each_file(tmp_path, monkeypatch):
+    _apply(tmp_path, monkeypatch, "en", "permalink\n", [("en", "permalink", "N", "bp", "H", "sonnet-5.5")], LOG)
+    text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
+    assert f"log sha256 {sb.file_hash(tmp_path / 'log.json')}" in text
+    assert f"verdicts sha256 {sb.file_hash(tmp_path / 'v.tsv')}" in text
+    assert sb.file_hash(tmp_path / "log.json") != sb.file_hash(tmp_path / "v.tsv")
+
+
+def test_json_never_overwrites_the_input_log_however_the_path_is_spelled(tmp_path, monkeypatch):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    (tmp_path / "sub").mkdir()
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        sb.main(["log.json", "--language", "en", "--json", str(tmp_path / "sub" / ".." / "log.json")])
+    (tmp_path / "hard.json").hardlink_to(log)  # same file, another name
+    with pytest.raises(SystemExit):
+        sb.main(["log.json", "--language", "en", "--json", str(tmp_path / "hard.json")])
+    assert json.loads(log.read_text("utf-8"))["data"]["keywords"] == LOG
+
+
+@pytest.mark.parametrize("name", ["com0", "lpt0", "COM0"])
+def test_the_zero_device_names_are_reserved_too(name):
+    with pytest.raises(SystemExit):
+        sb.check_language(name.lower())
+
+
+def test_the_comment_keeps_combining_marks_and_loses_line_breaks(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    sb.append_batch("hi", ["उन्होंने"], "hi-1", [], "single reader: उन्होंने\u2028x\u0085y")
+    text = (tmp_path / "hi.yml").read_text("utf-8")
+    assert "single reader: उन्होंने_x_y" in text and yaml.safe_load(text)["stopwords"] == ["उन्होंने"]
+
+
+@pytest.mark.parametrize("content", ["platform_names: [facebook]\nambiguous_platform_names:\n",
+                                     "platform_names: [facebook]\nambiguous_platform_names: false\n",
+                                     "platform_names: [facebook]\nambiguous_platform_names: ~\n"])
+def test_an_ambiguous_list_that_is_null_or_false_stops_the_tool(tmp_path, content):
+    keep = tmp_path / "k3.yml"
+    keep.write_text(content, "utf-8")
+    with pytest.raises(SystemExit):
+        sb.platform_names(keep)
+
+
+def test_a_flag_in_the_model_column_still_blocks_and_is_not_named_as_a_model(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("en\tzzalpha\tN\tbp\tH\tunstable\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("zzalpha", v) == ["unstable"]
+    assert v["zzalpha"]["models"] == set()
+
+
+def test_a_row_that_names_no_model_is_not_high_confidence(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("en\tzzalpha\tN\tbp\tH\t\n", "utf-8")
+    assert "not_high_confidence" in sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en"))
+
+
+def test_the_summary_line_shows_how_many_rows_of_other_languages_were_skipped(tmp_path, capsys):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    v = _verdict_file(tmp_path, ("en", "permalink", "N", "bp", "H", "sonnet"), ("fr", "lundi", "N", "cal", "H", "sonnet"),
+                      ("en-US", "color", "N", "bp", "H", "sonnet"))
+    assert sb.main([str(log), "--language", "en", "--verdicts", str(v)]) == 0
+    out = capsys.readouterr().out
+    assert "read 1 rows for en; skipped 2 rows for 2 other languages" in out and "en-us 1" in out
+
+
+def test_a_words_file_ends_rows_only_at_cr_and_lf(tmp_path):
+    f = tmp_path / "w.txt"
+    f.write_bytes("permalink\rfollow\r\nwidget\u2028x\n".encode("utf-8"))
+    assert sb.read_words(f) == ["permalink", "follow", "widget x"]
