@@ -32,9 +32,11 @@ from src.scheduler.storage_guard import (
     ERROR_HOLD_S,
     GIB,
     MIB,
+    OVERRIDE_FLOOR_MIN_BYTES,
     StorageGuard,
     disk_reserve_bytes,
     is_disk_full,
+    override_floor_bytes,
     wal_high_bytes,
 )
 from tests.js_source_helper import python_function_source
@@ -693,15 +695,30 @@ def test_the_housekeeping_lane_takes_on_no_new_kind_while_engaged(monkeypatch):
     assert {k for k in out if k != "_paused"} == set(), "no kind ran"
 
 
-def test_the_resume_endpoint_is_wired_and_releases(monkeypatch):
+def test_the_resume_endpoint_is_wired_and_really_overrides(monkeypatch):
     from src.api.scheduler import router, storage_guard_resume
 
     assert "/api/scheduler/storage-guard/resume" in {getattr(r, "path", None) for r in router.routes}
     g = _engaged("wal")
     monkeypatch.setattr(storage_guard, "storage_guard", g)
     payload = storage_guard_resume()
-    assert g.engaged is False
-    assert payload["storage_guard"]["engaged"] is False
+    # R112: the button FORCES collection on while the limit still holds -- the latch is the
+    # truth about the condition and stays engaged; what changes is whether work may start
+    assert payload["storage_guard_override"] == {"engaged": True, "overridden": True, "refused": None}
+    assert g.engaged is True and g.admit() is None
+    assert payload["storage_guard"]["engaged"] is True and payload["storage_guard"]["overridden"] is True
+
+
+def test_the_resume_endpoint_answers_a_refusal_with_its_sentence(monkeypatch):
+    from src.api.scheduler import storage_guard_resume
+
+    g = _engaged("disk")  # free = 1 MiB: already below the floor
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    payload = storage_guard_resume()
+    o = payload["storage_guard_override"]
+    assert o["overridden"] is False and o["refused"]["kind"] == "floor"
+    assert o["refused"]["frame"] == storage_guard.FRAME_OVERRIDE_STOPPED
+    assert g.admit() == "disk", "a refusal changes nothing"
 
 
 def test_start_and_run_now_release_the_latch_as_a_retry(monkeypatch):
@@ -718,6 +735,260 @@ def test_start_and_run_now_release_the_latch_as_a_retry(monkeypatch):
     monkeypatch.setattr(storage_guard, "storage_guard", g2)
     api_sched.scheduler_run_now()
     assert not g2.engaged
+
+
+# --------------------------------------------------------------------------- #
+#  the operator's override (R112, question 18 = a): "Resume anyway" really overrides
+# --------------------------------------------------------------------------- #
+def _overridable(*, wal=2 * GIB, free=100 * GIB, kind="wal", clock=None):
+    """An engaged guard whose own readings (what ``override()`` re-reads at the click) are the
+    mutable ``g.fake``; ``free`` and ``wal`` are what the drive and the log look like."""
+    fake = {"wal_bytes": wal, "disk_free_bytes": free}
+
+    def readings():
+        return {"corpus_bytes": _CORPUS, "disk_total_bytes": _TOTAL, "lane_wal_bytes": {}, **fake}
+
+    g = _guard(clock, readings_fn=readings, drain_fn=lambda: {"busy": 1, "skipped": None})
+    g.fake = fake
+    g.poll()
+    g.poll()
+    assert g.engaged and g.kind() == kind
+    return g
+
+
+def test_the_override_floor_is_the_logs_own_size_never_below_128_mib():
+    assert OVERRIDE_FLOOR_MIN_BYTES == 128 * MIB
+    assert override_floor_bytes(None) == 128 * MIB
+    assert override_floor_bytes(5 * MIB) == 128 * MIB, "a small log still needs room for a commit"
+    assert override_floor_bytes(3 * GIB) == 3 * GIB, "a checkpoint may need the log's size again"
+
+
+def test_an_override_lets_collection_run_while_the_limit_still_holds():
+    g = _overridable()
+    r = g.override(reason="test")
+    assert r == {"engaged": True, "overridden": True, "refused": None}
+    # the condition is still true and still reported as such ...
+    assert g.engaged is True and g.kind() == "wal"
+    # ... but nothing waits on it: a pass starts, and the loop does not pause
+    assert g.admit() is None
+    st = g.state()
+    assert st["engaged"] is True and st["overridden"] is True and st["phase"] is None
+    assert st["override"]["floor_bytes"] == 2 * GIB and st["overrides"] == 1
+    assert st["kinds"] == ["override-wal"], "the notice says the override is on, not 'paused'"
+    note = st["notes"][0]
+    assert note["frame"] == storage_guard.FRAME_OVERRIDE_WAL
+    assert note["vars"] == {"size": 2 * GIB, "limit": g.state()["thresholds"]["wal_high_bytes"], "floor": 2 * GIB}
+
+
+def test_an_override_on_a_nearly_full_drive_names_the_floor_and_the_free_space():
+    g = _overridable(wal=100 * MIB, free=1 * GIB, kind="disk")  # reserve is 10 GB, free 1 GiB
+    r = g.override(reason="test")
+    assert r["overridden"] is True
+    st = g.state()
+    assert st["kinds"] == ["override-disk"] and st["phase"] is None
+    assert st["notes"][0]["vars"]["free"] == 1 * GIB
+    assert st["notes"][0]["vars"]["floor"] == 128 * MIB
+
+
+def test_an_override_ends_by_itself_when_the_cause_clears_and_the_guard_is_armed_again():
+    g = _overridable()
+    g.override(reason="test")
+    # the reader let go: the log resets, both samples healthy
+    g.fake["wal_bytes"] = 0
+    g.poll()
+    g.poll()
+    assert g.engaged is False and g.state()["overridden"] is False and g.admit() is None
+    assert g.state()["override"] is None
+    # armed again: a new over-limit stretch pauses normally, with no override left over
+    g.fake["wal_bytes"] = 2 * GIB
+    g.poll()
+    g.poll()
+    assert g.engaged and g.admit() == "wal"
+    assert g.state()["overridden"] is False
+
+
+def test_an_override_is_withdrawn_when_free_space_falls_to_the_logs_size():
+    # a 20 GiB log on a drive whose reserve is 10 GiB: the floor (the log's size) is the limit
+    # that bites first, so the override ends on its own terms rather than by the disk latch
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    g.override(reason="test")
+    g.fake["disk_free_bytes"] = 20 * GIB + 1
+    g.poll()
+    assert g.admit() is None, "still above the floor"
+    g.fake["disk_free_bytes"] = 20 * GIB  # at the floor: the log could no longer be written back
+    g.poll()
+    assert g.admit() == "wal", "collection pauses again by itself"
+    st = g.state()
+    assert st["overridden"] is False
+    assert st["kinds"] == ["override-withdrawn", "wal"], "the sentence says WHY it stopped, then the pause"
+    withdrawn = st["notes"][0]
+    assert withdrawn["frame"] == storage_guard.FRAME_OVERRIDE_STOPPED
+    assert withdrawn["vars"] == {"free": 20 * GIB, "floor": 20 * GIB}
+
+
+def test_the_disk_reserve_latch_can_join_an_override_but_the_floor_still_ends_it():
+    """While overridden for the log, free space also falls under the drive's reserve: the disk
+    latch trips as usual, the notice names both, and the floor is still what stops collection."""
+    g = _overridable(wal=2 * GIB, free=100 * GIB)  # reserve 10 GiB, floor 2 GiB
+    g.override(reason="test")
+    g.fake["disk_free_bytes"] = 5 * GIB
+    g.poll()
+    g.poll()
+    assert g.state()["kinds"] == ["override-disk", "override-wal"]
+    assert g.admit() is None
+    g.fake["disk_free_bytes"] = 2 * GIB
+    g.poll()
+    assert g.admit() == "disk", "now both latches pause it"
+    assert g.state()["kinds"][0] == "override-withdrawn"
+
+
+def test_the_floor_never_falls_when_a_reading_is_missing():
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    g.override(reason="test")
+    g.fake["wal_bytes"] = None  # the size could not be read: the last real size still sets the floor
+    g.fake["disk_free_bytes"] = 15 * GIB
+    g.poll()
+    assert g.admit() == "wal", "free space below the log's last known size ends it"
+
+
+def test_a_small_log_still_leaves_128_mib_for_a_commit():
+    g = _overridable(wal=1 * MIB, free=1 * GIB, kind="disk")
+    g.override(reason="test")
+    g.fake["disk_free_bytes"] = 129 * MIB
+    g.poll()
+    assert g.admit() is None
+    g.fake["disk_free_bytes"] = 128 * MIB
+    g.poll()
+    assert g.admit() == "disk"
+
+
+def test_an_override_is_refused_when_free_space_is_already_at_the_floor():
+    g = _overridable(wal=20 * GIB, free=20 * GIB)
+    r = g.override(reason="test")
+    assert r["overridden"] is False and r["refused"]["kind"] == "floor"
+    assert r["refused"]["vars"] == {"free": 20 * GIB, "floor": 20 * GIB}
+    assert g.admit() == "wal", "nothing changed"
+    assert g.state()["overrides"] == 0
+
+
+def test_an_override_is_refused_when_free_space_cannot_be_read():
+    g = _overridable()
+    g.fake["disk_free_bytes"] = None
+    r = g.override(reason="test")
+    assert r["overridden"] is False and r["refused"]["kind"] == "unreadable"
+    assert g.admit() == "wal"
+
+
+def test_an_override_is_refused_while_a_write_has_just_failed_for_want_of_space():
+    clock = Clock()
+    g = _overridable(clock=clock)
+    g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    r = g.override(reason="test")
+    assert r["overridden"] is False and r["refused"]["kind"] == "held"
+    assert r["refused"]["frame"] == storage_guard.FRAME_OVERRIDE_HELD
+    assert g.admit() == "disk", "a drive that refuses writes cannot be forced"
+    clock.advance(ERROR_HOLD_S + 1)
+    g.poll()
+    g.poll()
+    # the hold is over and the drive reads healthy: the disk latch releases by itself, the log
+    # is still over its limit, and the button works again
+    assert g.kind() == "wal"
+    assert g.override(reason="test")["overridden"] is True
+
+
+def test_a_write_that_fails_for_want_of_space_ends_an_override_at_once():
+    g = _overridable()
+    g.override(reason="test")
+    assert g.admit() is None
+    assert g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass") is True
+    assert g.admit() == "disk", "no waiting for the next sample"
+    st = g.state()
+    assert st["overridden"] is False and "override-wal" not in st["kinds"]
+    assert g.override(reason="test")["refused"]["kind"] == "held"
+
+
+def test_an_override_with_nothing_engaged_is_not_recorded():
+    g = _guard()
+    r = g.override(reason="test")
+    assert r == {"engaged": False, "overridden": False, "refused": None}
+    # a latch that trips later is paused normally, not pre-overridden
+    _feed(g, wal=2 * GIB, n=2)
+    assert g.admit() == "wal"
+
+
+def test_the_start_and_run_now_retry_ends_an_override_it_does_not_extend_one():
+    g = _overridable()
+    g.override(reason="test")
+    g.reset(reason="operator started collection")
+    assert g.engaged is False and g.state()["overridden"] is False
+    g.poll()
+    g.poll()
+    assert g.admit() == "wal", "a retry that finds the limit still exceeded pauses again"
+
+
+def test_an_override_does_not_stop_the_drain_and_the_drain_ends_the_cause():
+    clock = Clock()
+    calls = []
+    g = _overridable(clock=clock)
+    g._drain = lambda: calls.append(clock()) or {"busy": 0, "wal_bytes_before": 2 * GIB, "wal_bytes_after": 0}
+    g.override(reason="test")
+    assert g.drain_if_due() is not None and len(calls) == 1, "the log still gets reset the moment it can"
+
+
+def test_off_peak_maintenance_still_yields_under_an_override(monkeypatch):
+    """Collection is forced on; the maintenance writes are not (they append to the file the
+    guard is bounding, and nobody asked for them)."""
+    g = _overridable()
+    g.override(reason="test")
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    sched = runner.BackgroundScheduler(
+        run_once_fn=lambda: {}, settings_provider=lambda: SchedulerSettings()
+    )
+    assert sched._run_off_peak_maintenance() is False
+    assert sched.status()["maintenance_skips"].get("storage_pressure") == 1
+
+
+def test_the_pass_wind_down_and_the_loop_do_not_pause_under_an_override(monkeypatch):
+    g = _overridable()
+    g.override(reason="test")
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    assert runner._PassWindDown(budget_s=0, max_sources=0).admit() is None
+    runs = {"n": 0}
+    sched = runner.BackgroundScheduler(
+        run_once_fn=lambda: runs.__setitem__("n", runs["n"] + 1) or {"ok": True},
+        settings_provider=lambda: SchedulerSettings(continuous=True),
+    )
+    sched._continuous_gap_s = 0.01
+    sched._storage_pause_poll_s = 0.02
+    assert sched.start()
+    try:
+        deadline = time.monotonic() + 5.0
+        while runs["n"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert runs["n"] >= 1, "collection ran while the limit was still exceeded"
+        assert runner.current_phase() != "paused-wal-pinned"
+    finally:
+        sched.stop()
+
+
+def test_an_override_and_its_withdrawal_are_logged_with_the_numbers(caplog):
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    with caplog.at_level("WARNING", logger=storage_guard._LOG.name):
+        g.override(reason="operator resumed via the API")
+        g.fake["disk_free_bytes"] = 15 * GIB
+        g.poll()
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "STORAGE GUARD OVERRIDDEN (operator resumed via the API)" in text
+    assert "WAL 20 GB, free 100 GB" in text.replace(".0 GB", " GB")
+    assert "STORAGE GUARD OVERRIDE WITHDRAWN" in text and "15" in text
+
+
+def test_the_polled_state_says_what_bounds_an_override():
+    g = _overridable()
+    st = g.state()
+    assert st["thresholds"]["override_floor_bytes"] == 2 * GIB
+    assert "Resume anyway" in st["method"] and "128 MiB" in st["method"]
+    assert st["overridden"] is False and st["override"] is None and st["overrides"] == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -879,19 +1150,66 @@ def _src(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+def _function_node(tree, name):
+    import ast
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"no def of {name!r}")
+
+
+def _call_lines(node, name):
+    import ast
+
+    return [
+        c.lineno
+        for c in ast.walk(node)
+        if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == name
+    ]
+
+
 def test_boot_starts_the_supervisor_inside_the_scheduler_gate():
-    # The functions' own source comes from the parser (the shared helper), so the start
-    # can only be found INSIDE the upkeep that run_deferred_startup calls -- a match
-    # elsewhere in main.py would not satisfy this.
+    """The call of the imported ``start`` must sit INSIDE the ``if`` whose test is the
+    OO_NO_SCHEDULER gate, in the upkeep that run_deferred_startup calls. A parser walk, not a
+    text search: dedenting the block out of the gate, or keeping the import and deleting the
+    call, would each pass a find/rfind pair and fail this."""
+    import ast
+
     main = _src("src/api/main.py")
     assert "_run_startup_upkeep()" in python_function_source(main, "run_deferred_startup")
-    body = python_function_source(main, "_run_startup_upkeep")
-    i = body.find("from src.scheduler.storage_guard import start")
-    gate = body.rfind('os.getenv("OO_NO_SCHEDULER", "0") != "1"', 0, i)
-    assert i != -1 and gate != -1, (
+    tree = ast.parse(main)
+    upkeep = _function_node(tree, "_run_startup_upkeep")
+    gates = [
+        n
+        for n in ast.walk(upkeep)
+        if isinstance(n, ast.If) and ast.unparse(n.test) == "os.getenv('OO_NO_SCHEDULER', '0') != '1'"
+    ]
+    assert gates, "the OO_NO_SCHEDULER gate moved -- re-anchor this test"
+    inside = []
+    for gate in gates:
+        imported = {
+            a.asname or a.name
+            for n in ast.walk(gate)
+            if isinstance(n, ast.ImportFrom) and n.module == "src.scheduler.storage_guard"
+            for a in n.names
+            if a.name == "start"
+        }
+        inside += [name for name in imported if _call_lines(gate, name)]
+    assert inside, (
         "the supervisor must start after unlock (run_deferred_startup) and stay behind "
         "OO_NO_SCHEDULER, like the offline-maintenance timer it sits beside"
     )
+
+
+def test_shutdown_stops_the_supervisor_before_the_engine_is_disposed():
+    """A drain in flight (an engaged guard) must not overlap ``dispose_engine``."""
+    import ast
+
+    life = _function_node(ast.parse(_src("src/api/main.py")), "lifespan")
+    stop_at = _call_lines(life, "_stop_storage_guard")
+    assert stop_at, "the lifespan never stops the storage guard's supervisor"
+    assert max(_call_lines(life, "_stop_offline_maintenance")) < min(stop_at) < min(_call_lines(life, "dispose_engine"))
 
 
 def test_the_supervisor_can_be_stopped_and_started_again_and_leaves_one_live_thread(monkeypatch):
@@ -938,7 +1256,10 @@ def test_wait_if_engaged_ends_by_itself_when_no_supervisor_runs(monkeypatch):
 
 def test_the_runner_consults_the_guard_at_every_point_the_memory_guard_is_consulted():
     src = _src("src/scheduler/runner.py")
-    assert src.count("storage_guard.storage_guard.admit()") >= 3  # wind-down, lane, off-peak
+    assert src.count("storage_guard.storage_guard.admit()") >= 2  # wind-down, lane
+    # off-peak maintenance asks the LATCH, not admit(): an operator's override lets collection
+    # run, it does not ask for the maintenance writes (R112)
+    assert "storage_guard.storage_guard.enabled() and storage_guard.storage_guard.engaged" in src
     assert "_wait_while_storage_paused" in src and "note_error(exc" in src
     assert '"storage_guard": storage_state' in src
 
@@ -951,6 +1272,149 @@ def test_the_engine_hook_and_the_read_engine_registration_exist():
         "with the decorator removed)"
     )
     assert "_pool_watch.register(eng)" in _src("src/database/read_snapshot.py")
+
+
+# --------------------------------------------------------------------------- #
+#  the follow-ups from the coordinator's check of #1279 (P1, P3, P6, P7, P8, P9, P11)
+# --------------------------------------------------------------------------- #
+def test_no_sentence_the_guard_sends_tells_the_user_to_do_anything():
+    """P1: the app works as is. The disk frames used to end with an imperative; they now say
+    what would bring the end sooner."""
+    frames = [
+        storage_guard.FRAME_WAL,
+        storage_guard.FRAME_DISK,
+        storage_guard.FRAME_DISK_ERROR,
+        storage_guard.FRAME_OVERRIDE_WAL,
+        storage_guard.FRAME_OVERRIDE_DISK,
+        storage_guard.FRAME_OVERRIDE_STOPPED,
+        storage_guard.FRAME_OVERRIDE_HELD,
+        storage_guard.FRAME_OVERRIDE_UNREADABLE,
+    ]
+    for f in frames:
+        assert "Free some space" not in f and "move the data folder" not in f, f
+    # the plain-words rule: the first thing a reader meets is "working file", not log jargon
+    assert "working file (its write-ahead log)" in storage_guard.FRAME_WAL
+    assert "once writes succeed" not in storage_guard.FRAME_DISK_ERROR, "release does not attempt a write"
+
+
+def test_the_reserve_has_one_stated_reason_everywhere_it_is_said():
+    """P3: 1 GiB for the writes still in flight plus 2% of the drive as room for everything
+    else writing to it -- the same two-part reason in the docstring, the hover and the method."""
+    doc = storage_guard.__doc__ or ""
+    assert "1 GiB for the writes still in flight" in doc and "2% of the drive as room for everything" in doc
+    method = _guard().state()["method"]
+    assert "1 GiB for the writes still in flight" in method and "2% of the drive as room" in method
+    for page in ("src/static/app-core.js", "src/static/taskmanager.js"):
+        assert "1 GB for the writes still in flight plus 2% of the drive as room for everything else" in _src(page)
+
+
+def test_the_stack_depth_is_one_number_in_the_report_and_the_on_demand_capture():
+    """P11: pool_watch's default and the guard's report depth are the same twelve."""
+    assert pool_watch.STACK_DEPTH == storage_guard.PIN_STACK_DEPTH
+
+
+def test_a_long_pin_logs_one_warning_an_episode_and_one_when_the_holders_change(caplog):
+    """P6: one WARNING a minute for a day-long pin would replace the 2,000-record error ring."""
+    clock = Clock()
+    holders = [[{"thread": "worker-1", "age_s": 400.0}]]
+
+    def drain():
+        return {"busy": 1, "wal_bytes_before": 3 * GIB, "wal_bytes_after": 3 * GIB}
+
+    g = _guard(clock, drain_fn=drain)
+    _feed(g, wal=3 * GIB, n=2)
+
+    import src.scheduler.storage_guard as sg
+
+    real = sg._pin_report
+    sg._pin_report = lambda rec: {"holders": holders[0], "n": len(holders[0])}
+    try:
+        with caplog.at_level("INFO", logger=sg._LOG.name):
+            for _ in range(4):
+                clock.advance(storage_guard.PIN_REPORT_EVERY_S + 1)
+                assert g.drain_if_due() is not None
+            levels = [r.levelname for r in caplog.records if "TRUNCATE is busy" in r.getMessage()]
+            assert levels == ["WARNING", "INFO", "INFO", "INFO"], levels
+            holders[0] = [{"thread": "worker-2", "age_s": 10.0}]  # a different holder: say so again
+            clock.advance(storage_guard.PIN_REPORT_EVERY_S + 1)
+            g.drain_if_due()
+            levels = [r.levelname for r in caplog.records if "TRUNCATE is busy" in r.getMessage()]
+            assert levels[-1] == "WARNING"
+            # a released and re-engaged guard is a new episode: its first report is a WARNING again
+            g.fake = None
+            _feed(g, wal=0, n=2)
+            assert not g.engaged
+            _feed(g, wal=3 * GIB, n=2)
+            clock.advance(storage_guard.PIN_REPORT_EVERY_S + 1)
+            g.drain_if_due()
+            levels = [r.levelname for r in caplog.records if "TRUNCATE is busy" in r.getMessage()]
+            assert levels[-1] == "WARNING"
+    finally:
+        sg._pin_report = real
+
+
+def test_the_drain_is_paced_from_when_it_ended_not_from_when_it_began():
+    """P9: a drain that queued 30 s on the write gate must not be followed 5 s later by the next."""
+    clock = Clock()
+    starts = []
+
+    def slow_drain():
+        starts.append(clock())
+        clock.advance(30.0)  # the bounded wait on a busy write gate
+        return {"busy": 0, "skipped": "gate busy"}
+
+    g = _guard(clock, drain_fn=slow_drain)
+    _feed(g, wal=2 * GIB, n=2)
+    assert g.drain_if_due() is not None
+    clock.advance(DRAIN_EVERY_S - 1)
+    assert g.drain_if_due() is None, "ten seconds after it ENDED has not passed"
+    clock.advance(2)
+    assert g.drain_if_due() is not None
+    assert len(starts) == 2
+
+
+def test_a_write_error_latch_whose_hold_lapsed_with_free_space_unreadable_releases_as_a_retry():
+    """P7: nothing could ever confirm recovery by measurement (a PostgreSQL install reads no
+    free space), so the latch must not outlive its hold for ever; another failed write
+    re-latches it at once."""
+    clock = Clock()
+    g = _guard(clock)
+    _feed(g, free=_FREE_OK)
+    g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass")
+    assert g.kind() == "disk"
+    for _ in range(4):
+        g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=None, disk_total_bytes=None)
+    assert g.engaged, "inside the hold an unreadable figure releases nothing"
+    clock.advance(ERROR_HOLD_S + 1)
+    g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=None, disk_total_bytes=None)
+    assert g.engaged, "one sample is not yet resume_after"
+    g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=None, disk_total_bytes=None)
+    assert not g.engaged, "released as a retry"
+    assert g.note_error(sqlite3.OperationalError("database or disk is full"), "collect pass") is True
+    assert g.kind() == "disk", "the next failed write latches it again at once"
+
+
+def test_a_latch_set_by_measurement_never_releases_on_an_unreadable_figure():
+    clock = Clock()
+    g = _guard(clock)
+    _feed(g, free=MIB, n=2)
+    assert g.kind() == "disk"
+    clock.advance(ERROR_HOLD_S * 10)
+    for _ in range(6):
+        g.observe(wal_bytes=None, corpus_bytes=None, disk_free_bytes=None, disk_total_bytes=None)
+    assert g.engaged, "no measurement said the drive recovered"
+
+
+def test_wait_if_engaged_can_be_bounded():
+    """P8: a caller that cannot wait for ever says how long it can."""
+    g = _engaged("wal")
+    g._clock = time.monotonic  # the helper's fake clock does not move; this wait is real, and short
+    t0 = time.monotonic()
+    assert g.wait_if_engaged(max_wait_s=0.3, poll_s=0.05) is True
+    assert 0.25 <= time.monotonic() - t0 < 3.0
+    stop = threading.Event()
+    stop.set()
+    assert g.wait_if_engaged(stop, poll_s=0.05) is False, "an interrupted wait returns at once"
 
 
 def test_the_conftest_isolates_the_process_global_latch():
@@ -972,9 +1436,16 @@ def test_every_storage_string_is_in_the_twelve_locales():
         hover.group(1),
         "Paused: the database log has grown too large",
         "Paused: the data drive is nearly full",
-        "Try again now",
-        "Trying again. Collection pauses again by itself if the limit is still exceeded.",
+        "Resume anyway",
+        "Collection resumed although the limit is still exceeded. It stops again by itself if free space falls too low.",
+        storage_guard.FRAME_OVERRIDE_WAL,
+        storage_guard.FRAME_OVERRIDE_DISK,
+        storage_guard.FRAME_OVERRIDE_STOPPED,
+        storage_guard.FRAME_OVERRIDE_HELD,
+        storage_guard.FRAME_OVERRIDE_UNREADABLE,
     ]
+    for gone in ("Try again now", "Trying again. Collection pauses again by itself if the limit is still exceeded."):
+        assert gone not in _src("src/static/app-core.js") and gone not in _src("src/static/taskmanager.js")
     for p in sorted((ROOT / "src/static/locales").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
         for k in keys:

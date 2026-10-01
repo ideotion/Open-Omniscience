@@ -1821,7 +1821,8 @@ class BackgroundScheduler:
         Holds nothing: no session, gate or permit (the drain runs on the guard's own
         supervisor thread, never here). The paused state is visible as phase
         ``paused-wal-pinned`` or ``paused-low-disk`` and in ``status()['storage_guard']``.
-        Returns at once when the guard is disabled or healthy.
+        Returns at once when the guard is disabled or healthy, or while the operator's
+        override ("Resume anyway", R112) holds: ``admit()`` is None then.
 
         The supervisor is what RELEASES the latch (fresh readings, the drain). When it is not
         running -- the scheduler started over the API after a boot with ``OO_NO_SCHEDULER=1``
@@ -1980,9 +1981,10 @@ class BackgroundScheduler:
             if memguard.memory_guard.engaged:  # property, not a call
                 self._note_maint_skip("memory_pressure")
                 return False  # under memory pressure — do not add write-gate work now
-            if storage_guard.storage_guard.admit() is not None:
+            if storage_guard.storage_guard.enabled() and storage_guard.storage_guard.engaged:
                 # A pinned WAL or a nearly full drive: maintenance writes are exactly the
-                # work that must not start (they append to the file the guard is bounding).
+                # work that must not start (they append to the file the guard is bounding),
+                # even while the operator's override lets collection itself continue.
                 self._note_maint_skip("storage_pressure")
                 return False
         except Exception:  # noqa: BLE001 - guard read must never block maintenance

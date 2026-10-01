@@ -365,8 +365,9 @@ def scheduler_start() -> dict:
     # try again (the guard re-trips after fresh sustained samples if memory is
     # still genuinely low — a retry, never a permanent override).
     memguard.memory_guard.reset(reason="operator started collection")
-    # Likewise the storage guard: a RETRY, never an override -- it re-trips after fresh
-    # over-limit samples if the WAL is still pinned or the drive still nearly full.
+    # Likewise the storage guard: a RETRY -- it re-trips after fresh over-limit samples if the
+    # WAL is still pinned or the drive still nearly full. The button that FORCES collection on
+    # while a limit holds is /storage-guard/resume (R112), not this.
     storage_guard.storage_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}
@@ -415,14 +416,18 @@ def memory_guard_resume() -> dict:
 
 @router.post("/storage-guard/resume")
 def storage_guard_resume() -> dict:
-    """Release the storage guard's pause explicitly ("Try again now").
+    """The operator's override of the storage guard's pause ("Resume anyway", R112).
 
-    A retry, never an override of the measurement: the guard re-engages after fresh
-    over-limit samples if the WAL is still pinned past this machine's limit or the drive
-    is still nearly full. Status (incl. the guard's numbers) rides the response.
+    Collection continues although the WAL limit or the drive reserve is still exceeded. It
+    ends by itself when the cause clears, stops again if free space falls to the override
+    floor (``max(128 MiB, the log's size)``) or a write fails for want of space, and is
+    REFUSED (with a sentence frame, nothing changes) while a write has just failed, when free
+    space cannot be read, or when it is already at or below the floor. Loopback only, no
+    egress. The response carries the status payload and ``storage_guard_override`` =
+    ``{engaged, overridden, refused}``.
     """
-    storage_guard.storage_guard.reset(reason="operator resumed via the API")
-    return _status_payload()
+    result = storage_guard.storage_guard.override(reason="operator resumed via the API")
+    return {**_status_payload(), "storage_guard_override": result}
 
 
 @router.get("/targets")

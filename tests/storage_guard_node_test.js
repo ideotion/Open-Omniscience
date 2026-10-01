@@ -4,8 +4,12 @@
 // GPL-3.0-or-later.
 //
 //   * an engaged guard draws each note from its FRAME with the numbers filled in through the
-//     page's own byte formatter, the retry button, and the method one hover away (which says
-//     that quitting and reopening ends what the app itself holds open);
+//     page's own byte formatter, the "Resume anyway" button (the operator's OVERRIDE, R112), and
+//     the method one hover away (which says what bounds an override and that quitting and
+//     reopening ends what the app itself holds open);
+//   * while an override holds the notice says so, with the floor it stops at, and offers no
+//     button; the click shows the server's refusal sentence with the sizes through the page's
+//     formatter, or says that collection resumed although the limit is exceeded;
 //   * it draws NOTHING unless collection is meant to be running: a "Collection is paused"
 //     notice over a stopped scheduler or airplane mode would claim a state that is not the case;
 //   * a healthy or absent guard draws nothing, and no placeholder survives into the text.
@@ -44,6 +48,8 @@ const bytes = (n) => (n == null ? "—" : Math.round(n / 1048576) + " MB");
 
 const FRAME_WAL = "Collection is paused: the database's write-ahead log has grown to {size} (this machine's limit is {limit}) and cannot be reset while something still holds it open, such as a long read or a long write. Collection resumes by itself as soon as the log can be reset.";
 const GUARD = { engaged: true, notes: [{ kind: "wal", frame: FRAME_WAL, vars: { size: 3221225472, limit: 1073741824 } }] };
+const FRAME_OVERRIDE_WAL = "Collection was resumed by you although the database's write-ahead log is {size} (this machine's limit is {limit}). It stops again by itself if free space falls to {floor}, the least the log needs to be written back into the database, or if a write fails for lack of space. The next start will spend longer recovering the log.";
+const OVERRIDDEN = { engaged: true, overridden: true, notes: [{ kind: "override-wal", frame: FRAME_OVERRIDE_WAL, vars: { size: 3221225472, limit: 1073741824, floor: 3221225472 } }] };
 const ok = (over) => Object.assign({ running: true, online: true, storage_guard: GUARD }, over || {});
 
 const app = new Function("esc", "_fmtBytes",
@@ -65,11 +71,22 @@ for (const [ui, draw] of Object.entries(render)) {
     assert.ok(html.includes("limit is 1024 MB)"), html);
     assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
   });
-  check(ui + ": the retry button is there and the hover carries the restart sentence", () => {
+  check(ui + ": the override button is there and the hover says what bounds it and the restart sentence", () => {
     const html = draw(ok());
     assert.ok(/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), html);
-    assert.ok(html.includes("Try again now"), html);
-    assert.ok(html.includes("quitting and reopening the app ends anything the app itself is holding open"), html);
+    assert.ok(html.includes("Resume anyway"), html);
+    assert.ok(!html.includes("Try again now"), "the retry-era label is gone: " + html);
+    assert.ok(html.includes("forces it on while the limit is still exceeded"), html);
+    assert.ok(html.includes("never less than 128 MB"), html);
+    assert.ok(html.includes("Quitting and reopening the app ends anything the app itself is holding open"), html);
+    assert.ok(html.includes("1 GB for the writes still in flight plus 2% of the drive as room for everything else"), html);
+  });
+  check(ui + ": while an override holds the note says so with its floor and the button is not offered", () => {
+    const html = draw(ok({ storage_guard: OVERRIDDEN }));
+    assert.ok(html.includes("Collection was resumed by you although the database"), html);
+    assert.ok(html.includes("falls to 3072 MB"), html);
+    assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), html);
+    assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
   });
   check(ui + ": nothing is drawn while the scheduler is stopped", () => {
     assert.strictEqual(draw(ok({ running: false })), "");
@@ -84,6 +101,81 @@ for (const [ui, draw] of Object.entries(render)) {
   });
 }
 
+// The click: the server grants the override, or refuses with a sentence frame whose sizes are
+// written through the page's own formatter -- and a refusal is an error toast, never a success.
+const FRAME_STOPPED = "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the least the database's log needs to be written back into place. Collection stays paused. Free some space or move the data folder.";
+function handlerSource(src, marker) {
+  const at = src.indexOf(marker);
+  assert.ok(at !== -1, marker + " not found -- was it renamed?");
+  const open = src.indexOf("{", src.indexOf(")", at));
+  let d = 0, j = open;
+  for (; j < src.length; j++) {
+    if (src[j] === "{") d++;
+    else if (src[j] === "}") { d--; if (d === 0) { j++; break; } }
+  }
+  return "async function _h()" + src.slice(open, j);
+}
+async function clickCase(makeHandler, reply) {
+  const toasts = [];
+  const api = async () => { if (reply instanceof Error) throw reply; return reply; };
+  const toast = (m, kind) => toasts.push([m, kind || "ok"]);
+  await makeHandler(api, toast)();
+  return toasts;
+}
+const FAKE_I18N = { t: (s) => s, tf };
+const appHandler = (api, toast) => new Function("api", "toast", "_fmtBytes", "window", "OOI18N", "_pollVitals",
+  handlerSource(APP, "async function storageGuardResume(") + "return _h;")(api, toast, bytes, { OOI18N: FAKE_I18N }, FAKE_I18N, undefined);
+const tmHandler = (api, toast) => new Function("api", "toast", "fmtBytes", "t", "tf",
+  handlerSource(TM, "storageResume: async function") + "return _h;")(api, toast, bytes, (s) => s, tf);
+const clicks = { "the app": appHandler, "/tasks": tmHandler };
+const pending = [];
+for (const [ui, make] of Object.entries(clicks)) {
+  pending.push((async () => {
+    let t = await clickCase(make, { storage_guard_override: { engaged: true, overridden: true, refused: null } });
+    check(ui + ": a granted override says collection resumed although the limit is still exceeded", () => {
+      assert.strictEqual(t.length, 1);
+      assert.ok(t[0][0].startsWith("Collection resumed although the limit is still exceeded"), t[0][0]);
+      assert.strictEqual(t[0][1], "ok");
+    });
+    t = await clickCase(make, { storage_guard_override: { engaged: true, overridden: false,
+      refused: { kind: "floor", frame: FRAME_STOPPED, vars: { free: 104857600, floor: 134217728 } } } });
+    check(ui + ": a refusal is an error toast with the sizes through the formatter", () => {
+      assert.strictEqual(t.length, 1);
+      assert.strictEqual(t[0][1], "err");
+      assert.ok(t[0][0].includes("free space is 100 MB, at or below 128 MB"), t[0][0]);
+      assert.ok(!/\{\w+\}/.test(t[0][0]), t[0][0]);
+    });
+    t = await clickCase(make, { storage_guard_override: { engaged: false, overridden: false, refused: null } });
+    check(ui + ": nothing left to override just says resumed", () => {
+      assert.strictEqual(t[0][0], "Resumed.");
+    });
+    t = await clickCase(make, new Error("boom"));
+    check(ui + ": a failed request shows its error", () => {
+      assert.deepStrictEqual(t, [["boom", "err"]]);
+    });
+  })());
+}
+
+// The loop's phase can read paused for up to one poll after "Resume anyway": no "Paused" label may
+// sit beside the "resumed by you" note while an override holds.
+const pausedApp = new Function(extract(APP, "_storagePausedText") + "return _storagePausedText;")();
+const pausedTm = new Function(extract(TM, "storagePausedText") + "return storagePausedText;")();
+for (const [ui, fn] of [["the app", pausedApp], ["/tasks", pausedTm]]) {
+  check(ui + ": the paused label shows while the guard holds and never while overridden", () => {
+    assert.ok(/^Paused: the database log/.test(fn("paused-wal-pinned", GUARD)));
+    assert.ok(/^Paused: the data drive/.test(fn("paused-low-disk", undefined)));
+    assert.strictEqual(fn("paused-wal-pinned", OVERRIDDEN), null);
+    assert.strictEqual(fn("paused-low-disk", OVERRIDDEN), null);
+    assert.strictEqual(fn("collecting", GUARD), null);
+  });
+}
+const callSites = (src, name) => (src.match(new RegExp(name + "\\(a\\.phase[^)]*\\)", "g")) || []);
+check("every pill call site passes the guard (a site that forgets brings the label back)", () => {
+  const sites = callSites(APP, "_storagePausedText").concat(callSites(TM, "storagePausedText"));
+  assert.strictEqual(sites.length, 3, sites.join(" | "));
+  sites.forEach((x) => assert.ok(x.includes("a.storage_guard"), x));
+});
+
 check("the hover key in both UIs is a locale key (the page translates it by that exact text)", () => {
   for (const [name, src] of [["app-core", APP], ["taskmanager", TM]]) {
     const m = src.match(/t\("(Measured from the size of the database[^"]*)"\)/);
@@ -92,8 +184,10 @@ check("the hover key in both UIs is a locale key (the page translates it by that
   }
 });
 
-if (fails.length) {
-  console.log(fails.join("\n"));
-  process.exit(1);
-}
-console.log("storage guard notice: all checks ok");
+Promise.all(pending).then(() => {
+  if (fails.length) {
+    console.log(fails.join("\n"));
+    process.exit(1);
+  }
+  console.log("storage guard notice: all checks ok");
+});

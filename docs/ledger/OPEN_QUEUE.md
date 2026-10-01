@@ -11758,27 +11758,33 @@
   **AND THE HONEST LIMIT THE BRIEF OPENED WITH STILL HOLDS: none of this establishes what killed any
   of the four sessions.** Phase 0 shipped so the NEXT one is answerable; it cannot recover the four
   that are gone. Nothing here licenses writing a crash cause into a user-facing string.
-- **THE STORAGE GUARD — PR A BUILT 2026-09-30 (WAL / disk thread; ranks 1, 2 and 6 of the 16-instance field
-  diagnostics). ONE DECISION IS STILL THE MAINTAINER'S (D1, asked as question 18, recommendation YES).**
+- **THE STORAGE GUARD — PR A MERGED 2026-10-01 (#1279); D1 DECIDED (`R112`, 2026-10-01 00:12 UTC, answer 18a) AND THE OVERRIDE BUTTON
+  BUILT IN THE NEXT PR (WAL / disk thread; ranks 1, 2 and 6 of the 16-instance field diagnostics).**
   Six of sixteen instances carried a `-wal` of 18.7 to 42.9 GB, the drive filled on three, and one machine failed
   fourteen passes in a row on the same full drive. `src/scheduler/storage_guard.py` pauses NEW collection work
   while the corpus WAL sits at or above a limit sized from the machine (`min(clamp(10% of the corpus file,
   512 MiB, 2 GiB), 10% of free disk)`, never below 128 MiB) or free disk is below `max(1 GiB, 2% of the drive)`;
   it drains the WAL (the boundary's own PASSIVE-then-TRUNCATE call) and, when TRUNCATE is busy, NAMES the
-  holders with stacks. It resumes by itself with hysteresis, and "Try again now" is a retry, never an override.
-  Each number says what it protects (`storage_guard.py`'s docstring, and the PR). **PENDING (D1, question 18):
-  does collection PAUSE by itself at those thresholds (new behaviour; recommended), or does the guard only WARN?**
-  Built on YES; on b the engaged path becomes a warning only (the notice, the named holders and the gauges stay).
+  holders with stacks. It resumes by itself with hysteresis. **D1 IS DECIDED: YES, collection pauses by itself, with a
+  button that really overrides (`R112`).** Merged #1279 shipped the pause with a retry-only button; the NEXT PR carries the
+  override: «Resume anyway» continues collection while a limit is still exceeded and ends by itself at the override floor
+  `max(128 MiB, the log's own size)` (the least a checkpoint may need to write the log back), at once on a write that
+  fails for want of space (which also latches the 300 s hold during which the button is refused), and when the cause clears;
+  it is refused with a sentence when free space is already at or below the floor or cannot be read, lives in memory only,
+  and leaves the drain and the maintenance block as they were. Each number says what it protects (`storage_guard.py`'s
+  docstring, and the PR).
   **NOT CHANGED, and the deferral in the entry above stands:** the boundary's PASSIVE/TRUNCATE logic and
-  `wal_autocheckpoint` (MEASURE FIRST); the bound is a STOP, not a new checkpoint. **ONE SIZING QUESTION THE
-  REVIEW RAISED, ASKED OF THE COORDINATOR (2026-09-30; built as written, D2):** the disk reserve
-  `max(1 GiB, 2% of the drive)` has a floor but NO CEILING, and "grows with the machine" is not a stated
-  protection: what it protects is the writes still in flight while a pass winds down plus the pass tail, which
-  does not scale with the drive, so a 4 TB volume pauses at about 80 GB free. The proposed fix is a ceiling (10
-  GiB was suggested) justified by a MEASURED figure, the most bytes written between the guard's first refusal and
-  the pass's end on the largest instance; no ceiling is written until that figure exists. **Still to come from the same
+  `wal_autocheckpoint` (MEASURE FIRST); the bound is a STOP, not a new checkpoint. **ONE SIZING QUESTION, ANSWERED AS OPTION a
+  (D2, the coordinator's standing ruling 2026-09-30):** the disk reserve `max(1 GiB, 2% of the drive)` has a floor but NO CEILING.
+  Its stated reason is now ONE sentence, said the same way in the module docstring, the notice's hover and the method string: **1 GiB
+  for the writes still in flight while a pass winds down (plus the pass-tail records), and 2% of the drive as room for everything
+  else that writes to it** (the OS, a browser, a download; not a measured need of this app). The first part does not scale with the
+  drive, so a 4 TB volume pauses at about 80 GB free. It STAYS as built; a ceiling is written only once the pass tail is MEASURED
+  (the most bytes written between the guard's first refusal and the pass's end on the largest instance; PR B adds the
+  measurement), never a fixed 10 GiB. **"BY ITSELF" MEANS "FOR AS LONG AS THE HOLDER LIVES":** a reader the app itself holds open
+  never ends on its own, so the exits are "Resume anyway", a restart, or the holder ending (stated in the guard's docstring). **Still to come from the same
   thread:** PR B (the pool: rank 12's endpoint on a standing row; rank 7's last-good activity preview, which is
-  NOT the ruling-gated 429 cap), PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
+  NOT the ruling-gated 429 cap; the tail measure), PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
   machine's measured recovery rate), PR D (rank 9's browse query).
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and

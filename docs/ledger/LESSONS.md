@@ -12876,3 +12876,19 @@ a helper call breaks every harness that extracts it without the helper**: grep `
 function's name and run ALL the node-wrapped tests, not the ones whose name sounds related; and run the repo-wide
 guard tests (slicing budget, ruff ratchet, i18n gates, inline-handler ratchet, planned index, repo invariants)
 before saying a change is verified.
+
+### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)
+
+The first build of the storage guard's button cleared the latch and let the next two samples re-trip it, and was
+called an override in the ledger. The maintainer's answer to question 18 ("a resume button to override") meant what it
+said: collection continues WHILE the limit holds. An override of a disk guard is only safe if it carries four
+things, each pinned by a test: (1) a FLOOR derived from what the worst recovery action needs (`max(128 MiB, the
+log's own size)`: a checkpoint can write every frame back as a distinct page, measured 1.0 GB for a 1 GiB append-only
+log), never a number typed from habit; (2) a REFUSAL with its own sentence when it cannot be bounded (free space already
+at or below the floor, or unreadable) rather than a silent no-op; (3) a WITHDRAWAL on the real failure (a write that
+fails for want of space ends it at once and latches the hold during which the button is refused: a drive that
+says "free" and refuses writes cannot be forced); (4) an end when the cause clears, kept in memory only. **Keep the
+latch's truth apart from the permission:** `engaged` stays the condition (the drain and the maintenance block read it),
+`admit()` is whether new work may start. And when the override covers one cause (the log), free space falling under the
+OTHER cause's reserve (the drive) legitimately trips that latch too; test numbers must respect it (a 2 GiB log on a
+500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not the floor, is what a naive test sees).
