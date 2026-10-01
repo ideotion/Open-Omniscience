@@ -262,15 +262,22 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         gained_d = (
             qual.get("introduced_disqualified") or 0
         ) + (qual.get("adopted_disqualified") or 0)
-        if gained_q or gained_d or qual.get("local_verdict_kept"):
+        if (
+            gained_q
+            or gained_d
+            or qual.get("local_verdict_kept")
+            or qual.get("catalogue_stamp_kept")
+            or qual.get("confirmed_qualified")
+        ):
             lines.append("## Source qualification")
             lines.append("")
-            lines.append(
-                f"- **{_fmt_count(gained_q)} qualified sources** arrived with this import "
-                f"({_fmt_count(qual.get('introduced_qualified'))} on sources it added, "
-                f"{_fmt_count(qual.get('adopted_qualified'))} on sources already here that "
-                "had never been judged or carried only the shipped catalogue's own stamp)."
-            )
+            if gained_q:
+                lines.append(
+                    f"- **{_fmt_count(gained_q)} qualified sources** arrived with this import "
+                    f"({_fmt_count(qual.get('introduced_qualified'))} on sources it added, "
+                    f"{_fmt_count(qual.get('adopted_qualified'))} on sources already here that "
+                    "had never been judged)."
+                )
             if gained_d:
                 lines.append(
                     f"- {_fmt_count(gained_d)} sources arrived DISQUALIFIED and are kept out "
@@ -280,14 +287,27 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             if qual.get("local_verdict_kept"):
                 kept_line = (
                     f"- {_fmt_count(qual.get('local_verdict_kept'))} sources already carried a "
-                    "verdict reached on THIS machine; those were left exactly as they were"
+                    "verdict of their own (reached on this machine, or taken from an earlier "
+                    "import); those were left exactly as they were"
                 )
                 if qual.get("local_verdict_disagreed"):
                     kept_line += (
                         f", including {_fmt_count(qual.get('local_verdict_disagreed'))} where the "
-                        "incoming corpus disagreed — your own verdict was kept"
+                        "incoming corpus disagreed — the verdict already here was kept"
                     )
                 lines.append(kept_line + ".")
+            if qual.get("catalogue_stamp_kept"):
+                lines.append(
+                    f"- {_fmt_count(qual.get('catalogue_stamp_kept'))} sources carry only the "
+                    "shipped catalogue's own stamp (nothing was measured here) and the incoming "
+                    "corpus had nothing measured for them; they were left as they were."
+                )
+            if qual.get("confirmed_qualified"):
+                lines.append(
+                    f"- {_fmt_count(qual.get('confirmed_qualified'))} catalogue-stamped sources "
+                    "were already collectable and now also carry the same verdict measured on "
+                    "another instance; they are not counted as newly qualified."
+                )
             engines = qual.get("engines") or {}
             if engines:
                 shown = ", ".join(

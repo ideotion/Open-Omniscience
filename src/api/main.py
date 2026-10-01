@@ -302,6 +302,27 @@ def _run_startup_upkeep() -> None:
                 )
         except Exception:  # noqa: BLE001 - seeding must never block startup
             logger.warning("could not seed the source catalog at startup", exc_info=True)
+    # WITHDRAW, NEVER RE-ADMIT, what the history already refused (2026-09-30, diagnostics
+    # rank 14): a source whose live status is not 'disqualified' although its newest judging
+    # attempt says so goes back to disqualified. LOCAL DATABASE ONLY, so airplane mode does
+    # not stop it, and only the direction that takes a source OUT of collection -- restoring
+    # 'qualified' stays an operator's call. ONLY a source whose live verdict is the shipped
+    # catalogue's own stamp (or nothing) is touched: a verdict measured here is never changed
+    # by an imported history on its own (rule 12 = b). Every change is kept in a revert
+    # record. Not gated by OO_AUTOSEED: it is a reconciliation of history, not a seed;
+    # OO_QUALIFICATION_AUTO_REPAIR=0 (set only by the test conftest) switches it off.
+    try:
+        from src.catalog.qualification_integrity import auto_repair_inversions
+
+        repaired = auto_repair_inversions()
+        if repaired.get("repaired"):
+            logger.info(
+                "Restored %d source(s) to disqualified: their newest judging attempt says "
+                "disqualified (revert record kept).", repaired["repaired"],
+            )
+    except Exception:  # noqa: BLE001 - a repair that could not run never blocks startup
+        logger.warning("could not reconcile qualification inversions at startup",
+                       exc_info=True)
     try:
         from src.api.startup_status import mark_phase as _mp
 
@@ -519,6 +540,16 @@ async def lifespan(app: FastAPI):
         _stop_offline_maintenance()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.warning("Error stopping offline maintenance on shutdown", exc_info=True)
+    try:
+        # The storage guard's supervisor drains the WAL through the corpus engine: stop it
+        # BEFORE the engine is disposed. stop() waits up to two seconds for a drain in flight; one
+        # queued longer on the write gate may still be running, and a checkout after the disposal
+        # only opens a fresh connection on a process that is going down.
+        from src.scheduler.storage_guard import stop as _stop_storage_guard
+
+        _stop_storage_guard()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.warning("Error stopping the storage guard on shutdown", exc_info=True)
 
     dispose_engine()
     try:

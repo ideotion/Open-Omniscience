@@ -447,3 +447,31 @@ def test_a_refused_trim_is_not_reported_as_a_release(monkeypatch):
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
     assert "release" not in entry
+
+
+def test_a_route_member_answering_a_memory_stop_as_503_is_skipped_not_an_error():
+    """A member that calls its route function sees a memory stop (or a deadline) as an
+    HTTPException(503) chained to the typed abort. ``MemoryShort`` promises a diagnostics member
+    "skipped"; the bundle recorded "error" for the keyword digest once the stop could fire there.
+    A 503 that is NOT a stop is still an error."""
+    from fastapi import HTTPException
+
+    from src.database.maintenance import MemoryShort
+
+    def stopped():
+        try:
+            raise MemoryShort("only 40 MB of memory is available, the floor is 300 MB")
+        except MemoryShort as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    def refused():
+        raise HTTPException(status_code=503, detail="not a stop")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        results = d._write_all_diagnostics_zip([("a.json", stopped), ("b.json", refused)], z)
+        names = z.namelist()
+    by_file = {r["file"]: r for r in results}
+    assert by_file["a.json"]["outcome"] == "skipped-deadline" and by_file["a.json"]["ok"] is False
+    assert "a.json.skipped-deadline.txt" in names and "a.json.error.txt" not in names
+    assert by_file["b.json"]["outcome"] == "error" and "b.json.error.txt" in names

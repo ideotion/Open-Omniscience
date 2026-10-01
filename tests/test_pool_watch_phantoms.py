@@ -37,25 +37,38 @@ def eng(tmp_path):
     e.dispose()
 
 
+def _mine():
+    """This test's own checkouts. The registry is process-wide: a daemon's own checkout on the
+    global engine may be listed too, so an assertion about a test's connections compares on the
+    test's own threads, never on the whole table."""
+    me = threading.get_ident()
+    return [r for r in pool_watch.checked_out() if r["ident"] == me or str(r["thread"]).startswith("pw-")]
+
+
+def _live_mine():
+    me = threading.get_ident()
+    return [v for v in list(pool_watch._LIVE.values()) if v["ident"] == me]
+
+
 def test_a_normal_checkout_is_listed_then_dropped_on_checkin(eng):
     c = eng.connect()
     try:
-        rows = pool_watch.checked_out()
+        rows = _mine()
         assert [r["thread"] for r in rows] == [threading.current_thread().name]
         assert rows[0]["ident"] == threading.get_ident()
         assert rows[0]["age_s"] >= 0
     finally:
         c.close()
-    assert pool_watch.checked_out() == []
+    assert _mine() == []
 
 
 def test_an_invalidated_connection_leaves_no_phantom_row(eng):
     c = eng.connect()
     c.exec_driver_sql("SELECT 1")
-    assert len(pool_watch.checked_out()) == 1
+    assert len(_mine()) == 1
     c.invalidate()
     c.close()
-    assert pool_watch.checked_out() == [], "an invalidated checkout must not stay 'oldest' forever"
+    assert _mine() == [], "an invalidated checkout must not stay 'oldest' forever"
 
 
 def test_a_detached_connection_leaves_no_phantom_row(eng):
@@ -63,9 +76,9 @@ def test_a_detached_connection_leaves_no_phantom_row(eng):
     c.exec_driver_sql("SELECT 1")
     c.detach()
     # a detached connection has left the pool for good: it is not a pooled checkout any more
-    assert pool_watch.checked_out() == []
+    assert _mine() == []
     c.close()
-    assert pool_watch.checked_out() == []
+    assert _mine() == []
 
 
 def test_a_row_whose_record_is_no_longer_out_is_pruned_at_read_time_and_counted(eng):
@@ -73,17 +86,17 @@ def test_a_row_whose_record_is_no_longer_out_is_pruned_at_read_time_and_counted(
     return) leaves a row for a record that is back in the pool. The pool's own state is left
     untouched: the connection really is checked in, and the table still remembers it."""
     c = eng.connect()
-    assert len(pool_watch.checked_out()) == 1
+    assert len(_mine()) == 1
     before = pool_watch.pruned_total()
     event.remove(eng, "checkin", pool_watch._on_checkin)
     try:
         c.close()
     finally:
         event.listen(eng, "checkin", pool_watch._on_checkin)
-    assert len(pool_watch._LIVE) == 1, "fixture: the checkin listener really did not see the return"
-    assert pool_watch.checked_out() == []
-    assert pool_watch.pruned_total() == before + 1
-    assert pool_watch._LIVE == {}
+    assert len(_live_mine()) == 1, "fixture: the checkin listener really did not see the return"
+    assert _mine() == []
+    assert pool_watch.pruned_total() >= before + 1
+    assert _live_mine() == []
 
 
 def test_registering_the_same_engine_twice_attaches_each_listener_once(eng):
@@ -107,11 +120,11 @@ def test_a_checkout_hook_that_cannot_weak_reference_the_record_still_records_the
     monkeypatch.setattr(pool_watch, "weakref", types.SimpleNamespace(ref=no_ref))
     c = eng.connect()
     try:
-        rows = pool_watch.checked_out()
+        rows = _mine()
         assert len(rows) == 1, "an unverifiable row is kept, never silently dropped"
     finally:
         c.close()
-    assert pool_watch.checked_out() == []
+    assert _mine() == []
 
 
 def test_stacks_are_captured_on_demand_for_a_live_thread_only(eng):
@@ -147,10 +160,10 @@ def test_the_oldest_checkout_comes_first(eng):
     while "younger" not in held:
         time.sleep(0.005)
     try:
-        names = [r["thread"] for r in pool_watch.checked_out()]
+        names = [r["thread"] for r in _mine()]
         assert names == ["pw-older", "pw-younger"], names
     finally:
         release.set()
         older.join(5.0)
         younger.join(5.0)
-    assert pool_watch.checked_out() == []
+    assert _mine() == []

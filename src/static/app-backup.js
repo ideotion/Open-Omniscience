@@ -2965,7 +2965,7 @@
       // engine" half — never inferred, only what the incoming stamp recorded.
       let qualGained = 0, disqGained = 0;
       const qualEngines = {};
-      // "Already judged here, kept" and "Backup disagreed" are SNAPSHOTS, one per item,
+      // "Already judged, kept" and "Backup disagreed" are SNAPSHOTS, one per item,
       // each read against the corpus as that item found it -- which the items before it
       // in the same run had already grown. A source carried by four backups was counted
       // four times, and a source the first backup introduced read as "already judged
@@ -3198,8 +3198,8 @@
       // and the aggregate says why it shows none (I-1).
       const keptLines = (pq) => {
         const out = [];
-        if (pq && pq.local_verdict_kept) out.push(tf("Already judged here, kept: {n}", { n: num(pq.local_verdict_kept) }));
-        if (pq && pq.local_verdict_disagreed) out.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(pq.local_verdict_disagreed) }));
+        if (pq && pq.local_verdict_kept) out.push(tf("Already judged, kept: {n}", { n: num(pq.local_verdict_kept) }));
+        if (pq && pq.local_verdict_disagreed) out.push(tf("Backup disagreed, existing verdict kept: {n}", { n: num(pq.local_verdict_disagreed) }));
         return out;
       };
       const qualPerBackup = !!(qualGained || disqGained) && qualSnaps.length > 1;
@@ -3210,7 +3210,7 @@
         const sub = [];
         if (!qualPerBackup) sub.push(...keptLines(qualSnaps[0]));
         else if (qualSnaps.some((pq) => keptLines(pq).length)) {
-          sub.push(t("Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up."));
+          sub.push(t("Sources already judged are counted per backup, below: the backups of one run overlap, so those counts are not added up."));
         }
         const engNames = Object.keys(qualEngines);
         if (engNames.length) {

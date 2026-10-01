@@ -501,9 +501,29 @@ def test_performance_report_carries_real_evidence(client, seeded):
     probes = {row["probe"] for row in st["results"]}
     assert {"database_stats", "insights_map", "keyword_export_streamed"} <= probes
     for row in st["results"]:
-        assert ("ms" in row) or ("error" in row)  # measured or honestly failed
+        # measured, honestly failed, or honestly not run (a machine the keyword export's memory
+        # gate declines says so and carries no number)
+        assert ("ms" in row) or ("error" in row) or ("skipped" in row)
     streamed = [x for x in st["results"] if x["probe"] == "keyword_export_streamed"]
-    assert all("bytes" in x for x in streamed), "streamed body must be fully consumed"
+    assert all("bytes" in x or "skipped" in x for x in streamed), "streamed body must be fully consumed"
+
+
+def test_performance_report_says_so_when_the_keyword_export_is_declined(client, seeded, monkeypatch):
+    """The probe goes through the same RAM gate as the bundle's digest member: where the gate
+    declines, the report carries a ``skipped`` row with the reason and the export never runs."""
+    import src.api.diagnostics.bundle as bundle_mod
+    import src.api.diagnostics.performance as perf_mod
+
+    ran: list[int] = []
+    monkeypatch.setattr(
+        bundle_mod, "ram_declined_reason", lambda name, **_k: f"{name} declined for the test"
+    )
+    monkeypatch.setattr(perf_mod, "keyword_log", lambda **_k: ran.append(1))
+    rows = client.get("/api/diagnostics/performance").json()["data"]["selftest"]["results"]
+    row = [x for x in rows if x["probe"] == "keyword_export_streamed"]
+    assert len(row) == 1 and "declined for the test" in row[0]["skipped"]
+    assert "ms" not in row[0] and "bytes" not in row[0] and ran == []
+    assert row[0]["run"] == 0, "the row says the probe did not run, not only that it was skipped"
 
 
 def test_performance_report_selftest_can_be_skipped(client):

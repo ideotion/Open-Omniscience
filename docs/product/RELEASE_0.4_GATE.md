@@ -1179,7 +1179,7 @@ Kept explicit so nothing drifts in by assumption:
   3–6), Q1113 (the embassy platforms) — are not decided here and not defaulted anywhere.~~ All four answered
   2026-09-29 (a, a, a, a), recorded in `RULINGS_INDEX.md` and §3.
 - **The stoplist merge** (Q1103 = b vs Q1104 = a, a CONFLICT recorded 2026-09-15) — RESOLVED 2026-09-30
-  (R98, amended by R111): reviewed batches curated by us and shipped with each app update, no Settings screen; row M closes with the first such batch (after T2 and T3).
+  (R98, amended by R111): reviewed batches curated by us and shipped with each app update, no Settings screen; row M closes with the first such batch (after R111 steps T2 and T3).
 - **Row 5's Tier B** (the 451 index pages above the word guard). Not proposed for `0.3` and not
   proposed here: their prose is unmeasured. The `0.3` PR made that measurable
   (`criteria-calibration.json`'s prose arm now advances and can be pointed at that population),

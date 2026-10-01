@@ -18,7 +18,9 @@ import json
 import os
 import pathlib
 import threading
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -635,19 +637,73 @@ def _fixity_bundle_member(db: Session) -> dict:
 #: guessing in either direction is worse than running it. This map grows when a run
 #: measures something, never when someone estimates it -- every bundle already records
 #: `rss_peak_rise_kb` per member, so the evidence arrives on its own.
+#:
+#: RE-MEASURED 2026-09-30, because a measured constant is a claim about ONE VERSION of the code
+#: and the code changed. The 3,322.8 MiB above was the unbounded builder (a dict per keyword of
+#: the window, five times the memory for five times the keywords); the export now holds flat
+#: arrays, bounded heaps and a batch (src/analytics/keyword_log_scan.py), and on a synthetic
+#: corpus with the field's shape the digest's peak RSS RISE was 181 MiB at 2 M keywords and 186
+#: MiB at 6 M keywords (400,000 articles, 10 M mentions; the process idles at 79 MB). 200.0 is
+#: that, rounded up, for a corpus of 13 languages (65,000 exported entries). THIS IS A
+#: SYNTHETIC-CORPUS READING and the FALLBACK used only when no session is at hand: with one, the
+#: gate uses the estimate from the instance's own counts (82 languages x 5,000 entries measured
+#: 1,015 MiB). The operator's next FULL bundle records `rss_peak_rise_kb` for this member on the
+#: real corpus, and that number replaces these.
 _MEMBER_RSS_NEED_MB: dict[str, float] = {
-    "keyword-log-digest.json": 3322.8,
+    "keyword-log-digest.json": 200.0,
 }
 
-#: A member declines when its measured need exceeds this share of TOTAL RAM.
-#: Half, per R27's own words. It is self-limiting by construction: the one measured
-#: member needs 3,322.8 MiB, so it declines on a 4 GB machine and runs from ~6.6 GB up,
-#: which is the "below the floor" shape the ruling asks for without a second threshold
-#: to keep in step with the first.
+#: A member declines when its need exceeds this share of TOTAL RAM.
+#: Half, per R27's own words. The keyword digest's need is no longer one constant: it is
+#: estimated from the instance's own counts (``_MEMBER_NEED_ESTIMATORS``), about 2.75 KB per
+#: exported keyword (2.5 KB measured at up to 410,000 entries, plus ten per cent). On the largest
+#: instance seen (14.65 M keywords, 1.83 M articles, about 82 languages) that is about 1,170 MiB,
+#: so a 4 GB machine with 2.5 GB free is admitted where the old 3,322.8 MiB (the unbounded
+#: builder, code that no longer exists) declined it. The ruling's "below the floor" shape is TWO
+#: checks, in this order (``ram_declined_reason``): the need against half of total RAM (R27's own
+#: text), and, for an ESTIMATED need only, the need plus the memory stop's floor against the memory
+#: available NOW. The second is a default taken under "size from the machine", not ruled by R27
+#: (OPEN_QUEUE): it is for a machine busier than its total says. On bundle 091717's own numbers it
+#: ADMITS the digest (1,426 MiB needed against 2,280 MiB available): that run was killed by the
+#: OLD, unbounded builder, which needed more than the machine had. The old gate's constant
+#: (3,322.8 MiB, one 4 GB instance's reading at 11 M keywords, not what 091717 needed) sat under
+#: half of 091717's total RAM (3,386 MiB), so the gate admitted it, and a fixed constant cannot see
+#: a bigger instance. The second check did not exist then: it is new, and the bounded builder is
+#: what answers that kill.
 _MEMBER_RAM_SHARE = 0.5
 
 
-def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | None:
+def _keyword_digest_need_mb(db) -> float:
+    """What the keyword digest is expected to add to the process on THIS instance.
+
+    From the instance's own counts (articles, the keyword id range, the languages its articles
+    carry) times the per-row costs MEASURED for the bounded export -- see
+    :func:`src.analytics.keyword_log_scan.estimate_export_need`. The 200 MiB in
+    ``_MEMBER_RSS_NEED_MB`` is one synthetic corpus's reading; this is the instance's own
+    number, and it is what the gate uses whenever a session is at hand.
+    """
+    from src.analytics.keyword_log_scan import estimate_export_need
+
+    return float(estimate_export_need(db, per_language=_MAX_KEYWORDS_PER_LANG)["need_mb"])
+
+
+#: Members whose need is ESTIMATED from the instance's counts, not read from one earlier run:
+#: ``name -> fn(db) -> MiB``. The static map above stays as the fallback for a call without a
+#: session (and for a count that cannot be read) and keeps R27's half-of-RAM rule; an estimated
+#: member is ALSO held against the memory that is available right now, because a fixed
+#: reading cannot know that the machine is busy.
+_MEMBER_NEED_ESTIMATORS: dict[str, Callable[[Any], float]] = {
+    "keyword-log-digest.json": _keyword_digest_need_mb,
+}
+
+
+def ram_declined_reason(
+    name: str,
+    *,
+    total_mb: float | None = None,
+    db: Any = None,
+    available_mb: float | None = None,
+) -> str | None:
     """Why this member must not run on THIS machine, or ``None`` to run it.
 
     THREE REFUSALS TO REFUSE, each the mirror of a recorded defect:
@@ -656,8 +712,25 @@ def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | No
     never declines (absence of a reading is not a reading); and the operator's existing
     override lifts it, because S1.3's does and a second override key for the same idea
     is how two surfaces come to disagree.
+
+    With a session (``db``) an estimated member (``_MEMBER_NEED_ESTIMATORS``) is sized from
+    the instance's own counts and must fit BOTH R27's half of total RAM AND what is available
+    now minus the floor the memory stop keeps free -- a need that would leave the stop no room
+    is declined here, before the first byte, instead of by the stop in the middle of the run.
+    Without one, the measured constant applies, exactly as before.
     """
-    need = _MEMBER_RSS_NEED_MB.get(name)
+    measured = _MEMBER_RSS_NEED_MB.get(name)
+    estimator = _MEMBER_NEED_ESTIMATORS.get(name)
+    need: float | None = None
+    estimated = False
+    if estimator is not None and db is not None:
+        try:
+            need = estimator(db)
+            estimated = True
+        except Exception:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
+            _LOG.debug("need estimate for %s failed; using the measured constant", name, exc_info=True)
+    if need is None:
+        need = measured
     if need is None:
         return None
     from src.config.machine_floor import _override_requested
@@ -665,25 +738,45 @@ def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | No
 
     if _override_requested():
         return None
-    total = total_ram_mb() if total_mb is None else total_mb
-    if total is None or total <= 0:
-        return None
-    ceiling = total * _MEMBER_RAM_SHARE
-    if need <= ceiling:
-        return None
-    return (
-        f"it measured a {need:,.1f} MiB peak RSS rise on the operator's instance, and "
-        f"this machine has {total:,.0f} MiB of RAM -- more than the {ceiling:,.0f} MiB "
-        f"({_MEMBER_RAM_SHARE:.0%} of total) a single bundle member may ask for. Running "
-        "it would put this machine into swap on its own (finding F12)"
+    said = (
+        f"it is expected to add {need:,.1f} MiB (estimated from this instance's own counts)"
+        if estimated
+        else f"it measured a {need:,.1f} MiB peak RSS rise on the operator's instance"
     )
+    total = total_ram_mb() if total_mb is None else total_mb
+    if total is not None and total > 0:
+        ceiling = total * _MEMBER_RAM_SHARE
+        if need > ceiling:
+            return (
+                f"{said}, and this machine has {total:,.0f} MiB "
+                f"of RAM -- more than the {ceiling:,.0f} MiB ({_MEMBER_RAM_SHARE:.0%} of "
+                "total) a single bundle member may ask for. Running it would put this "
+                "machine into swap on its own (finding F12)"
+            )
+    if estimated:
+        from src.database import maintenance as _mt
+
+        avail = _mt._available_mb() if available_mb is None else available_mb
+        floor = _mt._read_memory_floor_mb()
+        if avail is not None and floor is not None and need + floor > avail:
+            return (
+                f"{said}, and this machine has {avail:,.0f} MiB "
+                f"available right now with {floor:,.0f} MiB the memory stop keeps free -- "
+                "it would leave the stop no room and end in swap or a killed app (finding "
+                "F12). Close other programs, or set OO_ALLOW_BIG_SCANS=1 to run it anyway"
+            )
+    return None
 
 
 _LIGHT_DECLINED: dict[str, str] = {
     "keyword-log-digest.json": (
-        "measured a 3,322.8 MB peak RSS rise on the operator's 4 GB instance -- the ONLY "
-        "member in that 72-member run with a peak rise above 0.0 MB, so on a small machine "
-        "this one member forces swapping by itself (finding F12)"
+        "it re-reads the whole keyword-mention table (37.7 s at 6 M keywords on a 4-core "
+        "test machine) and measured a 3,322.8 MB peak RSS rise on the operator's 4 GB "
+        "instance (finding F12) before the export was made memory-bounded. The bounded "
+        "export has only been measured on synthetic corpora (about 190 MB at 65,000 "
+        "exported keywords, about 1 GB at 410,000), so the light profile keeps skipping it "
+        "until a FULL bundle on the operator's own machine records its real "
+        "rss_peak_rise_kb"
     ),
     "source-audit.json": (
         "measured 297.9 s on the operator's instance, and the ledger already records it as "
@@ -762,7 +855,8 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
          # per_lang/page are the route's OWN declared defaults, not numbers chosen
          # here: passing anything else would silently change what this member exports.
          lambda: keyword_log(
-             db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG, page=1
+             db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG, page=1,
+             max_mb=None,
          )),
         (
             "date-extraction.json",
@@ -1853,7 +1947,7 @@ def _write_all_diagnostics_zip(
             # A RAM decline would happen on the FULL profile too, so reporting it as a
             # light-profile choice would tell the operator they skipped something they
             # were never going to be allowed to run on this box.
-            ram_reason = ram_declined_reason(name)
+            ram_reason = ram_declined_reason(name, db=db)
             declined_reason = ram_reason or (
                 _LIGHT_DECLINED.get(name) if profile == "light" else None
             )
@@ -1921,9 +2015,17 @@ def _write_all_diagnostics_zip(
                 outcome = "skipped-deadline"
                 zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(exc))
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
-                outcome = "error"
-                err = _all_diag_err_str(exc)
-                zf.writestr(name + ".error.txt", err)
+                # A member that calls its route function answers a deadline or a memory stop as
+                # an HTTPException(503) CHAINED to the typed abort: that is the same "skipped"
+                # an in-process member reports (MemoryShort promises it), not an error.
+                cause = exc.__cause__ if isinstance(exc, HTTPException) else None
+                if isinstance(cause, StatementTimeout):
+                    outcome = "skipped-deadline"
+                    zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(cause))
+                else:
+                    outcome = "error"
+                    err = _all_diag_err_str(exc)
+                    zf.writestr(name + ".error.txt", err)
 
             wall_s = round(_time.time() - started_t, 3)
             rss_after = _rss.kb()

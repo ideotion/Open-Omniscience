@@ -221,13 +221,25 @@ def _reader_snapshot() -> dict:
 
 
 def checkpoint_wal(
-    *, engine=None, force: bool = False, busy_timeout_ms: int | None = None
+    *,
+    engine=None,
+    force: bool = False,
+    busy_timeout_ms: int | None = None,
+    gate_timeout_s: float | None = None,
+    errors: list[str] | None = None,
 ) -> dict | None:
     """Run ``PRAGMA wal_checkpoint(TRUNCATE)`` at a pass boundary, measured.
 
     Serialised through ``write_lock()`` (the same gate every writer takes), so
     it can NEVER run beside a gated writer — it queues behind one instead.
-    S2.5: that queue is now BOUNDED (``OO_CKPT_GATE_TIMEOUT_S``, 30 s). It used
+    S2.5: that queue is now BOUNDED (``OO_CKPT_GATE_TIMEOUT_S``, 30 s; a caller
+    that must not wait on the operator's setting passes ``gate_timeout_s``, which
+    wins over it, ``0`` meaning wait for ever like the setting: the storage guard's own
+    drain passes one, so a ``0`` in the setting cannot leave the guard's sampler waiting on a
+    long writer; ``errors``, when a list is given, receives the exception type's name when the
+    checkpoint failed for any reason but a busy gate, for example a pooled-connection wait that
+    timed out: the return is None either way, and a caller that must tell "failed" from "not due"
+    reads it there). It used
     to be an unbounded wait, and ``record_run`` sits BELOW this call in the pass
     tail — so a long writer did not merely delay the checkpoint, it meant a
     stalled pass left no run record of itself at all.
@@ -243,6 +255,7 @@ def checkpoint_wal(
     failure path here, and visible in the returned record rather than silent.
     """
     global _LAST_CKPT_MONO
+    gate_timeout = _ckpt_gate_timeout_s() if gate_timeout_s is None else gate_timeout_s
     if not wal_checkpoint_enabled():
         return None
     try:
@@ -269,7 +282,6 @@ def checkpoint_wal(
 
         from src.database.writer import write_lock
 
-        gate_timeout = _ckpt_gate_timeout_s()
         t0 = time.monotonic()
         raw = engine.raw_connection()
         try:
@@ -350,10 +362,12 @@ def checkpoint_wal(
         return {
             "skipped": "gate busy",
             "detail": str(exc),
-            "waited_s": _ckpt_gate_timeout_s(),
+            "waited_s": gate_timeout,
         }
-    except Exception:  # noqa: BLE001 - hygiene must never break the run loop
+    except Exception as exc:  # noqa: BLE001 - hygiene must never break the run loop
         _LOG.warning("wal checkpoint failed; run loop continues", exc_info=True)
+        if errors is not None:
+            errors.append(type(exc).__name__)
         return None
 
 

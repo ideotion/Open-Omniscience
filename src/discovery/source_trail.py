@@ -183,11 +183,13 @@ def _qualification_basis(session, source) -> str | None:
         v
         for (v,) in session.query(A.verdict).filter(A.source_id == source.id).distinct()
     }
+    # The LIVE stamp decides, exactly as the export's basis does (2026-09-30, rank 14): judging
+    # attempts copied in beside a still-curated stamp do not make the stamp a measurement.
+    if source.qualification_criteria_version == CURATED_CRITERIA_VERSION:
+        return "curated"
     if verdicts & set(JUDGING_VERDICTS):
         return "measured"
-    if VERDICT_CURATED in verdicts or (
-        source.qualification_criteria_version == CURATED_CRITERIA_VERSION
-    ):
+    if VERDICT_CURATED in verdicts:
         return "curated"
     if VERDICT_INHERITED in verdicts:
         return "inherited"

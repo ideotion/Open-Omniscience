@@ -1547,6 +1547,19 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
     return out
 
 
+def _ensure_storage_supervisor() -> None:
+    """Make sure the storage guard's supervisor runs whenever collection can (R112 review S7).
+
+    A boot with ``OO_NO_SCHEDULER=1`` starts none, and collection started afterwards over the
+    API would then be sampled only at pass boundaries: an operator's override must be bounded by
+    the floor, which only the supervisor's own ticks read, so it is started here. Idempotent,
+    zero network, and a failure to start it never stops collection from starting."""
+    try:
+        storage_guard.start()
+    except Exception:  # noqa: BLE001 - the guard is a safety net, never a reason not to start
+        _LOG.warning("storage guard supervisor could not be started", exc_info=True)
+
+
 class BackgroundScheduler:
     """Daemon-thread scheduler with explicit start/stop and non-overlapping run-now.
 
@@ -1637,6 +1650,7 @@ class BackgroundScheduler:
         """Start the scheduling loop. Returns False if it was already running."""
         if self.is_running():
             return False
+        _ensure_storage_supervisor()
         self._stop.clear()
         self._started_at = datetime.now(UTC)
         self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
@@ -1694,6 +1708,7 @@ class BackgroundScheduler:
         with self._state_lock:
             if self._active or self._exclusive_hold:
                 return False
+        _ensure_storage_supervisor()
         threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
         return True
 
@@ -1821,12 +1836,13 @@ class BackgroundScheduler:
         Holds nothing: no session, gate or permit (the drain runs on the guard's own
         supervisor thread, never here). The paused state is visible as phase
         ``paused-wal-pinned`` or ``paused-low-disk`` and in ``status()['storage_guard']``.
-        Returns at once when the guard is disabled or healthy.
+        Returns at once when the guard is disabled or healthy, or while the operator's
+        override ("Resume anyway", R112) holds: ``admit()`` is None then.
 
-        The supervisor is what RELEASES the latch (fresh readings, the drain). When it is not
-        running -- the scheduler started over the API after a boot with ``OO_NO_SCHEDULER=1``
-        -- this loop takes the readings and the drain itself, so a pause can never outlive
-        the condition that caused it.
+        The supervisor is what RELEASES the latch (fresh readings, the drain), and starting
+        collection starts it (:func:`_ensure_storage_supervisor`). Should it not be running (it
+        failed to start), this loop takes the readings and the drain itself, so a pause can never
+        outlive the condition that caused it.
         """
         waited = False
         shown: str | None = None
@@ -1980,9 +1996,10 @@ class BackgroundScheduler:
             if memguard.memory_guard.engaged:  # property, not a call
                 self._note_maint_skip("memory_pressure")
                 return False  # under memory pressure — do not add write-gate work now
-            if storage_guard.storage_guard.admit() is not None:
+            if storage_guard.storage_guard.enabled() and storage_guard.storage_guard.engaged:
                 # A pinned WAL or a nearly full drive: maintenance writes are exactly the
-                # work that must not start (they append to the file the guard is bounding).
+                # work that must not start (they append to the file the guard is bounding),
+                # even while the operator's override lets collection itself continue.
                 self._note_maint_skip("storage_pressure")
                 return False
         except Exception:  # noqa: BLE001 - guard read must never block maintenance

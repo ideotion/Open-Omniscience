@@ -56,6 +56,10 @@ os.environ.setdefault("OO_LLM_AUTORELEASE", "0")
 # a supervisor that outlived its test would keep sampling into the next one. Off for the
 # suite; tests/test_storage_guard.py turns it back on for itself, with injected readings.
 os.environ.setdefault("OO_STORAGE_GUARD", "0")
+# The boot repair of qualification inversions writes to the corpus at every deferred startup;
+# a test that boots the app must not have that as a side effect. tests/test_qualification_auto_repair.py
+# turns it back on for itself.
+os.environ.setdefault("OO_QUALIFICATION_AUTO_REPAIR", "0")
 # Never auto-seed the ~3,200-source production catalog during tests. The seed moved
 # into run_deferred_startup on 2026-06-18, so it now fires on EVERY TestClient-context
 # lifespan -- slow, non-hermetic, and its auto-increment Source ids collide with tests
