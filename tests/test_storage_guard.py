@@ -2095,7 +2095,7 @@ def test_the_reader_snapshot_lists_every_holder_not_only_the_oldest(tmp_path):
         snap = _reader_snapshot()
         # The registry is process-wide: a daemon's own checkout may be listed too.
         assert snap["n"] >= 2 and len(snap["holders"]) >= 2
-        assert set(snap["holders"][0]) == {"thread", "age_s"}
+        assert set(snap["holders"][0]) == {"thread", "endpoint", "age_s"}
         assert snap["oldest_thread"] == snap["holders"][0]["thread"]
     finally:
         a.close()

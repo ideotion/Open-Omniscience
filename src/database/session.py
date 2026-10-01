@@ -246,14 +246,14 @@ def _storage_guard_on_disk_full(context) -> None:
     (fourteen in a row), because nothing connected "the disk is full" to "do not start the
     next pass". The guard's supervisor would see the free figure within five seconds; this
     closes the gap between the failure and that sample, and covers a drive that reports
-    room but refuses writes (a quota). Observes only: the error still propagates unchanged.
+    room but refuses writes (a quota). SQLite's plain "disk I/O error" counts when the drive's
+    free space is below the reserve (a copy-on-write filesystem reports ENOSPC at fsync that
+    way). Observes only: the error still propagates unchanged.
     """
     try:
-        from src.scheduler.storage_guard import is_disk_full, storage_guard
+        from src.scheduler.storage_guard import on_engine_error
 
-        exc = getattr(context, "original_exception", None)
-        if is_disk_full(exc):
-            storage_guard.note_disk_full(f"{type(exc).__name__}: {str(exc)[:120]}")
+        on_engine_error(context)
     except Exception:  # noqa: BLE001 - an observer never replaces the real error
         pass
 

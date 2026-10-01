@@ -185,6 +185,18 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         pool_timeout=30,
     )
 
+    @event.listens_for(eng, "handle_error")
+    def _lane_storage_guard_on_error(context) -> None:
+        """A lane is written to the same drive as the corpus (one reached 100 GB): a write
+        that fails for want of space must stop collection as the corpus engine's does.
+        Observes only; the error still propagates unchanged."""
+        try:
+            from src.scheduler.storage_guard import on_engine_error
+
+            on_engine_error(context)
+        except Exception:  # noqa: BLE001 - an observer never replaces the real error
+            pass
+
     @event.listens_for(eng, "connect")
     def _lane_pragmas(dbapi_connection, _record) -> None:
         """WAL + the safety PRAGMAs, mirroring the corpus engine's own listener.
