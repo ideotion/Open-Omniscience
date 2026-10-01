@@ -187,6 +187,16 @@ def _qualification_basis(session, source) -> str | None:
     # attempts copied in beside a still-curated stamp do not make the stamp a measurement.
     if source.qualification_criteria_version == CURATED_CRITERIA_VERSION:
         return "curated"
+    # A row the boot repair withdrew on an imported history's say reads `inherited` while its
+    # newest judging attempt is still that imported one, exactly as the export labels it.
+    try:
+        from src.catalog.qualification_integrity import repair_still_followed, repaired_rows
+
+        repaired, _unreadable = repaired_rows()
+        if source.domain in repaired and repair_still_followed(session, source, repaired[source.domain]):
+            return "inherited"
+    except Exception:  # noqa: BLE001 - an unreadable record leaves the basis as it was read, never fails the page
+        pass
     if verdicts & set(JUDGING_VERDICTS):
         return "measured"
     if VERDICT_CURATED in verdicts:

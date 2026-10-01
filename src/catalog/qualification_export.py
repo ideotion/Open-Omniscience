@@ -110,18 +110,6 @@ def _curated_stamp_ids(session: Session) -> set[int]:
     }
 
 
-
-def _still_follows_the_repair(session, source, judged_at) -> bool:
-    """True while the source's newest judging attempt is the one a boot repair followed (the check
-    ``revert_repairs`` makes too). A repair record without a ``judged_at`` cannot be compared and is
-    read as still followed."""
-    if not judged_at:
-        return True
-    from src.catalog.qualification_integrity import _iso, _newest_judging
-
-    newest = _newest_judging(session, int(source.id))
-    return newest is not None and _iso(newest.attempted_at) == judged_at
-
 def build_overlay_export(session: Session, *, now: datetime | None = None) -> dict:
     """The exportable record of what this instance knows about its shipped sources."""
     from src.database.models import Source
@@ -146,7 +134,7 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
     repair_record_unreadable = False
     repair_runs_unreadable: list[str] = []
     try:
-        from src.catalog.qualification_integrity import repaired_rows
+        from src.catalog.qualification_integrity import repair_still_followed, repaired_rows
 
         repaired, repair_runs_unreadable = repaired_rows()
         repair_record_unreadable = bool(repair_runs_unreadable)
@@ -169,7 +157,7 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             basis = BASIS_CURATED
             if s.id in measured:
                 curated_stamp_with_judging_history += 1
-        elif s.domain in repaired and _still_follows_the_repair(session, s, repaired[s.domain]):
+        elif s.domain in repaired and repair_still_followed(session, s, repaired[s.domain]):
             # withdrawn by the boot repair on an imported history's say and not judged again here
             # since (its newest judging attempt is still the imported one the repair followed):
             # inherited, whatever its history holds, and shipped as such

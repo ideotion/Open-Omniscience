@@ -1233,6 +1233,35 @@ def test_an_unreadable_newest_run_at_the_same_instant_is_not_overwritten(env, mo
     assert _status(env, "y.example").status == STATUS_QUALIFIED
 
 
+def test_a_readable_run_at_the_same_instant_is_not_overwritten_either(env) -> None:
+    """The same-instant guard is not only for unreadable records: a confirmed run's revert record
+    would be replaced by a different plan and the index would not grow."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    before = dict(env.store[run_key])
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    out = qi.auto_repair_inversions(now=NOW)
+    assert out["repaired"] == 0 and "skipped" in out
+    assert env.store[run_key] == before and len(qi._read_repair_index()["runs"]) == 1
+    assert qi.auto_repair_inversions(now=NOW + timedelta(hours=1))["repaired"] == 1    # the clock moved
+
+
+def test_the_newest_record_of_a_domain_decides_what_repaired_rows_lists(env) -> None:
+    def run(at, **row):
+        env.store[qi.REPAIR_RUN_PREFIX + at] = {
+            "run_at": at, "applied": True, "repairs": [{"domain": "x.example", **row}]}
+    run("2026-09-30T00:00:00+00:00", judged_at="OLD")
+    run("2026-10-01T00:00:00+00:00", judged_at="NEW")
+    env.store[qi.REPAIR_INDEX_KEY] = {"runs": ["2026-09-30T00:00:00+00:00", "2026-10-01T00:00:00+00:00"],
+                                      "last_run_at": "2026-10-01T00:00:00+00:00", "reverted_domains": []}
+    assert qi.repaired_rows()[0] == {"x.example": "NEW"}
+    run("2026-10-01T00:00:00+00:00", judged_at="NEW", reverted_at="2026-10-01T05:00:00+00:00")
+    assert qi.repaired_rows()[0] == {}, "reverted newest: the older record must not bring the domain back"
+
+
 def test_repaired_domains_lists_applied_unreverted_repairs_only(env) -> None:
     with env.scope() as s:
         _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
