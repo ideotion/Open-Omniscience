@@ -12959,8 +12959,8 @@ previous archive and dead, unless it has this archive's own file NAMES (never ju
 of one corpus usually have the same count), in which case it is already the answer. A split that FAILS may have swept the
 previous files (a full disk, an answer lost on the way), and the page cannot tell a failure before the sweep from one
 after it, so it empties such a bar too (a set still being saved included: the loop would ask for dead files), except
-after a 404 or a 409, which the route refuses before it sweeps anything; the price is a live set dropped when the answer
-of a split that swept nothing is lost, in a window of about two seconds. The orderings are a table in
+after a 404 or a 409, which the route refuses before it sweeps anything (a keyword set is never dropped); the price is a live set dropped when the answer
+of a split that swept nothing is lost, in a window of one poll interval (two to five seconds). The orderings are a table in
 `tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails without it, and the mutants that
 survive cannot change what a person sees (the generation bump when a failed split empties the bar, since the button allows
 one build per page; the re-render of a bar that is then hidden; and the order of the deferral and the same-archive
