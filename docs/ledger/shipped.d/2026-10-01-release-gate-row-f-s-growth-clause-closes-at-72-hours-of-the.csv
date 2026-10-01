@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-01,release/gate,Row F's growth clause closes at 72 hours of the run on the lane's own counters (R116),shipped (docs),PR #1291,docs/product/RELEASE_0.5_GATE.md; docs/ledger/RULINGS_INDEX.md; docs/ledger/OPEN_QUEUE.md,"Answer 20b: the growth clause no longer waits for the Q1006 surface's seven-day rule, the day-7 lanes sample is dropped, and the measured crash and update survival results are recorded in the queue."
