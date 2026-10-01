@@ -103,14 +103,16 @@ FAMILY_SHARE = 0.10
 #: more than this would add to a working set the plan has already sized. The cache is allocated
 #: as pages are touched, so a spill that stays small uses less. It is a ceiling chosen for that
 #: margin, not a measured figure, and the gate's estimate (``estimate_export_need``) does not
-#: count the ranking, so this cache is outside it: it is the one place the plan's memory share
-#: pays for.
+#: count the ranking, so this cache is outside it. It is paid from the ranker's own share: the
+#: heaps are emptied when the spill starts, and that share is never below
+#: ``MIN_HEAP_ROWS * ROW_BYTES`` (40 MB, 38 MiB), more than these 32 MiB.
 SPILL_CACHE_KIB = 32 * 1024
 
 #: Ids per ``IN (...)`` list in the export's queries. What it protects: a statement stays near
-#: 8 KB of SQL (ids of up to nine digits), far under SQLite's statement-length limit (``getlimit(SQLITE_LIMIT_SQL_LENGTH)`` reads it:
-#: 1,000,000,000 bytes on SQLite 3.45.1). It is the length
-#: every reader of this file used before the export was sized, and ``in_batches`` always cuts to it
+#: 8 KB of SQL (ids of up to nine digits), far under SQLite's statement-length limit
+#: (``getlimit(SQLITE_LIMIT_SQL_LENGTH)`` reads it: 1,000,000,000 bytes on SQLite 3.45.1). It is
+#: the length every reader of this file used before the export was sized, and ``in_batches``
+#: always cuts to it
 #: whatever the batch is: a larger batch changes how many entries are held between two checks,
 #: never how long a statement is.
 IN_LIST_IDS = 800
@@ -216,9 +218,11 @@ class _SparseArr:
 
 
 #: Slots of headroom when a flat array is extended. What it protects: a collection pass runs beside
-#: the export and inserts articles in bursts, and growing by one slot each time would copy the array
-#: per article. The headroom costs 4 KB in the language array and 8 KB in the source array, nothing
-#: at the scale of the arrays.
+#: the export and inserts articles in bursts, and extending by exactly one slot per article would
+#: build and extend a one-slot array each time. It does not save a copy of the array: CPython's own
+#: ``array`` over-allocates (measured: one address change in 200,000 one-slot extends of a 2 M-slot
+#: array). The headroom costs 4 KB in the language array and 8 KB in the source array, nothing at
+#: the scale of the arrays.
 _GROW_HEADROOM = 1024
 
 
@@ -489,8 +493,8 @@ class SuspectBoard:
 #: SQLite's extended result code for a write that failed with an errno it has no word for
 #: (``SQLITE_IOERR_WRITE``: its unix layer says ``disk I/O error`` for a quota or a drive that
 #: turned read-only, and ``database or disk is full`` only for ENOSPC). The constant exists from
-#: Python 3.11; 778 is its value, which is part of SQLite's file format promise.
-_SQLITE_IOERR_WRITE = getattr(sqlite3, "SQLITE_IOERR_WRITE", 778)
+#: Python 3.11, and this project needs 3.13.
+_SQLITE_IOERR_WRITE = sqlite3.SQLITE_IOERR_WRITE
 
 
 def _drive_is_read_only(directory: Path | str) -> bool:
@@ -560,14 +564,16 @@ def no_room_refusal(exc: OSError, doing: str) -> ExportRefused | None:
     if code == errno.EROFS:
         return ExportRefused(
             f"the drive the export writes to turned out to be read-only while the export was "
-            f"{doing}, so it stopped and left nothing behind. The data folder (or the "
-            "system's temp folder, when there is none) has to be writable for an export.",
+            f"{doing}, so it stopped. The data folder (or the system's temp folder, when there is "
+            "none) has to be writable for an export. A partial file that could not be deleted from "
+            "a read-only drive is removed by a later export once the drive is writable "
+            "(scratch files older than twelve hours are swept at the start of each export).",
             status=507,
         )
     why = "has no room left in your disk quota" if code != errno.ENOSPC else "ran out of room"
     return ExportRefused(
         f"the drive the export writes to {why} while the export was {doing}, so it stopped and "
-        "left nothing behind. Free some space, or ask for a smaller window (per_lang=...).",
+        "removed what it had written (deleting works on a full drive). Free some space, or ask for a smaller window (per_lang=...).",
         status=507,
     )
 

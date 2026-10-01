@@ -524,12 +524,14 @@ def _io_error_on_write() -> sqlite3.OperationalError:
     return exc
 
 
+@pytest.mark.skipif(not hasattr(os, "statvfs"), reason="this platform has no statvfs")
 def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(tmp_path, monkeypatch):
     real = os.statvfs
 
     def read_only(path):
-        st = real(path)
-        return types.SimpleNamespace(f_flag=st.f_flag | os.ST_RDONLY)
+        # Ignores the path on purpose: a guard that stops asking for a folder (``None``) must fail
+        # here, and a fake that called the real ``statvfs`` on ``"None"`` would raise and say False.
+        return types.SimpleNamespace(f_flag=os.ST_RDONLY)
 
     monkeypatch.setattr(os, "statvfs", read_only)
     with pytest.raises(kls.ExportRefused) as err, kls._refuse_when_the_disk_is_full(tmp_path):
@@ -548,6 +550,53 @@ def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(
     other.sqlite_errorcode = kls._SQLITE_IOERR_WRITE + 1
     with pytest.raises(sqlite3.OperationalError), kls._refuse_when_the_disk_is_full(tmp_path):
         raise other
+
+
+@pytest.mark.skipif(not hasattr(os, "statvfs"), reason="this platform has no statvfs")
+@pytest.mark.parametrize("where", ["to_spill", "flush", "prune"])
+def test_every_write_the_ranker_makes_asks_its_own_drive_whether_it_is_read_only(
+    tmp_path, monkeypatch, where
+):
+    """The three places the ranker writes its spill each name the spill's folder to the refusal;
+    one that stopped naming it would raise SQLite's bare ``disk I/O error`` as a 500."""
+    r = kls.Ranker(0, 3, heap_rows=2, spill_dir=tmp_path, disk_check=None)
+    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=os.ST_RDONLY))
+    try:
+        if where == "to_spill":
+            def fail(*args, **kwargs):
+                raise _io_error_on_write()
+
+            monkeypatch.setattr(kls.sqlite3, "connect", fail)
+            with pytest.raises(kls.ExportRefused) as err:
+                for kid in (10, 20, 30):
+                    r.add("en", kid, 5, 1, None, None, "en")
+        else:
+            for kid in (10, 20, 30, 40):
+                r.add("en", kid, 5, 1, None, None, "en")
+            assert r.spilled, "the spill must exist for this to test anything"
+
+            class _Failing:
+                def execute(self, *args, **kwargs):
+                    raise _io_error_on_write()
+
+                executemany = execute
+
+                def close(self):
+                    pass
+
+            real_con, r._con = r._con, _Failing()
+            try:
+                with pytest.raises(kls.ExportRefused) as err:
+                    if where == "flush":
+                        r._buf = [(-5, "en", 99, 1, 1, None, None, None)]
+                        r._flush()
+                    else:
+                        r._prune("en")
+            finally:
+                r._buf, r._con = [], real_con
+        assert err.value.status == 507 and "read-only" in str(err.value)
+    finally:
+        r.close()
 
 
 @pytest.mark.parametrize(("code", "words"), _NO_ROOM_CASES)

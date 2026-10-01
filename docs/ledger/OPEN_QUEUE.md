@@ -63,7 +63,7 @@
   starts, where the memory available now, not the total, is what the export competes for. It would NOT have declined bundle
   `091717`'s own machine under the bounded code (need about 1,170 MiB plus the floor, about 1,426 MiB, against 2,280 MiB available):
   that kill was the OLD, unbounded builder, which needed more than the machine had (the old gate's 3,322.8 MiB was one 4 GB
-  instance's reading at 11 M keywords, under half of that machine's RAM, so the gate admitted it; the second check is new in this
+  instance's reading at 11 M keywords, under half of `091717`'s 6,773 MiB (3,386 MiB), so the gate admitted it; the second check is new in this
   PR), and the bounded code is what answers it. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
   (`EXPORT_ENTRY_BYTES` 2,750 B = the 2,500 B per exported keyword MEASURED by peak resident size on synthetic databases of 100,000,
   205,000 and 410,000 entries, the last being the shape of the largest instance's export, plus ten per cent;
