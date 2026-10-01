@@ -656,6 +656,188 @@ def test_the_route_lists_files_in_the_page_shape_manifest_first_and_serves_the_m
         assert Path(resp.path).stat().st_size == f["bytes"]
 
 
+def _two_archives(_diag_dir):
+    """The first archive split (its listing returned), then a newer archive waiting to be split."""
+    from src.api import diagnostics as d
+
+    first = _diag_dir / "oo-all-diagnostics-20261001-060000.zip"
+    _build_bundle(_diag_dir).rename(first)
+    old = json.loads(bytes(d.all_diagnostics_volumes().body))
+    first.unlink()
+    newer = _diag_dir / "oo-all-diagnostics-20261001-070000.zip"
+    _build_bundle(_diag_dir).rename(newer)
+    return old, newer
+
+
+def test_a_split_that_fails_leaves_the_previous_set_serving_and_no_half_written_files(
+    _diag_dir, monkeypatch
+):
+    """R115 follow-up S1. The previous files were deleted first and the new ones written into the
+    live folder, so a split that died left NO set and the half-written volumes beside nothing."""
+    from fastapi import HTTPException
+
+    from src.api import diagnostics as d
+
+    old, _newer = _two_archives(_diag_dir)
+    vol_dir = d._all_diagnostics_volumes_dir()
+    before = sorted(p.name for p in vol_dir.iterdir())
+
+    def _dies_after_one_file(src_zip, out_dir, **kw):
+        (Path(out_dir) / "half-written-part-01-of-03.zip").write_bytes(b"PK" + b"0" * 1000)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(dv, "write_volume_set", _dies_after_one_file)
+    with pytest.raises(HTTPException) as exc:
+        d.all_diagnostics_volumes()
+    assert exc.value.status_code == 500
+    assert "No space left" in exc.value.detail
+    assert "could not split" not in exc.value.detail.lower(), "the page says that, translated"
+    assert sorted(p.name for p in vol_dir.iterdir()) == before, "the set that was there is untouched"
+    assert not list(_diag_dir.glob("volumes-build-*")), "the build folder goes on every path"
+    for f in old["files"]:
+        assert Path(d.all_diagnostics_volume_download(f["name"]).path).is_file()
+
+
+def test_the_previous_set_keeps_answering_for_the_whole_length_of_the_next_split(_diag_dir, monkeypatch):
+    """R115 follow-up S1: every name 404ed from the sweep to the sidecar, seconds to a minute."""
+    from src.api import diagnostics as d
+
+    old, newer = _two_archives(_diag_dir)
+    real = dv.write_volume_set
+    probed: list[str] = []
+
+    def _probe_then_build(src_zip, out_dir, **kw):
+        for f in old["files"]:
+            probed.append(Path(d.all_diagnostics_volume_download(f["name"]).path).name)
+        return real(src_zip, out_dir, **kw)
+
+    monkeypatch.setattr(dv, "write_volume_set", _probe_then_build)
+    new = json.loads(bytes(d.all_diagnostics_volumes().body))
+
+    assert probed == [f["name"] for f in old["files"]], "the old set answered while the new one was built"
+    assert new["source"] == newer.name
+    vol_dir = d._all_diagnostics_volumes_dir()
+    assert {p.name for p in vol_dir.iterdir()} == (
+        {f["name"] for f in new["files"]} | {dv.MANIFEST_NAME}
+    ), "the old files are retired once the new set is in, and nothing else is left"
+    assert not list(_diag_dir.glob("volumes-build-*"))
+
+
+def test_a_build_folder_a_dead_process_left_is_removed_by_the_next_split(_diag_dir):
+    from src.api import diagnostics as d
+
+    left = _diag_dir / "volumes-build-dead1234"
+    left.mkdir()
+    (left / "x-part-01-of-01.zip").write_bytes(b"PK" + b"0" * 100)
+    _build_bundle(_diag_dir).rename(_diag_dir / "oo-all-diagnostics-20261001-080000.zip")
+    d.all_diagnostics_volumes()
+    assert not left.exists()
+
+
+def _fake_disk(monkeypatch, *, free: int, total: int = 100 * 2**30):
+    import collections
+    import shutil
+
+    usage = collections.namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(total, total - free, free))
+
+
+@pytest.mark.parametrize("with_a_previous_set", [False, True])
+def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
+    _diag_dir, monkeypatch, with_a_previous_set
+):
+    """R115 follow-up S2: the keyword path preflighted; this one ran into a full disk after the
+    sweep and answered with a raw operating-system error."""
+    from fastapi import HTTPException
+
+    from src.api import diagnostics as d
+
+    if with_a_previous_set:
+        old, _newer = _two_archives(_diag_dir)
+    else:
+        old = None
+        _build_bundle(_diag_dir).rename(_diag_dir / "oo-all-diagnostics-20261001-090000.zip")
+    vol_dir = d._all_diagnostics_volumes_dir()
+    before = sorted(p.name for p in vol_dir.iterdir())
+    _fake_disk(monkeypatch, free=1 * 2**20)
+
+    def _must_not_run(*a, **kw):
+        raise AssertionError("no room: nothing may be written")
+
+    monkeypatch.setattr(dv, "write_volume_set", _must_not_run)
+    with pytest.raises(HTTPException) as exc:
+        d.all_diagnostics_volumes()
+    assert exc.value.status_code == 507
+    assert "MiB" in exc.value.detail and "free" in exc.value.detail
+    assert sorted(p.name for p in vol_dir.iterdir()) == before
+    assert not list(_diag_dir.glob("volumes-build-*"))
+    if old is not None:
+        for f in old["files"]:
+            assert Path(d.all_diagnostics_volume_download(f["name"]).path).is_file()
+
+
+def test_a_drive_with_room_for_the_archive_twice_over_is_not_refused(_diag_dir, monkeypatch):
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    need = src.stat().st_size
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-100000.zip")
+    # The reserve (512 MiB at least) plus the archive and its 20% headroom: exactly enough.
+    from src.analytics.keyword_log_export import disk_reserve
+
+    _fake_disk(monkeypatch, free=int(need * 1.2) + disk_reserve(_diag_dir) + 1)
+    assert json.loads(bytes(d.all_diagnostics_volumes().body))["volume_count"] >= 1
+
+
+def test_publishing_moves_the_sidecar_last_and_retires_only_what_nothing_names(tmp_path, monkeypatch):
+    """The sidecar is what makes a set exist: until it moves the old one still names old files."""
+    src = _build_bundle(tmp_path)
+    build, out = tmp_path / "build", tmp_path / "volumes"
+    out.mkdir()
+    (out / "old-part-01-of-01.zip").write_bytes(b"PK" + b"0" * 50)
+    (out / dv.MANIFEST_NAME).write_text(json.dumps({"kind": dv.VOLUME_KIND, "volumes": []}), encoding="utf-8")
+    manifest = dv.write_volume_set(src, build, cap=100_000)
+
+    moved: list[str] = []
+    real = os.replace
+
+    def _recording_replace(a, b, *args, **kw):
+        moved.append(Path(b).name)
+        return real(a, b, *args, **kw)
+
+    monkeypatch.setattr(os, "replace", _recording_replace)
+    got = dv.publish_volume_set(build, out)
+    assert got == manifest
+    assert moved[-1] == dv.MANIFEST_NAME and dv.MANIFEST_NAME not in moved[:-1]
+    assert sorted(moved[:-1]) == sorted(
+        [v["name"] for v in manifest["volumes"]] + [f["name"] for f in manifest["manifest_files"]]
+    )
+    assert {p.name for p in out.iterdir()} == set(moved)
+    assert dv.verify_volume_set(out)["ok"]
+
+
+def test_a_stale_file_that_cannot_be_removed_does_not_fail_the_publish(tmp_path, monkeypatch):
+    """A download holding a file open on Windows refuses its removal; the set is still in."""
+    src = _build_bundle(tmp_path)
+    build, out = tmp_path / "build", tmp_path / "volumes"
+    out.mkdir()
+    stale = out / "old-part-01-of-01.zip"
+    stale.write_bytes(b"PK" + b"0" * 50)
+    dv.write_volume_set(src, build, cap=100_000)
+
+    real_unlink = Path.unlink
+
+    def _refuses_the_stale_file(self, *a, **kw):
+        if self.name == stale.name:
+            raise PermissionError("in use")
+        return real_unlink(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", _refuses_the_stale_file)
+    dv.publish_volume_set(build, out)
+    assert dv.verify_volume_set(out)["ok"]
+    assert stale.exists(), "left for the next publish; never served, as only a listed name is"
+
+
 def test_a_set_built_under_another_cap_is_rebuilt_not_re_served(_diag_dir, monkeypatch):
     from src.api import diagnostics as d
 

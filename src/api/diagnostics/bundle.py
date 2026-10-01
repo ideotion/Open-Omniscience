@@ -17,6 +17,8 @@ import contextlib
 import json
 import os
 import pathlib
+import shutil
+import tempfile
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -2785,6 +2787,35 @@ def _all_diagnostics_volumes_dir():
 # then finds the finished set rather than rebuilding it.
 _ALL_DIAG_VOLUMES_LOCK = threading.Lock()
 
+#: The folder a set is built in, a sibling of ``volumes/`` (never inside it, where its half-built
+#: files would sit among the served ones, and never matching the archive sweep's
+#: ``oo-all-diagnostics-*.zip`` glob over the parent).
+_VOLUME_BUILD_PREFIX = "volumes-build-"
+
+
+def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path) -> None:
+    """Refuse, with the numbers, a split the drive cannot take beside the archive (HTTP 507).
+
+    The set is built beside the previous one and replaces it only when whole, so for a while the
+    drive holds the archive, the old set and the new one: the new set weighs about what the archive
+    does (its members are re-deflated or stored as they were), and the same headroom and reserve
+    the keyword export keeps free apply. What the reserve protects is the database's own log on
+    the same drive, which a full disk stops. Without this the split ran into a full disk after
+    sweeping the old set and reported a raw operating-system error."""
+    from src.analytics.keyword_log_export import room_for
+    from src.api import diagnostics_volumes as dvol
+
+    need = src.stat().st_size
+    fits, free, reserve = room_for(where, need)
+    if not fits:
+        raise dvol.VolumeRoomError(
+            f"the numbered files need about {need / 2**20:.0f} MiB beside the archive on the drive "
+            f"the data folder is on, and only {free / 2**20:.0f} MiB is free there (about "
+            f"{reserve / 2**30:.1f} GiB is kept free on it for whatever else writes to it, the "
+            "database's own log included). The files of the previous archive are still there. "
+            "Free some space and press the button again."
+        )
+
 
 def _ensure_volume_set(src: pathlib.Path) -> dict:
     """The volume set for ``src``, built only if it is not already the current one.
@@ -2793,6 +2824,12 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
     re-splitting, and an archive newer than the set replaces it. The stale set is
     removed rather than left to accumulate volumes of two different bundles in one
     directory, where an operator collecting files by glob would mix them.
+
+    THE NEW SET IS BUILT BESIDE THE OLD ONE AND MOVED IN WHOLE (``publish_volume_set``): the
+    previous files used to be deleted first and the new ones written into the live folder, so a
+    failure left no set at all and the half-written volumes, and every name answered 404 for the
+    length of the split (seconds to a minute). Now the old set keeps serving until the new one is
+    complete and a failed split leaves it as it was; the build folder is removed on every path.
     """
     from src.api import diagnostics_volumes as dvol
 
@@ -2808,10 +2845,17 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
                 and dvol.verify_volume_set(out)["ok"]
             ):
                 return current
-        for stale in out.iterdir():
-            with contextlib.suppress(OSError):
-                stale.unlink()
-        return dvol.write_volume_set(src, out)
+        # Beside the live folder, so the move in is a rename on one drive. A build folder left by
+        # a process that died is removed first (the lock means none is in use by this process).
+        for left in out.parent.glob(_VOLUME_BUILD_PREFIX + "*"):
+            shutil.rmtree(left, ignore_errors=True)
+        _check_room_for_volumes(src, out.parent)
+        build = pathlib.Path(tempfile.mkdtemp(prefix=_VOLUME_BUILD_PREFIX, dir=out.parent))
+        try:
+            dvol.write_volume_set(src, build)
+            return dvol.publish_volume_set(build, out)
+        finally:
+            shutil.rmtree(build, ignore_errors=True)
 
 
 @router.get("/all-job/volumes")
@@ -2858,10 +2902,16 @@ def all_diagnostics_volumes() -> JSONResponse:
                 "POST /api/diagnostics/all-job"
             ),
         )
+    from src.api import diagnostics_volumes as dvol
+
     try:
         manifest = _ensure_volume_set(src)
+    except dvol.VolumeRoomError as exc:
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500
-        raise HTTPException(status_code=500, detail=f"could not split the archive: {exc}") from exc
+        # No "could not split the archive" prefix here: the page puts its own, translated, before
+        # whatever this says, and a caller of the endpoint knows what it asked.
+        raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc
     # The same listing shape as a numbered keyword set (``files`` + ``download_base``), so the one
     # page routine that saves five files per click serves both; the manifest's own fields stay.
     files = [
