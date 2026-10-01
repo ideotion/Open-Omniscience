@@ -7,13 +7,13 @@
 > `src/analytics/extract.py` and `families.py` (lemmatise at extraction), `pyproject.toml` +
 > `configs/external_artifacts.yml` (`simplemma` to core), a new consented in-app Wikidata ring job with its
 > Settings surface, `scripts/generate_wikidata_rings.py` (10 s), `src/ai_layer/translate.py` (persist into
-> `keyword_translations`), the locales, the tests. Must NOT: merge anything into the stoplists (HELD), build
+> `keyword_translations`), the locales, the tests. Must NOT: merge anything into the stoplists (HELD when written; RELEASED 2026-09-30 by `R98`, amended by `R111`: batches are curated by us and ship with each app update), build
 > search expansion (`S04-07`), the entity ladder (Q415 → `S05-03`), the AI sweep (Q405 → `S05-08`), or the
 > `keyword_translations` migration itself (`S04-04` — coordinate).
 > **Implements:** Q401, Q402, Q403, Q406 ⛔, Q407, Q408, Q410 (operator), Q411, Q412, Q413, Q414, Q416,
 > Q418, Q1103 (CONFLICT, TENSION), Q1104 (CONFLICT).
 > **Gated on:** `S04-04`'s `keyword_translations` table; `S04-01`'s host list (the job's hosts); the CONFLICT
-> Q1103 / Q1104 is HELD — nothing merges until the maintainer picks.
+> Q1103 / Q1104 was HELD — nothing merges until the maintainer picks. **(2026-09-30: picked, `R98`; `R111` removes the review surface.)**
 > **Sequencing:** after `S04-04` and `S04-01`; before `S04-07` (which reads `translation_tier` for Q514).
 
 ## 0. Working mode
@@ -61,7 +61,7 @@ method for Q1104 = a; it ships reviewed additions, the side of Q1103's NOTE. The
 
 **RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** Nothing in this slice moved: `RC05`–`RC07` touch `S04-12`,
 not the ladder, and the Q1103 / Q1104 stoplist CONFLICT is NOT an RC question — it stays exactly as recorded
-and the stoplist merge stays HELD. B2 and B3 are unchanged, so B3's method (a seeded stratified sample per
+and the stoplist merge stays HELD. **(Superseded 2026-09-30: `R98` released it, `R111` amends it.)** B2 and B3 are unchanged, so B3's method (a seeded stratified sample per
 batch, furniture words only, open-class refused) is still what governs any reviewed addition.
 
 ## 2. Where this stands in the tree — the staleness guard, with anchors
@@ -161,7 +161,7 @@ batch, furniture words only, open-class refused) is still what governs any revie
 - **Why (ruling):** Q410 = a. **May not decide:** whether the script keeps batching ids per `wbgetentities`
   call under the 10 s rule — Q408 rules the in-app pattern (§6).
 
-### S8 — The stopword DIAGNOSTIC may ship; the merge is HELD (Q1103 note, Q1104)
+### S8 — The stopword DIAGNOSTIC may ship; the merge is HELD (Q1103 note, Q1104) — **superseded 2026-09-30: `R98` released the merge and `R111` replaced the review surface with batches curated by us; the diagnostic now exists (`src/api/diagnostics/keywords.py`)**
 - **What:** extend and surface `_stopword_candidates` so the list can be optimised and enlarged as the note
   asks — it decides nothing and merges nothing into `configs/stopwords_extra`. No batch through the review
   surface until the maintainer picks between Q1103 = b and Q1104 = a.
