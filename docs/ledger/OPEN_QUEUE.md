@@ -16215,9 +16215,11 @@ maintainer as a card.
   class, not a claim about every row in it. The revert record fails CLOSED: a run record that
   is present but unparseable stops the boot repair, the report's repair list and `--revert-repairs` until a maintainer fixes
   the store by hand (reading it as empty would let a new plan overwrite a confirmed repair's revert record). THE FORCED RE-CHECK LIST (PR 3, built): the boot lists these sources (`qualification.recheck_first` in `app_state`,
-  never merged on restore) and the qualification pass takes them ahead of its two pools, least recently tried first, at most half
-  of the per-pass re-check slots (the odd slot alternates; unused slots go back to the ordinary queue; budget 0 switches it off),
-  so a measured disagreement waits for the first passes rather than a re-check interval. It changes no verdict, an entry leaves
-  the list when the row is no longer inverted, and an unreadable stored list skips the step. The Settings queue view shows how
+  never merged on restore) and the qualification pass takes them ahead of its two pools, least recently tried first, in half
+  of the per-pass re-check slots plus any the ordinary queue cannot use (the odd slot alternates between the list and the
+  ordinary queue, one try at a time; budget 0 switches it off), so a measured disagreement waits for the first passes rather than
+  a re-check interval. It changes no verdict, an entry leaves the list when the row is no longer inverted or is no longer a
+  judging verdict, an entry the pass has tried `MAX_FORCED_TRIES` (3) times without settling it stops being forced (the
+  ordinary queue still reaches it), and an unreadable stored list skips the step. The Settings queue view shows how
   many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.

@@ -329,3 +329,202 @@ def test_the_pass_reports_how_many_rechecks_came_from_the_list(db, store):
     )
     assert out["forced_rechecks"] == 1 and out["rechecks"] == 1
     assert db.query(Source).count() == 1
+
+
+# ------------------------------------------------- the reviews' findings (Opus on #1285)
+
+class _S:
+    def __init__(self, i):
+        self.id = i
+
+
+def _due_disqualified(db, domain):
+    s = _src(db, domain, STATUS_DISQUALIFIED)
+    _attempt(db, s, STATUS_DISQUALIFIED, LONG_AGO)
+    return s
+
+
+def _due_qualified(db, domain, days=0):
+    s = _src(db, domain, STATUS_QUALIFIED, qualified_at=LONG_AGO)
+    _attempt(db, s, STATUS_QUALIFIED, LONG_AGO + timedelta(days=days))
+    return s
+
+
+def _new_attempts(db, before):
+    return [x for x in db.query(SourceQualificationAttempt).all() if x.id not in before]
+
+
+def test_a_budget_of_one_never_spends_more_than_one_slot(db, store):
+    """On the list's turn with both ordinary pools due, a budget of one used to spend three slots
+    (a negative slice count took almost the whole qualified pool)."""
+    f = _inverted_qualified(db, "f.example")
+    _flag(store, f, turn="list")
+    _due_disqualified(db, "dq.example")
+    _due_qualified(db, "ql1.example")
+    _due_qualified(db, "ql2.example", 1)
+    before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+    out = q.run_qualification_pass(
+        db, None, per_pass=0, recheck_per_pass=1, now=NOW, cohort_provider=_COHORT)
+    assert out["rechecks"] == 1 and len(_new_attempts(db, before)) == 1
+    for turn in (True, False):
+        assert len(allocate_rechecks([_S(1)], [_S(2)], [_S(3), _S(4)], 1, odd_to_list=turn)) == 1
+
+
+def test_no_budget_up_to_seven_ever_overspends_or_repeats_a_source():
+    forced = [_S(i) for i in range(1, 5)]
+    dq = [_S(2), _S(10), _S(11)]            # 2 is flagged AND due in the disqualified pool
+    ql = [_S(3), _S(20), _S(21)]
+    for total in range(0, 8):
+        for turn in (False, True):
+            ids = [x.id for x in allocate_rechecks(forced, dq, ql, total, odd_to_list=turn)]
+            assert len(ids) <= total and len(ids) == len(set(ids)), (total, turn, ids)
+
+
+def test_a_flagged_source_that_is_also_due_in_a_pool_is_evaluated_once(db, store):
+    s = _src(db, "both.example", STATUS_DISQUALIFIED)
+    s.qualification_criteria_version = MEASURED
+    db.commit()
+    _attempt(db, s, STATUS_DISQUALIFIED, LONG_AGO)
+    _attempt(db, s, STATUS_QUALIFIED, NOW - timedelta(days=45))     # imported, newer, disagrees
+    _flag(store, s)
+    for i in range(3):
+        _due_disqualified(db, f"dq{i}.example")
+    before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+    q.run_qualification_pass(
+        db, None, per_pass=0, recheck_per_pass=4, now=NOW, cohort_provider=_COHORT)
+    mine = [x for x in _new_attempts(db, before) if x.source_id == s.id]
+    assert len(mine) == 1
+
+
+def test_a_row_reset_to_unqualified_is_left_to_the_new_candidate_queue(db, store):
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    a.status = "unqualified"
+    db.commit()
+    assert pending_forced_rechecks(db) == []
+    before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+    q.run_qualification_pass(
+        db, None, per_pass=2, recheck_per_pass=2, now=NOW, cohort_provider=_COHORT)
+    assert len([x for x in _new_attempts(db, before) if x.source_id == a.id]) <= 1
+
+
+def test_the_default_budget_lets_both_ordinary_kinds_advance_while_the_list_has_entries(db, store):
+    """Budget 2, a list, and BOTH ordinary pools due: the single ordinary slot alternates between
+    the disqualified and the qualified side instead of the disqualified side always winning."""
+    flagged = [_inverted_qualified(db, f"f{i}.example") for i in range(3)]
+    _flag(store, *flagged)
+    _due_disqualified(db, "dq.example")
+    _due_qualified(db, "ql.example")
+
+    def ordinary_kind(hours):
+        before = {x.id for x in db.query(SourceQualificationAttempt).all()}
+        q.run_qualification_pass(
+            db, None, per_pass=0, recheck_per_pass=2, now=NOW + timedelta(hours=hours),
+            cohort_provider=_COHORT)
+        names = {db.get(Source, x.source_id).domain for x in _new_attempts(db, before)}
+        return sorted(n for n in names if not n.startswith("f"))
+
+    assert [ordinary_kind(h) for h in (1, 2)] == [["dq.example"], ["ql.example"]]
+    forced = [_S(1)]
+    chosen, contested = q.allocate_rechecks_detail(forced, [_S(2)], [_S(3)], 2, odd_to_list=False)
+    assert [x.id for x in chosen] == [1, 2] and contested
+    chosen, contested = q.allocate_rechecks_detail(forced, [_S(2)], [_S(3)], 2, odd_to_list=True)
+    assert [x.id for x in chosen] == [1, 3] and contested
+
+
+def test_an_entry_that_never_settles_stops_being_forced_after_a_few_tries(db, store):
+    a = _inverted_qualified(db, "dead.example")
+    _flag(store, a)
+    for hour in range(q.MAX_FORCED_TRIES):
+        assert [s.domain for s in pending_forced_rechecks(db)] == ["dead.example"]
+        q.run_qualification_pass(
+            db, None, per_pass=0, recheck_per_pass=2, now=NOW + timedelta(hours=hour),
+            cohort_provider=_COHORT)          # an empty cohort never judges it: it stays inverted
+    entry = store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]
+    assert entry["tries"] == q.MAX_FORCED_TRIES
+    assert pending_forced_rechecks(db) == []
+    assert qualification_queue(db, now=NOW, recheck_per_pass=2)["rechecks"]["flagged"] == 0
+
+
+def test_the_boot_step_keeps_the_tries_of_an_entry_it_lists_again(db, store, monkeypatch):
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]["tries"] = 2
+    import src.database.session as sess
+    from contextlib import contextmanager
+
+    @contextmanager
+    def scope():
+        yield db
+
+    monkeypatch.setattr(sess, "session_scope", scope)
+    qi.flag_inversions_for_recheck(now=NOW)
+    assert store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]["tries"] == 2
+
+
+def test_a_stored_entry_of_the_wrong_shape_does_not_fail_the_pass(db, store):
+    a = _inverted_qualified(db, "a.example")
+    store[q.RECHECK_FIRST_KEY] = {"turn": "ordinary", "flagged": {
+        str(a.id): {"flagged_at": 5, "last_tried_at": ["x"], "tries": "many"}, "junk": 3}}
+    assert [s.domain for s in pending_forced_rechecks(db)] == ["a.example"]
+    store[q.RECHECK_FIRST_KEY] = {"flagged": ["not", "a", "dict"]}
+    assert pending_forced_rechecks(db) == []
+    q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_COHORT)
+
+
+def test_recording_a_try_never_rewrites_a_list_it_could_not_read(db, store, monkeypatch):
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    before = copy.deepcopy(store[q.RECHECK_FIRST_KEY])
+    import src.config.kv_store as kv
+
+    def locked(_key):
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", locked)
+    q.record_forced_tries({a.id}, now=NOW, odd_budget=True)
+    assert store[q.RECHECK_FIRST_KEY] == before
+
+
+def test_the_tries_are_recorded_after_the_pass_committed(db, store, monkeypatch):
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    seen: list[bool] = []
+    real = q.record_forced_tries
+
+    def spy(ids, **kw):
+        seen.append(db.in_transaction())     # kv_set_json must never run inside an open transaction
+        return real(ids, **kw)
+
+    monkeypatch.setattr(q, "record_forced_tries", spy)
+    q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_COHORT)
+    assert seen == [False]
+
+
+def test_the_ordinary_pools_are_queried_a_share_deeper_while_the_list_has_entries(db, store, monkeypatch):
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    limits: list[int] = []
+    real = q.select_due_disqualified
+
+    def spy(session, **kw):
+        limits.append(kw["limit"])
+        return real(session, **kw)
+
+    monkeypatch.setattr(q, "select_due_disqualified", spy)
+    q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=4, now=NOW, cohort_provider=_COHORT)
+    assert limits == [4 + (4 + 1) // 2]
+
+
+def test_the_queue_view_follows_the_turn_of_the_contested_slot(db, store):
+    f = _inverted_qualified(db, "f.example")
+    _due_disqualified(db, "dq.example")
+    _due_qualified(db, "ql.example")
+    names = {}
+    for turn in ("ordinary", "list"):
+        _flag(store, f, turn=turn)
+        view = qualification_queue(db, now=NOW, recheck_per_pass=2, next_limit=2)
+        names[turn] = [r["domain"] for r in view["rechecks"]["next"]]
+    assert names["ordinary"] == ["f.example", "dq.example"]
+    assert names["list"] == ["f.example", "ql.example"]

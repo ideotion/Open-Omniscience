@@ -779,7 +779,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     those no longer inverted. It changes no verdict and writes nothing else.
 
     Fails closed like the repair: an unreadable stored list skips the step and rewrites nothing.
-    Local database only; counts returned.
+    Local database only; counts returned. It shares the repair's off switch
+    (``OO_QUALIFICATION_AUTO_REPAIR=0``, set by the test conftest only).
     """
     from src.config.kv_store import kv_get_json_strict, kv_set_json
     from src.database.session import session_scope
@@ -805,8 +806,9 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     def _entry(sid: str) -> dict[str, Any]:
         old = stored.get(sid)
         if isinstance(old, dict):          # keep what this install already recorded about it
-            return {"flagged_at": old.get("flagged_at") or stamp, "last_tried_at": old.get("last_tried_at")}
-        return {"flagged_at": str(old) if old else stamp, "last_tried_at": None}
+            return {"flagged_at": old.get("flagged_at") or stamp, "last_tried_at": old.get("last_tried_at"),
+                    "tries": old.get("tries") if isinstance(old.get("tries"), int) else 0}
+        return {"flagged_at": str(old) if old else stamp, "last_tried_at": None, "tries": 0}
 
     updated = {sid: _entry(sid) for sid in sorted(wanted, key=int)}
     if updated != stored:
