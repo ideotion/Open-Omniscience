@@ -13,18 +13,36 @@ makes the app's logging create the gitignored ``audit/`` directory, which is the
 
     python scripts/stopword_batch.py LOG --language en                 # the evidence table
     python scripts/stopword_batch.py LOG --language en --words w.txt   # check a decided list
-    python scripts/stopword_batch.py LOG --language en --words w.txt --apply --batch-id en-2026-10
+    python scripts/stopword_batch.py LOG --language en --words w.txt --verdicts v.tsv \\
+        --apply --batch-id en-2026-10                                  # write the batch
 
 ``LOG`` is the keyword-log zip (or the single JSON) the diagnostics export produces. ``w.txt``
 is the decided list, one word per line (``#`` comments allowed): the words the curation
 accepted. Without ``--words`` the tool prints candidates worth reading, never a decision.
+
+THE VERDICT GATE (R98/R111: only a HIGH-CONFIDENCE "N" is a stoplist candidate; the triage's two
+runs of Sonnet agreed on every such row). ``--apply`` REQUIRES ``--verdicts FILE``, the triage
+thread's decision rows as tab-separated text, one per line, ``#`` comments allowed::
+
+    language <TAB> word <TAB> verdict <TAB> code <TAB> confidence <TAB> model [<TAB> flags]
+
+with ``verdict`` N (or ``junk``), ``confidence`` H, and ``flags`` a comma list that may hold
+``unstable`` (the verdict did not reproduce between runs) or ``single_reader``. A word with no
+verdict row for the language, a verdict other than N, a confidence other than H, or an ``unstable``
+flag is refused, and the batch comment records the verdict file's hash and the models named in it.
+Without ``--verdicts`` the tool only REPORTS, says so, and its table is not a decision.
 
 WHY THE REFUSALS EXIST. ``configs/stopwords_extra`` is a LANGUAGE-AGNOSTIC union
 (``global_stopwords()``): a word added for English hides that spelling in EVERY language. So a
 word is refused, with the reason, when adding it would hide signal:
 
 * ``ring_member``      a member of a shipped translation ring (R102), in any language: signal, not grammar;
-* ``platform_name``    facebook, twitter and kin COUNT as keywords (R104);
+* ``platform_name``    facebook, twitter and kin COUNT as keywords (R104); the keep-file MUST load, and
+                       empty or missing it stops the tool (a guard that fails open is not one);
+* ``not_in_log``       the log holds no article for it in this language: nothing was weighed;
+* ``no_verdict`` / ``not_junk`` / ``not_high_confidence`` / ``unstable``   the verdict gate above;
+* ``de_elided``        extraction strips ``d'`` / ``l'`` / ``qu'`` before the stop check, so an entry
+                       for ``d'una`` could never match;
 * ``content_elsewhere`` another language stores it as a live keyword (evidence from THIS log);
 * ``also_an_entity``   the log holds it as a person / place / organisation, which the hide set
                        (a whole-normalized-term match) would hide too;
@@ -35,8 +53,9 @@ word is refused, with the reason, when adding it would hide signal:
 * ``phrase``           multi-word entries are refused until the hide path is verified for them.
 
 A maintainer can override ``content_elsewhere`` and ``also_an_entity`` for a word with
-``--allow WORD`` (recorded in the batch comment); ``ring_member`` and ``platform_name`` have no
-override. HOW THIS DIFFERS FROM ``scripts/analyze_keyword_log.py``. That script reads one log and PROPOSES
+``--allow WORD`` (recorded in the batch comment), and lift ``platform_name`` for the names the
+keep-file lists as AMBIGUOUS (signal, threads, x: also ordinary words); ``ring_member``, the
+verdict gate and a firm platform name have no override. HOW THIS DIFFERS FROM ``scripts/analyze_keyword_log.py``. That script reads one log and PROPOSES
 several kinds of optimisation (stopword candidates, mis-tagged entities, ring candidates,
 families) for a human to read; it edits nothing and decides nothing. This tool imports its log
 loading and candidate reading (``load_log``, ``stopword_candidates``) and adds the one step it
@@ -51,12 +70,12 @@ add a section to ``configs/stopwords_extra/PROVENANCE.md``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 import unicodedata
 from collections import defaultdict
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -71,8 +90,19 @@ KEEP_FILE = ROOT / "configs" / "stopword_batches" / "_keep_platform_names.yml"
 ELSEWHERE_MIN_ARTICLES = 3
 # A source holding at least this share of a term's mentions makes it that source's boilerplate.
 SINGLE_SOURCE_SHARE = 0.5
-# A language code names a file in configs/stopwords_extra, so it may never carry a path.
+# A language code names a file in configs/stopwords_extra, so it may never carry a path. The
+# 16-character ceiling protects only that: it is longer than any BCP 47 language-plus-script tag
+# the app stores, and short enough that a code can never be mistaken for a sentence.
 LANGUAGE_CODE = re.compile(r"[a-z][a-z0-9_-]{0,15}")
+# Windows treats these as devices whatever the extension, so ``con.yml`` is not a file there.
+RESERVED_NAMES = frozenset({"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)),
+                            *(f"lpt{i}" for i in range(1, 10))})
+# A batch id lands in a YAML comment; it must never be able to open a new line.
+BATCH_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+# How many other-language / entity rows the table prints before saying "and N more": two lines of
+# evidence are enough to read a refusal, and the full rows are in the --json report.
+SHOWN_ROWS = 4
+HIGH = "H"
 
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -101,12 +131,31 @@ def spelling(term: object) -> str:
     return " ".join(_straight(term).split()).lower()
 
 
-def platform_names(path: Path = KEEP_FILE) -> frozenset[str]:
+def _read_keep(path: Path | None = None) -> tuple[frozenset[str], frozenset[str]]:
+    """(firm names, ambiguous names) from the keep-file. A missing, unreadable, malformed or empty
+    file STOPS the tool: an empty guard would let ``facebook`` through with no warning."""
+    path = path or KEEP_FILE
     try:
         data = yaml.safe_load(path.read_text("utf-8")) or {}
-    except (OSError, yaml.YAMLError):
-        return frozenset()
-    return frozenset(norm(n) for n in (data.get("platform_names") or []) if norm(n))
+    except (OSError, yaml.YAMLError) as exc:
+        raise SystemExit(f"the platform keep-file {path} cannot be read ({exc}); refusing to run without it") from exc
+    if not isinstance(data, dict):
+        raise SystemExit(f"the platform keep-file {path} is not a mapping; refusing to run without it")
+    firm = frozenset(norm(n) for n in (data.get("platform_names") or []) if norm(n))
+    ambiguous = frozenset(norm(n) for n in (data.get("ambiguous_platform_names") or []) if norm(n))
+    if not firm:
+        raise SystemExit(f"the platform keep-file {path} lists no platform names; refusing to run without them")
+    return firm, ambiguous
+
+
+def platform_names(path: Path | None = None) -> frozenset[str]:
+    """The firm platform names: refused with no override."""
+    return _read_keep(path)[0]
+
+
+def ambiguous_platform_names(path: Path | None = None) -> frozenset[str]:
+    """Platform names that are also ordinary words: refused, but ``--allow`` lifts the refusal."""
+    return _read_keep(path)[1]
 
 
 def read_words(path: Path) -> list[str]:
@@ -118,6 +167,47 @@ def read_words(path: Path) -> list[str]:
         if w and w not in words:
             words.append(w)
     return words
+
+
+def log_keywords(doc: dict) -> list[dict]:
+    """The log's keyword rows, read the way the analyzer reads them (an envelope with ``data``, or
+    a flat document). Zero rows STOPS the tool: with none, every guard that weighs evidence is off."""
+    data = doc.get("data", doc)
+    rows = data.get("keywords") if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise SystemExit("the log holds no keyword rows; refusing to judge words without evidence")
+    return rows
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
+def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
+    """The triage decisions for ``lang``, keyed by spelling. Several rows for one word merge to the
+    STRICTEST reading (any row that is not a high-confidence N, or is unstable, spoils it)."""
+    out: dict[str, dict[str, Any]] = {}
+    for line in path.read_text("utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        cols = [c.strip() for c in line.split("\t")]
+        if len(cols) < 5 or cols[0].lower() != lang:
+            continue
+        word = spelling(cols[1])
+        verdict = cols[2].upper()
+        flags = {f.strip().lower() for f in (cols[6] if len(cols) > 6 else "").split(",") if f.strip()}
+        row = out.setdefault(word, {"junk": True, "high": True, "unstable": False, "single_reader": False,
+                                    "models": set()})
+        row["junk"] &= verdict in ("N", "JUNK")
+        row["high"] &= cols[4].upper() == HIGH
+        row["unstable"] |= "unstable" in flags
+        row["single_reader"] |= "single_reader" in flags
+        if len(cols) > 5 and cols[5]:
+            row["models"].add(cols[5])
+    if not out:
+        raise SystemExit(f"{path} holds no verdict rows for language {lang!r}")
+    return out
 
 
 def index_log(keywords: list[dict]) -> dict[str, list[dict]]:
@@ -134,16 +224,18 @@ def _articles(k: dict) -> int:
     return int(k.get("articles") or 0)
 
 
+def _de_elided(word: str) -> bool:
+    """A token extraction strips (``d'una`` -> ``una``) before the stop check: an entry for it
+    could never match, so adding it would do nothing."""
+    from src.analytics.extract import _deelide
+
+    return _deelide(word) != word
+
+
 def _is_listed(word: str, hidden_in_lang: frozenset[str]) -> bool:
     """Whether extraction already drops ``word``. The loader gives only the extras a curly copy,
     so a contraction listed in a vendored list with a straight apostrophe still lets the curly
-    token through: it counts as listed only when both forms are. A token that de-elides (``d'una``
-    -> ``una``) never reaches the stop check as a contraction, so adding it would do nothing: it
-    counts as listed too, listed or not."""
-    from src.analytics.extract import _deelide
-
-    if _deelide(word) != word:
-        return True
+    token through: it counts as listed only when both forms are."""
     if word not in hidden_in_lang:
         return False
     return "'" not in word or word.replace("'", "\u2019") in hidden_in_lang
@@ -177,29 +269,53 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
         "top_source_share": max((float(k["top_source_share"]) for k in spreads), default=None),
         "content_elsewhere": elsewhere,
         "entities": entities,
-        "already_hidden": _is_listed(spelling(word), hidden_in_lang),
+        "de_elided": _de_elided(spelling(word)),
+        "already_hidden": not _de_elided(spelling(word)) and _is_listed(spelling(word), hidden_in_lang),
     }
 
 
+def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]]) -> list[str]:
+    """The verdict gate: only a high-confidence, reproducible N is a stoplist candidate."""
+    v = verdicts.get(spelling(word))
+    if v is None:
+        return ["no_verdict"]
+    out: list[str] = []
+    if not v["junk"]:
+        out.append("not_junk")
+    if not v["high"]:
+        out.append("not_high_confidence")
+    if v["unstable"]:
+        out.append("unstable")
+    return out
+
+
 def refusals(word: str, ev: dict[str, Any], *, ring_words: frozenset[str], platforms: frozenset[str],
-             allow: frozenset[str]) -> list[str]:
-    """Why a word may not be added, as stable keys. Empty = addable."""
+             allow: frozenset[str], ambiguous: frozenset[str] = frozenset(),
+             verdicts: dict[str, dict[str, Any]] | None = None) -> list[str]:
+    """Why a word may not be added, as stable keys. Empty = addable. ``verdicts`` None means no
+    verdict file was given (report mode); ``--apply`` never runs without one."""
     out: list[str] = []
     if " " in word:
         out.append("phrase")
     if ev["already_hidden"]:
         out.append("already_hidden")
+    if ev.get("de_elided"):
+        out.append("de_elided")
     key = norm(word)
-    if key in platforms:
+    if key in platforms or (key in ambiguous and key not in allow):
         out.append("platform_name")
     if key in ring_words:
         out.append("ring_member")
+    if not ev["articles"]:
+        out.append("not_in_log")
     if ev["content_elsewhere"] and key not in allow:
         out.append("content_elsewhere")
     if ev["entities"] and key not in allow:
         out.append("also_an_entity")
     if ev["top_source_share"] is not None and ev["top_source_share"] >= SINGLE_SOURCE_SHARE:
         out.append("single_source")
+    if verdicts is not None:
+        out.extend(verdict_refusals(word, verdicts))
     return out
 
 
@@ -251,7 +367,7 @@ def candidates_to_read(log_doc: dict, lang: str, existing: frozenset[str]) -> li
     """The spellings worth reading for a language: surfaced by the analyzer, net-new only."""
     import analyze_keyword_log as akl
 
-    kws = log_doc.get("data", {}).get("keywords", [])
+    kws = log_keywords(log_doc)
     by = akl.stopword_candidates(kws, set(existing), 0)
     # ``term`` keeps the surface form; the casefold key cannot give back a final sigma or an eszett.
     return [c["term"] for c in by.get(lang, []) if c["bucket"] == "high_confidence"] + [
@@ -265,11 +381,27 @@ def yaml_scalar(term: str) -> str:
     return dumped.removesuffix("...").strip()
 
 
+def check_language(lang: str) -> str:
+    """A language code names a file in configs/stopwords_extra and nothing else."""
+    if not LANGUAGE_CODE.fullmatch(lang) or lang in RESERVED_NAMES:
+        raise SystemExit(f"{lang!r} is not a language code (a letter, then letters, digits, - or _; "
+                         "no device names); refusing to build a path from it")
+    return lang
+
+
 def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str], source: str) -> Path:
-    """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads."""
-    if not LANGUAGE_CODE.fullmatch(lang):
-        raise SystemExit(f"{lang!r} is not a language code; refusing to build a path from it")
+    """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads.
+
+    The comment is deterministic (no date, no file name): the same decision gives the same bytes
+    on any day. ``batch_id`` carries the date, and ``source`` is hashes and model names only."""
+    check_language(lang)
+    if not BATCH_ID.fullmatch(batch_id):
+        raise SystemExit(f"--batch-id {batch_id!r} may hold only letters, digits, . _ - (1 to 64): it "
+                         "is written into a YAML comment and must not be able to open a new line")
+    source = re.sub(r"[^A-Za-z0-9._ ;:,-]", "_", source)
     path = EXTRA_DIR / f"{lang}.yml"
+    if path.is_symlink() or path.resolve().parent != EXTRA_DIR.resolve():
+        raise SystemExit(f"{path} is a symlink or leaves {EXTRA_DIR}; refusing to write through it")
     new_file = not path.exists()
     before = "stopwords:\n" if new_file else path.read_text("utf-8")
     try:
@@ -280,10 +412,11 @@ def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str],
     # A language with no file yet starts from an empty list; an existing file must already hold one.
     if not (isinstance(listed, list) or (new_file and listed is None)):
         raise SystemExit(f"{path} has no 'stopwords:' list; refusing to edit it")
-    stamp = datetime.now(UTC).strftime("%Y-%m-%d")
-    lines = [f"  # batch {batch_id} ({stamp}; source: {source})"]
+    prior = [str(x) for x in (listed or [])]
+    lines = [f"  # batch {batch_id} ({source})"]
     if allowed:
-        lines.append(f"  # maintainer overrides (content elsewhere / entity reviewed): {', '.join(sorted(allowed))}")
+        lines.append(f"  # maintainer overrides (content elsewhere / entity / ambiguous platform name reviewed): "
+                     f"{', '.join(sorted(allowed))}")
     for w in sorted(words):
         lines.append(f"  - {yaml_scalar(w)}")
     after = before.rstrip("\n") + "\n" + "\n".join(lines) + "\n"
@@ -294,10 +427,15 @@ def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str],
             f"{path}: appending a 2-space block list item does not parse here ({exc}) -- the file "
             "uses another layout (unindented or flow list); edit it by hand. Nothing written."
         ) from exc
-    if [str(x) for x in loaded[-len(words):]] != sorted(words):
-        raise SystemExit(f"{path}: the appended words did not round-trip through YAML; nothing written")
+    if [str(x) for x in loaded] != prior + sorted(words):
+        raise SystemExit(f"{path}: the list after the append is not the old list plus exactly the "
+                         "decided words; nothing written")
     path.write_text(after, "utf-8")
     return path
+
+
+def _more(items: list[str], shown: int = SHOWN_ROWS) -> str:
+    return ", ".join(items[:shown]) + (f" and {len(items) - shown} more" if len(items) > shown else "")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -305,32 +443,48 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("log", type=Path, help="keyword-log zip or JSON from the diagnostics export")
     ap.add_argument("--language", required=True, help="the language whose list the words go into (e.g. en)")
     ap.add_argument("--words", type=Path, help="the decided words, one per line")
-    ap.add_argument("--allow", action="append", default=[], help="override content_elsewhere / also_an_entity for a word")
+    ap.add_argument("--verdicts", type=Path, help="the triage decision rows (required with --apply)")
+    ap.add_argument("--allow", action="append", default=[],
+                    help="override content_elsewhere / also_an_entity / an ambiguous platform name for a word")
     ap.add_argument("--apply", action="store_true", help="append the addable words to the language's file")
-    ap.add_argument("--batch-id", help="the batch's id (required with --apply)")
-    ap.add_argument("--json", type=Path, help="also write the full evidence report here")
+    ap.add_argument("--batch-id", help="the batch's id, e.g. en-2026-10 (required with --apply)")
+    ap.add_argument("--json", type=Path, help="also write the full evidence report here (a .json file outside configs/)")
     args = ap.parse_args(argv)
 
     import analyze_keyword_log as akl
 
-    lang = args.language.strip().lower()
-    if not LANGUAGE_CODE.fullmatch(lang):
-        raise SystemExit(f"--language {args.language!r} is not a language code (letters, digits, - or _)")
+    lang = check_language(args.language.strip().lower())
+    if args.apply and not (args.words and args.batch_id and args.verdicts):
+        raise SystemExit("--apply needs --words, --batch-id and --verdicts (the triage decision rows)")
+    if args.json is not None:
+        target = args.json.resolve()
+        if (target.suffix != ".json" or args.json.is_symlink()
+                or target.is_relative_to((ROOT / "configs").resolve())):
+            raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
     doc = akl.load_log(args.log)
-    keywords = doc.get("data", {}).get("keywords", [])
+    keywords = log_keywords(doc)
     index = index_log(keywords)
     hidden, ring = app_context(lang)
+    firm, ambiguous = _read_keep()
+    verdicts = read_verdicts(args.verdicts, lang) if args.verdicts else None
     note = trimmed_log_notice(args.log)
     if note:
         print(note)
-    platforms = platform_names()
+    if verdicts is None:
+        print("NOTICE: no --verdicts file: this table is evidence, not a decision, and --apply will refuse.")
     allow = frozenset(norm(a) for a in args.allow)
 
-    words = read_words(args.words) if args.words else [spelling(w) for w in candidates_to_read(doc, lang, hidden)]
+    if args.words:
+        words = read_words(args.words)
+    elif verdicts is not None:
+        words = sorted(w for w, v in verdicts.items() if v["junk"] and v["high"] and not v["unstable"])
+    else:
+        words = [spelling(w) for w in candidates_to_read(doc, lang, hidden)]
     rows = []
     for w in words:
         ev = evidence(w, lang, index.get(norm(w), []), hidden)
-        ev["refused"] = refusals(w, ev, ring_words=ring, platforms=platforms, allow=allow)
+        ev["refused"] = refusals(w, ev, ring_words=ring, platforms=firm, allow=allow,
+                                 ambiguous=ambiguous, verdicts=verdicts)
         rows.append(ev)
 
     addable = [r["term"] for r in rows if not r["refused"]]
@@ -339,9 +493,9 @@ def main(argv: list[str] | None = None) -> int:
         tag = "OK     " if not r["refused"] else "REFUSED"
         extra = ""
         if r["content_elsewhere"]:
-            extra += "; also a keyword in " + ", ".join(f"{u['language']} ({u['articles']})" for u in r["content_elsewhere"][:4])
+            extra += "; also a keyword in " + _more([f"{u['language']} ({u['articles']})" for u in r["content_elsewhere"]])
         if r["entities"]:
-            extra += "; also an entity in " + ", ".join(f"{u['language']} {u['kind']} ({u['articles']})" for u in r["entities"][:3])
+            extra += "; also an entity in " + _more([f"{u['language']} {u['kind']} ({u['articles']})" for u in r["entities"]], 3)
         if r["top_source_share"] is None and not r["refused"]:
             extra += "; source spread not in this log, single-source boilerplate NOT judged"
         print(f"  {tag} {r['term']:<24} articles {r['articles']:>6} mentions {r['mentions']:>7}"
@@ -350,14 +504,19 @@ def main(argv: list[str] | None = None) -> int:
         args.json.write_text(json.dumps({"language": lang, "rows": rows}, ensure_ascii=False, indent=2), "utf-8")
 
     if args.apply:
-        if not args.words or not args.batch_id:
-            raise SystemExit("--apply needs --words and --batch-id")
         if not addable:
             print("nothing addable; nothing written")
             return 0
         used_allow = [w for w in addable if norm(w) in allow]
+        models = sorted({m for w in addable for m in verdicts[spelling(w)]["models"]}) if verdicts else []
+        single = sorted(w for w in addable if verdicts and verdicts[spelling(w)]["single_reader"])
+        source = f"log sha256 {file_hash(args.log)}; verdicts sha256 {file_hash(args.verdicts)}"
+        if models:
+            source += f"; models {', '.join(models)}"
+        if single:
+            source += f"; single reader: {', '.join(single)}"
         existed = (EXTRA_DIR / f"{lang}.yml").exists()
-        path = append_batch(lang, addable, args.batch_id, used_allow, args.log.name)
+        path = append_batch(lang, addable, args.batch_id, used_allow, source)
         print(f"\nappended {len(addable)} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
         # The loader adds a curly copy of every listed contraction, so the digest test needs both.
         declare = sorted(set(addable) | {w.replace("'", "\u2019") for w in addable if "'" in w})

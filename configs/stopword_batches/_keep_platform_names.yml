@@ -3,9 +3,13 @@
 # furniture around an article ("comments", "follow", "share"), which goes on the stoplist in
 # reviewed batches. scripts/stopword_batch.py REFUSES to add a word listed here, and says so (R111: batches are curated by us; no user is ever asked).
 #
-# A starting list, extended by review, never a cap. Names that are also ordinary words in some
-# language (signal, threads, x) are left out on purpose: the tool cannot tell the platform from
-# the word, and a wrong refusal only costs one more review decision, not a hidden keyword.
+# A starting list, extended by review, never a cap. The tool STOPS if this file is missing or lists
+# no names: an empty guard would let a platform through silently.
+#
+# Names that are also ordinary words in some language (signal, threads, x) go in the second list:
+# they are refused too, because a wrong ACCEPTANCE hides a platform keyword for every language,
+# while a wrong refusal costs one review decision. The maintainer lifts the refusal for one word
+# with --allow WORD after reading the evidence (recorded in the batch comment).
 platform_names:
   - bluesky
   - discord
@@ -26,3 +30,8 @@ platform_names:
   - weibo
   - whatsapp
   - youtube
+
+ambiguous_platform_names:
+  - signal
+  - threads
+  - x

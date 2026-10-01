@@ -27,6 +27,28 @@ def _load():
 
 
 sb = _load()
+_REAL_APP_CONTEXT = sb.app_context
+REAL_KEEP_FILE = sb.KEEP_FILE
+
+# What extraction already drops per language and what the rings hold, SYNTHETIC: no test here may
+# depend on what the shipped stoplists hold today, or the first real batch that adds "permalink"
+# would turn it red (coordinator check on #1280, P5).
+HIDDEN = {
+    "en": frozenset({"the"}),
+    "de": frozenset({"heisst"}),
+    "el": frozenset({"ένας"}),
+    "ca": frozenset({"li'n", "d'una", "s'han"}),  # straight-only contractions, as the vendored list holds them
+}
+RING = frozenset({"election"})
+KEEP = {"platform_names": ["facebook", "twitter", "youtube"], "ambiguous_platform_names": ["signal", "x", "threads"]}
+
+
+@pytest.fixture(autouse=True)
+def synthetic_shipped_data(tmp_path, monkeypatch):
+    keep = tmp_path / "keep.yml"
+    keep.write_text(yaml.safe_dump(KEEP), "utf-8")
+    monkeypatch.setattr(sb, "KEEP_FILE", keep)
+    monkeypatch.setattr(sb, "app_context", lambda lang: (HIDDEN.get(lang, frozenset()), RING))
 
 
 def _kw(term, lang, arts, *, kind="term", hidden=False, **extra):
@@ -46,6 +68,8 @@ LOG = [
     _kw("sidebar", "en", 500, top_source_share=0.9, sources=2),
     _kw("widget", "en", 500, top_source_share=0.1, sources=200),
     _kw("the", "en", 9000),
+    _kw("signal", "en", 300),
+    _kw("x", "en", 300),
 ]
 
 
@@ -58,7 +82,8 @@ def ctx():
 def _refusals(word, ctx, allow=frozenset()):
     hidden, ring, index = ctx
     ev = sb.evidence(word, "en", index.get(word, []), hidden)
-    return sb.refusals(word, ev, ring_words=ring, platforms=sb.platform_names(), allow=allow), ev
+    return sb.refusals(word, ev, ring_words=ring, platforms=sb.platform_names(),
+                       ambiguous=sb.ambiguous_platform_names(), allow=allow), ev
 
 
 def test_a_plain_page_word_is_addable(ctx):
@@ -73,6 +98,7 @@ def test_every_refusal_has_its_reason(ctx):
     assert _refusals("rose", ctx)[0] == ["also_an_entity"]
     assert _refusals("sidebar", ctx)[0] == ["single_source"]
     assert _refusals("the", ctx)[0] == ["already_hidden"]
+    assert _refusals("zznotinlog", ctx)[0] == ["not_in_log"]
     assert "phrase" in _refusals("read more", ctx)[0]
 
 
@@ -166,7 +192,8 @@ def test_a_trimmed_or_paged_log_is_announced(tmp_path):
 
 
 def test_the_platform_keep_list_ships_and_reads():
-    assert {"facebook", "twitter", "youtube"} <= sb.platform_names()
+    assert {"facebook", "twitter", "youtube"} <= sb.platform_names(REAL_KEEP_FILE)
+    assert {"signal", "threads", "x"} <= sb.ambiguous_platform_names(REAL_KEEP_FILE)
 
 
 def test_the_tool_is_offline_and_outside_the_app():
@@ -203,7 +230,7 @@ def test_a_word_shipped_in_a_stoplist_hides_in_the_stored_keywords_with_no_user_
                       content="c", hash="h1", country="fr", language="en",
                       published_at=datetime(2024, 4, 1, tzinfo=UTC), created_at=datetime.now(UTC)))
         s.add(Keyword(id=1, term="zzfurniture", normalized_term="zzfurniture", language="en", mention_count=9, article_count=1))
-        s.add(Keyword(id=2, term="harvest", normalized_term="harvest", language="en", mention_count=7, article_count=1))
+        s.add(Keyword(id=2, term="zzharvest", normalized_term="zzharvest", language="en", mention_count=7, article_count=1))
         s.commit()
         s.add(KeywordMention(keyword_id=1, article_id=1, count=9))
         s.add(KeywordMention(keyword_id=2, article_id=1, count=7))
@@ -212,7 +239,7 @@ def test_a_word_shipped_in_a_stoplist_hides_in_the_stored_keywords_with_no_user_
         def listed() -> set[str]:
             return {r.get("term") for r in queries.top_terms(s, limit=20)["terms"]}
 
-        assert listed() == {"zzfurniture", "harvest"}
+        assert listed() == {"zzfurniture", "zzharvest"}
         monkeypatch.setattr(extract, "_EXTRA_STOPWORDS", frozenset(extract._EXTRA_STOPWORDS) | {"zzfurniture"})
         def _recache() -> None:  # what the restart after an update does
             for fn in (extract._global_stopwords_raw, extract._ring_member_exemptions, extract.global_stopwords):
@@ -220,7 +247,7 @@ def test_a_word_shipped_in_a_stoplist_hides_in_the_stored_keywords_with_no_user_
 
         _recache()
         try:
-            assert listed() == {"harvest"}  # hidden at read time; the stored rows are untouched
+            assert listed() == {"zzharvest"}  # hidden at read time; the stored rows are untouched
             assert s.query(Keyword).count() == 2
         finally:
             monkeypatch.undo()
@@ -276,13 +303,30 @@ def test_the_last_page_of_a_paged_export_is_announced_too(tmp_path):
     assert sb.trimmed_log_notice(only) is None
 
 
-def test_apply_hints_the_curly_copy_and_the_script_guard_for_a_new_file(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+def _verdict_file(tmp_path, *rows, name="v.tsv"):
+    f = tmp_path / name
+    f.write_text("# language\tword\tverdict\tcode\tconfidence\tmodel\tflags\n"
+                 + "\n".join("\t".join(r) for r in rows) + "\n", "utf-8")
+    return f
+
+
+def _apply(tmp_path, monkeypatch, lang, words_text, verdict_rows, keywords, *extra, batch_id="b-1"):
+    extra_dir = tmp_path / "extra"
+    extra_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(sb, "EXTRA_DIR", extra_dir)
     log = tmp_path / "log.json"
-    log.write_text(json.dumps({"data": {"keywords": [_kw("y'all", "xx", 50, sources=9)]}}), "utf-8")
+    log.write_text(json.dumps({"data": {"keywords": keywords}}), "utf-8")
     words = tmp_path / "w.txt"
-    words.write_text("y'all\n", "utf-8")
-    assert sb.main([str(log), "--language", "xx", "--words", str(words), "--apply", "--batch-id", "xx-1"]) == 0
+    words.write_text(words_text, "utf-8")
+    verdicts = _verdict_file(tmp_path, *verdict_rows)
+    return sb.main([str(log), "--language", lang, "--words", str(words), "--verdicts", str(verdicts),
+                    "--apply", "--batch-id", batch_id, *extra])
+
+
+def test_apply_hints_the_curly_copy_and_the_script_guard_for_a_new_file(tmp_path, monkeypatch, capsys):
+    rc = _apply(tmp_path, monkeypatch, "xx", "y'all\n", [("xx", "y'all", "N", "fn", "H", "sonnet-5.5")],
+                [_kw("y'all", "xx", 50, sources=9)], batch_id="xx-1")
+    assert rc == 0
     out = capsys.readouterr().out
     assert '"y’all"' in out and '"y\'all"' in out
     assert "_NON_LATIN_FILES" in out
@@ -300,4 +344,199 @@ def test_an_elided_contraction_is_refused_because_extraction_never_sees_it_as_on
     # "d'una" becomes "una" before the stop check, in either apostrophe, so a stoplist entry is a no-op
     hidden, _ring = sb.app_context("ca")
     for w in ("d'una", "s'han", "d'xyzzy"):
-        assert sb.evidence(w, "ca", [], hidden)["already_hidden"] is True
+        ev = sb.evidence(w, "ca", [], hidden)
+        assert ev["de_elided"] is True and ev["already_hidden"] is False  # its own reason, not "listed"
+        assert "de_elided" in sb.refusals(w, ev, ring_words=frozenset(), platforms=frozenset(), allow=frozenset())
+
+
+# ---- the verdict gate (R98/R111; coordinator check P1) ----------------------------------------
+
+def test_the_verdict_gate_admits_only_a_reproducible_high_confidence_n(tmp_path):
+    f = _verdict_file(
+        tmp_path,
+        ("en", "permalink", "N", "bp", "H", "sonnet-5.5"),
+        ("en", "follow", "N", "lv", "L", "sonnet-5.5"),
+        ("en", "rose", "K", "", "", "sonnet-5.5"),
+        ("en", "sidebar", "N", "bp", "H", "sonnet-5.5", "unstable"),
+        ("en", "widget", "N", "bp", "H", "sonnet-5.5"),
+        ("en", "widget", "N", "bp", "L", "haiku-4.5"),  # a second, unsure reading spoils it
+        ("fr", "lundi", "N", "cal", "H", "sonnet-5.5"),
+    )
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("permalink", v) == []
+    assert sb.verdict_refusals("follow", v) == ["not_high_confidence"]
+    assert sb.verdict_refusals("rose", v) == ["not_junk", "not_high_confidence"]
+    assert sb.verdict_refusals("sidebar", v) == ["unstable"]
+    assert sb.verdict_refusals("widget", v) == ["not_high_confidence"]
+    assert sb.verdict_refusals("lundi", v) == ["no_verdict"]  # another language's row is not this one's
+    assert sb.verdict_refusals("unjudged", v) == ["no_verdict"]
+
+
+def test_apply_refuses_to_run_without_a_verdict_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    words = tmp_path / "w.txt"
+    words.write_text("permalink\n", "utf-8")
+    with pytest.raises(SystemExit) as exc:
+        sb.main([str(log), "--language", "en", "--words", str(words), "--apply", "--batch-id", "b-1"])
+    assert "--verdicts" in str(exc.value)
+    assert not (tmp_path / "en.yml").exists()
+
+
+def test_apply_writes_only_judged_words_and_records_where_the_decision_came_from(tmp_path, monkeypatch, capsys):
+    rc = _apply(
+        tmp_path, monkeypatch, "en", "permalink\nfollow\nwidget\n",
+        [("en", "permalink", "N", "bp", "H", "sonnet-5.5"), ("en", "follow", "K", "", "", "sonnet-5.5"),
+         ("en", "widget", "N", "bp", "H", "sonnet-5.5", "single_reader")],
+        LOG,
+    )
+    assert rc == 0
+    text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
+    assert yaml.safe_load(text)["stopwords"] == ["permalink", "widget"]  # "follow" was kept by the triage
+    assert "verdicts sha256" in text and "models sonnet-5.5" in text and "single reader: widget" in text
+    assert "REFUSED follow" in capsys.readouterr().out
+
+
+def test_the_batch_comment_is_deterministic_no_date_no_file_name(tmp_path, monkeypatch):
+    rows = [("en", "permalink", "N", "bp", "H", "sonnet-5.5")]
+    _apply(tmp_path, monkeypatch, "en", "permalink\n", rows, LOG)
+    text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
+    assert "log.json" not in text and "v.tsv" not in text
+    import re as _re
+    assert not _re.search(r"20\d\d-\d\d-\d\d", text)
+
+
+def test_candidate_mode_with_verdicts_is_limited_to_judged_words(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    v = _verdict_file(tmp_path, ("en", "permalink", "N", "bp", "H", "sonnet-5.5"),
+                      ("en", "follow", "N", "lv", "L", "sonnet-5.5"))
+    assert sb.main([str(log), "--language", "en", "--verdicts", str(v)]) == 0
+    out = capsys.readouterr().out
+    assert "permalink" in out and "follow" not in out and "1 words read" in out
+
+
+# ---- the platform guard fails closed (P2) ------------------------------------------------------
+
+def test_a_missing_or_empty_keep_file_stops_the_tool(tmp_path, monkeypatch):
+    for content in (None, "", "platform_names: []\n", "- a\n- b\n", "platform_names: [unclosed\n"):
+        keep = tmp_path / "k.yml"
+        if content is None:
+            keep.unlink(missing_ok=True)
+        else:
+            keep.write_text(content, "utf-8")
+        monkeypatch.setattr(sb, "KEEP_FILE", keep)
+        with pytest.raises(SystemExit):
+            sb.platform_names()
+
+
+def test_the_main_run_stops_when_the_keep_file_is_gone(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "KEEP_FILE", tmp_path / "gone.yml")
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en"])
+
+
+def test_an_ambiguous_platform_name_is_refused_and_only_allow_lifts_it(ctx):
+    assert _refusals("signal", ctx)[0] == ["platform_name"]
+    assert _refusals("x", ctx)[0] == ["platform_name"]
+    assert _refusals("signal", ctx, frozenset({"signal"}))[0] == []
+    assert "platform_name" in _refusals("facebook", ctx, frozenset({"facebook"}))[0]  # a firm name has no override
+
+
+# ---- evidence, not silence (P3) ----------------------------------------------------------------
+
+def test_a_flat_json_log_is_read_with_its_guards_on(tmp_path, capsys):
+    log = tmp_path / "flat.json"
+    log.write_text(json.dumps({"keywords": LOG}), "utf-8")
+    words = tmp_path / "w.txt"
+    words.write_text("rose\npie\n", "utf-8")
+    assert sb.main([str(log), "--language", "en", "--words", str(words)]) == 0
+    out = capsys.readouterr().out
+    assert "also_an_entity" in out and "content_elsewhere" in out
+
+
+def test_a_log_with_no_keyword_rows_stops_the_tool(tmp_path):
+    log = tmp_path / "empty.json"
+    log.write_text(json.dumps({"data": {"keywords": []}}), "utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en"])
+
+
+# ---- write scope (P4, P6, P7, P8) ---------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", ["inj-1\n  - facebook #", "a b", "", "x" * 65, "../x", "a;b"])
+def test_a_batch_id_cannot_open_a_new_line(tmp_path, monkeypatch, bad):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        sb.append_batch("en", ["permalink"], bad, [], "log")
+    assert not (tmp_path / "en.yml").exists()
+
+
+def test_the_round_trip_compares_the_whole_list(tmp_path, monkeypatch):
+    (tmp_path / "en.yml").write_text("stopwords:\n  - alpha\n", "utf-8")
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    # a source string that tried to smuggle an entry is reduced to harmless comment text
+    sb.append_batch("en", ["permalink"], "b-1", [], "log\n  - facebook")
+    loaded = yaml.safe_load((tmp_path / "en.yml").read_text("utf-8"))["stopwords"]
+    assert loaded == ["alpha", "permalink"]
+
+
+def test_a_symlink_in_the_directory_is_never_written_through(tmp_path, monkeypatch):
+    outside = tmp_path / "outside.yml"
+    outside.write_text("stopwords:\n  - keep\n", "utf-8")
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    (extra / "en.yml").symlink_to(outside)
+    monkeypatch.setattr(sb, "EXTRA_DIR", extra)
+    with pytest.raises(SystemExit):
+        sb.append_batch("en", ["permalink"], "b-1", [], "log")
+    assert outside.read_text("utf-8") == "stopwords:\n  - keep\n"
+
+
+@pytest.mark.parametrize("name", ["con", "nul", "aux", "com1", "lpt9"])
+def test_a_windows_device_name_is_not_a_language_code(tmp_path, monkeypatch, name):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        sb.append_batch(name, ["permalink"], "b-1", [], "log")
+    assert not list(tmp_path.glob(f"{name}.yml"))
+
+
+def test_main_refuses_a_path_as_language_before_reading_anything(tmp_path):
+    with pytest.raises(SystemExit):
+        sb.main([str(tmp_path / "no-such-log.json"), "--language", "../x"])
+
+
+def test_json_report_is_confined_to_a_json_file_outside_configs(tmp_path):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    for bad in (tmp_path / "r.txt", ROOT / "configs" / "stopwords_extra" / "en.json"):
+        with pytest.raises(SystemExit):
+            sb.main([str(log), "--language", "en", "--json", str(bad)])
+    ok = tmp_path / "report.json"
+    assert sb.main([str(log), "--language", "en", "--json", str(ok)]) == 0
+    assert json.loads(ok.read_text("utf-8"))["language"] == "en"
+
+
+def test_ring_members_are_keyed_like_the_word_they_are_compared_with(monkeypatch):
+    from src.analytics import equivalence
+
+    class _Ring:
+        members = (("en", "Y\u2019all"), ("de", "Fl\u00fcchtling"))
+
+    monkeypatch.setattr(equivalence, "shipped_rings", lambda: [_Ring()])
+    _hidden, ring = _REAL_APP_CONTEXT("en")
+    assert sb.norm("y'all") in ring and sb.norm("flüchtling") in ring
+
+
+def test_long_evidence_lists_say_how_many_more_there_are(tmp_path, capsys):
+    rows = [_kw("shared", "en", 50, sources=9)] + [_kw("shared", lang, 40) for lang in ("de", "fr", "es", "it", "pt", "nl")]
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": rows}}), "utf-8")
+    words = tmp_path / "w.txt"
+    words.write_text("shared\n", "utf-8")
+    assert sb.main([str(log), "--language", "en", "--words", str(words)]) == 0
+    assert "and 2 more" in capsys.readouterr().out
