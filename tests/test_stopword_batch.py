@@ -554,3 +554,14 @@ def test_a_short_or_bom_prefixed_verdict_row_still_votes(tmp_path):
     assert sb.verdict_refusals("rose", v) != []
     assert sb.verdict_refusals("pie", v) == ["not_high_confidence"]
     assert sb.verdict_refusals("calm", v) == []  # the BOM did not cost the first row its language
+
+
+def test_a_row_with_leading_blanks_or_a_mid_file_bom_still_votes(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("en\trose\tN\tbp\tH\tsonnet\n"
+                 "\ten\trose\tK\t\tH\tsonnet\n"  # an empty first column is blanks, not a column
+                 "en\tpie\tN\tbp\tH\tsonnet\n"
+                 "\ufeffen\tpie\tK\t\tH\tsonnet\n", "utf-8")  # a second file's BOM, joined with cat
+    v = sb.read_verdicts(f, "en")
+    assert "not_junk" in sb.verdict_refusals("rose", v)
+    assert "not_junk" in sb.verdict_refusals("pie", v)

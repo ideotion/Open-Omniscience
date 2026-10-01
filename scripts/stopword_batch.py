@@ -193,8 +193,10 @@ def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
     """The triage decisions for ``lang``, keyed by spelling. Several rows for one word merge to the
     STRICTEST reading (any row that is not a high-confidence N, or is unstable, spoils it)."""
     out: dict[str, dict[str, Any]] = {}
-    for line in path.read_text("utf-8").lstrip("\ufeff").splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
+    for line in path.read_text("utf-8").splitlines():
+        # A BOM can sit mid-file too (two exports joined with cat); leading blanks are not a column.
+        line = line.replace("\ufeff", "").lstrip()
+        if not line or line.startswith("#"):
             continue
         # Split BEFORE trimming: stripping would eat the trailing tabs of a row whose last columns are
         # empty ("en rose K" + 3 tabs), and a row that goes missing loses its vote in the merge.
