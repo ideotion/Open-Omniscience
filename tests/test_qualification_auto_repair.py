@@ -569,3 +569,86 @@ def test_the_summary_forgets_its_cached_keys_so_an_out_of_process_revert_shows(e
     qi.repair_summary()
     assert qi.REPAIR_INDEX_KEY in forgotten
     assert qi.REPAIR_RUN_PREFIX + qi._iso(NOW) in forgotten
+
+
+def test_an_inverted_backup_imported_into_a_consistent_instance_is_withdrawn_at_the_next_boot(
+    tmp_path, monkeypatch
+) -> None:
+    """The whole path, found by the diagnostics thread's reproduction: a backup from an instance
+    that is itself inverted (a catalogue stamp beside a newer disqualified attempt, the 085639
+    shape) lands on a consistent catalogue-stamped instance. The incoming stamp replaces nothing
+    but the attempts merge copies every attempt row, so the importing instance reads
+    inversions-found until the next boot repair withdraws it."""
+    import copy
+    from datetime import timedelta
+
+    from src.backup.merge import merge_corpus
+    from tests.test_merge_source_qualification import (
+        _BATCH_META,
+        _CURATED,
+        _MEASURED,
+        _SEEN,
+        _T0,
+        _add_attempt,
+        _add_source,
+        _attempts,
+        _corpus,
+        _integrity,
+        _sources,
+    )
+
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        # a measured row on the importing side, to prove the repair leaves it alone
+        mid = _add_source(s, "mine.example", status="qualified", at=_T0, version=_MEASURED)
+        _add_attempt(s, mid, "qualified", _T0, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        mid = _add_source(s, "mine.example", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, mid, "disqualified", _SEEN + timedelta(days=1), version=_MEASURED)
+        s.commit()
+    assert _integrity(staged)["verdict"] == "inversions-found"
+
+    merge_corpus(staged, working, _BATCH_META)
+    got = _sources(working)
+    assert got["psx.com.pk"].status == "qualified" and got["psx.com.pk"].qualification_criteria_version == _CURATED
+    assert [a.verdict for a in _attempts(working, "psx.com.pk")] == ["curated", "disqualified"]
+    assert _integrity(working)["inversions_total"] == 2          # inverted until the next boot
+
+    # the next boot, against that corpus (a fake key-value store, the working file's sessions)
+    maker = _corpus(working)
+    store: dict[str, dict] = {}
+
+    @contextlib.contextmanager
+    def scope():
+        s = maker()
+        try:
+            yield s
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise
+        finally:
+            s.close()
+
+    import src.config.kv_store as kv
+    import src.database.session as sess
+
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    monkeypatch.setattr(sess, "session_scope", scope)
+    monkeypatch.setattr(kv, "kv_get_json", lambda key: copy.deepcopy(store.get(key)))
+    monkeypatch.setattr(kv, "kv_set_json", lambda key, obj: store.__setitem__(key, copy.deepcopy(obj)))
+    out = qi.auto_repair_inversions(now=NOW)
+
+    after = _sources(working)
+    assert out["repaired"] == 1
+    assert after["psx.com.pk"].status == STATUS_DISQUALIFIED, "the catalogue-stamped row is withdrawn"
+    assert after["mine.example"].status == STATUS_QUALIFIED, "a verdict measured here is not"
+    rep = _integrity(working)
+    assert rep["inversions_total"] == 1 and rep["left_for_local_recheck_total"] == 1
+    assert [r["domain"] for r in rep["laundered"]] == ["mine.example"]
