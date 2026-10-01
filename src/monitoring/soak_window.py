@@ -107,9 +107,10 @@ def _window(bar_hours: float) -> dict[str, Any]:
         "bar_hours": bar_hours,
         "reaches_bar": hours >= bar_hours,
         "note": (
-            "A restart ends the soak. Every process-cumulative counter below resets "
-            "with it, which is why they can be read against this window and only this "
-            "window."
+            "A restart ends THIS window: its clock is process uptime, and every "
+            "process-cumulative counter below resets with it, which is why they can be read "
+            "against this window and only this window. The Wikipedia lane's own run is "
+            "read from its rows instead, across restarts: wiki_lane.run."
         ),
     }
 
@@ -333,7 +334,9 @@ def _db_stats_latency() -> dict[str, Any]:
     try:
         from src.monitoring.latency import summary as _summary
 
-        rows = (_summary() or {}).get("routes") or []
+        summ = _summary() or {}
+        rows = summ.get("routes") or []
+        dropped = int((summ.get("route_keyspace") or {}).get("dropped_requests") or 0)
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
         _LOG.debug("latency summary unavailable", exc_info=True)
         return {"measured": False, "reason": f"latency summary unavailable: {exc}"}
@@ -349,7 +352,20 @@ def _db_stats_latency() -> dict[str, Any]:
     }
     if row is None:
         base["measured"] = False
-        base["reason"] = "this route has not been called in this process"
+        # The latency summary now lists EVERY route it recorded. It used to cut the list at 60
+        # rows, slowest first, and was exactly 60 rows long on all 16 field instances; on 5 of
+        # them this block read "not called" with the route missing from it, which a cut list
+        # cannot tell apart from a route nobody called. The one way a called route can still have
+        # no row is a full keyspace, and that is counted, so say it rather than call it uncalled.
+        base["reason"] = (
+            "this route has not been called in this process"
+            if not dropped
+            else (
+                "this route has no recorded row: the latency log's route keyspace was full and "
+                f"{dropped} request(s) to routes first seen after that were not recorded, so it "
+                "may have been called"
+            )
+        )
         return base
     base.update(
         {
@@ -435,7 +451,9 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
 
     window_days = max(1, int(round(bar_hours / 24.0)) + 4)
     with lane_session("wiki") as lane:
-        out = lane_counters(lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"))
+        out = lane_counters(
+            lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"), bar_hours=bar_hours
+        )
     # MEASURED means the lane produced a reading at all. The per-block ``measured``
     # flags inside it stay exactly as ``lane_counters`` set them; flattening them into
     # one verdict here is what would let an absent growth series hide behind a present
@@ -496,7 +514,8 @@ def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[
         ),
         "caveat": (
             "Each block reports the window it actually read, and they differ. A "
-            "restart ends the soak and resets the cumulative counters. A block listed "
+            "restart ends this window and resets the cumulative counters; the Wikipedia "
+            "lane's run (wiki_lane.run) is read from its rows and does not reset. A block listed "
             "in unmeasured has no reading here — that is not the same as a reading of "
             "zero."
         ),

@@ -55,7 +55,7 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
+  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
 ];
@@ -172,6 +172,39 @@ const WIKI = {
   const all = R.livingGroupsHtml(groups);
   noJunk(all, "the measured wiki groups");
   noVerdict(all, "the measured wiki groups");
+}
+
+// --- 2b. the run: hours across restarts, and a visible line when the lane has gone quiet ---- //
+{
+  const run = { measured: true, hours: 60.4, stops_n: 1, idle_now: null,
+    first_activity_at: "2026-09-14T00:00:00+00:00", last_activity_at: "2026-09-16T22:00:00+00:00" };
+  const stream = group(R.livingWikiGroups({ ...WIKI, stream: { ...WIKI.stream, run } }, t, tf), "Live stream");
+  assert.ok(visible(stream).includes("Run so far 60 hours of activity, stops: 1"), visible(stream));
+  assert.ok(!visible(stream).includes("No sign of life"), "an active lane drew the stopped line");
+  const quiet = { ...run, idle_now: { since: "2026-09-16T23:00:00+00:00", hours: 6.2 } };
+  const quietGroups = R.livingWikiGroups({ ...WIKI, stream: { ...WIKI.stream, run: quiet } }, t, tf);
+  const q = group(quietGroups, "Live stream");
+  assert.ok(visible(q).includes("Stopped No sign of life for 6 hours"), visible(q));
+  assert.ok(visible(q).includes("Last sign of life 2026-09-16 22:00 UTC"),
+    "the time of the last sign of life is its own figure, never inside the sentence");
+  assert.ok(hovers(q).includes("Go online with the airplane button"), "the way back was not stated");
+  // No reading is not a run of zero hours: no figure is drawn, and a lane with a file but no sign
+  // of life in the window SAYS so (a lane that stopped a week ago is the case that matters most).
+  for (const bad of [undefined, null]) {
+    const g = group(R.livingWikiGroups({ ...WIKI, stream: { ...WIKI.stream, run: bad } }, t, tf), "Live stream");
+    assert.ok(!visible(g).includes("Run so far"), "drew a run from a payload with no run block");
+  }
+  const none = group(R.livingWikiGroups({ ...WIKI, stream: { ...WIKI.stream,
+    run: { measured: false, reason: "x", window_days: 7, hours: null } } }, t, tf), "Live stream");
+  assert.ok(visible(none).includes("Run so far No sign of life in the last 7 days"), visible(none));
+  assert.ok(!/Run so far \d/.test(visible(none)), "drew a figure for no reading");
+  const unread = group(R.livingWikiGroups({ ...WIKI, stream: { ...WIKI.stream,
+    run: { measured: false, reason: "the run clock could not be read: OperationalError" } } }, t, tf), "Live stream");
+  assert.ok(visible(unread).includes("Run so far Could not be read"), visible(unread));
+  assert.ok(!hovers(unread).includes("no walk request made"),
+    "an unreadable run clock claimed a measured absence in its hover");
+  noJunk(R.livingGroupsHtml(quietGroups), "the run rows");
+  noVerdict(R.livingGroupsHtml(quietGroups), "the run rows");
 }
 
 // --- 3. storage: Settings' own cells, without the edit box ------------------------- //

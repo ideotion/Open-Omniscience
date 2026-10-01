@@ -171,7 +171,11 @@ def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
         if run is None or not run.get("applied"):
             continue                       # unreadable, or planned but never applied
         for r in run.get("repairs") or []:
-            if r.get("domain") and not r.get("reverted_at"):
+            if not r.get("domain"):
+                continue
+            if r.get("reverted_at"):
+                rows.pop(str(r["domain"]), None)       # the newest record of a domain decides
+            else:
                 rows[str(r["domain"])] = r.get("judged_at")
     return rows, sorted(unreadable)
 
@@ -179,6 +183,16 @@ def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
 def repaired_domains() -> set[str]:
     """Domains the boot repair withdrew and nobody has reverted (see :func:`repaired_rows`)."""
     return set(repaired_rows()[0])
+
+
+def repair_still_followed(session, source, judged_at) -> bool:
+    """True while the source's newest judging attempt is the one a boot repair followed (the check
+    ``revert_repairs`` makes too). A repair record without a ``judged_at`` cannot be compared and is
+    read as still followed."""
+    if not judged_at:
+        return True
+    newest = _newest_judging(session, int(source.id))
+    return newest is not None and _iso(newest.attempted_at) == judged_at
 
 
 def _newest_judging(session: Session, source_id: int):
@@ -783,14 +797,18 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     # is never overwritten here, and a record that cannot be read is left byte for byte: the new
     # plan is appended as its own run, so the repair carries on without it.
     last = idx["runs"][-1] if idx["runs"] else None
+    replacing = False
     if last is not None:
         try:
             if _changed_nothing(_read_run(last)):
                 run_at = last
+                replacing = True
         except UnreadableRunRecord:
             _LOG.warning("qualification repair: run %s cannot be read, kept as it is", last)
-            if run_at == last:     # the same key would overwrite it (a clock stepped back): wait
-                return {"repaired": 0, "skipped": "the newest run record cannot be read and the clock has not moved"}
+    if not replacing and run_at in idx["runs"]:
+        # The same key would overwrite a run that stays on record (a clock stepped back, or two
+        # boots at one instant): wait for the clock to move rather than lose its revert record.
+        return {"repaired": 0, "skipped": "a run is already recorded at this instant"}
     run_key = REPAIR_RUN_PREFIX + run_at
     # 2. record and index the intent (outside any ORM write transaction: kv_set_json's contract)
     kv_set_json(run_key, {"run_at": run_at, "applied": False, "repairs": rows})

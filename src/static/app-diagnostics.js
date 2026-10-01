@@ -867,9 +867,9 @@
     let _partsGen = 0;
     // The generation of the NEWEST keyword or diagnostics-split request that has not finished, 0 when
     // none has: the finished diagnostics build must know whether the newest press has not landed yet
-    // (an older one that a newer press overtook is dropped when it lands, so it never counts). A
-    // request finishes when its own save ends, not when its answer lands, so a press that has already
-    // landed is told apart by the bar holding its set, not by this number.
+    // (an older one that a newer press overtook is dropped when it lands, so it never counts). A press
+    // that saves ("again") finishes when its save ends, not when its answer lands, so a press that has
+    // already landed is told apart by the bar holding its set, not by this number.
     let _partsBusy = 0;
 
     // The manifest first, then the numbered parts in order (the listing carries both kinds).

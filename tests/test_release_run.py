@@ -98,6 +98,8 @@ def fast(monkeypatch, tmp_path):
                 "child": {"ok": True, "restore": {"kind": "volume-set", "committed": True},
                           "counts": {"articles": 412, "sources": 9, "keywords": 30},
                           "integrity": {"verdict": "consistent", "laundered_total": 0, "demoted_total": 0,
+                                        "auto_repairable_total": 3, "not_auto_repaired_total": 2,
+                                        "not_auto_repaired_measured_here_total": 1, "not_auto_repaired_held_total": 1,
                                         "checked": {"with_judging_attempt": 4}, "verified_disqualified_sample": ["x.example"]},
                           "country_code_scan": {"duplicates": 0}, "peak_rss_mb": 120.0}}
 
@@ -116,7 +118,8 @@ def fast(monkeypatch, tmp_path):
     def _collect(ctx, run):
         calls.append("collect")
         return {"soak_window": {"window": {"hours": run.soak.get("elapsed_hours"), "reaches_bar": False}, "unmeasured": ["wal"]},
-                "qualification_integrity_live": {"verdict": "consistent", "laundered_total": 0, "demoted_total": 0},
+                "qualification_integrity_live": {"verdict": "consistent", "laundered_total": 0, "demoted_total": 0,
+                                                 "auto_repairable_total": 5, "not_auto_repaired_measured_here_total": 4},
                 "collector": {"verdict": "not-measurable-here", "reason": "short window"},
                 "wiki_lane_counters": {"measured": False, "reason": "lane-never-run", "detail": "no file"},
                 "wiki_lane_service": {"streaming": False}}
@@ -180,6 +183,12 @@ def test_a_full_run_sequences_the_phases_and_writes_one_report(fast):
     # Row 5 of 0.3 is 0.4 board row W (ruling RC01 = a, 2026-09-27); "G" is the maintainer's flip.
     assert set(rows) == {"A", "B", "C", "D", "E", "W", "J", "K", "I", "P", "Q", "T"}
     assert rows["A"]["status"] == "measured" and rows["A"]["evidence"]["integrity_verdict"] == "consistent"
+    # which inversions the boot repair takes and which it leaves on purpose ride the board rows
+    a_ev = rows["A"]["evidence"]
+    assert (a_ev["auto_repairable_total"], a_ev["not_auto_repaired_total"],
+            a_ev["not_auto_repaired_measured_here_total"], a_ev["not_auto_repaired_held_total"]) == (3, 2, 1, 1)
+    e_live = rows["E"]["evidence"]["live_corpus_after_drain"]
+    assert (e_live["auto_repairable_total"], e_live["not_auto_repaired_measured_here_total"]) == (5, 4)
     assert rows["W"]["status"] == "skipped"
     assert "row W stays open" in rows["W"]["note"] and "ruling A1" not in rows["W"]["clause"]
     assert rows["P"]["status"] == "not-measurable-here"

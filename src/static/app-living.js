@@ -221,6 +221,41 @@
       return { title: t("Other changed pages"), facts };
     }
 
+    // How long the lane has run across restarts, and, when it has gone quiet, a visible line
+    // saying so. Both come from the lane's own rows (``run`` in /api/living/overview), never
+    // from this process's uptime, which a crash or an update resets. A lane that has shown no
+    // sign of life is not a "run of 0 hours": it has no reading and the row is not drawn.
+    function livingRunFacts(run, t, tf) {
+      if (!run) return [];
+      // A lane file that exists but shows no sign of life inside the window is NAMED, never
+      // left blank: an absence hidden is the case where the row matters most (a lane that
+      // stopped a week ago). An unreadable read is the same: it says so.
+      if (run.measured !== true) {
+        return [{ label: t("Run so far"),
+          value: run.window_days
+            ? tf("No sign of life in the last {n} days", { n: _livingCount(run.window_days) })
+            : t("Could not be read"),
+          // The "no sign of life" hover states a measured fact; an unreadable clock measured nothing.
+          hover: run.window_days
+            ? t("No change was recorded, no size sample taken and no walk request made in that time. This is not a run of zero hours; it is no reading.")
+            : t("This part could not be read just now. The other figures on this page are unaffected.") }];
+      }
+      const facts = [
+        { label: t("Run so far"),
+          value: tf("{h} hours of activity, stops: {n}", { h: _livingCount(Math.round(run.hours)), n: _livingCount(run.stops_n) }),
+          hover: t("Hours in which this install stored or requested something, counted across restarts. A stop is a hole of three or more silent hours; it says the lane showed no sign of life, not why.") },
+      ];
+      if (run.idle_now) {
+        facts.push({ label: t("Stopped"),
+          value: tf("No sign of life for {h} hours", { h: _livingCount(Math.round(run.idle_now.hours)) }),
+          hover: t("After a restart the app starts offline and the lane waits. Go online with the airplane button to resume it: your place and your counts are kept.") });
+        // The time is its own figure, so a narrow card never breaks a date across two lines.
+        facts.push({ label: t("Last sign of life"), value: livingWhen(run.last_activity_at, t),
+          hover: t("The newest hour in which this install stored or requested something for the lane.") });
+      }
+      return facts;
+    }
+
     function livingWikiGroups(src, t, tf) {
       const s = src.stream || {};
       const stream = s.measured !== true ? _livingUnmeasured(s, t) : [
@@ -238,6 +273,7 @@
           hover: t("The earliest point every feed was read without a break. Changes before it are all here; after it, some may be missing.") },
         { label: t("Open gaps"), value: String(s.open_gaps),
           hover: t("Stretches of the feed the stream knows it missed and has not filled.") },
+        ...livingRunFacts(s.run, t, tf),
       ];
       const k = src.tracked || {};
       const tracked = k.measured !== true ? _livingUnmeasured(k, t) : [

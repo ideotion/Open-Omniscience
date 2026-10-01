@@ -408,6 +408,45 @@ def test_an_uncalled_route_is_unmeasured_rather_than_fast(monkeypatch, session, 
     assert "not been called" in lat["reason"]
 
 
+def test_the_route_is_found_however_many_routes_the_instance_has(
+    monkeypatch, session, _clean_latency
+):
+    """Diagnostics round of 2026-09-30, rank 10. The latency summary used to cut its route list
+    at 60 rows, slowest first, and it was exactly 60 rows long on all 16 field instances; on 5 of
+    them this block read "has not been called" with the route missing from the cut list. A fast
+    route on an instance with many slow ones is exactly the one a cut drops, so 80 slower routes
+    stand in front of this one and it must still be found, and read as what it is."""
+    for n in range(80):
+        for i in range(3):
+            _clean_latency.record(1000 * n + i, f"GET /api/other/{n}", 200, 700.0)
+    for i, ms in enumerate([5.0, 6.0, 7.0]):
+        _clean_latency.record(i, sw._DB_STATS_ROUTE, 200, ms)
+    _uptime(monkeypatch, seconds=80 * 3600.0)
+
+    lat = sw.soak_window(session)["database_stats_latency"]
+    assert lat["measured"] is True, lat
+    assert lat["window_n"] == 3 and lat["requests_total"] == 3
+    assert lat["p95_ms"] is not None and lat["p95_ms"] < 10.0, "its own p95, not a slower route's"
+
+
+def test_a_route_that_a_full_keyspace_never_recorded_is_not_called_uncalled(
+    monkeypatch, session, _clean_latency
+):
+    """The one way a CALLED route can still have no row: the latency log's route keyspace was
+    full when it first arrived. That is counted and published, so this block says so instead of
+    claiming nobody called the route."""
+    monkeypatch.setattr(_clean_latency, "_ROUTES_CAP", 3)
+    for n in range(3):
+        _clean_latency.record(n, f"GET /api/junk/{n}", 404, 1.0)
+    _clean_latency.record(99, sw._DB_STATS_ROUTE, 200, 5.0)  # arrives once it is full: dropped
+    _uptime(monkeypatch, seconds=80 * 3600.0)
+
+    lat = sw.soak_window(session)["database_stats_latency"]
+    assert lat["measured"] is False and "p95_ms" not in lat
+    assert "keyspace was full" in lat["reason"] and "1 request" in lat["reason"]
+    assert "not been called" not in lat["reason"], "it may well have been called"
+
+
 # --------------------------------------------------------------------------- #
 # Interrupted statements                                                       #
 # --------------------------------------------------------------------------- #

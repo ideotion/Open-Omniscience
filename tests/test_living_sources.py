@@ -129,6 +129,36 @@ def test_the_stream_counts_followed_counted_and_unfollowed_SEPARATELY(lane):
     assert out["contiguous_through"] is None, "no feed declared one, so none is invented"
 
 
+def test_the_stream_block_carries_the_run_and_says_when_the_lane_has_gone_quiet(lane):
+    """The panel's run rows read the lane's rows, not this process: a lane whose newest
+    sign of life is a day old is quiet NOW, whatever this process's uptime says."""
+    with lane_session("wiki") as db:
+        for i in range(5):
+            db.add(VersionedChange(change_ref=f"q{i}", feed="stream:en", change_kind="edit",
+                                   recorded_at=NOW - timedelta(hours=30 + i)))
+        db.commit()
+    run = living._wiki_stream(SINCE)["run"]
+    assert run["measured"] is True and run["hours"] >= 5
+    assert run["idle_now"] is not None and run["idle_now"]["hours"] > 20
+    assert run["quiet_hours_before_a_stop"] == 3
+
+
+def test_a_lane_that_stopped_longer_ago_than_the_window_names_the_window(lane):
+    """Eight days of silence must not read as an empty panel: the block says which window it read."""
+    with lane_session("wiki") as db:
+        db.add(VersionedChange(change_ref="old", feed="stream:en", change_kind="edit",
+                               recorded_at=NOW - timedelta(days=8)))
+        db.commit()
+    run = living._wiki_stream(SINCE)["run"]
+    assert run["measured"] is False and run["window_days"] == 7 and run["hours"] is None
+
+
+def test_a_lane_with_no_sign_of_life_has_a_run_that_says_it_has_no_reading(lane):
+    out = living._wiki_stream(SINCE)
+    assert out["run"]["measured"] is False and "reason" in out["run"]
+    assert out["run"]["hours"] is None, "no reading must not be drawn as zero hours"
+
+
 def test_complete_through_is_the_feed_that_is_BEHIND(lane):
     """With one feed current and one behind, only the one behind is true of both."""
     ahead, behind = NOW - timedelta(minutes=5), NOW - timedelta(days=2)

@@ -214,6 +214,135 @@ def test_a_completed_run_carries_no_stop_marker(monkeypatch, tmp_path):
     assert "incomplete_reason" not in view and "kept_reason" not in view
 
 
+def test_a_refresh_that_lands_during_a_kept_run_is_not_marked_as_the_previous_feed(monkeypatch, tmp_path):
+    """The guard needs the feed that was on disk when the run STARTED: two reads taken after the
+    run cannot see a complete refresh that landed while it ran (the coordinator's check, S5)."""
+    path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "old"}])
+
+    def _run(*a, **k):
+        # a concurrent refresh finishes while this one runs: a newer, complete, unmarked feed
+        path.write_text(json.dumps({
+            "version": service.CACHE_VERSION, "generated_at": "2026-02-02T00:00:00+00:00",
+            "article_count": 3, "cards": [{"type": "x", "title": "fresh"}],
+        }), encoding="utf-8")
+        return [], {"truncated": True, "truncated_reason": "memory_short"}
+
+    monkeypatch.setattr(service, "run_all_bounded", _run)
+    out = service.refresh_briefing(object())
+    assert out["kept_reason"] == "memory_short", "this call still reports that it kept the cache"
+    on_disk = json.loads(path.read_text("utf-8"))
+    assert "kept_reason" not in on_disk, "a fresh complete feed was marked as the previous one"
+    assert [c["title"] for c in on_disk["cards"]] == ["fresh"]
+
+
+# ---------------------------------------------------------- a marker is repaired without a click
+@pytest.fixture
+def poll(monkeypatch, tmp_path, memory):
+    """``poll(marker)`` is one Home poll over a cache carrying ``marker``; it returns how many
+    background refreshes that poll started."""
+    path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a", "id": "a", "bucket": "lead"}])
+    memory(4096.0)
+    monkeypatch.setitem(service._marker_retry, "at", None)
+    # no scheduler of an earlier test, with a lock still held, may decide these polls
+    monkeypatch.setattr("src.scheduler.runner._scheduler", None)
+    monkeypatch.setattr(
+        service, "run_all_bounded",
+        lambda *a, **k: ([], {"truncated": True, "truncated_reason": "memory_short"}),
+    )
+    started: list[int] = []
+    monkeypatch.setattr(service, "_ensure_background_refresh", lambda: started.append(1))
+
+    def _poll(marker: dict | None = None) -> int:
+        on_disk = json.loads(path.read_text("utf-8"))
+        for key in ("kept_reason", "incomplete_reason"):
+            on_disk.pop(key, None)
+        path.write_text(json.dumps({**on_disk, **(marker or {})}), encoding="utf-8")
+        before = len(started)
+        service.get_briefing(object(), background=True)
+        return len(started) - before
+
+    return _poll
+
+
+@pytest.mark.parametrize("marker", [{"kept_reason": "memory_short"}, {"incomplete_reason": "deadline"}])
+def test_a_stop_marker_starts_one_repair_once_memory_is_back(poll, marker):
+    assert poll(marker) == 1, "a feed that says it stopped early stayed that way until someone pressed Refresh"
+
+
+def test_a_feed_without_a_marker_is_not_refreshed(poll):
+    assert poll(None) == 0
+
+
+def test_the_repair_waits_while_memory_is_still_short(poll, memory):
+    memory(100.0)
+    assert poll({"kept_reason": "memory_short"}) == 0
+    memory(4096.0)
+    assert poll({"kept_reason": "memory_short"}) == 1, "the wait for memory must not use up the attempt"
+
+
+def test_the_repair_needs_a_margin_of_headroom_not_a_megabyte_over_the_floor(poll, memory):
+    """A refresh started a hair above the floor only stops again at its first producer boundary."""
+    marker = {"kept_reason": "memory_short"}
+    memory(257.0, 256.0)
+    assert poll(marker) == 0
+    memory(512.0, 256.0)
+    assert poll(marker) == 0, "exactly floor plus margin is not yet above it"
+    memory(513.0, 256.0)
+    assert poll(marker) == 1
+
+
+def test_the_headroom_margin_is_capped_so_a_high_floor_does_not_switch_the_repair_off(poll, memory):
+    marker = {"kept_reason": "memory_short"}
+    memory(2048.0 + 512.0, 2048.0)
+    assert poll(marker) == 0, "exactly floor plus the cap is not yet above it"
+    memory(2048.0 + 513.0, 2048.0)
+    assert poll(marker) == 1
+
+
+def test_the_repair_never_overlaps_the_schedulers_whole_corpus_work(poll, monkeypatch):
+    from src.scheduler import runner
+
+    class _Busy:
+        def whole_corpus_work_running(self):
+            return busy[0]
+
+    busy = [True]
+    monkeypatch.setattr(runner, "_scheduler", _Busy())
+    marker = {"kept_reason": "memory_short"}
+    assert poll(marker) == 0
+    busy[0] = False
+    assert poll(marker) == 1
+
+
+def test_the_scheduler_reports_its_whole_corpus_work_from_its_two_locks():
+    from src.scheduler.runner import BackgroundScheduler
+    from src.scheduler.settings import SchedulerSettings
+
+    sched = BackgroundScheduler(settings_provider=lambda: SchedulerSettings())
+    assert sched.whole_corpus_work_running() is False
+    with sched._briefing_bg_lock:
+        assert sched.whole_corpus_work_running() is True
+    with sched._heavy_tail_lock:
+        assert sched.whole_corpus_work_running() is True
+    assert sched.whole_corpus_work_running() is False
+
+
+def test_a_marker_that_keeps_coming_back_waits_from_when_the_last_refresh_finished(poll, monkeypatch):
+    """What the pause protects: a refresh that keeps ending early, or one that takes minutes,
+    being re-run back to back. The wait starts when a refresh FINISHES, not when it began."""
+    marker = {"kept_reason": "memory_short"}
+    clock = [1000.0]
+    monkeypatch.setattr(service, "_monotonic", lambda: clock[0])
+    assert poll(marker) == 1, "nothing has run in this process yet: the first poll repairs at once"
+    # that refresh runs for a long time and ends early, re-marking the feed
+    clock[0] += 5000.0
+    service.refresh_briefing(object())  # a stopped run (the module's stub below) records its finish time
+    clock[0] += service._MARKER_RETRY_S - 1
+    assert poll(marker) == 0
+    clock[0] += 1
+    assert poll(marker) == 1, "exactly the retry interval after the finish is allowed"
+
+
 # ------------------------------------------------------------------------------- warm_cache
 def _sqlite_session(tmp_path):
     eng = sa.create_engine(f"sqlite:///{tmp_path / 'w.db'}",
@@ -301,3 +430,10 @@ def test_a_disabled_endpoint_deadline_leaves_the_warm_deadline_disabled(monkeypa
     monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "0")
     monkeypatch.setenv("OO_WARM_DEADLINE_S", "90")
     assert ins._warm_deadline_seconds() is None
+
+
+def test_a_huge_warm_deadline_is_honoured_not_capped(monkeypatch):
+    """There is no ceiling by design (no fixed caps): the operator asked to wait."""
+    monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "60")
+    monkeypatch.setenv("OO_WARM_DEADLINE_S", "1e12")
+    assert ins._warm_deadline_seconds() == 1e12

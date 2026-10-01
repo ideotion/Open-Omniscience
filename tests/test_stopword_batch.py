@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import zipfile
 from pathlib import Path
@@ -29,7 +30,9 @@ def _load():
 sb = _load()
 
 # The link tests need symlink and hard-link rights, which a plain Windows runner does not grant.
-NEEDS_LINKS = pytest.mark.skipif(sys.platform == "win32", reason="symlinks and hard links need rights a Windows runner lacks")
+NEEDS_LINKS = pytest.mark.skipif(
+    sys.platform == "win32", reason="symlinks and hard links need rights a Windows runner lacks"
+)
 _REAL_APP_CONTEXT = sb.app_context
 REAL_KEEP_FILE = sb.KEEP_FILE
 
@@ -982,12 +985,69 @@ def test_json_never_overwrites_a_checkout_file_through_a_hard_link_outside_it(tm
 def test_json_naming_a_directory_or_a_missing_folder_is_a_message_not_a_traceback(tmp_path, capsys):
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
-    for target in (tmp_path / "somedir.json", tmp_path / "missing" / "report.json"):
-        if target.name == "somedir.json":
-            target.mkdir()
+    (tmp_path / "somedir.json").mkdir()
+    with pytest.raises(SystemExit) as exc:
+        sb.main([str(log), "--language", "en", "--json", str(tmp_path / "somedir.json")])
+    assert "not a directory" in str(exc.value)
+    with pytest.raises(SystemExit) as exc:
+        sb.main([str(log), "--language", "en", "--json", str(tmp_path / "missing" / "report.json")])
+    assert "cannot write" in str(exc.value)
+
+
+def test_json_that_cannot_be_written_for_any_reason_is_a_message(tmp_path):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    # a FILE where the report's folder should be: NotADirectoryError, not FileNotFoundError
+    (tmp_path / "afile").write_text("x", "utf-8")
+    with pytest.raises(SystemExit) as exc:
+        sb.main([str(log), "--language", "en", "--json", str(tmp_path / "afile" / "report.json")])
+    assert "cannot write" in str(exc.value)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="named pipes need a POSIX file system")
+def test_json_naming_a_pipe_is_refused_instead_of_blocking_the_write(tmp_path):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    os.mkfifo(tmp_path / "x.json")
+    # A reader on the pipe keeps a regressed guard from blocking forever in open(): the write then
+    # goes through and this test fails on the missing refusal instead of hanging the whole run.
+    reader = os.open(tmp_path / "x.json", os.O_RDONLY | os.O_NONBLOCK)
+    try:
         with pytest.raises(SystemExit) as exc:
-            sb.main([str(log), "--language", "en", "--json", str(target)])
-        assert "not a directory" in str(exc.value) if target.name == "somedir.json" else "cannot write" in str(exc.value)
+            sb.main([str(log), "--language", "en", "--json", str(tmp_path / "x.json")])
+    finally:
+        os.close(reader)
+    assert "regular file" in str(exc.value)
+
+
+def test_json_under_a_folder_that_cannot_be_searched_is_a_message_not_a_traceback(tmp_path, monkeypatch):
+    """The OS raises PermissionError from the very first guard line (``is_symlink``) for a folder the
+    user may not search; a real chmod 000 cannot prove it as root, so the error is injected."""
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+
+    def _denied(self):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(sb.Path, "is_symlink", _denied)
+    with pytest.raises(SystemExit) as exc:
+        sb.main([str(log), "--language", "en", "--json", str(tmp_path / "report.json")])
+    assert "--json:" in str(exc.value) and "Permission denied" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "shifted",
+    ["flaky,disputed", "disputed flaky", "claude sonnet", "sonnet,", "status:disputed", "-", ".x",
+     "un1stable", "singlereader", "single-reader", "claude-sonnet-5-5singlereader"],
+)
+def test_a_model_column_that_is_not_a_model_id_is_read_as_flags_and_blocks(tmp_path, shifted):
+    """Each spelling gets past ``FLAG_STEMS`` or the underscore alone only if ``MODEL_ID`` or the
+    letter match is loosened, so together they pin the whole rule (the coordinator's CHECK-5, S1)."""
+    f = tmp_path / "v.tsv"
+    f.write_text(f"en\tzzalpha\tN\tfn\tH\t{shifted}\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("zzalpha", v) != []
+    assert v["zzalpha"]["models"] == set()
 
 
 def test_the_summary_line_for_a_one_language_file_names_no_skipped_rows(tmp_path, capsys):

@@ -851,5 +851,43 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     assert.strictEqual(page.els["parts-bar"].hidden, true);
   }
 
+  // ---- the same drop in the ordering the build itself makes likely: "again" is pressed WHILE the build
+  // runs, lands with this archive's files, and its own first save is still going when the build's split
+  // fails. Here the busy marker is set and a press has been made since the build was asked, the two
+  // facts the success branch uses to protect a press, so a catch that reused them would keep a dead set.
+  {
+    for (const failure of ["500", "network"]) {
+      const page = makePage(); const hold = []; const statusHeld = []; let failNow = false;
+      const api = load(page, {hold, api: (url) => {
+        if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+        if (url === "/api/diagnostics/all-job/status") return new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})));
+        if (failNow) { const e = new Error("lost"); if (failure !== "network") e.status = 500; return Promise.reject(e); }
+        return Promise.resolve(listing(8, 1));
+      }});
+      const diag = api.runAllDiagnostics({disabled: false});
+      for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+      const again = api.downloadDiagnosticsVolumes({disabled: false});
+      for (let spin = 0; spin < 20; spin++) await Promise.resolve();
+      assert.ok(api.state() && api.state().saving, "setup (" + failure + "): the again press's own save is going");
+      const clicksBefore = page.clicked.length;
+      failNow = true;
+      statusHeld[0]();
+      await diag;
+      assert.strictEqual(api.state(), null, failure + ": the set an again press fetched while the build ran is dropped, mid-save");
+      assert.strictEqual(page.els["parts-bar"].hidden, true, failure + ": the bar is hidden");
+      while (hold.length) { hold.shift()(); for (let s = 0; s < 5; s++) await Promise.resolve(); }
+      await again;
+      assert.strictEqual(page.clicked.length, clicksBefore, failure + ": its loop asked for no more dead files");
+      assert.strictEqual(page.els["parts-status"].textContent, "", failure + ": and wrote no status for a set that is gone");
+      assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
+      // and a later press still takes the bar (a smoke check: the busy marker's release is pinned by the earlier blocks)
+      failNow = false;
+      const next = api.downloadDiagnosticsVolumes({disabled: false});
+      for (let k = 0; k < 60; k++) { if (hold.length) hold.shift()(); await Promise.resolve(); }
+      await next;
+      assert.strictEqual(api.state().kind, "diagnostics", failure + ": a later again press takes the bar");
+    }
+  }
+
   console.log("all assertions passed");
 })().catch((e) => { console.error(e); process.exit(1); });

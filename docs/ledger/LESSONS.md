@@ -12959,8 +12959,8 @@ previous archive and dead, unless it has this archive's own file NAMES (never ju
 of one corpus usually have the same count), in which case it is already the answer. A split that FAILS may have swept the
 previous files (a full disk, an answer lost on the way), and the page cannot tell a failure before the sweep from one
 after it, so it empties such a bar too (a set still being saved included: the loop would ask for dead files), except
-after a 404 or a 409, which the route refuses before it sweeps anything; the price is a live set dropped when the answer
-of a split that swept nothing is lost, in a window of about two seconds. The orderings are a table in
+after a 404 or a 409, which the route refuses before it sweeps anything (a keyword set is never dropped); the price is a live set dropped when the answer
+of a split that swept nothing is lost, in a window of one poll interval (two to five seconds). The orderings are a table in
 `tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails without it, and the mutants that
 survive cannot change what a person sees (the generation bump when a failed split empties the bar, since the button allows
 one build per page; the re-render of a bar that is then hidden; and the order of the deferral and the same-archive
@@ -13009,7 +13009,11 @@ never returns it. It is idle, so it does not pin the WAL (`tests/test_wal_pin_fa
 of the pool's slots for ever and nothing counted it: on the small tier (6 + 6, API margin 4) the app had three
 slots for API requests, and D44's "cap 8, pool 12, margin 4" held only on paper. **A connection the app keeps for
 its own reasons must not be a pooled checkout**: `raw_connection()` then `conn.detach()` frees the pool's slot
-(the fairy still works, and `close()` then really closes the DBAPI connection), and the price is that
+(the fairy still works, and `close()` then really closes the DBAPI connection; **but only for a QUEUE pool or a NULL
+pool**: on a `StaticPool` or `SingletonThreadPool`, how the in-memory test fixtures build their one database,
+`detach()` empties the pool's only record and the next checkout opens a NEW, EMPTY `:memory:` database, which is how
+eleven tests went red on main until #1298; see "A POOL-SLOT FIX IS ONLY VALID FOR A POOL OF INTERCHANGEABLE
+CONNECTIONS" below), and the price is that
 `Engine.dispose()` no longer closes it (dispose only closes CHECKED-IN connections), so a listener on the engine's
 `engine_disposed` event must (unlock, a restore's file swap and a shutdown all dispose; a probe left open reads a
 replaced file, and on Windows pins the old one). Guard the listener with a flag ON THE ENGINE OBJECT, not a set of
@@ -13105,3 +13109,53 @@ last measured one (`forensics.last_recovery`, kept apart from `last_unlock`, whi
 overwrites) and the only lever on the cost is the log's size at boot (the storage guard's bound). `close()` of the
 LAST connection always backfills (so deferring it from that connection was not available); with another connection
 open on the file it does not (see the idea above).
+
+### A LIST THE PRODUCER CUT CANNOT BE LOOKED UP IN: A MISSING ROW READS AS "NOBODY CALLED IT" (release candidate diagnostics, 2026-10-01, `src/monitoring/latency.py`)
+
+The latency summary cut its `routes` list at 60 rows (slowest first) and its `breaching_routes` at 20, and said so
+nowhere in the payload. On the 16 field exports `routes` was exactly 60 rows long on every instance, and
+`breaching_routes` held 282 rows in all, beside counters that summed to 306 routes over the bar. The soak-window artifact
+finds `GET /api/database/stats` by looking it up in that list, so on 5 of the 16 instances it published
+`measured: false, "this route has not been called in this process"`, and the route had a row on the other eleven. A
+cut list cannot tell "nobody called it" from "it fell off the end", and a fast route on a busy instance is exactly
+what a slowest-first cut drops: the reason string was written as a fact about the process and was a fact about the
+cut. **Publish the whole list and bound the KEYSPACE instead, counting what the bound drops and publishing that
+count beside the list (`route_keyspace.dropped_requests`), so the only way left for a called route to have no row
+is a counted one and the reader can say so.** Where a cut is unavoidable, publish the total beside it and word
+every absence "not in this list". This is the lookup twin of "a cap may bound which EXAMPLES are listed; it must
+never bound a displayed NUMBER" (2026-07-18) and of the truncated-head lesson of 2026-08-11 above.
+
+### A SELF-TEST THAT RESETS THE PROCESS'S OWN STATE RUNS INSIDE THE EXPORT THAT READS IT (release candidate diagnostics, 2026-10-01, `src/monitoring/search_timing.py`)
+
+The search-timing self-test called the module's `_reset_for_tests()`, the hook that empties the in-process record
+window, to prove that the window is bounded. Every diagnostics bundle runs that self-test (as a gate of
+`recursive-loop.json`) BEFORE it reads `search-timing.json`, and the bundle journal shows that order on 16 of 16
+exports, so the report emptied the very window it was about to publish: `searches: 0` on all 16 instances of the
+2026-09-30 round said nothing about whether anyone had searched, and the reading written for it ("none since this
+process started") was a second wrong explanation of a number the export itself had made. Reproduced: record one search
+and two browses, run `recursive_loop_report()`, and the report reads 0 and 0 while the durable log still holds 1 and 2.
+**A self-test that runs on a production path must never call a hook that clears production state. Prove the bound on a
+LOCAL structure through the same helper the live code uses (`_append_bounded`), so the check is of the real code and
+touches nothing, and pin it with a test that records first, runs the self-test, then reads the live report.** The
+reset shipped with the instrument on 2026-07-13 (`b7efad2b`) and survived eleven weeks of its tests; the review of the
+PR that fixed it found it, because no test recorded anything before it ran the self-test (the window was always empty
+there, so emptying it changed nothing a test could see), which is the order that hides the bug.
+
+### A POOL-SLOT FIX IS ONLY VALID FOR A POOL OF INTERCHANGEABLE CONNECTIONS, AND A FOCUSED TEST SET DID NOT SAY SO (WAL / disk thread, 2026-10-01)
+
+#1289 detached the status probe's connection from the pool (`conn.detach()`) so it stopped holding one of the real
+pool's slots. On a `StaticPool` or a `SingletonThreadPool` (what an in-memory test engine uses) the one pooled
+connection IS the database, so detaching it empties the pool's record of that connection and the next checkout
+reconnects to a new, empty `:memory:` database: eleven existing tests (`test_search_sort` 4, `test_top_keyword_sort` 4,
+`test_seeded_corpus_reaches_articles` 2, `test_search_timing_wired` 1) failed with "no such table: articles" on main from
+the merge on. The coordinator's reading check of the merged PR found three of them (0 of 3 failing with the old
+`insights.py`), the release-candidate thread's run of its own PR found ten, and the Opus read of this fix counted
+eleven by running the four files on main itself; the author's own focused run passed because it named the PR's new
+tests and the pool tests, and none of the tests that reach `_data_version` through the article list. The rule for the
+next such change: **before pushing a change to a helper many routes call, grep the tests for what reaches it
+(`rg "_data_version" tests/` finds none of the eleven: three reach it through the endpoint, eight through
+`_query_articles` directly), or run the whole directory of tests the helper's callers live in, not the set named after
+the change.** `insights._detachable` now gates the detach on a queue pool or a null pool (the only engine that reaches the
+probe in production is a `ReservingQueuePool`, and every other engine the app builds is a queue or null pool too, so
+production behaviour is unchanged); `tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its
+tables; the five pool classes answer as expected) and each mutant (always detach; allow `StaticPool`) fails them.

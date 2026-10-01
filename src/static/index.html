@@ -306,6 +306,9 @@
         <span class="sp"></span>
         <div id="home-status" class="hint" style="margin:0"></div>
       </div>
+      <!-- The Wikipedia run is chosen and the app is offline (it always starts offline): one
+           visible line saying so and how to resume. Painted by _paintWikiLane (app-sources.js). -->
+      <div id="home-wiki-wait" class="hint card-caveat" role="status" hidden></div>
 
       <!-- Severity alert layer (info / watch / urgent) — GET /api/signals/alerts, LOCAL,
            no network. 'Urgent' is ONLY ever a provider-declared RED hazard alert (never a
