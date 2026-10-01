@@ -81,7 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.revert_repairs:
         if args.ignore_hold:
             print("--ignore-hold has no effect with --revert-repairs", file=sys.stderr)
-        result = revert_repairs(dry_run=not args.apply)
+        try:
+            result = revert_repairs(dry_run=not args.apply)
+        except Exception as exc:  # noqa: BLE001 - say why, never a traceback; nothing was changed
+            print(f"cannot read the revert record ({exc}); nothing was changed.", file=sys.stderr)
+            return 2
         print(json.dumps(result, indent=2))
         print(
             f"\n({'reverted' if args.apply else 'dry run -- would revert'} "

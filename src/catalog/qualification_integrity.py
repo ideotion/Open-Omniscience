@@ -611,7 +611,7 @@ def repair_summary() -> dict[str, Any]:
     (``repairs_unconfirmed``) rather than in ``repaired_total``. Read-only, and it degrades to an
     empty, zero-count summary where the key-value store is unavailable.
     """
-    from src.config.kv_store import kv_get_json, kv_invalidate
+    from src.config.kv_store import kv_invalidate
 
     try:
         # The maintainer's revert tool runs in ANOTHER process and writes these keys there, and
@@ -624,7 +624,7 @@ def repair_summary() -> dict[str, Any]:
         repairs: list[dict[str, Any]] = []
         confirmed = unconfirmed = 0
         for run_at in idx["runs"]:
-            run = kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}
+            run = _read_run(run_at)
             done = bool(run.get("applied"))
             for r in run.get("repairs") or []:
                 if done:
@@ -636,6 +636,7 @@ def repair_summary() -> dict[str, Any]:
                     "run_at": run_at,
                     # a reconciled run says "applied, time unknown": never the time it was only planned
                     "applied_at": run.get("applied_at"),
+                    "reconciled": bool(run.get("reconciled")),
                     "confirmed": done,
                     "was_status": r.get("was"),
                     "restored_to": r.get("restored_to"),
@@ -698,7 +699,7 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     Returns counts only. A failure anywhere raises to the caller, which logs it: a repair that
     could not run must never block startup.
     """
-    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.config.kv_store import kv_set_json
     from src.database.session import session_scope
 
     if os.getenv(AUTO_REPAIR_ENV, "1") == "0":
@@ -730,11 +731,9 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     # REPLACES its plan instead of appending a second one. (A run that applied but could not
     # confirm leaves different sources to plan, so it is never overwritten here.)
     last = idx["runs"][-1] if idx["runs"] else None
-    prior = (kv_get_json(REPAIR_RUN_PREFIX + last) or {}) if last else {}
-    if (
-        last is not None and not prior.get("applied")
-        and {int(r.get("source_id", -1)) for r in prior.get("repairs") or []} <= planned_ids
-    ):
+    prior = _read_run(last) if last else {}      # strict: an unreadable record must not read as empty
+    prior_ids = {int(r.get("source_id", -1)) for r in prior.get("repairs") or []}
+    if last is not None and not prior.get("applied") and prior_ids and prior_ids <= planned_ids:
         run_at = last
     run_key = REPAIR_RUN_PREFIX + run_at
     # 2. record and index the intent (outside any ORM write transaction: kv_set_json's contract)
@@ -758,6 +757,14 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
             "held_by_operator_revert": done["held_by_operator_revert"]}
 
 
+def _read_run(run_at: str) -> dict[str, Any]:
+    """One run's record, read strictly: an unreadable store or value raises (the callers skip
+    the boot or refuse the revert) instead of reading as "no such run"."""
+    from src.config.kv_store import kv_get_json_strict
+
+    return kv_get_json_strict(REPAIR_RUN_PREFIX + run_at) or {}
+
+
 def _confirm_applied_runs(idx: dict[str, Any]) -> None:
     """Close a run whose change landed but whose confirmation write failed.
 
@@ -766,7 +773,7 @@ def _confirm_applied_runs(idx: dict[str, Any]) -> None:
     reads what it restored, nothing is left to plan for it, and without this it would read
     "unconfirmed" for good. Only a run whose EVERY row reads its ``restored_to`` is confirmed.
     """
-    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.config.kv_store import kv_set_json
     from src.database.models import Source
     from src.database.session import session_scope
 
@@ -775,11 +782,11 @@ def _confirm_applied_runs(idx: dict[str, Any]) -> None:
     seen_later: set[int] = set()
     for run_at in reversed(runs):                     # which sources a LATER run also plans
         listed_later[run_at] = set(seen_later)
-        for r in (kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}).get("repairs") or []:
+        for r in _read_run(run_at).get("repairs") or []:
             if "source_id" in r:
                 seen_later.add(int(r["source_id"]))
     for run_at in runs:
-        run = kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}
+        run = _read_run(run_at)
         rows = run.get("repairs") or []
         if run.get("applied") or not rows:
             continue
@@ -812,7 +819,7 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     silently repaired again at the next boot. Dry run by default; nothing in the app or its
     documentation asks a user to run this.
     """
-    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.config.kv_store import kv_set_json
     from src.database.models import Source
     from src.database.session import session_scope
 
@@ -823,7 +830,7 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     seen: set[str] = set()
     with session_scope() as session:
         for run_at in reversed(idx["runs"]):                      # newest run first
-            run = kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}
+            run = _read_run(run_at)
             runs[run_at] = run
             for r in run.get("repairs") or []:
                 domain = r.get("domain")

@@ -992,6 +992,50 @@ def test_the_held_domain_read_forgets_the_per_process_cache(env, monkeypatch) ->
     assert qi.REPAIR_INDEX_KEY in forgotten
 
 
+def test_an_unreadable_prior_run_is_never_overwritten_by_a_new_plan(env, monkeypatch) -> None:
+    """The replace rule reads the last run strictly: when that record cannot be read, the boot
+    skips instead of treating it as empty (an empty set of sources is a subset of any plan) and
+    overwriting a confirmed repair's revert record."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    assert qi.auto_repair_inversions(now=NOW)["repaired"] == 1
+    run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    import src.config.kv_store as kv
+
+    strict = kv.kv_get_json_strict
+
+    def flaky(key):
+        if key == run_key:
+            raise OSError("database is locked")
+        return strict(key)
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", flaky)
+    with pytest.raises(OSError):
+        qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+    assert [r["domain"] for r in env.store[run_key]["repairs"]] == ["x.example"]
+    assert _status(env, "y.example").status == STATUS_QUALIFIED
+
+
+def test_the_strict_reader_does_not_serve_a_corrupt_value_from_the_cache(tmp_path, monkeypatch) -> None:
+    import sqlite3
+
+    import src.config.kv_store as kv
+
+    db = tmp_path / "open_omniscience.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    kv.kv_invalidate()
+    kv.kv_set_json("k", {"a": 1})
+    kv.kv_invalidate()
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE app_state SET value = ? WHERE key = 'k'", ('{"a": 1',))
+    assert kv.kv_get_json("k") is None                  # the lenient reader caches the raw value
+    with pytest.raises(ValueError):
+        kv.kv_get_json_strict("k")                      # ...and the strict one must not trust the cache
+    kv.kv_invalidate()
+
+
 def test_a_restore_does_not_carry_the_repair_record(tmp_path) -> None:
     from src.backup.merge import merge_corpus
     from src.database.models import AppState
