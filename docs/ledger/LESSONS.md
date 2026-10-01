@@ -13062,10 +13062,16 @@ holds the GIL for nothing (0.01 s). So on an encrypted store the unlock's verify
 the backfill (the field's 24.7 s and 981 s unlocks), which is also why no progress sentence could be shown: the
 poll for it was not answered until the close returned. **Before closing the last connection to an encrypted store
 that may have a log, checkpoint it through `execute`**; `close()` then has nothing to hold the GIL over
-(`src/api/unlock.py::_close_after_checkpoint`). Still unfixed, by their owners' files: the failed-candidate
-`conn.close()` inside `connect._try_open_encrypted` (a wrong passphrase, or a store at a non-default page size,
-pays the backfill on the FIRST failed candidate, under the GIL: the unlock page's sentence arrived at 3.6 s in
-that walk instead of 1.1 s), and `engine.dispose()` at shutdown and in a restore swap.
+(`src/api/unlock.py::_close_after_checkpoint`). **A FAILED KEYED OPEN HAS NO SUCH FIX, AND ONLY ONE KIND OF FAILURE
+PAYS THE STALL** (measured the same way on a 300 MiB log, data reopened with the right key afterwards: every row
+intact): in `connect._try_open_encrypted` a WRONG PASSPHRASE at the store's right page size still has its `close()`
+checkpoint the log (0.69 s, worst gap 0.43 s, about 1.5 s per GiB) and remove it, once per log, because the frames are
+copied raw and no key is needed; a right key at a WRONG page size never reaches the log (0.32 s, gap 0.01 s, log
+untouched). `execute("PRAGMA wal_checkpoint(...)")` on the failed connection raises `MemoryError` (the codec is in its
+sticky error state) and a keyless stdlib `sqlite3` connection answers `file is not a database`, so there is no call-site
+checkpoint-before-close to add and `connect.py` stays as it is; `tests/test_failed_open_wal_facts.py` pins the four
+facts so a later session neither re-derives them nor "fixes" it the wrong way, and fails loudly if the library ever
+makes a fix possible. Still unfixed, in its owner's file: `engine.dispose()` at shutdown and in a restore swap.
 
 ### THE UNLOCK'S WAL COST IS TWO COSTS THAT NEITHER DOMINATES, SO NO SPLIT IS WORTH BUILDING (WAL / disk thread, unlock phase 0, 2026-10-01)
 
