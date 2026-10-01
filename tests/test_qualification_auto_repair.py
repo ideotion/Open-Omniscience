@@ -931,6 +931,8 @@ def test_the_operator_script_stops_when_the_revert_record_is_unreadable(env, mon
     assert script.main(["--apply"]) == 2
     assert _status(env, "x.example").status == STATUS_QUALIFIED
     assert "cannot read the revert record" in capsys.readouterr().err
+    assert script.main(["--revert-repairs"]) == 2         # the revert path stops cleanly too
+    assert "the revert stopped" in capsys.readouterr().err
 
 
 def test_a_later_plan_that_includes_the_failed_sources_replaces_the_failed_record(env, monkeypatch) -> None:
@@ -980,6 +982,8 @@ def test_a_run_is_not_reconciled_by_a_later_runs_work(env) -> None:
     summary = qi.repair_summary()
     assert summary["repaired_total"] == 2 and summary["repairs_unconfirmed"] == 1
     assert {r["applied_at"] for r in summary["repairs"] if r["confirmed"]} == {None}
+    assert [r["reconciled"] for r in summary["repairs"] if r["run_at"] == r2] == [True, True]
+    assert [r["reconciled"] for r in summary["repairs"] if r["run_at"] == r1] == [False]
 
 
 def test_the_held_domain_read_forgets_the_per_process_cache(env, monkeypatch) -> None:
@@ -1005,6 +1009,9 @@ def test_an_unreadable_prior_run_is_never_overwritten_by_a_new_plan(env, monkeyp
     import src.config.kv_store as kv
 
     strict = kv.kv_get_json_strict
+    # the reconcile reads the same key strictly and would raise first: stub it so THIS test pins
+    # the replace rule's own read
+    monkeypatch.setattr(qi, "_confirm_applied_runs", lambda _idx: None)
 
     def flaky(key):
         if key == run_key:

@@ -16099,9 +16099,11 @@ maintainer as a card.
   at once the line can be long: months, not weeks, is the honest expectation), and the safe order (live disqualified,
   newer imported qualification) waits on the disqualified ladder. With `qualification_recheck_per_pass` at 0 qualified re-checks
   are off and the unsafe order keeps collecting until the setting changes. `not_auto_repaired_measured_here_total` counts the
-  judged-disqualified inversions whose live stamp is not the catalogue's, so it also holds verdicts adopted from an import or from the shipped overlay
+  judged-disqualified inversions whose live row is qualified with a stamp that is not the catalogue's, so it also holds verdicts adopted from an import or from the shipped overlay
   (`apply_overlay` runs earlier in the same boot and does not look at local judging history): "measured here" is the name of the
-  class, not a claim about every row in it. The follow-up (PR 3, plan to the coordinator first) is a
+  class, not a claim about every row in it. The revert record fails CLOSED: a run record that
+  is present but unparseable stops the boot repair, the report's repair list and `--revert-repairs` until a maintainer fixes
+  the store by hand (reading it as empty would let a new plan overwrite a confirmed repair's revert record). The follow-up (PR 3, plan to the coordinator first) is a
   forced re-check list in `app_state`, read by the qualification pass ahead of its two pools within the existing
   per-pass budget and cleared once a newer attempt exists. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.

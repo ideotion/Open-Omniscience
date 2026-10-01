@@ -83,8 +83,13 @@ def main(argv: list[str] | None = None) -> int:
             print("--ignore-hold has no effect with --revert-repairs", file=sys.stderr)
         try:
             result = revert_repairs(dry_run=not args.apply)
-        except Exception as exc:  # noqa: BLE001 - say why, never a traceback; nothing was changed
-            print(f"cannot read the revert record ({exc}); nothing was changed.", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 - say why, never a traceback
+            print(
+                f"the revert stopped ({exc}). The hold and some sources may already be written: "
+                "run it again (a revert only touches a row that still reads the state the repair "
+                "gave it, so a second run is safe).",
+                file=sys.stderr,
+            )
             return 2
         print(json.dumps(result, indent=2))
         print(
