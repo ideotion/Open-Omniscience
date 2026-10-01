@@ -162,7 +162,10 @@ def test_a_damaged_sentinel_entry_is_no_measurement(dd):
 # --- the locked app ---------------------------------------------------------------------------
 
 
-def test_the_progress_path_is_served_while_locked_and_is_the_only_path_added():
+def test_the_progress_path_is_served_while_locked_and_the_open_stores_status_is_not():
+    """The gate matches by PREFIX and ``/api/system/unlock`` is already in the tuple, so the progress
+    path was reachable before its own entry and the entry adds no reach (the Opus read of #1293);
+    what this pins is the behaviour, and that the named entry is not duplicated."""
     from src.api.unlock import ALLOWED_WHILE_LOCKED, allowed_while_locked
 
     assert allowed_while_locked("/api/system/unlock-progress", "locked")
@@ -179,6 +182,38 @@ def test_the_progress_endpoint_answers_inactive_outside_an_attempt(dd):
     assert unlock_progress()["active"] is True
     ss.end_recovery(tok)
     assert unlock_progress() == {"active": False}
+
+
+def test_a_log_at_the_wal_resting_ceiling_is_not_a_recovery(dd, monkeypatch):
+    """Opus read of #1293: ``journal_size_limit`` (64 MiB by default) truncates a log that ever grew
+    past it back to EXACTLY that size, where it rests holding almost nothing, so a leftover log of
+    exactly the ceiling used to read as "64 MB to apply" and to store key-derivation time as the
+    machine's recovery rate. The floor is one byte above the ceiling in force."""
+    monkeypatch.delenv("OO_WAL_SIZE_LIMIT_MB", raising=False)
+    ceiling = 64 * _MIB
+    assert forensics.recovery_floor_bytes() == ceiling + 1
+    forensics.record_unlock_timing(_record(ceiling, 400.0))
+    assert forensics.last_recovery() is None, "a log AT the resting ceiling is not a measurement"
+    forensics.record_unlock_timing(_record(ceiling + 1, 400.0))
+    assert forensics.last_recovery() is not None, "a log past the ceiling still is"
+    from src.api import unlock as unlock_mod
+
+    seen: list = []
+    monkeypatch.setattr(ss, "begin_recovery", lambda *a, **k: seen.append(a) or 1)
+    assert unlock_mod._begin_recovery_notice({"state": "present", "bytes": ceiling}) is None
+    assert unlock_mod._begin_recovery_notice({"state": "present", "bytes": ceiling + 1}) == 1
+    assert len(seen) == 1
+
+
+def test_the_floor_follows_the_ceiling_in_force_and_never_drops_below_the_plain_floor(monkeypatch):
+    monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", "256")
+    assert forensics.recovery_floor_bytes() == 256 * _MIB + 1
+    monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", "8")
+    assert forensics.recovery_floor_bytes() == forensics.RECOVERY_RATE_MIN_BYTES
+    monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", "0")  # no limit: SQLite's default
+    assert forensics.recovery_floor_bytes() == forensics.RECOVERY_RATE_MIN_BYTES
+    monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", "not a number")  # session.py falls back to 64
+    assert forensics.recovery_floor_bytes() == 64 * _MIB + 1
 
 
 # --- the real unlock path -----------------------------------------------------------------------
@@ -203,7 +238,13 @@ os._exit(0)  # no close(): the log stays as a crash leaves it
 
 
 @pytest.fixture()
-def crashed_store(dd, monkeypatch):
+def finish_calls():
+    """The keyword arguments the real ``unlock()`` handed to ``_finish_unlock``."""
+    return []
+
+
+@pytest.fixture()
+def crashed_store(dd, monkeypatch, finish_calls):
     """A real encrypted store whose last session died with a >= 2 MiB log, wired to ``unlock()``."""
     db = dd / forensics._DB_NAME
     subprocess.run(
@@ -218,13 +259,14 @@ def crashed_store(dd, monkeypatch):
     from src.database import connect as connect_mod
 
     monkeypatch.setattr(unlock_mod, "main_db_path", lambda: db)
-    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: None)
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: finish_calls.append(kw))
     monkeypatch.setattr(connect_mod, "set_passphrase", lambda *_a, **_k: None)
     # the lock state the real route reads; the file really is encrypted
     assert connect_mod.is_encrypted_file(db) is True
     # the bound under test is 64 MiB; a 2 MiB log keeps the test quick, and the bound is
     # read from the forensics module at call time so this patches the same name production reads
     monkeypatch.setattr(forensics, "RECOVERY_RATE_MIN_BYTES", 1 * _MIB)
+    monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", "0")  # no resting ceiling, so the 1 MiB floor stands
     return db, wal
 
 
@@ -333,7 +375,7 @@ def test_the_page_states_its_numbers_and_never_a_percent():
     src = page_source("unlock.html")
     body = function_source(src, "recoveryLines")
     assert "%" not in body.replace("%s", ""), "a recovery sentence must not render a percent"
-    assert "Applying {size} of writes the last session had not yet moved into your database" in body
+    assert "Applying up to {size} of writes the last session had not yet moved into your database" in body
     assert "no earlier measurement on this machine" in body
     # the basis of the estimate is shown beside it, and an overrun is stated, not hidden
     assert "past_size" in body and "eta_time" in body
@@ -342,7 +384,7 @@ def test_the_page_states_its_numbers_and_never_a_percent():
 
 def test_every_recovery_sentence_is_translated_in_all_locales():
     keys = [
-        "Applying {size} of writes the last session had not yet moved into your database. Nothing is downloaded.",
+        "Applying up to {size} of writes the last session had not yet moved into your database. Nothing is downloaded.",
         "Last time on this machine, {past_size} took {past_time}, so this should take about {eta_time}.",
         "That estimate has passed; the step is still running.",
         "There is no earlier measurement on this machine to compare with. A large log can take several minutes.",
@@ -398,10 +440,39 @@ def test_the_verify_connection_is_checkpointed_through_execute_before_it_closes(
     assert wal.stat().st_size >= 2 * _MIB
     unlock(PassphraseBody(passphrase=_KEY))
     kinds = [o[0] for o in order]
-    assert kinds == ["execute", "close"], order
-    assert order[0][1] == "PRAGMA wal_checkpoint(TRUNCATE)"
+    assert kinds == ["execute", "execute", "close"], order
+    # the checkpoint never waits for a reader: the timeout is zeroed BEFORE it
+    assert order[0][1] == "PRAGMA busy_timeout = 0"
+    assert order[1][1] == "PRAGMA wal_checkpoint(TRUNCATE)"
     # when close() ran there was nothing left in the log for it to hold the GIL over
-    assert order[1][1] == 0, f"{order[1][1]} bytes of log were still there when close() ran"
+    assert order[2][1] == 0, f"{order[2][1]} bytes of log were still there when close() ran"
+
+
+def test_a_reader_holding_the_log_does_not_make_the_unlock_wait(crashed_store):
+    """Opus read of #1293: the verify connection inherits connect()'s 30 s busy timeout, and a
+    TRUNCATE checkpoint with ANOTHER connection holding a read snapshot waits all of it while
+    holding the WAL write lock (measured 30.12 s; the old close() skipped the checkpoint in
+    0.00 s). A second process on the file, or a POST /unlock on an app that is already unlocked,
+    reaches this. The checkpoint now returns busy at once and close() does what it always did."""
+    import time
+
+    db, wal = crashed_store
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    reader = connect_mod.connect(db, key=_KEY, check_same_thread=False)
+    try:
+        reader.execute("BEGIN")
+        before = reader.execute("SELECT count(*) FROM t").fetchone()[0]
+        assert before > 0
+        t0 = time.monotonic()
+        unlock(PassphraseBody(passphrase=_KEY))
+        waited = time.monotonic() - t0
+        assert waited < 10.0, f"the unlock waited {waited:.1f} s for a reader (busy_timeout is 30 s)"
+        # the reader's snapshot and the data are untouched
+        assert reader.execute("SELECT count(*) FROM t").fetchone()[0] == before
+    finally:
+        reader.close()
 
 
 def test_a_failed_checkpoint_falls_back_to_the_close_that_always_ran():
@@ -419,3 +490,111 @@ def test_a_failed_checkpoint_falls_back_to_the_close_that_always_ran():
 
     _close_after_checkpoint(Conn())
     assert calls == ["execute", "close"]
+
+
+def test_a_failed_checkpoint_is_logged_not_swallowed(caplog):
+    """Opus read of #1293 / the coordinator's check: a write-back that fails (a full drive, an I/O
+    error) was a DEBUG line, so the step ended "successfully" and the next the person heard of the
+    drive was init_db failing on it. It is a WARNING now, with the driver's first line only."""
+    import logging
+
+    from src.api.unlock import _close_after_checkpoint
+
+    class Conn:
+        def execute(self, *_a):
+            raise RuntimeError("disk I/O error\nSECRET trailing line")
+
+        def close(self):
+            pass
+
+    with caplog.at_level(logging.WARNING, logger="api.unlock"):
+        _close_after_checkpoint(Conn())
+    (rec,) = [r for r in caplog.records if "written back" in r.getMessage()]
+    assert rec.levelno == logging.WARNING
+    assert "RuntimeError: disk I/O error" in rec.getMessage()
+    assert "SECRET" not in rec.getMessage()
+
+
+def test_the_real_unlock_hands_the_verify_and_the_log_to_the_forensic_record(crashed_store, finish_calls):
+    """``_finish_unlock`` is patched out in this file's real-store tests, so nothing proved that
+    ``unlock()`` passes the verify time and the pre-open log reading on: if either call site
+    changed, the page would say "no earlier measurement" for ever and every other test here would
+    stay green (the coordinator's check of #1293)."""
+    db, wal = crashed_store
+    wal_size = wal.stat().st_size
+    from src.api.unlock import PassphraseBody, unlock
+
+    unlock(PassphraseBody(passphrase=_KEY))
+    (kw,) = finish_calls
+    assert kw["verify_ms"] > 0
+    assert kw["wal_state"]["state"] == "present" and kw["wal_state"]["bytes"] == wal_size
+
+
+def test_the_timer_names_the_verify_phase_so_the_recovery_is_measured(dd):
+    """The other link: ``add_phase(UNLOCK_VERIFY_PHASE, ms)`` then ``finish()`` is what puts a
+    rate into ``last_recovery`` (the name is compared literally, not by a copy of it)."""
+    from src.api.unlock import _forensic_timer
+
+    t = _forensic_timer(wal_state={"state": "present", "bytes": 3 * _GIB})
+    t.add_phase(forensics.UNLOCK_VERIFY_PHASE, 120_000.0)
+    t.finish()
+    rec = forensics.last_recovery()
+    assert rec is not None and rec["seconds_per_gib"] == 40.0 and rec["wal_bytes"] == 3 * _GIB
+
+
+def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeypatch):
+    """The second attempt (a reload and a second click, a second tab) used to race the first: it
+    replaced the first's recovery notice, read the log the first was still recovering and then
+    recorded a rate several times too fast. It now waits its turn and finds the log written back."""
+    import threading
+    import time
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    real = connect_mod.connect
+    events: list = []
+    first_inside = threading.Event()
+    release_first = threading.Event()
+    n = {"connect": 0}
+
+    def spy(*a, **k):
+        n["connect"] += 1
+        mine = n["connect"]
+        events.append(("connect", mine, ss.get_recovery()["active"]))
+        if mine == 1:
+            first_inside.set()
+            assert release_first.wait(30), "the test never released the first attempt"
+        return real(*a, **k)
+
+    monkeypatch.setattr(connect_mod, "connect", spy)
+    monkeypatch.setattr(
+        unlock_mod,
+        "_finish_unlock",
+        lambda **kw: events.append(("finish", kw["wal_state"]["state"])),
+    )
+    t1 = threading.Thread(target=lambda: unlock(PassphraseBody(passphrase=_KEY)))
+    t2 = threading.Thread(target=lambda: unlock(PassphraseBody(passphrase=_KEY)))
+    t1.start()
+    try:
+        assert first_inside.wait(30)
+        t2.start()
+        time.sleep(0.4)
+        assert n["connect"] == 1, "the second attempt started its own verify while the first was running"
+    finally:
+        release_first.set()  # never leave the first attempt parked, pass or fail
+    t1.join(60)
+    t2.join(60)
+    assert not t1.is_alive() and not t2.is_alive()
+    assert [e[:2] for e in events] == [
+        ("connect", 1), ("finish", "present"), ("connect", 2), ("finish", "absent"),
+    ], events
+    # the second attempt found the log already written back: no recovery notice, nothing to measure
+    assert events[2][2] is False
+
+
+@pytest.mark.parametrize("bad", ["12", None, True, float("nan"), float("inf"), -5, 0])
+def test_a_size_that_is_not_a_real_positive_number_is_no_estimate(dd, bad):
+    forensics.record_unlock_timing(_record(2 * _GIB, 80_000.0))
+    assert forensics.recovery_estimate(bad) == (None, None)

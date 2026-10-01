@@ -11,6 +11,7 @@ These pin three properties:
 
 from __future__ import annotations
 
+import math
 import subprocess
 import sys
 import threading
@@ -134,7 +135,11 @@ def test_the_pool_timeout_setting_refuses_a_value_the_pool_cannot_use_and_keeps_
     for raw, want in kept:
         monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
         assert session_module._pool_timeout_s() == want, raw
-    refused = ("nan", "inf", "-inf", "Infinity", "NaN", "abc", "", "-1", "-0.5", "1e10", "9300000000", repr(top * 2))
+    # the float just above the platform's limit pins the boundary itself: ``>`` and ``>=`` differ only here
+    refused = (
+        "nan", "inf", "-inf", "Infinity", "NaN", "abc", "", "-1", "-0.5", "1e10", "9300000000",
+        repr(math.nextafter(top, math.inf)), repr(top * 2),
+    )
     for raw in refused:
         monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
         caplog.clear()

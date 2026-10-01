@@ -20,6 +20,7 @@ shutdown never leaves a handle on the replaced file.
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 
 import pytest
@@ -61,7 +62,10 @@ def test_the_probe_takes_no_slot_from_the_pool(eng):
     v = insights._data_version(eng)
     assert v is not None
     assert eng.pool.checkedout() == 0, "a detached probe is not one of the pool's checkouts"
-    assert pool_watch.checked_out() == [], "and is not listed as a standing holder"
+    assert [r for r in pool_watch.checked_out() if r["ident"] == threading.get_ident()] == [], (
+        "and is not listed as a standing holder (this thread's rows only: the registry is "
+        "process-wide)"
+    )
     # the whole pool (2 slots) is usable while the probe lives: with the probe pooled, the
     # second of these would wait pool_timeout (1 s) and raise
     held = [eng.connect(), eng.connect()]
@@ -84,10 +88,13 @@ def test_the_probe_still_sees_other_connections_commits(eng):
 def test_disposing_the_engine_closes_the_probe_and_the_next_read_rebuilds_it(eng):
     insights._data_version(eng)
     old = insights._PROBE_CONNS[id(eng)]
+    raw = old.dbapi_connection  # the DRIVER's own handle: the wrapper above it proves nothing
+    assert raw is not None
+    raw.execute("SELECT 1")  # open before the dispose
     eng.dispose()
     assert id(eng) not in insights._PROBE_CONNS and id(eng) not in insights._PROBE_ENGINES
-    with pytest.raises(Exception):  # noqa: B017 - a closed connection, whatever SQLAlchemy calls it
-        old.cursor().execute("SELECT 1")
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        raw.execute("SELECT 1")
     assert insights._data_version(eng) is not None, "a new probe is built on the next read"
     assert insights._PROBE_CONNS[id(eng)] is not old
 

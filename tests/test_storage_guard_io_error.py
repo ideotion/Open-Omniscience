@@ -235,3 +235,92 @@ def test_a_lane_engine_carries_the_same_hook(monkeypatch, tmp_path):
         assert g2.engaged and g2.state()["last_io_error"]["latched"] is True
     finally:
         store.dispose_all()
+
+
+def test_the_message_is_matched_on_the_drivers_exception_never_on_sqlalchemys_wrapper_text():
+    """Opus read of #1289: SQLAlchemy's wrapper text carries the SQL and its bound parameters, so an
+    ``IntegrityError`` whose bound title said "disk I/O error" was counted as one."""
+    from sqlalchemy.exc import IntegrityError
+
+    wrapper = IntegrityError(
+        "INSERT INTO articles(title) VALUES (?)",
+        ("disk I/O error",),
+        sqlite3.IntegrityError("UNIQUE constraint failed: articles.url"),
+    )
+    assert "disk I/O error" in str(wrapper), "the premise: the wrapper's text carries the parameter"
+    assert is_io_error(wrapper) is False
+    g = _guard(free=2 * GIB)
+    assert g.note_io_error(wrapper, "collect pass") is False
+    assert g.state()["io_errors"] == 0 and not g.engaged
+    # the driver's own exception still matches by message, and so does a wrapper OVER it
+    assert is_io_error(sqlite3.OperationalError("disk I/O error"))
+    assert is_io_error(OperationalError("UPDATE t SET x=?", (1,), sqlite3.OperationalError("disk I/O error")))
+
+
+def test_the_kept_detail_is_the_drivers_first_line_never_the_statement_or_its_parameters():
+    g = _guard(free=2 * GIB)
+    exc = OperationalError(
+        "UPDATE sources SET note=? WHERE id=?",
+        ("secret-note", 42),
+        sqlite3.OperationalError("disk I/O error"),
+    )
+    assert "secret-note" in str(exc) and "UPDATE sources" in str(exc), "the premise: the wrapper has both"
+    assert g.note_io_error(exc, "collect pass") is True
+    detail = g.state()["last_io_error"]["detail"]
+    assert detail == "OperationalError: disk I/O error"
+    assert "secret-note" not in detail and "UPDATE" not in detail and "42" not in detail
+    # a coded error that is not the driver's class keeps its class name and NO message text
+    g2 = _guard(free=2 * GIB)
+    g2.note_io_error(_CodedError("a path /home/me/private.db and parameters", 10), "x")
+    assert g2.state()["last_io_error"]["detail"] == "_CodedError"
+
+
+def test_an_incident_reads_the_drive_once_not_once_per_failing_statement():
+    """The coordinator's check of #1289 (N4): every I/O error read the drive on the failing thread.
+    One reading is reused for ``IO_READING_REUSE_S``, then a fresh one is taken."""
+    reads: list = []
+    now = {"t": 100.0}
+
+    def readings():
+        reads.append(1)
+        return {"lane_wal_bytes": {}, "wal_bytes": 1, "corpus_bytes": 1,
+                "disk_free_bytes": 300 * GIB, "disk_total_bytes": _TOTAL}
+
+    g = StorageGuard(readings_fn=readings, clock=lambda: now["t"], trip_after=2, resume_after=2)
+    err = sqlite3.OperationalError("disk I/O error")
+    for _ in range(50):
+        assert g.note_io_error(err, "pass") is False
+    assert len(reads) == 1, "fifty failing statements in one second must share one drive reading"
+    assert g.state()["io_errors"] == 50, "every error is still counted"
+    now["t"] += sg.IO_READING_REUSE_S + 0.1
+    g.note_io_error(err, "pass")
+    assert len(reads) == 2
+
+
+def test_a_reading_in_flight_is_never_queued_behind():
+    """A caller that finds the drive being read takes the last reading or none: it must not wait
+    on a drive that may be hung. None means "not classified", never a latch."""
+    import threading
+
+    inside, release = threading.Event(), threading.Event()
+    reads: list = []
+
+    def readings():
+        reads.append(1)
+        inside.set()
+        assert release.wait(10)
+        return {"lane_wal_bytes": {}, "wal_bytes": 1, "corpus_bytes": 1,
+                "disk_free_bytes": 1 * GIB, "disk_total_bytes": _TOTAL}  # below the reserve
+
+    g = StorageGuard(readings_fn=readings, trip_after=2, resume_after=2)
+    err = sqlite3.OperationalError("disk I/O error")
+    first = threading.Thread(target=lambda: g.note_io_error(err, "a"))
+    first.start()
+    try:
+        assert inside.wait(10)
+        assert g.note_io_error(err, "b") is False, "the second caller must return at once, unclassified"
+        assert len(reads) == 1
+    finally:
+        release.set()
+        first.join(10)
+    assert g.engaged, "the first caller's reading latched DISK"

@@ -10,8 +10,9 @@ that is the thread that pins the WAL: an open read transaction stops
 ``PRAGMA wal_checkpoint(TRUNCATE)`` from reclaiming anything, which is how the
 field's WAL reached three hours of growth with the gate free the whole time.
 
-So: a checkout/checkin/detach trio, recording ONLY ``{thread, ident, endpoint, checkout_at}``
-per live connection. Three properties are load-bearing.
+So: a checkout/checkin/detach trio, recording per live connection ``{thread, ident, endpoint,
+collector, pool, checkout_at}`` and a weak reference to its record (to re-verify it at read time),
+and nothing else. Three properties are load-bearing.
 
 * It records at CHECKOUT and forgets at CHECKIN, so a RETURNED connection is
   never listed. An instrument that keeps naming an innocent thread after it has
@@ -53,14 +54,38 @@ _LOG = logging.getLogger(__name__)
 # by a thread-pool worker reads the route it is working for. Threads the app starts
 # itself (collector, briefing, rollups) carry no request and read ``None`` -- their
 # thread NAME is the identifier there.
-_ENDPOINT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+_ENDPOINT: contextvars.ContextVar[tuple[str, str | None, Any] | None] = contextvars.ContextVar(
     "oo_pool_endpoint", default=None
 )
 
 
-def set_endpoint(label: str | None) -> contextvars.Token:
-    """Name the request this context is serving; returns the token for :func:`reset_endpoint`."""
-    return _ENDPOINT.set(label)
+def set_endpoint(
+    label: str | None, *, method: str | None = None, scope: Any = None
+) -> contextvars.Token:
+    """Name the request this context is serving; returns the token for :func:`reset_endpoint`.
+
+    ``label`` is the raw "METHOD /path" the middleware knows before routing. The route TEMPLATE
+    ("GET /api/articles/{id}/view") is only known once routing has run, which is after this set,
+    so the request's ASGI ``scope`` (the dict routing fills in, shared with the endpoint's
+    context) is kept with the ``method`` and the template is read from it at checkout. Without it
+    the label stays the raw path, which would carry an article id or an edition's file name into
+    the bundle, where the latency log keys on the template."""
+    return _ENDPOINT.set(None if label is None else (label, method, scope))
+
+
+def _endpoint_label() -> str | None:
+    cur = _ENDPOINT.get()
+    if cur is None:
+        return None
+    label, method, scope = cur
+    try:
+        if scope is not None and method:
+            template = getattr(scope.get("route"), "path", None)
+            if isinstance(template, str) and template:
+                return f"{method} {template}"
+    except Exception:  # noqa: BLE001 - an instrument must never break a checkout
+        pass
+    return label
 
 
 def reset_endpoint(token: contextvars.Token) -> None:
@@ -82,14 +107,27 @@ _LIVE: dict[int, dict[str, Any]] = {}
 # same reason (see ``checked_out``).
 _LOCK = threading.RLock()
 _REGISTERED = False
+# Which pool a checkout came from: ``id(pool) -> (weak reference to it, label)``. The corpus pool
+# is the one whose slots the D44 reservation counts; the read-snapshot engines (a streamed
+# export's read, a NullPool of their own) are watched too but are not slots of it. A pool nobody
+# labelled reads as "corpus", the app's own.
+_POOL_LABELS: dict[int, tuple[Any, str]] = {}
 # The last connections the POOL invalidated (a failed rollback on return, an explicit
 # ``invalidate()``, a disconnect): who held it, which route, and what the DBAPI said. The
 # phantom rows above were the false positive; this is the open question behind them -- what
 # invalidates a connection in production -- so the next bundle can answer it. Bounded,
 # in-memory, and carries the DBAPI exception's own message only (never a statement or a
-# bound parameter).
+# bound parameter). Twenty because the question it answers is "what invalidates connections",
+# which a handful of recent, named examples answers and a longer list repeats; the TOTAL keeps
+# counting past it, so an incident's size is never read off the ring's length.
 _INVALIDATIONS: deque[dict[str, Any]] = deque(maxlen=20)
 _INVALIDATED = 0
+#: At most one WARNING line per this many seconds (the ring above and the total keep every
+#: one): a disk incident can invalidate a connection on every checkin, and an unthrottled line
+#: per invalidation would fill the 2,000-record error ring the diagnostics bundle carries.
+INVALIDATION_LOG_EVERY_S = 30.0
+_INVAL_LOGGED_AT: float | None = None
+_INVAL_SUPPRESSED = 0
 # Rows dropped at READ time because their record no longer shows a checkout. Mostly the
 # phantoms the event keys above could not prevent (a listener attached late, an id reused
 # after a record was collected), but SQLAlchemy clears ``fairy_ref`` just BEFORE it fires
@@ -109,6 +147,18 @@ def _is_collector() -> bool:
         return False
 
 
+def _pool_label(proxy: Any) -> str:
+    """The label ``register`` gave the pool a checkout came from ("corpus" when unlabelled)."""
+    try:
+        pool = getattr(proxy, "_pool", None)
+        ent = _POOL_LABELS.get(id(pool))
+        if ent is not None and ent[0]() is pool:
+            return ent[1]
+    except Exception:  # noqa: BLE001 - an instrument must never break a checkout
+        pass
+    return "corpus"
+
+
 def _on_checkout(dbapi_connection, connection_record, _connection_proxy) -> None:
     # On the pool's hot path: an instrument must never be the reason a checkout fails.
     try:
@@ -120,8 +170,9 @@ def _on_checkout(dbapi_connection, connection_record, _connection_proxy) -> None
         row: dict[str, Any] = {
             "thread": thread.name,
             "ident": thread.ident,
-            "endpoint": _ENDPOINT.get(),
+            "endpoint": _endpoint_label(),
             "collector": _is_collector(),
+            "pool": _pool_label(_connection_proxy),
             "checkout_at": time.monotonic(),
             "record": ref,
         }
@@ -150,9 +201,18 @@ def _on_detach(dbapi_connection, connection_record) -> None:
 
 def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
     """Record WHAT invalidated a connection and who was holding it. Never raises."""
-    global _INVALIDATED
+    global _INVALIDATED, _INVAL_LOGGED_AT, _INVAL_SUPPRESSED
     try:
         thread = threading.current_thread()
+        # Everything that runs foreign code (``str()`` of an exception) happens BEFORE the lock
+        # is taken: a ``__str__`` that raises used to lose the invalidation altogether (4 of 6
+        # hostile inputs in the coordinator's check), and one that is slow held the table.
+        orig = getattr(exception, "orig", exception)
+        try:
+            message = str(orig)[:160] if orig is not None else None
+        except Exception:  # noqa: BLE001 - a hostile __str__ must not lose the record
+            message = "(the exception's message could not be read)"
+        exc_name = type(orig).__name__ if orig is not None else None
         with _LOCK:
             live = _LIVE.get(id(connection_record)) or {}
             held_by = {
@@ -160,25 +220,35 @@ def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
                 "endpoint": live.get("endpoint"),
                 "age_s": round(time.monotonic() - live["checkout_at"], 3) if live else None,
             }
-            orig = getattr(exception, "orig", exception)
             rec = {
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "by_thread": thread.name,
                 "held_by": held_by,
-                "exception": type(orig).__name__ if orig is not None else None,
+                "exception": exc_name,
                 # The DBAPI's own message, trimmed: SQLAlchemy's wrapper carries the SQL
                 # text and its parameters, which this record never keeps.
-                "message": str(orig)[:160] if orig is not None else None,
+                "message": message,
             }
             _INVALIDATIONS.append(rec)
             _INVALIDATED += 1
-        _LOG.warning(
-            "pool connection invalidated: held by %s (route %s), %s: %s",
-            held_by["thread"],
-            held_by["endpoint"],
-            rec["exception"],
-            rec["message"],
-        )
+            now = time.monotonic()
+            log_it = _INVAL_LOGGED_AT is None or now - _INVAL_LOGGED_AT >= INVALIDATION_LOG_EVERY_S
+            skipped = _INVAL_SUPPRESSED
+            if log_it:
+                _INVAL_LOGGED_AT, _INVAL_SUPPRESSED = now, 0
+            else:
+                _INVAL_SUPPRESSED += 1
+        if log_it:
+            _LOG.warning(
+                "pool connection invalidated: held by %s (route %s), %s: %s%s",
+                held_by["thread"],
+                held_by["endpoint"],
+                rec["exception"],
+                rec["message"],
+                f" (+{skipped} more since the last line; all are in the pool-watch record)"
+                if skipped
+                else "",
+            )
     except Exception:  # noqa: BLE001 - an instrument must never break the pool
         pass
 
@@ -201,7 +271,8 @@ def _still_out(rec: dict[str, Any]) -> bool:
 def checked_out() -> list[dict[str, Any]]:
     """Live checkouts, OLDEST FIRST. Empty when nothing is checked out.
 
-    Each row is ``{thread, ident, endpoint, age_s}``; ``endpoint`` is the route the request
+    Each row is ``{thread, ident, endpoint, collector, pool, age_s}``; ``pool`` says which watched
+    pool it came from ("corpus", or the label ``register`` was given); ``endpoint`` is the route the request
     was serving at checkout (``None`` for a thread the app started itself), and ``ident``
     lets a caller ask for that thread's stack on demand (:func:`stacks_for`) without this
     module storing one (``stack_at_checkout`` appears only under ``OO_POOL_WATCH_STACKS=1``).
@@ -222,6 +293,7 @@ def checked_out() -> list[dict[str, Any]]:
                 "ident": rec["ident"],
                 "endpoint": rec.get("endpoint"),
                 "collector": bool(rec.get("collector")),
+                "pool": rec.get("pool", "corpus"),
                 "age_s": round(now - rec["checkout_at"], 3),
             }
             if rec.get("stack"):
@@ -240,15 +312,22 @@ STANDING_AGE_S = 60.0
 
 
 def standing_holders(min_age_s: float = STANDING_AGE_S) -> int | None:
-    """How many pooled connections the APP's own threads (not the collector, whose slots the
-    D44 reservation already counts) have held for at least ``min_age_s``.
+    """How many pooled connections of the CORPUS pool the APP's own threads (not the collector,
+    whose slots the D44 reservation already counts) have held for at least ``min_age_s``. A
+    watched pool that is not the corpus pool (a streamed export's own read-snapshot engine, whose
+    read can legitimately last minutes) is not one of the slots the headroom reading is about, so
+    it is not counted: it used to be, and a long export made a healthy pool read "insufficient".
 
     ``None`` when the instrument is not attached: "nothing is held" and "nobody is watching"
     are opposite facts, and a caller must be able to tell them apart.
     """
     if not _REGISTERED:
         return None
-    return sum(1 for r in checked_out() if not r["collector"] and r["age_s"] >= min_age_s)
+    return sum(
+        1
+        for r in checked_out()
+        if not r["collector"] and r["pool"] == "corpus" and r["age_s"] >= min_age_s
+    )
 
 
 def invalidations() -> dict[str, Any]:
@@ -308,11 +387,13 @@ def is_registered() -> bool:
     return _REGISTERED
 
 
-def register(engine) -> bool:
+def register(engine, *, label: str = "corpus") -> bool:
     """Attach the listeners to ``engine``'s pool. Idempotent per engine; never raises.
 
     More than one engine may be watched (the corpus engine and the read-snapshot engines
-    whose streamed reads hold a WAL snapshot); ``checked_out()`` lists them together.
+    whose streamed reads hold a WAL snapshot); ``checked_out()`` lists them together, each row
+    carrying the ``label`` its pool was registered under (only "corpus" rows are slots of the
+    corpus pool).
     """
     global _REGISTERED
     try:
@@ -320,6 +401,11 @@ def register(engine) -> bool:
 
         if event.contains(engine, "checkout", _on_checkout):
             return False
+        pool = engine.pool
+        with _LOCK:
+            for k in [k for k, (ref, _l) in _POOL_LABELS.items() if ref() is None]:
+                _POOL_LABELS.pop(k, None)  # a collected pool's id may be reused
+            _POOL_LABELS[id(pool)] = (weakref.ref(pool), label)
         event.listen(engine, "checkout", _on_checkout)
         event.listen(engine, "checkin", _on_checkin)
         event.listen(engine, "detach", _on_detach)
@@ -332,9 +418,10 @@ def register(engine) -> bool:
 
 def _reset_for_tests() -> None:
     """Test-only: forget every recorded checkout (the listeners stay attached)."""
-    global _PRUNED, _INVALIDATED
+    global _PRUNED, _INVALIDATED, _INVAL_LOGGED_AT, _INVAL_SUPPRESSED
     with _LOCK:
         _LIVE.clear()
         _PRUNED = 0
         _INVALIDATED = 0
         _INVALIDATIONS.clear()
+        _INVAL_LOGGED_AT, _INVAL_SUPPRESSED = None, 0

@@ -156,6 +156,19 @@ def _build_engine() -> Engine:
 engine: Engine = _build_engine()
 
 
+def wal_size_limit_bytes() -> int:
+    """The ``-wal``'s RESTING ceiling in force (``OO_WAL_SIZE_LIMIT_MB``, default 64; ``<= 0``
+    restores SQLite's no-limit default, answered as ``-1``), in bytes. A log that ever grew past
+    it is truncated back to EXACTLY this size and rests there, so a leftover ``-wal`` of this size
+    says how big the log once was, not how much of it is unapplied (the unlock page's recovery
+    floor reads it for that reason)."""
+    try:
+        wal_mb = int(os.getenv("OO_WAL_SIZE_LIMIT_MB", "64"))
+    except ValueError:
+        wal_mb = 64
+    return wal_mb * 1024 * 1024 if wal_mb > 0 else -1
+
+
 @event.listens_for(engine, "connect")
 def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
     """Apply WAL + safety/concurrency PRAGMAs to every new SQLite connection."""
@@ -204,11 +217,7 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         # bound growth DURING a long transaction/reader-starvation (that is measured, not
         # tuned — see the storage diagnostic's wal_bytes). OO_WAL_SIZE_LIMIT_MB overrides;
         # <=0 restores SQLite's default (no limit). Bytes.
-        try:
-            wal_mb = int(os.getenv("OO_WAL_SIZE_LIMIT_MB", "64"))
-        except ValueError:
-            wal_mb = 64
-        cursor.execute(f"PRAGMA journal_size_limit={wal_mb * 1024 * 1024 if wal_mb > 0 else -1}")
+        cursor.execute(f"PRAGMA journal_size_limit={wal_size_limit_bytes()}")
         # mmap for PLAINTEXT stores only: SQLCipher pages cannot be memory-
         # mapped through the codec (every page passes the decrypt), so mmap
         # there would be a fabricated speed-up. For plaintext files it lets

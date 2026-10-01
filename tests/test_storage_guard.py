@@ -2267,7 +2267,7 @@ def test_the_engine_hook_and_the_read_engine_registration_exist():
         "the global engine must carry the full-disk listener (a substring check would pass "
         "with the decorator removed)"
     )
-    assert "_pool_watch.register(eng)" in _src("src/database/read_snapshot.py")
+    assert '_pool_watch.register(eng, label="read_snapshot")' in _src("src/database/read_snapshot.py")
 
 
 # --------------------------------------------------------------------------- #
@@ -2632,3 +2632,33 @@ def test_the_stop_check_and_the_publishing_of_the_drain_thread_are_one_step_unde
     assert not sup.is_alive()
     assert storage_guard._DRAIN_THREAD is None and ran == [], "no drain thread was started after the stop"
 
+
+
+def test_a_failure_of_the_unsupervised_path_is_a_warning_and_a_repeat_is_not(monkeypatch, caplog):
+    """The coordinator's check of #1287 (nit 9) and the Opus read of #1289: the unsupervised twin
+    of the background drain logged at DEBUG, so an exception escaping it stayed silent; and a
+    failure that repeats every tick must not write a traceback per tick into the 2,000-record error
+    ring (the pin report has the same once-per-change rule)."""
+    import logging
+
+    g = _engaged("wal")
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: False)
+
+    def boom():
+        raise RuntimeError("outside the drain")
+
+    monkeypatch.setattr(g, "drain_if_due", boom)
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        g.poll_and_drain_unsupervised()  # must not raise
+        g.poll_and_drain_unsupervised()
+        g.poll_and_drain_unsupervised()
+    warns = [r for r in caplog.records if r.levelno == logging.WARNING and "unsupervised poll failed" in r.getMessage()]
+    assert len(warns) == 1, "the first failure is loud, the repeats are not"
+    assert warns[0].exc_info is not None, "the first carries its traceback"
+    assert sum("failed again" in r.getMessage() for r in caplog.records) == 2
+    # a DIFFERENT failure is news again
+    monkeypatch.setattr(g, "drain_if_due", lambda: (_ for _ in ()).throw(ValueError("something else")))
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        g.poll_and_drain_unsupervised()
+    assert any(r.levelno == logging.WARNING for r in caplog.records)

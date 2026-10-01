@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -469,6 +470,23 @@ UNLOCK_VERIFY_PHASE = "passphrase verify + WAL recovery + checkpoint-on-close"
 RECOVERY_RATE_MIN_BYTES = 64 * 1024 * 1024
 
 
+def recovery_floor_bytes() -> int:
+    """The log size from which an unlock is read as a recovery (a sentence, a measured rate): the
+    larger of ``RECOVERY_RATE_MIN_BYTES`` and ONE BYTE MORE than the ``-wal`` resting ceiling
+    (``journal_size_limit``, 64 MiB by default). A log that ever grew past the ceiling is truncated
+    back to exactly the ceiling and rests there holding almost nothing (measured by the Opus read
+    of #1293: 67,108,864 bytes, one valid frame, 0.39 s to recover), so a log AT the ceiling carries
+    no information about pending writes: it used to be read as "64 MB to apply" and stored ~6 s/GiB
+    of key-derivation time as this machine's recovery rate."""
+    try:
+        from src.database.session import wal_size_limit_bytes
+
+        limit = wal_size_limit_bytes()
+    except Exception:  # noqa: BLE001 - no ceiling known: the plain floor applies
+        limit = -1
+    return max(RECOVERY_RATE_MIN_BYTES, limit + 1 if limit > 0 else 0)
+
+
 def record_unlock_timing(record: dict[str, Any]) -> None:
     """Persist the unlock path's own timing record (wal bytes before open,
     per-phase ms, total) into the sentinel file. Best-effort.
@@ -489,7 +507,7 @@ def _recovery_from_record(record: dict[str, Any]) -> dict[str, Any] | None:
     """The measured recovery inside an unlock timing record, or None when the record has no log
     of at least ``RECOVERY_RATE_MIN_BYTES`` or no verify step to time it by."""
     wal = record.get("wal_bytes_before_open")
-    if not isinstance(wal, (int, float)) or isinstance(wal, bool) or wal < RECOVERY_RATE_MIN_BYTES:
+    if not isinstance(wal, (int, float)) or isinstance(wal, bool) or wal < recovery_floor_bytes():
         return None
     for ph in record.get("phases") or []:
         if not isinstance(ph, dict) or ph.get("phase") != UNLOCK_VERIFY_PHASE:
@@ -522,7 +540,15 @@ def recovery_estimate(wal_bytes: int) -> tuple[float | None, dict[str, float] | 
     guess with a number on it (the field's own per-GiB figures ran from 5.0 to 39.2 s, so no
     constant is honest). ``basis`` is the measurement it came from, so the page can say so."""
     rec = last_recovery()
-    if rec is None or wal_bytes <= 0:
+    # A size that is not a real, positive number (a damaged reading, a bool) is no size: the
+    # estimate stays absent rather than raising into the unlock that asked for it.
+    if (
+        rec is None
+        or isinstance(wal_bytes, bool)
+        or not isinstance(wal_bytes, (int, float))
+        or not math.isfinite(wal_bytes)
+        or wal_bytes <= 0
+    ):
         return None, None
     per_gib = float(rec["seconds_per_gib"])
     basis = {"wal_bytes": float(rec.get("wal_bytes") or 0), "seconds": float(rec.get("seconds") or 0)}

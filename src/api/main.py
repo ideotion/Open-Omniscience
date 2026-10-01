@@ -884,7 +884,9 @@ async def monitor_requests(request: Request, call_next):
     try:
         from src.database import pool_watch as _pool_watch
 
-        _ep_token = _pool_watch.set_endpoint(f"{method} {endpoint}")
+        _ep_token = _pool_watch.set_endpoint(
+            f"{method} {endpoint}", method=method, scope=request.scope
+        )
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _pool_watch = None  # type: ignore[assignment]
         _ep_token = None

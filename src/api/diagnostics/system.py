@@ -383,10 +383,18 @@ def write_gate_report() -> dict:
       transaction pins the WAL with the gate free the whole time, which is the
       shape the field's three-hour WAL growth had; the top row is the candidate.
 
+    * ``invalidations`` -- the last connections the POOL invalidated (a failed rollback
+      on return, a disconnect), each with who held it, which route and the DRIVER's own
+      message (never the statement or its parameters), and the total since start: the
+      open question behind a pool that loses connections under disk trouble.
+
     An empty ``pool`` list means nothing is checked out RIGHT NOW -- a returned
     connection is deliberately not listed, so no innocent thread is named.
-    Read-only, in-memory, no statement text and no stack (the write gate's own
-    watchdog captures a stack on demand, only for a hold past its threshold).
+    Read-only, in-memory, no statement text. A row carries no stack unless the
+    operator started the app with ``OO_POOL_WATCH_STACKS=1`` (a debugging flag, off by
+    default: a stack at checkout is work on the pool's hot path), when it carries
+    ``stack_at_checkout``; the write gate's own watchdog otherwise captures a stack on
+    demand, only for a hold past its threshold.
     """
     from src.database import pool_watch
     from src.database.writer import write_gate_stats
@@ -394,6 +402,7 @@ def write_gate_report() -> dict:
     return {
         "gate": write_gate_stats(),
         "pool": pool_watch.checked_out(),
+        "invalidations": pool_watch.invalidations(),
         "method": (
             "gate counters read under the gate's own lock; pool rows recorded by "
             "SQLAlchemy checkout/checkin listeners and forgotten on checkin"

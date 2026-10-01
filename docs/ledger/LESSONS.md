@@ -13053,6 +13053,7 @@ recorded (`io_errors`, `last_io_error` with the figure it was judged against) an
 sits on the corpus engine AND every lane engine, because a lane is written to the same drive (the corpus engine's hook alone
 never saw a lane's failed write). Stated limit: a copy-on-write drive that reports room (metadata exhausted while `df` says
 free) and fails with an I/O error is not classified as full.
+
 ### sqlcipher3's `Connection.close()` HOLDS THE GIL THROUGH THE CLOSE-TIME CHECKPOINT; `execute("PRAGMA wal_checkpoint(...)")` DOES NOT (WAL / disk thread, unlock phase 0, 2026-10-01)
 
 Measured with a ticker thread that sleeps 10 ms in a loop and records its worst gap while the main thread does the
@@ -13060,24 +13061,34 @@ step, on a 600 MiB leftover `-wal` (a child process writes it with autocheckpoin
 `os._exit`): sqlcipher3 `close()` of the last connection took 2.1 s with a worst gap of 2.1 s, so every other
 Python thread, **the uvicorn event loop included**, stood still for the whole backfill; the same checkpoint run as
 `execute("PRAGMA wal_checkpoint(PASSIVE)")` took 1.7 s with a worst gap of 0.01 s, a `TRUNCATE` on the emptied log
-0.3 s with 0.01 s, and the first read that RECOVERS the log (0.6 s) 0.02 s; stdlib sqlite3's own `close()` (2.4 s)
+0.3 s with 0.01 s (the Opus read of #1293 measured the `TRUNCATE` form on the full log too: worst gap 0.006 to
+0.023 s), and the first read that RECOVERS the log (0.6 s) 0.02 s; stdlib sqlite3's own `close()` (2.4 s)
 holds the GIL for nothing (0.01 s). So on an encrypted store the unlock's verify connection froze the process for
-the backfill (the field's 24.7 s and 981 s unlocks), which is also why no progress sentence could be shown: the
-poll for it was not answered until the close returned. **Before closing the last connection to an encrypted store
+the backfill, which is also why no progress sentence could be shown: the poll for it was not answered until the
+close returned. HOW MUCH OF THE FIELD'S 24.7 s AND 981 s UNLOCKS WAS THAT FREEZE WAS NEVER MEASURED: the open that
+recovers the log releases the GIL and was never split from the close in the field data (a first draft of this
+lesson said the 24.7 s "was" the freeze). Walked in headless Chromium on seeded encrypted stores with a real
+unreplayed log (an event-loop probe = a GET answered while the passphrase check runs): the right passphrase froze
+the loop for 10.1 s before the fix and answered the probe within 54 to 80 ms after it. **Before closing the last connection to an encrypted store
 that may have a log, checkpoint it through `execute`**; `close()` then has nothing to hold the GIL over
 (`src/api/unlock.py::_close_after_checkpoint`). **A FAILED KEYED OPEN HAS NO SUCH FIX, AND ONLY ONE KIND OF FAILURE
 PAYS THE STALL** (measured the same way on a 300 MiB log, data reopened with the right key afterwards: every row
 intact): in `connect._try_open_encrypted` a WRONG PASSPHRASE at the store's right page size still has its `close()`
-checkpoint the log (0.69 s, worst gap 0.43 s, about 1.5 s per GiB) and remove it, once per log, because the frames are
-copied raw and no key is needed; a right key at a WRONG page size never reaches the log (0.32 s, gap 0.01 s, log
+checkpoint the log (0.69 s, worst gap 0.43 s on 300 MiB) and remove it, once per log, because the frames are
+copied raw and no key is needed. THE STALL IS NOT A PER-GiB FIGURE: the walk of #1293 in Chromium measured it at
+1.34 s for 700 MiB, 8.95 s for 1.5 GiB and 5.84 s for 3 GiB (it follows the log's content, how many distinct pages
+it rewrites, and not its size alone), so none is stated, and during it the progress poll is not answered; a right key at a WRONG page size never reaches the log (0.32 s, gap 0.01 s, log
 untouched). `execute("PRAGMA wal_checkpoint(...)")` on the failed connection raises `MemoryError` (the codec is in its
 sticky error state) and a keyless stdlib `sqlite3` connection answers `file is not a database`, so there is no call-site
 checkpoint-before-close to add and `connect.py` stays as it is; `tests/test_failed_open_wal_facts.py` pins the four
 facts so a later session neither re-derives them nor "fixes" it the wrong way, and fails loudly if the library ever
-makes a fix possible. **One idea is recorded UNTESTED, for whoever takes slice S04-08 (the coordinator's note,
-2026-10-01; nothing was built or run for it):** in WAL mode an idle open connection keeps its shared lock on the
+makes a fix possible. **One idea is recorded for whoever takes slice S04-08 (the coordinator's note,
+2026-10-01; nothing was built for it):** in WAL mode an idle open connection keeps its shared lock on the
 database file, so a failed candidate kept OPEN is not the last connection and should not backfill; if it stays open
-until the right key's phase 0 has checkpointed the log, its `close()` should find nothing left to copy. Still
+until the right key's phase 0 has checkpointed the log, its `close()` should find nothing left to copy. Its premise
+was measured by the Opus read of #1293 (with an idle sibling connection open the verify connection's `close()` took
+0.000 s and kept the log); the idea itself, and the coordinator's check of #1293's other one (verify the key against
+the main file alone, read-only and immutable, so the log is not opened by a wrong key at all), are unbuilt. Still
 unfixed, in its owner's file: `engine.dispose()` at shutdown and in a restore swap.
 
 ### THE UNLOCK'S WAL COST IS TWO COSTS THAT NEITHER DOMINATES, SO NO SPLIT IS WORTH BUILDING (WAL / disk thread, unlock phase 0, 2026-10-01)
@@ -13091,5 +13102,6 @@ dominates depends on whether the page cache still holds the log and on how many 
 the backfill is 4 to 7 times the open; cold, the open is 1.5 to 3 times the close. Totals ran 3.1 to 5.4 s per GiB
 here against the field's 5.0 to 39.2 s per GiB, so the only honest predictor of a machine's unlock is THAT MACHINE'S
 last measured one (`forensics.last_recovery`, kept apart from `last_unlock`, which an unlock with no log
-overwrites) and the only lever on the cost is the log's size at boot (the storage guard's bound). The driver offers
-no way to skip the close-time backfill, so deferring it was not available either.
+overwrites) and the only lever on the cost is the log's size at boot (the storage guard's bound). `close()` of the
+LAST connection always backfills (so deferring it from that connection was not available); with another connection
+open on the file it does not (see the idea above).

@@ -74,7 +74,7 @@ def _build_read_engine(url: str) -> Engine:
     # pin report (storage guard, hygiene's checkpoint record) lists pooled checkouts, so an
     # engine nobody registered was invisible to it: a pinned WAL during an export read as
     # "nobody is reading". Registering names the export's thread and how long it has held.
-    _pool_watch.register(eng)
+    _pool_watch.register(eng, label="read_snapshot")
 
     @event.listens_for(eng, "connect")
     def _read_pragmas(dbapi_connection, _record) -> None:  # noqa: ANN001

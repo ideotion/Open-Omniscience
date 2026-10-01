@@ -85,14 +85,12 @@ def test_the_pass_summary_subtracts_what_the_pool_watch_measured(monkeypatch):
         # the small tier's shape (pool 6 + 6, margin 4), whatever machine runs this test
         monkeypatch.setattr(mb, "budget", lambda: mb.resolve_for(3296))
         monkeypatch.setattr(pool_watch, "standing_holders", lambda *a, **k: standing)
-        real = sess.engine
-        sess.engine = _Eng()
-        try:
-            return CollectionMonitor(governor=_Gov(), pass_id="t", mode="press")._db_memory()[
-                "api_headroom"
-            ]
-        finally:
-            sess.engine = real
+        # monkeypatch restores the module's engine even if the read raises (a bare assignment in a
+        # try/finally did the same by hand; the coordinator's check of #1289 asked for the standard way)
+        monkeypatch.setattr(sess, "engine", _Eng())
+        return CollectionMonitor(governor=_Gov(), pass_id="t", mode="press")._db_memory()[
+            "api_headroom"
+        ]
 
     clean = verdict(0)
     assert clean["sufficient"] is True and clean["standing_holders"] == 0
@@ -100,3 +98,47 @@ def test_the_pass_summary_subtracts_what_the_pool_watch_measured(monkeypatch):
     assert held["sufficient"] is False and held["headroom"] == 2
     blind = verdict(None)
     assert blind["standing_unmeasured"] and blind["standing_holders"] == 0
+
+
+def test_a_watched_read_snapshot_pool_is_not_a_slot_of_the_corpus_pool(tmp_path):
+    """Opus read of #1289: ``checked_out()`` lists every watched engine, so a multi-minute export
+    read on the read-snapshot engine's own NullPool (a non-collector checkout older than 60 s)
+    was subtracted from the CORPUS pool's headroom: the pool showed 0 checked out and the
+    headroom read 3 of 4. Each row now names its pool and only the corpus pool's are counted."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    from src.config.memory_budget import api_headroom_for
+    from src.database import pool_watch
+
+    pool_watch._reset_for_tests()
+    other = create_engine(f"sqlite:///{tmp_path / 'snap.db'}", future=True, poolclass=NullPool)
+    assert pool_watch.register(other, label="read_snapshot") is True
+    conn = other.connect()
+    try:
+        rows = [r for r in pool_watch.checked_out() if r["pool"] == "read_snapshot"]
+        assert len(rows) == 1 and rows[0]["pool"] == "read_snapshot"
+        assert pool_watch.standing_holders(min_age_s=0) == 0, "not a slot of the corpus pool"
+        v = api_headroom_for(8, pool_total=12, standing=pool_watch.standing_holders(min_age_s=0))
+        assert v["standing_holders"] == 0 and v["headroom"] == v["headroom_before_standing"]
+    finally:
+        conn.close()
+        other.dispose()
+
+
+def test_a_corpus_pool_checkout_is_still_counted_and_labelled_corpus(tmp_path):
+    from sqlalchemy import create_engine
+
+    from src.database import pool_watch
+
+    pool_watch._reset_for_tests()
+    e = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}", future=True)
+    assert pool_watch.register(e) is True  # the default label: the corpus pool
+    conn = e.connect()
+    try:
+        rows = [r for r in pool_watch.checked_out() if r["pool"] == "corpus"]
+        assert len(rows) == 1
+        assert pool_watch.standing_holders(min_age_s=0) == 1
+    finally:
+        conn.close()
+        e.dispose()
