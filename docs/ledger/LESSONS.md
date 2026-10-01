@@ -12905,7 +12905,7 @@ follow each reading. And an override that can no longer be bounded (free space u
 started over the API had no supervisor, so the floor was read only at pass boundaries (hours apart), and the guard's own
 rule "an override that cannot be bounded is not granted" was kept at the click and broken for the whole pass; starting
 collection now starts the supervisor (`runner._ensure_storage_supervisor`), and even then the real gap between two
-readings is 5 to about 35 s plus the checkpoint's own run, because the tick also runs a drain that can wait 30 s for the write gate (and the guard's own drain is bounded at 30 s whatever `OO_CKPT_GATE_TIMEOUT_S` says: `0` there is the pass-boundary checkpoint's wait-for-ever, and it would have made the sampler wait on a long writer too). **A retry button
+readings is 5 to about 35 s plus the checkpoint's own run and, on an exhausted pool, a connection wait, because the tick also runs a drain that can wait 30 s for the write gate (and the guard's own drain is bounded at 30 s whatever `OO_CKPT_GATE_TIMEOUT_S` says: `0` there is the pass-boundary checkpoint's wait-for-ever, and it would have made the sampler wait on a long writer too). **A retry button
 must not end what it did not start:** Start and Run now cleared the latches under an override and so ended it, which
 R112 does not list; they now leave an override alone while its cause is still over the limit or cannot be read against it (and end one whose cause is already under it, so no override outlives its cause for want of an exit). Test numbers
 must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not

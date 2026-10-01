@@ -129,11 +129,12 @@ to :data:`DRAIN_GATE_TIMEOUT_S` (30 s) for the write gate that running collector
 whatever ``OO_CKPT_GATE_TIMEOUT_S`` says (a shorter setting shortens it; ``0`` and a longer one
 leave the guard's own wait at 30 s, while the pass-boundary checkpoint and the restore's pre-swap
 checkpoint keep the operator's setting). While overridden, the gap between two readings is 5 s to
-about 35 s plus the checkpoint's own run and the drain's wait for a pooled connection (which
-nothing here bounds). At the 1.4 MB/s of log growth the sampling comment below records (its
-source is not in the repo), 35 s is about 49 MB: 37% of the smallest floor (128 MiB) and less
-of any larger one; that rate is the log's growth, not
-everything a pass writes. The floor reserves room to write the log back and finish a write, NOT
+about 35 s plus the checkpoint's own run (which nothing here bounds) and, when the pool is
+exhausted, the drain's wait for a connection (up to ``OO_DB_POOL_TIMEOUT``, 30 s by default).
+The figures that follow use the 35 s. At the 1.4 MB/s of log growth the sampling comment
+below records (its source is not in the repo), 35 s is about 49 MB: 37% of the smallest floor
+(128 MiB) and less of any larger one; that rate is the log's growth, not everything a pass
+writes. The floor reserves room to write the log back and finish a write, NOT
 the pass tail written after a withdrawal (a measured tail is what would size that, and it is not
 a fixed number). The write error above is the last net and it does not wait for a reading.
 
