@@ -33,6 +33,7 @@ import errno
 import gc
 import io
 import json
+import os
 import random
 import sqlite3
 import tempfile
@@ -513,6 +514,42 @@ def test_sqlite_saying_the_drive_is_full_or_read_only_is_a_507(message, words):
         raise sqlite3.OperationalError("no such table: kw")
 
 
+def _io_error_on_write() -> sqlite3.OperationalError:
+    """What SQLite's unix layer raises for a write that failed with an errno it has no word for
+    (a quota, a drive remounted read-only): a bare ``disk I/O error`` with this extended code. Real
+    failures read like this, which the hand-written messages above do not."""
+    exc = sqlite3.OperationalError("disk I/O error")
+    exc.sqlite_errorcode = kls._SQLITE_IOERR_WRITE
+    exc.sqlite_errorname = "SQLITE_IOERR_WRITE"
+    return exc
+
+
+def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(tmp_path, monkeypatch):
+    real = os.statvfs
+
+    def read_only(path):
+        st = real(path)
+        return types.SimpleNamespace(f_flag=st.f_flag | os.ST_RDONLY)
+
+    monkeypatch.setattr(os, "statvfs", read_only)
+    with pytest.raises(kls.ExportRefused) as err, kls._refuse_when_the_disk_is_full(tmp_path):
+        raise _io_error_on_write()
+    assert err.value.status == 507 and "read-only" in str(err.value)
+    # No folder named: nothing to ask the drive about, so nothing is renamed.
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"), kls._refuse_when_the_disk_is_full():
+        raise _io_error_on_write()
+    # A writable drive: the same bare error may be a failing disk or a quota SQLite cannot name.
+    monkeypatch.setattr(os, "statvfs", real)
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"), kls._refuse_when_the_disk_is_full(tmp_path):
+        raise _io_error_on_write()
+    # A different extended code on a read-only drive is not a write refusal.
+    monkeypatch.setattr(os, "statvfs", read_only)
+    other = sqlite3.OperationalError("disk I/O error")
+    other.sqlite_errorcode = kls._SQLITE_IOERR_WRITE + 1
+    with pytest.raises(sqlite3.OperationalError), kls._refuse_when_the_disk_is_full(tmp_path):
+        raise other
+
+
 @pytest.mark.parametrize(("code", "words"), _NO_ROOM_CASES)
 def test_the_drive_filling_in_the_middle_of_the_archive_is_a_507_and_leaves_nothing(
     dbs, data_dir, monkeypatch, code, words
@@ -569,8 +606,9 @@ def test_with_no_data_folder_the_archive_is_watched_on_the_temp_folders_drive(
 ):
     """The archive goes to the OS temp folder when there is no data folder, and that drive is the
     one to watch. It was watched through the data folder, which is None in exactly this case: no
-    watch at all. The drive below is at its reserve for the temp folder only, and the up-front
-    check is off, so only the between-batches watch can stop the archive."""
+    watch at all. Every drive reads as at its reserve below and the up-front check is off, so only
+    the between-batches watch can stop the archive; that the temp folder's own path was asked
+    about is what shows it was watched there."""
     import collections
 
     import src.api.diagnostics.keywords as kw_mod

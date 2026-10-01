@@ -664,9 +664,12 @@ _MEMBER_RSS_NEED_MB: dict[str, float] = {
 #: text), and, for an ESTIMATED need only, the need plus the memory stop's floor against the memory
 #: available NOW. The second is a default taken under "size from the machine", not ruled by R27
 #: (OPEN_QUEUE): it is for a machine busier than its total says. On bundle 091717's own numbers it
-#: ADMITS the digest (1,426 MiB needed against 2,280 MiB available): that run was killed because
-#: the old builder needed 3,322.8 MiB, which the first check admitted and the second never saw (a
-#: fixed constant is not an estimate).
+#: ADMITS the digest (1,426 MiB needed against 2,280 MiB available): that run was killed by the
+#: OLD, unbounded builder, which needed more than the machine had. The old gate's constant
+#: (3,322.8 MiB, one 4 GB instance's reading at 11 M keywords, not what 091717 needed) sat under
+#: half of 091717's total RAM (3,386 MiB), so the gate admitted it, and a fixed constant cannot see
+#: a bigger instance. The second check did not exist then: it is new, and the bounded builder is
+#: what answers that kill.
 _MEMBER_RAM_SHARE = 0.5
 
 

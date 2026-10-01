@@ -62,8 +62,9 @@
   branch in `ram_declined_reason` to remove. **What it protects, stated exactly:** a machine that is busy at the moment the digest
   starts, where the memory available now, not the total, is what the export competes for. It would NOT have declined bundle
   `091717`'s own machine under the bounded code (need about 1,170 MiB plus the floor, about 1,426 MiB, against 2,280 MiB available):
-  that kill was the OLD builder, a static 3,322.8 MiB constant which the second check never applied to, and the bounded code is
-  what answers it. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
+  that kill was the OLD, unbounded builder, which needed more than the machine had (the old gate's 3,322.8 MiB was one 4 GB
+  instance's reading at 11 M keywords, under half of that machine's RAM, so the gate admitted it; the second check is new in this
+  PR), and the bounded code is what answers it. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
   (`EXPORT_ENTRY_BYTES` 2,750 B = the 2,500 B per exported keyword MEASURED by peak resident size on synthetic databases of 100,000,
   205,000 and 410,000 entries, the last being the shape of the largest instance's export, plus ten per cent;
   `EXPORT_FIXED_BYTES` 60 MiB against a measured intercept of 38 MiB; both are pinned BY VALUE against that resident-size measurement, and tracemalloc tests bound them from below, because tracemalloc cannot see the allocator's overhead);
@@ -88,7 +89,9 @@
   folder both the spill and the archive go to the OS temp folder (after a sweep of stale scratch files) and ONE watch covers
   that folder for both, between batches too; the texts say «the drive the export writes to». Creating a scratch file on a full
   drive, a disk quota (`EDQUOT`) or a read-only drive (`EROFS`), and the same errors in the middle of writing the archive, are a
-  507 that names the window to ask for, not a 500. Scratch
+  507 (the full-drive and quota texts say to ask for a smaller window; the read-only text says the folder must be writable), not a
+  500. SQLite reports a quota that fails while it writes the ranking's spill as a bare «disk I/O error», which cannot be told from
+  a failing drive, so that one case stays a 500 (a drive that is read-only is recognised from the drive itself). Scratch
   names come from `mkstemp` (two exports in one millisecond used to share one), a spill that fails while being set up removes its
   file and closes its connection, and the archive response deletes its file however the exchange ends (a malformed or unsatisfiable
   `Range` request made Starlette skip its background task and left the archive on disk). A 12 h sweep removes a killed

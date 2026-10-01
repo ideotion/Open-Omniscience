@@ -102,13 +102,14 @@ FAMILY_SHARE = 0.10
 #: scans of the file, and SQLite's own default (2 MiB) makes each one re-read the pages from disk;
 #: more than this would add to a working set the plan has already sized. The cache is allocated
 #: as pages are touched, so a spill that stays small uses less. It is a ceiling chosen for that
-#: margin, not a separately measured figure: ``EXPORT_FIXED_BYTES`` (60 MiB) is the room it sits
-#: in.
+#: margin, not a measured figure, and the gate's estimate (``estimate_export_need``) does not
+#: count the ranking, so this cache is outside it: it is the one place the plan's memory share
+#: pays for.
 SPILL_CACHE_KIB = 32 * 1024
 
 #: Ids per ``IN (...)`` list in the export's queries. What it protects: a statement stays near
 #: 8 KB of SQL (ids of up to nine digits), far under SQLite's statement-length limit (1 MB by
-#: default) and short enough that the planner keeps using the primary-key index. It is the length
+#: default). It is the length
 #: every reader of this file used before the export was sized, and ``in_batches`` always cuts to it
 #: whatever the batch is: a larger batch changes how many entries are held between two checks,
 #: never how long a statement is.
@@ -178,8 +179,7 @@ def memory_plan(available_bytes: float | None) -> dict[str, int]:
         # what is available. A batch is the unit between two checks of the memory stop and the
         # disk watch, and the number of entries held at once. The floor is one full IN list. The
         # 8,000 ceiling holds a batch to about 16 MB of entries and keeps a check coming every
-        # few thousand entries on any machine, so a run is stopped within about a second of the
-        # machine running short. It has nothing to do with the length of an IN list, which
+        # few thousand entries on any machine. It has nothing to do with the length of an IN list, which
         # ``in_batches`` cuts to ``IN_LIST_IDS`` whatever the batch is.
         batch = max(IN_LIST_IDS, min(8000, int(available_bytes * 0.002 / 2048)))
         family_rows = max(MIN_FAMILY_ROWS, int(available_bytes * FAMILY_SHARE / FAMILY_ROW_BYTES))
@@ -485,18 +485,49 @@ class SuspectBoard:
 # --------------------------------------------------------------------------- ranking
 
 
+#: SQLite's extended result code for a write that failed with an errno it has no word for
+#: (``SQLITE_IOERR_WRITE``: its unix layer says ``disk I/O error`` for a quota or a drive that
+#: turned read-only, and ``database or disk is full`` only for ENOSPC). The constant exists from
+#: Python 3.11; 778 is its value, which is part of SQLite's file format promise.
+_SQLITE_IOERR_WRITE = getattr(sqlite3, "SQLITE_IOERR_WRITE", 778)
+
+
+def _drive_is_read_only(directory: Path | str) -> bool:
+    """True when the file system holding ``directory`` is mounted read-only (``statvfs``; a
+    platform without it, or a folder it cannot read, says False: nothing is guessed)."""
+    statvfs = getattr(os, "statvfs", None)
+    flag = getattr(os, "ST_RDONLY", None)
+    if statvfs is None or flag is None:
+        return False
+    try:
+        return bool(statvfs(str(directory)).f_flag & flag)
+    except OSError:
+        return False
+
+
 @contextlib.contextmanager
-def _refuse_when_the_disk_is_full():
+def _refuse_when_the_disk_is_full(directory: Path | str | None = None):
     """SQLite's own "database or disk is full" (and "attempt to write a readonly database") is the
     drive answering, not a fault of ours: say so, as the same refusal (HTTP 507) the free-space
-    checks give. Any other SQLite error is raised as itself."""
+    checks give. A bare "disk I/O error" on a write (``SQLITE_IOERR_WRITE``) is the same answer
+    only when the drive says so itself: ``directory``'s file system is read-only. Without that it
+    could as well be a failing drive or a quota SQLite cannot name, so it is raised as itself.
+    Any other SQLite error is raised as itself."""
     try:
         yield
     except sqlite3.OperationalError as exc:
         said = str(exc).lower()
         if "full" in said:
             code = errno.ENOSPC
-        elif "readonly" in said or "read-only" in said:
+        elif (
+            "readonly" in said
+            or "read-only" in said
+            or (
+                getattr(exc, "sqlite_errorcode", None) == _SQLITE_IOERR_WRITE
+                and directory is not None
+                and _drive_is_read_only(directory)
+            )
+        ):
             code = errno.EROFS
         else:
             raise
@@ -527,15 +558,15 @@ def no_room_refusal(exc: OSError, doing: str) -> ExportRefused | None:
         return None
     if code == errno.EROFS:
         return ExportRefused(
-            f"the drive the export writes to is read-only while the export was {doing}, so it "
-            "stopped and removed its scratch file. The data folder (or the system's temp folder, "
-            "when there is none) has to be writable for an export.",
+            f"the drive the export writes to turned out to be read-only while the export was "
+            f"{doing}, so it stopped and removed what it had written. The data folder (or the "
+            "system's temp folder, when there is none) has to be writable for an export.",
             status=507,
         )
     why = "has no room left in your disk quota" if code != errno.ENOSPC else "ran out of room"
     return ExportRefused(
         f"the drive the export writes to {why} while the export was {doing}, so it stopped and "
-        "removed its scratch file. Free some space, or ask for a smaller window (per_lang=...).",
+        "removed what it had written. Free some space, or ask for a smaller window (per_lang=...).",
         status=507,
     )
 
@@ -654,7 +685,7 @@ class Ranker:
         name = str(self._path)
         con: sqlite3.Connection | None = None
         try:
-            with _refuse_when_the_disk_is_full():
+            with _refuse_when_the_disk_is_full(self._spill_dir):
                 con = sqlite3.connect(name, isolation_level=None, check_same_thread=False)
                 for pragma in ("journal_mode=OFF", "synchronous=OFF", "locking_mode=EXCLUSIVE",
                                f"cache_size=-{SPILL_CACHE_KIB}"):
@@ -689,7 +720,7 @@ class Ranker:
 
     def _flush(self) -> None:
         if self._buf and self._con is not None:
-            with _refuse_when_the_disk_is_full():
+            with _refuse_when_the_disk_is_full(self._spill_dir):
                 self._con.execute("BEGIN")
                 self._con.executemany("INSERT INTO kw VALUES (?,?,?,?,?,?,?,?)", self._buf)
                 self._con.execute("COMMIT")
@@ -702,7 +733,7 @@ class Ranker:
         self._flush()
         con = self._con
         assert con is not None
-        with _refuse_when_the_disk_is_full():
+        with _refuse_when_the_disk_is_full(self._spill_dir):
             cut = con.execute(
                 "SELECT has_m, m, kid FROM kw WHERE lang=? "
                 "ORDER BY has_m DESC, m DESC, kid ASC LIMIT 1 OFFSET ?",

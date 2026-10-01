@@ -25,7 +25,9 @@ prevents is the seam eroding by addition, which is how a seam dies.
 from __future__ import annotations
 
 import ast
+import io
 import re
+import tokenize
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -344,8 +346,9 @@ _EXPORT_REAL_READS: dict[str, int] = {
 
 
 def _real_reads(source: str) -> int:
-    """Names of the mentions table in ``source`` that are neither in a docstring, a comment, an
-    import nor the right-hand side of the ``MENTIONS_TABLE = ...`` definition."""
+    """Names of the mentions table in ``source`` that are neither in a docstring, a comment (a whole
+    line or the end of a line), an import nor the right-hand side of the ``MENTIONS_TABLE = ...``
+    definition. A ``#`` inside a string is not a comment, so a query that carries one still counts."""
     tree = ast.parse(source)
     skip: set[int] = set()
     for node in ast.walk(tree):
@@ -362,10 +365,15 @@ def _real_reads(source: str) -> int:
             and any(isinstance(t, ast.Name) and t.id == "MENTIONS_TABLE" for t in node.targets)
         ):
             skip.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    comment_at = {
+        tok.start[0]: tok.start[1]
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline)
+        if tok.type == tokenize.COMMENT
+    }
     return sum(
-        len(_RAW_RE.findall(line))
+        len(_RAW_RE.findall(line[: comment_at.get(number, len(line))]))
         for number, line in enumerate(source.splitlines(), start=1)
-        if number not in skip and not line.lstrip().startswith("#")
+        if number not in skip
     )
 
 
@@ -379,9 +387,11 @@ def test_the_real_read_counter_skips_what_is_not_a_read():
         '    """Docstring naming MENTIONS_TABLE."""\n'
         '    return c.execute(f"SELECT 1 FROM {MENTIONS_TABLE}")\n'
         'def raw(c):\n'
-        '    return c.execute("SELECT 1 FROM keyword_mentions")\n'
+        '    return c.execute("SELECT 1 FROM keyword_mentions")  # trailing note naming keyword_mentions\n'
+        'def hashy(c):\n'
+        '    return c.execute("SELECT 1 FROM keyword_mentions WHERE note = \'#\'")\n'
     )
-    assert _real_reads(source) == 2
+    assert _real_reads(source) == 3
 
 
 def test_the_export_files_carry_exactly_the_reads_recorded():
