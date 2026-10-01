@@ -159,9 +159,13 @@ def test_a_memory_stopped_run_keeps_the_whole_cached_feed_even_when_partial(monk
     out = service.refresh_briefing(object())
     assert [c["title"] for c in out["cards"]] == ["a", "b"]
     assert out["kept_reason"] == "memory_short", "the caller must be able to tell nothing was refreshed"
-    assert [c["title"] for c in json.loads(path.read_text("utf-8"))["cards"]] == ["a", "b"], (
+    on_disk = json.loads(path.read_text("utf-8"))
+    assert [c["title"] for c in on_disk["cards"]] == ["a", "b"], (
         "the partial set replaced the cached feed on disk"
     )
+    # Home reads the cache, not this return value: the marker must be in the file and reach the view.
+    assert on_disk["kept_reason"] == "memory_short"
+    assert service._present({**on_disk, "cards": []}, include_dismissed=False)["kept_reason"] == "memory_short"
 
 
 def test_a_memory_stopped_run_with_no_cache_still_writes_what_it_has(monkeypatch, tmp_path):
@@ -174,10 +178,17 @@ def test_a_memory_stopped_run_with_no_cache_still_writes_what_it_has(monkeypatch
         service, "run_all_bounded",
         lambda *a, **k: ([_Card("only-one")], {"truncated": True, "truncated_reason": "memory_short"}),
     )
+    warmed: list[int] = []
+    monkeypatch.setattr(ins, "warm_cache", lambda _s: warmed.append(1))
     out = service.refresh_briefing(object())
     assert [c["title"] for c in out["cards"]] == ["only-one"], (
         "with nothing cached, something must beat an empty Home"
     )
+    # A short feed must not read as a complete one: the cache says so, and so does the view.
+    assert out["incomplete_reason"] == "memory_short"
+    assert json.loads(path.read_text("utf-8"))["incomplete_reason"] == "memory_short"
+    assert service._present(out, include_dismissed=False)["incomplete_reason"] == "memory_short"
+    assert warmed == [], "the warm-up ran straight after a stop for lack of memory"
 
 
 def test_a_partial_run_stopped_by_a_spent_budget_is_not_widened_by_this_change(monkeypatch, tmp_path):
@@ -189,6 +200,16 @@ def test_a_partial_run_stopped_by_a_spent_budget_is_not_widened_by_this_change(m
     )
     out = service.refresh_briefing(object())
     assert [c["title"] for c in out["cards"]] == ["new"]
+    assert out["incomplete_reason"] == "deadline", "a partial set from a spent budget is marked too"
+
+
+def test_a_completed_run_carries_no_stop_marker(monkeypatch, tmp_path):
+    path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a"}])
+    monkeypatch.setattr(service, "run_all_bounded", lambda *a, **k: ([_Card("new")], {"truncated": False}))
+    out = service.refresh_briefing(object())
+    assert "incomplete_reason" not in out and "kept_reason" not in out
+    view = service._present(json.loads(path.read_text("utf-8")), include_dismissed=False)
+    assert "incomplete_reason" not in view and "kept_reason" not in view
 
 
 # ------------------------------------------------------------------------------- warm_cache
@@ -252,6 +273,9 @@ def test_a_read_stopped_part_way_is_skipped_and_nothing_is_cached(monkeypatch, t
         s.rollback()
         s.close()
     assert len(out["warmed"]) == 1, "the spec that was not stopped must still be warmed"
+    key = ins._bind_key(s, ins.trending_windows_key(
+        country=None, kind=None, limit=ins.WARM_TRENDING_HOME[0], series_top=ins.WARM_TRENDING_HOME[1]))
+    assert ins._read_cache.get(key) is None, "an aborted read must leave nothing in the cache"
 
 
 def test_warming_gets_a_longer_time_budget_than_a_request_but_keeps_the_memory_stop(monkeypatch):
@@ -262,3 +286,16 @@ def test_warming_gets_a_longer_time_budget_than_a_request_but_keeps_the_memory_s
     assert ins._warm_deadline_seconds() == 90.0
     monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "0")
     assert ins._warm_deadline_seconds() is None, "a disabled deadline stays disabled"
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "nan", "inf", "abc", ""])
+def test_a_warm_deadline_that_would_disarm_the_stop_falls_back_to_the_default(monkeypatch, value):
+    monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "60")
+    monkeypatch.setenv("OO_WARM_DEADLINE_S", value)
+    assert ins._warm_deadline_seconds() == 300.0
+
+
+def test_a_disabled_endpoint_deadline_leaves_the_warm_deadline_disabled(monkeypatch):
+    monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "0")
+    monkeypatch.setenv("OO_WARM_DEADLINE_S", "90")
+    assert ins._warm_deadline_seconds() is None

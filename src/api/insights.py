@@ -2478,9 +2478,12 @@ def _warm_deadline_seconds() -> float | None:
     if base <= 0:
         return None
     try:
-        return float(_os.environ.get("OO_WARM_DEADLINE_S", "")) or base * 5
+        value = float(_os.environ.get("OO_WARM_DEADLINE_S", ""))
     except ValueError:
         return base * 5
+    # Only a positive, finite number overrides: 0, a negative or nan would otherwise disarm
+    # the deadline, and the memory stop rides on it.
+    return value if 0 < value < float("inf") else base * 5
 
 
 def warm_cache(db: Session) -> dict:

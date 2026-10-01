@@ -2064,8 +2064,9 @@ class BackgroundScheduler:
                 try:
                     with session_scope() as session:
                         refreshed = refresh_briefing(session)
-                        # A refresh that kept the cached feed (memory short) did not act:
-                        # a ledger line saying N cards were surfaced would be false.
+                        # A refresh that kept the cached feed (memory short, or an enclosing
+                        # deadline that left no cards) did not act: a ledger line saying N cards
+                        # were surfaced would be false. (The deadline case used to be ledgered.)
                         if not (isinstance(refreshed, dict) and refreshed.get("kept_reason")):
                             _activity("briefing", refreshed)
                 finally:

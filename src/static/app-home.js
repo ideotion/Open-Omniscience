@@ -1229,7 +1229,17 @@
       // keep showing them under a slim "updating…" banner so Home is never blank.
       const refreshing = !!(data.refreshing || data.building);
       if (refreshing) _scheduleBriefRepoll(); else _cancelBriefRepoll();
-      const banner = refreshing ? briefProgressHtml(data, t) : "";
+      // The last refresh stopped early (diagnostics rank 4): say whether cards are missing
+      // from this feed or whether this is the previous feed, and why -- a short or old feed
+      // must not read as a complete, current one. Absent when the last refresh finished.
+      const stopWhy = (r) => t(r === "memory_short" ? "the machine was short of memory" : "it ran out of time");
+      const stopNote = data.kept_reason
+        ? tf("This is the previous feed: the last refresh stopped early because {why}.", {why: stopWhy(data.kept_reason)})
+        : data.incomplete_reason
+        ? tf("Some cards may be missing: the last refresh stopped early because {why}.", {why: stopWhy(data.incomplete_reason)})
+        : "";
+      const banner = (refreshing ? briefProgressHtml(data, t) : "")
+        + (stopNote ? `<p class="card-caveat" id="brief-stopped">${esc(stopNote)}</p>` : "");
       if (!data.buckets || !data.buckets.length) {
         if (refreshing) { feed.innerHTML = banner; return; }
         // ONE frame, not nine fragments. This paragraph was nine text nodes, because

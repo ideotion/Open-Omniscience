@@ -310,7 +310,15 @@ def refresh_briefing(session, on_progress=None) -> dict:
             )
             # Said in the payload, not only in a log: the caller must not record this as a
             # refresh that surfaced cards (the Activity Ledger would claim one).
-            return {**existing, "kept_reason": "memory_short" if memory_stopped else "deadline"}
+            kept = {**existing, "kept_reason": "memory_short" if memory_stopped else "deadline"}
+            # Written into the cache as well, so Home (which reads the cache, not this return
+            # value) can say that the feed it shows is the previous one and why. The next
+            # refresh that completes replaces the whole payload, marker included.
+            try:
+                _write_cache(kept)
+            except OSError:
+                _LOG.warning("could not record that the briefing refresh kept the cache", exc_info=True)
+            return kept
 
     payload = {
         "version": CACHE_VERSION,
@@ -323,21 +331,33 @@ def refresh_briefing(session, on_progress=None) -> dict:
         "article_count": _article_count(session),
         "cards": _sorted(cards),
     }
-    path = _cache_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    if stats.get("truncated"):
+        # A feed that is missing the producers the run never reached says so, in the cache
+        # and in the view: a short feed must not read as a complete one.
+        payload["incomplete_reason"] = "memory_short" if memory_stopped else "deadline"
+    _write_cache(payload)
     _LOG.info("briefing refreshed: %d cards", len(cards))
     # Warm the heavy whole-corpus read cache (top / trending / map) in this same
     # background pass, so the Home + Insights surfaces are instant and never trigger
     # a cold multi-second aggregation in the UI (perf, field report 2026-06-18).
-    try:
-        from src.api.insights import warm_cache
+    #
+    # Not after a memory stop: the warm-up reads more of the corpus, and the run just
+    # stopped because the machine was nearly out of memory.
+    if not memory_stopped:
+        try:
+            from src.api.insights import warm_cache
 
-        warm_cache(session)
-    except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
-        _LOG.warning("insights cache warm failed; briefing continues", exc_info=True)
+            warm_cache(session)
+        except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
+            _LOG.warning("insights cache warm failed; briefing continues", exc_info=True)
     return payload
+
+
+def _write_cache(payload: dict) -> None:
+    path = _cache_path()
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(path)
 
 
 def _read_cache() -> dict | None:
@@ -367,7 +387,7 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
         items = [c for c in visible if c["bucket"] == b]
         if items:
             buckets.append({"bucket": b, "label": BUCKET_LABELS[b], "cards": items})
-    return {
+    view = {
         "generated_at": payload.get("generated_at"),
         "count": len(visible),
         "total": len(cards),
@@ -375,6 +395,13 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
         "buckets": buckets,
         "cards": visible,
     }
+    # Why this feed may not be the whole picture (diagnostics rank 4): the last refresh
+    # stopped early, either leaving cards out ("incomplete") or leaving this earlier feed
+    # in place ("kept"). Absent when the last refresh completed.
+    for key in ("incomplete_reason", "kept_reason"):
+        if payload.get(key) in ("memory_short", "deadline"):
+            view[key] = payload[key]
+    return view
 
 
 def get_briefing(
