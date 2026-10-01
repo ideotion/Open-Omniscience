@@ -174,7 +174,35 @@ What this adds to the clause, none of it a new bar:
 3. `checked.with_judging_attempt` and `basis: "measured"` are not evidence that a pass ran on that
    build: the backup merge copies attempt rows unchanged, so a judgement made on another instance
    counts. Read the report's verdict counts with that in mind (on `085639` and `091717` the
-   2,049 and 2,195 "measured" rows all carry the curated stamp).
+   2,049 and 2,195 "measured" rows all carry the curated stamp; an export from a build with
+   PR #1281 reads such a row `curated`, item 4).
+4. **PR #1281 (merged 2026-10-01 05:45 UTC) makes the inversions that already exist visible and
+   withdraws the ones the field showed.** *At boot* (`auto_repair_inversions`, called from
+   `run_deferred_startup`; `OO_QUALIFICATION_AUTO_REPAIR=0` switches it off and only the test
+   configuration sets it) a source whose newest judging attempt says `disqualified` and whose
+   live verdict is the catalogue's own stamp (`oo-curated-catalog-1`) or nothing (`unqualified`)
+   goes back to `disqualified`. The plan, with the status and stamp each source is about to lose,
+   is written to the `app_state` store before anything changes, so that a maintainer can undo it
+   (`scripts/repair_qualification_inversions.py --revert-repairs`, which also holds the domain
+   out of the next boot). A verdict measured on that install, or taken from an earlier import,
+   is never changed by an imported history on its own (rule 12 = b): such a row stays in the
+   report (`not_auto_repaired_measured_here_total`) and waits for the install's own re-check, so
+   the first shape of item 2 stays reported, while the second shape's result (a curated
+   `qualified` stamp whose newest judging attempt is `disqualified`) is what the boot repair
+   withdraws at the next boot. It only withdraws sources from collection: restoring `qualified`
+   stays operator-run. All five inversions of this round carried the catalogue's own stamp
+   (above), so the repair covers each of them; it is unit-proved only, no instance has yet
+   booted this build, and its field proof is this row's, as the merge fix's is.
+   *The integrity member* (`qualification-integrity.json`) gains `checked.last_attempt_at`,
+   `last_judging_attempt_at`, `attempts_last_24h` and `judging_attempts_last_24h`, a
+   `live_stamp` (`none`, `catalogue` or `measured`) on every inverted row,
+   `auto_repairable_total` and `not_auto_repaired_total` with its reasons, and every automatic
+   repair made (`repaired_total`, `repairs_unconfirmed`, `repair_runs`, `last_repair_at`); its
+   caveat says the timestamps cannot tell an attempt this instance's engine made from one copied
+   in by an import, so they do not turn item 3's warning into a proof. *The qualification
+   export* (`source-qualification-export.json`) now gives a row whose live stamp is the
+   catalogue's `basis: "curated"` even when judging attempts sit beside it, and
+   `basis.curated_stamp_with_judging_history` counts those rows apart.
 
 **The cheaper substitute, still available.** A *small* committed backup demonstrates (1) and
 (3) in minutes; only (2) genuinely needs the full corpus. This split was **proposed and
