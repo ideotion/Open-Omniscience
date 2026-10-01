@@ -48,6 +48,12 @@ DEFAULT_WINDOW_DAYS: int = 7
 #: resolution as the one the soak window already reads beside it.
 SAMPLE_INTERVAL_S: float = 3600.0
 
+#: How many hours with no sign of life separate two stretches of the run. A running lane
+#: leaves a sign in almost every hour (changes it stored, the hourly size sample, a walk
+#: request), so a hole this long is a stop, and a shorter quiet spell is not seen as one.
+#: Stated in the block, not hidden: it is what the figure can and cannot tell apart.
+QUIET_HOURS_BEFORE_A_STOP: int = 3
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -262,6 +268,154 @@ def entity_counts(lane: Any) -> dict[str, Any]:
     }
 
 
+def _hour_floor(value: datetime) -> datetime:
+    return value.replace(minute=0, second=0, microsecond=0)
+
+
+def run_clock(
+    lane: Any,
+    *,
+    window_days: int,
+    now: datetime,
+    bar_hours: float | None = None,
+) -> dict[str, Any]:
+    """How long the lane has actually been running, from rows it wrote, across restarts.
+
+    THE SOAK WINDOW'S CLOCK IS ONE PROCESS'S UPTIME, so a restart (a crash, an update) reads
+    as zero hours although the lane's rows carry on. This reads the run from the rows
+    instead: an hour counts when THIS INSTALL stored or requested something in it -- a
+    change recorded (``recorded_at``), a size sample, a walk request -- and NEVER by a
+    change's own ``occurred_at``, because a stream resumed after downtime replays the hours
+    it missed, and counting those would mark the offline hours as active.
+
+    A STRETCH is a run of such hours with no more than :data:`QUIET_HOURS_BEFORE_A_STOP`
+    silent hours inside it; the holes between stretches are listed as STOPS. There is no
+    verdict: ``reaches_bar`` says only whether the stretches together are as long as the
+    bar, which is a fact about their length.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    from src.versioned.models import VersionedChange, VersionedSizeSample
+
+    start, _labels = _days(window_days, now)
+    hours: set[datetime] = set()
+    sources: dict[str, int] = {}
+
+    def _take(name: str, values: Any) -> None:
+        n = 0
+        for raw in values:
+            at = _aware(raw)
+            if at is not None:
+                hours.add(_hour_floor(at))
+                n += 1
+        sources[name] = n
+
+    # One bucket per hour in SQL, so a busy lane costs one row per hour and not one per
+    # change. ``strftime`` on the stored text, the way ``changes_per_day`` uses ``date``.
+    stamp = func.strftime("%Y-%m-%dT%H:00:00", VersionedChange.recorded_at)
+    changes = lane.execute(
+        select(stamp).where(VersionedChange.recorded_at >= start).group_by(stamp)
+    ).scalars().all()
+    _take("changes_recorded", (datetime.fromisoformat(h).replace(tzinfo=UTC) for h in changes if h))
+    _take(
+        "size_samples",
+        lane.execute(
+            select(VersionedSizeSample.measured_at).where(VersionedSizeSample.measured_at >= start)
+        ).scalars().all(),
+    )
+    # The walk's table is absent from a lane file a 0.4 build wrote, until create_schema runs.
+    from src.wiki.lane_models import WikiWalkSample
+
+    if sa_inspect(lane.connection()).has_table(WikiWalkSample.__tablename__):
+        _take(
+            "walk_requests",
+            lane.execute(
+                select(WikiWalkSample.hour_start).where(
+                    WikiWalkSample.hour_start >= start, WikiWalkSample.requests > 0
+                )
+            ).scalars().all(),
+        )
+    else:
+        sources["walk_requests"] = 0
+
+    base: dict[str, Any] = {
+        "bar_hours": bar_hours,
+        "window_starts_at": start.isoformat(),
+        "quiet_hours_before_a_stop": QUIET_HOURS_BEFORE_A_STOP,
+        "evidence": sources,
+        "method": (
+            "Hours in which THIS INSTALL stored or requested something: versioned_changes "
+            "by recorded_at, the hourly size samples, and walk hours with a request. Never "
+            "by a change's own time, so a stream resumed after downtime cannot mark the "
+            f"offline hours as active. A stretch ends when {QUIET_HOURS_BEFORE_A_STOP} or more "
+            "hours pass with none of these; the holes between stretches are the stops."
+        ),
+        "caveat": (
+            "A stretch is measured from its first evidence hour to the end of its last, so a "
+            "stop is only seen to within a few hours and a stop shorter than that is not seen. "
+            "The window reaches back a fixed number of days; a run older than that is cut at "
+            "its start. A stop says the lane showed no sign of life, not why: a crash, an "
+            "update, airplane mode and a closed app all look the same here."
+        ),
+    }
+    if not hours:
+        return {
+            **base,
+            "measured": False,
+            "reason": (
+                "no sign of the lane running in this window: no change recorded, no size "
+                "sample, no walk request. This is not a run of zero hours; it is no reading."
+            ),
+        }
+    ordered = sorted(hours)
+    one = timedelta(hours=1)
+    limit = timedelta(hours=QUIET_HOURS_BEFORE_A_STOP)
+    stretches: list[tuple[datetime, datetime]] = []
+    begin = prev = ordered[0]
+    for h in ordered[1:]:
+        if h - prev > limit:
+            stretches.append((begin, prev + one))
+            begin = h
+        prev = h
+    stretches.append((begin, prev + one))
+    stops = [
+        {
+            "from": a_end.isoformat(),
+            "to": b_start.isoformat(),
+            "hours": round((b_start - a_end).total_seconds() / 3600.0, 1),
+        }
+        for (_a, a_end), (b_start, _b) in zip(stretches, stretches[1:], strict=False)
+    ]
+    covered = sum((e - b).total_seconds() for b, e in stretches) / 3600.0
+    last_end = stretches[-1][1]
+    silent_for = (now - last_end).total_seconds() / 3600.0
+    idle = silent_for > 0 and (now - prev).total_seconds() > limit.total_seconds()
+    out: dict[str, Any] = {
+        **base,
+        "measured": True,
+        "first_activity_at": ordered[0].isoformat(),
+        "last_activity_at": prev.isoformat(),
+        "stretches_n": len(stretches),
+        "stretches": [
+            {"from": b.isoformat(), "to": e.isoformat(), "hours": round((e - b).total_seconds() / 3600.0, 1)}
+            for b, e in stretches[-20:]
+        ],
+        "stretches_truncated": len(stretches) > 20,
+        "stops": stops[-20:],
+        "stops_n": len(stops),
+        "evidence_hours": len(ordered),
+        "hours": round(covered, 1),
+        "span_hours": round((last_end - ordered[0]).total_seconds() / 3600.0, 1),
+        "may_be_cut_by_window": ordered[0] <= _hour_floor(start) + one,
+        "idle_now": (
+            {"since": last_end.isoformat(), "hours": round(silent_for, 1)} if idle else None
+        ),
+    }
+    if bar_hours is not None:
+        out["reaches_bar"] = covered >= float(bar_hours)
+    return out
+
+
 def lane_counters(
     lane: Any,
     *,
@@ -269,8 +423,9 @@ def lane_counters(
     window_days: int = DEFAULT_WINDOW_DAYS,
     now: datetime | None = None,
     file_bytes: int | None = None,
+    bar_hours: float | None = None,
 ) -> dict[str, Any]:
-    """The whole reading: rows/day, bytes/day, gap history, entity counts.
+    """The whole reading: rows/day, bytes/day, gap history, entity counts, the run clock.
 
     Each block carries its own ``measured`` and its own method, exactly as the soak
     window's blocks do, and this function composes them without a verdict. What the
@@ -284,6 +439,9 @@ def lane_counters(
         "rows_per_day": changes_per_day(lane, window_days=window_days, now=at),
         "bytes_per_day": bytes_per_day(lane, window_days=window_days, now=at),
         "gaps": gap_history(lane, window_days=window_days, now=at),
+        # How long the lane has run, across restarts: the soak window's own clock is one
+        # process's uptime, which a crash or an update resets while these rows carry on.
+        "run": run_clock(lane, window_days=window_days, now=at, bar_hours=bar_hours),
         "entities": entity_counts(lane),
         # Q701 = c's walk: pages seen of each edition's own article count, and the
         # measured throughput per transport (S05-06's S2 + S3). The SAME artifact the

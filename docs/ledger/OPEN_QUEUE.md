@@ -16245,9 +16245,10 @@ maintainer as a card.
   the lane's data survives a crash and an update (integrity ok every time, nothing lost or duplicated, the walk's bookmark equal
   to its stored pages, the stream resumed from the newest stored token). **What restarts:** the soak window's clock
   (`src/monitoring/soak_window.py`, process uptime) and its process-cumulative blocks, and the lane itself, because the app boots
-  offline (airplane mode at boot, a non-negotiable) and the operator crosses online again with the one consent. **STILL OWED:** a
-  run clock read from the lane's own rows (active hours counted by when this install stored or requested something, never by a
-  change's own timestamp, so a replay after downtime cannot mark offline hours active; the stretches between restarts listed; no
-  verdict), shown in what the operator already sends at 72 hours, plus a visible «the Wikipedia run stopped at the restart» line.
+  offline (airplane mode at boot, a non-negotiable) and the operator crosses online again with the one consent. **BUILT 2026-10-01 (the run-clock
+  PR):** a run clock read from the lane's own rows (`wiki_lane.run` in the soak-window report; hours counted by when this
+  install stored or requested something, never by a change's own timestamp, so a replay after downtime cannot mark offline hours
+  active; the stretches between restarts listed as stops; no verdict), so the 72 hours need no new step from the operator, and a
+  Living sources → Wikipedia «Run so far» row with a «Stopped» line when the lane has gone quiet.
   **OPEN, put to the maintainer as question 21:** whether the run goes back online by itself after an abnormal restart (an opt-in
   setting amending the airplane-at-boot ruling) or keeps one click per restart; the build is for the second until it is answered.

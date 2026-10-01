@@ -1099,6 +1099,18 @@ same connection and with the same waits as the walk: airplane mode, or protected
 mode with no usable proxy, makes it wait (it never goes direct), and a wiki that asks
 it to slow down is asked again after a pause that doubles up to an hour.
 
+**A crash or an update does not lose the run.** Everything the lane stores is written in
+small all-or-nothing steps, so a crash (or killing the app) loses at most the step in progress; the
+walk resumes from its bookmark and the stream from the last position it stored. What does
+stop is the lane itself: the app always starts **offline**, so after a restart nothing is
+fetched until you go online again with the airplane button. Nothing is lost while it waits
+(the stream's own history reaches back about a week). Living sources → Wikipedia → Live
+stream shows **Run so far** (hours in which this install stored or requested something,
+counted across restarts, with the number of stops) and, when the lane has gone quiet, a
+**Stopped** line with how long and since when. The same figures ride the soak-window
+report as `wiki_lane.run`. A stop says the lane showed no sign of life for three or more
+hours, not why: a crash, an update, airplane mode and a closed app look the same.
+
 **Searching what the lane holds:** the lane keeps a search index of the texts it
 holds, in the same file and inside the same storage budget. A changed page's
 **latest** text is indexed in full, title included. Every **older version** (a

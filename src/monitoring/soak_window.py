@@ -107,9 +107,10 @@ def _window(bar_hours: float) -> dict[str, Any]:
         "bar_hours": bar_hours,
         "reaches_bar": hours >= bar_hours,
         "note": (
-            "A restart ends the soak. Every process-cumulative counter below resets "
-            "with it, which is why they can be read against this window and only this "
-            "window."
+            "A restart ends THIS window: its clock is process uptime, and every "
+            "process-cumulative counter below resets with it, which is why they can be read "
+            "against this window and only this window. The Wikipedia lane's own run is "
+            "read from its rows instead, across restarts: wiki_lane.run."
         ),
     }
 
@@ -435,7 +436,9 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
 
     window_days = max(1, int(round(bar_hours / 24.0)) + 4)
     with lane_session("wiki") as lane:
-        out = lane_counters(lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"))
+        out = lane_counters(
+            lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"), bar_hours=bar_hours
+        )
     # MEASURED means the lane produced a reading at all. The per-block ``measured``
     # flags inside it stay exactly as ``lane_counters`` set them; flattening them into
     # one verdict here is what would let an absent growth series hide behind a present
@@ -496,7 +499,8 @@ def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[
         ),
         "caveat": (
             "Each block reports the window it actually read, and they differ. A "
-            "restart ends the soak and resets the cumulative counters. A block listed "
+            "restart ends this window and resets the cumulative counters; the Wikipedia "
+            "lane's run (wiki_lane.run) is read from its rows and does not reset. A block listed "
             "in unmeasured has no reading here — that is not the same as a reading of "
             "zero."
         ),
