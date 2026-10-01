@@ -361,8 +361,8 @@ def test_a_drain_that_raises_never_kills_the_supervisor():
 
     g = _guard(drain_fn=boom)
     _feed(g, wal=2 * GIB, n=2)
-    assert g.drain_if_due() is None
-    assert g.state()["last_drain"]["ran"] is False
+    assert g.drain_if_due() == {"error": "RuntimeError"}, "its own outcome, not None (\"not due\")"
+    assert g.state()["last_drain"]["ran"] is False and g.state()["last_drain"]["error"] == "RuntimeError"
 
 
 def test_the_drain_never_runs_while_an_exclusive_operation_owns_the_machine(monkeypatch):
@@ -1498,6 +1498,7 @@ def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypat
     connection is held (the wait ``raw_connection()`` makes)."""
     from sqlalchemy.pool import QueuePool
 
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)  # the real supervisor sets it
     g = _engaged("wal")
     started: list[int] = []
     polls: list[int] = []
@@ -1707,6 +1708,55 @@ def test_a_drain_that_failed_is_recorded_as_its_own_outcome_not_as_not_due(monke
     last = g.state()["last_drain"]
     assert last["error"] == "TimeoutError" and last["ran"] is False and last["skipped"] is None
     assert last["checkpoint_disabled"] is False
+
+
+def test_a_drain_that_raised_outside_the_checkpoint_is_recorded_as_its_own_outcome_and_the_flag_is_released(caplog):
+    """A custom drain, or anything between the claim and the checkpoint, may raise: the record
+    says so (``error``, ``ran`` False) rather than reading as "not due", it is logged at WARNING
+    (degrade loudly), and the in-flight flag is released so the next drain can run."""
+    import logging
+
+    g = _overridable()
+
+    def broken():
+        raise ValueError("the drain broke")
+
+    g._drain = broken
+    with caplog.at_level(logging.WARNING, logger="scheduler.storage_guard"):
+        assert g.drain_if_due() == {"error": "ValueError"}
+    assert any(r.levelno == logging.WARNING and "the drain failed" in r.getMessage() for r in caplog.records)
+    last = g.state()["last_drain"]
+    assert last["error"] == "ValueError" and last["ran"] is False
+    g._last_drain_mono = None
+    g._drain = lambda: {"busy": 0}
+    assert g.drain_if_due() == {"busy": 0}, "the in-flight flag was released after the failure"
+
+
+def test_an_exception_that_escapes_the_background_drain_is_logged_at_warning(monkeypatch, caplog):
+    import logging
+
+    g = _engaged("wal")
+
+    def boom():
+        raise RuntimeError("outside the drain")
+
+    monkeypatch.setattr(g, "drain_if_due", boom)
+    with caplog.at_level(logging.WARNING, logger="scheduler.storage_guard"):
+        storage_guard._drain_in_background(g, threading.Event())  # must not raise
+    assert any(r.levelno == logging.WARNING and "background drain failed" in r.getMessage() for r in caplog.records)
+
+
+def test_the_supervisor_starts_no_drain_thread_once_it_is_stopped(monkeypatch):
+    """A supervisor that outlives ``stop()`` must not start a drain thread (it would overwrite
+    ``_DRAIN_THREAD``, and the next ``stop()`` would not join the live one)."""
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)
+    g = _engaged("wal")
+    stop = threading.Event()
+    real_poll = g.poll
+    g.poll = lambda: (stop.set(), real_poll())[1]  # stopped during the tick
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    storage_guard._supervise(stop)  # one tick, then the loop ends
+    assert storage_guard._DRAIN_THREAD is None, "no drain thread was started after the stop"
 
 
 def test_an_override_does_not_stop_the_drain_and_the_drain_ends_the_cause():
