@@ -111,6 +111,7 @@ for (const [ui, draw] of Object.entries(render)) {
       const html = draw(ok({ storage_guard: Object.assign({}, GUARD, { kinds: ["wal"], override_refusal: rf }) }));
       assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), "button drawn beside a refusal: " + html);
       assert.ok(html.includes(tf(rf.frame, { free: "100 MB", floor: "128 MB" })), "the refusal is not said: " + html);
+      assert.ok(html.includes('<div class="vnote">'), "the refusal sentence lost its styled note class: " + html);
       assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
     }
   });

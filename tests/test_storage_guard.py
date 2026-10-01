@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import errno
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
@@ -706,6 +707,7 @@ def test_the_resume_endpoint_is_wired_and_really_overrides(monkeypatch):
     assert "/api/scheduler/storage-guard/resume" in {getattr(r, "path", None) for r in router.routes}
     g = _engaged("wal")
     monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: True)  # the route needs one
     payload = storage_guard_resume()
     # R112: the button FORCES collection on while the limit still holds -- the latch is the
     # truth about the condition and stays engaged; what changes is whether work may start
@@ -719,11 +721,46 @@ def test_the_resume_endpoint_answers_a_refusal_with_its_sentence(monkeypatch):
 
     g = _engaged("disk")  # free = 1 MiB: already below the floor
     monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: True)
     payload = storage_guard_resume()
     o = payload["storage_guard_override"]
     assert o["overridden"] is False and o["refused"]["kind"] == "floor"
     assert o["refused"]["frame"] == storage_guard.FRAME_OVERRIDE_STOPPED
     assert g.admit() == "disk", "a refusal changes nothing"
+
+
+def test_the_resume_endpoint_refuses_while_no_supervisor_can_watch_the_floor_and_grants_once_one_runs(monkeypatch):
+    """An override is bounded by the floor, which only the supervisor's ticks read between passes:
+    a grant with no supervisor (its start raised once) would be unbounded until the next pass
+    boundary, so the route tries to start it and refuses, changing nothing, when it still is not."""
+    from src.api.scheduler import storage_guard_resume
+
+    g = _engaged("wal")
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    asked: list[int] = []
+    up: list[int] = []
+    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: asked.append(1))
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: bool(up))
+    o = storage_guard_resume()["storage_guard_override"]
+    assert o["engaged"] is True and o["overridden"] is False
+    assert o["refused"] == {"kind": "unreadable", "frame": storage_guard.FRAME_OVERRIDE_UNREADABLE, "vars": {}}
+    assert asked == [1], "starting it was tried first"
+    assert g.admit() == "wal" and g.state()["overridden"] is False, "a refusal changes nothing"
+    up.append(1)  # it could be started (or came up since)
+    assert storage_guard_resume()["storage_guard_override"]["overridden"] is True
+    # nothing paused: nothing to override, and no supervisor is started on its account
+    quiet = _guard()
+    monkeypatch.setattr(storage_guard, "storage_guard", quiet)
+    asked.clear()
+    assert storage_guard_resume()["storage_guard_override"]["engaged"] is False and asked == []
+
+
+def test_the_refusal_note_class_is_styled_in_both_pages():
+    """The refusal sentence is drawn as ``<div class="vnote">`` (node test); an unstyled class
+    would draw it as unreadable running text."""
+    root = Path(__file__).resolve().parent.parent / "src" / "static"
+    assert ".vnote" in (root / "app.css").read_text(encoding="utf-8")
+    assert ".vnote" in (root / "taskmanager.html").read_text(encoding="utf-8")
 
 
 def test_start_and_run_now_release_the_latch_as_a_retry(monkeypatch):
@@ -1258,6 +1295,83 @@ def test_an_unreadable_free_figure_does_not_let_a_retry_end_a_log_override_it_ca
     assert g.state()["overridden"] is True  # one blind sample does not withdraw it
     g.reset(reason="operator started collection")
     assert g.state()["overridden"] is True, "no evidence the log is under its real limit"
+
+
+def test_a_retry_before_every_unreadable_sample_still_lets_the_run_withdraw_the_override(monkeypatch):
+    """Start is clicked before every reading: the blind count is the supervisor's alone, so a
+    retry can neither extend an override over unreadable free space nor shorten it."""
+    monkeypatch.setenv("OO_DISK_RESERVE_MB", "1024")  # keep the drive's own latch out of the way
+    g = _overridable(wal=700 * MIB, free=5 * GIB)
+    assert g.override(reason="test")["overridden"] is True
+    g.fake["disk_free_bytes"] = None
+    for _ in range(g.trip_after):
+        g.reset(reason="operator started collection")  # Start is clicked before every reading
+        g.poll()
+    assert g.state()["overridden"] is False, "trip_after unreadable samples in a row withdraw it, retries or not"
+    assert g.admit() == "wal"
+
+
+def test_the_latches_trip_exactly_at_the_limit_and_one_byte_under_the_reserve(monkeypatch):
+    """The retry rule's comparisons agree with the latches' own, so the latches' are pinned too:
+    the log trips AT its limit (>=), the drive only BELOW its reserve (<)."""
+    monkeypatch.delenv("OO_WAL_HIGH_MB", raising=False)
+    monkeypatch.delenv("OO_DISK_RESERVE_MB", raising=False)
+    limit = wal_high_bytes(_CORPUS, _FREE_OK)
+    reserve = disk_reserve_bytes(_TOTAL)
+    assert _feed(_guard(), wal=limit, n=2).engaged
+    assert not _feed(_guard(), wal=limit - 1, n=2).engaged
+    assert _feed(_guard(), free=reserve - 1, n=2).engaged
+    assert not _feed(_guard(), free=reserve, n=2).engaged
+
+
+@pytest.mark.parametrize(("setting", "bound"), [("0", 30.0), ("", 30.0), ("5", 5.0), ("120", 30.0)])
+def test_the_guards_own_drain_never_waits_longer_for_the_gate_than_its_bound(monkeypatch, setting, bound):
+    """The drain runs between two floor readings, so its wait is the gap in which free space can
+    fall unseen: ``OO_CKPT_GATE_TIMEOUT_S=0`` (wait for ever, for the pass-boundary checkpoint)
+    must not make the guard's own sampler wait for ever too."""
+    from src.scheduler import hygiene
+
+    seen: dict = {}
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda **kw: seen.update(kw) or {"busy": 0})
+    monkeypatch.setenv("OO_CKPT_GATE_TIMEOUT_S", setting)
+    storage_guard._default_drain()
+    assert seen["force"] is True and seen["gate_timeout_s"] == bound
+    assert storage_guard.DRAIN_GATE_TIMEOUT_S == 30.0
+
+
+def test_a_concurrent_start_leaves_exactly_one_supervisor(monkeypatch):
+    """Start is called from the scheduler's start, a manual run and the resume route, on different
+    threads; the lock around the thread slot is what keeps it to one (without it, many). Repeated
+    rounds under a tiny switch interval, because one round of a race is a coin toss."""
+    monkeypatch.setattr(storage_guard, "_supervise", lambda stop: stop.wait())  # no real sampling
+
+    def one_round(n: int) -> list[bool]:
+        barrier = threading.Barrier(n)
+        results: list[bool] = []
+
+        def go():
+            barrier.wait(5.0)
+            results.append(storage_guard.start())
+
+        threads = [threading.Thread(target=go) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(10.0)
+        return results
+
+    old_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        for _ in range(12):
+            storage_guard.stop()
+            results = one_round(24)
+            assert results.count(True) == 1, results
+            live = [t for t in threading.enumerate() if t.name == "oo-storage-guard" and t.is_alive()]
+            assert len(live) == 1, len(live)
+    finally:
+        sys.setswitchinterval(old_interval)
+        storage_guard.stop()
 
 
 def test_an_unreadable_sample_between_readable_ones_does_not_age_a_floor_note():
@@ -1886,10 +2000,19 @@ def _returns_within(fn, seconds=10.0):
     """Run ``fn`` on a daemon thread and fail, instead of hanging the suite, if it does not return:
     a regression that ignores a bound waits for ever."""
     out: list = []
-    th = threading.Thread(target=lambda: out.append(fn()), daemon=True)
+
+    def run():
+        try:
+            out.append(fn())
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the test's own thread below
+            out.append(exc)
+
+    th = threading.Thread(target=run, daemon=True)
     th.start()
     th.join(seconds)
     assert not th.is_alive(), f"did not return within {seconds} s: the bound is ignored"
+    if isinstance(out[0], BaseException):
+        raise out[0]
     return out[0]
 
 

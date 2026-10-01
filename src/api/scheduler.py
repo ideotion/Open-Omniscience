@@ -427,11 +427,28 @@ def storage_guard_resume() -> dict:
     space. It is REFUSED (with a sentence frame, nothing changes) while a write has just
     failed, when free space cannot be read, or when it is already at or below the floor; the
     status payload's ``storage_guard.override_refusal`` previews that answer so the page
-    offers the button only when it would be granted. Loopback only, no egress. The response
+    offers the button only when it would be granted. It is also refused, with the same
+    sentence (the closest one that exists: the floor could not be watched), when the guard's
+    supervisor is not running and cannot be started: an override is granted only while
+    something reads the floor between passes. Loopback only, no egress. The response
     carries the status payload and ``storage_guard_override`` = ``{engaged, overridden,
     refused}``.
     """
-    result = storage_guard.storage_guard.override(reason="operator resumed via the API")
+    guard = storage_guard.storage_guard
+    if guard.enabled() and guard.engaged:
+        from src.scheduler import runner
+
+        runner._ensure_storage_supervisor()  # idempotent; a failure is logged, never raised
+        if not storage_guard.supervisor_running():
+            _LOG.warning(
+                "storage guard override refused: its supervisor is not running and could not be started"
+            )
+            refused = {"kind": "unreadable", "frame": storage_guard.FRAME_OVERRIDE_UNREADABLE, "vars": {}}
+            return {
+                **_status_payload(),
+                "storage_guard_override": {"engaged": True, "overridden": False, "refused": refused},
+            }
+    result = guard.override(reason="operator resumed via the API")
     return {**_status_payload(), "storage_guard_override": result}
 
 

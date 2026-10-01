@@ -117,19 +117,19 @@ What then stops the drive from filling, in order:
 * it ends when both causes are gone (the next trip pauses normally again), and it lives in
   memory only: quitting the app ends it. Start and Run now (:meth:`reset`) leave it alone while
   a covered limit is still exceeded by the last reading (or cannot be read against), and end it,
-  re-arming the limit, when the reading is already back under the limit and only the hysteresis
-  holds the latch (the notes
-  then still compare against the limit: the latch holds below it until the resume level).
+  re-arming the limit, when the last reading no longer shows a covered limit exceeded (for
+  example when only the hysteresis holds the latch: the notes then still compare against the
+  limit, and the latch holds below it until the resume level).
 
 This is a bound, not a promise that the drive can never fill. The floor is read on every
 supervisor tick, ``POLL_EVERY_S`` (5 s) apart, but a tick also runs the drain, which can wait up
-to 30 s for the write gate that running collectors keep busy: while overridden, the gap between
-two readings is 5 s to about 40 s plus the checkpoint's own run (which nothing bounds), and
-longer for every second a larger ``OO_CKPT_GATE_TIMEOUT_S`` adds beyond 30 and without bound if
-``OO_CKPT_GATE_TIMEOUT_S=0`` restores the old unbounded wait. At the 1.4 MB/s of
-log growth the sampling comment below records (its source is not in the repo), 40 s is under
-60 MB, small against a floor of at least 128 MiB; that rate is the log's growth, not everything
-a pass writes. The floor reserves room to write the log back and
+to :data:`DRAIN_GATE_TIMEOUT_S` (30 s) for the write gate that running collectors keep busy,
+whatever ``OO_CKPT_GATE_TIMEOUT_S`` says (a shorter setting shortens it; ``0`` and a longer one
+leave the guard's own wait at 30 s, and only the pass-boundary checkpoint keeps the operator's
+setting): while overridden, the gap between two readings is 5 s to about 40 s plus the
+checkpoint's own run (which nothing bounds). At the 1.4 MB/s of log growth the sampling comment
+below records (its source is not in the repo), 40 s is about 56 MB: 42% of the smallest floor
+(128 MiB) and less of any larger one; that rate is the log's growth, not everything a pass writes. The floor reserves room to write the log back and
 finish a write, NOT the pass tail written after a withdrawal (a measured tail is what would size
 that, and it is not a fixed number). The write error above is the last net and it does not wait
 for a reading.
@@ -191,6 +191,13 @@ PIN_REPORT_EVERY_S = 60.0
 #: record: every other sample (two sample periods) keeps a pinned WAL from keeping a permanent
 #: waiter on the gate and from filling a nearly full drive's log with checkpoint records.
 DRAIN_EVERY_S = 10.0
+#: The longest the GUARD's own drain waits for the write gate, whatever the operator set for
+#: ``OO_CKPT_GATE_TIMEOUT_S`` (``0`` there means "wait for ever" for the pass-boundary
+#: checkpoint). It protects the override's bound: the drain runs between two floor readings, so
+#: its wait is the gap in which free space can fall unseen, and this keeps the floor read at least
+#: every half minute or so (plus the checkpoint's own run) however long a writer holds the gate.
+#: Chosen as the setting's own default, not measured.
+DRAIN_GATE_TIMEOUT_S = 30.0
 #: Holders named per report, and frames per stack. They bound the PAYLOAD (a pin report rides
 #: the diagnostics bundle and every checkpoint record rides a pass summary), not the truth:
 #: eight is the small tier's collector ceiling, so a pass-end listing can name every collector
@@ -400,10 +407,13 @@ def read_storage() -> dict[str, Any]:
 
 def _default_drain() -> dict | None:
     """The same call the pass boundary makes: PASSIVE then TRUNCATE through the write gate,
-    the gate wait bounded, busy timeout zero. ``force`` skips only its cadence."""
-    from src.scheduler.hygiene import checkpoint_wal
+    busy timeout zero. ``force`` skips only its cadence. The gate wait is the operator's
+    ``OO_CKPT_GATE_TIMEOUT_S`` but never longer than :data:`DRAIN_GATE_TIMEOUT_S`, and ``0`` (for
+    ever) becomes that bound here."""
+    from src.scheduler.hygiene import _ckpt_gate_timeout_s, checkpoint_wal
 
-    return checkpoint_wal(force=True)
+    t = _ckpt_gate_timeout_s()
+    return checkpoint_wal(force=True, gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S)
 
 
 def _checkpoint_enabled() -> bool:
@@ -881,9 +891,9 @@ class StorageGuard:
         retry, and clearing the latches under it would only end it and re-pause collection after
         ``trip_after`` samples, which is none of the ways R112 lets an override end (the cause
         clearing, the floor, a failed write, a second limit, free space unreadable). Where the last
-        reading is already back under the limit and only the hysteresis holds the latch, the retry
-        runs as usual: it ends the override and re-arms the limit, so no override outlives its cause
-        for want of an exit."""
+        reading does not show a covered limit exceeded (for example when only the hysteresis holds
+        the latch), the retry runs as usual: it ends the override and re-arms the limit, so no
+        override outlives its cause for want of an exit."""
         was = False
         had_override = False
         now_mono = self._clock()
@@ -903,7 +913,7 @@ class StorageGuard:
             _LOG.warning("storage guard released (%s) -- collection resumes", reason)
         if had_override:
             _LOG.warning(
-                "STORAGE GUARD OVERRIDE ENDED (%s) -- the last reading no longer shows a limit it covered "
+                "STORAGE GUARD OVERRIDE ENDED (%s) -- the last reading does not show a limit it covered "
                 "as exceeded, so the retry re-armed the guard.",
                 reason,
             )
@@ -917,7 +927,7 @@ class StorageGuard:
         wal_high, reserve = thr.get("wal_high_bytes"), thr.get("disk_reserve_bytes")
         # The WAL limit has a free-space term that is dropped when free space cannot be read, so
         # an unreadable figure may leave the stored limit too high (not with OO_WAL_HIGH_MB set,
-        # where keeping the override is merely cautious: the next blind sample withdraws it):
+        # where keeping the override is merely cautious: ``trip_after`` blind samples withdraw it):
         # no evidence the log is under its real limit.
         if "wal" in kinds and self._wal and (wal is None or wal_high is None or free is None or wal >= wal_high):
             return True
@@ -1331,8 +1341,8 @@ storage_guard = StorageGuard()
 # --- the supervisor -----------------------------------------------------------------
 
 #: How often the supervisor samples the drive. File sizes and a statvfs: cheap enough that
-#: five seconds is not a cost, and short enough that a WAL growing at the measured 1.4 MB/s
-#: moves under 10 MB between samples.
+#: five seconds is not a cost, and short enough that a WAL growing at the 1.4 MB/s field figure
+#: (its source is not in the repo) moves under 10 MB between samples.
 POLL_EVERY_S = 5.0
 
 _THREAD: threading.Thread | None = None

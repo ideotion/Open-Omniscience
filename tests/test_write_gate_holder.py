@@ -139,6 +139,35 @@ def test_checkpoint_wal_records_an_honest_skip_when_the_gate_is_busy(monkeypatch
     eng.dispose()
 
 
+def test_checkpoint_wal_takes_the_callers_bound_over_an_unbounded_setting(monkeypatch, tmp_path):
+    """The storage guard's own drain passes ``gate_timeout_s``: ``OO_CKPT_GATE_TIMEOUT_S=0`` (wait for
+    ever) is the operator's setting for the pass-boundary checkpoint and must not bind the guard's
+    sampler to a long writer. Run on a daemon thread so a regression fails instead of hanging."""
+    from src.database.writer import write_gate
+    from src.scheduler import hygiene
+
+    monkeypatch.setenv("OO_CKPT_GATE_TIMEOUT_S", "0")
+    monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None, raising=False)
+    db = tmp_path / "bound.db"
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.connect() as con:
+        con.execute(text("PRAGMA journal_mode=WAL"))
+        con.execute(text("CREATE TABLE t (a INTEGER)"))
+        con.commit()
+
+    out: list = []
+    with _Holder(write_gate):
+        th = threading.Thread(
+            target=lambda: out.append(hygiene.checkpoint_wal(engine=eng, force=True, gate_timeout_s=0.1)),
+            daemon=True,
+        )
+        th.start()
+        th.join(10.0)
+        assert not th.is_alive(), "the caller's bound was ignored: the wait is unbounded"
+    assert out[0]["skipped"] == "gate busy" and out[0]["waited_s"] == pytest.approx(0.1)
+    eng.dispose()
+
+
 def test_checkpoint_wal_still_checkpoints_when_the_gate_is_free(monkeypatch, tmp_path):
     """The negative twin: a skip that fired unconditionally would silently stop
     every checkpoint, and the WAL growth this exists to bound would be worse."""
