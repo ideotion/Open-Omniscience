@@ -243,6 +243,10 @@ def poll(monkeypatch, tmp_path, memory):
     path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a", "id": "a", "bucket": "lead"}])
     memory(4096.0)
     monkeypatch.setitem(service._marker_retry, "at", None)
+    monkeypatch.setattr(
+        service, "run_all_bounded",
+        lambda *a, **k: ([], {"truncated": True, "truncated_reason": "memory_short"}),
+    )
     started: list[int] = []
     monkeypatch.setattr(service, "_ensure_background_refresh", lambda: started.append(1))
 
@@ -274,16 +278,59 @@ def test_the_repair_waits_while_memory_is_still_short(poll, memory):
     assert poll({"kept_reason": "memory_short"}) == 1, "the wait for memory must not use up the attempt"
 
 
-def test_a_marker_that_keeps_coming_back_is_not_retried_on_every_poll(poll, monkeypatch):
-    """What the pause protects: a refresh that keeps ending early being re-run every 15 s."""
-    marker = {"kept_reason": "deadline"}
-    clock = [1000.0]
-    monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
+def test_the_repair_needs_a_whole_floor_of_headroom_not_a_megabyte_over_the_floor(poll, memory):
+    """A refresh started a hair above the floor only stops again at its first producer boundary."""
+    marker = {"kept_reason": "memory_short"}
+    memory(257.0, 256.0)
+    assert poll(marker) == 0
+    memory(512.0, 256.0)
+    assert poll(marker) == 0, "exactly two floors is not yet more than two floors"
+    memory(513.0, 256.0)
     assert poll(marker) == 1
+
+
+def test_the_repair_never_overlaps_the_schedulers_whole_corpus_work(poll, monkeypatch):
+    from src.scheduler import runner
+
+    class _Busy:
+        def whole_corpus_work_running(self):
+            return busy[0]
+
+    busy = [True]
+    monkeypatch.setattr(runner, "_scheduler", _Busy())
+    marker = {"kept_reason": "memory_short"}
+    assert poll(marker) == 0
+    busy[0] = False
+    assert poll(marker) == 1
+
+
+def test_the_scheduler_reports_its_whole_corpus_work_from_its_two_locks():
+    from src.scheduler.runner import BackgroundScheduler
+    from src.scheduler.settings import SchedulerSettings
+
+    sched = BackgroundScheduler(settings_provider=lambda: SchedulerSettings())
+    assert sched.whole_corpus_work_running() is False
+    with sched._briefing_bg_lock:
+        assert sched.whole_corpus_work_running() is True
+    with sched._heavy_tail_lock:
+        assert sched.whole_corpus_work_running() is True
+    assert sched.whole_corpus_work_running() is False
+
+
+def test_a_marker_that_keeps_coming_back_waits_from_when_the_last_refresh_finished(poll, monkeypatch):
+    """What the pause protects: a refresh that keeps ending early, or one that takes minutes,
+    being re-run back to back. The wait starts when a refresh FINISHES, not when it began."""
+    marker = {"kept_reason": "memory_short"}
+    clock = [1000.0]
+    monkeypatch.setattr(service, "_monotonic", lambda: clock[0])
+    assert poll(marker) == 1, "nothing has run in this process yet: the first poll repairs at once"
+    # that refresh runs for a long time and ends early, re-marking the feed
+    clock[0] += 5000.0
+    service.refresh_briefing(object())  # a stopped run (the module's stub below) records its finish time
     clock[0] += service._MARKER_RETRY_S - 1
     assert poll(marker) == 0
-    clock[0] += 2
-    assert poll(marker) == 1
+    clock[0] += 1
+    assert poll(marker) == 1, "exactly the retry interval after the finish is allowed"
 
 
 # ------------------------------------------------------------------------------- warm_cache

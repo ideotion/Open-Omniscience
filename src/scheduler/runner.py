@@ -2104,6 +2104,13 @@ class BackgroundScheduler:
         )
         self._briefing_thread.start()
 
+    def whole_corpus_work_running(self) -> bool:
+        """True while the pass-tail briefing refresh or the heavy-tail housekeeping holds its lock.
+
+        A read, never a wait: the Home briefing's marker repair asks this and skips a poll when it
+        is true, so a repair never overlaps the scheduler's own whole-corpus work (S2.5 b)."""
+        return self._briefing_bg_lock.locked() or self._heavy_tail_lock.locked()
+
     def _heavy_tail_timeout_s(self) -> float:
         try:
             return max(0.0, float(os.getenv("OO_HEAVY_TAIL_WAIT_S", "") or 900.0))

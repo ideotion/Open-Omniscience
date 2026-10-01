@@ -148,31 +148,55 @@ def _is_cache_stale(session, payload: dict, *, current: int | None = None) -> bo
 
 
 # A feed that carries a stop marker (``kept_reason`` / ``incomplete_reason``) is repaired
-# without anyone pressing Refresh: once the machine has memory again, the next Home poll
-# starts ONE background refresh. This many seconds must pass between two such attempts, which
-# protects the machine from a refresh that keeps ending early (a lasting memory shortage, a
-# deadline) being re-run on every 15 s poll -- each one a full pass over the producers. It is
-# per process, so a restart (an app update) tries once straight away.
+# without anyone pressing Refresh: once the machine has headroom again, the next Home poll
+# starts ONE background refresh. Three things keep that from becoming a loop:
+#   * ``_MARKER_RETRY_S`` seconds must pass AFTER the last refresh FINISHED (any refresh, the
+#     scheduler's included), so a refresh that keeps ending early, or one that itself takes
+#     minutes on a large corpus, never runs back to back;
+#   * memory must be a whole floor ABOVE the floor, not a megabyte over it: a refresh started
+#     there only stops again at the first producer boundary and re-marks the feed;
+#   * the scheduler's own briefing refresh and housekeeping lane are not running (they are
+#     never to overlap a whole-corpus recompute, S2.5 b).
+# The state is per process, so a restart (an app update) tries once straight away.
 _MARKER_RETRY_S = 600.0
 _marker_retry: dict[str, float | None] = {"at": None}
 
 
+def _monotonic() -> float:
+    return time.monotonic()
+
+
+def _scheduler_is_busy_with_the_whole_corpus() -> bool:
+    """True while the scheduler's pass-tail briefing refresh or its heavy-tail housekeeping runs."""
+    try:
+        from src.scheduler import runner
+
+        sched = runner._scheduler  # never created here: no scheduler means nothing is running
+        return sched is not None and sched.whole_corpus_work_running()
+    except Exception:  # noqa: BLE001 - a probe failure must never break Home
+        return False
+
+
+def _has_headroom_for_a_repair() -> bool:
+    """Memory is more than one floor above the guard's floor (or cannot be measured, the honest default)."""
+    try:
+        from src.database.maintenance import _available_mb, _read_memory_floor_mb
+
+        floor, avail = _read_memory_floor_mb(), _available_mb()
+    except Exception:  # noqa: BLE001 - no DB layer, or no reading
+        return True
+    return floor is None or avail is None or avail > 2 * floor
+
+
 def _marker_wants_refresh(payload: dict) -> bool:
-    """True when ``payload`` carries a stop marker, memory is no longer short, and the last
-    repair attempt is at least ``_MARKER_RETRY_S`` ago. Records the attempt when it says yes."""
+    """True when ``payload`` carries a stop marker and a repair is allowed right now."""
     if not (payload.get("kept_reason") or payload.get("incomplete_reason")):
         return False
-    from src.briefing.registry import _memory_short
-
-    if _memory_short() is not None:
+    if not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
         return False
-    now = time.monotonic()
     with _refresh_lock:
         last = _marker_retry["at"]
-        if last is not None and now - last < _MARKER_RETRY_S:
-            return False
-        _marker_retry["at"] = now
-    return True
+    return last is None or _monotonic() - last >= _MARKER_RETRY_S
 
 
 def _dismissed_path():
@@ -287,6 +311,19 @@ def clear_dismissed() -> None:
 def refresh_briefing(session, on_progress=None) -> dict:
     """Recompute the briefing from all producers and write the cache. Returns it.
 
+    Whatever the outcome, the time it finished is remembered: a marker repair waits
+    ``_MARKER_RETRY_S`` from there (see ``_marker_wants_refresh``).
+    """
+    try:
+        return _refresh_briefing(session, on_progress)
+    finally:
+        with _refresh_lock:
+            _marker_retry["at"] = _monotonic()
+
+
+def _refresh_briefing(session, on_progress=None) -> dict:
+    """The body of :func:`refresh_briefing`.
+
     ``on_progress(done, total, name)`` (optional) is forwarded to ``run_all`` so a
     background recompute can publish a progress bar; callers that don't need it
     (the scheduler, an explicit synchronous get) pass nothing — unchanged behaviour."""
@@ -347,6 +384,8 @@ def refresh_briefing(session, on_progress=None) -> dict:
             # Written into the cache as well, so Home (which reads the cache, not this return
             # value) can say that the feed it shows is the previous one and why. The next
             # refresh that completes replaces the whole payload, marker included.
+            # (A refresh that lands between the read above and the write below still loses to
+            # this one; the marker repair puts that right, so it is not guarded a second time.)
             if existing.get("generated_at") != started_with:
                 # A refresh landed during this run: its feed is the newer one, so the marker is
                 # not written (Home would call a fresh feed "the previous feed"); this call

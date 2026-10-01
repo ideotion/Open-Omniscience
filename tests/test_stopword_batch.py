@@ -1009,8 +1009,14 @@ def test_json_naming_a_pipe_is_refused_instead_of_blocking_the_write(tmp_path):
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
     os.mkfifo(tmp_path / "x.json")
-    with pytest.raises(SystemExit) as exc:
-        sb.main([str(log), "--language", "en", "--json", str(tmp_path / "x.json")])
+    # A reader on the pipe keeps a regressed guard from blocking forever in open(): the write then
+    # goes through and this test fails on the missing refusal instead of hanging the whole run.
+    reader = os.open(tmp_path / "x.json", os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        with pytest.raises(SystemExit) as exc:
+            sb.main([str(log), "--language", "en", "--json", str(tmp_path / "x.json")])
+    finally:
+        os.close(reader)
     assert "regular file" in str(exc.value)
 
 
