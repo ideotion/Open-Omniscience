@@ -2530,8 +2530,10 @@ def _warm_deadline_seconds() -> float | None:
     read is the case: before this, warming was the only thing that ever filled its cache
     there). So it gets ``OO_WARM_DEADLINE_S``, default FIVE TIMES the endpoint deadline: what
     the number protects is the pass tail never hanging without limit, and what it leaves
-    alone is the memory stop, which is the same floor at every budget. A disabled endpoint
-    deadline (``OO_STATEMENT_TIMEOUT_S=0``) stays disabled here too.
+    alone is the memory floor, which is the same at every budget. The memory stop rides on
+    ``statement_deadline``, so a disabled endpoint deadline (``OO_STATEMENT_TIMEOUT_S=0``)
+    stays disabled here too and takes the warm-up's memory stop with it: that is the
+    operator's explicit choice of "no limits", not a floor this function can keep.
     """
     from src.database.maintenance import _deadline_seconds
 
@@ -2542,8 +2544,10 @@ def _warm_deadline_seconds() -> float | None:
         value = float(_os.environ.get("OO_WARM_DEADLINE_S", ""))
     except ValueError:
         return base * 5
-    # Only a positive, finite number overrides: 0, a negative or nan would otherwise disarm
-    # the deadline, and the memory stop rides on it.
+    # Only a positive, finite number overrides: 0, a negative or nan cannot be a deadline and
+    # would disarm it, and the memory stop rides on it. There is deliberately NO ceiling (no
+    # fixed caps): a huge finite value is the operator saying "wait as long as it takes", and
+    # a tiny one stops every read at its first tick, which turns the warm-up off.
     return value if 0 < value < float("inf") else base * 5
 
 

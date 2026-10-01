@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from datetime import UTC, datetime
 
 from src.briefing.card import BUCKET_LABELS, BUCKETS
@@ -146,6 +147,34 @@ def _is_cache_stale(session, payload: dict, *, current: int | None = None) -> bo
     return grew >= _STALE_GROWTH_MIN and grew >= int(cached) * _STALE_GROWTH_FRAC
 
 
+# A feed that carries a stop marker (``kept_reason`` / ``incomplete_reason``) is repaired
+# without anyone pressing Refresh: once the machine has memory again, the next Home poll
+# starts ONE background refresh. This many seconds must pass between two such attempts, which
+# protects the machine from a refresh that keeps ending early (a lasting memory shortage, a
+# deadline) being re-run on every 15 s poll -- each one a full pass over the producers. It is
+# per process, so a restart (an app update) tries once straight away.
+_MARKER_RETRY_S = 600.0
+_marker_retry: dict[str, float | None] = {"at": None}
+
+
+def _marker_wants_refresh(payload: dict) -> bool:
+    """True when ``payload`` carries a stop marker, memory is no longer short, and the last
+    repair attempt is at least ``_MARKER_RETRY_S`` ago. Records the attempt when it says yes."""
+    if not (payload.get("kept_reason") or payload.get("incomplete_reason")):
+        return False
+    from src.briefing.registry import _memory_short
+
+    if _memory_short() is not None:
+        return False
+    now = time.monotonic()
+    with _refresh_lock:
+        last = _marker_retry["at"]
+        if last is not None and now - last < _MARKER_RETRY_S:
+            return False
+        _marker_retry["at"] = now
+    return True
+
+
 def _dismissed_path():
     from src.paths import data_dir
 
@@ -270,6 +299,10 @@ def refresh_briefing(session, on_progress=None) -> dict:
         evaluate_watches(session)
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
+    # Which feed was on disk when this run STARTED: a refresh that lands while this one runs
+    # must not be overwritten with the feed it just replaced, and only a read taken before the
+    # run can tell (two reads taken after it cannot).
+    started_with = (_read_cache() or {}).get("generated_at")
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
     produced, stats = run_all_bounded(
         session, on_progress=on_progress, lanes=True, memory_stop=True
@@ -314,12 +347,13 @@ def refresh_briefing(session, on_progress=None) -> dict:
             # Written into the cache as well, so Home (which reads the cache, not this return
             # value) can say that the feed it shows is the previous one and why. The next
             # refresh that completes replaces the whole payload, marker included.
+            if existing.get("generated_at") != started_with:
+                # A refresh landed during this run: its feed is the newer one, so the marker is
+                # not written (Home would call a fresh feed "the previous feed"); this call
+                # still reports that it kept the cache, which is what its caller records.
+                return kept
             try:
-                # Only if no full refresh landed since this one read the cache: it must not be
-                # overwritten with the feed it just replaced.
-                current = _read_cache()
-                if current and current.get("generated_at") == existing.get("generated_at"):
-                    _write_cache(kept)
+                _write_cache(kept)
             except OSError:
                 _LOG.warning("could not record that the briefing refresh kept the cache", exc_info=True)
             return kept
@@ -453,6 +487,7 @@ def get_briefing(
     stale = cached is not None and (
         cached.get("version") != CACHE_VERSION  # a servable prior shape: recompute once
         or _is_cache_stale(session, cached, current=_count_once())
+        or _marker_wants_refresh(cached)
     )
     need_recompute = force or cached is None or stale
     if need_recompute and background:
@@ -461,7 +496,7 @@ def get_briefing(
         payload = cached
     elif need_recompute:
         if stale:
-            _LOG.info("briefing cache is stale (corpus grew, or an older cache shape); recomputing")
+            _LOG.info("briefing cache is stale (corpus grew, an older cache shape, or a stop marker to repair); recomputing")
         payload = refresh_briefing(session)
     else:
         payload = cached
