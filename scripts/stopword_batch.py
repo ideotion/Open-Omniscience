@@ -35,7 +35,14 @@ word is refused, with the reason, when adding it would hide signal:
 
 A maintainer can override ``content_elsewhere`` and ``also_an_entity`` for a word with
 ``--allow WORD`` (recorded in the batch comment); ``ring_member`` and ``platform_name`` have no
-override. After ``--apply``, declare the added words in
+override. HOW THIS DIFFERS FROM ``scripts/analyze_keyword_log.py``. That script reads one log and PROPOSES
+several kinds of optimisation (stopword candidates, mis-tagged entities, ring candidates,
+families) for a human to read; it edits nothing and decides nothing. This tool imports its log
+loading and candidate reading (``load_log``, ``stopword_candidates``) and adds the one step it
+does not have: checking a DECIDED word list against the evidence and the refusals above, and,
+only with ``--apply``, writing the batch into ``configs/stopwords_extra``.
+
+After ``--apply``, declare the added words in
 ``tests/test_analytics_extract.py::added_since_migration`` (the tool prints the exact lines) and
 add a section to ``configs/stopwords_extra/PROVENANCE.md``.
 """
@@ -114,7 +121,7 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
             and not k.get("hidden")
             and _articles(k) >= ELSEWHERE_MIN_ARTICLES
         ),
-        key=lambda u: (-u["articles"], u["language"]),
+        key=lambda u: (-int(u["articles"]), str(u["language"])),
     )
     entities = [
         {"language": k.get("language") or "?", "kind": k.get("kind"), "articles": _articles(k)}
