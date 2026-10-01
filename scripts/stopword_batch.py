@@ -210,9 +210,12 @@ def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
     accept, spoils it), whatever their order. A line the reader cannot parse stops the WHOLE file: a
     row skipped in silence could be the one that dissents."""
     out: dict[str, dict[str, Any]] = {}
-    for number, line in enumerate(path.read_text("utf-8").splitlines(), 1):
-        # A BOM can sit mid-file too (two exports joined with cat); leading blanks are not a column.
-        line = line.replace("\ufeff", "").lstrip()
+    # Only CR, LF and CRLF end a row: str.splitlines() would also cut at U+2028, U+0085 and the like,
+    # leaving a fragment of a row that could pass for another language's.
+    for number, line in enumerate(re.split(r"\r\n|\r|\n", path.read_text("utf-8")), 1):
+        # A BOM can sit mid-file too (two exports joined with cat). Leading SPACES are not a column,
+        # but a leading TAB is an empty first column, which the language check below refuses.
+        line = line.replace("\ufeff", "").lstrip(" ")
         if not line or line.startswith("#"):
             continue
         # Split BEFORE trimming: stripping would eat the trailing tabs of a row whose last columns are
@@ -225,8 +228,9 @@ def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
                              f"code); refusing to skip it, a skipped row could be the dissenting one: {line[:60]!r}")
         if cols[0].lower() != lang:
             continue
-        if not cols[1]:
-            raise SystemExit(f"{path}:{number}: a verdict row for {lang!r} with no word; refusing to skip it")
+        if not cols[1] or len(cols) < 3 or not cols[2]:
+            raise SystemExit(f"{path}:{number}: a verdict row for {lang!r} with no word or no verdict column; "
+                             "refusing to skip it")
         cols += [""] * (7 - len(cols))  # a short row is read as having empty columns: never high, never N
         word = spelling(cols[1])
         verdict = cols[2].upper()
@@ -518,8 +522,9 @@ def main(argv: list[str] | None = None) -> int:
         if (target.suffix != ".json" or args.json.is_symlink()
                 or target.is_relative_to((ROOT / "configs").resolve())):
             raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
-        if target == args.log.resolve() or (target.exists() and target.is_relative_to(ROOT)):
-            raise SystemExit("--json would overwrite the input log or an existing file in the checkout "
+        inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
+        if target in inputs or (target.exists() and target.is_relative_to(ROOT)):
+            raise SystemExit("--json would overwrite an input file (the log, the verdicts or the words) or an existing file in the checkout "
                              "(a tracked file is one); name a new file or one outside the checkout")
     doc = akl.load_log(args.log)
     keywords = log_keywords(doc)

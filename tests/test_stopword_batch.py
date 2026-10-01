@@ -556,15 +556,19 @@ def test_a_short_or_bom_prefixed_verdict_row_still_votes(tmp_path):
     assert sb.verdict_refusals("calm", v) == []  # the BOM did not cost the first row its language
 
 
-def test_a_row_with_leading_blanks_or_a_mid_file_bom_still_votes(tmp_path):
+def test_a_row_with_leading_spaces_or_a_mid_file_bom_still_votes_and_a_leading_tab_stops_the_file(tmp_path):
     f = tmp_path / "v.tsv"
     f.write_text("en\trose\tN\tbp\tH\tsonnet\n"
-                 "\ten\trose\tK\t\tH\tsonnet\n"  # an empty first column is blanks, not a column
+                 "  en\trose\tK\t\tH\tsonnet\n"  # leading spaces are not a column
                  "en\tpie\tN\tbp\tH\tsonnet\n"
                  "\ufeffen\tpie\tK\t\tH\tsonnet\n", "utf-8")  # a second file's BOM, joined with cat
     v = sb.read_verdicts(f, "en")
     assert "not_junk" in sb.verdict_refusals("rose", v)
     assert "not_junk" in sb.verdict_refusals("pie", v)
+    # an EMPTY first column shifts the word into the language column: "the" looks like a language code
+    f.write_text("en\tthe\tN\tfn\tH\tsonnet\n\tthe\tK\t\tH\tsonnet\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
 
 
 # ---- fail closed on what the reader cannot read (coordinator check 2: S1-S6) -------------------
@@ -708,3 +712,46 @@ def test_a_bom_prefixed_words_file_keeps_its_first_word(tmp_path):
     f = tmp_path / "w.txt"
     f.write_text("﻿permalink\nfollow\n", "utf-8")
     assert sb.read_words(f) == ["permalink", "follow"]
+
+
+def test_a_row_with_no_verdict_column_stops_the_file_instead_of_voting_for_another_word(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("en\tthe\tN\tfn\tH\tsonnet\nen\tthe K H\n", "utf-8")  # space-separated: 2 columns
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
+    f.write_text("en\tthe\tN\tfn\tH\tsonnet\nen\tthe\t\tfn\tH\n", "utf-8")  # an empty verdict
+    with pytest.raises(SystemExit):
+        sb.read_verdicts(f, "en")
+
+
+def test_only_cr_lf_and_crlf_end_a_verdict_row(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_bytes("en\tthe\tN\tfn\tH\tm\ren\tthe\tK\t\t\t\r\nen\ta\u2028b\tN\tfn\tH\tm\n".encode("utf-8"))
+    v = sb.read_verdicts(f, "en")
+    assert "not_junk" in sb.verdict_refusals("the", v)  # a CR-only file still gives every row its vote
+    assert "a b" in v  # U+2028 inside a word is not a row break (the key collapses it like any blank)
+
+
+def test_json_report_never_overwrites_the_verdicts_or_words_file(tmp_path):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    v = tmp_path / "v.json"
+    v.write_text("en\tpermalink\tN\tbp\tH\tm\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--verdicts", str(v), "--json", str(v)])
+    assert v.read_text("utf-8").startswith("en\tpermalink")
+    w = tmp_path / "w.json"
+    w.write_text("permalink\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--words", str(w), "--json", str(w)])
+    assert w.read_text("utf-8") == "permalink\n"
+
+
+def test_a_json_symlink_is_refused_on_its_own(tmp_path):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    link = tmp_path / "out.json"
+    link.symlink_to(tmp_path / "dangling-target.json")  # not an existing file, outside the checkout
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--json", str(link)])
+    assert not (tmp_path / "dangling-target.json").exists()
