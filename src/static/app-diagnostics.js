@@ -865,10 +865,10 @@
     // Every action that replaces the bar's set takes a number; one that finds a newer number after
     // an await was overtaken and leaves the bar to the newer one.
     let _partsGen = 0;
-    // The generation of the NEWEST keyword or diagnostics-split request still on its way to the bar,
-    // 0 when none is: the finished diagnostics build must know whether the newest press has not
-    // landed yet (an older one that a newer press overtook is dropped when it lands, so it never
-    // counts). It stays set until the request's own save has finished, so a press that has already
+    // The generation of the NEWEST keyword or diagnostics-split request that has not finished, 0 when
+    // none has: the finished diagnostics build must know whether the newest press has not landed yet
+    // (an older one that a newer press overtook is dropped when it lands, so it never counts). A
+    // request finishes when its own save ends, not when its answer lands, so a press that has already
     // landed is told apart by the bar holding its set, not by this number.
     let _partsBusy = 0;
 
@@ -1200,10 +1200,12 @@
             } catch (e) {
               // The split sweeps the previous archive's files BEFORE it writes the new ones, so a
               // failure after that point (a full disk, an answer lost on the way) leaves a diagnostics
-              // set on the bar pointing at files that are gone. Only a 409 (another build is running)
-              // is refused before anything is swept; every other failure empties such a bar (the
-              // sentence below says why the archive is not offered).
-              if (_partsSet && _partsSet.kind === "diagnostics" && !(e && e.status === 409)) {
+              // set on the bar pointing at files that are gone. A 404 (no archive) and a 409 (another build
+              // is running) are refused before anything is swept; every other failure empties such a bar
+              // (the sentence below says why the archive is not offered), whatever the set is doing: the
+              // page cannot tell a failure before the sweep from one after it, so it takes the safe side,
+              // and a set an "again" had just fetched for THIS archive goes with it if the answer was lost.
+              if (_partsSet && _partsSet.kind === "diagnostics" && !(e && (e.status === 404 || e.status === 409))) {
                 ++_partsGen; _partsSet = null; _partsRender();
                 const barEl = $("parts-bar"), line = $("parts-status");
                 if (line) line.textContent = "";
