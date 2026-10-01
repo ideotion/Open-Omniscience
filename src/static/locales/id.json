@@ -587,7 +587,7 @@
   "Backup & restore": "Cadangkan & pulihkan",
   "Backup complete →": "Cadangan selesai →",
   "Backup complete:": "Cadangan selesai:",
-  "Backup disagreed, your verdict kept: {n}": "Cadangan tidak setuju, keputusan Anda dipertahankan: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "Cadangan tidak setuju, keputusan yang ada dipertahankan: {n}",
   "Backup downloaded.": "Cadangan terunduh.",
   "Backup failed — see console": "Pencadangan gagal — lihat konsol",
   "Backup failed:": "Cadangan gagal:",

@@ -587,7 +587,7 @@
   "Backup & restore": "Sicherung & Wiederherstellung",
   "Backup complete →": "Sicherung abgeschlossen →",
   "Backup complete:": "Sicherung abgeschlossen:",
-  "Backup disagreed, your verdict kept: {n}": "Sicherung widersprach, Ihr Urteil beibehalten: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "Sicherung widersprach, bestehendes Urteil beibehalten: {n}",
   "Backup downloaded.": "Sicherung heruntergeladen.",
   "Backup failed — see console": "Sicherung fehlgeschlagen — siehe Konsole",
   "Backup failed:": "Sicherung fehlgeschlagen:",

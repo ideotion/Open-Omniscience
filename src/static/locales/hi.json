@@ -587,7 +587,7 @@
   "Backup & restore": "बैकअप और पुनर्स्थापना",
   "Backup complete →": "बैकअप पूर्ण →",
   "Backup complete:": "बैकअप पूर्ण:",
-  "Backup disagreed, your verdict kept: {n}": "बैकअप असहमत था, आपका निर्णय रखा गया: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "बैकअप असहमत था, मौजूदा निर्णय रखा गया: {n}",
   "Backup downloaded.": "बैकअप डाउनलोड हुआ।",
   "Backup failed — see console": "बैकअप विफल — कंसोल देखें",
   "Backup failed:": "बैकअप विफल:",

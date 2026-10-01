@@ -33,9 +33,11 @@ adopting is pure information gain) OR carries only the shipped catalogue's own s
 verdict outranks it). A verdict MEASURED here always wins, in BOTH directions: a local
 ``disqualified`` can never be laundered to ``qualified`` by a shipped file, and a local
 measured ``qualified`` is never downgraded by one. Two paths that adopt the same kind of
-evidence must not disagree about who wins. (The merge adds one guard this loader does not need:
+evidence must not disagree about who wins. (The merge adds one guard this loader does not have:
 it also copies the incoming attempt history, so it will not adopt a stamp over a local history
-holding a newer judging attempt that disagrees.)
+holding a newer judging attempt that disagrees. The loader adopts over a catalogue stamp
+without looking at local judging attempts, so it can leave the safe-direction inversion the
+merge guard avoids; that behaviour is older than the guard and is left as it was.)
 
 DISQUALIFIED VERDICTS SHIP TOO (ruled): a fresh install skips a known-broken source instead
 of spending Tor bandwidth rediscovering that it is broken, and the re-qualification ladder

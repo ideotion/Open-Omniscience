@@ -3199,7 +3199,7 @@
       const keptLines = (pq) => {
         const out = [];
         if (pq && pq.local_verdict_kept) out.push(tf("Already judged, kept: {n}", { n: num(pq.local_verdict_kept) }));
-        if (pq && pq.local_verdict_disagreed) out.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(pq.local_verdict_disagreed) }));
+        if (pq && pq.local_verdict_disagreed) out.push(tf("Backup disagreed, existing verdict kept: {n}", { n: num(pq.local_verdict_disagreed) }));
         return out;
       };
       const qualPerBackup = !!(qualGained || disqGained) && qualSnaps.length > 1;

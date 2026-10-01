@@ -587,7 +587,7 @@
   "Backup & restore": "Backup & restore",
   "Backup complete →": "Backup complete →",
   "Backup complete:": "Backup complete:",
-  "Backup disagreed, your verdict kept: {n}": "Backup disagreed, your verdict kept: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "Backup disagreed, existing verdict kept: {n}",
   "Backup downloaded.": "Backup downloaded.",
   "Backup failed — see console": "Backup failed — see console",
   "Backup failed:": "Backup failed:",

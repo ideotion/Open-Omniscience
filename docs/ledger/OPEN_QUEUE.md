@@ -16090,7 +16090,7 @@ maintainer as a card.
   boot with a revert record. **WHICH ROWS THE BOOT REPAIR MAY TOUCH (coordinator ruling on rule 12 = b, 2026-10-01):**
   only a source whose live verdict is the catalogue's own stamp (`oo-curated-catalog-1`) or nothing; the field's own
   inversions (085639, 091717) are all of that kind. A source whose live verdict was MEASURED here (or taken from an
-  earlier import) is reported (`left_for_local_recheck_total`, each row's `live_stamp`) and never changed by an
+  earlier import) is reported (`not_auto_repaired_measured_here_total`, each row's `live_stamp`) and never changed by an
   imported history on its own. **KNOWN LIMIT, until the follow-up lands:** nothing brings a re-check forward (a
   copied-in attempt resets the re-verification clock), so the unsafe order of that class (live qualified, newer
   imported disqualification) can keep collecting for up to three months, and the safe order (live disqualified, newer

@@ -587,7 +587,7 @@
   "Backup & restore": "バックアップと復元",
   "Backup complete →": "バックアップ完了 →",
   "Backup complete:": "バックアップが完了しました:",
-  "Backup disagreed, your verdict kept: {n}": "バックアップと不一致、あなたの判定を保持: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "バックアップと不一致、既存の判定を保持: {n}",
   "Backup downloaded.": "バックアップをダウンロードしました。",
   "Backup failed — see console": "バックアップ失敗 — コンソールを確認",
   "Backup failed:": "バックアップ失敗:",

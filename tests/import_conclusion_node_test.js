@@ -403,7 +403,7 @@ test("I-1: a single backup's snapshot is the run's and is stated in the aggregat
   const html = render([okq("one", qual(6400, 21, 1, { v1: 22 }, 3))],
                       { state: "done", elapsed_s: 5, items_done: 1, items_total: 1 });
   assert(/Already judged, kept: 6.400/.test(html), html);
-  assert(html.includes("Backup disagreed, your verdict kept: 3"), html);
+  assert(html.includes("Backup disagreed, existing verdict kept: 3"), html);
   assert(!html.includes("counted per backup"), "one backup has nothing to overlap with: " + html);
 });
 

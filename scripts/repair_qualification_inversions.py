@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.ignore_hold:
         from src.catalog.qualification_integrity import _read_repair_index
 
-        held = set(_read_repair_index()["reverted_domains"])
+        held = set(_read_repair_index(strict=True)["reverted_domains"])
     with session_scope() as session:
         report = repair_inversions(session, dry_run=not args.apply, skip_domains=held)
 

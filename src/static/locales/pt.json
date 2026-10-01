@@ -587,7 +587,7 @@
   "Backup & restore": "Cópia de segurança e restauro",
   "Backup complete →": "Cópia concluída →",
   "Backup complete:": "Cópia de segurança concluída:",
-  "Backup disagreed, your verdict kept: {n}": "O backup discordou, o seu veredicto foi mantido: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "O backup discordou, o veredicto existente foi mantido: {n}",
   "Backup downloaded.": "Backup baixado.",
   "Backup failed — see console": "Cópia falhou — ver consola",
   "Backup failed:": "Falha no backup:",

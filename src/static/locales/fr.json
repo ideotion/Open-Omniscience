@@ -587,7 +587,7 @@
   "Backup & restore": "Sauvegarde & restauration",
   "Backup complete →": "Sauvegarde terminée →",
   "Backup complete:": "Sauvegarde terminée :",
-  "Backup disagreed, your verdict kept: {n}": "La sauvegarde était en désaccord, votre verdict conservé : {n}",
+  "Backup disagreed, existing verdict kept: {n}": "La sauvegarde était en désaccord, verdict existant conservé : {n}",
   "Backup downloaded.": "Sauvegarde téléchargée.",
   "Backup failed — see console": "Échec de la sauvegarde — voir la console",
   "Backup failed:": "Échec de la sauvegarde :",

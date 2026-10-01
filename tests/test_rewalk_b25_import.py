@@ -147,7 +147,7 @@ _RESULT_BLOCK_KEYS = [
     "database records, all types",
     "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.",
     "How your corpus grew",
-    "Backup disagreed, your verdict kept: {n}",
+    "Backup disagreed, existing verdict kept: {n}",
     "{n} conflict (your version kept)",
     "{n} conflicts (your version kept)",
     "conflicts (your version kept)",

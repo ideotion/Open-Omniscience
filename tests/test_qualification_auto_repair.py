@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -66,6 +67,7 @@ def env(monkeypatch):
 
     monkeypatch.setattr(sess, "session_scope", scope)
     monkeypatch.setattr(kv, "kv_get_json", lambda key: copy.deepcopy(store.get(key)))
+    monkeypatch.setattr(kv, "kv_get_json_strict", lambda key: copy.deepcopy(store.get(key)))
     monkeypatch.setattr(kv, "kv_set_json", lambda key, obj: store.__setitem__(key, copy.deepcopy(obj)))
 
     class Env:
@@ -216,7 +218,9 @@ def test_the_report_degrades_to_zero_when_the_record_is_unreadable(monkeypatch) 
         raise RuntimeError("store unavailable")
 
     monkeypatch.setattr(kv, "kv_get_json", boom)
-    assert qi.repair_summary()["repaired_total"] == 0
+    monkeypatch.setattr(kv, "kv_get_json_strict", boom)
+    summary = qi.repair_summary()
+    assert summary["repaired_total"] == 0 and "could not be read" in summary["repairs_note"]
 
 
 def _attempt(env, domain: str, verdict: str, at: datetime) -> None:
@@ -361,11 +365,13 @@ def test_the_hold_is_written_before_the_revert_changes_anything(env, monkeypatch
     assert qi.auto_repair_inversions(now=NOW + timedelta(days=1))["repaired"] == 0
 
 
+_MAIN_PY = Path(__file__).resolve().parents[1] / "src" / "api" / "main.py"
+
+
 def _boot_call_ancestry():
     import ast
-    from pathlib import Path
 
-    tree = ast.parse(Path("src/api/main.py").read_text(encoding="utf-8"))
+    tree = ast.parse(_MAIN_PY.read_text(encoding="utf-8"))
     parents: dict[int, ast.AST] = {}
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
@@ -432,7 +438,9 @@ def test_a_verdict_measured_here_is_never_changed_by_the_boot_repair(env) -> Non
     with env.scope() as s:
         rep = qi.qualification_integrity_report(s)
     assert rep["inversions_total"] == 2          # mine.example and s7a.example remain, reported
-    assert rep["auto_repairable_total"] == 0 and rep["left_for_local_recheck_total"] == 2
+    assert rep["auto_repairable_total"] == 0 and rep["not_auto_repaired_total"] == 2
+    assert rep["not_auto_repaired_measured_here_total"] == 1
+    assert rep["not_auto_repaired_requalify_direction_total"] == 1
     assert {r["domain"]: r["live_stamp"] for r in rep["laundered"]} == {"mine.example": "measured"}
 
 
@@ -443,7 +451,7 @@ def test_the_report_counts_what_the_boot_repair_would_take(env) -> None:
         _add(s, "catalogue.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
         _add(s, "never.example", "unqualified", STATUS_DISQUALIFIED)
         rep = qi.qualification_integrity_report(s)
-    assert rep["auto_repairable_total"] == 2 and rep["left_for_local_recheck_total"] == 1
+    assert rep["auto_repairable_total"] == 2 and rep["not_auto_repaired_total"] == 1
     stamps = {r["domain"]: r["live_stamp"] for r in rep["laundered"]}
     assert stamps == {"mine.example": "measured", "catalogue.example": "catalogue",
                       "never.example": "none"}
@@ -642,6 +650,7 @@ def test_an_inverted_backup_imported_into_a_consistent_instance_is_withdrawn_at_
     monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
     monkeypatch.setattr(sess, "session_scope", scope)
     monkeypatch.setattr(kv, "kv_get_json", lambda key: copy.deepcopy(store.get(key)))
+    monkeypatch.setattr(kv, "kv_get_json_strict", lambda key: copy.deepcopy(store.get(key)))
     monkeypatch.setattr(kv, "kv_set_json", lambda key, obj: store.__setitem__(key, copy.deepcopy(obj)))
     out = qi.auto_repair_inversions(now=NOW)
 
@@ -650,5 +659,269 @@ def test_an_inverted_backup_imported_into_a_consistent_instance_is_withdrawn_at_
     assert after["psx.com.pk"].status == STATUS_DISQUALIFIED, "the catalogue-stamped row is withdrawn"
     assert after["mine.example"].status == STATUS_QUALIFIED, "a verdict measured here is not"
     rep = _integrity(working)
-    assert rep["inversions_total"] == 1 and rep["left_for_local_recheck_total"] == 1
+    assert rep["inversions_total"] == 1 and rep["not_auto_repaired_measured_here_total"] == 1
     assert [r["domain"] for r in rep["laundered"]] == ["mine.example"]
+
+
+def test_a_held_domain_is_not_counted_as_auto_repairable(env) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    qi.revert_repairs(dry_run=False)                       # back to qualified, and held
+    assert qi.auto_repair_inversions(now=NOW + timedelta(hours=1))["repaired"] == 0
+    with env.scope() as s:
+        rep = qi.qualification_integrity_report(s)
+    assert rep["auto_repairable_total"] == 0
+    assert rep["not_auto_repaired_held_total"] == 1 and rep["not_auto_repaired_total"] == 1
+
+
+def test_a_measured_row_is_in_no_record_and_a_second_boot_writes_nothing(env) -> None:
+    with env.scope() as s:
+        _add(s, "mine.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED,
+             live_version=MEASURED, live_at=T0)
+        _add(s, "cat.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    for run in (v for k, v in env.store.items() if k.startswith(qi.REPAIR_RUN_PREFIX)):
+        assert "mine.example" not in [r["domain"] for r in run["repairs"]]
+    import copy
+
+    before = copy.deepcopy(env.store)
+    assert qi.auto_repair_inversions(now=NOW + timedelta(hours=1))["repaired"] == 0
+    assert env.store == before, "nothing planned, nothing written"
+
+
+def test_an_applied_run_whose_confirmation_failed_is_confirmed_at_the_next_boot(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    import src.config.kv_store as kv
+
+    real = kv.kv_set_json
+    state = {"fail": True}
+
+    def flaky(key, obj):
+        if state["fail"] and key.startswith(qi.REPAIR_RUN_PREFIX) and obj.get("applied"):
+            raise OSError("disk full")
+        real(key, obj)
+
+    monkeypatch.setattr(kv, "kv_set_json", flaky)
+    with pytest.raises(OSError):
+        qi.auto_repair_inversions(now=NOW)
+    assert qi.repair_summary()["repairs_unconfirmed"] == 1
+    state["fail"] = False
+    qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+    summary = qi.repair_summary()
+    assert summary["repaired_total"] == 1 and summary["repairs_unconfirmed"] == 0
+
+
+def test_an_applied_but_unconfirmed_record_survives_a_later_different_plan(env, monkeypatch) -> None:
+    """A run that applied but could not confirm is never overwritten by the next plan: it lists
+    different sources, so it is appended, and BOTH records stay revertable."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    import src.config.kv_store as kv
+
+    real = kv.kv_set_json
+    state = {"fail": True}
+
+    def flaky(key, obj):
+        if state["fail"] and key.startswith(qi.REPAIR_RUN_PREFIX) and obj.get("applied"):
+            raise OSError("disk full")
+        real(key, obj)
+
+    monkeypatch.setattr(kv, "kv_set_json", flaky)
+    with pytest.raises(OSError):
+        qi.auto_repair_inversions(now=NOW)
+    # a confirm that cannot land either (the store is still failing), then a NEW inversion
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    with pytest.raises(OSError):
+        qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+    runs = qi._read_repair_index()["runs"]
+    assert len(runs) == 2, "the first run was appended to, not overwritten"
+    first = env.store[qi.REPAIR_RUN_PREFIX + runs[0]]
+    assert [r["domain"] for r in first["repairs"]] == ["x.example"]
+    state["fail"] = False
+    assert qi.revert_repairs(dry_run=False)["reverted"] == 2
+
+
+# --------------------------------------------------------------------------- #
+#  The coordinator's S2 / S3: fail closed, and the claims that were only read, now exercised
+# --------------------------------------------------------------------------- #
+def test_an_unreadable_index_skips_the_repair_and_overwrites_nothing(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    before = {k: dict(v) for k, v in env.store.items()}
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)   # would be planned
+    import src.config.kv_store as kv
+
+    def locked(_key):
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", locked)
+    out = qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+
+    assert out["repaired"] == 0 and "cannot be read" in out["skipped"]
+    assert _status(env, "y.example").status == STATUS_QUALIFIED, "nothing is repaired this boot"
+    assert env.store == before, "the stored index and runs are exactly as they were"
+    with pytest.raises(OSError):
+        qi.revert_repairs(dry_run=False)                            # the revert refuses too
+
+
+def test_the_strict_reader_tells_an_unreadable_store_from_an_absent_key(tmp_path, monkeypatch) -> None:
+    import sqlite3
+
+    import src.config.kv_store as kv
+
+    db = tmp_path / "open_omniscience.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    kv.kv_invalidate()
+    assert kv.kv_get_json_strict("k") is None            # no file, no table: absent
+    kv.kv_set_json("k", {"a": 1})
+    kv.kv_invalidate()
+    assert kv.kv_get_json_strict("k") == {"a": 1}
+    kv.kv_invalidate()
+    with sqlite3.connect(db) as c:
+        c.execute("DROP TABLE app_state")
+    assert kv.kv_get_json_strict("k") is None            # the table is simply not there yet
+
+    def broken(_path):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(kv, "_open", broken)
+    kv.kv_invalidate()
+    with pytest.raises(sqlite3.OperationalError):
+        kv.kv_get_json_strict("k")
+
+
+def test_a_restore_does_not_carry_the_repair_record(tmp_path) -> None:
+    from src.backup.merge import merge_corpus
+    from src.database.models import AppState
+    from tests.test_merge_source_qualification import _BATCH_META, _corpus
+
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    mine = {"runs": ["2026-09-30T12:00:00+00:00"], "last_run_at": "x", "reverted_domains": ["keep.example"]}
+    with _corpus(working)() as s:
+        s.add(AppState(key=qi.REPAIR_INDEX_KEY, value=__import__("json").dumps(mine)))
+        s.commit()
+    with _corpus(staged)() as s:
+        s.add(AppState(key=qi.REPAIR_INDEX_KEY, value='{"runs": ["other"], "reverted_domains": []}'))
+        s.add(AppState(key=qi.REPAIR_RUN_PREFIX + "other", value='{"applied": true, "repairs": []}'))
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    with _corpus(working)() as s:
+        rows = {r.key: r.value for r in s.query(AppState).all()}
+    assert __import__("json").loads(rows[qi.REPAIR_INDEX_KEY]) == mine, "this machine's record is untouched"
+    assert qi.REPAIR_RUN_PREFIX + "other" not in rows, "another machine's record never arrives"
+
+
+def _load_script():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "repair_script_cli", Path(__file__).resolve().parents[1] / "scripts"
+        / "repair_qualification_inversions.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    return script
+
+
+def test_revert_repairs_is_a_dry_run_through_the_script_unless_apply_is_given(env) -> None:
+    script = _load_script()
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+
+    assert script.main(["--revert-repairs"]) == 0
+    assert _status(env, "x.example").status == STATUS_DISQUALIFIED, "no --apply, nothing written"
+    assert qi._read_repair_index()["reverted_domains"] == []
+    script.main(["--revert-repairs", "--apply"])
+    assert _status(env, "x.example").status == STATUS_QUALIFIED
+    assert qi._read_repair_index()["reverted_domains"] == ["x.example"]
+
+
+def test_the_boot_block_is_exercised_and_never_raises(monkeypatch, caplog) -> None:
+    """Not only read from the syntax tree: the real try block of run_deferred_startup is cut out
+    of main.py and run, once with a repair that fails and once with one that repaired."""
+    import ast
+    import logging
+    import textwrap
+
+    source = _MAIN_PY.read_text(encoding="utf-8")
+    tries = [n for n in _boot_call_ancestry() if isinstance(n, ast.Try)]
+    node = tries[0]
+    block = textwrap.dedent(" " * node.col_offset + ast.get_source_segment(source, node))
+    log = logging.getLogger("test.boot")
+
+    def boom():
+        raise RuntimeError("store locked")
+
+    monkeypatch.setattr(qi, "auto_repair_inversions", boom)
+    with caplog.at_level(logging.INFO, logger="test.boot"):
+        exec(compile(block, "<boot-block>", "exec"), {"logger": log})   # must not raise
+    assert any("could not reconcile" in r.getMessage() for r in caplog.records)
+
+    caplog.clear()
+    monkeypatch.setattr(qi, "auto_repair_inversions", lambda: {"repaired": 3})
+    with caplog.at_level(logging.INFO, logger="test.boot"):
+        exec(compile(block, "<boot-block>", "exec"), {"logger": log})
+    assert any("Restored 3 source" in r.getMessage() for r in caplog.records)
+
+
+def test_ruling_12_a_measured_local_verdict_survives_an_imported_disqualification(tmp_path, monkeypatch) -> None:
+    """The whole path for the case the coordinator's ruling is about: a verdict measured HERE,
+    a newer disqualification imported from another instance. The merge keeps the local status
+    (C2) and the next boot does not take it back."""
+    import copy
+
+    from src.backup.merge import merge_corpus
+    from tests.test_merge_source_qualification import (
+        _BATCH_META,
+        _MEASURED,
+        _SEEN,
+        _T0,
+        _add_attempt,
+        _add_source,
+        _corpus,
+        _integrity,
+        _sources,
+    )
+
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "mine.example", status="qualified", at=_T0, version=_MEASURED)
+        _add_attempt(s, sid, "qualified", _T0, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "mine.example", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["mine.example"].status == "qualified"
+    assert _integrity(working)["inversions_total"] == 1
+
+    maker = _corpus(working)
+    store: dict[str, dict] = {}
+
+    @contextlib.contextmanager
+    def scope():
+        s = maker()
+        try:
+            yield s
+            s.commit()
+        finally:
+            s.close()
+
+    import src.config.kv_store as kv
+    import src.database.session as sess
+
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    monkeypatch.setattr(sess, "session_scope", scope)
+    monkeypatch.setattr(kv, "kv_get_json", lambda key: copy.deepcopy(store.get(key)))
+    monkeypatch.setattr(kv, "kv_get_json_strict", lambda key: copy.deepcopy(store.get(key)))
+    monkeypatch.setattr(kv, "kv_set_json", lambda key, obj: store.__setitem__(key, copy.deepcopy(obj)))
+    assert qi.auto_repair_inversions(now=NOW)["repaired"] == 0
+    assert _sources(working)["mine.example"].status == "qualified", "12 = b: it is not taken back"
+    assert not store, "and nothing was recorded"

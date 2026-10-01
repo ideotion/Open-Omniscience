@@ -587,7 +587,7 @@
   "Backup & restore": "Резервное копирование и восстановление",
   "Backup complete →": "Резервное копирование завершено →",
   "Backup complete:": "Резервное копирование завершено:",
-  "Backup disagreed, your verdict kept: {n}": "Резервная копия не согласна, ваш вердикт сохранён: {n}",
+  "Backup disagreed, existing verdict kept: {n}": "Резервная копия не согласна, имеющийся вердикт сохранён: {n}",
   "Backup downloaded.": "Копия скачана.",
   "Backup failed — see console": "Ошибка резервного копирования — см. консоль",
   "Backup failed:": "Сбой резервного копирования:",
