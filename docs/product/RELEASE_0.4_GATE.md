@@ -424,8 +424,8 @@ instance as row D, read through `GET /api/diagnostics/qualification-integrity` a
   withdraws by itself (a source still on the catalogue's own stamp), and
   `not_auto_repaired_measured_here_total` is what it deliberately LEAVES (a verdict measured here or
   adopted from an import is never changed by an imported history, rule 12 = b) until this install's
-  own re-check, which the forced re-check list brings forward. Row A's clause is answered by those
-  rows being named, not by the number being zero.
+  own re-check, which the forced re-check list brings forward. (This reads the report; it does not
+  change how row A is judged.)
 
 So **"tooling that can state its own result" is true today**: it states a verdict, both
 directions apart, names the sources, and refuses to read a corpus with no judgements as a clean

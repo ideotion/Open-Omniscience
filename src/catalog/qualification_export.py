@@ -306,4 +306,12 @@ def to_overlay_yaml(export: dict) -> str:
         "# A domain absent from this file ships unqualified and is judged by the install's\n"
         "# own first qualification pass, exactly as before this file existed.\n"
     )
+    basis = export.get("basis") or {}
+    if basis.get("repair_record_unreadable"):
+        runs = ", ".join(basis.get("repair_runs_unreadable") or []) or "the repair index"
+        header += (
+            "# WARNING: the record of the boot repair could not be read in full (" + runs + ").\n"
+            "# A source it withdrew may be labelled `measured` below although its verdict came from an\n"
+            "# imported history; do not count this file's verdicts as corroboration until it is read.\n"
+        )
     return header + yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)

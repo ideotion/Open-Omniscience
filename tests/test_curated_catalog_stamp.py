@@ -382,6 +382,21 @@ def test_a_repair_record_without_judged_at_reads_inherited_conservatively(db, mo
     assert [(v["domain"], v["basis"]) for v in export["verdicts"]] == [(s.domain, "inherited")]
 
 
+def test_the_overlay_file_carries_the_warning_when_the_repair_record_was_unreadable(db, monkeypatch):
+    """The flag in the basis block never reached the YAML a maintainer merges; now a comment does."""
+    import src.catalog.qualification_integrity as qi
+    from src.catalog.qualification_export import to_overlay_yaml
+
+    _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, []))
+    assert "WARNING" not in to_overlay_yaml(build_overlay_export(db, now=NOW + timedelta(days=6)))
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    text = to_overlay_yaml(build_overlay_export(db, now=NOW + timedelta(days=6)))
+    assert "WARNING" in text and "2026-09-30T00:00:00+00:00" in text
+    import yaml
+    assert yaml.safe_load(text)["verdicts"] is not None, "still a valid overlay file"
+
+
 def test_the_provenance_basis_reads_a_repaired_row_as_the_export_does(db, monkeypatch):
     """GET /api/sources/{id}/provenance must not call an imported verdict `measured` either."""
     import src.catalog.qualification_integrity as qi
