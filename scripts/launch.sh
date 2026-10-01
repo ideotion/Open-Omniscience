@@ -29,6 +29,16 @@ if [ -f "$DIR/oo.env" ]; then
     . "$DIR/oo.env" || true
 fi
 
+# Cap glibc's malloc arenas at 2 (R114, the maintainer's ruling of 2026-10-01). glibc gives
+# every busy thread an arena of its own, up to 8 per core, and memory a thread frees stays in
+# ITS arena until glibc trims it: the app runs dozens of threads, and the one reading taken
+# inside a death (2026-09-30) found 988.7 MB of 3,437 MB of anonymous memory freed but held.
+# A value the operator already chose (oo.env above, or the caller's environment) is kept, so
+# this is only a default. glibc reads the variable once, when the server process starts, so
+# it takes effect at the next launch; where the allocator is not glibc (macOS, Alpine, Windows)
+# it does nothing, and the app's diagnostics say which allocator each session ran on.
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+
 PORT="${OO_PORT:-8000}"
 BASE="http://127.0.0.1:${PORT}"
 URL="${BASE}${UI_PATH}"

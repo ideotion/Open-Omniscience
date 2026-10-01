@@ -92,6 +92,11 @@ this section were still open.
   guard's floor, and the keyword clean-up and Home card reads are bounded (#1190); a crash report
   keeps the last C-heap reading taken before the final peak (#1194); collection workers read
   their source through their own session (#1184).
+- The launcher caps glibc's malloc arenas at two (`MALLOC_ARENA_MAX=2`, R114, #1304): the app's many threads
+  leave the memory they free held in their own arenas, and the first reading taken inside a crash found
+  nearly 30% of its anonymous memory in that state. An instance has it from its first launch through
+  the launcher after an update, an operator's own value is kept, and the diagnostics say which
+  instances run with it.
 
 ### Interface and translations
 

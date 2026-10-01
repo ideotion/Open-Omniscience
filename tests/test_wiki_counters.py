@@ -25,6 +25,7 @@ from src.wiki.counters import (
     gap_history,
     lane_counters,
     record_size_sample,
+    run_clock,
 )
 
 NOW = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
@@ -200,7 +201,7 @@ def test_the_reading_names_every_block_that_has_NOTHING_to_say(lane):
         out = lane_counters(db, now=NOW)
     # "walk" and "warm" too: a lane whose page walk or WARM tier never ran reports each
     # ABSENT (0.5 row F), never as zero pages seen or zero texts fetched.
-    assert set(out["unmeasured"]) == {"rows_per_day", "bytes_per_day", "walk", "warm"}
+    assert set(out["unmeasured"]) == {"rows_per_day", "bytes_per_day", "run", "walk", "warm"}
     assert out["walk"] == {"measured": False, "reason": "walk-never-run"}
     assert out["warm"] == {"measured": False, "reason": "warm-never-run"}
     assert "no counters file" in out["method"]
@@ -260,3 +261,183 @@ def test_the_soak_windows_own_method_line_names_the_lane(lane):
         report = soak_window(db)
     assert "wiki_lane" in report
     assert "Wikipedia lane" in report["method"]
+
+
+# --------------------------------------------------------------------------- #
+# The run clock: how long the lane has run, across restarts.
+# --------------------------------------------------------------------------- #
+T0 = datetime(2026, 9, 14, 0, 0, tzinfo=UTC)  # inside the 7-day window read at NOW
+
+
+def _hourly(db, *, from_h, to_h, prefix, occurred_offset_h=None):
+    """One change recorded in each hour of [from_h, to_h), hours after T0."""
+    for h in range(from_h, to_h):
+        at = T0 + timedelta(hours=h, minutes=17)
+        db.add(
+            VersionedChange(
+                change_ref=f"{prefix}{h}",
+                feed="stream:oo",
+                change_kind="edit",
+                recorded_at=at,
+                occurred_at=at - timedelta(hours=occurred_offset_h) if occurred_offset_h else at,
+            )
+        )
+    db.flush()
+
+
+def _clock(db, *, now=NOW, bar=72.0):
+    return run_clock(db, window_days=7, now=now, bar_hours=bar)
+
+
+def test_a_lane_with_no_sign_of_life_has_NO_run_rather_than_zero_hours(lane):
+    with lane_session("wiki") as db:
+        out = _clock(db)
+    assert out["measured"] is False
+    assert "not a run of zero hours" in out["reason"]
+    assert "hours" not in out and "reaches_bar" not in out
+
+
+def test_an_unbroken_run_counts_its_hours_and_reaches_the_bar(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=72, prefix="a")
+        out = _clock(db, now=T0 + timedelta(hours=72, minutes=30))
+    assert out["measured"] is True
+    assert out["stretches_n"] == 1 and out["stops_n"] == 0
+    assert out["hours"] == 72.0 and out["reaches_bar"] is True
+    assert out["idle_now"] is None
+
+
+def test_a_RESTART_does_not_reset_the_clock_it_leaves_a_named_stop(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=30, prefix="a")
+        _hourly(db, from_h=40, to_h=70, prefix="b")  # ten silent hours: the app was down
+        out = _clock(db, now=T0 + timedelta(hours=70, minutes=30))
+    assert out["stretches_n"] == 2
+    assert out["stops_n"] == 1
+    stop = out["stops"][0]
+    assert stop["hours"] == 10.0
+    assert stop["from"] == (T0 + timedelta(hours=30)).isoformat()
+    assert stop["to"] == (T0 + timedelta(hours=40)).isoformat()
+    # Both stretches count, the hole does not: 60 hours of run, short of a 72 hour bar.
+    assert out["hours"] == 60.0 and out["reaches_bar"] is False
+    assert out["span_hours"] == 70.0, "the span still says how long ago the run began"
+
+
+def test_a_replay_after_downtime_does_NOT_mark_the_offline_hours_active(lane):
+    # The stream resumed after ten silent hours replays them: the rows are RECORDED in the
+    # new stretch but OCCURRED inside the hole. Counted by occurred_at the stop would vanish.
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=30, prefix="a")
+        _hourly(db, from_h=40, to_h=41, prefix="b", occurred_offset_h=5)
+        db.add(
+            VersionedChange(
+                change_ref="replayed", feed="stream:oo", change_kind="edit",
+                recorded_at=T0 + timedelta(hours=40, minutes=20),
+                occurred_at=T0 + timedelta(hours=35),
+            )
+        )
+        db.flush()
+        out = _clock(db, now=T0 + timedelta(hours=41, minutes=30))
+    assert out["stops_n"] == 1 and out["stops"][0]["hours"] == 10.0
+
+
+def test_a_short_quiet_spell_inside_a_stretch_is_not_a_stop(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=10, prefix="a")
+        _hourly(db, from_h=12, to_h=20, prefix="b")  # two empty hours: below the limit
+        out = _clock(db, now=T0 + timedelta(hours=20, minutes=30))
+    assert out["stretches_n"] == 1 and out["stops_n"] == 0
+    assert out["evidence_hours"] == 18 and out["hours"] == 20.0
+
+
+def test_a_lane_that_has_gone_quiet_since_says_so(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=10, prefix="a")
+        out = _clock(db, now=T0 + timedelta(hours=16))
+    assert out["idle_now"] is not None
+    assert out["idle_now"]["since"] == (T0 + timedelta(hours=10)).isoformat()
+    assert out["idle_now"]["hours"] == 6.0
+
+
+def test_size_samples_and_walk_hours_are_signs_of_life_too(lane):
+    from src.wiki.lane_models import WikiWalkSample
+
+    with lane_session("wiki") as db:
+        db.add(VersionedSizeSample(measured_at=T0 + timedelta(hours=1, minutes=5), file_bytes=10))
+        db.add(
+            WikiWalkSample(
+                hour_start=T0 + timedelta(hours=2), transport="direct", requests=3, pages=150,
+                response_bytes=1, busy_ms=1,
+            )
+        )
+        db.add(  # a walk hour with NO request is not a sign of life
+            WikiWalkSample(
+                hour_start=T0 + timedelta(hours=9), transport="direct", requests=0, pages=0,
+                response_bytes=0, busy_ms=0,
+            )
+        )
+        db.flush()
+        out = _clock(db, now=T0 + timedelta(hours=3))
+    assert out["evidence"] == {"changes_recorded": 0, "size_samples": 1, "walk_requests": 1}
+    assert out["evidence_hours"] == 2 and out["stretches_n"] == 1
+
+
+def test_a_lane_file_without_the_walk_table_still_reads(lane):
+    from sqlalchemy import text
+
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=5, prefix="a")
+        db.execute(text("DROP TABLE wiki_walk_samples"))
+        out = _clock(db, now=T0 + timedelta(hours=6))
+    assert out["measured"] is True and out["evidence"]["walk_requests"] == 0
+
+
+def test_the_run_rides_the_soak_windows_lane_block_with_its_bar(lane, monkeypatch):
+    import src.wiki.counters as counters_mod
+
+    monkeypatch.setattr(counters_mod, "_utcnow", lambda: T0 + timedelta(hours=5, minutes=30))
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=5, prefix="a")
+    from src.monitoring.soak_window import _wiki_lane
+
+    block = _wiki_lane(72.0)
+    assert block["run"]["measured"] is True
+    assert block["run"]["bar_hours"] == 72.0 and block["run"]["reaches_bar"] is False
+
+
+def test_the_idle_rule_is_the_stop_rule_three_WHOLE_silent_hours_after_the_last_hour(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=10, prefix="a")  # last evidence hour is 9 (09:17)
+        just_short = _clock(db, now=T0 + timedelta(hours=12, minutes=59))  # hours 10, 11, 12 -> not yet 3 whole
+        exactly = _clock(db, now=T0 + timedelta(hours=13))
+    assert just_short["idle_now"] is None, "two and a bit silent hours is not yet a stop"
+    assert exactly["idle_now"] == {"since": (T0 + timedelta(hours=10)).isoformat(), "hours": 3.0}
+
+
+def test_the_hour_in_progress_counts_only_up_to_now(lane):
+    with lane_session("wiki") as db:
+        db.add(VersionedSizeSample(measured_at=T0 + timedelta(hours=5, minutes=1), file_bytes=1))
+        db.flush()
+        out = _clock(db, now=T0 + timedelta(hours=5, minutes=2))
+    assert out["hours"] == 0.0 and out["span_hours"] == 0.0 and out["reaches_bar"] is False
+
+
+def test_evidence_older_than_the_window_is_NO_reading_and_says_the_window(lane):
+    with lane_session("wiki") as db:
+        _hourly(db, from_h=0, to_h=5, prefix="a")
+        out = run_clock(db, window_days=7, now=T0 + timedelta(days=9), bar_hours=72.0)
+    assert out["measured"] is False and out["window_days"] == 7
+    assert "hours" not in out
+
+
+def test_a_failing_run_clock_blanks_itself_and_not_the_counters(lane, monkeypatch):
+    import src.wiki.counters as counters_mod
+
+    def boom(*a, **k):
+        raise RuntimeError("disk I/O error")
+
+    monkeypatch.setattr(counters_mod, "run_clock", boom)
+    with lane_session("wiki") as db:
+        out = lane_counters(db, now=NOW)
+    assert out["run"]["measured"] is False and "RuntimeError" in out["run"]["reason"]
+    assert out["rows_per_day"]["measured"] is False and "run" in out["unmeasured"]

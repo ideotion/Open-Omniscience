@@ -29,6 +29,12 @@ written through at once, the newest few kept. At boot both files are read as the
 PREVIOUS session's record and then reset — so the previous session's own peaks travel
 into the next boot's report, and nothing the current session does can overwrite them.
 
+Since 2026-10-01 (R114) the record also says which C allocator the session ran on and
+whether its malloc arenas were capped (``allocator``): ``scripts/launch.sh`` starts the app
+with ``MALLOC_ARENA_MAX=2``, only instances launched since an update carry it, and
+"freed but held" memory (``heap_free_held_mb``) can only be read against the setting the
+process started with.
+
 HONESTY RULES BAKED IN
 - A field that cannot be measured is OMITTED, never written as 0. ``rss_max_mb: 0``
   would read as "the process used no memory", which is the opposite of unmeasured
@@ -164,6 +170,104 @@ def _glibc_heap() -> dict[str, float] | None:
         "heap_free_held_mb": round(mi.fordblks / mb, 1),
         "heap_mmapped_mb": round(mi.hblkhd / mb, 1),
     }
+
+
+_ARENA_VAR = "MALLOC_ARENA_MAX"
+
+
+def _starting_value(name: str) -> tuple[str | None, str]:
+    """The value environment variable ``name`` had when this process STARTED, and where
+    that was read (``None`` for a variable that was not set).
+
+    glibc reads ``MALLOC_ARENA_MAX`` once, before the process's first allocation, so a
+    later change to ``os.environ`` can never have applied to it. On Linux
+    ``/proc/self/environ`` is the block the process was started with and is read first;
+    where it cannot be read (no procfs, an empty block) ``os.environ`` stands in and the
+    source says so. A variable set twice takes its last value, as glibc and ``os.environ``
+    both do."""
+    source = "the environment the process started with"
+    try:
+        block = Path("/proc/self/environ").read_bytes()
+    except OSError:
+        block = b""
+    if not block:
+        return os.environ.get(name), "os.environ (the starting environment could not be read)"
+    want = name.encode("ascii") + b"="
+    value: str | None = None
+    for entry in block.split(b"\0"):
+        if entry.startswith(want):
+            value = entry[len(want):].decode("utf-8", errors="replace")
+    return value, source
+
+
+def _glibc_version() -> str | None:
+    """``glibc 2.39`` on glibc, None on anything else (musl, macOS, Windows). Asked of the
+    C library itself: ``platform.libc_ver`` scans the interpreter's binary when that
+    fails, which a diagnostic read at every boot has no business doing."""
+    try:
+        got = os.confstr("CS_GNU_LIBC_VERSION")
+    except (AttributeError, ValueError, OSError):
+        return None
+    return got.strip() if got and got.strip().startswith("glibc") else None
+
+
+def allocator_setting() -> dict[str, Any]:
+    """Which C allocator this process runs on and whether its malloc arenas are capped
+    (R114). Every session's record carries it, so a report can tell the instances that run
+    with the cap from those that do not, and the sessions either side of an update.
+
+    ``effective`` is the answer to "does this process run with the cap": True only on glibc
+    started with ``MALLOC_ARENA_MAX`` set to a plain positive whole number (``arena_cap``);
+    False where it is not set, or where the allocator is not glibc and the variable does
+    nothing; None where it was set to something that is not a plain positive whole number,
+    because what glibc made of it is not known. The value is the process's STARTING
+    environment (``source`` says where it was read), never a later ``os.environ``."""
+    try:
+        raw, source = _starting_value(_ARENA_VAR)
+        libc = _glibc_version()
+        cap: int | None = None
+        if raw is not None:
+            text = raw.strip()
+            if text.isascii() and text.isdigit() and int(text) >= 1:
+                cap = int(text)
+        out: dict[str, Any] = {
+            "allocator": libc or f"not glibc ({sys.platform})",
+            "arena_cap": cap,
+            "effective": False,
+            "source": source,
+        }
+        if libc is None:
+            out["note"] = "MALLOC_ARENA_MAX has no effect here" + (
+                f" (it was set to {raw!r})" if raw is not None else ""
+            )
+        elif raw is None:
+            out["note"] = (
+                "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per core, glibc's default "
+                "on a 64-bit machine"
+            )
+        elif cap is None:
+            out["effective"] = None
+            out["note"] = (
+                f"MALLOC_ARENA_MAX was set to {raw!r}, which is not a plain positive whole "
+                "number: whether glibc applied it is not known"
+            )
+        else:
+            out["effective"] = True
+            out["note"] = f"malloc arenas capped at {cap} by MALLOC_ARENA_MAX"
+        return out
+    except Exception as exc:  # noqa: BLE001 - an optional reading, never a second failure
+        return {
+            "allocator": None,
+            "arena_cap": None,
+            "effective": None,
+            "note": f"the allocator setting could not be read ({type(exc).__name__}): unmeasured",
+        }
+
+
+def _session_header() -> dict[str, Any]:
+    """What identifies this session in its own record, written once at its start: the
+    process, when it began, and the allocator setting it began with."""
+    return {"pid": os.getpid(), "started_at": _now(), "allocator": allocator_setting()}
 
 
 def composition(*, walk_heap: bool = True) -> dict[str, Any]:
@@ -491,7 +595,7 @@ def capture_previous() -> dict[str, Any] | None:
         if not _PREV_LOADED:
             _PREV = _read_record()
             _PREV_LOADED = True
-        _MARKS = {"pid": os.getpid(), "started_at": _now()}
+        _MARKS = _session_header()
         _LAST_WRITE = _NEVER
         _reset_snapshots()
         _write(dict(_MARKS))
@@ -558,7 +662,7 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 at_peak["at"] = _now()
         with _LOCK:
             if not _MARKS:
-                _MARKS.update({"pid": os.getpid(), "started_at": _now()})
+                _MARKS.update(_session_header())
             if at_peak is not None:
                 _MARKS["at_peak"] = at_peak
                 # A peak taken with memory already short skips the heap walk, and the
