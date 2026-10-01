@@ -365,8 +365,11 @@ def scheduler_start() -> dict:
     # try again (the guard re-trips after fresh sustained samples if memory is
     # still genuinely low — a retry, never a permanent override).
     memguard.memory_guard.reset(reason="operator started collection")
-    # Likewise the storage guard: a RETRY, never an override -- it re-trips after fresh
-    # over-limit samples if the WAL is still pinned or the drive still nearly full.
+    # Likewise the storage guard: a RETRY -- it re-trips after fresh over-limit samples if the
+    # WAL is still pinned or the drive still nearly full. The button that FORCES collection on
+    # while a limit holds is /storage-guard/resume (R112), not this; an override that is still
+    # needed (its cause is still over the limit, or cannot be read against it) is left alone:
+    # collection runs under it and there is nothing to retry.
     storage_guard.storage_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}
@@ -415,14 +418,49 @@ def memory_guard_resume() -> dict:
 
 @router.post("/storage-guard/resume")
 def storage_guard_resume() -> dict:
-    """Release the storage guard's pause explicitly ("Try again now").
+    """The operator's override of the storage guard's pause ("Resume anyway", R112).
 
-    A retry, never an override of the measurement: the guard re-engages after fresh
-    over-limit samples if the WAL is still pinned past this machine's limit or the drive
-    is still nearly full. Status (incl. the guard's numbers) rides the response.
+    Collection continues although the WAL limit or the drive reserve is still exceeded. It
+    ends by itself when the cause clears, when a limit it was not granted for trips (a second
+    limit), when free space cannot be read for ``trip_after`` samples in a row, when free space falls to
+    the override floor (``max(128 MiB, the log's size)``) and when a write fails for want of
+    space. It is REFUSED (with a sentence frame, nothing changes) while a write has just
+    failed, when free space cannot be read, or when it is already at or below the floor; the
+    status payload's ``storage_guard.override_refusal`` previews that answer from the last
+    sample, so the page offers the button only when that sample says it would be granted. It
+    is also refused, with its own
+    sentence (kind ``supervisor``), when the guard's supervisor is not running and cannot be
+    started: an override is granted only while something reads the floor between passes. A
+    refusal the last sample already shows (held, unreadable, at or below the floor) is the one
+    given, because it is the more specific fact. Loopback only, no egress. The response
+    carries the status payload and ``storage_guard_override`` = ``{engaged, overridden,
+    refused}``.
     """
-    storage_guard.storage_guard.reset(reason="operator resumed via the API")
-    return _status_payload()
+    guard = storage_guard.storage_guard
+    # An override already in force needs no supervisor check for a stale click (the supervisor is
+    # gone only in the shutdown window): the refusal is for a NEW grant.
+    if guard.enabled() and guard.engaged and not guard.state().get("overridden"):
+        from src.scheduler import runner
+
+        runner._ensure_storage_supervisor()  # idempotent; a failure is logged, never raised
+        if not storage_guard.supervisor_running():
+            _LOG.warning(
+                "storage guard override refused: its supervisor is not running and could not be started"
+            )
+            # The click's answer only: the status poll's own preview (``override_refusal``) does not
+            # know about a dead supervisor, so the button stays and a further click is refused with
+            # the same true sentence.
+            refused = guard.state().get("override_refusal") or {
+                "kind": "supervisor",
+                "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,
+                "vars": {},
+            }
+            return {
+                **_status_payload(),
+                "storage_guard_override": {"engaged": True, "overridden": False, "refused": refused},
+            }
+    result = guard.override(reason="operator resumed via the API")
+    return {**_status_payload(), "storage_guard_override": result}
 
 
 @router.get("/targets")

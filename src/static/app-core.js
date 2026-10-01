@@ -1996,8 +1996,11 @@
     // nearly full. The server sends each sentence as a FRAME with its numbers (bytes) apart
     // (the estimate_method_i18n pattern), so the sentence is written in the UI language and the
     // sizes through the one byte formatter. The caveat IS the notice -- visible by default,
-    // never behind a toggle -- with the method one hover away; the button is a RETRY (the guard
-    // re-engages on fresh over-limit samples), never an override of the measurement.
+    // never behind a toggle -- with the method one hover away; the button is the operator's
+    // OVERRIDE (R112): collection continues while the limit is still exceeded, bounded by the
+    // server (it ends by itself when the cause clears, stops again at the override floor or on a
+    // write error, and is refused with a sentence when it cannot be granted). While an
+    // override holds the notice says so and offers no button.
     function _storageGuardHtml(a, t, tf) {
       // Only while collection is meant to be running: "Collection is paused" about a stopped
       // scheduler or airplane mode would be a claim about a state that is not the case.
@@ -2009,20 +2012,51 @@
         Object.keys(n.vars || {}).forEach((k) => { vars[k] = _fmtBytes(n.vars[k]); });
         return `<div class="vwarn">${esc(tf(n.frame, vars))}</div>`;
       }).join("");
-      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look. If the log does not clear by itself, quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
-        lines +
-        `<button class="tiny secondary" data-on-click="storageGuardResume()">${esc(t("Try again now"))}</button></div>`;
+      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
+        lines + _storageGuardTail(g, t, tf) + "</div>";
+    }
+    // What stands under the notice: the button when the last sample says a click would be granted, the server's own
+    // refusal sentence in its place when it would not (so no button is drawn beside "Collection
+    // stays paused" to answer with that same sentence as an error), and nothing while an
+    // override holds. A withdrawal note already says the refusal, so it is not said twice; a
+    // payload without the preview (an older server) keeps the button.
+    function _storageGuardTail(g, t, tf) {
+      if (g.overridden) return "";
+      const rf = g.override_refusal;
+      if (!rf) return `<button class="tiny secondary" data-on-click="storageGuardResume()">${esc(t("Resume anyway"))}</button>`;
+      if ((g.kinds || []).indexOf("override-withdrawn") >= 0) return "";
+      const vars = {};
+      Object.keys(rf.vars || {}).forEach((k) => { vars[k] = _fmtBytes(rf.vars[k]); });
+      return `<div class="vnote">${esc(tf(rf.frame, vars))}</div>`;
     }
     // The two paused phases the storage guard sets, as the labels the panels show.
-    function _storagePausedText(phase) {
+    // None while the operator's override holds: the loop's phase can still read paused for up to
+    // one poll after "Resume anyway", and a "Paused" pill beside the "resumed by you" note says
+    // two things at once.
+    function _storagePausedText(phase, g) {
+      if (g && g.overridden) return null;
       return { "paused-wal-pinned": "Paused: the database log has grown too large",
                "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
     }
     async function storageGuardResume() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, o) => s.replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null) ? String(o[k]) : m));
       try {
-        await api("/api/scheduler/storage-guard/resume", {method: "POST"});
-        toast(t("Trying again. Collection pauses again by itself if the limit is still exceeded."));
+        const r = await api("/api/scheduler/storage-guard/resume", {method: "POST"});
+        const o = (r && r.storage_guard_override) || {};
+        if (o.refused) {
+          // The server could not grant it (a write just failed, free space unreadable, already at
+          // the floor, or no supervisor running): its own sentence, with the sizes through the
+          // page's formatter.
+          const vars = {};
+          Object.keys(o.refused.vars || {}).forEach((k) => { vars[k] = _fmtBytes(o.refused.vars[k]); });
+          toast(tf(o.refused.frame, vars), "err");
+        } else if (o.overridden) {
+          toast(t("Collection resumed although the limit is still exceeded. It stops again by itself if free space falls too low."));
+        } else {
+          toast(t("Resumed."));
+        }
         if (typeof _pollVitals === "function") _pollVitals();
       } catch (e) { toast(e.message, "err"); }
     }
@@ -2063,7 +2097,7 @@
           background: "Background tasks (markets · calendars · checks)",
           briefing: "Building the briefing",
         }[a.phase];
-        const _pausedTxt = _storagePausedText(a.phase);
+        const _pausedTxt = _storagePausedText(a.phase, a.storage_guard);
         nowHtml = row(esc(t9("Now collecting")), a.active
           ? `<span class="muted">${esc(t9(_phaseTxt || "Collecting…"))}</span>`
           : _pausedTxt
@@ -2520,7 +2554,7 @@
       const sect = (x) => `<div class="vsect">${x}</div>`;
       // -- State: the real thread state, never a simulated "healthy" ---------- //
       let stateHtml;
-      const pausedTxt = _storagePausedText(a.phase);
+      const pausedTxt = _storagePausedText(a.phase, a.storage_guard);
       if (a.active) {
         stateHtml = `<span class="pill ok">${esc(t("running — collection in progress"))}</span>`;
       } else if (pausedTxt) {
