@@ -2430,6 +2430,53 @@ def _growth_of(recent: int, expected: float) -> tuple[float, bool]:
     return float(recent), False
 
 
+def _rising_in_rank_order(recent, prior, *, min_recent, baseline_days, window_days, want):
+    """Yield ``(kid, recent, prior, expected, growth, is_ratio)`` in rank order, lazily.
+
+    The order is exactly ``sorted(every keyword, key=(-growth, -recent))`` with a stable tie
+    (the order ``recent`` holds them), which is what the loop here used to build by putting a
+    six-field tuple for EVERY keyword in one list and sorting it. On a corpus with millions of
+    keywords over the floor that list was the allocation burst the 2026-09-30 diagnostics
+    caught (2.2 M blocks, one instance killed). The caller only needs the first ``want`` that
+    survive its filters, so this ranks a bounded chunk at a time (``heapq.nsmallest``, which is
+    documented as equal to ``sorted(...)[:n]``) and asks for a bigger one only when the filters
+    (hidden words, a kind) consumed the chunk. ``want`` is the caller's own headroom, not a cap.
+    """
+    import heapq
+
+    def keyed():
+        for idx, (kid, rc) in enumerate(recent.items()):
+            rc = int(rc or 0)
+            if rc < min_recent:
+                continue
+            pc = int(prior.get(kid, 0) or 0)
+            expected = (pc / baseline_days) * window_days
+            growth, is_ratio = _growth_of(rc, expected)
+            g = round(growth, 2)
+            yield (-g, -rc, idx, kid, pc, round(expected, 2), is_ratio)
+
+    # How many keywords are over the floor: a chunk that has grown to a quarter of them is
+    # no cheaper than ranking them all once, and a heap that size is DEARER than the list it
+    # replaces (a tuple and its tiebreaker per entry, rescanned each pass). So when the
+    # filters keep consuming chunks (a rare kind, thousands of hidden words) the last step is
+    # one full sort, which is the old cost and no more.
+    over_floor = sum(1 for rc in recent.values() if int(rc or 0) >= min_recent)
+    done = 0
+    chunk = max(int(want) * 2, 64)
+    while True:
+        if chunk * 4 >= over_floor:
+            for ng, nrc, _idx, kid, pc, expected, is_ratio in sorted(keyed())[done:]:
+                yield kid, -nrc, pc, expected, -ng, is_ratio
+            return
+        ranked = heapq.nsmallest(chunk, keyed())
+        for ng, nrc, _idx, kid, pc, expected, is_ratio in ranked[done:]:
+            yield kid, -nrc, pc, expected, -ng, is_ratio
+        if len(ranked) < chunk:
+            return  # every keyword over the floor has been offered
+        done = len(ranked)
+        chunk *= 4
+
+
 def trending(
     session,
     *,
@@ -2528,22 +2575,13 @@ def trending(
         )
         prior, _ = _counts(b_start, w_start, lambda kid, _pc: kid in recent)
 
-    scored = []
-    for kid, rc in recent.items():
-        rc = int(rc or 0)
-        if rc < min_recent:
-            continue
-        pc = int(prior.get(kid, 0) or 0)
-        expected = (pc / baseline_days) * window_days
-        growth, is_ratio = _growth_of(rc, expected)
-        scored.append((kid, rc, pc, round(expected, 2), round(growth, 2), is_ratio))
-    scored.sort(key=lambda x: (-x[4], -x[1]))
-
     is_hidden = _hidden_predicate()
     cap = limit * 4  # headroom so ring members below `limit` still merge
     cand = []
     stored_lang: dict[str, str | None] = {}
-    for kid, rc, pc, expected, growth, is_ratio in scored:
+    for kid, rc, pc, expected, growth, is_ratio in _rising_in_rank_order(
+        recent, prior, min_recent=min_recent, baseline_days=baseline_days, window_days=window_days, want=cap
+    ):
         kw = session.get(Keyword, kid)
         if kw is None or (kind and kind_of(kw) != kind) or is_hidden(kw.normalized_term):
             continue
@@ -2622,7 +2660,7 @@ def trending(
         # Multiple-comparisons honesty (evidence-tiered cards): how many
         # candidates were screened to surface these winners — with many terms
         # scanned, some ratios will be high by chance (winner's curse).
-        "scanned": len(scored),
+        "scanned": sum(1 for _rc in recent.values() if int(_rc or 0) >= min_recent),
         "keywords_with_recent_mentions": recent_keywords,
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }

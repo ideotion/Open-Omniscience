@@ -271,7 +271,9 @@ def refresh_briefing(session, on_progress=None) -> dict:
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
-    produced, stats = run_all_bounded(session, on_progress=on_progress, lanes=True)
+    produced, stats = run_all_bounded(
+        session, on_progress=on_progress, lanes=True, memory_stop=True
+    )
     cards = [c.to_dict() for c in produced]
 
     # S2.3: a truncated run must not REPLACE a good feed with what it managed to
@@ -285,15 +287,42 @@ def refresh_briefing(session, on_progress=None) -> dict:
     # would freeze a stale Home forever on a corpus that genuinely yields no cards,
     # which is a worse failure than the one being fixed: the feed would stop being
     # about the corpus at all, and nothing would say so.
-    if stats.get("truncated") and not cards:
+    #
+    # MEMORY is the second reason, and there a PARTIAL set is not good enough either
+    # (diagnostics rank 4): the run stopped because the machine was nearly out of memory,
+    # so the producers it never reached are the ones whose cards would silently vanish
+    # from Home -- the feed would look complete and be missing whatever ran last. When a
+    # cached feed exists it is kept whole and the stop is logged; when none exists the
+    # partial set is written (something beats an empty Home), and ``truncated_reason`` in
+    # ``run_all_bounded``'s stats records why.
+    memory_stopped = stats.get("truncated_reason") == "memory_short"
+    if stats.get("truncated") and (memory_stopped or not cards):
         existing = _read_cache()
         if existing and existing.get("cards"):
             _LOG.warning(
-                "briefing refresh truncated by an enclosing deadline and produced no "
-                "cards; keeping the %d cached cards rather than blanking Home",
+                "briefing refresh %s; keeping the %d cached cards rather than "
+                "replacing Home with %d",
+                "stopped because the machine was nearly out of memory"
+                if memory_stopped
+                else "truncated by an enclosing deadline and produced no cards",
                 len(existing["cards"]),
+                len(cards),
             )
-            return existing
+            # Said in the payload, not only in a log: the caller must not record this as a
+            # refresh that surfaced cards (the Activity Ledger would claim one).
+            kept = {**existing, "kept_reason": "memory_short" if memory_stopped else "deadline"}
+            # Written into the cache as well, so Home (which reads the cache, not this return
+            # value) can say that the feed it shows is the previous one and why. The next
+            # refresh that completes replaces the whole payload, marker included.
+            try:
+                # Only if no full refresh landed since this one read the cache: it must not be
+                # overwritten with the feed it just replaced.
+                current = _read_cache()
+                if current and current.get("generated_at") == existing.get("generated_at"):
+                    _write_cache(kept)
+            except OSError:
+                _LOG.warning("could not record that the briefing refresh kept the cache", exc_info=True)
+            return kept
 
     payload = {
         "version": CACHE_VERSION,
@@ -306,21 +335,33 @@ def refresh_briefing(session, on_progress=None) -> dict:
         "article_count": _article_count(session),
         "cards": _sorted(cards),
     }
-    path = _cache_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    if stats.get("truncated"):
+        # A feed that is missing the producers the run never reached says so, in the cache
+        # and in the view: a short feed must not read as a complete one.
+        payload["incomplete_reason"] = "memory_short" if memory_stopped else "deadline"
+    _write_cache(payload)
     _LOG.info("briefing refreshed: %d cards", len(cards))
     # Warm the heavy whole-corpus read cache (top / trending / map) in this same
     # background pass, so the Home + Insights surfaces are instant and never trigger
     # a cold multi-second aggregation in the UI (perf, field report 2026-06-18).
-    try:
-        from src.api.insights import warm_cache
+    #
+    # Not after a memory stop: the warm-up reads more of the corpus, and the run just
+    # stopped because the machine was nearly out of memory.
+    if not memory_stopped:
+        try:
+            from src.api.insights import warm_cache
 
-        warm_cache(session)
-    except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
-        _LOG.warning("insights cache warm failed; briefing continues", exc_info=True)
+            warm_cache(session)
+        except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
+            _LOG.warning("insights cache warm failed; briefing continues", exc_info=True)
     return payload
+
+
+def _write_cache(payload: dict) -> None:
+    path = _cache_path()
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(path)
 
 
 def _read_cache() -> dict | None:
@@ -350,7 +391,7 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
         items = [c for c in visible if c["bucket"] == b]
         if items:
             buckets.append({"bucket": b, "label": BUCKET_LABELS[b], "cards": items})
-    return {
+    view = {
         "generated_at": payload.get("generated_at"),
         "count": len(visible),
         "total": len(cards),
@@ -358,6 +399,13 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
         "buckets": buckets,
         "cards": visible,
     }
+    # Why this feed may not be the whole picture (diagnostics rank 4): the last refresh
+    # stopped early, either leaving cards out ("incomplete") or leaving this earlier feed
+    # in place ("kept"). Absent when the last refresh completed.
+    for key in ("incomplete_reason", "kept_reason"):
+        if payload.get(key) in ("memory_short", "deadline"):
+            view[key] = payload[key]
+    return view
 
 
 def get_briefing(
