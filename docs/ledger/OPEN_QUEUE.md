@@ -16231,3 +16231,18 @@ maintainer as a card.
   ordinary queue still reaches it), and an unreadable stored list skips the step. The Settings queue view shows how
   many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.
+
+- **ROW F'S 72-HOUR RUN: GROWTH CLOSES AT 72 H (`R116`, 2026-10-01, answer 20b) AND THE RUN MUST SURVIVE CRASHES (PLAN-V05
+  THREAD).** The clause «the budget surface (Q1006) shows the lane's growth» is replaced by «the lane's growth is read at 72
+  hours of the run from its own counters»; the Q1006 surface keeps its seven-day rule and the day-7 `GET /api/storage/lanes`
+  sample is no longer asked of the operator. **Measured on main 74b7fb5d, 2026-10-01 (fixture harness, 36 random kill -9
+  moments and one v0.4.0-lane-file upgrade; scripts and results under `/mnt/project-files/plan-v05/crash-survival-2026-10-01/`):**
+  the lane's data survives a crash and an update (integrity ok every time, nothing lost or duplicated, the walk's bookmark equal
+  to its stored pages, the stream resumed from the newest stored token). **What restarts:** the soak window's clock
+  (`src/monitoring/soak_window.py`, process uptime) and its process-cumulative blocks, and the lane itself, because the app boots
+  offline (airplane mode at boot, a non-negotiable) and the operator crosses online again with the one consent. **STILL OWED:** a
+  run clock read from the lane's own rows (active hours counted by when this install stored or requested something, never by a
+  change's own timestamp, so a replay after downtime cannot mark offline hours active; the stretches between restarts listed; no
+  verdict), shown in what the operator already sends at 72 hours, plus a visible «the Wikipedia run stopped at the restart» line.
+  **OPEN, put to the maintainer as question 21:** whether the run goes back online by itself after an abnormal restart (an opt-in
+  setting amending the airplane-at-boot ruling) or keeps one click per restart; the build is for the second until it is answered.
