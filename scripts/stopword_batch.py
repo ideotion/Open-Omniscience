@@ -137,7 +137,13 @@ def _articles(k: dict) -> int:
 def _is_listed(word: str, hidden_in_lang: frozenset[str]) -> bool:
     """Whether extraction already drops ``word``. The loader gives only the extras a curly copy,
     so a contraction listed in a vendored list with a straight apostrophe still lets the curly
-    token through: it counts as listed only when both forms are."""
+    token through: it counts as listed only when both forms are. A token that de-elides (``d'una``
+    -> ``una``) never reaches the stop check as a contraction, so adding it would do nothing: it
+    counts as listed too, listed or not."""
+    from src.analytics.extract import _deelide
+
+    if _deelide(word) != word:
+        return True
     if word not in hidden_in_lang:
         return False
     return "'" not in word or word.replace("'", "\u2019") in hidden_in_lang

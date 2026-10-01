@@ -294,3 +294,10 @@ def test_a_contraction_listed_only_with_a_straight_apostrophe_is_not_already_hid
     assert "li'n" in hidden and "li’n" not in hidden
     assert sb.evidence("li'n", "ca", [], hidden)["already_hidden"] is False
     assert sb.evidence("l", "ca", [], frozenset({"l"}))["already_hidden"] is True
+
+
+def test_an_elided_contraction_is_refused_because_extraction_never_sees_it_as_one():
+    # "d'una" becomes "una" before the stop check, in either apostrophe, so a stoplist entry is a no-op
+    hidden, _ring = sb.app_context("ca")
+    for w in ("d'una", "s'han", "d'xyzzy"):
+        assert sb.evidence(w, "ca", [], hidden)["already_hidden"] is True
