@@ -131,23 +131,28 @@ sets: 30 s by default, and an operator may set it to minutes), then queues for t
 running collectors keep busy (capped at :data:`DRAIN_GATE_TIMEOUT_S`, 30 s, whatever
 ``OO_CKPT_GATE_TIMEOUT_S`` says: ``0`` and a longer value leave the guard's own wait at 30 s, while
 the pass-boundary checkpoint and the restore's pre-swap checkpoint keep the operator's setting),
-then runs a checkpoint that nothing here bounds. The reading itself (``read_storage``: file sizes
-and a statvfs) and the step that ends an override (``observe``) take no pooled connection, so
-no pool or gate setting can leave the floor unread (pinned by a test that makes every
-connection request fail). So the gap between two readings is 5 s plus the reading; at the
-1.4 MB/s of log growth the sampling comment below records (its source is not in the repo), 5 s is
-about 7 MB: 5% of the smallest floor (128 MiB) and less of any larger one; that rate is the
-log's growth, not everything a pass writes. What is NOT covered: a drive that does not answer a
+then runs a checkpoint whose own run (TRUNCATE's busy allowance ``OO_WAL_CHECKPOINT_BUSY_MS``
+included) is not bounded here; a drain that fails, a pool timeout for one, is recorded as its own
+outcome (``last_drain["error"]``). The reading itself (``read_storage``: file sizes and a statvfs)
+and the step that ends an override (``observe``) take no pooled connection, so no pool or gate
+setting can leave the floor unread (pinned by a test that makes every connection request fail).
+So the gap between two readings is 5 s plus the reading. At 1.4 MB/s of log growth, the figure the
+sampling comment below uses (its original source is not in the repo; the nearest measured one is
+instance 090243's 2026-09-30 diagnostics, 1.48 to 25.41 GB in five hours = 4.8 GB/h, about
+1.3 MB/s, kept in the project files), 5 s is about 7 MB: 5% of the smallest floor (128 MiB) and
+less of any larger one; that rate is the log's growth, not everything a pass writes. What is NOT covered: a drive that does not answer a
 statvfs stalls the reading itself, and the floor reserves room to write the log back and finish a
 write, NOT the pass tail written after a withdrawal (a measured tail is what would size that, and
 it is not a fixed number). The write error above is the last net and it does not wait for a
 reading.
 
-A drain still in flight when the app shuts down is not waited for: :func:`stop` joins the
-supervisor for up to two seconds, and the drain's thread is a daemon holding a corpus lease until
-its checkpoint ends. If the process exits first the drain is abandoned mid-wait, which is safe: a
-checkpoint is crash-safe and the next open recovers the log. A restore that starts while a drain
-runs still waits for its lease (the lease is why the drain may not run between a restore's
+A drain still in flight when the app shuts down: :func:`stop` sets the supervisor's event, so a
+drain that has not started never does (it checks the event first), and joins the supervisor and
+the drain's thread for two seconds in all. One still waiting after that (for a pooled connection
+or the write gate) is a daemon thread and is abandoned at exit: it may open one connection on a
+process that is going down, which is harmless because a checkpoint is crash-safe and the next
+open recovers the log, and it holds its corpus lease until it ends, so a restore that starts in
+the same process still waits for it (the lease is why the drain may not run between a restore's
 dispose and its replace).
 
 The drain keeps running while the override holds, so the WAL still resets the moment its reader
@@ -433,11 +438,21 @@ def _default_drain() -> dict | None:
     """The same call the pass boundary makes: PASSIVE then TRUNCATE through the write gate,
     busy timeout zero. ``force`` skips only its cadence. The gate wait is the operator's
     ``OO_CKPT_GATE_TIMEOUT_S`` but never longer than :data:`DRAIN_GATE_TIMEOUT_S`, and ``0`` (for
-    ever) becomes that bound here."""
+    ever) becomes that bound here. A checkpoint that FAILED (a pooled-connection wait that timed
+    out, say) comes back as ``{"error": <exception type>}``, its own outcome: ``checkpoint_wal``
+    returns None for it, which reads as "disabled / not due"."""
     from src.scheduler.hygiene import _ckpt_gate_timeout_s, checkpoint_wal
 
     t = _ckpt_gate_timeout_s()
-    return checkpoint_wal(force=True, gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S)
+    errors: list[str] = []
+    rec = checkpoint_wal(
+        force=True,
+        gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S,
+        errors=errors,
+    )
+    if rec is None and errors:
+        return {"error": errors[0]}
+    return rec
 
 
 def _checkpoint_enabled() -> bool:
@@ -1128,9 +1143,12 @@ class StorageGuard:
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "busy": rec.get("busy") if isinstance(rec, dict) else None,
                 "skipped": rec.get("skipped") if isinstance(rec, dict) else None,
+                # A checkpoint that failed (its own outcome, never "disabled / not due"): the
+                # exception's type, e.g. the pool's TimeoutError after OO_DB_POOL_TIMEOUT.
+                "error": rec.get("error") if isinstance(rec, dict) else None,
                 "wal_bytes_before": rec.get("wal_bytes_before") if isinstance(rec, dict) else None,
                 "wal_bytes_after": rec.get("wal_bytes_after") if isinstance(rec, dict) else None,
-                "ran": rec is not None,
+                "ran": rec is not None and not (isinstance(rec, dict) and "error" in rec),
                 # OO_WAL_CHECKPOINT=0 makes the drain a no-op by the operator's own switch: the
                 # latch then releases only when SQLite resets the log on a later write, or on a
                 # start or run-now retry. Said here rather than left to read as a drain that failed.
@@ -1383,16 +1401,24 @@ storage_guard = StorageGuard()
 # --- the supervisor -----------------------------------------------------------------
 
 #: How often the supervisor samples the drive. File sizes and a statvfs: cheap enough that
-#: five seconds is not a cost, and short enough that a WAL growing at the 1.4 MB/s field figure
-#: (its source is not in the repo) moves under 10 MB between samples.
+#: five seconds is not a cost, and short enough that a WAL growing at 1.4 MB/s moves under 10 MB
+#: between samples (the figure's original source is not in the repo; the nearest measured one is
+#: instance 090243's 2026-09-30 diagnostics: 4.8 GB in an hour, about 1.3 MB/s, kept in the project
+#: files). The drain never delays a sample: it runs on its own thread (``_supervise``).
 POLL_EVERY_S = 5.0
 
+#: How long ``stop()`` waits, in all, for the supervisor and its drain thread to end.
+STOP_JOIN_S = 2.0
+
 _THREAD: threading.Thread | None = None
+_DRAIN_THREAD: threading.Thread | None = None
 _STOP = threading.Event()
 _SUP_LOCK = threading.Lock()
 
 
-def _drain_in_background(g: StorageGuard) -> None:
+def _drain_in_background(g: StorageGuard, stop: threading.Event) -> None:
+    if stop.is_set():
+        return  # shutting down: a drain that has not started must not reach the engine now
     try:
         g.drain_if_due()
     except Exception:  # noqa: BLE001 - the drain must never kill anything but itself
@@ -1401,6 +1427,7 @@ def _drain_in_background(g: StorageGuard) -> None:
 
 def _supervise(stop: threading.Event) -> None:
     """The supervisor loop: read the floor every tick; run the drain beside it, never in it."""
+    global _DRAIN_THREAD
     drain: threading.Thread | None = None
     while not stop.is_set():
         try:
@@ -1414,8 +1441,9 @@ def _supervise(stop: threading.Event) -> None:
                 # Run inline, any of the three would leave the override's floor unread.
                 if g.engaged and (drain is None or not drain.is_alive()):
                     drain = threading.Thread(
-                        target=_drain_in_background, args=(g,), name="oo-storage-guard-drain", daemon=True
+                        target=_drain_in_background, args=(g, stop), name="oo-storage-guard-drain", daemon=True
                     )
+                    _DRAIN_THREAD = drain  # so stop() can join it
                     drain.start()
         except Exception:  # noqa: BLE001 - a guard that dies silently is worse than none
             _LOG.warning("storage guard supervisor tick failed", exc_info=True)
@@ -1443,12 +1471,18 @@ def start() -> bool:
 
 
 def stop() -> None:
-    """Ask the supervisor to exit (it finishes its current tick). Safe to call twice."""
+    """Ask the supervisor to exit (it finishes its current tick) and wait up to
+    :data:`STOP_JOIN_S` in all for it and for its drain thread. A drain that has not started
+    never does; one still waiting after that is abandoned (see the module docstring). Safe to call
+    twice, and after a ``start()`` that failed to launch its thread."""
     with _SUP_LOCK:
         _STOP.set()
-        t = _THREAD
-    if t is not None and t is not threading.current_thread():
-        t.join(timeout=2.0)
+        threads = (_THREAD, _DRAIN_THREAD)
+    deadline = time.monotonic() + STOP_JOIN_S
+    for t in threads:
+        # ``ident`` is None for a thread that was created but never started (a failed start()).
+        if t is not None and t is not threading.current_thread() and t.ident is not None:
+            t.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 def supervisor_running() -> bool:

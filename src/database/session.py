@@ -62,12 +62,16 @@ _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 def _pool_timeout_s() -> float:
     """``OO_DB_POOL_TIMEOUT``: how long a checkout waits for a pooled connection (default 30 s).
 
-    A non-finite value is refused and the default used, with a log line: SQLAlchemy's pool spins
-    a core at full speed for ever on ``nan`` and raises ``OverflowError`` from the first checkout
-    that has to wait on ``inf`` (or anything past about 9e9). Every finite value the operator
-    sets is kept as it is; this is not a clamp."""
+    A value that is not a finite number (``nan``, ``inf``, ``abc``, empty) is refused and the
+    default used, with a log line: SQLAlchemy's pool spins a core at full speed for ever on
+    ``nan``, raises ``OverflowError`` from the first checkout that has to wait on ``inf`` (or
+    anything past about 9e9), and an unparseable value used to stop the app at import. Every
+    finite number the operator sets is kept as it is; this is not a clamp."""
     raw = os.getenv("OO_DB_POOL_TIMEOUT", "30")
-    value = float(raw)
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
     if not math.isfinite(value):
         # Resolved by NAME: this runs inside the module-level ``_build_engine()`` call, above the
         # module's ``_LOG``.

@@ -729,43 +729,71 @@ def test_the_resume_endpoint_answers_a_refusal_with_its_sentence(monkeypatch):
     assert g.admit() == "disk", "a refusal changes nothing"
 
 
-def test_the_resume_endpoint_refuses_while_no_supervisor_can_watch_the_floor_and_grants_once_one_runs(monkeypatch):
+def _route_with(monkeypatch, g, *, running):
+    """The resume route over the guard ``g``, with a supervisor that is (or is not) running and
+    that the route's start attempts only count. Returns ``(route, asked, up)``."""
+    from src.api.scheduler import storage_guard_resume
+
+    asked: list[int] = []
+    up: list[int] = [1] if running else []
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: asked.append(1))
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: bool(up))
+    return storage_guard_resume, asked, up
+
+
+def test_the_resume_route_refuses_with_its_own_sentence_while_no_supervisor_can_watch_the_floor(monkeypatch):
     """An override is bounded by the floor, which only the supervisor's ticks read between passes:
     a grant with no supervisor (its start raised once) would be unbounded until the next pass
     boundary, so the route tries to start it and refuses, changing nothing, when it still is not.
     The refusal names ITS cause (a supervisor that is not running is not free space that cannot be
-    read), and a more specific refusal the last sample shows is the one given."""
-    from src.api.scheduler import storage_guard_resume
-
+    read)."""
     g = _engaged("wal")
-    monkeypatch.setattr(storage_guard, "storage_guard", g)
-    asked: list[int] = []
-    up: list[int] = []
-    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: asked.append(1))
-    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: bool(up))
-    payload = storage_guard_resume()
+    route, asked, _up = _route_with(monkeypatch, g, running=False)
+    payload = route()
     o = payload["storage_guard_override"]
     assert o["engaged"] is True and o["overridden"] is False
     assert o["refused"] == {"kind": "supervisor", "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR, "vars": {}}
     assert payload["storage_guard"]["override_refusal"] is None, (
         "the supervisor refusal is the click's answer only; the response's status preview is not changed for it"
     )
-    assert "free space" in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR and "cannot be read" not in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR
+    assert "free space" in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR
+    assert "cannot be read" not in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR
     assert asked == [1], "starting it was tried first"
     assert g.admit() == "wal" and g.state()["overridden"] is False, "a refusal changes nothing"
+
+
+def test_the_resume_route_grants_once_a_supervisor_runs(monkeypatch):
+    g = _engaged("wal")
+    route, asked, up = _route_with(monkeypatch, g, running=False)
+    assert route()["storage_guard_override"]["overridden"] is False
     up.append(1)  # it could be started (or came up since)
-    assert storage_guard_resume()["storage_guard_override"]["overridden"] is True
-    # a more specific refusal the last sample already shows wins: the drive is already at the floor
-    low = _engaged("disk")  # free = 1 MiB
-    monkeypatch.setattr(storage_guard, "storage_guard", low)
-    up.clear()
-    refused = storage_guard_resume()["storage_guard_override"]["refused"]
+    assert route()["storage_guard_override"]["overridden"] is True
+    assert g.admit() is None
+
+
+def test_the_resume_route_gives_the_more_specific_refusal_the_last_sample_shows_first(monkeypatch):
+    low = _engaged("disk")  # free = 1 MiB: already at the floor
+    route, _asked, _up = _route_with(monkeypatch, low, running=False)
+    refused = route()["storage_guard_override"]["refused"]
     assert refused["kind"] == "floor" and refused["frame"] == storage_guard.FRAME_OVERRIDE_STOPPED
-    # nothing paused: nothing to override, and no supervisor is started on its account
-    quiet = _guard()
-    monkeypatch.setattr(storage_guard, "storage_guard", quiet)
-    asked.clear()
-    assert storage_guard_resume()["storage_guard_override"]["engaged"] is False and asked == []
+
+
+def test_the_resume_route_starts_no_supervisor_for_a_guard_with_nothing_paused(monkeypatch):
+    route, asked, _up = _route_with(monkeypatch, _guard(), running=False)
+    assert route()["storage_guard_override"]["engaged"] is False and asked == []
+
+
+def test_a_stale_click_on_an_override_already_in_force_is_not_refused_for_a_missing_supervisor(monkeypatch):
+    """The supervisor is gone only in the shutdown window; the refusal is for a NEW grant, so a
+    stale click there must not read ``refused: supervisor`` beside an override that stays."""
+    g = _engaged("wal")
+    route, asked, up = _route_with(monkeypatch, g, running=True)
+    assert route()["storage_guard_override"]["overridden"] is True
+    up.clear()  # the supervisor is gone (shutdown)
+    o = route()["storage_guard_override"]
+    assert o["refused"] is None and o["overridden"] is True
+    assert asked == [1], "only the first, un-overridden click looked for a supervisor"
 
 
 def test_the_refusal_note_class_is_styled_in_both_pages():
@@ -1460,22 +1488,44 @@ def test_starting_collection_starts_the_supervisor_so_an_override_is_always_boun
         storage_guard.stop()
 
 
-def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypatch):
+@pytest.mark.parametrize("stall", ["event", "exhausted-pool"])
+def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypatch, stall):
     """The drain checks out a pooled connection before the write gate, and that wait is
     ``OO_DB_POOL_TIMEOUT``, which an operator may set to minutes; then it queues on the gate and
     runs a checkpoint. Run inline by the supervisor's tick, any of them would leave an
     override's floor unread for as long. The drain runs on its own thread, one at a time, so the
-    readings carry on."""
+    readings carry on. ``exhausted-pool`` stalls it in a real SQLAlchemy pool whose only
+    connection is held (the wait ``raw_connection()`` makes)."""
+    from sqlalchemy.pool import QueuePool
+
     g = _engaged("wal")
-    release = threading.Event()
     started: list[int] = []
     polls: list[int] = []
     real_poll = g.poll
+    release = threading.Event()
+    if stall == "event":
 
-    def blocked_drain():
-        started.append(1)
-        release.wait(20)
-        return {"busy": 0, "wal_bytes_before": 1, "wal_bytes_after": 1}
+        def let_go():
+            release.set()
+
+        def blocked_drain():
+            started.append(1)
+            release.wait(20)
+            return {"busy": 0, "wal_bytes_before": 1, "wal_bytes_after": 1}
+
+    else:
+        pool = QueuePool(
+            lambda: sqlite3.connect(":memory:", check_same_thread=False), pool_size=1, max_overflow=0, timeout=60
+        )
+        held = pool.connect()  # the only connection: the next checkout waits in the pool's own timed wait
+
+        def let_go():
+            held.close()  # returned to the pool: the waiting checkout now succeeds
+
+        def blocked_drain():
+            started.append(1)
+            pool.connect().close()
+            return {"busy": 0, "wal_bytes_before": 1, "wal_bytes_after": 1}
 
     def counting_poll():
         polls.append(1)
@@ -1496,7 +1546,7 @@ def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypat
         assert len(polls) >= 6, "the floor kept being read while the drain was still waiting"
         assert any(t.name == "oo-storage-guard-drain" and t.is_alive() for t in threading.enumerate())
     finally:
-        release.set()
+        let_go()
         stop.set()
         sup.join(5)
     assert not sup.is_alive()
@@ -1567,6 +1617,96 @@ def test_only_one_drain_runs_at_a_time_even_when_the_cadence_check_would_pass():
     assert first and first[0] is not None
     g._last_drain_mono = None
     assert g.drain_if_due() is not None and calls == [1, 1], "and the flag was released afterwards"
+
+
+def test_a_drain_that_has_not_started_never_does_after_stop_and_stop_joins_the_one_in_flight(monkeypatch):
+    """Shutdown stops the supervisor BEFORE the engine is disposed. The drain's thread checks the
+    stop event first, and ``stop()`` waits for it, within ``STOP_JOIN_S`` in all."""
+    g = _engaged("wal")
+    ran: list[int] = []
+    g._drain = lambda: ran.append(1) or {"busy": 0}
+    gone = threading.Event()
+    gone.set()
+    storage_guard._drain_in_background(g, gone)
+    assert ran == [], "a drain that had not started does not start once the supervisor is stopped"
+    storage_guard._drain_in_background(g, threading.Event())
+    assert ran == [1]
+
+    # stop() waits for a drain thread that finishes soon ...
+    monkeypatch.setattr(storage_guard, "_STOP", threading.Event())
+    quick = threading.Thread(target=lambda: time.sleep(0.3), daemon=True)
+    quick.start()
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", quick)
+    t0 = time.monotonic()
+    storage_guard.stop()
+    assert not quick.is_alive(), "stop() joined the drain thread"
+    assert time.monotonic() - t0 < 2.0
+    # ... and gives up on one still waiting, within the bound (the thread is abandoned, a daemon)
+    release = threading.Event()
+    stuck = threading.Thread(target=lambda: release.wait(20), daemon=True)
+    stuck.start()
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", stuck)
+    monkeypatch.setattr(storage_guard, "STOP_JOIN_S", 0.3)
+    t0 = time.monotonic()
+    try:
+        storage_guard.stop()
+        assert time.monotonic() - t0 < 2.0, "stop() does not wait for ever for a stuck drain"
+        assert stuck.is_alive()
+    finally:
+        release.set()
+        stuck.join(5)
+
+
+def test_stop_after_a_start_that_failed_to_launch_its_thread_does_not_raise(monkeypatch):
+    """``start()`` keeps the thread object it could not start; ``join`` on it raises
+    ``cannot join thread before it is started``. stop() joins only started threads."""
+    import types
+
+    class NoThreadsLeft(threading.Thread):
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(storage_guard, "_THREAD", None)
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)
+    monkeypatch.setattr(storage_guard, "_STOP", threading.Event())
+    monkeypatch.setattr(
+        storage_guard,
+        "threading",
+        types.SimpleNamespace(
+            Thread=NoThreadsLeft,
+            Event=threading.Event,
+            Lock=threading.Lock,
+            current_thread=threading.current_thread,
+        ),
+    )
+    with pytest.raises(RuntimeError):
+        storage_guard.start()
+    storage_guard.stop()  # must not raise
+    assert not storage_guard.supervisor_running()
+
+
+def test_a_drain_that_failed_is_recorded_as_its_own_outcome_not_as_not_due(monkeypatch):
+    """A pooled-connection wait that timed out made ``checkpoint_wal`` return None, which reads
+    as "disabled / not due": the drain's record said ``ran: False, skipped: None``, the same as
+    a drain that never had work. It now carries the exception's type."""
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    from src.database import session as dbsession
+    from src.scheduler import hygiene
+
+    def pool_is_exhausted():
+        raise PoolTimeout("QueuePool limit of size 1 overflow 0 reached, connection timed out, timeout 30.00")
+
+    monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None, raising=False)
+    monkeypatch.setattr(dbsession.engine, "raw_connection", pool_is_exhausted)
+    assert storage_guard._default_drain() == {"error": "TimeoutError"}
+    g = _overridable()
+    g._drain = storage_guard._default_drain
+    assert g.drain_if_due() == {"error": "TimeoutError"}
+    last = g.state()["last_drain"]
+    assert last["error"] == "TimeoutError" and last["ran"] is False and last["skipped"] is None
+    assert last["checkpoint_disabled"] is False
 
 
 def test_an_override_does_not_stop_the_drain_and_the_drain_ends_the_cause():

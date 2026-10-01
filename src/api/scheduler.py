@@ -437,7 +437,9 @@ def storage_guard_resume() -> dict:
     refused}``.
     """
     guard = storage_guard.storage_guard
-    if guard.enabled() and guard.engaged:
+    # An override already in force needs no supervisor check for a stale click (the supervisor is
+    # gone only in the shutdown window): the refusal is for a NEW grant.
+    if guard.enabled() and guard.engaged and not guard.state().get("overridden"):
         from src.scheduler import runner
 
         runner._ensure_storage_supervisor()  # idempotent; a failure is logged, never raised
