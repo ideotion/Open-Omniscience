@@ -497,6 +497,14 @@ def test_a_quota_and_a_read_only_drive_are_the_same_refusal_as_a_full_one(
         kls.scratch_file("p-", ".x", tmp_path)
     assert err.value.status == 507 and words in str(err.value)
     assert "the drive the export writes to" in str(err.value)
+    text = str(err.value)
+    # What the refusal says happened to the files is true of THAT drive: a read-only one cannot
+    # delete anything, so it must not claim to have (the sentence that came back three times).
+    if code == errno.EROFS:
+        assert "removed its scratch file" not in text and "left nothing behind" not in text
+        assert "swept at the start of each export" in text
+    else:
+        assert "removed any partial file" in text and "twelve hours" in text
     assert isinstance(err.value.__cause__, OSError), "the original error stays attached"
 
 
@@ -676,6 +684,7 @@ def test_the_disk_watch_says_what_the_export_was_doing_when_it_stopped(tmp_path,
     with pytest.raises(kls.ExportRefused) as archive:
         kle.disk_watch_for(tmp_path)()
     assert "stopped writing the archive and removed it" in str(archive.value)
+    assert "for whatever else writes to it" in str(archive.value), "the reserve sentence"
     with pytest.raises(kls.ExportRefused) as spill:
         kle.disk_watch_for(tmp_path, stopped="stopped ranking and removed its scratch file")()
     assert "stopped ranking and removed its scratch file" in str(spill.value)
@@ -1681,6 +1690,7 @@ def test_a_spill_the_disk_cannot_take_is_refused_before_the_file_exists(dbs, dat
     with pytest.raises(HTTPException) as err:
         _call(db)
     assert err.value.status_code == 507
+    assert "whatever else writes" in err.value.detail, "the reserve sentence"
     assert _leftovers(data_dir) == []
     db.close()
 

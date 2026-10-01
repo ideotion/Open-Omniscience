@@ -24,7 +24,8 @@ WHAT THIS MODULE DOES INSTEAD. Nothing here is proportional to the number of key
   :class:`Ranker`. "Has mentions" is one byte per keyword id, not a set.
 * :class:`Ranker` answers the per-language quota ("rank r of language L") with a bounded heap
   per language, and when the window is larger than the machine can hold it SPILLS to an
-  SQLite file next to the data (after a free-space check) and reads each language back in
+  SQLite file next to the data (or in the OS temp folder when there is no data folder; after
+  a free-space check) and reads each language back in
   rank order. A spill loses nothing the window could use: a row that a full heap discards is
   ranked beyond the window for good, because rank only ever worsens as rows arrive.
 * :class:`StopwordAcc`, :class:`RingAcc` and :class:`SuspectBoard` are the streaming forms
@@ -105,8 +106,13 @@ FAMILY_SHARE = 0.10
 #: margin, not a measured figure, and the gate's estimate (``estimate_export_need``) does not
 #: count the ranking, so this cache is outside it. Once the heaps have been moved to disk it is
 #: paid from the ranker's own share, which is never below ``MIN_HEAP_ROWS * ROW_BYTES`` (40 MB,
-#: 38 MiB), more than these 32 MiB; DURING the move the heap being written and the cache fill
-#: together, so for that stretch the cache can sit up to 32 MiB above the share.
+#: 38 MiB), more than these 32 MiB: in Python's own allocations, which is what that share is
+#: made of. The resident size can stay above it when the allocator keeps freed blocks (seen in
+#: a review's probe when each language's rows arrive in one run, less when they interleave; the
+#: field feeds rows in keyword-id order, and whether that makes runs was not measured).
+#: DURING the move the heap being written (and ``add()``'s own reference to it, until ``add()``
+#: returns) and the cache fill together, so for that stretch the cache can sit up to 32 MiB
+#: above the share.
 SPILL_CACHE_KIB = 32 * 1024
 
 #: Ids per ``IN (...)`` list in the export's queries. What it protects: a statement stays near
@@ -182,8 +188,8 @@ def memory_plan(available_bytes: float | None) -> dict[str, int]:
         # what is available. A batch is the unit between two checks of the memory stop and the
         # disk watch, and the number of entries held at once. The floor is one full IN list. The
         # 8,000 ceiling holds a batch to about 16 MB of entries and keeps a check coming every
-        # few thousand entries on any machine. It has nothing to do with the length of an IN list, which
-        # ``in_batches`` cuts to ``IN_LIST_IDS`` whatever the batch is.
+        # few thousand entries on any machine. It has nothing to do with the length of an IN list,
+        # which ``in_batches`` cuts to ``IN_LIST_IDS`` whatever the batch is.
         batch = max(IN_LIST_IDS, min(8000, int(available_bytes * 0.002 / 2048)))
         family_rows = max(MIN_FAMILY_ROWS, int(available_bytes * FAMILY_SHARE / FAMILY_ROW_BYTES))
     return {"heap_rows": rows, "batch": batch, "family_rows": family_rows}
@@ -574,8 +580,9 @@ def no_room_refusal(exc: OSError, doing: str) -> ExportRefused | None:
     why = "has no room left in your disk quota" if code != errno.ENOSPC else "ran out of room"
     return ExportRefused(
         f"the drive the export writes to {why} while the export was {doing}, so it stopped and "
-        "removed any partial file (one it could not delete is swept by a later export once it is "
-        "twelve hours old). Free some space, or ask for a smaller window (per_lang=...).",
+        "removed any partial file (one it could not delete is swept by a later export that writes "
+        "to the same folder once it is twelve hours old). Free some space, or ask for a smaller "
+        "window (per_lang=...).",
         status=507,
     )
 
@@ -840,10 +847,11 @@ class Ranker:
 EXPORT_ENTRY_BYTES = 2750
 
 #: The rest of the export's rise in resident memory that does not scale with the corpus: the
-#: SQLite page cache, the accumulators, the interpreter's own growth. MEASURED: the intercept of
-#: the fit above is 38 MiB (37.8-38.8 at the three sizes), and a digest over 13 languages x
-#: 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M. 60 MiB is 1.6x
-#: the measured intercept; ``test_export_fixed_constant_covers_the_measured_intercept`` fails
+#: reading connection's SQLite page cache (not the spill's, which ``SPILL_CACHE_KIB`` names and
+#: the gate does not count), the accumulators, the interpreter's own growth. MEASURED: the
+#: intercept of the fit above is 38 MiB (37.8-38.8 at the three sizes), and a digest over 13
+#: languages x 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M. 60
+#: MiB is 1.6x the measured intercept; ``test_export_fixed_constant_covers_the_measured_intercept`` fails
 #: if it drops below the 38 MiB that was measured, and the value itself is pinned, so a change is
 #: a re-measurement and not a drift.
 EXPORT_FIXED_BYTES = 60 * 2**20

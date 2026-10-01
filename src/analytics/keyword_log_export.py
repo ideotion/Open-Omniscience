@@ -200,8 +200,8 @@ def disk_check_for(d: Path | None):
             raise ExportRefused(
                 f"the export needs about {need / 2**30:.1f} GiB of scratch space on the drive it "
                 f"writes to, and only {free / 2**30:.1f} GiB is free on it "
-                f"(it keeps {reserve / 2**30:.1f} GiB free on that drive for whatever else writes to it; "
-                "on the data folder's drive that includes the database's own log). "
+                f"(it keeps {reserve / 2**30:.1f} GiB free on that drive for whatever else "
+                "writes to it; on the data folder's drive that includes the database's own log). "
                 "Free some space, or ask for a smaller window (per_lang=...).",
                 status=507,
             )
@@ -227,8 +227,9 @@ def disk_watch_for(d: Path | None, *, stopped: str = "stopped writing the archiv
         if free < reserve:
             raise ExportRefused(
                 f"the drive the export writes to is down to {free / 2**30:.2f} GiB free "
-                f"(the export keeps {reserve / 2**30:.1f} GiB free on that drive for whatever else writes "
-                f"to it; on the data folder's drive that includes the database's own log), so it {stopped}.",
+                f"(the export keeps {reserve / 2**30:.1f} GiB free on that drive for whatever "
+                "else writes to it; on the data folder's drive that includes the database's own "
+                f"log), so it {stopped}.",
                 status=507,
             )
 

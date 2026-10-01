@@ -186,7 +186,7 @@ jobs:
         # whoever touches the lane next. THE READING TO TRUST IS THE ONE TAKEN AFTER THE LAST
         # EDIT: this branch read 442, then 447, then 443, then 441 as files were added and
         # fixed -- only the base measurement (445) ever said which findings were its own.
-        run: python scripts/ruff_ratchet.py --max 439
+        run: python scripts/ruff_ratchet.py --max 435
 
       # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
       # future bug discovery would not contradict what has been planned ... to help future

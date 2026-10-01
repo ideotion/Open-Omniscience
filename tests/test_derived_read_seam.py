@@ -348,7 +348,8 @@ _EXPORT_REAL_READS: dict[str, int] = {
 def _real_reads(source: str) -> int:
     """Names of the mentions table in ``source`` that are neither in a docstring, a comment (a whole
     line or the end of a line), an import nor the right-hand side of the ``MENTIONS_TABLE = ...``
-    definition. A ``#`` inside a string is not a comment, so a query that carries one still counts."""
+    definition. A ``#`` inside a string is not a comment, so a query that carries one still
+    counts."""
     tree = ast.parse(source)
     skip: set[int] = set()
     for node in ast.walk(tree):
@@ -387,7 +388,7 @@ def test_the_real_read_counter_skips_what_is_not_a_read():
         '    """Docstring naming MENTIONS_TABLE."""\n'
         '    return c.execute(f"SELECT 1 FROM {MENTIONS_TABLE}")\n'
         'def raw(c):\n'
-        '    return c.execute("SELECT 1 FROM keyword_mentions")  # trailing note naming keyword_mentions\n'
+        '    return c.execute("SELECT 1 FROM keyword_mentions")  # trailing note naming it\n'
         'def hashy(c):\n'
         '    return c.execute("SELECT \'#\' FROM keyword_mentions")\n'
         'def spaced(c):\n'

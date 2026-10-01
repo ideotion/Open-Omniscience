@@ -338,9 +338,9 @@ def _safe_lang_filename(lang: str) -> str:
 
 #: Entries per ``json.dumps`` call when the JSON form streams its keywords and its families.
 #: What it protects: one ``dumps`` of the whole list built a second copy of it (the string); a
-#: slice holds a few hundred KB (an entry is about 210 bytes of JSON on the synthetic corpus and 250-290 in the field's logs: see
-#: ``ZIP_BYTES_PER_ENTRY``), so
-#: streaming costs one slice, never the window. It is also the cadence of the memory stop's check
+#: slice holds a few hundred KB (an entry is about 210 bytes of JSON on the synthetic corpus and
+#: 250-290 in the field's logs: see ``ZIP_BYTES_PER_ENTRY``), so streaming costs one slice, never
+#: the window. It is also the cadence of the memory stop's check
 #: between slices (a read of available memory per thousand entries, far finer than the stop's
 #: margin). The bytes written are the same as one ``dumps``.
 _JSON_SLICE = 1_000

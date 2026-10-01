@@ -580,7 +580,7 @@ def test_every_closed_part_keeps_the_room_the_accounting_reserves_and_no_more(tm
     well under 450 and fails here; reserving more than 800 means parts are no longer filled."""
     room = _reserve_set(tmp_path, monkeypatch, cap)[1:-1]  # the first part is the summary's, the last is short
     assert len(room) >= 5, "the set must span several parts for this to test anything"
-    assert 450 <= min(room) and max(room) <= 800, sorted(room)
+    assert min(room) >= 450 and max(room) <= 800, sorted(room)
 
 
 def test_the_post_check_stops_a_part_over_the_cap_instead_of_handing_it_over(tmp_path):
