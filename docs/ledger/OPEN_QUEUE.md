@@ -16245,9 +16245,15 @@ maintainer as a card.
   the lane's data survives a crash and an update (integrity ok every time, nothing lost or duplicated, the walk's bookmark equal
   to its stored pages, the stream resumed from the newest stored token). **What restarts:** the soak window's clock
   (`src/monitoring/soak_window.py`, process uptime) and its process-cumulative blocks, and the lane itself, because the app boots
-  offline (airplane mode at boot, a non-negotiable) and the operator crosses online again with the one consent. **STILL OWED:** a
-  run clock read from the lane's own rows (active hours counted by when this install stored or requested something, never by a
-  change's own timestamp, so a replay after downtime cannot mark offline hours active; the stretches between restarts listed; no
-  verdict), shown in what the operator already sends at 72 hours, plus a visible «the Wikipedia run stopped at the restart» line.
-  **OPEN, put to the maintainer as question 21:** whether the run goes back online by itself after an abnormal restart (an opt-in
-  setting amending the airplane-at-boot ruling) or keeps one click per restart; the build is for the second until it is answered.
+  offline (airplane mode at boot, a non-negotiable) and the operator crosses online again with the one consent. **BUILT 2026-10-01 (the run-clock
+  PR):** a run clock read from the lane's own rows (`wiki_lane.run` in the soak-window report; hours counted by when this
+  install stored or requested something, never by a change's own timestamp, so a replay after downtime cannot mark offline hours
+  active; the stretches between restarts listed as stops; no verdict), so the 72 hours need no new step from the operator, and a
+  Living sources → Wikipedia «Run so far» row with a «Stopped» line when the lane has gone quiet.
+  **DECIDED, `R117` (question 21, 2026-10-01 06:34 UTC):** the app always starts offline, one click on the airplane button brings
+  it online, and a Wikipedia run that was on resumes with that click while one that was off stays off; no auto-online setting. Measured
+  on main: the stream, walk and WARM settings survive going offline and online, a kill -9 and a clean stop (they live in the corpus
+  database), a real boot is offline with the run still chosen, and the click is what starts the lane
+  (`tests/test_wiki_online_resume.py`). Home shows a line while the run is waiting on airplane mode. The diagnostics read of the
+  crashing instance adds that nothing relaunches the app after a crash (`launch.sh` exits when the server dies) and that boot
+  records carry no build id, so an update reads like a crash; the boot-record fix belongs to the Export thread.

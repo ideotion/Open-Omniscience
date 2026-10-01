@@ -1261,6 +1261,17 @@
         + action + "\n" + stopHint
         + t9("This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.");
       btn.setAttribute("aria-label", action);
+      // HOME SAYS SO TOO. After a crash or an update the app starts offline and a chosen run
+      // waits for the one click on the airplane button; the top-bar hover alone left that to
+      // be discovered. Shown only while the run is chosen AND airplane mode is what holds it.
+      const wait = $("home-wiki-wait");
+      if (wait) {
+        const show = running && held && why.reason === "airplane-mode";
+        wait.hidden = !show;
+        wait.textContent = show
+          ? t9("The Wikipedia run is waiting: the app starts offline after a restart. Click the airplane button to go online and resume it.")
+          : "";
+      }
       // Pressed = the stream is running (live or waiting). A held stream is NOT pressed, and
       // its label says Start, so a screen reader hears an unpressed button that starts it.
       btn.setAttribute("aria-pressed", (running && !held) ? "true" : "false");
