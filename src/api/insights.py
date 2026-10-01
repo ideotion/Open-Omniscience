@@ -25,6 +25,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import SingletonThreadPool, StaticPool
 
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
@@ -650,8 +651,12 @@ def _data_version(bind) -> str | None:
                 if conn is None:
                     conn = bind.raw_connection()  # held, never .close()d on success -> pinned
                     # Out of the pool's accounting: the pool's slot is free again and the
-                    # dispose listener below owns this connection's end of life.
-                    conn.detach()
+                    # dispose listener below owns this connection's end of life. A pool that holds
+                    # ONE connection by design (an in-memory test database) has nothing to free, and
+                    # detaching it would take the schema with it: the next checkout opens a new,
+                    # empty database.
+                    if not isinstance(bind.pool, (SingletonThreadPool, StaticPool)):
+                        conn.detach()
                     _PROBE_CONNS[eid] = conn
                     _PROBE_ENGINES[eid] = bind
                     _close_probe_on_dispose(bind, eid)

@@ -119,3 +119,24 @@ def test_a_probe_read_in_flight_does_not_hang_a_dispose(eng, monkeypatch):
         insights._PROBE_LOCK.release()
         t.join(3.0)
     assert id(eng) not in insights._PROBE_CONNS
+
+
+@pytest.mark.parametrize("pool", ["singleton", "static"])
+def test_a_one_connection_pool_keeps_its_schema_after_the_probe(pool):
+    """An in-memory database lives in its pool's ONE connection. Detaching that connection for the
+    probe handed the next checkout a new, empty database ("no such table"): ten tests on main went
+    red that way. The probe must leave such a pool whole."""
+    from sqlalchemy.pool import StaticPool
+
+    insights._reset_status_probe_for_tests()
+    kw = {"poolclass": StaticPool} if pool == "static" else {}
+    e = create_engine("sqlite://", future=True, connect_args={"check_same_thread": False}, **kw)
+    try:
+        with e.begin() as c:
+            c.execute(text("CREATE TABLE t(x INTEGER)"))
+        assert insights._data_version(e) is not None
+        with e.connect() as c:
+            assert c.execute(text("SELECT count(*) FROM t")).scalar() == 0
+    finally:
+        insights._reset_status_probe_for_tests()
+        e.dispose()
