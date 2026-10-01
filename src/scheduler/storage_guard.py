@@ -124,19 +124,31 @@ What then stops the drive from filling, in order:
   limit, and the latch holds below it until the resume level).
 
 This is a bound, not a promise that the drive can never fill. The floor is read on every
-supervisor tick, ``POLL_EVERY_S`` (5 s) apart, but a tick also runs the drain, which can wait up
-to :data:`DRAIN_GATE_TIMEOUT_S` (30 s) for the write gate that running collectors keep busy,
-whatever ``OO_CKPT_GATE_TIMEOUT_S`` says (a shorter setting shortens it; ``0`` and a longer one
-leave the guard's own wait at 30 s, while the pass-boundary checkpoint and the restore's pre-swap
-checkpoint keep the operator's setting). While overridden, the gap between two readings is 5 s to
-about 35 s plus the checkpoint's own run (which nothing here bounds) and, when the pool is
-exhausted, the drain's wait for a connection (up to ``OO_DB_POOL_TIMEOUT``, 30 s by default).
-The figures that follow use the 35 s. At the 1.4 MB/s of log growth the sampling comment
-below records (its source is not in the repo), 35 s is about 49 MB: 37% of the smallest floor
-(128 MiB) and less of any larger one; that rate is the log's growth, not everything a pass
-writes. The floor reserves room to write the log back and finish a write, NOT
-the pass tail written after a withdrawal (a measured tail is what would size that, and it is not
-a fixed number). The write error above is the last net and it does not wait for a reading.
+supervisor tick, ``POLL_EVERY_S`` (5 s) apart, WHATEVER THE DRAIN IS WAITING ON: the drain runs on
+its own thread, one at a time (``_supervise``, ``drain_if_due``'s in-flight flag, taken under
+the guard's lock), because it checks out a pooled connection (the wait ``OO_DB_POOL_TIMEOUT``
+sets: 30 s by default, and an operator may set it to minutes), then queues for the write gate that
+running collectors keep busy (capped at :data:`DRAIN_GATE_TIMEOUT_S`, 30 s, whatever
+``OO_CKPT_GATE_TIMEOUT_S`` says: ``0`` and a longer value leave the guard's own wait at 30 s, while
+the pass-boundary checkpoint and the restore's pre-swap checkpoint keep the operator's setting),
+then runs a checkpoint that nothing here bounds. The reading itself (``read_storage``: file sizes
+and a statvfs) and the step that ends an override (``observe``) take no pooled connection, so
+no pool or gate setting can leave the floor unread (pinned by a test that makes every
+connection request fail). So the gap between two readings is 5 s plus the reading; at the
+1.4 MB/s of log growth the sampling comment below records (its source is not in the repo), 5 s is
+about 7 MB: 5% of the smallest floor (128 MiB) and less of any larger one; that rate is the
+log's growth, not everything a pass writes. What is NOT covered: a drive that does not answer a
+statvfs stalls the reading itself, and the floor reserves room to write the log back and finish a
+write, NOT the pass tail written after a withdrawal (a measured tail is what would size that, and
+it is not a fixed number). The write error above is the last net and it does not wait for a
+reading.
+
+A drain still in flight when the app shuts down is not waited for: :func:`stop` joins the
+supervisor for up to two seconds, and the drain's thread is a daemon holding a corpus lease until
+its checkpoint ends. If the process exits first the drain is abandoned mid-wait, which is safe: a
+checkpoint is crash-safe and the next open recovers the log. A restore that starts while a drain
+runs still waits for its lease (the lease is why the drain may not run between a restore's
+dispose and its replace).
 
 The drain keeps running while the override holds, so the WAL still resets the moment its reader
 lets go, and the notice says that the override is on, what bounds it, and that the next start
@@ -191,16 +203,15 @@ HISTORY_KEEP = 360
 #: minute at most keeps it off the hot path of a machine that is already struggling, and a
 #: pinned reader is still pinned a minute later, so nothing is lost by the wait.
 PIN_REPORT_EVERY_S = 60.0
-#: A drain queues on the write gate for up to 30 s (``OO_CKPT_GATE_TIMEOUT_S``) and logs its
+#: A drain queues on the write gate for up to 30 s (:data:`DRAIN_GATE_TIMEOUT_S`) and logs its
 #: record: every other sample (two sample periods) keeps a pinned WAL from keeping a permanent
 #: waiter on the gate and from filling a nearly full drive's log with checkpoint records.
 DRAIN_EVERY_S = 10.0
 #: The longest the GUARD's own drain waits for the write gate, whatever the operator set for
 #: ``OO_CKPT_GATE_TIMEOUT_S`` (``0`` there means "wait for ever" for the pass-boundary
-#: checkpoint). It protects the override's bound: the drain runs between two floor readings, so
-#: its wait is the gap in which free space can fall unseen, and this keeps the floor read at most
-#: about 35 s apart (the 5 s poll wait plus 30 s of gate wait), plus the checkpoint's own run and
-#: any wait for a pooled connection, however long a writer holds the gate.
+#: checkpoint). It is not the override's bound (the floor is read on its own thread, whatever the
+#: drain waits on); it keeps a drain from sitting behind a gate for ever, holding a pooled
+#: connection and a corpus lease and keeping the next drain from starting.
 #: Chosen as the setting's own default, not measured.
 DRAIN_GATE_TIMEOUT_S = 30.0
 #: Holders named per report, and frames per stack. They bound the PAYLOAD (a pin report rides
@@ -527,6 +538,7 @@ class StorageGuard:
         self._last_hist_mono: float | None = None
         self._last_drain: dict[str, Any] | None = None
         self._last_drain_mono: float | None = None
+        self._drain_inflight = False
         self._last_pin_report: dict[str, Any] | None = None
         self._last_pin_mono: float | None = None
         self._drains = 0
@@ -1051,15 +1063,19 @@ class StorageGuard:
         Returns the drain record when one ran. Never while an exclusive operation owns the
         machine (an import, a restore's swap: the drain opens connections to the live corpus
         and must not do so between a restore's dispose and its replace), and under a corpus
-        lease, so a restore that starts during a drain waits for it. A busy write gate (bounded
-        at 30 s by ``checkpoint_wal``) delays nothing but the calling thread.
+        lease, so a restore that starts during a drain waits for it. At most one drain runs at a
+        time (an in-flight flag taken under the guard's lock, so two callers cannot both pass the
+        cadence check). A busy write gate (bounded at 30 s by the guard's own drain,
+        :func:`_default_drain`) delays only the caller: the supervisor calls this on a thread of its
+        own, so the floor is still read every tick.
         """
-        from src.database.corpus_lease import corpus_lease
         from src.scheduler.runner import owns_the_machine
 
         now_mono = self._clock()
         with self._lock:
             if not self._wal and not self._disk:
+                return None
+            if self._drain_inflight:
                 return None
             if self._last_drain_mono is not None and now_mono - self._last_drain_mono < DRAIN_EVERY_S:
                 return None
@@ -1070,8 +1086,20 @@ class StorageGuard:
             wal_now = self._last.get("wal_bytes")
             if not self._wal and wal_now is not None and wal_now < WAL_ABSOLUTE_MIN_BYTES:
                 return None
-        if owns_the_machine():
-            return None  # not a drain that ran: the stamp below is not taken
+            self._drain_inflight = True  # claimed under the lock that made the checks
+        try:
+            if owns_the_machine():
+                return None  # not a drain that ran: the stamp is not taken
+            return self._run_drain(now_mono)
+        finally:
+            with self._lock:
+                self._drain_inflight = False
+
+    def _run_drain(self, now_mono: float) -> dict | None:
+        """The drain a caller has claimed (:meth:`drain_if_due`): stamp, lease, checkpoint,
+        record and the pin report. ``_drain_inflight`` is the caller's to release."""
+        from src.database.corpus_lease import corpus_lease
+
         with self._lock:
             self._last_drain_mono = now_mono  # claimed before it runs: no second drain starts
         try:
@@ -1364,13 +1392,31 @@ _STOP = threading.Event()
 _SUP_LOCK = threading.Lock()
 
 
+def _drain_in_background(g: StorageGuard) -> None:
+    try:
+        g.drain_if_due()
+    except Exception:  # noqa: BLE001 - the drain must never kill anything but itself
+        _LOG.debug("storage guard: background drain failed", exc_info=True)
+
+
 def _supervise(stop: threading.Event) -> None:
+    """The supervisor loop: read the floor every tick; run the drain beside it, never in it."""
+    drain: threading.Thread | None = None
     while not stop.is_set():
         try:
             g = storage_guard
             if g.enabled():
                 g.poll()
-                g.drain_if_due()
+                # The drain runs on its OWN thread, at most one at a time, so the floor is read
+                # every ``POLL_EVERY_S`` whatever the drain is waiting on: it checks out a pooled
+                # connection before the write gate (a wait ``OO_DB_POOL_TIMEOUT`` sets, which an
+                # operator may raise to minutes), then queues on the gate, then runs a checkpoint.
+                # Run inline, any of the three would leave the override's floor unread.
+                if g.engaged and (drain is None or not drain.is_alive()):
+                    drain = threading.Thread(
+                        target=_drain_in_background, args=(g,), name="oo-storage-guard-drain", daemon=True
+                    )
+                    drain.start()
         except Exception:  # noqa: BLE001 - a guard that dies silently is worse than none
             _LOG.warning("storage guard supervisor tick failed", exc_info=True)
         stop.wait(POLL_EVERY_S)

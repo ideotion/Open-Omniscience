@@ -1460,6 +1460,115 @@ def test_starting_collection_starts_the_supervisor_so_an_override_is_always_boun
         storage_guard.stop()
 
 
+def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypatch):
+    """The drain checks out a pooled connection before the write gate, and that wait is
+    ``OO_DB_POOL_TIMEOUT``, which an operator may set to minutes; then it queues on the gate and
+    runs a checkpoint. Run inline by the supervisor's tick, any of them would leave an
+    override's floor unread for as long. The drain runs on its own thread, one at a time, so the
+    readings carry on."""
+    g = _engaged("wal")
+    release = threading.Event()
+    started: list[int] = []
+    polls: list[int] = []
+    real_poll = g.poll
+
+    def blocked_drain():
+        started.append(1)
+        release.wait(20)
+        return {"busy": 0, "wal_bytes_before": 1, "wal_bytes_after": 1}
+
+    def counting_poll():
+        polls.append(1)
+        return real_poll()
+
+    g._drain = blocked_drain
+    g.poll = counting_poll
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(storage_guard, "POLL_EVERY_S", 0.02)
+    stop = threading.Event()
+    sup = threading.Thread(target=storage_guard._supervise, args=(stop,), daemon=True)
+    sup.start()
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not (started and len(polls) >= 6):
+            time.sleep(0.01)
+        assert started == [1], "the drain started, once"
+        assert len(polls) >= 6, "the floor kept being read while the drain was still waiting"
+        assert any(t.name == "oo-storage-guard-drain" and t.is_alive() for t in threading.enumerate())
+    finally:
+        release.set()
+        stop.set()
+        sup.join(5)
+    assert not sup.is_alive()
+
+
+def test_the_reading_and_the_step_that_ends_an_override_take_no_pooled_connection(monkeypatch):
+    """The override's bound must not depend on any pool or gate setting: with every request for a
+    pooled connection failing (the pool exhausted, however long its timeout), the floor is still
+    read and an override still ends when free space reaches it. The REAL reading is used for the
+    first half, so a future ``read_storage`` that opened a connection fails here."""
+    from src.database import session as dbsession
+
+    eng = dbsession.engine
+    asked: list[str] = []
+
+    def refuse(name):
+        def boom(*a, **k):
+            asked.append(name)
+            raise AssertionError(f"a pooled connection was asked for ({name})")
+
+        return boom
+
+    monkeypatch.setattr(eng, "connect", refuse("engine.connect"))
+    monkeypatch.setattr(eng, "raw_connection", refuse("engine.raw_connection"))
+    monkeypatch.setattr(eng.pool, "connect", refuse("pool.connect"))
+    monkeypatch.setattr(eng.pool, "_do_get", refuse("pool._do_get"))
+
+    real = _guard(readings_fn=storage_guard.read_storage)
+    real.poll()
+    assert asked == [], "the guard's own reading takes no connection"
+    assert set(storage_guard.read_storage()) >= {"wal_bytes", "disk_free_bytes"}
+
+    g = _overridable(wal=20 * GIB, free=100 * GIB)
+    assert g.override(reason="test")["overridden"] is True
+    g.fake["disk_free_bytes"] = 20 * GIB  # the floor
+    g.poll()
+    assert g.admit() == "wal" and g.state()["overridden"] is False, "it stopped, pool or no pool"
+    assert asked == []
+
+
+def test_only_one_drain_runs_at_a_time_even_when_the_cadence_check_would_pass():
+    """The in-flight flag is taken under the lock that made the checks: a second caller that has
+    passed the cadence check (the stamp cleared here, as if it were read before the first caller
+    stamped) still starts nothing while one is running."""
+    g = _overridable()
+    release = threading.Event()
+    entered = threading.Event()
+    calls: list[int] = []
+
+    def drain():
+        calls.append(1)
+        entered.set()
+        release.wait(20)
+        return {"busy": 1, "skipped": None}
+
+    g._drain = drain
+    first: list = []
+    t = threading.Thread(target=lambda: first.append(g.drain_if_due()), daemon=True)
+    t.start()
+    try:
+        assert entered.wait(10), "the first drain is running"
+        g._last_drain_mono = None  # the cadence check alone would now let a second caller through
+        assert g.drain_if_due() is None
+        assert calls == [1], "no second drain started"
+    finally:
+        release.set()
+        t.join(10)
+    assert first and first[0] is not None
+    g._last_drain_mono = None
+    assert g.drain_if_due() is not None and calls == [1, 1], "and the flag was released afterwards"
+
+
 def test_an_override_does_not_stop_the_drain_and_the_drain_ends_the_cause():
     clock = Clock()
     calls = []
