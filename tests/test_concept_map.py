@@ -308,9 +308,9 @@ def test_the_arms_drop_a_stoplisted_association(corpus, monkeypatch):
     from src.database.models import Keyword
 
     victim = sorted(before)[0]
-    (norm,) = corpus.query(Keyword.normalized_term).filter(Keyword.term == victim).first()
+    norms = {n for (n,) in corpus.query(Keyword.normalized_term).filter(Keyword.term == victim)}
     real = filters.hidden_set
-    monkeypatch.setattr(filters, "hidden_set", lambda *a, **k: frozenset(real(*a, **k)) | {norm})
+    monkeypatch.setattr(filters, "hidden_set", lambda *a, **k: frozenset(real(*a, **k)) | norms)
     after = {x["term"] for a in q.concept_arms(corpus, ck, min_cooccur=1)["arms"] for x in a["associations"]}
     assert victim not in after, "the stoplisted association is still drawn"
     assert after, "stoplisting one word emptied the map"
@@ -327,7 +327,7 @@ def test_a_stoplisted_association_does_not_use_up_a_slot(corpus, monkeypatch):
     full = next(a for a in q.concept_arms(corpus, ck, min_cooccur=1, assoc_limit=100)["arms"]
                 if a["language"] == "en")["associations"]
     strongest = [x["term"] for x in full if x["articles"] == max(y["articles"] for y in full)]
-    assert 1 <= len(strongest) <= 2 and len(full) > len(strongest), "the fixture no longer shows the slot effect"
+    assert len(strongest) == 2 and len(full) > 2, "the fixture no longer shows the slot effect"
     # the predicate reads the NORMALIZED term, which a lemmatised form does not share with its display term
     hidden = {n for (n,) in corpus.query(Keyword.normalized_term).filter(Keyword.term.in_(strongest))}
     real = filters.hidden_set

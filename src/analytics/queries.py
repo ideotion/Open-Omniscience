@@ -570,7 +570,7 @@ def concept_arms(
                     continue
                 counts[kid] = counts.get(kid, 0) + int(n)
         top = [(k, v) for k, v in counts.items() if v >= min_cooccur]
-        top.sort(key=lambda kv: -kv[1])
+        top.sort(key=lambda kv: (-kv[1], kv[0]))  # ties by id: the cut is the same on every engine
         # A word the filters hide (the stoplist, a user exclusion, too short, numeric: R111 step T2)
         # is dropped BEFORE the cut, so it never uses one of the slots a shown word could take.
         want = max(0, assoc_limit) * 2
