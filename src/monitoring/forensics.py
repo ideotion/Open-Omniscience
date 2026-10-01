@@ -476,7 +476,18 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
     Also keeps ``last_recovery``: the most recent unlock that actually recovered a log of at
     least ``RECOVERY_RATE_MIN_BYTES``. ``last_unlock`` is overwritten by every unlock, including
     the ones with no log, so on its own it could not answer "how long did this machine take the
-    last time it had a large log to recover"."""
+    last time it had a large log to recover".
+
+    It also stamps WHEN the unlock finished (``unlock_marker``): every finished unlock passes
+    through here, and the request-latency and search-timing logs measure each call's distance
+    from that moment. Stamped first, so a sentinel file that cannot be written (the very
+    condition this log exists to diagnose) does not also lose the stamp."""
+    try:
+        from src.monitoring.unlock_marker import note_unlock_done
+
+        note_unlock_done()
+    except Exception:  # noqa: BLE001 - a stamp must never break the unlock it describes
+        _LOG.debug("could not stamp the unlock", exc_info=True)
     state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
     state["last_unlock"] = {**record, "at": _now()}
     recovery = _recovery_from_record(record)

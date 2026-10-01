@@ -134,6 +134,75 @@ def _entry(spec: dict, *, value=None, n=None, as_of=None, verdict=_NM, method: s
     }
 
 
+def _k2_made_of(snappy_bar: dict, worst: dict, unlock: dict | None = None) -> tuple[str, str]:
+    """What K2's number is MADE OF, as two method fragments: how the worst route's slowest call
+    sat against an unlock, and how the breaches across all interactive routes divide.
+
+    The 2026-09-30 round had K2 red on sixteen of sixteen instances, most of them on a route
+    with one or two samples, and nothing in the entry said whether that was a slow read, a
+    refused request or a first call after an unlock. The value, n and verdict are unchanged --
+    this only says what they are made of -- and every figure is read from the latency summary:
+    a summary that predates the attribution yields only the fragments its keys support (the
+    call needs ``slowest``; the split needs ``breaching`` and ``interactive_routes``).
+
+    A call's distance from an unlock is fixed when the call is RECORDED, against the latest unlock
+    that had finished by then, while these words are chosen when the report is built. So they must
+    not say "the last unlock" (a later one may exist) and, when the distance is absent, they read
+    ``unlock`` (the summary's own stamp record) to tell "no unlock has ever finished here" from
+    "none had finished when this call ended"."""
+    from src.monitoring.unlock_marker import UNLOCK_ROUTES
+
+    slowest = worst.get("slowest")
+    call = ""
+    if isinstance(slowest, dict) and slowest.get("ms") is not None:
+        d = slowest.get("started_after_unlock_s")
+        ended = slowest.get("ended_at")
+        finished = unlock.get("count") if isinstance(unlock, dict) else None
+        if d is None:
+            if ended is None:
+                # A clock that failed (or a summary that predates the stamp) leaves no end time, and
+                # then nothing can be said about where the call sat against an unlock, the case below
+                # that reads "it ended before any unlock had finished" included.
+                where = "its end time was not recorded, so its distance from an unlock is unknown"
+            elif not isinstance(finished, int):
+                where = "its distance from an unlock was not recorded"  # no stamp record to read
+            elif finished >= 1:
+                where = "it ended before any unlock had finished in this process"
+            else:
+                where = "no unlock has finished in this process, so its distance from one is unknown"
+        elif d >= 0:
+            where = f"it began {d:,.1f} s after the latest unlock to finish before it ended"
+        else:
+            # The stamp lies between this call's start and its end: an unlock finished while it ran.
+            # Only the two requests that PERFORM an unlock are that unlock's own request.
+            own = " (the unlock's own request)" if worst.get("route") in UNLOCK_ROUTES else ""
+            where = f"it began {-d:,.1f} s BEFORE an unlock finished while it ran{own}"
+        call = (
+            f"; its slowest call took {float(slowest['ms']):,.1f} ms (status {slowest.get('status')})"
+            + (f", ended {ended}," if ended else ",")
+            + f" and {where}"
+        )
+    split = ""
+    breaching, interactive = snappy_bar.get("breaching"), snappy_bar.get("interactive_routes")
+    if isinstance(breaching, int) and isinstance(interactive, int):
+        split = f"{breaching} of {interactive} interactive routes are over the bar"
+        thin, floor = snappy_bar.get("breaching_low_n"), snappy_bar.get("min_n")
+        if isinstance(thin, int) and isinstance(floor, int):
+            split += f" ({thin} of them on fewer than {floor} samples)"
+        kinds = [
+            f"{snappy_bar[key]} {label}"
+            for key, label in (
+                ("breaching_refusal_or_error_driven", "only through refused or errored requests"),
+                ("breaching_first_call_only", "only on their first call"),
+                ("breaching_single_call", "on a single call"),
+            )
+            if isinstance(snappy_bar.get(key), int)
+        ]
+        if kinds:
+            split += "; " + ", ".join(kinds) + " (counted by route, and overlapping)"
+    return call, split
+
+
 def _k2_latency(spec: dict) -> dict:
     """K2: worst interactive-route p95 vs the 500 ms bar, from the in-memory latency reservoir."""
     from src.monitoring import latency
@@ -167,6 +236,7 @@ def _k2_latency(spec: dict) -> dict:
     worst_p95 = round(float(worst.get("p95_ms") or 0.0), 1)
     worst_n = int(worst.get("window_n") or 0)
     thin = worst.get("snappy") == "low-n"
+    call_note, split_note = _k2_made_of(snappy_bar, worst, summ.get("unlock"))
     return _entry(
         spec,
         value=worst_p95,
@@ -184,7 +254,10 @@ def _k2_latency(spec: dict) -> dict:
                 if thin
                 else ""
             )
-            + "); measured, per-process reservoir, counts only, no score"
+            + call_note
+            + ")"
+            + (f"; {split_note}" if split_note else "")
+            + "; measured, per-process reservoir, counts only, no score"
         ),
     )
 
