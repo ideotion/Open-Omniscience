@@ -799,7 +799,7 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     wanted = {
         str(int(r["source_id"]))
         for r in [*plan["restored_to_disqualified"], *plan["restored_to_qualified"]]
-        if r.get("live_stamp") == "measured"
+        if r.get("live_stamp") == STAMP_MEASURED
     }
     stamp = _iso(now or datetime.now(UTC)) or ""
     def _entry(sid: str) -> dict[str, Any]:
