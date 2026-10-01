@@ -13071,7 +13071,11 @@ untouched). `execute("PRAGMA wal_checkpoint(...)")` on the failed connection rai
 sticky error state) and a keyless stdlib `sqlite3` connection answers `file is not a database`, so there is no call-site
 checkpoint-before-close to add and `connect.py` stays as it is; `tests/test_failed_open_wal_facts.py` pins the four
 facts so a later session neither re-derives them nor "fixes" it the wrong way, and fails loudly if the library ever
-makes a fix possible. Still unfixed, in its owner's file: `engine.dispose()` at shutdown and in a restore swap.
+makes a fix possible. **One idea is recorded UNTESTED, for whoever takes slice S04-08 (the coordinator's note,
+2026-10-01; nothing was built or run for it):** in WAL mode an idle open connection keeps its shared lock on the
+database file, so a failed candidate kept OPEN is not the last connection and should not backfill; if it stays open
+until the right key's phase 0 has checkpointed the log, its `close()` should find nothing left to copy. Still
+unfixed, in its owner's file: `engine.dispose()` at shutdown and in a restore swap.
 
 ### THE UNLOCK'S WAL COST IS TWO COSTS THAT NEITHER DOMINATES, SO NO SPLIT IS WORTH BUILDING (WAL / disk thread, unlock phase 0, 2026-10-01)
 
