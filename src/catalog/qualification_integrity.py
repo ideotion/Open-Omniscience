@@ -322,6 +322,7 @@ def qualification_integrity_report(
 def repair_inversions(
     session: Session, *, dry_run: bool = True, only_to: str | None = None,
     skip_domains: frozenset[str] | set[str] = frozenset(), name_cap: int | None = NAME_CAP,
+    only_source_ids: frozenset[int] | set[int] | None = None,
 ) -> dict[str, Any]:
     """Reconcile every inversion :func:`qualification_integrity_report` finds: for a
     source whose ``Source.status`` no longer agrees with its own newest JUDGING attempt,
@@ -359,6 +360,8 @@ def repair_inversions(
     ``skip_domains`` are sources an operator deliberately reverted: they are never touched.
     ``name_cap`` bounds the NAMES in the returned lists (the counts are always exact); the
     automatic repair passes ``None`` because its revert record must name every source.
+    ``only_source_ids`` limits the repair to exactly the sources a previous (dry-run) call
+    planned, each re-checked against the live state, so what is recorded is what is applied.
 
     Both directions are reconciled, and named apart, for the same reason the report keeps
     them apart: restoring a recorded ``disqualified`` (a known-bad source that was
@@ -409,6 +412,8 @@ def repair_inversions(
             continue
         if source.domain in skip_domains:
             held_by_revert += 1
+            continue
+        if only_source_ids is not None and int(source.id) not in only_source_ids:
             continue
         row = {
             "domain": source.domain,
@@ -489,38 +494,57 @@ def _read_repair_index() -> dict[str, Any]:
 
     raw = kv_get_json(REPAIR_INDEX_KEY) or {}
     return {
-        "total": int(raw.get("total") or 0),
         "runs": [str(r) for r in (raw.get("runs") or [])],
         "last_run_at": raw.get("last_run_at"),
         "reverted_domains": [str(d) for d in (raw.get("reverted_domains") or [])],
     }
 
 
+def _write_repair_index(idx: dict[str, Any]) -> None:
+    from src.config.kv_store import kv_set_json
+
+    kv_set_json(REPAIR_INDEX_KEY, {
+        "runs": idx["runs"], "last_run_at": idx["last_run_at"],
+        "reverted_domains": idx["reverted_domains"],
+    })
+
+
 def repair_summary() -> dict[str, Any]:
     """What the automatic repair has done here, read from its own revert record.
 
     EVERY repair is listed -- never a capped sample (a cap would hide exactly the long tail an
-    operator wants to audit; the list is bounded by the number of sources anyway). Read-only,
-    and it degrades to an empty, zero-count summary where the key-value store is unavailable.
+    operator wants to audit; the list is bounded by the number of sources anyway). A run is
+    INDEXED before its change is applied, so a crash can never leave a repair nobody can see:
+    a run whose confirmation never landed is listed with ``confirmed: false`` and counted apart
+    (``repairs_unconfirmed``) rather than in ``repaired_total``. Read-only, and it degrades to an
+    empty, zero-count summary where the key-value store is unavailable.
     """
     from src.config.kv_store import kv_get_json
 
     try:
         idx = _read_repair_index()
         repairs: list[dict[str, Any]] = []
+        confirmed = unconfirmed = 0
         for run_at in idx["runs"]:
             run = kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}
+            done = bool(run.get("applied"))
             for r in run.get("repairs") or []:
+                if done:
+                    confirmed += 1
+                else:
+                    unconfirmed += 1
                 repairs.append({
                     "domain": r.get("domain"),
                     "run_at": run_at,
+                    "confirmed": done,
                     "was_status": r.get("was"),
                     "restored_to": r.get("restored_to"),
                     "judged_at": r.get("judged_at"),
                     "reverted_at": r.get("reverted_at"),
                 })
         return {
-            "repaired_total": idx["total"],
+            "repaired_total": confirmed,
+            "repairs_unconfirmed": unconfirmed,
             "repair_runs": len(idx["runs"]),
             "last_repair_at": idx["last_run_at"],
             "repairs": repairs,
@@ -534,8 +558,8 @@ def repair_summary() -> dict[str, Any]:
         }
     except Exception:  # noqa: BLE001 - a report must never fail for want of its side record
         return {
-            "repaired_total": 0, "repair_runs": 0, "last_repair_at": None, "repairs": [],
-            "repairs_held_by_revert": [],
+            "repaired_total": 0, "repairs_unconfirmed": 0, "repair_runs": 0,
+            "last_repair_at": None, "repairs": [], "repairs_held_by_revert": [],
             "repairs_note": "the repair record could not be read on this instance",
         }
 
@@ -549,16 +573,19 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     re-admits sources and stays operator-run (see :func:`repair_inversions`). It runs at
     deferred boot and touches the LOCAL database only, so airplane mode does not stop it.
 
-    IT NEEDS NO NEW SCHEMA. Every repair is written, with the status and stamp it replaced, to
-    the ``app_state`` revert record BEFORE the change is applied, then the change is committed,
-    then the record is marked applied and indexed -- so a crash leaves at worst an unindexed,
-    unapplied plan, never a repair nobody can see. Nothing is capped. A source an operator has
+    IT NEEDS NO NEW SCHEMA, and its ORDER is the point. (1) The plan is computed without
+    writing. (2) The run is recorded AND INDEXED (``applied: false``) with the status and stamp
+    each source is about to lose, BEFORE anything changes -- so no crash or failed write after the
+    commit can leave a repair that nothing lists. (3) Exactly the planned sources are re-checked
+    and changed, in one transaction. (4) The record is rewritten with what was really applied and
+    marked ``applied: true``. A failure of step 4 leaves a listed, revertable run reported as
+    unconfirmed; a failure of step 2 changes nothing. Nothing is capped. A source an operator has
     deliberately reverted is never repaired again.
 
-    Returns counts only. A failure anywhere is returned as ``error`` and logged by the caller:
-    a repair that could not run must never block startup, and leaves the report to say so.
+    Returns counts only. A failure anywhere raises to the caller, which logs it: a repair that
+    could not run must never block startup.
     """
-    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.config.kv_store import kv_set_json
     from src.database.session import session_scope
 
     now = now or datetime.now(UTC)
@@ -574,75 +601,90 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
 
     run_at = _iso(now) or ""
     run_key = REPAIR_RUN_PREFIX + run_at
-    # 1. the revert record first (outside any ORM write transaction: kv_set_json's contract)
+    # 2. record and index the intent (outside any ORM write transaction: kv_set_json's contract)
     kv_set_json(run_key, {"run_at": run_at, "applied": False, "repairs": rows})
-    # 2. the change, committed by the session scope
+    idx["runs"] = [*idx["runs"], run_at]
+    idx["last_run_at"] = run_at
+    _write_repair_index(idx)
+    # 3. the planned sources, re-checked, in one transaction
     with session_scope() as session:
         done = repair_inversions(
             session, dry_run=False, only_to=STATUS_DISQUALIFIED, skip_domains=skip,
-            name_cap=None,
+            name_cap=None, only_source_ids={int(r["source_id"]) for r in rows},
         )
-    repaired = int(done["restored_to_disqualified_total"])
-    # 3. mark applied and index it
-    run = kv_get_json(run_key) or {"run_at": run_at, "repairs": rows}
-    run["applied"] = True
-    run["repaired"] = repaired
-    kv_set_json(run_key, run)
-    idx = _read_repair_index()
-    kv_set_json(REPAIR_INDEX_KEY, {
-        "total": idx["total"] + repaired,
-        "runs": [*idx["runs"], run_at],
-        "last_run_at": run_at,
-        "reverted_domains": idx["reverted_domains"],
-    })
-    return {"repaired": repaired, "run_at": run_at,
+    applied_rows = done["restored_to_disqualified"]
+    # 4. what was REALLY applied replaces the plan
+    kv_set_json(run_key, {"run_at": run_at, "applied": True, "repairs": applied_rows})
+    return {"repaired": len(applied_rows), "run_at": run_at,
             "held_by_operator_revert": done["held_by_operator_revert"]}
 
 
 def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     """MAINTAINER TOOL: put every automatically repaired source back exactly as it was.
 
-    A row is reverted only while it still reads the state the repair gave it (a later judgement
-    that moved it on is never overwritten), restoring the status AND the stamp the repair
-    replaced. Each reverted domain is then held out of any later automatic repair -- without
-    that, the next boot would simply repair it again. Dry run by default; nothing in the app or
-    its documentation asks a user to run this.
+    Only the NEWEST unreverted record of each domain is applied (a domain repaired in two runs
+    would otherwise get the oldest stamp back), and only while the row still reads what the
+    repair gave it AND its newest judging attempt is still the one the repair followed -- a later
+    judgement that confirms the disqualification produces exactly the state the repair writes,
+    and must never be undone by this. Each reverted domain is HELD out of later automatic
+    repairs, and the hold is written BEFORE the change, so a failure part-way can never be
+    silently repaired again at the next boot. Dry run by default; nothing in the app or its
+    documentation asks a user to run this.
     """
     from src.config.kv_store import kv_get_json, kv_set_json
     from src.database.models import Source
     from src.database.session import session_scope
 
     idx = _read_repair_index()
-    reverted: list[dict[str, Any]] = []
-    skipped_moved_on = 0
+    plan: list[tuple[str, dict[str, Any]]] = []
+    moved_on = 0
     runs: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
     with session_scope() as session:
-        for run_at in idx["runs"]:
+        for run_at in reversed(idx["runs"]):                      # newest run first
             run = kv_get_json(REPAIR_RUN_PREFIX + run_at) or {}
             runs[run_at] = run
             for r in run.get("repairs") or []:
-                if r.get("reverted_at"):
+                domain = r.get("domain")
+                if r.get("reverted_at") or domain in seen:
                     continue
-                source = session.query(Source).filter(Source.domain == r.get("domain")).first()
-                if source is None or source.status != r.get("restored_to"):
-                    skipped_moved_on += 1
+                seen.add(domain)
+                source = session.query(Source).filter(Source.domain == domain).first()
+                newest = _newest_judging(session, int(source.id)) if source is not None else None
+                if (
+                    source is None or newest is None
+                    or source.status != r.get("restored_to")
+                    or _iso(newest.attempted_at) != r.get("judged_at")
+                ):
+                    moved_on += 1
                     continue
-                reverted.append({"domain": source.domain, "to": r.get("was"), "run_at": run_at})
-                if not dry_run:
-                    source.status = r.get("was") or STATUS_UNQUALIFIED
-                    source.qualified_at = _parse_iso(r.get("was_qualified_at"))
-                    source.qualification_criteria_version = r.get("was_criteria_version")
-                    r["reverted_at"] = _iso(datetime.now(UTC))
-    if not dry_run and reverted:
-        for run_at, run in runs.items():
-            kv_set_json(REPAIR_RUN_PREFIX + run_at, run)
-        held = sorted({*idx["reverted_domains"], *(x["domain"] for x in reverted)})
-        kv_set_json(REPAIR_INDEX_KEY, {
-            "total": idx["total"], "runs": idx["runs"], "last_run_at": idx["last_run_at"],
-            "reverted_domains": held,
-        })
-    return {"dry_run": dry_run, "reverted": len(reverted), "sources": reverted,
-            "moved_on_since_repair": skipped_moved_on}
+                plan.append((run_at, r))
+    result = {
+        "dry_run": dry_run, "reverted": len(plan), "moved_on_since_repair": moved_on,
+        "sources": [{"domain": r["domain"], "to": r.get("was"), "run_at": run_at}
+                    for run_at, r in plan],
+    }
+    if dry_run or not plan:
+        return result
+
+    # 1. the hold, BEFORE the change
+    idx["reverted_domains"] = sorted({*idx["reverted_domains"], *(r["domain"] for _, r in plan)})
+    _write_repair_index(idx)
+    # 2. the change, re-checking each row inside the transaction
+    stamp = _iso(datetime.now(UTC))
+    with session_scope() as session:
+        for _run_at, r in plan:
+            source = session.query(Source).filter(Source.domain == r["domain"]).first()
+            if source is None or source.status != r.get("restored_to"):
+                continue
+            source.status = r.get("was") or STATUS_UNQUALIFIED
+            source.qualified_at = _parse_iso(r.get("was_qualified_at"))
+            source.qualification_criteria_version = r.get("was_criteria_version")
+            r["reverted_at"] = stamp
+    # 3. mark the records
+    for run_at in {run_at for run_at, _ in plan}:
+        kv_set_json(REPAIR_RUN_PREFIX + run_at, runs[run_at])
+    return result
 
 
 def _parse_iso(value: str | None) -> datetime | None:
