@@ -168,6 +168,30 @@ def test_a_memory_stopped_run_keeps_the_whole_cached_feed_even_when_partial(monk
     assert service._present({**on_disk, "cards": []}, include_dismissed=False)["kept_reason"] == "memory_short"
 
 
+def test_a_run_stopped_by_a_spent_budget_with_no_cards_keeps_the_feed_and_says_deadline(monkeypatch, tmp_path):
+    """The other kept reason: only a diagnostic or a test reaches it (no production caller passes a
+    deadline), so nothing else would notice it saying ``memory_short`` here (CHECK of #1284, A3)."""
+    path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a"}])
+    monkeypatch.setattr(
+        service, "run_all_bounded",
+        lambda *a, **k: ([], {"truncated": True, "truncated_reason": "budget"}),
+    )
+    out = service.refresh_briefing(object())
+    assert out["kept_reason"] == "deadline"
+    assert json.loads(path.read_text("utf-8"))["kept_reason"] == "deadline"
+
+
+@pytest.mark.parametrize(
+    "garbage", ["", "Memory_Short", "memory_short ", " deadline", "<img src=x>", None, 0, 1, True, [], {}, ["deadline"]],
+)
+def test_the_view_drops_any_marker_that_is_not_one_of_the_two_known_reasons(garbage):
+    """A hand-edited or damaged cache must not reach the API view: Home maps any value that is not
+    ``memory_short`` to the time reason, so a stray string would read as a wrong cause (A14)."""
+    on_disk = {"cards": [], "kept_reason": garbage, "incomplete_reason": garbage}
+    view = service._present(on_disk, include_dismissed=False)
+    assert "kept_reason" not in view and "incomplete_reason" not in view
+
+
 def test_a_memory_stopped_run_with_no_cache_still_writes_what_it_has(monkeypatch, tmp_path):
     path = tmp_path / "briefing_cache.json"  # absent
     monkeypatch.setattr(service, "_cache_path", lambda: path)
