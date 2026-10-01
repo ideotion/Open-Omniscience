@@ -1279,11 +1279,13 @@ class StorageGuard:
         except Exception as exc:  # noqa: BLE001 - the drain must never kill the supervisor
             _LOG.warning("storage guard: the drain failed", exc_info=True)
             rec = {"error": type(exc).__name__}
-        # Paced from when the drain ENDED: one that queued 30 s on the write gate must not be
-        # followed five seconds later by the next, the permanent waiter this cadence exists to
-        # prevent.
-        with self._lock:
-            self._last_drain_mono = self._clock()
+        finally:
+            # Paced from when the drain ENDED, however it ended: one that queued 30 s on the write
+            # gate must not be followed five seconds later by the next (the permanent waiter this
+            # cadence exists to prevent), and one that raised past the ``except`` (a
+            # ``BaseException``) must not leave the cadence unstamped either.
+            with self._lock:
+                self._last_drain_mono = self._clock()
         # TRUNCATE came back busy: a reader holds the log. The gate was busy: a WRITER held the
         # write gate for the whole bounded wait and TRUNCATE never ran. Different facts.
         pinned = isinstance(rec, dict) and rec.get("busy") == 1
@@ -1636,12 +1638,20 @@ def _supervise(stop: threading.Event) -> None:
                 # connection before the write gate (a wait ``OO_DB_POOL_TIMEOUT`` sets, which an
                 # operator may raise to minutes), then queues on the gate, then runs a checkpoint.
                 # Run inline, any of the three would leave the override's floor unread.
-                if g.engaged and not stop.is_set() and (drain is None or not drain.is_alive()):
-                    drain = threading.Thread(
-                        target=_drain_in_background, args=(g, stop), name="oo-storage-guard-drain", daemon=True
-                    )
-                    _DRAIN_THREAD = drain  # so stop() can join it
-                    drain.start()
+                if g.engaged and (drain is None or not drain.is_alive()):
+                    # The stop check and the publishing of the thread are one step under the lock
+                    # ``stop()`` reads the threads under: a drain thread is either published before
+                    # it reads (and joined) or never started, never in between.
+                    with _SUP_LOCK:
+                        if not stop.is_set():
+                            drain = threading.Thread(
+                                target=_drain_in_background,
+                                args=(g, stop),
+                                name="oo-storage-guard-drain",
+                                daemon=True,
+                            )
+                            _DRAIN_THREAD = drain  # so stop() can join it
+                            drain.start()
         except Exception:  # noqa: BLE001 - a guard that dies silently is worse than none
             _LOG.warning("storage guard supervisor tick failed", exc_info=True)
         stop.wait(POLL_EVERY_S)
