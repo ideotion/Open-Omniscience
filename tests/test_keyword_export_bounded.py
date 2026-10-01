@@ -560,7 +560,12 @@ def test_every_write_the_ranker_makes_asks_its_own_drive_whether_it_is_read_only
     """The three places the ranker writes its spill each name the spill's folder to the refusal;
     one that stopped naming it would raise SQLite's bare ``disk I/O error`` as a 500."""
     r = kls.Ranker(0, 3, heap_rows=2, spill_dir=tmp_path, disk_check=None)
-    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=os.ST_RDONLY))
+    # Read-only only for the SPILL'S folder: a site that asked about another one (the ranker's
+    # fallback temp folder, say) must not be refused.
+    monkeypatch.setattr(
+        os, "statvfs",
+        lambda path: types.SimpleNamespace(f_flag=os.ST_RDONLY if path == str(tmp_path) else 0),
+    )
     try:
         if where == "to_spill":
             def fail(*args, **kwargs):
@@ -574,6 +579,7 @@ def test_every_write_the_ranker_makes_asks_its_own_drive_whether_it_is_read_only
             for kid in (10, 20, 30, 40):
                 r.add("en", kid, 5, 1, None, None, "en")
             assert r.spilled, "the spill must exist for this to test anything"
+            r._flush()  # empty the buffer: `_prune` flushes first, which would hit the flush site
 
             class _Failing:
                 def execute(self, *args, **kwargs):

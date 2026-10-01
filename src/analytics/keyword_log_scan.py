@@ -103,9 +103,10 @@ FAMILY_SHARE = 0.10
 #: more than this would add to a working set the plan has already sized. The cache is allocated
 #: as pages are touched, so a spill that stays small uses less. It is a ceiling chosen for that
 #: margin, not a measured figure, and the gate's estimate (``estimate_export_need``) does not
-#: count the ranking, so this cache is outside it. It is paid from the ranker's own share: the
-#: heaps are emptied when the spill starts, and that share is never below
-#: ``MIN_HEAP_ROWS * ROW_BYTES`` (40 MB, 38 MiB), more than these 32 MiB.
+#: count the ranking, so this cache is outside it. Once the heaps have been moved to disk it is
+#: paid from the ranker's own share, which is never below ``MIN_HEAP_ROWS * ROW_BYTES`` (40 MB,
+#: 38 MiB), more than these 32 MiB; DURING the move the heap being written and the cache fill
+#: together, so for that stretch the cache can sit up to 32 MiB above the share.
 SPILL_CACHE_KIB = 32 * 1024
 
 #: Ids per ``IN (...)`` list in the export's queries. What it protects: a statement stays near
@@ -573,7 +574,8 @@ def no_room_refusal(exc: OSError, doing: str) -> ExportRefused | None:
     why = "has no room left in your disk quota" if code != errno.ENOSPC else "ran out of room"
     return ExportRefused(
         f"the drive the export writes to {why} while the export was {doing}, so it stopped and "
-        "removed what it had written (deleting works on a full drive). Free some space, or ask for a smaller window (per_lang=...).",
+        "removed any partial file (one it could not delete is swept by a later export once it is "
+        "twelve hours old). Free some space, or ask for a smaller window (per_lang=...).",
         status=507,
     )
 
