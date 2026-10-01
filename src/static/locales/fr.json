@@ -883,6 +883,7 @@
   "Collection": "Collecte",
   "Collection activity": "Activité de collecte",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "La collecte et les pistes se mettent à jour automatiquement en arrière-plan lorsque vous êtes en ligne — il n'y a rien à lancer à la main.",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "La collecte ne peut pas être forcée : la vérification qui surveille l’espace libre du disque pendant une reprise forcée n’a pas pu démarrer, donc une reprise forcée ne pourrait pas rester dans ce que le disque peut absorber. La collecte reste en pause.",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "La collecte ne peut pas continuer malgré cette limite : l’espace libre est de {free}, au plus égal à {floor}, la place dont la base a besoin pour remettre son fichier de travail en place et terminer une écriture. La collecte reste en pause.",
   "Collection coverage": "Couverture de la collecte",
   "Collection is OFF — click to turn on": "La collecte est DÉSACTIVÉE — cliquez pour l'activer",

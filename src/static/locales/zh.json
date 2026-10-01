@@ -883,6 +883,7 @@
   "Collection": "采集",
   "Collection activity": "采集活动",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "当您在线时，采集与线索会在后台自动更新——无需手动操作。",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "无法强制继续采集：用于在强制继续期间监视磁盘可用空间的检查未能启动，因此强制继续无法保证在磁盘可承受的范围内。采集保持暂停。",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "采集无法在此上限下继续运行：可用空间为 {free}，不高于 {floor}（数据库把工作文件写回原处并完成一次写入所需的空间）。采集保持暂停。",
   "Collection coverage": "采集覆盖",
   "Collection is OFF — click to turn on": "采集已关闭 — 点击开启",

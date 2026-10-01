@@ -883,6 +883,7 @@
   "Collection": "Collection",
   "Collection activity": "Collection activity",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.",
   "Collection coverage": "Collection coverage",
   "Collection is OFF — click to turn on": "Collection is OFF — click to turn on",

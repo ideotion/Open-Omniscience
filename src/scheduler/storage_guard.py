@@ -117,7 +117,7 @@ What then stops the drive from filling, in order:
 * it ends when both causes are gone (the next trip pauses normally again), and it lives in
   memory only: quitting the app ends it. Start and Run now (:meth:`reset`) leave it alone while
   a covered limit is still exceeded by the last reading (or cannot be read against), and end it,
-  re-arming the limit, when the last reading no longer shows a covered limit exceeded (for
+  re-arming the limit, when the last reading does not show a covered limit exceeded (for
   example when only the hysteresis holds the latch: the notes then still compare against the
   limit, and the latch holds below it until the resume level).
 
@@ -125,14 +125,14 @@ This is a bound, not a promise that the drive can never fill. The floor is read 
 supervisor tick, ``POLL_EVERY_S`` (5 s) apart, but a tick also runs the drain, which can wait up
 to :data:`DRAIN_GATE_TIMEOUT_S` (30 s) for the write gate that running collectors keep busy,
 whatever ``OO_CKPT_GATE_TIMEOUT_S`` says (a shorter setting shortens it; ``0`` and a longer one
-leave the guard's own wait at 30 s, and only the pass-boundary checkpoint keeps the operator's
-setting): while overridden, the gap between two readings is 5 s to about 40 s plus the
-checkpoint's own run (which nothing bounds). At the 1.4 MB/s of log growth the sampling comment
-below records (its source is not in the repo), 40 s is about 56 MB: 42% of the smallest floor
-(128 MiB) and less of any larger one; that rate is the log's growth, not everything a pass writes. The floor reserves room to write the log back and
-finish a write, NOT the pass tail written after a withdrawal (a measured tail is what would size
-that, and it is not a fixed number). The write error above is the last net and it does not wait
-for a reading.
+leave the guard's own wait at 30 s, while the pass-boundary checkpoint and the restore's pre-swap
+checkpoint keep the operator's setting). While overridden, the gap between two readings is 5 s to
+about 40 s plus the checkpoint's own run (which nothing bounds). At the 1.4 MB/s of log growth
+the sampling comment below records (its source is not in the repo), 40 s is about 56 MB: 42% of
+the smallest floor (128 MiB) and less of any larger one; that rate is the log's growth, not
+everything a pass writes. The floor reserves room to write the log back and finish a write, NOT
+the pass tail written after a withdrawal (a measured tail is what would size that, and it is not
+a fixed number). The write error above is the last net and it does not wait for a reading.
 
 The drain keeps running while the override holds, so the WAL still resets the moment its reader
 lets go, and the notice says that the override is on, what bounds it, and that the next start
@@ -195,7 +195,8 @@ DRAIN_EVERY_S = 10.0
 #: ``OO_CKPT_GATE_TIMEOUT_S`` (``0`` there means "wait for ever" for the pass-boundary
 #: checkpoint). It protects the override's bound: the drain runs between two floor readings, so
 #: its wait is the gap in which free space can fall unseen, and this keeps the floor read at least
-#: every half minute or so (plus the checkpoint's own run) however long a writer holds the gate.
+#: every 5 to about 40 s (30 s of gate wait plus the checkpoint's own run) however long a writer holds
+#: the gate.
 #: Chosen as the setting's own default, not measured.
 DRAIN_GATE_TIMEOUT_S = 30.0
 #: Holders named per report, and frames per stack. They bound the PAYLOAD (a pin report rides
@@ -280,6 +281,14 @@ FRAME_OVERRIDE_HELD = (
 )
 FRAME_OVERRIDE_UNREADABLE = (
     "Free space on the data drive cannot be read, so a forced resume could not be kept within "
+    "what the drive can take. Collection stays paused."
+)
+#: The click was answered by the route, not by :meth:`StorageGuard.override`: nothing is reading the
+#: floor between passes (the supervisor could not be started), which is a different fact from free
+#: space being unreadable, so it gets its own sentence.
+FRAME_OVERRIDE_NO_SUPERVISOR = (
+    "Collection cannot be forced on: the check that watches the drive's free space while "
+    "collection is overridden could not be started, so a forced resume could not be kept within "
     "what the drive can take. Collection stays paused."
 )
 

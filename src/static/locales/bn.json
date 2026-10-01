@@ -883,6 +883,7 @@
   "Collection": "সংগ্রহ",
   "Collection activity": "সংগ্রহ কার্যকলাপ",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "আপনি অনলাইনে থাকাকালীন সংগ্রহ ও সূত্র পটভূমিতে স্বয়ংক্রিয়ভাবে আপডেট হয় — হাতে করে আলাদা কিছু চালু করার দরকার নেই।",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "জোর করে চালু করা যাচ্ছে না: জোর করে চালু থাকা অবস্থায় ড্রাইভের ফাঁকা জায়গার ওপর নজর রাখা পরীক্ষাটি চালু করা যায়নি, তাই জোর করে চালু করা ড্রাইভ যা সইতে পারে তার মধ্যে রাখা যাবে না। সংগ্রহ বিরতিতে থাকবে।",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "এই সীমার বিপরীতে সংগ্রহ চালু রাখা যাচ্ছে না: ফাঁকা জায়গা {free}, যা {floor}-এর সমান বা কম, ডেটাবেসের নিজের কাজের ফাইল ফেরত লিখতে ও একটি লেখা শেষ করতে যতটুকু জায়গা লাগে, তা-ই। সংগ্রহ বিরতিতে থাকবে।",
   "Collection coverage": "সংগ্রহ কভারেজ",
   "Collection is OFF — click to turn on": "সংগ্রহ বন্ধ — চালু করতে ক্লিক করুন",

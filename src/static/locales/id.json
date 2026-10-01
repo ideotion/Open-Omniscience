@@ -883,6 +883,7 @@
   "Collection": "Pengumpulan",
   "Collection activity": "Aktivitas pengumpulan",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "Pengumpulan dan petunjuk diperbarui secara otomatis di latar belakang saat Anda daring — tidak ada yang perlu dimulai secara manual.",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "Pengumpulan tidak dapat dipaksa berlanjut: pemeriksaan yang mengawasi ruang kosong drive selama lanjutan paksa tidak dapat dimulai, sehingga lanjutan paksa tidak dapat dijaga dalam batas yang sanggup ditampung drive. Pengumpulan tetap dijeda.",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "Pengumpulan tidak dapat terus berjalan melawan batas ini: ruang kosong {free}, sama dengan atau kurang dari {floor}, ruang yang dibutuhkan basis data untuk menulis kembali berkas kerjanya dan menyelesaikan satu penulisan. Pengumpulan tetap dijeda.",
   "Collection coverage": "Cakupan pengumpulan",
   "Collection is OFF — click to turn on": "Pengumpulan NONAKTIF — klik untuk mengaktifkan",

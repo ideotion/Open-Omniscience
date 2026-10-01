@@ -233,8 +233,9 @@ def checkpoint_wal(
     it can NEVER run beside a gated writer — it queues behind one instead.
     S2.5: that queue is now BOUNDED (``OO_CKPT_GATE_TIMEOUT_S``, 30 s; a caller
     that must not wait on the operator's setting passes ``gate_timeout_s``, which
-    wins over it: the storage guard's own drain does, so a ``0`` there cannot leave
-    the guard's sampler waiting on a long writer). It used
+    wins over it, ``0`` meaning wait for ever like the setting: the storage guard's own
+    drain passes one, so a ``0`` in the setting cannot leave the guard's sampler waiting on a
+    long writer). It used
     to be an unbounded wait, and ``record_run`` sits BELOW this call in the pass
     tail — so a long writer did not merely delay the checkpoint, it meant a
     stalled pass left no run record of itself at all.

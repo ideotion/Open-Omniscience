@@ -883,6 +883,7 @@
   "Collection": "収集",
   "Collection activity": "収集アクティビティ",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "収集と手がかりは、オンライン中はバックグラウンドで自動的に更新されます — 手動で開始する操作は不要です。",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "収集を強制再開できません。強制再開中にドライブの空き容量を監視するチェックを開始できなかったため、強制再開をドライブが受け入れられる範囲に収めることができません。収集は一時停止のままです。",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "この上限のままでは収集を続けられません。空きは {free} で、{floor}（データベースが作業ファイルを書き戻して書き込みを終えるのに必要な量）以下です。収集は一時停止のままです。",
   "Collection coverage": "収集カバレッジ",
   "Collection is OFF — click to turn on": "収集はオフです — クリックしてオンにします",

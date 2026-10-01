@@ -883,6 +883,7 @@
   "Collection": "Сбор",
   "Collection activity": "Активность сбора",
   "Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.": "Сбор и зацепки обновляются автоматически в фоновом режиме, пока вы в сети — вручную запускать ничего не нужно.",
+  "Collection cannot be forced on: the check that watches the drive's free space while collection is overridden could not be started, so a forced resume could not be kept within what the drive can take. Collection stays paused.": "Принудительно возобновить сбор нельзя: не удалось запустить проверку, которая следит за свободным местом на диске во время принудительного возобновления, поэтому его нельзя удержать в пределах того, что диск выдержит. Сбор остаётся на паузе.",
   "Collection cannot be kept running against this limit: free space is {free}, at or below {floor}, the room the database needs to write its working file back into place and finish a write. Collection stays paused.": "Сбор не может продолжаться вопреки этому пределу: свободно {free}, то есть не больше {floor} — места, которое нужно базе данных, чтобы записать свой рабочий файл обратно и завершить запись. Сбор остаётся на паузе.",
   "Collection coverage": "Охват сбора",
   "Collection is OFF — click to turn on": "Сбор ВЫКЛЮЧЕН — нажмите, чтобы включить",

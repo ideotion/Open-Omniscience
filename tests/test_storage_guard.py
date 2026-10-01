@@ -732,7 +732,9 @@ def test_the_resume_endpoint_answers_a_refusal_with_its_sentence(monkeypatch):
 def test_the_resume_endpoint_refuses_while_no_supervisor_can_watch_the_floor_and_grants_once_one_runs(monkeypatch):
     """An override is bounded by the floor, which only the supervisor's ticks read between passes:
     a grant with no supervisor (its start raised once) would be unbounded until the next pass
-    boundary, so the route tries to start it and refuses, changing nothing, when it still is not."""
+    boundary, so the route tries to start it and refuses, changing nothing, when it still is not.
+    The refusal names ITS cause (a supervisor that is not running is not free space that cannot be
+    read), and a more specific refusal the last sample shows is the one given."""
     from src.api.scheduler import storage_guard_resume
 
     g = _engaged("wal")
@@ -741,13 +743,22 @@ def test_the_resume_endpoint_refuses_while_no_supervisor_can_watch_the_floor_and
     up: list[int] = []
     monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: asked.append(1))
     monkeypatch.setattr(storage_guard, "supervisor_running", lambda: bool(up))
-    o = storage_guard_resume()["storage_guard_override"]
+    payload = storage_guard_resume()
+    o = payload["storage_guard_override"]
     assert o["engaged"] is True and o["overridden"] is False
-    assert o["refused"] == {"kind": "unreadable", "frame": storage_guard.FRAME_OVERRIDE_UNREADABLE, "vars": {}}
+    assert o["refused"] == {"kind": "supervisor", "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR, "vars": {}}
+    assert payload["storage_guard"]["override_refusal"] == o["refused"], "the page swaps the button for the sentence"
+    assert "free space" in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR and "cannot be read" not in storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR
     assert asked == [1], "starting it was tried first"
     assert g.admit() == "wal" and g.state()["overridden"] is False, "a refusal changes nothing"
     up.append(1)  # it could be started (or came up since)
     assert storage_guard_resume()["storage_guard_override"]["overridden"] is True
+    # a more specific refusal the last sample already shows wins: the drive is already at the floor
+    low = _engaged("disk")  # free = 1 MiB
+    monkeypatch.setattr(storage_guard, "storage_guard", low)
+    up.clear()
+    refused = storage_guard_resume()["storage_guard_override"]["refused"]
+    assert refused["kind"] == "floor" and refused["frame"] == storage_guard.FRAME_OVERRIDE_STOPPED
     # nothing paused: nothing to override, and no supervisor is started on its account
     quiet = _guard()
     monkeypatch.setattr(storage_guard, "storage_guard", quiet)
@@ -1304,9 +1315,11 @@ def test_a_retry_before_every_unreadable_sample_still_lets_the_run_withdraw_the_
     g = _overridable(wal=700 * MIB, free=5 * GIB)
     assert g.override(reason="test")["overridden"] is True
     g.fake["disk_free_bytes"] = None
-    for _ in range(g.trip_after):
+    for i in range(g.trip_after):
         g.reset(reason="operator started collection")  # Start is clicked before every reading
         g.poll()
+        if i < g.trip_after - 1:
+            assert g.state()["overridden"] is True, "a retry adds nothing to the blind count"
     assert g.state()["overridden"] is False, "trip_after unreadable samples in a row withdraw it, retries or not"
     assert g.admit() == "wal"
 
@@ -1809,6 +1822,7 @@ def test_no_sentence_the_guard_sends_tells_the_user_to_do_anything():
         storage_guard.FRAME_OVERRIDE_STOPPED,
         storage_guard.FRAME_OVERRIDE_HELD,
         storage_guard.FRAME_OVERRIDE_UNREADABLE,
+        storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,
     ]
     for f in frames:
         assert "Free some space" not in f and "move the data folder" not in f, f
@@ -2067,6 +2081,7 @@ def test_every_storage_string_is_in_the_twelve_locales():
         storage_guard.FRAME_OVERRIDE_STOPPED,
         storage_guard.FRAME_OVERRIDE_HELD,
         storage_guard.FRAME_OVERRIDE_UNREADABLE,
+        storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,
     ]
     for gone in ("Try again now", "Trying again. Collection pauses again by itself if the limit is still exceeded."):
         assert gone not in _src("src/static/app-core.js") and gone not in _src("src/static/taskmanager.js")

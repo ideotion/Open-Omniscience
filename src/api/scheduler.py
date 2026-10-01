@@ -427,10 +427,11 @@ def storage_guard_resume() -> dict:
     space. It is REFUSED (with a sentence frame, nothing changes) while a write has just
     failed, when free space cannot be read, or when it is already at or below the floor; the
     status payload's ``storage_guard.override_refusal`` previews that answer so the page
-    offers the button only when it would be granted. It is also refused, with the same
-    sentence (the closest one that exists: the floor could not be watched), when the guard's
-    supervisor is not running and cannot be started: an override is granted only while
-    something reads the floor between passes. Loopback only, no egress. The response
+    offers the button only when it would be granted. It is also refused, with its own
+    sentence (kind ``supervisor``), when the guard's supervisor is not running and cannot be
+    started: an override is granted only while something reads the floor between passes. A
+    refusal the last sample already shows (held, unreadable, at or below the floor) is the one
+    given, because it is the more specific fact. Loopback only, no egress. The response
     carries the status payload and ``storage_guard_override`` = ``{engaged, overridden,
     refused}``.
     """
@@ -443,9 +444,18 @@ def storage_guard_resume() -> dict:
             _LOG.warning(
                 "storage guard override refused: its supervisor is not running and could not be started"
             )
-            refused = {"kind": "unreadable", "frame": storage_guard.FRAME_OVERRIDE_UNREADABLE, "vars": {}}
+            refused = guard.state().get("override_refusal") or {
+                "kind": "supervisor",
+                "frame": storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,
+                "vars": {},
+            }
+            payload = _status_payload()
+            # the page replaces the button with the sentence until its next poll
+            shown = payload.get("storage_guard")
+            if isinstance(shown, dict) and shown.get("override_refusal") is None:
+                shown["override_refusal"] = refused
             return {
-                **_status_payload(),
+                **payload,
                 "storage_guard_override": {"engaged": True, "overridden": False, "refused": refused},
             }
     result = guard.override(reason="operator resumed via the API")
