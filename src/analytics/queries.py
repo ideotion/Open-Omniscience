@@ -534,6 +534,7 @@ def concept_arms(
     lang_ids = ck.language_ids()
     ring_langs = _ring_language_map(ck.concept)
     own = {int(i) for i in ck.ids}
+    is_hidden = _hidden_predicate()
     arms: list[dict] = []
     for lang, ids in lang_ids.items():
         kw_ids = [int(i) for i in ids]
@@ -571,11 +572,13 @@ def concept_arms(
         top = [(k, v) for k, v in counts.items() if v >= min_cooccur]
         top.sort(key=lambda kv: -kv[1])
         top = top[: max(0, assoc_limit) * 2]
-        labels = dict(
-            session.query(Keyword.id, Keyword.term).filter(
+        labels = {
+            kid: term
+            for kid, term, norm in session.query(Keyword.id, Keyword.term, Keyword.normalized_term).filter(
                 Keyword.id.in_([k for k, _ in top][:_IN_CHUNK])
             )
-        ) if top else {}
+            if not is_hidden(norm)  # a stoplisted word is hidden at read time (R111 step T2)
+        } if top else {}
         # Ranked as TYPED PAIRS and only then rendered: sorting the payload dicts means
         # sorting on `object`, and an unlabelled keyword would otherwise sort by its id.
         ranked = [(str(labels[k]), v) for k, v in top if labels.get(k)]

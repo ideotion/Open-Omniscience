@@ -1255,14 +1255,22 @@ def _top_keyword_terms(session, articles) -> dict[int, str]:
     ids = {a.top_keyword_id for a in articles if a.top_keyword_id is not None}
     if not ids:
         return {}
+    from src.analytics.queries import _hidden_predicate
     from src.database.models import Keyword
 
+    # A stored top keyword that the stoplist now hides (R111 step T2) is left out, like a pruned
+    # one: the row then reports NO top keyword, because the next-best word is only known after the
+    # stored top is recomputed (T3), and naming a count beside a different word would be wrong.
+    is_hidden = _hidden_predicate()
     out: dict[int, str] = {}
     id_list = sorted(ids)
     for i in range(0, len(id_list), _FTS_ID_CHUNK):
         chunk = id_list[i : i + _FTS_ID_CHUNK]
-        for kid, term in session.query(Keyword.id, Keyword.term).filter(Keyword.id.in_(chunk)):
-            out[kid] = term
+        for kid, term, norm in session.query(Keyword.id, Keyword.term, Keyword.normalized_term).filter(
+            Keyword.id.in_(chunk)
+        ):
+            if not is_hidden(norm):
+                out[kid] = term
     return out
 
 
