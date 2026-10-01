@@ -126,12 +126,25 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
     )
 
     curated_ids = _curated_stamp_ids(session)
+    # Rows the boot repair withdrew because an IMPORTED history disagreed with the catalogue's
+    # stamp: the verdict they now carry came from another instance's attempt, so they are
+    # `inherited`, never this install's own measurement. An unreadable record is said so, not
+    # read as "none repaired".
+    repaired: set[str] = set()
+    repair_record_unreadable = False
+    try:
+        from src.catalog.qualification_integrity import repaired_domains
+
+        repaired = repaired_domains()
+    except Exception:  # noqa: BLE001 - the export still runs; the flag below says what was not checked
+        repair_record_unreadable = True
     verdicts = []
     stamp_dates: list[datetime] = []
     past_recheck = 0
     basis_counts = {BASIS_MEASURED: 0, BASIS_INHERITED: 0, BASIS_CURATED: 0}
     status_counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     curated_stamp_with_judging_history = 0
+    repaired_exported_as_inherited = 0
     for s in judged:
         if s.qualification_criteria_version == CURATED_CRITERIA_VERSION:
             # THE LIVE STAMP DECIDES (2026-09-30, diagnostics rank 14). A row still stamped by
@@ -142,6 +155,12 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             basis = BASIS_CURATED
             if s.id in measured:
                 curated_stamp_with_judging_history += 1
+        elif s.domain in repaired and not s.qualification_criteria_version:
+            # withdrawn by the boot repair on an imported history's say (a repaired row keeps no
+            # criteria version until this install judges it itself): inherited, whatever its
+            # history holds, and shipped as such
+            basis = BASIS_INHERITED
+            repaired_exported_as_inherited += 1
         elif s.id in measured:
             basis = BASIS_MEASURED
         elif s.id in curated_ids:
@@ -236,6 +255,10 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             # Rows whose LIVE stamp is the curated catalogue's although they carry judging
             # attempts (copied from a backup, or from before the stamp): read as `curated`.
             "curated_stamp_with_judging_history": curated_stamp_with_judging_history,
+            # Rows the boot repair withdrew on an imported history's say: `inherited`, never
+            # `measured`. If the repair record could not be read this is 0 and says why.
+            "repaired_exported_as_inherited": repaired_exported_as_inherited,
+            "repair_record_unreadable": repair_record_unreadable,
             "note": (
                 "'measured' means this instance judged the source itself; 'inherited' means "
                 "it adopted the verdict from a backup or an earlier overlay; 'curated' means "

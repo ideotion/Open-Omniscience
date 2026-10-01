@@ -980,7 +980,9 @@ def test_a_run_is_not_reconciled_by_a_later_runs_work(env) -> None:
     assert env.store[qi.REPAIR_RUN_PREFIX + r2]["applied"] is True
     assert env.store[qi.REPAIR_RUN_PREFIX + r1]["applied"] is False
     summary = qi.repair_summary()
-    assert summary["repaired_total"] == 2 and summary["repairs_unconfirmed"] == 1
+    # counted PER DOMAIN from the newest record: x is confirmed by R2, so R1's x is superseded
+    assert summary["repaired_total"] == 2 and summary["repairs_unconfirmed"] == 0
+    assert [r["superseded"] for r in summary["repairs"] if r["run_at"] == r1] == [True]
     assert {r["applied_at"] for r in summary["repairs"] if r["confirmed"]} == {None}
     assert [r["reconciled"] for r in summary["repairs"] if r["run_at"] == r2] == [True, True]
     assert [r["reconciled"] for r in summary["repairs"] if r["run_at"] == r1] == [False]
@@ -996,22 +998,19 @@ def test_the_held_domain_read_forgets_the_per_process_cache(env, monkeypatch) ->
     assert qi.REPAIR_INDEX_KEY in forgotten
 
 
-def test_an_unreadable_prior_run_is_never_overwritten_by_a_new_plan(env, monkeypatch) -> None:
-    """The replace rule reads the last run strictly: when that record cannot be read, the boot
-    skips instead of treating it as empty (an empty set of sources is a subset of any plan) and
-    overwriting a confirmed repair's revert record."""
+def test_an_unreadable_run_is_kept_byte_for_byte_and_the_repair_carries_on(env, monkeypatch) -> None:
+    """Per-run degradation: a run record that cannot be read is never replaced or confirmed, the
+    repair appends its new plan as its own run, and the report names the unreadable run."""
     with env.scope() as s:
         _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
     assert qi.auto_repair_inversions(now=NOW)["repaired"] == 1
     run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    before = dict(env.store[run_key])
     with env.scope() as s:
         _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
     import src.config.kv_store as kv
 
     strict = kv.kv_get_json_strict
-    # the reconcile reads the same key strictly and would raise first: stub it so THIS test pins
-    # the replace rule's own read
-    monkeypatch.setattr(qi, "_confirm_applied_runs", lambda _idx: None)
 
     def flaky(key):
         if key == run_key:
@@ -1019,10 +1018,185 @@ def test_an_unreadable_prior_run_is_never_overwritten_by_a_new_plan(env, monkeyp
         return strict(key)
 
     monkeypatch.setattr(kv, "kv_get_json_strict", flaky)
+    out = qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+
+    assert out["repaired"] == 1                                    # y is withdrawn, the app carries on
+    assert _status(env, "y.example").status == STATUS_DISQUALIFIED
+    assert env.store[run_key] == before, "the unreadable record is exactly as it was"
+    assert len(qi._read_repair_index()["runs"]) == 2
+    summary = qi.repair_summary()
+    assert summary["repair_runs_unreadable"] == [qi._iso(NOW)]
+    assert summary["repaired_total"] == 1 and [r["domain"] for r in summary["repairs"]] == ["y.example"]
+
+
+def test_a_run_is_not_confirmed_while_a_later_run_cannot_be_read(env, monkeypatch) -> None:
+    """What an unreadable later run lists is unknown, so no earlier run is confirmed on its account."""
+    with env.scope() as s:
+        x = _add(s, "x.example", STATUS_DISQUALIFIED, STATUS_DISQUALIFIED)
+    r1, r2 = "2026-09-30T12:00:00+00:00", "2026-09-30T13:00:00+00:00"
+    env.store[qi.REPAIR_RUN_PREFIX + r1] = {"run_at": r1, "applied": False, "repairs": [
+        {"source_id": x, "domain": "x.example", "restored_to": STATUS_DISQUALIFIED}]}
+    env.store[qi.REPAIR_RUN_PREFIX + r2] = {"run_at": r2, "applied": True, "repairs": []}
+    env.store[qi.REPAIR_INDEX_KEY] = {"runs": [r1, r2], "last_run_at": r2, "reverted_domains": []}
+    import src.config.kv_store as kv
+
+    strict = kv.kv_get_json_strict
+
+    def flaky(key):
+        if key == qi.REPAIR_RUN_PREFIX + r2:
+            raise OSError("database is locked")
+        return strict(key)
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", flaky)
+    qi._confirm_applied_runs(qi._read_repair_index())
+    assert env.store[qi.REPAIR_RUN_PREFIX + r1]["applied"] is False
+
+
+def test_an_indexed_run_whose_record_is_absent_never_has_its_key_taken(env) -> None:
+    """The replace rule needs a recorded run that lists sources: an index entry with no record
+    must not be 'replaced' by the new plan (an empty record changed nothing, trivially)."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    ghost = "2026-09-30T11:00:00+00:00"
+    env.store[qi.REPAIR_INDEX_KEY] = {"runs": [ghost], "last_run_at": ghost, "reverted_domains": []}
+    out = qi.auto_repair_inversions(now=NOW)
+
+    assert out["repaired"] == 1 and out["run_at"] == qi._iso(NOW)
+    assert qi._read_repair_index()["runs"] == [ghost, qi._iso(NOW)]
+    assert qi.REPAIR_RUN_PREFIX + ghost not in env.store
+
+
+def _failing_then_ok(monkeypatch):
+    real = qi.repair_inversions
+    state = {"broken": True}
+
+    def flaky(session, **kw):
+        if state["broken"] and not kw.get("dry_run", True):
+            raise RuntimeError("disk full")
+        return real(session, **kw)
+
+    monkeypatch.setattr(qi, "repair_inversions", flaky)
+    return state
+
+
+def test_a_failed_plan_is_replaced_when_none_of_its_left_out_sources_was_changed(env, monkeypatch) -> None:
+    """R1 plans {x, z} and fails; z is then resolved elsewhere (it reads the OPPOSITE of what R1
+    would have written) and y appears; the next plan {x, y} replaces R1: one record, nothing left
+    reading unconfirmed."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+        _add(s, "z.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    state = _failing_then_ok(monkeypatch)
+    with pytest.raises(RuntimeError):
+        qi.auto_repair_inversions(now=NOW)
+    state["broken"] = False
+    with env.scope() as s:
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    _attempt(env, "z.example", STATUS_QUALIFIED, T0 + timedelta(days=1))   # re-judged qualified: consistent again
+    qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+
+    summary = qi.repair_summary()
+    assert summary["repair_runs"] == 1
+    assert summary["repaired_total"] == 2 and summary["repairs_unconfirmed"] == 0
+    assert {r["domain"] for r in summary["repairs"]} == {"x.example", "y.example"}
+
+
+def test_a_failed_plan_is_kept_when_a_left_out_source_reads_what_it_would_have_written(
+        env, monkeypatch) -> None:
+    """z now reads disqualified: the failed run MAY have applied it, so its record (the only revert
+    record for z) stays and the new plan is appended."""
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+        _add(s, "z.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    state = _failing_then_ok(monkeypatch)
+    with pytest.raises(RuntimeError):
+        qi.auto_repair_inversions(now=NOW)
+    state["broken"] = False
+    with env.scope() as s:
+        s.query(Source).filter_by(domain="z.example").one().status = STATUS_DISQUALIFIED
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
+
+    first = env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]
+    assert {r["domain"] for r in first["repairs"]} == {"x.example", "z.example"}
+    assert len(qi._read_repair_index()["runs"]) == 2
+
+
+def test_a_second_revert_marks_the_records_a_stopped_revert_left_unmarked(env, monkeypatch) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    import src.config.kv_store as kv
+
+    real = kv.kv_set_json
+
+    def disk_full_for_runs(key, obj):
+        if key.startswith(qi.REPAIR_RUN_PREFIX):
+            raise OSError("disk full")
+        real(key, obj)
+
+    monkeypatch.setattr(kv, "kv_set_json", disk_full_for_runs)
     with pytest.raises(OSError):
-        qi.auto_repair_inversions(now=NOW + timedelta(hours=1))
-    assert [r["domain"] for r in env.store[run_key]["repairs"]] == ["x.example"]
-    assert _status(env, "y.example").status == STATUS_QUALIFIED
+        qi.revert_repairs(dry_run=False)
+    assert _status(env, "x.example").status == STATUS_QUALIFIED          # row reverted and held
+    assert not env.store[run_key]["repairs"][0].get("reverted_at")        # but the record is unmarked
+    monkeypatch.setattr(kv, "kv_set_json", real)
+
+    dry = qi.revert_repairs(dry_run=True)
+    assert dry["reverted"] == 0 and dry["already_reverted_unmarked"] == 1
+    out = qi.revert_repairs(dry_run=False)
+    assert out["already_reverted_unmarked"] == 1
+    assert env.store[run_key]["repairs"][0]["reverted_at"]
+    assert _status(env, "x.example").status == STATUS_QUALIFIED
+    assert qi.revert_repairs(dry_run=True)["already_reverted_unmarked"] == 0
+
+
+def test_the_revert_refuses_naming_an_unreadable_run_and_changes_nothing(env, monkeypatch, capsys) -> None:
+    import importlib.util
+    from pathlib import Path
+
+    import src.config.kv_store as kv
+
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    run_key = qi.REPAIR_RUN_PREFIX + qi._iso(NOW)
+    before = {k: dict(v) for k, v in env.store.items()}
+    strict = kv.kv_get_json_strict
+
+    def flaky(key):
+        if key == run_key:
+            raise OSError("database is locked")
+        return strict(key)
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", flaky)
+    with pytest.raises(qi.UnreadableRunRecord) as excinfo:
+        qi.revert_repairs(dry_run=False)
+    assert excinfo.value.run_at == qi._iso(NOW)
+    assert env.store == before and _status(env, "x.example").status == STATUS_DISQUALIFIED
+
+    spec = importlib.util.spec_from_file_location(
+        "repair_script3", Path(__file__).resolve().parents[1] / "scripts"
+        / "repair_qualification_inversions.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    assert script.main(["--revert-repairs", "--apply"]) == 2
+    err = capsys.readouterr().err
+    assert qi._iso(NOW) in err and "nothing was changed" in err
+
+
+def test_repaired_domains_lists_applied_unreverted_repairs_only(env) -> None:
+    with env.scope() as s:
+        _add(s, "x.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+        _add(s, "y.example", STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+    qi.auto_repair_inversions(now=NOW)
+    assert qi.repaired_domains() == {"x.example", "y.example"}
+    env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]["repairs"][0]["reverted_at"] = "2026-10-01T00:00:00+00:00"
+    reverted = env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]["repairs"][0]["domain"]
+    assert reverted not in qi.repaired_domains()
+    env.store[qi.REPAIR_RUN_PREFIX + qi._iso(NOW)]["applied"] = False      # planned, never applied
+    assert qi.repaired_domains() == set()
 
 
 def test_the_strict_reader_does_not_serve_a_corrupt_value_from_the_cache(tmp_path, monkeypatch) -> None:

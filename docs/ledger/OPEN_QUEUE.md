@@ -16221,14 +16221,12 @@ maintainer as a card.
   are off and the unsafe order keeps collecting until the setting changes. `not_auto_repaired_measured_here_total` counts the
   judged-disqualified inversions whose live row is qualified with a stamp that is not the catalogue's, so it also holds verdicts adopted from an import or from the shipped overlay
   (`apply_overlay` runs earlier in the same boot and does not look at local judging history): "measured here" is the name of the
-  class, not a claim about every row in it. The revert record fails CLOSED: a run record that
-  is present but unparseable stops the boot repair, the report's repair list and `--revert-repairs` until a maintainer fixes
-  the store by hand (reading it as empty would let a new plan overwrite a confirmed repair's revert record). THE FORCED RE-CHECK LIST (PR 3, built): the boot lists these sources (`qualification.recheck_first` in `app_state`,
+  class, not a claim about every row in it. The revert record degrades PER RUN (follow-up PR): an index that cannot be read still stops the boot repair (reading it as empty would drop earlier runs and the maintainer's holds), but a RUN record that is present and unreadable is kept byte for byte, never replaced or confirmed, left out of the counts and named in the report (`repair_runs_unreadable`), and the repair carries on with the readable runs; `--revert-repairs` stays fail closed and refuses naming the run, because it cannot know which rows that run touched. THE FORCED RE-CHECK LIST (PR 3, built): the boot lists these sources (`qualification.recheck_first` in `app_state`,
   never merged on restore) and the qualification pass takes them ahead of its two pools, least recently tried first, in half
   of the per-pass re-check slots plus any the ordinary queue cannot use (the odd slot alternates between the list and the
   ordinary queue, one try at a time; budget 0 switches it off), so a measured disagreement waits for the first passes rather than
   a re-check interval. It changes no verdict, an entry leaves the list when the row is no longer inverted or is no longer a
   judging verdict, an entry the pass has tried `MAX_FORCED_TRIES` (3) times without settling it stops being forced (the
-  ordinary queue still reaches it), and an unreadable stored list skips the step. The Settings queue view shows how
+  ordinary queue still reaches it; the count restarts when a newer attempt disagrees), and an unreadable stored list skips the step. The Settings queue view shows how
   many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.

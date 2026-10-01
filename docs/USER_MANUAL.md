@@ -663,6 +663,11 @@ Qualification work done on one instance is **not lost when you move or merge cor
   quietly re-enter the trial queue here. A verdict *this* instance reached always wins:
   an imported corpus can never overturn your own machine's judgement, in either
   direction.
+  The catalogue's own starting stamp is not such a verdict: an imported *measured* verdict
+  replaces it. When a source still carrying only the catalogue's stamp has a newer imported
+  judgement of *disqualified*, the next start withdraws it from collection and lists it in the
+  diagnostics; where your own machine's verdict disagrees with the import, yours is kept and the
+  source is re-checked early by your own qualification pass.
 - **A fresh install starts from what earlier instances measured.** The app ships
   `configs/source_qualification.yml`, a generated list of verdicts, and adopts them at
   first boot onto sources it has never judged. A source **absent** from that file simply
