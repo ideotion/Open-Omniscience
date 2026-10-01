@@ -153,12 +153,17 @@ def _is_cache_stale(session, payload: dict, *, current: int | None = None) -> bo
 #   * ``_MARKER_RETRY_S`` seconds must pass AFTER the last refresh FINISHED (any refresh, the
 #     scheduler's included), so a refresh that keeps ending early, or one that itself takes
 #     minutes on a large corpus, never runs back to back;
-#   * memory must be a whole floor ABOVE the floor, not a megabyte over it: a refresh started
-#     there only stops again at the first producer boundary and re-marks the feed;
-#   * the scheduler's own briefing refresh and housekeeping lane are not running (they are
-#     never to overlap a whole-corpus recompute, S2.5 b).
+#   * memory must be a margin ABOVE the floor, not a megabyte over it (the floor, up to
+#     ``_REPAIR_MARGIN_MAX_MB``): a refresh started there only stops again at the first producer
+#     boundary and re-marks the feed. A guard floor set above what the machine usually has free
+#     therefore leaves the repair off, and the Refresh button as the way out;
+#   * the scheduler's own briefing refresh and housekeeping lane are not running when the
+#     repair STARTS. The other direction is not closed: a pass-tail refresh that starts during a
+#     repair is not held back, exactly as for the stale-cache refresh and the Refresh button,
+#     which never took those locks either.
 # The state is per process, so a restart (an app update) tries once straight away.
 _MARKER_RETRY_S = 600.0
+_REPAIR_MARGIN_MAX_MB = 512.0
 _marker_retry: dict[str, float | None] = {"at": None}
 
 
@@ -178,14 +183,14 @@ def _scheduler_is_busy_with_the_whole_corpus() -> bool:
 
 
 def _has_headroom_for_a_repair() -> bool:
-    """Memory is more than one floor above the guard's floor (or cannot be measured, the honest default)."""
+    """Memory is a margin above the guard's floor (or cannot be measured, the honest default)."""
     try:
         from src.database.maintenance import _available_mb, _read_memory_floor_mb
 
         floor, avail = _read_memory_floor_mb(), _available_mb()
     except Exception:  # noqa: BLE001 - no DB layer, or no reading
         return True
-    return floor is None or avail is None or avail > 2 * floor
+    return floor is None or avail is None or avail > floor + min(floor, _REPAIR_MARGIN_MAX_MB)
 
 
 def _marker_wants_refresh(payload: dict) -> bool:

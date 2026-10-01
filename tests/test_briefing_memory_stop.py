@@ -243,6 +243,8 @@ def poll(monkeypatch, tmp_path, memory):
     path = _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a", "id": "a", "bucket": "lead"}])
     memory(4096.0)
     monkeypatch.setitem(service._marker_retry, "at", None)
+    # no scheduler of an earlier test, with a lock still held, may decide these polls
+    monkeypatch.setattr("src.scheduler.runner._scheduler", None)
     monkeypatch.setattr(
         service, "run_all_bounded",
         lambda *a, **k: ([], {"truncated": True, "truncated_reason": "memory_short"}),
@@ -278,14 +280,22 @@ def test_the_repair_waits_while_memory_is_still_short(poll, memory):
     assert poll({"kept_reason": "memory_short"}) == 1, "the wait for memory must not use up the attempt"
 
 
-def test_the_repair_needs_a_whole_floor_of_headroom_not_a_megabyte_over_the_floor(poll, memory):
+def test_the_repair_needs_a_margin_of_headroom_not_a_megabyte_over_the_floor(poll, memory):
     """A refresh started a hair above the floor only stops again at its first producer boundary."""
     marker = {"kept_reason": "memory_short"}
     memory(257.0, 256.0)
     assert poll(marker) == 0
     memory(512.0, 256.0)
-    assert poll(marker) == 0, "exactly two floors is not yet more than two floors"
+    assert poll(marker) == 0, "exactly floor plus margin is not yet above it"
     memory(513.0, 256.0)
+    assert poll(marker) == 1
+
+
+def test_the_headroom_margin_is_capped_so_a_high_floor_does_not_switch_the_repair_off(poll, memory):
+    marker = {"kept_reason": "memory_short"}
+    memory(2048.0 + 512.0, 2048.0)
+    assert poll(marker) == 0, "exactly floor plus the cap is not yet above it"
+    memory(2048.0 + 513.0, 2048.0)
     assert poll(marker) == 1
 
 
