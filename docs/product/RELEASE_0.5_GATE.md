@@ -68,8 +68,8 @@ The maintainer answered «21=b»: the 0.4 checks still open at the `v0.4.0` tag 
 not tagged until they are done. Each row keeps its text, its bar and its status in
 [`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md) — it is closed THERE, on its named artifact, and this list only makes
 it a condition of this exit. Every 0.4 row was carried except F (closed 2026-09-15) and G (closed 2026-09-28), and B
-was carried and then closed on 2026-10-01 (`R113`); as of that date the rows still open are **A, C, D, E, H, I, J, K,
-L, M, N, O, P, Q, R, S, T, U, V, W.** Most need only the operator's run or the maintainer's word (the 0.4 gate's
+and D were carried and then closed on 2026-10-01 (B by `R113`, D on its own exit text, in the 0.4 gate's §2); as of
+that date the rows still open are **A, C, E, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W.** Most need only the operator's run or the maintainer's word (the 0.4 gate's
 2026-09-28 tag entry lists which). Row K here is also the hard precondition of this gate's own row B above, as before.
 
 ---

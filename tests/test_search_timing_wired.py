@@ -69,10 +69,15 @@ def test_text_search_records_per_phase_timing_without_changing_results():
     assert report["dominant_phase"] in ("fts", "resolve", "load")
 
 
-def test_browse_without_a_query_records_nothing():
+def test_a_browse_is_not_a_search_and_one_nobody_asked_to_time_records_nothing():
+    """Renamed from ``..._records_nothing`` (rank 9, 2026-09-30): the article list now asks for
+    its browse to be timed (tests/test_search_timing_browse.py), so "records nothing" is true
+    only of a caller that did not ask -- the AI, evidence and analysis callers that browse. What
+    stays true of EVERY browse is that it never becomes a text search."""
     s = _session()
     search_timing._reset_for_tests()
     articles, total = _q(s, None)  # a browse, not a search
     assert total == 3  # all three, recency order
     report = search_timing.search_timing_report()
     assert report["searches"] == 0  # a browse is not a search — nothing recorded
+    assert report["browse"]["pages"] == 0  # and nobody asked for this one to be timed

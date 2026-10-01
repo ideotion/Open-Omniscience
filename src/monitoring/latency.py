@@ -24,15 +24,43 @@ import os
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+
+from src.monitoring import unlock_marker as _unlock
 
 _LOCK = threading.Lock()
 _RES_CAP = 512  # recent durations kept per route (the percentile reservoir)
 _EVENTS_CAP = 100  # loop-block events kept
+# Distinct route keys kept. This is the ONE bound on the published lists, and what it protects
+# is memory (and the size of the export): route templates are few, but a request no route matched
+# is keyed by its own path, so a scan of the loopback server could otherwise mint keys without
+# limit. The lists themselves are NOT cut below it (see ``summary``); a request for a NEW key once
+# the keyspace is full is counted in ``_KEYSPACE_DROPPED`` and published, never silently lost.
+_ROUTES_CAP = 2048
+_KEYSPACE_DROPPED = 0
 
-# route key ("GET /api/articles/{id}/view") -> {"durations": deque, "count": int,
-# "max_ms": float, "statuses": {code: n}}
+# Wall clock, injectable in tests. The reservoir stores durations only, so without a stamp no
+# call could be placed in time -- which is what the first-call and unlock readings below need.
+_wall: Callable[[], float] = time.time
+
+# Statuses that mean the server DECLINED or gave up rather than answered. Mostly that is what they
+# are here: 503 is what every API but the unlock flow answers while the database is locked and what
+# a statement that hit its deadline answers; 429 is the rate limiter's answer and a heavy
+# computation that is already running; 423 is the Wikipedia lane's own locked answer. But the same
+# codes also come from other places -- 503 from the language-model bridge and the custody anchor
+# when their service is unavailable, and from the Wikipedia lane when its file cannot be read -- so
+# the status says a request was declined, never which of these declined it. Any other 5xx is an
+# ERROR; everything else, 4xx included, is a request that ran to a response.
+# A refusal is not an error and not a completion, and a p95 that mixes the three cannot say which
+# one made a route slow: that is the whole reason for the split below.
+_REFUSAL_STATUSES = frozenset({423, 429, 503})
+
+# route key ("GET /api/articles/{id}/view") -> {"durations": deque, "kinds": deque (the same
+# window, one letter per sample: c completed / r refused / e error), "count": int,
+# "max_ms": float, "statuses": {code: n}, "first": call | None, "slowest": call | None}
+# where a ``call`` is {ms, status, ended_at, started_after_unlock_s}.
 _ROUTES: dict[str, dict[str, Any]] = {}
 # in-flight requests: id -> {"route": str, "started": float}
 _INFLIGHT: dict[int, dict[str, Any]] = {}
@@ -118,18 +146,63 @@ def note_start(req_id: int, route: str) -> None:
             _INFLIGHT[req_id] = {"route": route, "started": time.monotonic()}
 
 
+def _kind_of(status: int) -> str:
+    """One letter for how a request ended: ``r`` refused, ``e`` errored, ``c`` completed."""
+    if status in _REFUSAL_STATUSES:
+        return "r"
+    return "e" if status >= 500 else "c"
+
+
+def _call_facts(status: int, duration_ms: float) -> dict[str, Any]:
+    """What is worth keeping about ONE call: how long, how it ended, when, and how far from the
+    latest unlock to have finished by then it began. Taken only for a route's first call and its
+    slowest so far -- rare events -- so the wall-clock read costs nothing on the common path."""
+    ms, code = round(float(duration_ms), 1), int(status)
+    try:
+        ended = _wall()
+        return {
+            "ms": ms,
+            "status": code,
+            "ended_at": datetime.fromtimestamp(ended, tz=UTC).isoformat(timespec="seconds"),
+            # SIGNED, and None (never 0) when this process has finished no unlock; see unlock_marker.
+            "started_after_unlock_s": _unlock.started_after_unlock_s(ended - ms / 1000.0),
+        }
+    except Exception:  # noqa: BLE001 - a clock that fails costs the stamp, never the sample
+        return {"ms": ms, "status": code, "ended_at": None, "started_after_unlock_s": None}
+
+
 def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
     """Record one completed request. Best-effort; never raises."""
+    global _KEYSPACE_DROPPED
     try:
+        # Classified BEFORE any state is touched: ``durations`` and ``kinds`` are one window in
+        # two deques, and a failure between their two appends would leave them uneven for good.
+        kind = _kind_of(status)
         with _LOCK:
             _INFLIGHT.pop(req_id, None)
             r = _ROUTES.get(route)
             if r is None:
-                if len(_ROUTES) >= 2048:  # bound the keyspace (route templates are few)
+                if len(_ROUTES) >= _ROUTES_CAP:  # bound the keyspace (route templates are few)
+                    _KEYSPACE_DROPPED += 1
                     return
-                r = {"durations": deque(maxlen=_RES_CAP), "count": 0, "max_ms": 0.0, "statuses": {}}
+                r = {
+                    "durations": deque(maxlen=_RES_CAP),
+                    "kinds": deque(maxlen=_RES_CAP),
+                    "count": 0,
+                    "max_ms": 0.0,
+                    "statuses": {},
+                    "first": None,
+                    "slowest": None,
+                }
                 _ROUTES[route] = r
+            if r["count"] == 0 or duration_ms > r["max_ms"]:
+                call = _call_facts(status, duration_ms)
+                if r["count"] == 0:
+                    r["first"] = call
+                # strictly slower only, so a tie keeps the EARLIER call as the slowest
+                r["slowest"] = call
             r["durations"].append(duration_ms)
+            r["kinds"].append(kind)
             r["count"] += 1
             r["max_ms"] = max(r["max_ms"], duration_ms)
             sc = str(status)
@@ -344,39 +417,95 @@ def start_watchdog() -> None:
 
 
 def _reset_for_tests() -> None:
-    """Drop all recorded per-route reservoirs / events / lag samples (test hook)."""
+    """Drop all recorded per-route reservoirs / events / lag samples, the dropped-key count and
+    the unlock stamp the readings here are measured from (test hook)."""
+    global _KEYSPACE_DROPPED
     with _LOCK:
         _LAG.clear()
         _ROUTES.clear()
         _INFLIGHT.clear()
         _EVENTS.clear()
+        _KEYSPACE_DROPPED = 0
+    _unlock._reset_for_tests()
+
+
+def _route_row(key: str, r: dict[str, Any], bar_ms: float) -> dict[str, Any]:
+    """One route's published row. Called under ``_LOCK``.
+
+    Every figure beside ``p95_ms`` ATTRIBUTES it and none replaces it: ``p95_ms`` still counts
+    every request, refused ones included, because a person waited for them. What the extra
+    fields add is the part a single percentile cannot carry -- how the window's requests ended,
+    whether the route's first call is what made it slow, and where its slowest call sat
+    relative to the latest unlock that had finished when it ended. All of them are over the SAME window as ``window_n``, except
+    ``slowest`` and ``first_*``, which are since this process started (like ``max_ms``).
+    """
+    durations = list(r["durations"])
+    kinds = list(r["kinds"])
+    vals = sorted(durations)
+    p95 = _pct(vals, 95)
+    completed = sorted(d for d, k in zip(durations, kinds, strict=False) if k == "c")
+    first = r.get("first")
+    slowest = r.get("slowest")
+    # The route's first call is still the window's oldest sample only while nothing has been
+    # evicted from it; once a 513th request arrives the first call is gone and the figure that
+    # excludes it is ABSENT rather than computed over a window that no longer contains it.
+    first_in_window = bool(first) and r["count"] <= _RES_CAP and len(durations) >= 1
+    after_first = sorted(durations[1:]) if first_in_window else []
+    return {
+        "route": key,
+        "count": r["count"],
+        "window_n": len(vals),
+        "p50_ms": _pct(vals, 50),
+        "p95_ms": p95,
+        "p99_ms": _pct(vals, 99),
+        "max_ms": round(r["max_ms"], 1),
+        "statuses": dict(r["statuses"]),
+        # S2.7: the p95-vs-500 ms snappy-bar verdict for THIS route.
+        "snappy": _snappy_verdict(key, p95, len(vals), bar_ms),
+        # How the window's requests ended: completed + refused + error == window_n.
+        "completed_n": len(completed),
+        "refused_n": kinds.count("r"),
+        "error_n": kinds.count("e"),
+        # None, not 0.0, when no request in the window completed: "nothing completed" and
+        # "the completed ones were instant" are opposite claims.
+        "p95_completed_ms": _pct(completed, 95) if completed else None,
+        "first_ms": first["ms"] if first else None,
+        "first_status": first["status"] if first else None,
+        "first_in_window": first_in_window,
+        # None when the first call has left the window, or when it is the only sample.
+        "p95_without_first_ms": _pct(after_first, 95) if after_first else None,
+        "slowest": dict(slowest) if slowest else None,
+    }
+
+
+def _breach_row(r: dict[str, Any]) -> dict[str, Any]:
+    """The maintainer's worklist row: the route, its p95 and n, and the attribution beside them
+    (the full row stays in ``routes``)."""
+    return {
+        "route": r["route"],
+        "p95_ms": r["p95_ms"],
+        "window_n": r["window_n"],
+        "verdict": r["snappy"],
+        "completed_n": r["completed_n"],
+        "refused_n": r["refused_n"],
+        "error_n": r["error_n"],
+        "p95_completed_ms": r["p95_completed_ms"],
+        "first_ms": r["first_ms"],
+        "p95_without_first_ms": r["p95_without_first_ms"],
+        "slowest": r["slowest"],
+    }
 
 
 def summary() -> dict[str, Any]:
     """The latency log: per-route p50/p95/p99 over the recent window + the loop-block
-    events. Sorted by p99 so the slowest routes surface first."""
+    events. Sorted by p99 so the slowest routes surface first. Nothing is cut: every route is
+    listed, bounded only by the keyspace memory bound, whose dropped requests are published."""
     bar_ms = _snappy_bar_ms()
     with _LOCK:
-        routes = []
-        for key, r in _ROUTES.items():
-            vals = sorted(r["durations"])
-            p95 = _pct(vals, 95)
-            routes.append(
-                {
-                    "route": key,
-                    "count": r["count"],
-                    "window_n": len(vals),
-                    "p50_ms": _pct(vals, 50),
-                    "p95_ms": p95,
-                    "p99_ms": _pct(vals, 99),
-                    "max_ms": round(r["max_ms"], 1),
-                    "statuses": dict(r["statuses"]),
-                    # S2.7: the p95-vs-500 ms snappy-bar verdict for THIS route.
-                    "snappy": _snappy_verdict(key, p95, len(vals), bar_ms),
-                }
-            )
+        routes = [_route_row(key, r, bar_ms) for key, r in _ROUTES.items()]
         events = list(_EVENTS)
         in_flight_now = len(_INFLIGHT)
+        dropped = _KEYSPACE_DROPPED
     routes.sort(key=lambda x: x["p99_ms"], reverse=True)
     # S2.7 top-level roll-up: how the INTERACTIVE routes stand against the bar, so a field
     # export shows pass/fail directly. `failing` lists the offenders (interactive routes
@@ -400,29 +529,44 @@ def summary() -> dict[str, Any]:
     # thin window stays visible rather than being silently promoted to a failure.
     breaching = [r for r in interactive if float(r["p95_ms"] or 0.0) >= bar_ms]
     breaching_low_n = [r for r in breaching if r["snappy"] == "low-n"]
+    # ATTRIBUTION OF THE BREACHES (diagnostics round of 2026-09-30, rank 10). 306 routes were
+    # over the bar across sixteen bundles and 287 of them had a window under 20, so "which of
+    # these is a real slow read" was unanswerable from the export. These three counts do not
+    # excuse a breach -- every one of them stays in `breaching` and keeps `all_interactive_pass`
+    # false -- they say what kind of breach it is. They count ROUTES, not requests, and they
+    # overlap (a one-call route whose only call was refused is in two of them).
+    not_completed = [
+        r for r in breaching if r["p95_completed_ms"] is None or r["p95_completed_ms"] < bar_ms
+    ]
+    first_call_only = [
+        r
+        for r in breaching
+        if r["window_n"] >= 2
+        and r["p95_without_first_ms"] is not None
+        and r["p95_without_first_ms"] < bar_ms
+    ]
+    single_call = [r for r in breaching if r["window_n"] == 1]
     snappy = {
         "bar_ms": bar_ms,
+        "min_n": _SNAPPY_MIN_N,
         "interactive_routes": len(interactive),
         "passing": len(passing),
         "failing": len(failing),
         "low_n": len(low_n),
         "breaching": len(breaching),
         "breaching_low_n": len(breaching_low_n),
+        "breaching_refusal_or_error_driven": len(not_completed),
+        "breaching_first_call_only": len(first_call_only),
+        "breaching_single_call": len(single_call),
         "all_interactive_pass": len(breaching) == 0 and len(interactive) > 0,
         "breaching_routes": [
-            {
-                "route": r["route"],
-                "p95_ms": r["p95_ms"],
-                "window_n": r["window_n"],
-                "verdict": r["snappy"],
-            }
-            for r in sorted(breaching, key=lambda x: -(x["p95_ms"] or 0.0))
-        ][:20],
+            _breach_row(r) for r in sorted(breaching, key=lambda x: -(x["p95_ms"] or 0.0))
+        ],
         # Kept for callers that read it; same shape, now a SUBSET of breaching_routes.
         "failing_routes": [
             {"route": r["route"], "p95_ms": r["p95_ms"], "window_n": r["window_n"]}
             for r in sorted(failing, key=lambda x: -x["p95_ms"])
-        ][:20],
+        ],
         "method": (
             f"Each interactive route's measured p95 vs the {bar_ms:.0f} ms 'snappy' bar "
             "(ROADMAP/SCALE_ROADMAP): pass | fail | low-n (window < "
@@ -431,7 +575,23 @@ def summary() -> dict[str, Any]:
             "over the bar is counted in 'breaching' with its n shown, and "
             "all_interactive_pass is false while any measured route breaches — the routes "
             "a human actually waits on are exactly the ones with thin windows. "
-            "Measurements only; no fabricated number, no score."
+            "Measurements only; no fabricated number, no score. "
+            "BREACHES ARE ATTRIBUTED, NEVER EXCUSED: p95_ms still counts every request, "
+            "refused ones included, because a person waited for them. Beside it each route "
+            "says how its window ended (completed_n; refused_n = 423, 429 or 503, which are "
+            "mostly a locked database, a rate limit, a heavy computation already running or a "
+            "statement that hit its deadline, but the same codes also come from the language-model "
+            "bridge, the custody anchor and the Wikipedia lane, so the status alone does not say "
+            "which one declined; error_n = any other 5xx), the p95 "
+            "of the completed requests alone, its first call and the p95 without it (only "
+            "while that call is still in the window), and its slowest call with when it ended "
+            "and how far from the latest unlock to have finished by then it began (signed, "
+            "fixed when the call was recorded; absent, not 0, when no unlock had finished by "
+            "then). breaching_refusal_or_error_driven counts "
+            "breaching routes whose completed requests alone are under the bar (or that have "
+            "none); breaching_first_call_only those with two or more samples that fall under "
+            "it without the first call; breaching_single_call those with exactly one sample. "
+            "They count routes, not requests, and overlap."
         ),
     }
     return {
@@ -442,12 +602,28 @@ def summary() -> dict[str, Any]:
             "events_captured": len(events),
         },
         "in_flight_now": in_flight_now,
+        # The stamp record every `started_after_unlock_s` below is measured from (or the reason
+        # it is absent): the unlock path's own moment, not this process's start. Each distance was
+        # fixed against the latest stamp that existed when its call ended; a later unlock does not
+        # move it.
+        "unlock": _unlock.summary(),
         "snappy_bar": snappy,
-        "routes": routes[:60],
+        "routes_total": len(routes),
+        "routes": routes,
+        # The one bound that stays, and what it protects: distinct route keys, because a request
+        # no route matched is keyed by its own path and a scan could otherwise mint keys without
+        # limit. A request for a new key once it is full is counted here, never silently lost.
+        "route_keyspace": {
+            "cap": _ROUTES_CAP,
+            "routes": len(routes),
+            "dropped_requests": dropped,
+        },
         "method": (
             "Per-route latency percentiles over a recent-window reservoir + an event-loop "
             "watchdog that flags loop lag (heavy sync work on the async loop — the "
             "unlock/restore/task-manager freeze family) + a per-route p95-vs-bar snappy "
-            "verdict. Route templates only, no bound values; read-only; no score."
+            "verdict. Every route is listed (routes_total); the only bound is the route "
+            "keyspace (route_keyspace). Route templates only, no bound values; read-only; "
+            "no score."
         ),
     }
