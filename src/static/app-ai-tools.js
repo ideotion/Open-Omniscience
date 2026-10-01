@@ -441,6 +441,10 @@
               ? tf("{d} disqualified (re-checks of qualified sources are switched off)", {d: dqDue})
               : tf("{q} qualified, {d} disqualified", {q: n(rc.qualified_due), d: dqDue})))
             + `</div>`,
+          (rc.flagged
+            ? `<div>` + ooLabelHtml(esc(t("Checked first")),
+                esc(tf("{n} sources whose verdict a backup disagrees with, checked ahead of the rest", {n: n(rc.flagged)}))) + `</div>`
+            : ""),
           (rc.next && rc.next.length)
             ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(rc.next.map((r) => r.domain))) + `</div>` : "",
           `<div>` + ooLabelHtml(esc(t("Not due yet")),

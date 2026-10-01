@@ -323,6 +323,18 @@ def _run_startup_upkeep() -> None:
     except Exception:  # noqa: BLE001 - a repair that could not run never blocks startup
         logger.warning("could not reconcile qualification inversions at startup",
                        exc_info=True)
+    # The inversions that repair leaves (a verdict measured here that an imported history disagrees
+    # with) are listed for an EARLY LOCAL RE-CHECK: the qualification pass takes them ahead of its
+    # ordinary queue, within its own budget. Changes no verdict; local database only.
+    try:
+        from src.catalog.qualification_integrity import flag_inversions_for_recheck
+
+        flagged = flag_inversions_for_recheck()
+        if flagged.get("flagged"):
+            logger.info("%d source(s) flagged for an early local re-check.", flagged["flagged"])
+    except Exception:  # noqa: BLE001 - an ordering hint that could not be written never blocks startup
+        logger.warning("could not flag qualification inversions for re-check at startup",
+                       exc_info=True)
     try:
         from src.api.startup_status import mark_phase as _mp
 
