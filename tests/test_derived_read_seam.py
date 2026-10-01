@@ -390,8 +390,10 @@ def test_the_real_read_counter_skips_what_is_not_a_read():
         '    return c.execute("SELECT 1 FROM keyword_mentions")  # trailing note naming keyword_mentions\n'
         'def hashy(c):\n'
         '    return c.execute("SELECT \'#\' FROM keyword_mentions")\n'
+        'def spaced(c):\n'
+        '    return c.execute("SELECT \' #\' FROM keyword_mentions")\n'
     )
-    assert _real_reads(source) == 3
+    assert _real_reads(source) == 4
 
 
 def test_the_export_files_carry_exactly_the_reads_recorded():

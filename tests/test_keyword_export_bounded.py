@@ -544,12 +544,39 @@ def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(
     monkeypatch.setattr(os, "statvfs", real)
     with pytest.raises(sqlite3.OperationalError, match="disk I/O error"), kls._refuse_when_the_disk_is_full(tmp_path):
         raise _io_error_on_write()
-    # A different extended code on a read-only drive is not a write refusal.
+    # A different extended code on a read-only drive is not a write refusal: the plain IOERR, a
+    # failed READ and a failed fsync are all "disk I/O error" too, and a drive that cannot be read
+    # or synced is not one that is merely read-only.
     monkeypatch.setattr(os, "statvfs", read_only)
-    other = sqlite3.OperationalError("disk I/O error")
-    other.sqlite_errorcode = kls._SQLITE_IOERR_WRITE + 1
-    with pytest.raises(sqlite3.OperationalError), kls._refuse_when_the_disk_is_full(tmp_path):
-        raise other
+    for code in (
+        sqlite3.SQLITE_IOERR, sqlite3.SQLITE_IOERR_READ, sqlite3.SQLITE_IOERR_FSYNC,
+        kls._SQLITE_IOERR_WRITE + 1,
+    ):
+        other = sqlite3.OperationalError("disk I/O error")
+        other.sqlite_errorcode = code
+        with pytest.raises(sqlite3.OperationalError), kls._refuse_when_the_disk_is_full(tmp_path):
+            raise other
+
+
+def test_a_drive_that_cannot_be_asked_is_not_called_read_only(tmp_path, monkeypatch):
+    """Nothing is guessed: no ``statvfs`` on the platform, no ``ST_RDONLY`` flag, or a folder the
+    call cannot read all say False, and only the flag set on a real answer says True."""
+    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=1), raising=False)
+    monkeypatch.setattr(os, "ST_RDONLY", 1, raising=False)
+    assert kls._drive_is_read_only(tmp_path) is True
+    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=0), raising=False)
+    assert kls._drive_is_read_only(tmp_path) is False
+
+    def cannot_read(path):
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(os, "statvfs", cannot_read, raising=False)
+    assert kls._drive_is_read_only(tmp_path / "gone") is False
+    monkeypatch.delattr(os, "statvfs", raising=False)
+    assert kls._drive_is_read_only(tmp_path) is False
+    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=1), raising=False)
+    monkeypatch.delattr(os, "ST_RDONLY", raising=False)
+    assert kls._drive_is_read_only(tmp_path) is False
 
 
 @pytest.mark.skipif(not hasattr(os, "statvfs"), reason="this platform has no statvfs")
