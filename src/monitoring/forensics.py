@@ -1193,6 +1193,10 @@ def _render_pressure(snaps: Any, taken: Any = None) -> list[str]:
         reasons.append(f"{why.pop('memory short')} when memory ran short{below}")
     if why.get("allocation burst"):
         reasons.append(f"{why.pop('allocation burst')} at a burst of Python allocation")
+    if why.get("memory guard engaged"):
+        reasons.append(f"{why.pop('memory guard engaged')} when the memory guard engaged")
+    if why.get("memory still short"):
+        reasons.append(f"{why.pop('memory still short')} while memory stayed short")
     reasons += [f"{n} {label}" for label, n in why.items()]
     count = f"{len(snaps)} snapshot(s)"
     if isinstance(taken, int) and taken > len(snaps):
@@ -1215,6 +1219,9 @@ def _render_pressure(snaps: Any, taken: Any = None) -> list[str]:
         if mem.get("py_alloc_blocks") is not None:
             bits.append(f"{mem['py_alloc_blocks']:,} Python blocks")
         head = f"{snap.get('at')}, {snap.get('why') or 'memory short'}"
+        guard = snap.get("guard")
+        if isinstance(guard, dict) and guard.get("engaged"):
+            head += f" (memory guard engaged since {guard.get('since') or 'an unknown time'})"
         if isinstance(snap.get("blocks_gained"), int):
             head += f" (+{snap['blocks_gained']:,} Python blocks in {snap.get('over_s')} s)"
         out.append(f"    - {head}: {', '.join(bits) or 'no reading'}")
