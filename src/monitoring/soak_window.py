@@ -122,6 +122,12 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
     the window may be unknown (no rate), or the guard may be BLIND — enabled with no
     psutil readings — in which case zero engagements says nothing at all about memory
     pressure and must not be read as "the machine was fine".
+
+    ``allocator`` (R114) says whether THIS process runs with its malloc arenas capped, so
+    the engagements and paused time here can be read against the setting: an instance
+    launched since the update runs with ``MALLOC_ARENA_MAX=2``, and one that has not been
+    relaunched since does not. It is a property of the process, not a reading over the
+    window, and it never changes ``measured``.
     """
     try:
         from src.scheduler import memguard
@@ -130,6 +136,8 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
         _LOG.debug("memory-guard state unavailable", exc_info=True)
         return {"measured": False, "reason": f"memory-guard state unavailable: {exc}"}
+
+    from src.monitoring.session_hwm import allocator_setting
 
     engagements = state.get("engagements")
     engaged_s = state.get("total_engaged_s")
@@ -143,6 +151,7 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
             "process-cumulative; closed episodes only, so an episode still open is "
             "engaged_now and is not folded into total_engaged_s"
         ),
+        "allocator": allocator_setting(),
     }
     if state.get("enabled") and state.get("readings_available") is False:
         out["measured"] = False
