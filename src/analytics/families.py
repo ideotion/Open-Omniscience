@@ -368,23 +368,34 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
         else:
             by_match[key] = i
 
+    # Containment is found through a TOKEN INDEX rather than by comparing every entity with every
+    # other (2026-09-30: the pairwise form measured ~4x per doubling, 267 s for 16,000 multi-token
+    # entities, and is what kept the keyword export from grouping a whole window). The edges are
+    # the same ones the pairwise loops drew -- same kind, parent a CLEAN 2-3 token phrase, child
+    # a shorter contiguous token-run of it -- so the families are identical; only the search for
+    # them changed. Because a child of a multi-token parent has at least one token fewer, and a
+    # clean parent has at most three, a multi-token child is always a 2-token run of a 3-token
+    # parent and a single-token child is any one token of a 2- or 3-token parent.
     multi = [i for i in ents if len(recs[i]["match"]) >= 2]
-    for a in multi:  # phrase ⊂ longer phrase (both multi-token, parent clean)
-        for b in multi:
-            if a == b or recs[a]["kind"] != recs[b]["kind"] or not _clean_parent(b):
-                continue
-            if len(recs[a]["match"]) < len(recs[b]["match"]) and _is_contiguous_sub(
-                recs[a]["match"], recs[b]["match"]
-            ):
-                union(b, a)
+    clean_multi = [b for b in multi if _clean_parent(b)]
+    two_by_run: dict[tuple, list[int]] = {}
+    for a in multi:
+        if len(recs[a]["match"]) == 2:
+            two_by_run.setdefault((recs[a]["kind"], tuple(recs[a]["match"])), []).append(a)
+    tokens_to_parents: dict[tuple, list[int]] = {}
+    for b in clean_multi:
+        toks = recs[b]["match"]
+        kind = recs[b]["kind"]
+        if len(toks) == 3:  # phrase ⊂ longer phrase (both multi-token, parent clean)
+            for run in (tuple(toks[:2]), tuple(toks[1:])):
+                for a in two_by_run.get((kind, run), ()):
+                    union(b, a)
+        for tok in set(toks):
+            tokens_to_parents.setdefault((kind, tok), []).append(b)
     singles = [i for i in ents if len(recs[i]["match"]) == 1]
     for a in singles:
         parents = {
-            find(b)
-            for b in multi
-            if recs[a]["kind"] == recs[b]["kind"]
-            and _clean_parent(b)
-            and _is_contiguous_sub(recs[a]["match"], recs[b]["match"])
+            find(b) for b in tokens_to_parents.get((recs[a]["kind"], recs[a]["match"][0]), ())
         }
         if len(parents) == 1:  # unambiguous → join; 0 or 2+ → stay standalone
             union(parents.pop(), a)

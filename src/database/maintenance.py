@@ -1751,6 +1751,36 @@ def _memory_short_message(avail: float, floor: float, *, elapsed: float | None) 
     )
 
 
+def raise_if_memory_short(*, started: float | None = None) -> None:
+    """Stop a read the caller is driving from Python, when the machine is nearly out of memory.
+
+    THE HOLE THIS CLOSES (keyword export crash, 2026-09-30). :func:`statement_deadline`
+    watches memory only from inside SQLite's progress handler, and only while a deadline is
+    armed -- ``OO_KEYWORD_EXPORT_TIMEOUT_S=0`` (the export's shipped default: "a cap may
+    bound a REPORT, never the crunching") disabled the deadline and with it the stop, so a
+    killed 6.9 GB instance showed ``memory_guard_engaged: false`` while growing 2 GB in the
+    last three minutes of its life. A loop that does its own work between rows can call this
+    every few tens of thousands of rows instead, with no deadline and no handler installed
+    (installing one would REPLACE an enclosing block's handler, which is per connection).
+
+    The floor and the ``OO_READ_MEMORY_STOP=0`` switch are the stop's own (see
+    :func:`_read_memory_floor_mb`); an unreadable machine is never stopped (``None`` never
+    fabricates a refusal). ``started`` is a ``time.monotonic()`` reading, for the message.
+    """
+    floor = _read_memory_floor_mb()
+    if floor is None:
+        return
+    avail = _available_mb()
+    if avail is None or avail > floor:
+        return
+    elapsed = None if started is None else max(0.0, time.monotonic() - started)
+    _LOG.warning(
+        "memory stop: stopped a read on thread %s (%.0f MB available, floor %.0f MB)",
+        threading.current_thread().name, avail, floor,
+    )
+    raise MemoryShort(_memory_short_message(avail, floor, elapsed=elapsed))
+
+
 def _deadline_seconds() -> float:
     """Heavy-read deadline in seconds (OO_STATEMENT_TIMEOUT_S; 0 disables)."""
     try:

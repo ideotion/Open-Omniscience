@@ -497,7 +497,8 @@ def test_a_measured_qualification_replaces_a_curated_stamp_with_its_own_stamp(tm
     assert got.qualification_criteria_version == _MEASURED, "the earned stamp, not the default"
     assert _integrity(working)["verdict"] == "consistent"
     q = counts["_source_qualification"]
-    assert q["adopted_qualified"] == 1
+    # Collectable before and after: a measurement arrived, a qualified source did not.
+    assert q["adopted_qualified"] == 0 and q["confirmed_qualified"] == 1
     assert q["local_verdict_kept"] == 0 and q["local_verdict_disagreed"] == 0
 
 
@@ -508,6 +509,9 @@ def test_an_incoming_curated_stamp_replaces_nothing(tmp_path):
     got = _sources(working)["psx.com.pk"]
     assert got.qualification_criteria_version == _CURATED and got.qualified_at == _T0
     assert counts["_source_qualification"]["adopted_qualified"] == 0
+    # Nothing was measured here, so it is not reported as a verdict reached on this machine.
+    q = counts["_source_qualification"]
+    assert q["catalogue_stamp_kept"] == 1 and q["local_verdict_kept"] == 0
 
 
 def test_a_locally_measured_verdict_still_wins_over_an_incoming_measured_one(tmp_path):
@@ -753,3 +757,177 @@ def test_export_then_import_carries_qualification_between_two_seeded_instances(t
     assert counts["sources"]["new"] == 0
     assert counts["_source_qualification"]["adopted_qualified"] == 1
     assert counts["_source_qualification"]["adopted_disqualified"] == 1
+
+
+
+# --------------------------------------------------------------------------- #
+#  The three internals of the newest-evidence guard, each pinned by one case
+#  (coordinator check of #1278, F1: each one-edit variant of the block went uncaught)
+# --------------------------------------------------------------------------- #
+def test_a_later_non_judging_local_attempt_does_not_hide_the_newest_judging_one(tmp_path):
+    """The verdict filter on the LOCAL side: the newest local attempt of ANY kind is a
+    no_evidence row, but the guard compares the newest JUDGING one (qualified, newer than the
+    incoming evidence), so the give-way is still blocked."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        _add_attempt(s, sid, "no_evidence", _SEEN + timedelta(days=30), version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_a_later_non_judging_incoming_attempt_does_not_make_the_incoming_evidence_newer(tmp_path):
+    """The verdict filter on the INCOMING side: a no_evidence row far in the future must not
+    count as the incoming judging evidence, or a newer local judgement stops blocking."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        _add_attempt(s, sid, "no_evidence", _SEEN + timedelta(days=90), version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_the_incoming_evidence_is_read_by_the_incoming_source_not_by_the_local_id(tmp_path):
+    """The incoming subquery is keyed on the INCOMING source's id. The two databases number
+    their rows independently, so keying it on the local id reads another domain's attempts:
+    here the incoming database's first source has the local psx row's id and a far-future
+    judging attempt of its own."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        other = _add_source(s, "other.example", status="qualified", at=_SEEN, version=_MEASURED)
+        _add_attempt(s, other, "qualified", _SEEN + timedelta(days=90), version=_MEASURED)
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+    with _corpus(working)() as s:
+        assert s.query(Source).filter_by(domain="psx.com.pk").one().id == 1
+    with _corpus(staged)() as s:
+        assert s.query(Source).filter_by(domain="psx.com.pk").one().id == 2
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+# --------------------------------------------------------------------------- #
+#  Cases the check listed as unpinned
+# --------------------------------------------------------------------------- #
+def test_incoming_evidence_older_than_the_local_catalogue_stamp_still_gives_way(tmp_path):
+    """The field's own date order: the stamp is newer than the other instance's evidence."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    old = _T0 - timedelta(days=40)
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=_MEASURED)
+        _add_attempt(s, sid, "disqualified", old, version=_MEASURED)
+        s.commit()
+
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert counts["_source_qualification"]["adopted_disqualified"] == 1
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_an_incoming_stamp_with_no_recorded_version_counts_as_measured(tmp_path):
+    working, counts = _curated_local_and_incoming(
+        tmp_path, incoming_status="qualified", incoming_version=None)
+    assert counts["_source_qualification"]["confirmed_qualified"] == 1
+
+
+def test_an_incoming_curated_stamp_never_displaces_a_measured_or_disqualified_row(tmp_path):
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        a = _add_source(s, "measured.example", status="qualified", at=_T0, version=_MEASURED)
+        _add_attempt(s, a, "qualified", _T0, version=_MEASURED)
+        b = _add_source(s, "bad.example", status="disqualified", at=None, version=_MEASURED)
+        _add_attempt(s, b, "disqualified", _T0, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        _add_source(s, "measured.example", status="qualified", at=_T0, version=_CURATED)
+        _add_source(s, "bad.example", status="qualified", at=_T0, version=_CURATED)
+        s.commit()
+
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+    got = _sources(working)
+    assert got["measured.example"].qualification_criteria_version == _MEASURED
+    assert got["bad.example"].status == "disqualified"
+    assert counts["_source_qualification"]["adopted_qualified"] == 0
+
+
+def test_giving_way_leaves_the_enabled_flag_alone(tmp_path):
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        s.query(Source).filter_by(id=sid).update({"enabled": False})
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=_MEASURED)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.query(Source).filter_by(id=sid).update({"enabled": True})
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    got = _sources(working)["psx.com.pk"]
+    assert got.status == "disqualified" and got.enabled is False
+
+
+def test_importing_the_same_backup_twice_changes_nothing_the_second_time(tmp_path):
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=_MEASURED)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    first = [(a.verdict, a.attempted_at) for a in _attempts(working, "psx.com.pk")]
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert [(a.verdict, a.attempted_at) for a in _attempts(working, "psx.com.pk")] == first
+    assert counts["_source_qualification"]["adopted_disqualified"] == 0
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_the_import_report_does_not_call_a_catalogue_stamp_your_own_verdict(tmp_path):
+    from src.backup.import_reports import render_import_report_markdown  # noqa: PLC0415
+
+    qual = {
+        "introduced_qualified": 0, "introduced_disqualified": 0,
+        "adopted_qualified": 0, "adopted_disqualified": 0, "confirmed_qualified": 3,
+        "local_verdict_kept": 0, "local_verdict_disagreed": 0, "catalogue_stamp_kept": 6400,
+        "engines": {}, "qualified_at_min": None, "qualified_at_max": None,
+    }
+    text = render_import_report_markdown({"kind": "oo-backup-2", "plan": {"_source_qualification": qual}})
+    assert "6,400" in text or "6400" in text
+    assert "shipped catalogue's own stamp" in text
+    assert "reached on THIS machine" not in text and "your own verdict" not in text
+    assert "not counted as newly qualified" in text
+    assert "qualified sources** arrived" not in text, "a measurement is not an arrival"

@@ -134,7 +134,7 @@ def test_the_first_line_of_the_same_job_is_keyed_too(monkeypatch):
     "import {batch} ({articles})", "{n} article", "{n} articles", "starting…",
     # I-1 / I-2's two new strings
     "engine not recorded",
-    "Sources already judged here are counted per backup, below: the backups of one run overlap, "
+    "Sources already judged are counted per backup, below: the backups of one run overlap, "
     "so those counts are not added up.",
 ])
 def test_every_key_the_new_lines_need_is_there_x12(key):
@@ -147,7 +147,7 @@ _RESULT_BLOCK_KEYS = [
     "database records, all types",
     "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.",
     "How your corpus grew",
-    "Backup disagreed, your verdict kept: {n}",
+    "Backup disagreed, existing verdict kept: {n}",
     "{n} conflict (your version kept)",
     "{n} conflicts (your version kept)",
     "conflicts (your version kept)",

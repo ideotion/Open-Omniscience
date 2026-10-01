@@ -24,7 +24,7 @@ from src.database.models import Article, Keyword, Source
 from src.database.session import get_db
 from src.utils.export_envelope import envelope
 
-from ._base import router
+from ._base import _MAX_KEYWORDS_PER_LANG, router
 from .keywords import keyword_log
 
 
@@ -226,7 +226,31 @@ def performance_report(
         _timed("insights_top", lambda: aq.top_terms(db, limit=50))
         _timed("insights_trending", lambda: aq.trending(db))
         _timed("insights_map", lambda: aq.map_data(db))
-        _timed("keyword_export_streamed", lambda: keyword_log(db=db))
+        # THE KEYWORD EXPORT PROBE passes every argument itself: called bare, the route's Query()
+        # defaults arrive as sentinel objects (truthy -> the digest path, by accident), and the
+        # memory the export takes was then decided by nothing the reader could see. It goes
+        # through the SAME gate the bundle's digest member does (R27, sized from this instance's
+        # own counts), because a timing probe that kills a 6 GB machine is worse than no timing.
+        # Imported here: the bundle module imports this one.
+        from .bundle import ram_declined_reason
+
+        kw_declined = ram_declined_reason("keyword-log-digest.json", db=db)
+        if kw_declined is None:
+            _timed(
+                "keyword_export_streamed",
+                lambda: keyword_log(
+                    db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG,
+                    page=1, max_mb=None,
+                ),
+            )
+        else:
+            # A third honest state beside "measured" (ms) and "failed" (error): not run, and
+            # why. Its row says so in words and carries no number it did not measure.
+            selftest_rows.append({
+                "probe": "keyword_export_streamed",
+                "run": 0,
+                "skipped": f"not run on this machine: {kw_declined}",
+            })
 
     payload = {
         "environment": env,

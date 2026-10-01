@@ -186,12 +186,12 @@ mutation-checked by name; the numstat rule for the ledger files.
 2. The `reconcile_keyword_language` pass and the lemmatisation migration job on the real corpus. Artifact:
    both reports.
 3. The click-through of every surface in §4 (Q1128 = a). Artifact: the record under `docs/audit/`.
-4. The maintainer's pick on the Q1103 / Q1104 CONFLICT — recorded in `OPEN_QUEUE.md` in the turn it is given.
+4. The maintainer's pick on the Q1103 / Q1104 CONFLICT — recorded in `OPEN_QUEUE.md` in the turn it is given. **(Done 2026-09-30: `R98`; `R111` removed the review surface.)**
 
 ## 6. What this slice may not decide
 
 - The CONFLICT Q1103 = b (frozen; the note wants a diagnostic and per-release growth) vs Q1104 = a (batch by
-  batch through the review surface): recorded as given, both sides; nothing merges.
+  batch through the review surface): recorded as given, both sides; nothing merges. **(Superseded 2026-09-30: `R98` picked `Q1104`'s side and `R111` replaced the review surface with batches curated by us, shipped with each app update.)**
 - The local rings file's name and location, the ring-version precedence (`S04-04`'s design note), and the
   `maxlag=5` / bot-UA details that only option (a) of Q406 spelled out.
 - Whether the operator generator keeps batching ids per call under the 10 s rule.

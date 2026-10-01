@@ -1568,7 +1568,7 @@ Official **figures** are not here at all — they are data, so they live under
   | **All diagnostics (.zip)** | every log below in one archive |
   | **All diagnostics (split)** | the same finished archive, cut into several smaller .zip files so it can be attached where one big file cannot. Each piece opens on its own in any unzip tool. If a single log is too large to fit one piece, it is cut into numbered parts and `volumes.json` says which, and how to rejoin them (`cat <name>.part* > <name>`). It only splits an archive you have already built — it never starts a new build |
   | **Keyword log (.zip)** | the top keywords per language with real counts, families, your corrections and super-groups |
-  | **All keywords (.zip)** | every keyword in the corpus (not just the top per language) |
+  | **All keywords (.zip)** | every keyword in the corpus (not just the top per language), with no size cap. It is written to disk a batch at a time, so the app's memory stays flat whatever the corpus size; a big corpus makes a big file and takes minutes, and the export stops with a clear message (and deletes its partial file) if memory or disk runs short. The `Keyword log (.zip)` button keeps the 9 MB cap so it can be attached |
   | **Keyword self-test (.json)** | a golden-case check that keyword pre-selection still behaves (e.g. *WHO* ≠ *who*) |
   | **Keyword-engine report (.json)** | composition, entity precision, translation/tag coverage, per-language status |
   | **Keyword-growth curve / (.json)** | cumulative distinct keywords vs words added (is the vocabulary saturating?) |
