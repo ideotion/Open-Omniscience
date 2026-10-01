@@ -145,6 +145,49 @@ _READ_AFTER_CHANGE = (
     "from src.monitoring import session_hwm as h; print(json.dumps(h.allocator_setting()))"
 )
 
+# 16 threads that each allocate, kept alive while glibc reports its arenas (``malloc_info``).
+# A thread gets an arena of its own at its first allocation until the limit is reached.
+_COUNT_ARENAS = """
+import ctypes, os, re, tempfile, threading, time
+libc = ctypes.CDLL(None)
+libc.fopen.restype = ctypes.c_void_p
+libc.fopen.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+libc.fclose.argtypes = [ctypes.c_void_p]
+libc.malloc_info.argtypes = [ctypes.c_int, ctypes.c_void_p]
+started, hold = threading.Barrier(17), threading.Event()
+def work():
+    blocks = [bytearray(100_000) for _ in range(20)]
+    started.wait()
+    hold.wait()
+    del blocks
+threads = [threading.Thread(target=work) for _ in range(16)]
+for t in threads:
+    t.start()
+started.wait()
+fd, path = tempfile.mkstemp()
+os.close(fd)
+fp = libc.fopen(path.encode(), b"w")
+libc.malloc_info(0, fp)
+libc.fclose(fp)
+with open(path, encoding="utf-8") as fh:
+    arenas = len(re.findall(r"<heap nr=", fh.read()))
+os.unlink(path)
+hold.set()
+for t in threads:
+    t.join()
+print(arenas)
+"""
+
+
+def _arenas_after_16_allocating_threads(env_extra: dict[str, str]) -> int:
+    env = {k: v for k, v in os.environ.items() if k != "MALLOC_ARENA_MAX"}
+    env.update(env_extra)
+    got = subprocess.run(
+        [sys.executable, "-c", _COUNT_ARENAS], env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert got.returncode == 0, got.stderr
+    return int(got.stdout.strip())
+
 
 @linux_only
 def test_a_process_started_with_the_cap_reads_as_running_with_it():
@@ -176,6 +219,24 @@ def test_a_later_change_to_the_python_environment_is_not_read_as_what_the_proces
     assert unset["arena_cap"] is None, "set after the start: glibc never saw it"
     capped = _child_reading({"MALLOC_ARENA_MAX": "2"}, _READ_AFTER_CHANGE)
     assert capped["arena_cap"] == 2, "changed after the start: the start is what applied"
+
+
+@linux_only
+def test_the_cap_really_bounds_the_allocators_arenas_on_this_machine():
+    """What ``effective: true`` stands on. The reading says a process runs with the cap
+    when glibc was started with it; this measures that glibc then keeps to it for the
+    allocations a Python process makes (``malloc_info`` lists the arenas): on the review
+    machine (glibc 2.39, 4 cores) 16 allocating threads left 17 arenas without the variable
+    and 2 with it. A runtime whose allocations bypass glibc's arenas would fail the capped
+    half; a sandbox that never creates per-thread arenas has nothing to bound and skips."""
+    if session_hwm._glibc_version() is None:
+        pytest.skip("not glibc: MALLOC_ARENA_MAX is a glibc setting")
+    capped = _arenas_after_16_allocating_threads({"MALLOC_ARENA_MAX": "2"})
+    assert capped <= 2, f"started with the cap, glibc still reports {capped} arenas"
+    uncapped = _arenas_after_16_allocating_threads({})
+    if uncapped <= 2:
+        pytest.skip(f"this environment gave 16 threads {uncapped} arenas even without the cap")
+    assert uncapped > capped
 
 
 def _starting_block(monkeypatch, block: bytes | Exception) -> None:
