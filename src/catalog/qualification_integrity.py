@@ -509,6 +509,7 @@ def repair_inversions(
             # What a revert needs to put the row back EXACTLY: the stamp, not only the status.
             "was_qualified_at": _iso(source.qualified_at),
             "was_criteria_version": source.qualification_criteria_version,
+            "live_stamp": live_stamp_class(source),
             "restored_to": attempt.verdict,
             "judged_at": _iso(attempt.attempted_at),
             "criteria_version": attempt.criteria_version,
@@ -763,6 +764,47 @@ def _read_run(run_at: str) -> dict[str, Any]:
     from src.config.kv_store import kv_get_json_strict
 
     return kv_get_json_strict(REPAIR_RUN_PREFIX + run_at) or {}
+
+
+def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any]:
+    """The boot step that lists the inversions the repair does NOT change, for an early local
+    re-check (``qualification.recheck_first``, read by the qualification pass).
+
+    A source whose live verdict was measured here, or taken from an import, is never changed by an
+    imported history on its own (rule 12 = b); the install's own measurement settles it. But a
+    copied-in attempt resets the re-verification clock, so left alone the re-check would come a
+    whole interval after the OTHER instance's attempt. This lists every such source, in either
+    direction (live qualified against a newer disqualification, or live disqualified against a
+    newer qualification), keeps the original ``flagged_at`` of one already listed, and drops
+    those no longer inverted. It changes no verdict and writes nothing else.
+
+    Fails closed like the repair: an unreadable stored list skips the step and rewrites nothing.
+    Local database only; counts returned.
+    """
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+    from src.database.session import session_scope
+
+    if os.getenv(AUTO_REPAIR_ENV, "1") == "0":
+        return {"flagged": 0, "skipped": f"disabled by {AUTO_REPAIR_ENV}=0"}
+    from src.catalog.qualification import RECHECK_FIRST_KEY
+
+    try:
+        stored = (kv_get_json_strict(RECHECK_FIRST_KEY) or {}).get("flagged") or {}
+    except Exception:  # noqa: BLE001 - reported, never raised
+        _LOG.warning("recheck-first list skipped: it cannot be read", exc_info=True)
+        return {"flagged": 0, "skipped": "the list cannot be read"}
+    with session_scope() as session:
+        plan = repair_inversions(session, dry_run=True, name_cap=None)
+    wanted = {
+        str(int(r["source_id"]))
+        for r in [*plan["restored_to_disqualified"], *plan["restored_to_qualified"]]
+        if r.get("live_stamp") == "measured"
+    }
+    stamp = _iso(now or datetime.now(UTC)) or ""
+    updated = {sid: str(stored.get(sid) or stamp) for sid in sorted(wanted, key=int)}
+    if updated != {str(k): str(v) for k, v in stored.items()}:
+        kv_set_json(RECHECK_FIRST_KEY, {"flagged": updated, "updated_at": stamp})
+    return {"flagged": len(updated)}
 
 
 def _confirm_applied_runs(idx: dict[str, Any]) -> None:
