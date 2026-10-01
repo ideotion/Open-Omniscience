@@ -141,8 +141,14 @@ def _read_keep(path: Path | None = None) -> tuple[frozenset[str], frozenset[str]
         raise SystemExit(f"the platform keep-file {path} cannot be read ({exc}); refusing to run without it") from exc
     if not isinstance(data, dict):
         raise SystemExit(f"the platform keep-file {path} is not a mapping; refusing to run without it")
-    firm = frozenset(norm(n) for n in (data.get("platform_names") or []) if norm(n))
-    ambiguous = frozenset(norm(n) for n in (data.get("ambiguous_platform_names") or []) if norm(n))
+    lists: list[frozenset[str]] = []
+    for key in ("platform_names", "ambiguous_platform_names"):
+        value = data.get(key) or []
+        if not isinstance(value, list) or not all(isinstance(n, str) for n in value):
+            # a bare string would be walked letter by letter, and the guard would pass on single letters
+            raise SystemExit(f"the platform keep-file {path}: {key} must be a list of names; refusing to run")
+        lists.append(frozenset(norm(n) for n in value if norm(n)))
+    firm, ambiguous = lists
     if not firm:
         raise SystemExit(f"the platform keep-file {path} lists no platform names; refusing to run without them")
     return firm, ambiguous
@@ -187,23 +193,25 @@ def read_verdicts(path: Path, lang: str) -> dict[str, dict[str, Any]]:
     """The triage decisions for ``lang``, keyed by spelling. Several rows for one word merge to the
     STRICTEST reading (any row that is not a high-confidence N, or is unstable, spoils it)."""
     out: dict[str, dict[str, Any]] = {}
-    for line in path.read_text("utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    for line in path.read_text("utf-8").lstrip("\ufeff").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
+        # Split BEFORE trimming: stripping would eat the trailing tabs of a row whose last columns are
+        # empty ("en rose K" + 3 tabs), and a row that goes missing loses its vote in the merge.
         cols = [c.strip() for c in line.split("\t")]
-        if len(cols) < 5 or cols[0].lower() != lang:
+        if len(cols) < 2 or cols[0].lower() != lang or not cols[1]:
             continue
+        cols += [""] * (7 - len(cols))  # a short row is read as having empty columns: never high, never N
         word = spelling(cols[1])
         verdict = cols[2].upper()
-        flags = {f.strip().lower() for f in (cols[6] if len(cols) > 6 else "").split(",") if f.strip()}
+        flags = {f.strip().lower() for f in cols[6].split(",") if f.strip()}
         row = out.setdefault(word, {"junk": True, "high": True, "unstable": False, "single_reader": False,
                                     "models": set()})
         row["junk"] &= verdict in ("N", "JUNK")
         row["high"] &= cols[4].upper() == HIGH
         row["unstable"] |= "unstable" in flags
         row["single_reader"] |= "single_reader" in flags
-        if len(cols) > 5 and cols[5]:
+        if cols[5]:
             row["models"].add(cols[5])
     if not out:
         raise SystemExit(f"{path} holds no verdict rows for language {lang!r}")

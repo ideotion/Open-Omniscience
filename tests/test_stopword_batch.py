@@ -421,7 +421,8 @@ def test_candidate_mode_with_verdicts_is_limited_to_judged_words(tmp_path, monke
 # ---- the platform guard fails closed (P2) ------------------------------------------------------
 
 def test_a_missing_or_empty_keep_file_stops_the_tool(tmp_path, monkeypatch):
-    for content in (None, "", "platform_names: []\n", "- a\n- b\n", "platform_names: [unclosed\n"):
+    for content in (None, "", "platform_names: []\n", "- a\n- b\n", "platform_names: [unclosed\n",
+                    "platform_names: facebook\n", "platform_names: [facebook]\nambiguous_platform_names: signal\n"):
         keep = tmp_path / "k.yml"
         if content is None:
             keep.unlink(missing_ok=True)
@@ -540,3 +541,16 @@ def test_long_evidence_lists_say_how_many_more_there_are(tmp_path, capsys):
     words.write_text("shared\n", "utf-8")
     assert sb.main([str(log), "--language", "en", "--words", str(words)]) == 0
     assert "and 2 more" in capsys.readouterr().out
+
+
+def test_a_short_or_bom_prefixed_verdict_row_still_votes(tmp_path):
+    f = tmp_path / "v.tsv"
+    f.write_text("\ufeffen\trose\tN\tbp\tH\tsonnet\n"
+                 "en\trose\tK\t\t\t\n"  # trailing tabs: a K reading with no model
+                 "en\tpie\tN\tbp\tH\tsonnet\n"
+                 "en\tpie\tN\tbp\n"  # a short row: no confidence, so never high
+                 "en\tcalm\tN\tfn\tH\tsonnet\n", "utf-8")
+    v = sb.read_verdicts(f, "en")
+    assert sb.verdict_refusals("rose", v) != []
+    assert sb.verdict_refusals("pie", v) == ["not_high_confidence"]
+    assert sb.verdict_refusals("calm", v) == []  # the BOM did not cost the first row its language
