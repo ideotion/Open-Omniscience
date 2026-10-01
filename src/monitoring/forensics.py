@@ -717,8 +717,11 @@ def _previous_peaks() -> dict[str, Any] | None:
         "count), the newest peak that read glibc's heap when the last one could not "
         "(heap_at_peak: a peak taken with memory already short skips that walk) and, "
         "when available memory ran short, what every thread was doing "
-        "(pressure: name, CPU time and stack, the newest snapshots kept). A field that "
-        "could not be measured is ABSENT rather than zero."
+        "(pressure: name, CPU time and stack, the newest snapshots kept). allocator is "
+        "which C allocator the session ran on and whether its malloc arenas were capped "
+        "(R114), read from the environment the process started with; a record written "
+        "before it was kept has none. A field that could not be measured is ABSENT "
+        "rather than zero."
     )
     return out
 
@@ -1091,6 +1094,15 @@ _AT_PEAK_FIELDS = (
 )
 
 
+def _render_allocator(alloc: Any) -> list[str]:
+    """Which C allocator the session ran on and whether its malloc arenas were capped
+    (R114), as one line beside the peaks it explains: a heap that was freed but held reads
+    differently with the cap (it did not return the memory) than without it."""
+    if not isinstance(alloc, dict) or not alloc.get("note"):
+        return []
+    return [f"  - C allocator ({alloc.get('allocator') or 'not read'}): {alloc['note']}"]
+
+
 def _render_at_peak(comp: Any, heap_peak: Any = None) -> list[str]:
     """The composition at the RSS peak and, when that peak could not read the C heap,
     the newest earlier peak that did, on its own line with its own size and time: the
@@ -1338,6 +1350,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
                 lines.append(f"  - last phase seen: {peaks['phase']}")
             if peaks.get("last_ts"):
                 lines.append(f"  - last recorded at: {peaks['last_ts']}")
+            lines += _render_allocator(peaks.get("allocator"))
             lines += _render_at_peak(peaks.get("at_peak"), peaks.get("heap_at_peak"))
             lines += _render_pressure(peaks.get("pressure"), peaks.get("pressure_taken"))
     sample = prev.get("last_collector_sample") or {}
