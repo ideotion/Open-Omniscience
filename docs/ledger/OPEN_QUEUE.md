@@ -16226,6 +16226,6 @@ maintainer as a card.
   ordinary queue, one try at a time; budget 0 switches it off), so a measured disagreement waits for the first passes rather than
   a re-check interval. It changes no verdict, an entry leaves the list when the row is no longer inverted or is no longer a
   judging verdict, an entry the pass has tried `MAX_FORCED_TRIES` (3) times without settling it stops being forced (the
-  ordinary queue still reaches it), and an unreadable stored list skips the step. The Settings queue view shows how
+  ordinary queue still reaches it; the count restarts when a newer attempt disagrees), and an unreadable stored list skips the step. The Settings queue view shows how
   many sources are checked first. RC06 itself (how far back a re-check looks) is still the
   maintainer's call.

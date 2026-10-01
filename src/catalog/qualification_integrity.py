@@ -868,18 +868,25 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
         return {"flagged": 0, "skipped": "the list cannot be read"}
     with session_scope() as session:
         plan = repair_inversions(session, dry_run=True, name_cap=None)
+    # sid -> the date of the attempt that disagrees with the live row: a try counted against an
+    # OLDER disagreement must not cap a newer one that arrives before a boot dropped the entry.
     wanted = {
-        str(int(r["source_id"]))
+        str(int(r["source_id"])): r.get("judged_at")
         for r in [*plan["restored_to_disqualified"], *plan["restored_to_qualified"]]
         if r.get("live_stamp") == STAMP_MEASURED
     }
     stamp = _iso(now or datetime.now(UTC)) or ""
+
     def _entry(sid: str) -> dict[str, Any]:
+        judged_at = wanted[sid]
         old = stored.get(sid)
         if isinstance(old, dict):          # keep what this install already recorded about it
+            same = old.get("judged_at") in (None, judged_at)   # an entry from before this field keeps its count
+            tries = old.get("tries") if isinstance(old.get("tries"), int) else 0
             return {"flagged_at": old.get("flagged_at") or stamp, "last_tried_at": old.get("last_tried_at"),
-                    "tries": old.get("tries") if isinstance(old.get("tries"), int) else 0}
-        return {"flagged_at": str(old) if old else stamp, "last_tried_at": None, "tries": 0}
+                    "tries": tries if same else 0, "judged_at": judged_at}
+        return {"flagged_at": str(old) if old else stamp, "last_tried_at": None, "tries": 0,
+                "judged_at": judged_at}
 
     updated = {sid: _entry(sid) for sid in sorted(wanted, key=int)}
     if updated != stored:

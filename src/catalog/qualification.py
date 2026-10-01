@@ -608,8 +608,10 @@ def _naive_utc(value: str | None) -> datetime | None:
 # A flagged source whose local re-check keeps NOT settling it (no articles, no feed or sitemap to
 # judge it on, an imported attempt dated after this machine's clock) would otherwise be forced
 # again whenever it reaches the head of the line, each time with a trial fetch against its host.
-# After this many forced tries the entry stays listed (so it is still counted and not re-flagged
-# from scratch at boot) but is no longer taken ahead of the queue: the ordinary ladder handles it.
+# After this many forced tries the entry stays listed (so it is not re-flagged from scratch at
+# boot, but the queue view no longer counts it as checked first) and is no longer taken ahead of
+# the queue: the ordinary ladder handles it. The count belongs to ONE disagreement: the boot step
+# resets it when the attempt that disagrees changes.
 MAX_FORCED_TRIES = 3
 
 
