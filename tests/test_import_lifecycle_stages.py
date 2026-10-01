@@ -349,101 +349,93 @@ def test_a_newsletter_tally_supplies_the_headline_when_there_is_no_plan(tmp_path
 
 
 # --------------------------------------------------------------------------- #
-#  6. Q205: the boot auto-resume
+#  6. Q205: the boot auto-resume (asked for at boot, started by the boot sequence)
 # --------------------------------------------------------------------------- #
-def _record_boot_thread_calls(monkeypatch, vj, calls: list[str]) -> None:
-    """Patch the drain starter to record only calls made from the boot resume's OWN
-    thread. The attribute is shared by every caller in the process: the import queue's
-    worker also calls it on its way out, and one such worker left alive by an earlier
-    test landed its call inside the opt-out test's window (CI, 2026-09-24:
-    ``assert ['start'] == []``). Counting by thread makes these tests assert what the
-    function under test did, whatever else in the process is still running."""
+@pytest.fixture
+def boot_state(monkeypatch):
+    """A clean boot-sequence state, and the drain starter faked to record who called it.
+
+    The attribute is shared by every caller in the process: the import queue's worker also calls
+    it on its way out, and one such worker left alive by an earlier test landed its call inside
+    the opt-out test's window (CI, 2026-09-24). Only calls made from THIS thread count."""
+    import threading
+
+    import src.backup.volume_job as vj
+    from src.api import boot_sequence
+
+    monkeypatch.setitem(boot_sequence._STATE, "reindex_pending", None)
+    monkeypatch.setitem(boot_sequence._STATE, "warm", "pending")
+    boot_sequence._reset()
+    calls: list[str] = []
+    me = threading.get_ident()
 
     def fake() -> tuple[bool, None]:
-        import threading
-
-        if threading.current_thread().name == "oo-reindex-resume-boot":
+        if threading.get_ident() == me:
             calls.append("start")
         return True, None
 
     monkeypatch.setattr(vj, "start_reindex_drain", fake)
+    monkeypatch.setattr(boot_sequence, "_rollup_first_build", lambda: None)
+    return boot_sequence, calls
 
 
-def test_the_boot_resume_starts_the_drain(monkeypatch):
-    calls: list[str] = []
+def test_the_boot_resume_asks_for_the_drain_and_the_sequence_starts_it(monkeypatch, boot_state):
+    boot_sequence, calls = boot_state
     monkeypatch.setenv("OO_NO_SCHEDULER", "0")
     monkeypatch.delenv("OO_REINDEX_AUTORESUME", raising=False)
-    import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    _record_boot_thread_calls(monkeypatch, vj, calls)
     _resume_reindex_backlog_at_boot(42)
-    for _ in range(200):
-        if calls:
-            break
-        import time as _t
-
-        _t.sleep(0.01)
+    assert calls == [], "the drain must not start before the cache warm-up and the rollup have had their turn"
+    assert boot_sequence._STATE["reindex_pending"] == 42
+    boot_sequence.run(lambda: None)
     assert calls == ["start"], "boot must start the drain, not only log the backlog"
 
 
-def test_the_boot_resume_declines_under_its_own_opt_out(monkeypatch):
-    calls: list[str] = []
+def test_the_boot_resume_declines_under_its_own_opt_out(monkeypatch, boot_state):
+    boot_sequence, calls = boot_state
     monkeypatch.setenv("OO_NO_SCHEDULER", "0")
     monkeypatch.setenv("OO_REINDEX_AUTORESUME", "0")
-    import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    _record_boot_thread_calls(monkeypatch, vj, calls)
     _resume_reindex_backlog_at_boot(42)
-    import time as _t
-
-    _t.sleep(0.15)
+    boot_sequence.run(lambda: None)
     assert calls == [], "OO_REINDEX_AUTORESUME=0 must decline it"
 
 
-def test_the_boot_resume_is_inert_under_the_suites_own_gate(monkeypatch):
+def test_the_boot_resume_is_inert_under_the_suites_own_gate(monkeypatch, boot_state):
     """Adding an ACTION to a production path makes it a side effect of every test that
     drives that path. ``conftest`` sets ``OO_NO_SCHEDULER=1`` session-wide, exactly as
     it does for the other boot-time background work, and this pins that the gate is
     read here rather than only in the caller."""
-    calls: list[str] = []
+    boot_sequence, calls = boot_state
     monkeypatch.setenv("OO_NO_SCHEDULER", "1")
     monkeypatch.delenv("OO_REINDEX_AUTORESUME", raising=False)
-    import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    _record_boot_thread_calls(monkeypatch, vj, calls)
     _resume_reindex_backlog_at_boot(42)
-    import time as _t
-
-    _t.sleep(0.15)
+    boot_sequence.run(lambda: None)
     assert calls == []
 
 
-def test_the_boot_resume_never_blocks_the_boot(monkeypatch):
+def test_the_boot_resume_never_blocks_the_boot(monkeypatch, boot_state):
     """The drain is the heaviest writer this process runs. A boot that waited on it
-    would make a large backlog an app that will not start -- the recorded shape where
-    the worse the incident, the more likely the boot path is what pays for it."""
-    import threading
+    would make a large backlog an app that will not start. The call only RECORDS the
+    request now; the sequence that starts the drain runs in its own thread."""
     import time as _t
 
+    boot_sequence, _calls = boot_state
     monkeypatch.setenv("OO_NO_SCHEDULER", "0")
     monkeypatch.delenv("OO_REINDEX_AUTORESUME", raising=False)
-    import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    gate = threading.Event()
-    # ALWAYS the tuple. `gate.wait(5) or (True, None)` returned the bare `True` once the
-    # gate was set -- which it is, below -- so the boot thread this leaves behind raised
-    # "cannot unpack non-iterable bool object" into whichever test ran next (macOS CI
-    # captured it in the setup log of the kill-and-boot test, 2026-09-24).
-    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (gate.wait(5), (True, None))[1])
     t0 = _t.monotonic()
     _resume_reindex_backlog_at_boot(1)
-    elapsed = _t.monotonic() - t0
-    gate.set()
-    assert elapsed < 1.0, f"the boot call blocked for {elapsed:.2f}s on the drain"
+    assert _t.monotonic() - t0 < 1.0
+    src_text = (Path(__file__).resolve().parents[1] / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert "target=boot_sequence.run" in src_text and 'name="oo-boot-sequence"' in src_text, (
+        "the boot sequence must run in its own thread, never on the startup path"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -475,6 +467,11 @@ def boot_and_drain():
     before = reindex_backlog()
     from src.api.main import _resume_reindex_backlog_at_boot
     _resume_reindex_backlog_at_boot(int(before.get("articles_pending") or 0))
+    # The boot only ASKS now; the boot sequence (warm-up, rollup, then this) starts the drain,
+    # in its own thread exactly as the lifespan does. The warm-up step is a no-op here.
+    import threading
+    from src.api import boot_sequence
+    threading.Thread(target=boot_sequence.run, args=(lambda: None,), daemon=True).start()
     from src.api.backup_v2 import _REINDEX_RESUME_JOB
     deadline = time.time() + 120
     started = False

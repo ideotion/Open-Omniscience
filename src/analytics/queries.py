@@ -2475,7 +2475,12 @@ def _rising_in_rank_order(recent, prior, *, min_recent, baseline_days, window_da
     # no cheaper than ranking them all once, and a heap that size is DEARER than the list it
     # replaces (a tuple and its tiebreaker per entry, rescanned each pass). So when the
     # filters keep consuming chunks (a rare kind, thousands of hidden words) the last step is
-    # one full sort, which is the old cost and no more.
+    # one full sort. That is NOT the old cost: each earlier chunk pass re-scans every keyword
+    # before the sort (measured by the coordinator's check on 400,000 keywords over the floor,
+    # a caller that consumes every row: 3.51 s against 0.67 s for the old build-and-sort, with
+    # no memory win). It is the rare-``kind`` case, where the caller's own per-row lookups cost
+    # far more than the ranking; the common case (the first chunk is enough) is faster and far
+    # smaller.
     over_floor = sum(1 for rc in recent.values() if int(rc or 0) >= min_recent)
     done = 0
     chunk = max(int(want) * 2, 64)

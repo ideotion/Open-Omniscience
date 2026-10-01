@@ -78,3 +78,31 @@ def test_asking_for_the_top_few_allocates_far_less_than_building_every_row():
     tracemalloc.stop()
     del base, first
     assert lazy_peak < old_peak / 3, (lazy_peak, old_peak)
+
+
+def test_scanned_counts_the_keywords_over_the_floor_and_no_others(tmp_path):
+    """``scanned`` is the figure the multiple-comparisons caveat quotes ("with many terms
+    scanned, some ratios run high by chance"): how many keywords were screened, i.e. the ones
+    over the ``min_recent`` floor. It is its own pass now, so it is pinned (the coordinator's
+    check of PR #1284, mutant E11: counting every keyword passed every test)."""
+    from datetime import date, timedelta
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, Keyword, KeywordMention, Source
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'scanned.db'}", future=True)
+    Base.metadata.create_all(engine)
+    today = date.today()
+    with sessionmaker(bind=engine, future=True)() as s:
+        s.add(Source(name="S", domain="x.test"))
+        for i, recent in enumerate([1, 2, 3, 4, 9], start=1):
+            s.add(Keyword(term=f"zzscan{i}", normalized_term=f"zzscan{i}", language="en"))
+        s.flush()
+        for i, recent in enumerate([1, 2, 3, 4, 9], start=1):
+            s.add(KeywordMention(keyword_id=i, article_id=i, count=recent, observed_on=today))
+        s.commit()
+        out = queries.trending(s, window_days=7, baseline_days=30, limit=10, min_recent=3)
+    assert out["scanned"] == 3, "only the keywords with at least min_recent mentions were screened"
+

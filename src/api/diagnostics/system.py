@@ -64,6 +64,7 @@ def columnar_status() -> dict:
     maintainer SEE whether persisted-encrypted analytics are active before deciding
     whether to bundle the per-OS crypto extension that enables them. No score."""
     from src.analytics import columnar, map_serve, rollup_serve
+    from src.api import boot_sequence
     from src.database.connect import get_passphrase
     from src.geo import ip_geo
 
@@ -72,6 +73,8 @@ def columnar_status() -> dict:
         # The in-memory windowed rollup serve — AUTOMATIC when duckdb is available; this
         # shows the mode (auto/forced) + whether it's built, so the self-tuning is visible.
         "rollup_serve": rollup_serve.status(),
+        # The boot's three heavy jobs run one after the other; a stuck wait shows here (step, state, seconds).
+        "boot_sequence": boot_sequence.snapshot(),
         # The in-memory D4 map-coverage serve — AUTOMATIC when duckdb is available since
         # P1.11 (OO_COLUMNAR_MAP_SERVE overrides: 0 off / 1 on); shows the mode + build state.
         "map_serve": map_serve.status(),

@@ -141,7 +141,9 @@ def _build_and_swap() -> None:
         from src.analytics import columnar, serve_gate
         from src.database.session import session_scope
 
-        skip = serve_gate.exclusive_verdict()
+        from src.api import boot_sequence
+
+        skip = serve_gate.exclusive_verdict() or boot_sequence.heavy_step_verdict()
         if skip is not None:
             with _LOCK:
                 _STATE["last_skip"] = skip
