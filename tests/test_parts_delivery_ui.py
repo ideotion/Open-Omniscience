@@ -40,6 +40,7 @@ _STRINGS = [
     "Save the next {n}",
     "Save the last file",
     "Save from this part",
+    "Asked your browser to save those files again.",
     "Asked your browser to save {done} of {n} files.",
     "Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
     "{n} files of at most 1 MB each are ready (manifest: {m}, numbered parts: {parts}).",

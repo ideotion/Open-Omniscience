@@ -961,6 +961,7 @@
       const win = _partsWindow(set.files.length, set.pos, count);
       set.saving = true;
       _partsRender();
+      let fresh = 0;   // files of this click the browser was not asked for before
       try {
         for (let i = win.from; i < win.to; i++) {
           if (_partsSet !== set) return;   // another set took the bar: this one is not ours to finish
@@ -972,6 +973,7 @@
           document.body.appendChild(a);
           a.click();
           a.remove();
+          if (!set.offered.has(i)) fresh++;
           set.offered.add(i);
           // Staggered: a browser drops concurrent downloads opened in one tick, and a silently
           // missing file is exactly the incomplete set this exists to avoid handing someone.
@@ -984,7 +986,10 @@
       if (_partsSet !== set) return;   // never write the status of a set that is no longer shown
       _partsRender();
       const done = set.offered.size;
-      if (done >= set.files.length) {
+      if (fresh === 0 && win.to > win.from) {
+        // a resend changes no count, so the line says what the click did
+        _partsStatus(note + t("Asked your browser to save those files again."));
+      } else if (done >= set.files.length) {
         _partsStatus(note + tf("Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
                                {n: set.files.length}));
       } else {

@@ -261,8 +261,8 @@ function listing(parts, manifests) {
     await api.partsSaveFrom();
     assert.deepStrictEqual(page.clicked.slice(13).map((c) => c.download),
       [7, 8, 9, 10, 11].map((n) => partName(n, 12)));
-    assert.ok(/^Asked your browser to save all 13 files\./.test(page.els["parts-status"].textContent),
-      "a part sent again is not counted twice: " + page.els["parts-status"].textContent);
+    assert.strictEqual(page.els["parts-status"].textContent, "Asked your browser to save those files again.",
+      "a part sent again is not counted twice, and the line says what the click did");
   }
 
   // ---- a second click while files are on their way does nothing (no doubled downloads, buttons disabled meanwhile)
