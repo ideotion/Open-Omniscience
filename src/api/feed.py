@@ -153,21 +153,29 @@ def _top_keywords(session: Session, article_ids: list[int]) -> dict[int, list[di
     """
     if not article_ids:
         return {}
+    from src.analytics.queries import _hidden_predicate
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword
 
+    # A word on the stoplist is hidden here at READ time (R111 step T2), so a stopword shipped
+    # with an update disappears from cards already stored, with no recompute: filtered BEFORE
+    # the top-K slice, so the K shown are the K best of what is left.
+    is_hidden = _hidden_predicate()
     rows = session.execute(
         select(
             KeywordMentionRead.article_id,
             KeywordMentionRead.keyword_id,
             KeywordMentionRead.count,
             Keyword.term,
+            Keyword.normalized_term,
         )
         .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
         .where(KeywordMentionRead.article_id.in_(article_ids))
     ).all()
     by_article: dict[int, list[tuple[int, int, str]]] = {}
-    for aid, kid, count, term in rows:
+    for aid, kid, count, term, norm in rows:
+        if is_hidden(norm):
+            continue
         by_article.setdefault(aid, []).append((int(count or 0), int(kid), term))
     out: dict[int, list[dict]] = {}
     for aid, items in by_article.items():

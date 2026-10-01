@@ -12997,6 +12997,59 @@ must not end what it did not start:** Start and Run now cleared the latches unde
 R112 does not list; they now leave an override alone while its cause is still over the limit or cannot be read against it (and end one whose cause is already under it, so no override outlives its cause for want of an exit). Test numbers
 must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not
 the floor, is what a naive test sees).
+### A CACHED "PINNED" CONNECTION IS A POOL SLOT NOBODY COUNTED: DETACH IT, AND CLOSE IT ON `engine_disposed` (WAL / disk thread, PR B, 2026-09-30, `tests/test_status_probe_detached.py`)
+
+All 16 field instances showed "one API-thread checkout held for the whole process life" (rank 12). Hands-on on the
+real app it was not a leak and not a phantom: it was the status probe behind `GET /api/articles`
+(`_browse_total_cached` -> `_data_version`), which keeps ONE raw connection for `PRAGMA data_version` on purpose and
+never returns it. It is idle, so it does not pin the WAL (`tests/test_wal_pin_facts.py` pins that), but it held one
+of the pool's slots for ever and nothing counted it: on the small tier (6 + 6, API margin 4) the app had three
+slots for API requests, and D44's "cap 8, pool 12, margin 4" held only on paper. **A connection the app keeps for
+its own reasons must not be a pooled checkout**: `raw_connection()` then `conn.detach()` frees the pool's slot
+(the fairy still works, and `close()` then really closes the DBAPI connection), and the price is that
+`Engine.dispose()` no longer closes it (dispose only closes CHECKED-IN connections), so a listener on the engine's
+`engine_disposed` event must (unlock, a restore's file swap and a shutdown all dispose; a probe left open reads a
+replaced file, and on Windows pins the old one). Guard the listener with a flag ON THE ENGINE OBJECT, not a set of
+ids: an `id()` is recycled onto a new engine, which would then never get its listener. And make the headroom
+arithmetic count what is REALLY free (`pool_watch.standing_holders`: old, non-collector checkouts), because a
+reservation bounds the collector and cannot free a slot someone else sits on.
+
+### A CONTEXTVAR SET IN `BaseHTTPMiddleware` BEFORE `call_next` REACHES THE ENDPOINT'S WORKER THREAD (WAL / disk thread, PR B, 2026-09-30, `tests/test_pool_watch_endpoint.py`)
+
+To list a pooled checkout under the route that took it, the pool's `checkout` listener reads a `ContextVar` the
+request middleware sets. It works (verified on the real app and pinned with a mini-app of the same shape): Starlette
+runs the endpoint in a task created AFTER the middleware's `set`, and anyio's `run_sync` copies the context into the
+worker thread, so a sync endpoint's checkout reads its own route. Threads the app starts itself carry no request and
+read `None` (their thread NAME identifies them). Reset the token in a `finally` around `call_next`, and treat a
+token from another context as a no-op (`ValueError`), because the middleware can unwind in a different context than
+it set in.
+
+### A POLLED GET SHOULD NEVER DEPEND ON THE DATABASE POOL: SERVE THE LAST GOOD ANSWER, LABELLED WITH ITS AGE (WAL / disk thread, PR B, 2026-09-30, `src/scheduler/plan_cache.py`)
+
+`GET /api/scheduler/activity` is polled by three surfaces and opened a pooled connection per poll to sample the
+source catalogue; when the pool was busy it waited the 30 s checkout timeout and answered 500 (333 of 329,968 polls
+on nine instances, 97 on one), so the task manager went blank exactly when the machine was busiest. The data is a
+deliberately loose preview (a re-randomised sample and stated arithmetic), so a preview a few seconds old is as true
+as a fresh one: the poll now reads an in-memory last-good preview, at most ONE background thread refreshes it (its own
+session, its own wait), and the answer carries `state` / `as_of` / `age_s` so the page says how old it is and never
+draws an old plan as a live one. It refuses two things: a preview for settings the operator has since changed (it
+says "computing"), and a silent failure (a failed refresh is recorded and the age keeps growing). This is NOT the
+ruling-gated 429 cap on polled GETs: nothing is rejected.
+
+
+### A MESSAGE TWO DIFFERENT FAILURES SHARE MUST NEVER LATCH A SAFETY STOP ON ITS OWN: SQLite's "disk I/O error" IS A FULL DRIVE AND A DYING ONE (WAL / disk thread, PR B, 2026-10-01, `src/scheduler/storage_guard.py`)
+
+The guard latched DISK at once on "database or disk is full" (SQLITE_FULL / ENOSPC). A full drive can also reach SQLite as
+a plain "disk I/O error" (SQLITE_IOERR and its extended codes): a copy-on-write or delayed-allocation filesystem reports
+ENOSPC late, at fsync, and SQLite names that an I/O error. The same message is what an unplugged or failing drive produces,
+which the data-drive watchdog (R86) already owns, so widening the strict full-drive classifier to include it would pause
+collection for a dying drive on a guess and hide the real cause. The classification is therefore a MEASUREMENT: on an I/O
+error the guard reads the drive's free space at that moment and latches only when it is below the reserve (the comparison
+its own samples trip on, brought forward to the failure); a drive with room, or one whose free space cannot be read, is
+recorded (`io_errors`, `last_io_error` with the figure it was judged against) and left alone. The hook that carries both
+sits on the corpus engine AND every lane engine, because a lane is written to the same drive (the corpus engine's hook alone
+never saw a lane's failed write). Stated limit: a copy-on-write drive that reports room (metadata exhausted while `df` says
+free) and fails with an I/O error is not classified as full.
 
 ### A LIST THE PRODUCER CUT CANNOT BE LOOKED UP IN: A MISSING ROW READS AS "NOBODY CALLED IT" (release candidate diagnostics, 2026-10-01, `src/monitoring/latency.py`)
 

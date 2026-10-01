@@ -878,8 +878,23 @@ async def monitor_requests(request: Request, call_next):
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _lat = None  # type: ignore[assignment]
 
+    # Name the route for the pool's checkout listener (src/database/pool_watch.py): the
+    # endpoint runs in a task started after this set, and anyio copies the context into
+    # its worker thread, so a connection a request takes is listed under its route.
     try:
-        response = await call_next(request)
+        from src.database import pool_watch as _pool_watch
+
+        _ep_token = _pool_watch.set_endpoint(f"{method} {endpoint}")
+    except Exception:  # noqa: BLE001 - instrumentation must never affect the request
+        _pool_watch = None  # type: ignore[assignment]
+        _ep_token = None
+
+    try:
+        try:
+            response = await call_next(request)
+        finally:
+            if _pool_watch is not None and _ep_token is not None:
+                _pool_watch.reset_endpoint(_ep_token)
     except Exception as e:
         ACTIVE_REQUESTS.dec()
         if _lat is not None:
@@ -1240,14 +1255,22 @@ def _top_keyword_terms(session, articles) -> dict[int, str]:
     ids = {a.top_keyword_id for a in articles if a.top_keyword_id is not None}
     if not ids:
         return {}
+    from src.analytics.queries import _hidden_predicate
     from src.database.models import Keyword
 
+    # A stored top keyword that the stoplist now hides (R111 step T2) is left out, like a pruned
+    # one: the row then reports NO top keyword, because the next-best word is only known after the
+    # stored top is recomputed (T3), and naming a count beside a different word would be wrong.
+    is_hidden = _hidden_predicate()
     out: dict[int, str] = {}
     id_list = sorted(ids)
     for i in range(0, len(id_list), _FTS_ID_CHUNK):
         chunk = id_list[i : i + _FTS_ID_CHUNK]
-        for kid, term in session.query(Keyword.id, Keyword.term).filter(Keyword.id.in_(chunk)):
-            out[kid] = term
+        for kid, term, norm in session.query(Keyword.id, Keyword.term, Keyword.normalized_term).filter(
+            Keyword.id.in_(chunk)
+        ):
+            if not is_hidden(norm):
+                out[kid] = term
     return out
 
 

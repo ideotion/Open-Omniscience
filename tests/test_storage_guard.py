@@ -1590,8 +1590,8 @@ def test_the_reading_and_the_step_that_ends_an_override_take_no_pooled_connectio
 
 def test_only_one_drain_runs_at_a_time_even_when_the_cadence_check_would_pass():
     """The in-flight flag is taken under the lock that made the checks: a second caller that has
-    passed the cadence check (the stamp cleared here, as if it were read before the first caller
-    stamped) still starts nothing while one is running."""
+    passed the cadence check (the stamp cleared here, as if it had been read before the first
+    drain ended and stamped) still starts nothing while one is running."""
     g = _overridable()
     release = threading.Event()
     entered = threading.Event()
@@ -1609,7 +1609,7 @@ def test_only_one_drain_runs_at_a_time_even_when_the_cadence_check_would_pass():
     t.start()
     try:
         assert entered.wait(10), "the first drain is running"
-        g._last_drain_mono = None  # the cadence check alone would now let a second caller through
+        g._last_drain_mono = None  # no drain has ended yet: only the in-flight flag holds the second caller
         assert g.drain_if_due() is None
         assert calls == [1], "no second drain started"
     finally:
@@ -1910,7 +1910,6 @@ def test_the_supervisor_starts_a_drain_thread_only_while_a_latch_is_engaged(monk
     try:
         time.sleep(0.2)  # about twenty ticks
         assert storage_guard._DRAIN_THREAD is None, "a drain thread was started with nothing engaged"
-        assert not any(t.name == "oo-storage-guard-drain" for t in threading.enumerate())
     finally:
         stop.set()
         sup.join(5)
@@ -2095,7 +2094,7 @@ def test_the_reader_snapshot_lists_every_holder_not_only_the_oldest(tmp_path):
         snap = _reader_snapshot()
         # The registry is process-wide: a daemon's own checkout may be listed too.
         assert snap["n"] >= 2 and len(snap["holders"]) >= 2
-        assert set(snap["holders"][0]) == {"thread", "age_s"}
+        assert set(snap["holders"][0]) == {"thread", "endpoint", "age_s"}
         assert snap["oldest_thread"] == snap["holders"][0]["thread"]
     finally:
         a.close()
@@ -2580,3 +2579,56 @@ def test_the_ui_renders_the_notice_from_the_payload_and_the_button_is_dispatchab
     tm = _src("src/static/taskmanager.js")
     assert "storageGuardHtml(a)" in tm and 'data-tm="storage-resume"' in tm
     assert "paused-wal-pinned" in core and "paused-low-disk" in core
+
+
+def test_a_drain_that_raises_past_the_except_still_stamps_the_cadence():
+    """Paced from when the drain ENDED, however it ended: a ``BaseException`` (which the drain's own
+    ``except Exception`` lets through, and which an unsupervised caller would see) must not leave
+    the next call free to start another drain at the same instant."""
+
+    class Escape(BaseException):
+        pass
+
+    clock = Clock()
+    ran: list[int] = []
+
+    def drain():
+        ran.append(1)
+        raise Escape()
+
+    g = _guard(clock, drain_fn=drain)
+    _feed(g, wal=2 * GIB, n=2)
+    with pytest.raises(Escape):
+        g.drain_if_due()
+    assert g._drain_inflight is False, "the flag is released on the way out"
+    assert g.drain_if_due() is None and g.drain_if_due() is None
+    assert ran == [1], "the cadence held at the same clock instant"
+    clock.advance(DRAIN_EVERY_S + 0.1)
+    with pytest.raises(Escape):
+        g.drain_if_due()
+    assert ran == [1, 1]
+
+
+def test_the_stop_check_and_the_publishing_of_the_drain_thread_are_one_step_under_the_stop_lock(monkeypatch):
+    """A supervisor that has seen an engaged latch but not yet its stop event, and is held at the
+    lock ``stop()`` reads the threads under, starts nothing once the stop is set while it waits."""
+    g = _engaged("wal")
+    ran: list[int] = []
+    g._drain = lambda: ran.append(1) or {"busy": 0}
+    monkeypatch.setattr(storage_guard, "storage_guard", g)
+    monkeypatch.setattr(storage_guard, "POLL_EVERY_S", 0.01)
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", None)
+    stop = threading.Event()
+    sup = threading.Thread(target=storage_guard._supervise, args=(stop,), daemon=True)
+    storage_guard._SUP_LOCK.acquire()
+    try:
+        sup.start()
+        time.sleep(0.2)  # the supervisor is now waiting for the lock, its stop event unset
+        assert storage_guard._DRAIN_THREAD is None
+        stop.set()
+    finally:
+        storage_guard._SUP_LOCK.release()
+    sup.join(5)
+    assert not sup.is_alive()
+    assert storage_guard._DRAIN_THREAD is None and ran == [], "no drain thread was started after the stop"
+

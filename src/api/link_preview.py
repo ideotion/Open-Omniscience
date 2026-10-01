@@ -40,6 +40,25 @@ def _normalized(url: str) -> str:
     return LinkExtractor().normalize_url(url)
 
 
+def _local_keywords(db, article_id: int, limit: int = 6) -> list[str]:
+    """The article's top keywords by count, minus the ones the stoplist hides (R111 step T2).
+
+    Reads more than ``limit`` and keeps the first ``limit`` that are shown, so a stoplisted word
+    never uses a slot."""
+    from src.analytics.queries import _hidden_predicate
+
+    is_hidden = _hidden_predicate()
+    rows = (
+        db.query(Keyword.term, Keyword.normalized_term)
+        .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+        .filter(KeywordMentionRead.article_id == article_id)
+        .order_by(KeywordMentionRead.count.desc(), Keyword.id)
+        .limit(limit * 10)
+        .all()
+    )
+    return [t for t, norm in rows if not is_hidden(norm)][:limit]
+
+
 @router.get("/preview")
 def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
     """The database extraction for one URL — local reads only, zero network."""
@@ -97,17 +116,7 @@ def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
             wiki = {"page_id": w[0], "title": w[1], "wiki": w[2]}
 
     # Keywords of the local copy, when one exists (small columns only).
-    keywords: list[str] = []
-    if local:
-        kw_rows = (
-            db.query(Keyword.term)
-            .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
-            .filter(KeywordMentionRead.article_id == local[0])
-            .order_by(KeywordMentionRead.count.desc())
-            .limit(6)
-            .all()
-        )
-        keywords = [t for (t,) in kw_rows]
+    keywords: list[str] = _local_keywords(db, local[0]) if local else []
 
     return {
         "url": url,

@@ -336,6 +336,7 @@ def api_headroom_for(
     pool_total: int | None = None,
     pool_bound: int | None = None,
     reserved: bool = True,
+    standing: int = 0,
 ) -> dict[str, Any]:
     """How many connections survive ``workers`` collectors, and whether that is enough.
 
@@ -355,6 +356,15 @@ def api_headroom_for(
     reservation absorbs stays visible, and ``waiting_workers`` says how many of the
     requested workers can be queued at checkout at once. ``reserved=False`` asks the
     pre-D44 question of a pool with no reservation.
+
+    ``standing`` is the number of pooled connections the app's OWN non-collector threads have
+    held for a long time at the moment of the reading (``pool_watch.standing_holders``): the
+    reservation bounds the collector, it cannot free a slot someone else is sitting on, and
+    the arithmetic above is only the margin the app is promised. ``headroom`` is what is
+    really free (promised margin minus those), ``headroom_before_standing`` is the promise.
+    The 2026-09-30 field diagnostics found the gap exactly: a status probe that kept one
+    connection for the life of the process left the small tier 3 slots of its 4 (it is now
+    detached, so a reading of 0 is the normal one). The default 0 is the pure arithmetic.
     """
     # `pool_bound` is the pass summary's own name for the same number; accepting both
     # keeps that caller from having to rename a published field to ask this question.
@@ -381,6 +391,12 @@ def api_headroom_for(
             "collector. A collector thread holds its pooled connection while it queues "
             "on the single-writer gate, so a slow gate pins one per waiting thread."
         )
+    held = max(0, int(standing))
+    if held:
+        method += (
+            f" Minus {held} connection(s) other app threads have held for a long time "
+            "(a slot the reservation cannot free)."
+        )
     return {
         "workers": w,
         "pool_total": total,
@@ -388,9 +404,11 @@ def api_headroom_for(
         "reserved": bool(reserved),
         "collector_ceiling": ceiling,
         "waiting_workers": max(0, w - ceiling) if reserved else 0,
-        "headroom": headroom,
+        "headroom_before_standing": headroom,
+        "standing_holders": held,
+        "headroom": headroom - held,
         "unreserved_headroom": unreserved,
-        "sufficient": headroom >= _API_MARGIN,
+        "sufficient": headroom - held >= _API_MARGIN,
         "method": method,
     }
 

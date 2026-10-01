@@ -28,7 +28,9 @@ WHAT IT WATCHES, every few seconds, from two readings that touch no table:
 
 * **WAL**: the size of the corpus ``-wal`` file. Engages when it stays at or above ``wal_high``.
 * **DISK**: free bytes on the drive holding the corpus. Engages when they fall below
-  ``disk_reserve``, or at once when a write fails with "disk is full" (ENOSPC).
+  ``disk_reserve``, or at once when a write fails with "disk is full" (ENOSPC), or with
+  SQLite's plain "disk I/O error" while the drive's own free space, read at that moment, is
+  below the reserve (see :func:`is_io_error`: that message alone never latches).
 
 WHAT EACH NUMBER PROTECTS (derived from the machine, never a constant of its own; the two
 overrides exist for an operator who knows better):
@@ -234,6 +236,9 @@ PIN_LOG_HOLDERS = 4
 #: smallest log the guard calls large, which is the room a commit and a sort still need. The
 #: floor is also never below the log's own size (``override_floor_bytes``).
 OVERRIDE_FLOOR_MIN_BYTES = WAL_ABSOLUTE_MIN_BYTES
+#: Tails kept in memory (one per engagement that caught a pass in flight). Twenty is weeks of
+#: engagements on the worst field machine; the bundle carries them, nothing persists them.
+TAIL_KEEP = 20
 
 PHASE_WAL = "paused-wal-pinned"
 PHASE_DISK = "paused-low-disk"
@@ -376,6 +381,31 @@ def is_disk_full(exc: BaseException | None) -> bool:
     return False
 
 
+def is_io_error(exc: BaseException | None) -> bool:
+    """Whether an exception (or anything in its chain) is SQLite's plain "disk I/O error"
+    (``SQLITE_IOERR`` and its extended codes).
+
+    This is NOT a full-drive classification, and :func:`is_disk_full` does not widen to
+    include it: the same message is what a dying or unplugged drive produces (the data-drive
+    watchdog's business, R86), and what a full drive produces when its filesystem reports
+    ``ENOSPC`` late (at ``fsync``, on a copy-on-write or delayed-allocation filesystem) where
+    SQLite then says "disk I/O error" instead of "database or disk is full". The two are
+    told apart by one measurement, the drive's free space at that moment
+    (:meth:`StorageGuard.note_io_error`), never by the message. A driver that carries
+    ``sqlite_errorcode`` (Python 3.11 and later) is matched on it; the message is the fallback."""
+    seen: set[int] = set()
+    cur = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        code = getattr(cur, "sqlite_errorcode", None)
+        if isinstance(code, int) and (code & 0xFF) == 10:  # SQLITE_IOERR
+            return True
+        if "disk i/o error" in str(cur).lower():
+            return True
+        cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
+    return False
+
+
 def _size_text(n: float | int | None) -> str:
     """Binary steps with the page's own unit labels ("2.0 GB"), so a log line, the bundle and
     the notice read the same figure the same way; ``?`` when unreadable."""
@@ -489,6 +519,7 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
             out["holders"] = [
                 {
                     "thread": r["thread"],
+                    "endpoint": r.get("endpoint"),
                     "age_s": r["age_s"],
                     "stack": stacks.get(r["ident"], []) if r.get("ident") else [],
                 }
@@ -547,6 +578,8 @@ class StorageGuard:
         self._peak_wal_while_engaged = 0
         self._disk_full_events = 0
         self._last_disk_full: dict[str, Any] | None = None
+        self._io_errors = 0
+        self._last_io_error: dict[str, Any] | None = None
         self._hold_until: float | None = None
         self._last: dict[str, Any] = {}
         self._thresholds: dict[str, Any] = {}
@@ -573,6 +606,8 @@ class StorageGuard:
         # WARNING an episode (and another when the holders change), not one a minute: the error
         # ring keeps 2,000 records and a day-long pin would replace every other warning in it.
         self._report_key: tuple | None = None
+        self._episode: dict[str, Any] | None = None
+        self._tails: deque[dict[str, Any]] = deque(maxlen=TAIL_KEEP)
 
     def _reset_for_tests(self) -> None:
         """Back to the boot state (a process-global latch must not leak across tests)."""
@@ -584,6 +619,8 @@ class StorageGuard:
             self._total_engaged_s = 0.0
             self._peak_wal_while_engaged = 0
             self._last_disk_full = None
+            self._io_errors = 0
+            self._last_io_error = None
             self._hold_until = None
             self._last, self._thresholds = {}, {}
             self._history.clear()
@@ -597,6 +634,8 @@ class StorageGuard:
             self._disk_by_error = False
             self._wal_seen = 0
             self._report_key = None
+            self._episode = None
+            self._tails.clear()
 
     # -- switches ------------------------------------------------------------------
     @staticmethod
@@ -826,10 +865,22 @@ class StorageGuard:
             self._since = datetime.now(UTC).isoformat(timespec="seconds")
             self._since_mono = now_mono
             self._peak_wal_while_engaged = int(self._last.get("wal_bytes") or 0)
+            # The figures at the FIRST refusal, kept so the pass that was in flight can be
+            # measured against them when it ends (:meth:`note_pass_ended`).
+            self._episode = {
+                "start_mono": now_mono,
+                "at": self._since,
+                "kind": "disk" if self._disk else "wal",
+                "free_at_trip": self._last.get("disk_free_bytes"),
+                "wal_at_trip": self._last.get("wal_bytes"),
+                "corpus_at_trip": self._last.get("corpus_bytes"),
+                "measured": False,
+            }
         elif was and not now and self._since_mono is not None:
             self._total_engaged_s += now_mono - self._since_mono
             self._since, self._since_mono = None, None
             self._report_key = None  # the next episode's first report is a WARNING again
+            self._episode = None
 
     def _log_transitions(self, tripped: list[str], released: list[str]) -> None:
         # OUTSIDE the lock: the log handler does file I/O and workers' admit() must never
@@ -913,14 +964,55 @@ class StorageGuard:
             pass
 
     def note_error(self, exc: BaseException | None, where: str = "") -> bool:
-        """Latch DISK when ``exc`` is a full-drive failure; returns whether it was. Never raises."""
+        """Latch DISK when ``exc`` is a full-drive failure (or an I/O error on a drive whose free
+        space is below the reserve, :meth:`note_io_error`); returns whether it latched. Never raises."""
         try:
             if is_disk_full(exc):
                 self.note_disk_full(f"{where + ': ' if where else ''}{type(exc).__name__}: {exc}")
                 return True
+            return self.note_io_error(exc, where)
         except Exception:  # noqa: BLE001
             pass
         return False
+
+    def note_io_error(self, exc: BaseException | None, where: str = "") -> bool:
+        """SQLite's plain "disk I/O error" (:func:`is_io_error`): latch DISK only when the drive's
+        own free space, read NOW, is below the reserve (the condition the guard's samples trip
+        on, brought forward to the failure). Otherwise the error is recorded (``last_io_error``
+        in :meth:`state`) and left to the data-drive watchdog: a drive that reports room and
+        fails with an I/O error is not "full", and pausing collection for it on the message
+        alone would be a guess. A drive whose free space is unreadable is not classified either.
+        Returns whether it latched. Never raises."""
+        if not self.enabled():
+            return False
+        try:
+            if not is_io_error(exc):
+                return False
+            try:
+                reading = self._readings() or {}
+            except Exception:  # noqa: BLE001 - an unreadable drive is the answer "not classified"
+                reading = {}
+            free, total = reading.get("disk_free_bytes"), reading.get("disk_total_bytes")
+            reserve = disk_reserve_bytes(total)
+            full = free is not None and free < reserve
+            with self._lock:
+                self._io_errors += 1
+                self._last_io_error = {
+                    "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "where": where or None,
+                    "detail": f"{type(exc).__name__}: {exc}"[:200],
+                    "disk_free_bytes": free,
+                    "disk_reserve_bytes": reserve,
+                    "latched": bool(full),
+                }
+            if full:
+                self.note_disk_full(
+                    f"{where + ': ' if where else ''}disk I/O error with {_size_text(free)} free, "
+                    f"below the {_size_text(reserve)} reserve"
+                )
+            return bool(full)
+        except Exception:  # noqa: BLE001 - an observer never replaces the real error
+            return False
 
     def reset(self, *, reason: str = "user action") -> None:
         """Explicit start or run-now: a RETRY, never an override. The latches are cleared and
@@ -1043,6 +1135,70 @@ class StorageGuard:
             _LOG.warning("storage guard override refused (%s): %s", refused["kind"], reason)
         return out
 
+    def note_pass_ended(self, pass_started_mono: float) -> dict[str, Any] | None:
+        """Measure the TAIL: what kept using the drive between the guard's first refusal and
+        the end of the pass that was in flight when it refused.
+
+        The disk reserve (``max(1 GiB, 2% of the drive)``) protects exactly this tail (the
+        writes still in flight while a pass winds down, plus the pass-tail records), yet it is
+        sized from the drive, not from anything measured. This records the measurement the
+        sizing needs (2026-09-30 ruling: size the reserve from the instance's own measured
+        tail plus a stated margin once it exists). Once per engagement, and only for a pass
+        that STARTED before the guard first refused (a pass refused from its first source has
+        no tail). Numbers only: each figure is ``None`` when it could not be read, never 0.
+        The drive figure is an UPPER BOUND, since it also counts whatever else used the drive
+        meanwhile. Never raises.
+        """
+        try:
+            if not self.enabled():
+                return None
+            with self._lock:
+                ep = self._episode
+                if ep is None or ep["measured"] or not (self._wal or self._disk):
+                    return None
+                if ep["start_mono"] < pass_started_mono:
+                    return None  # engaged before this pass began: refused from the start
+                ep["measured"] = True
+                snap = dict(ep)
+            r = self._readings() or {}
+            now_mono = self._clock()
+            free_end, wal_end, corpus_end = (
+                r.get("disk_free_bytes"),
+                r.get("wal_bytes"),
+                r.get("corpus_bytes"),
+            )
+            free_trip = snap["free_at_trip"]
+            tail = {
+                "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "engaged_at": snap["at"],
+                "kind": snap["kind"],
+                "seconds": round(max(0.0, now_mono - snap["start_mono"]), 1),
+                "free_at_trip": free_trip,
+                "free_at_end": free_end,
+                # The headline: how much the drive lost in the tail (an upper bound).
+                "drive_free_drop_bytes": (
+                    None if free_trip is None or free_end is None else max(0, int(free_trip) - int(free_end))
+                ),
+                "wal_at_trip": snap["wal_at_trip"],
+                "wal_at_end": wal_end,
+                "corpus_at_trip": snap["corpus_at_trip"],
+                "corpus_at_end": corpus_end,
+            }
+            with self._lock:
+                self._tails.append(tail)
+            _LOG.info(
+                "storage guard: the pass that was in flight when the guard first refused ended "
+                "%s s later; the drive lost up to %s in that tail (WAL %s -> %s)",
+                tail["seconds"],
+                _size_text(tail["drive_free_drop_bytes"]),
+                _size_text(tail["wal_at_trip"]),
+                _size_text(tail["wal_at_end"]),
+            )
+            return tail
+        except Exception:  # noqa: BLE001 - a measurement never disturbs the pass
+            _LOG.debug("storage guard: tail measurement failed", exc_info=True)
+            return None
+
     # -- the pull side -------------------------------------------------------------
     def poll(self) -> bool:
         """Take a fresh reading NOW and return the engaged state afterwards."""
@@ -1123,11 +1279,13 @@ class StorageGuard:
         except Exception as exc:  # noqa: BLE001 - the drain must never kill the supervisor
             _LOG.warning("storage guard: the drain failed", exc_info=True)
             rec = {"error": type(exc).__name__}
-        # Paced from when the drain ENDED: one that queued 30 s on the write gate must not be
-        # followed five seconds later by the next, the permanent waiter this cadence exists to
-        # prevent.
-        with self._lock:
-            self._last_drain_mono = self._clock()
+        finally:
+            # Paced from when the drain ENDED, however it ended: one that queued 30 s on the write
+            # gate must not be followed five seconds later by the next (the permanent waiter this
+            # cadence exists to prevent), and one that raised past the ``except`` (a
+            # ``BaseException``) must not leave the cadence unstamped either.
+            with self._lock:
+                self._last_drain_mono = self._clock()
         # TRUNCATE came back busy: a reader holds the log. The gate was busy: a WRITER held the
         # write gate for the whole bounded wait and TRUNCATE never ran. Different facts.
         pinned = isinstance(rec, dict) and rec.get("busy") == 1
@@ -1338,6 +1496,10 @@ class StorageGuard:
                 "peak_wal_bytes_while_engaged": self._peak_wal_while_engaged if (wal or disk) else None,
                 "disk_full_events": self._disk_full_events,
                 "last_disk_full": self._last_disk_full,
+                # SQLite "disk I/O error"s seen, and the newest with the free space it was judged
+                # against: ``latched`` says whether that free space was below the reserve.
+                "io_errors": self._io_errors,
+                "last_io_error": self._last_io_error,
                 "thresholds": {
                     **thr,
                     "override_floor_bytes": floor_now,
@@ -1347,10 +1509,21 @@ class StorageGuard:
                 "last_reading": last,
                 "last_drain": self._last_drain,
                 "drains": self._drains,
+                # What the disk reserve protects, MEASURED (see note_pass_ended): the newest
+                # tail, and with ``detail`` all of them and the largest drive loss seen.
+                "last_tail": self._tails[-1] if self._tails else None,
                 # The pin report carries up to eight holders with a stack each: it rides the
                 # bundle (detail), not every status poll.
                 **(
-                    {"last_pin_report": self._last_pin_report, "history": list(self._history)}
+                    {
+                        "last_pin_report": self._last_pin_report,
+                        "history": list(self._history),
+                        "tails": list(self._tails),
+                        "max_tail_drive_free_drop_bytes": max(
+                            (t["drive_free_drop_bytes"] for t in self._tails if t["drive_free_drop_bytes"] is not None),
+                            default=None,
+                        ),
+                    }
                     if detail
                     else {"has_pin_report": self._last_pin_report is not None}
                 ),
@@ -1376,7 +1549,9 @@ class StorageGuard:
                     "Missing readings never count. The history is one sample a minute for six "
                     "hours, in memory only; the hourly wal_bytes and disk_free_mib gauges are "
                     "recorded by idle maintenance, which yields while the guard is engaged, so "
-                    "the history is what covers those hours."
+                    "the history is what covers those hours. The tail figures measure what the disk "
+                    "reserve protects: the drive's loss between the guard's first refusal and "
+                    "the end of the pass in flight (an upper bound: it counts every writer)."
                 ),
             }
 
@@ -1396,6 +1571,24 @@ def _env_int(name: str, default: int) -> int:
 # Process-wide singleton (no thread, no I/O at import). Call sites use it as
 # ``storage_guard.storage_guard`` (a module attribute) so tests can swap in a fake.
 storage_guard = StorageGuard()
+
+
+def on_engine_error(context) -> None:
+    """The SQLAlchemy ``handle_error`` listener for an engine that WRITES to the data drive.
+
+    A write that failed for want of space stops collection now (:meth:`StorageGuard.note_disk_full`);
+    SQLite's plain "disk I/O error" does so only when the drive's free space is below the reserve
+    (:meth:`StorageGuard.note_io_error`). Registered on the corpus engine (``database.session``)
+    and on every lane engine (``versioned.store``): a 100 GB lane fills the same drive. Observes
+    only: the error still propagates unchanged, and nothing here raises."""
+    try:
+        exc = getattr(context, "original_exception", None)
+        if is_disk_full(exc):
+            storage_guard.note_disk_full(f"{type(exc).__name__}: {str(exc)[:120]}")
+        else:
+            storage_guard.note_io_error(exc)
+    except Exception:  # noqa: BLE001 - an observer never replaces the real error
+        pass
 
 
 # --- the supervisor -----------------------------------------------------------------
@@ -1445,12 +1638,20 @@ def _supervise(stop: threading.Event) -> None:
                 # connection before the write gate (a wait ``OO_DB_POOL_TIMEOUT`` sets, which an
                 # operator may raise to minutes), then queues on the gate, then runs a checkpoint.
                 # Run inline, any of the three would leave the override's floor unread.
-                if g.engaged and not stop.is_set() and (drain is None or not drain.is_alive()):
-                    drain = threading.Thread(
-                        target=_drain_in_background, args=(g, stop), name="oo-storage-guard-drain", daemon=True
-                    )
-                    _DRAIN_THREAD = drain  # so stop() can join it
-                    drain.start()
+                if g.engaged and (drain is None or not drain.is_alive()):
+                    # The stop check and the publishing of the thread are one step under the lock
+                    # ``stop()`` reads the threads under: a drain thread is either published before
+                    # it reads (and joined) or never started, never in between.
+                    with _SUP_LOCK:
+                        if not stop.is_set():
+                            drain = threading.Thread(
+                                target=_drain_in_background,
+                                args=(g, stop),
+                                name="oo-storage-guard-drain",
+                                daemon=True,
+                            )
+                            _DRAIN_THREAD = drain  # so stop() can join it
+                            drain.start()
         except Exception:  # noqa: BLE001 - a guard that dies silently is worse than none
             _LOG.warning("storage guard supervisor tick failed", exc_info=True)
         stop.wait(POLL_EVERY_S)

@@ -618,9 +618,23 @@ def include_term(body: TermBody) -> dict:
 # not safe for concurrent use), and rebuilt once on any error (dispose-safe). A strong engine
 # reference is held alongside so ``id(engine)`` cannot be recycled onto a stale probe
 # connection (the test-fixture hazard); tests clear it via ``_reset_status_probe_for_tests``.
+#
+# THE PROBE IS DETACHED FROM THE POOL (2026-09-30, field diagnostics rank 12). It used to stay
+# a pooled checkout for the life of the process: all 16 field instances showed "one API-thread
+# checkout held for the whole process life", which hands-on on the real app turned out to be
+# exactly this connection (GET /api/articles -> _browse_total_cached -> here). It is idle and
+# does not pin the WAL (tests/test_wal_pin_facts.py), but it took one of the pool's slots for
+# ever and nothing counted it: on the small tier (6 + 6, margin 4) the app really had three
+# slots for API requests, and D44's "cap 8, pool 12, margin 4" held only on paper. A detached
+# connection is the pool's no longer (the slot is free, ``close()`` really closes it), so the
+# cost is the probe's own one extra connection, and the price is that ``engine.dispose()``
+# does not close it: a listener on the engine's ``engine_disposed`` event does (unlock, a
+# restore's swap, a shutdown all dispose), so a replaced store file is never read through a
+# stale handle and Windows is not left holding the old file.
 _PROBE_LOCK = _threading.Lock()
-_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> pinned raw DBAPI connection (never returned to the pool)
+_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> dedicated raw DBAPI connection (detached from the pool)
 _PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id() against recycle)
+_PROBE_CLOSE_WAIT_S = 5.0  # how long a dispose waits for a probe read in flight before leaving it to rebuild
 
 
 def _data_version(bind) -> str | None:
@@ -635,8 +649,12 @@ def _data_version(bind) -> str | None:
             try:
                 if conn is None:
                     conn = bind.raw_connection()  # held, never .close()d on success -> pinned
+                    # Out of the pool's accounting: the pool's slot is free again and the
+                    # dispose listener below owns this connection's end of life.
+                    conn.detach()
                     _PROBE_CONNS[eid] = conn
                     _PROBE_ENGINES[eid] = bind
+                    _close_probe_on_dispose(bind, eid)
                 cur = conn.cursor()
                 try:
                     cur.execute("PRAGMA data_version")
@@ -654,6 +672,49 @@ def _data_version(bind) -> str | None:
                 if attempt == 1:
                     return None
         return None
+
+
+def _close_probe(eid: int) -> bool:
+    """Close and forget the probe for engine ``eid``. Waits a bounded time for a read in
+    flight (a raw DBAPI connection is not safe for concurrent use); if that read does not end
+    the entry is dropped anyway, so the NEXT call builds a fresh connection -- never a read
+    through a stale one. Returns whether a connection was closed."""
+    got = _PROBE_LOCK.acquire(timeout=_PROBE_CLOSE_WAIT_S)
+    try:
+        conn = _PROBE_CONNS.pop(eid, None)
+        _PROBE_ENGINES.pop(eid, None)
+        if conn is None:
+            return False
+        if not got:
+            return False  # a read holds the lock; it will finish on the dropped handle
+        with contextlib.suppress(Exception):  # best-effort: the file handle is what matters
+            conn.close()
+        return True
+    finally:
+        if got:
+            _PROBE_LOCK.release()
+
+
+def _close_probe_on_dispose(bind, eid: int) -> None:
+    """Close this engine's probe when the engine is disposed (idempotent per engine).
+
+    ``Engine.dispose()`` closes the pool's CHECKED-IN connections and leaves everything else:
+    a detached probe would outlive an unlock, a restore's file swap and a shutdown, reading a
+    replaced file (and pinning the old one open on Windows)."""
+    try:
+        # Once per engine OBJECT (a flag on it, not a set of ids: an id can be recycled onto
+        # a new engine, which would then never get its listener).
+        if getattr(bind, "_oo_probe_dispose_hook", False):
+            return
+        from sqlalchemy import event
+
+        def _on_disposed(_engine) -> None:
+            _close_probe(eid)
+
+        event.listen(bind, "engine_disposed", _on_disposed)
+        bind._oo_probe_dispose_hook = True
+    except Exception:  # noqa: BLE001 - a missed listener costs only the old behaviour
+        pass
 
 
 def _reset_status_probe_for_tests() -> None:
@@ -3922,6 +3983,11 @@ def keywords_by_tag(
             }
             for kid, norm, term, lang, m, a in rows
         ]
+        # Stoplisted words are hidden at read time like every other listing (R111 step T2).
+        from src.analytics.queries import _hidden_predicate
+
+        is_hidden = _hidden_predicate()
+        items = [it for it in items if not is_hidden(it["normalized"])]
         items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
         return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
 
