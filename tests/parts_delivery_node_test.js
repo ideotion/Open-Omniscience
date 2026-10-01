@@ -602,7 +602,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
 
   // ---- a diagnostics set on the bar when the build finishes is of the PREVIOUS archive, whose files the new split replaced: dead, so the archive takes the bar
   {
-    const page = makePage(); let current = listing(8, 1); const statusHeld = [];
+    const page = makePage(); let current = listing(8, 1);
     const api = load(page, {api: (url) => {
       if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
       if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
@@ -712,6 +712,117 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     againHeld[0]();
     await again;
     assert.strictEqual(api.state().kind, "diagnostics");
+  }
+
+  // ---- the comparison with the archive on the bar is by NAME: two archives with the same number of files are still two
+  {
+    const page = makePage(); let stem = "oo-old";
+    const L = () => { const l = listing(8, 1); l.files.forEach((f) => { f.name = f.name.replace("oo-x", stem); }); return l; };
+    const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(L())});
+    await api.downloadDiagnosticsVolumes({disabled: false});            // "again" on the previous archive
+    stem = "oo-new";                                                    // a new build of the same corpus: same count, new stem
+    await api.runAllDiagnostics({disabled: false});
+    assert.ok(api.state().files[0].name.startsWith("oo-new"),
+      "the old archive's dead set was kept because its file COUNT matched: " + api.state().files[0].name);
+  }
+
+  // ---- "again" pressed AFTER the build was asked, answered with this very archive, its save still going when the poll sees "done"
+  {
+    const page = makePage(); const hold = []; const statusHeld = [];
+    const api = load(page, {hold, api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})))
+        : Promise.resolve(listing(8, 1))});
+    const diag = api.runAllDiagnostics({disabled: false});
+    for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+    const again = api.downloadDiagnosticsVolumes({disabled: false});
+    for (let spin = 0; spin < 20; spin++) await Promise.resolve();
+    const same = api.state();
+    assert.ok(same && same.saving, "setup: the set the press fetched is mid-save");
+    statusHeld[0]();
+    await diag;
+    assert.strictEqual(api.state(), same, "the same archive stays on the bar, its save uncut");
+    assert.strictEqual(page.els["all-diag-status"].textContent, "", "and no 'press again' line is written for the archive already on the bar");
+    while (hold.length) { hold.shift()(); for (let s = 0; s < 5; s++) await Promise.resolve(); }
+    await again;
+  }
+
+  // ---- an "again" that landed with the PREVIOUS archive and is still saving when the new one is split: that set is dead, the bar is taken
+  {
+    const page = makePage(); const hold = []; const statusHeld = []; let built = false;
+    const L = (stem) => { const l = listing(8, 1); l.files.forEach((f) => { f.name = f.name.replace("oo-x", stem); }); return l; };
+    const api = load(page, {hold, api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? new Promise((resolve) => statusHeld.push(() => resolve({state: "done", ready: true})))
+        : Promise.resolve(L(built ? "oo-new" : "oo-old"))});
+    const diag = api.runAllDiagnostics({disabled: false});
+    for (let spin = 0; spin < 10 && statusHeld.length === 0; spin++) await Promise.resolve();
+    const again = api.downloadDiagnosticsVolumes({disabled: false});   // answered by the previous archive, whose save begins
+    for (let spin = 0; spin < 20; spin++) await Promise.resolve();
+    assert.ok(api.state() && api.state().saving, "setup: the previous archive's save is going");
+    built = true;                                                      // the build's split replaced those files on the server
+    statusHeld[0]();
+    await diag;
+    assert.ok(api.state().files[0].name.startsWith("oo-new"), "a press that has already LANDED does not count as 'on its way': " + api.state().files[0].name);
+    assert.strictEqual(page.els["all-diag-status"].textContent, "");
+    while (hold.length) { hold.shift()(); for (let s = 0; s < 5; s++) await Promise.resolve(); }
+    await again;
+    assert.ok(api.state().files[0].name.startsWith("oo-new"), "the dead set's loop did not take the bar back");
+  }
+
+  // ---- "again" refused after the ready line was written leaves that line standing: the archive is still ready
+  {
+    for (const status of [404, 409, 500]) {
+      const page = makePage();
+      const api = load(page, {api: async () => { const e = new Error("refused"); e.status = status; throw e; }});
+      page.els["all-diag-status"].textContent = READY_SENTENCE;
+      await api.downloadDiagnosticsVolumes({disabled: false});
+      assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE, status + ": a refused press wiped the ready line");
+    }
+  }
+
+  // ---- the split sweeps the previous archive's files BEFORE it writes the new ones: a failed or lost split leaves no dead set on the bar
+  {
+    for (const failure of ["500", "network", "409"]) {
+      const page = makePage(); let failNow = false;
+      const api = load(page, {api: (url) => {
+        if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+        if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
+        if (failNow) {
+          const e = new Error(failure === "network" ? "network" : "split failed");
+          if (failure !== "network") e.status = Number(failure);
+          return Promise.reject(e);
+        }
+        return Promise.resolve(listing(8, 1));
+      }});
+      await api.downloadDiagnosticsVolumes({disabled: false});          // "again": five files handed over
+      const old = api.state();
+      assert.strictEqual(old.offered.size, 5);
+      failNow = true;
+      await api.runAllDiagnostics({disabled: false});
+      if (failure === "409") {
+        assert.strictEqual(api.state(), old, "409 (another build is running) swept nothing: the set stays");
+      } else {
+        assert.strictEqual(api.state(), null, failure + ": the swept archive's set is off the bar");
+        assert.strictEqual(page.els["parts-bar"].hidden, true, failure + ": and the bar is hidden, not left empty");
+        assert.strictEqual(page.els["parts-status"].textContent, "");
+        const before = page.clicked.length;
+        await api.partsSaveNext();
+        assert.strictEqual(page.clicked.length, before, failure + ": no click can ask for the dead files");
+      }
+      assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
+    }
+    // a KEYWORD set on the bar is not the split's to drop
+    const page = makePage(); let failNow = false;
+    const api = load(page, {api: (url) => {
+      if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+      if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
+      if (failNow && url === "/api/diagnostics/all-job/volumes") { const e = new Error("split failed"); e.status = 500; return Promise.reject(e); }
+      return Promise.resolve(listing(3, 1));
+    }});
+    await api.downloadKeywordParts({disabled: false}, "default");
+    failNow = true;
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(api.state().kind, "keywords", "a failed split does not touch a keyword set");
   }
 
   console.log("all assertions passed");

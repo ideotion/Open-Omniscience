@@ -12950,13 +12950,18 @@ after a crash).
 diagnostics build runs for hours and finishes after buttons pressed beside it, so "the last action to arrive wins the
 bar" drops the NEWER request (a keyword set pressed while it ran), and each patch for one ordering broke another: a
 press that ended with nothing (a 409 or 404) holding a bar no set would ever fill, a half-saved set protected although
-the finishing split had just deleted its files on the server, an overtaken request still counted as in flight. Four
+the finishing split had just deleted its files on the server, an overtaken request still counted as in flight. Five
 review passes each found the next ordering. The rule that holds: the finished build takes the bar unless a KEYWORD set
-on it has been begun to save, or a press made since the build was asked for holds a keyword set or is still the newest
-request on its way (the marker is that request's generation, cleared only by it); a diagnostics set on the bar is of
-the previous archive and dead, unless it has this archive's own file names, in which case it is already the answer.
-The orderings are a table in `tests/parts_delivery_node_test.js` and each row is mutation-checked. **State that a
-server action replaces (here the split's files) must be compared with what the server now holds, not assumed alive
+on it has been begun to save, or a press made since the build was asked for holds a keyword set or has not landed yet
+(the marker is the newest request's generation, cleared only by it; it stays set until that request's save ends, so a
+press that has already landed is told apart by the bar holding its set); a diagnostics set on the bar is of the
+previous archive and dead, unless it has this archive's own file NAMES (never just the same count: consecutive builds
+of one corpus have the same count), in which case it is already the answer. A split that FAILS after the server swept
+the previous files (a full disk, an answer lost on the way) empties such a bar too, except a 409, which sweeps nothing.
+The orderings are a table in `tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails
+without it, and the two mutants that survive cannot differ (the generation bump when a failed split empties the bar,
+and the order of the deferral and the same-archive clauses, which "has not landed yet" made equivalent). **State that
+a server action replaces (here the split's files) must be compared with what the server now holds, not assumed alive
 because the page remembers it.**
 
 ### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)

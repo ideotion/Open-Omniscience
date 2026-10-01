@@ -866,8 +866,10 @@
     // an await was overtaken and leaves the bar to the newer one.
     let _partsGen = 0;
     // The generation of the NEWEST keyword or diagnostics-split request still on its way to the bar,
-    // 0 when none is: the finished diagnostics build must know whether the newest press is still
-    // coming (an older one that a newer press overtook is dropped when it lands, so it never counts).
+    // 0 when none is: the finished diagnostics build must know whether the newest press has not
+    // landed yet (an older one that a newer press overtook is dropped when it lands, so it never
+    // counts). It stays set until the request's own save has finished, so a press that has already
+    // landed is told apart by the bar holding its set, not by this number.
     let _partsBusy = 0;
 
     // The manifest first, then the numbered parts in order (the listing carries both kinds).
@@ -1188,7 +1190,7 @@
               if (bar && bar.kind === "diagnostics" && filesOf(bar.files) === filesOf(m && m.files)) {
                 set("");   // already on the bar: the earlier press fetched this very archive
               } else if ((keywordsOnBar && bar.offered.size > 0)
-                         || (pressedSince && (_partsBusy === _partsGen || keywordsOnBar))) {
+                         || (pressedSince && ((!bar && _partsBusy === _partsGen) || keywordsOnBar))) {
                 set(t("The archive is ready. Press “All diagnostics, again” to save it as numbered files."));
               } else {
                 ++_partsGen;
@@ -1196,6 +1198,17 @@
                 _partsReady(m, "diagnostics");
               }
             } catch (e) {
+              // The split sweeps the previous archive's files BEFORE it writes the new ones, so a
+              // failure after that point (a full disk, an answer lost on the way) leaves a diagnostics
+              // set on the bar pointing at files that are gone. Only a 409 (another build is running)
+              // is refused before anything is swept; every other failure empties such a bar (the
+              // sentence below says why the archive is not offered).
+              if (_partsSet && _partsSet.kind === "diagnostics" && !(e && e.status === 409)) {
+                ++_partsGen; _partsSet = null; _partsRender();
+                const barEl = $("parts-bar"), line = $("parts-status");
+                if (line) line.textContent = "";
+                if (barEl) barEl.hidden = true;
+              }
               set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
             }
             break;
