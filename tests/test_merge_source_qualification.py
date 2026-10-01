@@ -434,6 +434,238 @@ def test_a_local_qualified_verdict_is_not_downgraded_by_an_incoming_disqualifica
 
 
 # --------------------------------------------------------------------------- #
+#  A CURATED stamp is the catalogue's default, not a local verdict (diagnostics rank 14)
+# --------------------------------------------------------------------------- #
+_CURATED = "oo-curated-catalog-1"
+_MEASURED = "oo-source-qualification-1"
+_SEEN = datetime(2026, 9, 3, 11, 19, 35, 173476)
+
+
+def _curated_local_and_incoming(tmp_path, *, incoming_status, incoming_version, incoming_attempt=True):
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(
+            s, "psx.com.pk", status=incoming_status,
+            at=_SEEN if incoming_status == "qualified" else None, version=incoming_version,
+        )
+        if incoming_attempt:
+            _add_attempt(s, sid, incoming_status, _SEEN, version=incoming_version or _MEASURED)
+        s.commit()
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+    return working, counts
+
+
+def _integrity(path: Path) -> dict:
+    from src.catalog.qualification_integrity import qualification_integrity_report
+
+    with _corpus(path)() as s:
+        return qualification_integrity_report(s)
+
+
+def test_a_measured_disqualification_replaces_a_curated_qualified_stamp(tmp_path):
+    """THE FIELD SHAPE. The live row was qualified only because the shipped catalogue says
+    so; another instance MEASURED it and disqualified it. Before the fix the attempt landed
+    beside a live 'qualified' and the integrity check reported an inversion."""
+    # A real disqualified row carries a NULL criteria version (evaluate_and_stamp clears it),
+    # so the field shape is NULL, not a measured version: a NULL <> 'curated' comparison that
+    # is not COALESCEd evaluates to NULL and would silently never adopt.
+    working, counts = _curated_local_and_incoming(
+        tmp_path, incoming_status="disqualified", incoming_version=None)
+
+    got = _sources(working)["psx.com.pk"]
+    assert got.status == "disqualified", "a known-bad source is not left in collection"
+    assert [a.verdict for a in _attempts(working, "psx.com.pk")] == ["curated", "disqualified"]
+    report = _integrity(working)
+    assert report["verdict"] == "consistent" and report["inversions_total"] == 0
+    q = counts["_source_qualification"]
+    assert q["adopted_disqualified"] == 1
+    # The tally's counts use the SAME predicate as the UPDATE: an adopted row is not also
+    # reported as a local verdict that was kept.
+    assert q["local_verdict_kept"] == 0 and q["local_verdict_disagreed"] == 0
+
+
+def test_a_measured_qualification_replaces_a_curated_stamp_with_its_own_stamp(tmp_path):
+    working, counts = _curated_local_and_incoming(
+        tmp_path, incoming_status="qualified", incoming_version=_MEASURED)
+
+    got = _sources(working)["psx.com.pk"]
+    assert got.status == "qualified"
+    assert got.qualification_criteria_version == _MEASURED, "the earned stamp, not the default"
+    assert _integrity(working)["verdict"] == "consistent"
+    q = counts["_source_qualification"]
+    assert q["adopted_qualified"] == 1
+    assert q["local_verdict_kept"] == 0 and q["local_verdict_disagreed"] == 0
+
+
+def test_an_incoming_curated_stamp_replaces_nothing(tmp_path):
+    working, counts = _curated_local_and_incoming(
+        tmp_path, incoming_status="qualified", incoming_version=_CURATED, incoming_attempt=False)
+
+    got = _sources(working)["psx.com.pk"]
+    assert got.qualification_criteria_version == _CURATED and got.qualified_at == _T0
+    assert counts["_source_qualification"]["adopted_qualified"] == 0
+
+
+def test_a_locally_measured_verdict_still_wins_over_an_incoming_measured_one(tmp_path):
+    """The other half of the rule: only the catalogue's default gives way. A verdict THIS
+    instance measured is the user's own data and stays, in both directions."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "mine.example", status="qualified", at=_T0, version=_MEASURED)
+        _add_attempt(s, sid, "qualified", _T0, version=_MEASURED)
+        sid = _add_source(s, "bad.example", status="disqualified", at=None, version=_MEASURED)
+        _add_attempt(s, sid, "disqualified", _T0, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        _add_source(s, "mine.example", status="disqualified", at=None, version=_MEASURED)
+        _add_source(s, "bad.example", status="qualified", at=_SEEN, version=_MEASURED)
+        s.commit()
+
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+    got = _sources(working)
+    assert got["mine.example"].status == "qualified"
+    assert got["bad.example"].status == "disqualified"
+    q = counts["_source_qualification"]
+    assert q["local_verdict_kept"] == 2 and q["local_verdict_disagreed"] == 2
+
+
+def test_a_curated_row_keeps_its_stamp_when_its_own_history_holds_a_newer_judgement(tmp_path):
+    """The Opus review's finding, reproduced with merge_corpus. This merge copies the incoming
+    attempts unchanged, so adopting an incoming stamp over a local history that already holds
+    a NEWER judging attempt would manufacture the opposite inversion -- live disqualified,
+    last judged qualified. Only a stamp that is the newest judging evidence either side
+    holds gives way; the repair, not this merge, reconciles the rest."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    newer = _SEEN + timedelta(days=20)
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", newer, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+    assert counts["_source_qualification"]["adopted_disqualified"] == 0
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_a_newer_local_judgement_that_agrees_does_not_block_healing(tmp_path):
+    """The re-review's finding: an instance ALREADY inverted (curated 'qualified' beside a
+    merged-in newer 'disqualified' attempt) must heal when another backup says the same thing,
+    so only a newer local judgement that DISAGREES with the incoming stamp blocks adoption."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        _add_attempt(s, sid, "disqualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        s.commit()
+    assert _integrity(working)["verdict"] == "inversions-found"
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_an_older_disagreeing_local_attempt_under_a_newer_agreeing_one_does_not_block(tmp_path):
+    """Only the local NEWEST judging attempt matters: an older 'qualified' beneath a newer
+    'disqualified' must not keep a curated stamp alive against an incoming 'disqualified'."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        _add_attempt(s, sid, "disqualified", _SEEN + timedelta(days=30), version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_a_tie_on_the_attempt_instant_keeps_the_local_verdict(tmp_path):
+    """The attempts merge dedupes on (source_id, attempted_at), so an incoming attempt at the
+    SAME instant as a local disagreeing one is dropped: adopting its stamp would leave the live
+    status contradicting the newest attempt. Reproduced by the re-review."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_a_tie_inside_the_local_history_is_broken_the_way_the_integrity_check_breaks_it(tmp_path):
+    """Two local judging attempts at the newest instant: the integrity check takes the higher
+    id, so an import agreeing with THAT one heals an already-inverted row."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    tie = _SEEN + timedelta(days=20)
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", tie, version=_MEASURED)       # lower id
+        _add_attempt(s, sid, "disqualified", tie, version=_MEASURED)    # higher id: the newest
+        s.commit()
+    assert _integrity(working)["verdict"] == "inversions-found"
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_an_incoming_stamp_with_no_judging_attempt_loses_to_any_local_judgement(tmp_path):
+    """No incoming judging attempt counts as older than any local one."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _T0, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+
+
+def test_a_curated_row_is_kept_where_the_backup_carries_no_verdict(tmp_path):
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        s.commit()
+    with _corpus(staged)() as s:
+        _add_source(s, "psx.com.pk", status="unqualified")
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+
+
+# --------------------------------------------------------------------------- #
 #  The tally the conclusion screen renders
 # --------------------------------------------------------------------------- #
 def test_the_tally_counts_what_this_import_actually_carried(tmp_path):

@@ -212,6 +212,26 @@ def _data_drive_on_disk_error(context) -> None:
         pass
 
 
+@event.listens_for(engine, "handle_error")
+def _storage_guard_on_disk_full(context) -> None:
+    """A write that FAILED for want of space stops collection NOW (storage guard, rank 2).
+
+    On the field's fullest machine one pass after another failed on the same full drive
+    (fourteen in a row), because nothing connected "the disk is full" to "do not start the
+    next pass". The guard's supervisor would see the free figure within five seconds; this
+    closes the gap between the failure and that sample, and covers a drive that reports
+    room but refuses writes (a quota). Observes only: the error still propagates unchanged.
+    """
+    try:
+        from src.scheduler.storage_guard import is_disk_full, storage_guard
+
+        exc = getattr(context, "original_exception", None)
+        if is_disk_full(exc):
+            storage_guard.note_disk_full(f"{type(exc).__name__}: {str(exc)[:120]}")
+    except Exception:  # noqa: BLE001 - an observer never replaces the real error
+        pass
+
+
 @event.listens_for(engine, "reset")
 def _disarm_progress_handler(dbapi_connection, _connection_record, _reset_state) -> None:
     """S2.1: no connection may re-enter the pool carrying a progress handler.

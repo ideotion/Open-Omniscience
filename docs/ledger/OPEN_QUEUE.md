@@ -11866,6 +11866,28 @@
   **AND THE HONEST LIMIT THE BRIEF OPENED WITH STILL HOLDS: none of this establishes what killed any
   of the four sessions.** Phase 0 shipped so the NEXT one is answerable; it cannot recover the four
   that are gone. Nothing here licenses writing a crash cause into a user-facing string.
+- **THE STORAGE GUARD — PR A BUILT 2026-09-30 (WAL / disk thread; ranks 1, 2 and 6 of the 16-instance field
+  diagnostics). ONE DECISION IS STILL THE MAINTAINER'S (D1, asked as question 18, recommendation YES).**
+  Six of sixteen instances carried a `-wal` of 18.7 to 42.9 GB, the drive filled on three, and one machine failed
+  fourteen passes in a row on the same full drive. `src/scheduler/storage_guard.py` pauses NEW collection work
+  while the corpus WAL sits at or above a limit sized from the machine (`min(clamp(10% of the corpus file,
+  512 MiB, 2 GiB), 10% of free disk)`, never below 128 MiB) or free disk is below `max(1 GiB, 2% of the drive)`;
+  it drains the WAL (the boundary's own PASSIVE-then-TRUNCATE call) and, when TRUNCATE is busy, NAMES the
+  holders with stacks. It resumes by itself with hysteresis, and "Try again now" is a retry, never an override.
+  Each number says what it protects (`storage_guard.py`'s docstring, and the PR). **PENDING (D1, question 18):
+  does collection PAUSE by itself at those thresholds (new behaviour; recommended), or does the guard only WARN?**
+  Built on YES; on b the engaged path becomes a warning only (the notice, the named holders and the gauges stay).
+  **NOT CHANGED, and the deferral in the entry above stands:** the boundary's PASSIVE/TRUNCATE logic and
+  `wal_autocheckpoint` (MEASURE FIRST); the bound is a STOP, not a new checkpoint. **ONE SIZING QUESTION THE
+  REVIEW RAISED, ASKED OF THE COORDINATOR (2026-09-30; built as written, D2):** the disk reserve
+  `max(1 GiB, 2% of the drive)` has a floor but NO CEILING, and "grows with the machine" is not a stated
+  protection: what it protects is the writes still in flight while a pass winds down plus the pass tail, which
+  does not scale with the drive, so a 4 TB volume pauses at about 80 GB free. The proposed fix is a ceiling (10
+  GiB was suggested) justified by a MEASURED figure, the most bytes written between the guard's first refusal and
+  the pass's end on the largest instance; no ceiling is written until that figure exists. **Still to come from the same
+  thread:** PR B (the pool: rank 12's endpoint on a standing row; rank 7's last-good activity preview, which is
+  NOT the ruling-gated 429 cap), PR C (unlock phase 0: whether the 2 GiB ceiling can be derived from each
+  machine's measured recovery rate), PR D (rank 9's browse query).
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
   anything marked in the memory as something to do later. Sort everything into a detailed action plan

@@ -194,6 +194,8 @@ async function run() {
       ${extract("_fmtBytes", null, CORE)}
       ${extract("_rateBytes", null, CORE)}
       ${extract("_fmtDur", null, CORE)}
+      ${extract("_storagePausedText", null, CORE)}
+      ${extract("_storageGuardHtml", null, CORE)}
       ${extract("repaintVitalsFromCache", null, CORE)}
       ${extract("_renderVitals", null, CORE)}
       this.els = els;

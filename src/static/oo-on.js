@@ -306,7 +306,7 @@
     "setTrendLens", "sgAddMember", "sgAddMemberFrom", "sgAddRing", "sgAddRingFrom",
     "sgRemoveMember", "showGovLens", "showTab", "srcFilterTag", "srcJumpToDomain", "srcMselChanged",
     "srcPage", "startDump", "startFolderImport", "startOsmDownload", "startPlanetDownload",
-    "stopVllm", "summarize", "synthesizeResults", "tmapFindCoverage", "toggleAiCoordinator",
+    "stopVllm", "storageGuardResume", "summarize", "synthesizeResults", "tmapFindCoverage", "toggleAiCoordinator",
     "toggleCalSub", "toggleIdxCompare", "toggleIndexTag", "toggleKeywordTriage", "toggleLangMenu",
     "toggleMktConfig", "toggleNetwork", "togglePerceptionExtract", "toggleRateMode",
     "toggleSidebar", "toggleSourceTags", "toggleSourceTrail", "toggleStatSub", "toggleVitals",

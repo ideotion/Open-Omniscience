@@ -2379,7 +2379,8 @@ def _qualification_tally(con, *, kept: int, disagreed: int) -> dict:
     Counts only -- never a score, and never a percentage of anything. Every figure is
     exact: the landing table holds one row per source whose verdict this merge either
     INTRODUCED (a source the merge added, already carrying a verdict) or ADOPTED (a
-    source that existed here but had never been judged).
+    source that existed here but had never been judged, or carried only the shipped
+    catalogue's own stamp and met a measured one).
 
     ``engines`` is the criteria version that produced each verdict
     (``Source.qualification_criteria_version``) -- the "by which engine" the field ask
@@ -2466,6 +2467,54 @@ def _merge_sources(con, batch_id, results) -> None:
     # only knowable BEFORE the statements that change them: "introduced" needs the
     # NOT EXISTS predicate that stops being true the moment the INSERT below runs, and
     # "adopted" needs the local row to still read 'unqualified'.
+    # WHICH LOCAL STAMPS GIVE WAY (2026-09-30, diagnostics rank 14). Local data never gives way
+    # on its own, and a local row that is `unqualified` has no verdict to defend. A local row
+    # stamped by the shipped CURATED catalogue (status 'qualified', criteria version
+    # oo-curated-catalog-1) is the second case: nothing was measured on this instance, the
+    # stamp is the catalogue's default, not the user's own verdict. `qualification_overlay`
+    # already treats it that way (a measured verdict outranks curation, in either direction).
+    # Without the same rule here the merge copied another instance's MEASURED disqualification
+    # into the attempt history below while the live status stayed 'qualified' -- the exact
+    # inversion the integrity check reported on two field instances (psx.com.pk, law.go.kr,
+    # wiadomosci.onet.pl). A local MEASURED verdict still wins in both directions, and an
+    # incoming CURATED stamp never replaces anything (every instance stamps its own catalogue).
+    from src.catalog.qualification import CURATED_CRITERIA_VERSION
+
+    _cur = CURATED_CRITERIA_VERSION.replace("'", "''")
+    _local_curated = (
+        f"(m.status = 'qualified' AND COALESCE(m.qualification_criteria_version, '') = '{_cur}')"
+    )
+    _incoming_measured = (
+        f"(i.status <> 'unqualified' AND COALESCE(i.qualification_criteria_version, '') <> '{_cur}')"
+    )
+    # ...BUT ONLY WHEN THE INCOMING STAMP IS THE NEWEST JUDGING EVIDENCE either side holds for
+    # the domain (found by the Opus review of this change, reproduced with merge_corpus): this
+    # merge copies the incoming attempt history below unchanged, so adopting an incoming stamp
+    # over a local history that already holds a NEWER judging attempt would manufacture the
+    # opposite inversion ("live disqualified, last judged qualified"). The give-way is blocked
+    # only by a local NEWEST judging attempt that is at least as new as the incoming evidence
+    # (a tie counts: the attempts merge keeps the local row) AND disagrees with the incoming stamp: one that agrees leaves the adoption consistent, and is
+    # exactly how an already-inverted instance heals. No incoming judging attempt at all
+    # counts as older than any local one.
+    _judging = "'qualified', 'disqualified'"
+    _local_newer_judging = (
+        "EXISTS (SELECT 1 FROM source_qualification_attempts la"  # nosec B608 - constant-only text
+        f"       WHERE la.source_id = m.id AND la.verdict IN ({_judging})"
+        "          AND la.verdict <> i.status"
+        # the local NEWEST judging attempt, ordered exactly as the integrity check orders it
+        "          AND la.id = (SELECT lb.id FROM source_qualification_attempts lb"
+        f"                       WHERE lb.source_id = m.id AND lb.verdict IN ({_judging})"
+        "                       ORDER BY lb.attempted_at DESC, lb.id DESC LIMIT 1)"
+        # `>=`, not `>`: the attempts merge dedupes on (source_id, attempted_at), so an incoming
+        # attempt at the SAME instant is dropped and the local one stays the newest
+        "          AND la.attempted_at >= COALESCE("
+        "            (SELECT MAX(ia.attempted_at) FROM inc.source_qualification_attempts ia"
+        f"             WHERE ia.source_id = i.id AND ia.verdict IN ({_judging})), ''))"
+    )
+    _adopts = (
+        "((m.status = 'unqualified' AND i.status <> 'unqualified')"
+        f" OR ({_local_curated} AND {_incoming_measured} AND NOT {_local_newer_judging}))"
+    )
     con.execute("DROP TABLE IF EXISTS temp.qual_landed")
     con.execute(
         "CREATE TEMP TABLE qual_landed"
@@ -2478,8 +2527,9 @@ def _merge_sources(con, batch_id, results) -> None:
         " WHERE i.status <> 'unqualified'"
         "   AND NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)"
     )
-    # The domains about to ADOPT a verdict (they exist here and were never judged), and
-    # the ones where local-wins will apply because a verdict was reached here already.
+    # The domains about to ADOPT a verdict (they exist here and were never judged, or carry
+    # only the catalogue's curated stamp), and the ones where local-wins will apply because a
+    # verdict was reached here already.
     # All four figures are measured against the PRE-MERGE local state: a first draft
     # counted `kept` after the INSERT, and a source the merge had just introduced then
     # read as a pre-existing local verdict (caught by the tally test, not by review).
@@ -2487,18 +2537,18 @@ def _merge_sources(con, batch_id, results) -> None:
         "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
         " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
         " 'adopted' FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        " WHERE i.status <> 'unqualified' AND m.status = 'unqualified'"
+        f" WHERE {_adopts}"  # nosec B608 - constant-only predicate built above, no input
     )
     _kept = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        " WHERE i.status <> 'unqualified' AND m.status <> 'unqualified'",
+        f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}",  # nosec B608 - constant-only predicate built above, no input
     )
     _disagreed = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        " WHERE i.status <> 'unqualified' AND m.status <> 'unqualified'"
-        "   AND i.status <> m.status",
+        f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
+        "   AND i.status <> m.status",  # nosec B608 - constant-only predicate built above, no input
     )
     r.new = _insert_tracked(
         con, batch_id, "sources",
@@ -2541,9 +2591,10 @@ def _merge_sources(con, batch_id, results) -> None:
     # direction the 2026-07-24 entry argues for (a known-bad source stays out of
     # collection instead of being laundered back into the trial queue); adopting
     # 'qualified' is the direction the field ask names. Neither can overwrite a local
-    # verdict: the `m.status = 'unqualified'` guard is what keeps local-wins intact
-    # wherever this instance actually judged the source itself -- in particular a local
-    # 'disqualified' can never be laundered to 'qualified' by an incoming corpus.
+    # verdict: the `_adopts` predicate (a local 'unqualified', or a local CURATED stamp
+    # meeting a measured one) is what keeps local-wins intact wherever this instance actually
+    # judged the source itself -- in particular a local 'disqualified' can never be laundered
+    # to 'qualified' by an incoming corpus.
     con.execute(
         "UPDATE sources SET"
         "  status = (SELECT i.status FROM inc.sources i WHERE i.domain = sources.domain),"
@@ -2552,9 +2603,8 @@ def _merge_sources(con, batch_id, results) -> None:
         "  qualification_criteria_version = (SELECT i.qualification_criteria_version"
         "                                    FROM inc.sources i"
         "                                    WHERE i.domain = sources.domain)"
-        " WHERE sources.status = 'unqualified'"
-        "   AND EXISTS (SELECT 1 FROM inc.sources i"
-        "               WHERE i.domain = sources.domain AND i.status <> 'unqualified')"
+        " WHERE EXISTS (SELECT 1 FROM inc.sources i JOIN sources m ON m.id = sources.id"
+        f"               WHERE i.domain = sources.domain AND {_adopts})"  # nosec B608 - constant-only predicate built above, no input
     )
     results["_source_qualification"] = _qualification_tally(con, kept=_kept, disagreed=_disagreed)
 
