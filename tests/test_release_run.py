@@ -14,12 +14,14 @@ fresh-install helper end to end on the row-K fixture artifact in its own subproc
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 import pytest
@@ -751,7 +753,9 @@ def _interrupt_mid_soak(fast, monkeypatch, *, phases_done=("preflight", "row5_qu
         elif name == "preflight":
             run.end("measured", "ok", result={"fresh_install_fits": True, "articles": 412, "statement_deadline_fix_present": True})
         elif name == "fresh_install_restore":
-            run.end("measured", "ok", result={"child": {"restore": {"committed": True}, "integrity": {"verdict": "consistent"}}})
+            # The shape the real helper writes: its own ok and its exit status are what make a restore one.
+            run.end("measured", "ok", result={"returncode": 0, "child": {
+                "ok": True, "restore": {"committed": True}, "integrity": {"verdict": "consistent"}}})
         else:
             run.end("measured", "ok", result={"ok": True})
     run.begin("soak")
@@ -1429,7 +1433,8 @@ def _interrupted_in_row5(fast, *, collect_status="measured"):
     run.artifacts["backup_folder"] = str(fast["dest"] / "202609181200_OpenOmniscience_Backup")
     for name, extra in (("preflight", {"result": {"fresh_install_fits": True}}),
                         ("p0_validation", {"result": {"checks": {"p0_1_verify": {"verdict": "pass"}}}}),
-                        ("fresh_install_restore", {"result": {"child": {"integrity": {"verdict": "consistent"}}}}),
+                        ("fresh_install_restore", {"result": {"returncode": 0, "child": {
+                            "ok": True, "restore": {"committed": True}, "integrity": {"verdict": "consistent"}}}}),
                         ("arm_soak", {}), ("online_probes", {}),
                         ("soak", {"ended_by": "window-complete"}),
                         ("collect", {"result": {"soak_window": {"window": {"hours": 72.0, "reaches_bar": True}}}}),
@@ -1543,3 +1548,857 @@ def test_a_paused_quarantine_in_ANOTHER_mode_is_refused_by_name_not_overwritten(
     with pytest.raises(RuntimeError, match="different quarantine run is paused"):
         rr._row5_quarantine(FakeCtx(), row5["run"])
     assert row5["sched"].calls == ["stop", "start"], "collection is put back on a refusal too"
+
+
+# --------------------------------------------------------------------------- #
+#  A restore is what its child reports (2026-10-01; the diagnostics round of 2026-09-30)
+# --------------------------------------------------------------------------- #
+# Two of the sixteen bundles held a run whose fresh-install restore had FAILED (both restores ran
+# on 2026-09-26) -- the engine's own staging check refused it after 128 s (20260930-085218),
+# another died with "Error creating function" after 53 minutes (20260930-085230) -- and both
+# recorded the phase as ``measured`` and rows A and I as ``measured`` over an empty ``restore``
+# block (row K read ``measured`` from the P0 trio, its scan of the restored corpus empty): the
+# phase was ok whenever the PARENT returned. The tests drive the REAL parent function (its
+# polling, its reading of the child's result, its clean-up) against a child whose outcome they
+# choose.
+_REAL_RESTORE = rr._fresh_install_restore  # the `fast` fixture replaces it per test; this is the real one
+
+_SPACE_ERROR = ("BackupSpaceError: Not enough free space for the restore staging: needs about 38.0 GB, only 14.7 GB "
+                "free at /d/.restore-release-run-own-backup-1/restore-staging. Free up space or choose another "
+                "location, or use the large-data/volume backup for a big corpus.")
+
+_OK_CHILD = {"ok": True, "restore": {"kind": "volume-set", "committed": True},
+             "counts": {"articles": 412, "sources": 9, "keywords": 30},
+             "integrity": {"verdict": "consistent", "laundered_total": 0, "demoted_total": 0},
+             "country_code_scan": {"duplicates": 0}, "peak_rss_mb": 120.0}
+
+
+def _child_process(monkeypatch, *, payload, returncode,
+                   stderr="INFO  [alembic.runtime.migration] Context impl SQLiteImpl."):
+    """Put a stand-in for the restore child behind the REAL ``_fresh_install_restore``: a
+    process that has already exited with ``returncode`` and wrote ``payload`` where the parent
+    asked (``OO_RELEASE_RUN_OUT``), or wrote nothing when ``payload`` is None, and said
+    ``stderr``. Replaced inside release_run only, so nothing else in the process loses
+    ``subprocess``."""
+
+    class _Proc:
+        def __init__(self, argv, **kw):
+            self.returncode = returncode
+            if payload is not None:
+                Path(kw["env"]["OO_RELEASE_RUN_OUT"]).write_text(json.dumps(payload), encoding="utf-8")
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self, timeout=None):
+            return (json.dumps(payload) if payload is not None else ""), stderr
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=_Proc, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(rr, "_fresh_install_restore", _REAL_RESTORE)
+
+
+_FAILED_RESTORES = {
+    # 20260930-085218: refused by the engine's staging check
+    "no-room": ({"ok": False, "error": _SPACE_ERROR, "elapsed_s": 125.8}, 1, "38.0 GB"),
+    # 20260930-085230: died after 53 minutes
+    "died": ({"ok": False, "error": "OperationalError: Error creating function", "elapsed_s": 3192.7}, 1,
+             "Error creating function"),
+    # killed (an OOM kill, a crash): no result at all
+    "killed": (None, -9, "left no result (exit status -9)"),
+    # a result that says ok, from a process that did not end cleanly
+    "unclean": (dict(_OK_CHILD), 139, "did not end cleanly"),
+    # run_restore RETURNS a refusal (no exception), so the child goes on and says ok over nothing
+    "refused": ({**_OK_CHILD, "restore": {"kind": "volume-set", "committed": False,
+                                          "refused": "post-merge verification failed; live database untouched"}},
+                0, "post-merge verification failed"),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_FAILED_RESTORES))
+def test_a_restore_whose_child_failed_reads_error_and_is_no_evidence_for_rows_a_e_i_k(fast, monkeypatch, shape):
+    payload, rc, fragment = _FAILED_RESTORES[shape]
+    _child_process(monkeypatch, payload=payload, returncode=rc)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "error" and fragment in phase["detail"], phase
+    # what the child DID leave stays in the record (RR-2): its exit status and its own words
+    kept = rep["phase_results"]["fresh_install_restore"]
+    assert kept["returncode"] == rc and kept["child"] == payload
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    for letter in ("A", "I"):
+        assert rows[letter]["status"] == "error", (letter, rows[letter])
+        assert fragment in rows[letter]["note"], (letter, rows[letter]["note"])
+    assert rows["I"]["evidence"]["restore"] is None and rows["I"]["evidence"]["elapsed_s"] is None
+    # row E keeps the LIVE corpus's own reading and says the restored install's is not counted
+    assert rows["E"]["evidence"]["restored_corpus"] is None and "NOT COUNTED" in rows["E"]["note"]
+    # row K's status is the P0 trio's; the scan that needs the restore is not counted and says why
+    assert rows["K"]["status"] == "measured"
+    assert rows["K"]["evidence"]["duplicate_key_scan_on_restored_corpus"] is None
+    assert "NOT COUNTED" in rows["K"]["note"] and "NOT taken" not in rows["K"]["note"], rows["K"]["note"]
+    # row A leads with the fact that matters: a restore that ended is not COUNTED (not "did not complete":
+    # a child that committed and then crashed did complete one)
+    assert rows["A"]["note"].startswith("this run does NOT COUNT its fresh-install restore"), rows["A"]["note"]
+    assert "did not complete" not in rows["A"]["note"] and "FAILED" not in rows["A"]["note"]
+    assert rep["summary"]["any_phase_error"] is True
+    # a failed restore does not end the run: the soak was armed and the end-of-window readings taken
+    assert "arm" in fast["calls"] and "collect" in fast["calls"] and rep["outcome"] == "done"
+    assert not list(fast["dest"].glob(".restore-release-run-*")), "the throwaway install and its result file go on a failure too"
+    assert SECRET not in json.dumps(rep)
+
+
+def test_a_restore_whose_child_reports_ok_and_exits_zero_still_reads_measured(fast, monkeypatch):
+    _child_process(monkeypatch, payload=dict(_OK_CHILD), returncode=0)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    assert {ph["name"]: ph["status"] for ph in rep["phases"]}["fresh_install_restore"] == "measured"
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert rows["A"]["status"] == "measured" and rows["A"]["evidence"]["integrity_verdict"] == "consistent"
+    assert rows["I"]["status"] == "measured" and rows["I"]["evidence"]["restore"]["committed"] is True
+    assert rows["K"]["evidence"]["duplicate_key_scan_on_restored_corpus"] == {"duplicates": 0}
+    assert "NOT COUNTED" not in rows["K"]["note"] and "NOT COUNTED" not in rows["E"]["note"]
+    assert "NOT COUNT" not in rows["A"]["note"] and "NOT COUNT" not in rows["I"]["note"]
+    assert not list(fast["dest"].glob(".restore-release-run-*"))
+
+
+def test_a_cancel_while_the_child_runs_stays_cancelled_and_is_not_a_failed_restore(fast, monkeypatch):
+    class _Proc:
+        def __init__(self, argv, **kw):
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=_Proc, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+    ctx = FakeCtx()
+    ctx.cancel()
+    ph = rr._run_phase(run, ctx, "fresh_install_restore",
+                       lambda: _REAL_RESTORE(ctx, run, fast["dest"] / "backup", label="own-backup"))
+    assert ph["status"] == "cancelled" and ph["result"]["returncode"] == -15, ph
+    rows = {r["row"]: r for r in rr.board_rows(run)}
+    assert rows["A"]["status"] == "cancelled" and "NOT COUNT" not in rows["A"]["note"]
+    assert rows["I"]["status"] == "cancelled"
+
+
+def test_a_child_that_cannot_be_started_is_no_restore_that_ended_so_no_row_says_it_was_not_counted(
+        fast, monkeypatch):
+    """The other end of ``test_a_restore_whose_child_failed_...``: the interpreter cannot be executed, so there
+    is no restore that ended and was left out of the count. Row A says the restore did not complete, with the
+    phase's own detail, and no row claims a restore was NOT COUNTED."""
+    def cannot_start(*a, **k):
+        raise FileNotFoundError("[Errno 2] No such file or directory: 'python'")
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=cannot_start, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(rr, "_fresh_install_restore", _REAL_RESTORE)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "error" and "No such file or directory" in phase["detail"], phase
+    assert "fresh_install_restore" not in rep["phase_results"], "no child ran, so there is no result to keep"
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert rows["A"]["status"] == "error"
+    assert rows["A"]["note"].startswith("the fresh-install restore did not complete here -- FileNotFoundError"), rows["A"]["note"]
+    assert rows["I"]["status"] == "error" and "did not complete here" in rows["I"]["note"]
+    for letter in ("A", "E", "I", "K"):
+        assert "NOT COUNT" not in rows[letter]["note"], (letter, rows[letter]["note"])
+    assert "absent because its restore did not complete here" in rows["K"]["note"]
+    assert rows["K"]["evidence"]["duplicate_key_scan_on_restored_corpus"] is None
+    assert SECRET not in json.dumps(rep)
+
+
+def test_the_real_child_on_a_missing_backup_exits_nonzero_and_reads_as_a_failed_restore(fast, tmp_path):
+    """The contract the parent now relies on, end to end: the real helper, in its own process and
+    encrypted under the passphrase, exits non-zero with ok false when it cannot restore."""
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+    ctx = FakeCtx()
+    ph = rr._run_phase(run, ctx, "fresh_install_restore",
+                       lambda: _REAL_RESTORE(ctx, run, tmp_path / "no-such-backup", label="own-backup"))
+    assert ph["status"] == "error", ph
+    assert ph["result"]["returncode"] == 1 and ph["result"]["child"]["ok"] is False
+    assert "no-such-backup" in ph["detail"] and "exited 1" in ph["detail"], ph["detail"]
+    assert not list(fast["dest"].glob(".restore-release-run-*"))
+    assert SECRET not in json.dumps(ph)
+
+
+def test_restore_failure_reads_the_childs_own_ok_the_exit_status_and_the_commit():
+    f = rr._restore_failure
+    committed = {"ok": True, "restore": {"committed": True}}
+    assert f({"returncode": 0, "child": committed}) is None
+    assert f({"child": committed}) is None, "a record that never stored an exit status is read by the child's ok alone"
+    assert "exited 1 and reported: boom" in f({"returncode": 1, "child": {"ok": False, "error": "boom"}})
+    assert "reported: no error text" in f({"returncode": 0, "child": {"ok": False}})
+    assert "reported ok but its process exited 139" in f({"returncode": 139, "child": committed})
+    assert "left no result (exit status -9)" in f({"returncode": -9, "child": None})
+    assert "left no result (exit status 0)" in f({"returncode": 0})
+    assert f(None) == "the phase recorded no result"
+    assert f({"returncode": 0, "child": {**committed, "ok": 1}}) is not None, "only a True ok is a restore"
+    # ok and a clean exit are not enough: run_restore RETURNS a refusal, and only a COMMITTED restore is one
+    refused = {"ok": True, "restore": {"committed": False, "refused": "post-merge verification failed; live database untouched"}}
+    why = f({"returncode": 0, "child": refused})
+    assert why == ("the restore child reported ok but its restore was not committed "
+                   "(refused: post-merge verification failed; live database untouched)"), why
+    assert "was not committed" in f({"returncode": 0, "child": {"ok": True, "restore": {"committed": False}}})
+    assert "(refused" not in f({"returncode": 0, "child": {"ok": True, "restore": {"committed": False}}})
+    assert "was not committed" in f({"returncode": 0, "child": {"ok": True}}), "no restore block: nothing says it committed"
+    assert "was not committed" in f({"returncode": 0, "child": {"ok": True, "restore": {"committed": 1}}}), "only a True commit"
+    assert len(f({"returncode": 0, "child": {"ok": True, "restore": {"committed": False, "refused": "x" * 900}}})) < 200 + 120
+
+
+def test_the_rows_refuse_a_restore_phase_recorded_measured_over_a_failed_child(fast):
+    """Whatever status a phase was given, the rows read the restore only through its record: this
+    is the second line behind the phase's own error, and the guard for a record an earlier build
+    wrote. A legacy restore whose child left NO result used to raise out of the report builder
+    (``None.get`` in row K), which would have cost a run its final report."""
+    run = rr._Run(rr.RunParams(str(fast["dest"]), SECRET, legacy_backup_path="/old/pre-migration.oobak"))
+    run.begin("fresh_install_restore")
+    run.end("measured", "ok", result={"returncode": 1, "child": {"ok": False, "error": _SPACE_ERROR}})
+    run.begin("legacy_restore")
+    run.end("measured", "ok", result={"returncode": -9, "child": None})
+    rows = {r["row"]: r for r in rr.board_rows(run)}
+    assert rows["A"]["status"] == "error" and "38.0 GB" in rows["A"]["note"]
+    assert rows["I"]["status"] == "error"
+    assert rows["K"]["evidence"]["legacy_backup"].startswith("the pre-migration restore is not counted as a restore: ")
+    assert "left no result (exit status -9)" in rows["K"]["evidence"]["legacy_backup"]
+    assert rows["K"]["evidence"]["duplicate_key_scan_on_restored_corpus"] is None
+    for r in rows.values():
+        assert r["status"] in rr.PHASE_STATUSES, r
+
+
+def test_a_restore_that_errored_says_why_from_its_result_or_from_its_own_detail(fast):
+    """The two places the reason can come from: the child's record when there is one (a restore that ENDED
+    and is not counted), the phase's own detail when it failed before a child ran (no restore to discount,
+    so the rows say it did not complete, and say no restore was NOT COUNTED), and the plain fact when
+    ``measured`` stands over nothing. The pre-migration restore reads the same way, whatever status a
+    build gave it."""
+    run = rr._Run(rr.RunParams(str(fast["dest"]), SECRET, legacy_backup_path="/old/pre-migration.oobak"))
+    run.begin("fresh_install_restore")
+    run.end("error", "BackupSpaceError: no room for the staging, before any child ran")  # no result at all
+    run.begin("legacy_restore")
+    run.end("error", "the legacy child failed", result={"returncode": 1, "child": {"ok": False, "error": "boom"}})
+    rows = {r["row"]: r for r in rr.board_rows(run)}
+    assert rows["A"]["note"] == ("the fresh-install restore did not complete here -- "
+                                 "BackupSpaceError: no room for the staging, before any child ran"), rows["A"]["note"]
+    assert "no room for the staging" in rows["I"]["note"] and rows["I"]["status"] == "error"
+    assert "did not complete here" in rows["I"]["note"] and "NOT COUNT" not in rows["I"]["note"]
+    assert "absent because its restore did not complete here" in rows["E"]["note"], rows["E"]["note"]
+    assert "absent because its restore did not complete here" in rows["K"]["note"], rows["K"]["note"]
+    assert "NOT COUNT" not in rows["E"]["note"] + rows["K"]["note"], "no restore ended, so none was left out of the count"
+    assert rows["K"]["evidence"]["legacy_backup"] == "the pre-migration restore is not counted as a restore: " \
+        "the restore child exited 1 and reported: boom", "an errored legacy phase reads from its child's record"
+
+    # a legacy phase that errored with only its detail to go on: no restore ended, so none is "not counted"
+    run2 = rr._Run(rr.RunParams(str(fast["dest"]), SECRET, legacy_backup_path="/old/pre-migration.oobak"))
+    run2.begin("legacy_restore")
+    run2.end("error", "the legacy child could not start")
+    assert {r["row"]: r for r in rr.board_rows(run2)}["K"]["evidence"]["legacy_backup"] == \
+        "the pre-migration restore gave no scan: it read error (the legacy child could not start)"
+
+    # ``measured`` over no result at all: the fact, never the phase's bare "ok"
+    run3 = rr._Run(rr.RunParams(str(fast["dest"]), SECRET))
+    run3.begin("fresh_install_restore")
+    run3.end("measured", "ok")
+    note = {r["row"]: r for r in rr.board_rows(run3)}["A"]["note"]
+    assert "the phase recorded no result" in note and not note.endswith("-- ok"), note
+
+
+def test_a_pre_migration_restore_that_gave_no_scan_says_what_it_read_not_a_bare_null(fast):
+    for status, detail in (("refused", "the legacy backup path is not a file"), ("cancelled", ""), (None, "")):
+        run = rr._Run(rr.RunParams(str(fast["dest"]), SECRET, legacy_backup_path="/old/pre-migration.oobak"))
+        if status:
+            run.begin("legacy_restore")
+            run.end(status, detail)
+        text = {r["row"]: r for r in rr.board_rows(run)}["K"]["evidence"]["legacy_backup"]
+        assert text.startswith("the pre-migration restore gave no scan: it read "), text
+        assert (status or "not run") in text and (detail in text if detail else True), text
+    # a pre-migration restore that did restore carries its scan, and one never asked for says so
+    good = rr._Run(rr.RunParams(str(fast["dest"]), SECRET, legacy_backup_path="/old/pre-migration.oobak"))
+    good.begin("legacy_restore")
+    good.end("measured", "ok", result={"returncode": 0, "child": dict(_OK_CHILD)})
+    assert {r["row"]: r for r in rr.board_rows(good)}["K"]["evidence"]["legacy_backup"] == {"duplicates": 0}
+    none = rr._Run(rr.RunParams(str(fast["dest"]), SECRET))
+    assert {r["row"]: r for r in rr.board_rows(none)}["K"]["evidence"]["legacy_backup"] == "no pre-migration backup path was given"
+
+
+def test_a_restore_recorded_measured_over_a_refusal_is_not_done_for_a_resume():
+    refused = {"returncode": 0, "child": {"ok": True, "restore": {"committed": False, "refused": "x"}}}
+    good = {"returncode": 0, "child": {"ok": True, "restore": {"committed": True}}}
+    for name in ("fresh_install_restore", "legacy_restore"):
+        assert rr._phase_done({"name": name, "status": "measured", "result": refused}) is False
+        assert rr._phase_done({"name": name, "status": "measured", "result": good}) is True
+    assert rr._phase_done({"name": "p0_validation", "status": "measured", "result": refused}) is True, "only a restore phase is read this way"
+
+
+def test_a_resume_retakes_a_restore_a_build_recorded_as_measured_over_a_failed_child(fast, monkeypatch):
+    from src.monitoring.release_run import _write_state, read_state, resume_preflight
+
+    _interrupt_mid_soak(fast, monkeypatch)
+    state = read_state()
+    for ph in state["phases"]:
+        if ph["name"] == "fresh_install_restore":
+            ph["result"] = {"returncode": 1, "child": {"ok": False, "error": _SPACE_ERROR}}
+    _write_state(state)
+    plan = resume_preflight("", check_passphrase=False)
+    assert plan["unlock_needed"] is True and "fresh_install_restore" not in plan["phases_done"]
+    assert "p0_validation" in plan["phases_done"], "the backup that verified is not owed again"
+    with pytest.raises(ValueError, match="passphrase"):
+        resume_preflight("")
+    rep = rr.run_release_run(FakeCtx(), resume=True, passphrase=SECRET)["report"]
+    assert "fresh:own-backup" in fast["calls"] and "p0" not in fast["calls"], fast["calls"]
+    assert "fresh_install_restore:measured (not counted as a restore)" in rep["sessions"][-1]["phases_rerun"]
+    assert [p["name"] for p in rep["phases"]].count("fresh_install_restore") == 1
+    assert {r["row"]: r for r in rep["board_rows"]}["A"]["status"] == "measured", "the retaken restore is the row's reading now"
+
+
+# --------------------------------------------------------------------------- #
+#  The passphrase, on a failed restore and on its retake (2026-10-01)
+# --------------------------------------------------------------------------- #
+# The module's promise is that the passphrase is in no state file, no report and no log line. What
+# the restore child SAYS (its result, its stderr) enters all three beside a passphrase it was
+# handed, and the endpoint scrubber redacts by KEY name, so a passphrase inside a value would ride
+# out. These tests drive a child that echoes it, through the real parent, on a first failure and on
+# the retake a resume makes.
+def _echoing_child(monkeypatch):
+    echoed = {"ok": False, "elapsed_s": 1.0,
+              "error": f"OperationalError: cannot open the store with key '{SECRET}'",
+              "restore": {"detail": f"the passphrase {SECRET} was refused"}}
+    _child_process(monkeypatch, payload=echoed, returncode=1,
+                   stderr=f"Traceback (most recent call last):\n  File x\nOperationalError: key {SECRET}")
+
+
+def _the_secret_is_nowhere(root: Path, report: dict, caplog) -> None:
+    """Every file under ``root`` (the run's destination, its data dir and its state file), the
+    report as returned and the log, none of which may carry the passphrase."""
+    for p in root.rglob("*"):
+        if p.is_file():
+            assert SECRET.encode() not in p.read_bytes(), p
+    assert SECRET not in json.dumps(report) and SECRET not in json.dumps(rr.read_state())
+    assert SECRET not in caplog.text
+
+
+def _watch_every_write(monkeypatch) -> list[str]:
+    """Check each state file and each report AS IT IS WRITTEN, and return what was written: ``state``,
+    ``interim`` or ``final``, and ``LEAK:<kind>`` for one that carried the passphrase. An interim report
+    is written after every phase and the final report deletes the run's interim ones, so a passphrase that
+    rode into one would be gone before ``_the_secret_is_nowhere`` looks.
+
+    The check RECORDS and the test asserts on the record (:func:`_no_write_leaked`): the run writes its
+    interim reports and its soak's state under ``contextlib.suppress(Exception)``, and an
+    ``AssertionError`` is an ``Exception``, so an assert raised here would be swallowed by the run and the
+    test would pass whatever was written."""
+    seen: list[str] = []
+    real_state, real_report = rr._write_state, rr._write_report
+
+    def state(st):
+        seen.append("state" if SECRET not in json.dumps(st, default=str) else "LEAK:state")
+        return real_state(st)
+
+    def report(run, *, interim):
+        path = real_report(run, interim=interim)
+        kind = "interim" if interim else "final"
+        seen.append(kind if SECRET.encode() not in Path(path).read_bytes() else f"LEAK:{kind}")
+        return path
+
+    monkeypatch.setattr(rr, "_write_state", state)
+    monkeypatch.setattr(rr, "_write_report", report)
+    return seen
+
+
+def _no_write_leaked(writes: list[str]) -> None:
+    assert not [w for w in writes if w.startswith("LEAK:")], f"written with the passphrase in it: {writes}"
+    assert {"state", "interim", "final"} <= set(writes), f"the watcher saw too little to mean anything: {writes}"
+
+
+def test_the_release_run_scrubs_with_the_shared_helper():
+    """One definition of the scrub (``src/monitoring/secret_scrub.py``, tested in test_secret_scrub.py),
+    used by the parent that records the child's words and by the child that writes them."""
+    from src.monitoring import secret_scrub
+
+    assert rr._without_secret is secret_scrub.without_secret
+    assert rr._without_secret(f"a {SECRET} b", SECRET) == "a ***redacted*** b"
+
+
+def test_a_restore_child_that_echoes_the_passphrase_leaves_it_in_no_state_report_or_log(fast, monkeypatch, caplog):
+    _echoing_child(monkeypatch)
+    writes = _watch_every_write(monkeypatch)
+    with caplog.at_level(logging.WARNING):
+        res = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    _no_write_leaked(writes)
+    rep = res["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    # the failure still reads in the child's own words, the secret taken out of them
+    assert phase["status"] == "error", phase
+    assert "cannot open the store with key '***redacted***'" in phase["detail"], phase["detail"]
+    kept = rep["phase_results"]["fresh_install_restore"]
+    assert "***redacted***" in kept["stderr_tail"] and "***redacted***" in kept["child"]["restore"]["detail"]
+    assert "release run phase fresh_install_restore failed part of the way" in caplog.text, "it is logged, scrubbed"
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert rows["A"]["status"] == "error" and "***redacted***" in rows["A"]["note"]
+    _the_secret_is_nowhere(fast["dest"].parent, rep, caplog)
+    assert SECRET not in rr.render_release_run_text(rep)
+
+
+def test_a_retaken_restore_asks_for_the_passphrase_like_a_first_run_and_leaves_it_in_no_record(
+        fast, client, monkeypatch, caplog):
+    from src.monitoring.release_run import _write_state
+
+    _interrupt_mid_soak(fast, monkeypatch)
+    state = rr.read_state()
+    for ph in state["phases"]:
+        if ph["name"] == "fresh_install_restore":
+            ph["result"] = {"returncode": 1, "child": {"ok": False, "error": _SPACE_ERROR}}
+    _write_state(state)
+    # The panel is told the passphrase is owed (so it asks, in the same password box a first run
+    # uses), and the route refuses a resume without it before anything runs.
+    st = client.get("/api/diagnostics/release-run/status").json()
+    assert st["resumable"] is True and st["resume"]["unlock_needed"] is True
+    assert "fresh_install_restore" not in st["resume"]["phases_done"]
+    r = client.post("/api/diagnostics/release-run/resume", json={"passphrase": ""})
+    assert r.status_code == 400 and "passphrase" in r.json()["detail"], r.text
+    assert not any(c.startswith("fresh") for c in fast["calls"]), "nothing ran on the refusal"
+    # With it, the restore is taken again -- by the real function, against a child that echoes it.
+    _echoing_child(monkeypatch)
+    writes = _watch_every_write(monkeypatch)
+    with caplog.at_level(logging.WARNING):
+        rep = rr.run_release_run(FakeCtx(), resume=True, passphrase=SECRET)["report"]
+    again = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert again["status"] == "error" and "key '***redacted***'" in again["detail"], again
+    assert [p["name"] for p in rep["phases"]].count("fresh_install_restore") == 1
+    assert "fresh_install_restore:measured (not counted as a restore)" in rep["sessions"][-1]["phases_rerun"]
+    _the_secret_is_nowhere(fast["dest"].parent, rep, caplog)
+    assert SECRET not in client.get("/api/diagnostics/release-run/status").text
+    _no_write_leaked(writes)
+
+
+def test_the_scrub_comes_before_every_cut_so_a_cut_through_the_passphrase_leaves_no_fragment(fast, monkeypatch):
+    """A stderr whose 4,000-character tail starts INSIDE the passphrase: scrubbing the tail afterwards
+    would find nothing to match and leave its last ten characters in the report."""
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1,
+                   stderr=SECRET + "y" * 3990)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert len(tail) == 4000 and "y" * 100 in tail
+    assert SECRET[-10:] not in tail and SECRET[:10] not in tail, tail[:40]
+
+
+def test_the_child_scrubs_its_own_error_text_before_cutting_it_to_600_characters():
+    from src.monitoring import release_run_fresh_restore as child
+
+    # the passphrase starts at character 594 of the text, so a cut at 600 would keep its first six
+    text = child._error_text(RuntimeError("a" * 580 + SECRET + " tail"), SECRET)
+    assert len(text) == 600 and "hunter" not in text and "***red" in text, text[580:]
+    assert child._error_text(RuntimeError("boom"), "") == "RuntimeError: boom", "no passphrase, nothing replaced"
+    assert child._error_text(RuntimeError(f"key {SECRET} refused"), SECRET) == "RuntimeError: key ***redacted*** refused"
+
+
+def test_a_resume_owes_the_passphrase_for_a_pre_migration_restore_it_has_not_finished(fast, monkeypatch):
+    """Every restore is a child that is handed the passphrase, the pre-migration one included, so a resume
+    that has only THAT restore left asks for it as a first run does; a restore that finished, or was refused
+    for good, owes nothing."""
+    from src.monitoring.release_run import _write_state, read_state, resume_preflight
+
+    _interrupt_mid_soak(fast, monkeypatch)  # the backup and the run's own restore are done
+    assert resume_preflight("")["unlock_needed"] is False, "no pre-migration backup was given: nothing is owed"
+    state = read_state()
+    state["params"]["legacy_backup_path"] = "/old/pre-migration.oobak"
+    _write_state(state)
+
+    def legacy(status, result=None):
+        st = read_state()
+        st["phases"] = [ph for ph in st["phases"] if ph["name"] != "legacy_restore"]
+        if status:
+            ph = {"name": "legacy_restore", "started_at": "x", "ended_at": "y", "status": status, "detail": "d"}
+            if result is not None:
+                ph["result"] = result
+            st["phases"].append(ph)
+        _write_state(st)
+
+    # never reached, failed, or recorded measured over a failed child: owed
+    for status, result in ((None, None), ("error", None),
+                           ("measured", {"returncode": 1, "child": {"ok": False, "error": "x"}})):
+        legacy(status, result)
+        assert resume_preflight("", check_passphrase=False)["unlock_needed"] is True, status
+        with pytest.raises(ValueError, match="passphrase"):
+            resume_preflight("")
+        assert resume_preflight(SECRET)["unlock_needed"] is True
+    # finished, or refused for good (the path does not exist): nothing owed
+    for status, result in (("measured", {"returncode": 0, "child": {"ok": True, "restore": {"committed": True}}}),
+                           ("refused", None)):
+        legacy(status, result)
+        assert resume_preflight("")["unlock_needed"] is False, status
+
+
+def test_the_worker_asks_for_the_passphrase_itself_and_runs_no_restore_without_it(fast, monkeypatch):
+    """The route refuses a resume without the passphrase, and the worker re-checks the same thing before it
+    starts, so a job started any other way cannot hand a restore child an empty passphrase."""
+    from src.monitoring.release_run import _write_state, read_state
+
+    _interrupt_mid_soak(fast, monkeypatch)  # the backup and the run's own restore are done
+    legacy = fast["dest"] / "pre-migration.oobak"
+    legacy.write_bytes(b"x")
+    state = read_state()
+    state["params"]["legacy_backup_path"] = str(legacy)
+    _write_state(state)
+    with pytest.raises(ValueError, match="passphrase"):
+        rr.run_release_run(FakeCtx(), resume=True, passphrase="")
+    assert not any(c.startswith("fresh") for c in fast["calls"]), fast["calls"]
+    # given the passphrase, the pre-migration restore it owes is the one thing taken again
+    rr.run_release_run(FakeCtx(), resume=True, passphrase=SECRET)
+    assert [c for c in fast["calls"] if c.startswith("fresh")] == ["fresh:pre-migration"], fast["calls"]
+
+
+@pytest.mark.parametrize("secret", ["ok", "commit", "store", "e", "child", "restore", "returncode"])
+def test_a_passphrase_that_is_a_piece_of_a_field_name_does_not_turn_a_good_restore_into_an_error(
+        fast, monkeypatch, secret):
+    """The scrub once renamed dict KEYS, and the record is read by ``ok``, ``restore``, ``committed``,
+    ``child`` and ``returncode``: a passphrase equal to a piece of one of them (the run puts no minimum on
+    its length) read a restore that committed as one that did not. Keys are field names; only values are
+    scrubbed."""
+    _child_process(monkeypatch, payload=dict(_OK_CHILD), returncode=0)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=secret))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "measured", phase
+    recorded = {**phase, "result": rep["phase_results"]["fresh_install_restore"]}
+    assert rr._phase_done(recorded) is True, "a resume must not retake a restore that committed"
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert rows["A"]["status"] == "measured" and rows["I"]["status"] == "measured"
+    assert rows["A"]["evidence"]["restore"]["committed"] is True
+
+
+@pytest.mark.parametrize("shape", sorted(_FAILED_RESTORES))
+@pytest.mark.parametrize("secret", ["returncode", "ok", "child", "restore", "committed"])
+def test_a_passphrase_that_is_a_piece_of_a_field_name_hides_no_failure_either(fast, monkeypatch, secret, shape):
+    """The same fault the other way round: a renamed ``returncode`` would have hidden a child that exited 139
+    (the record would have had no exit status to read), a renamed ``ok`` or ``committed`` a restore that was
+    refused. Every failed shape still reads ``error`` under a passphrase that is a piece of the keys."""
+    payload, rc, fragment = _FAILED_RESTORES[shape]
+    _child_process(monkeypatch, payload=payload, returncode=rc)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=secret))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "error" and fragment in phase["detail"], (secret, shape, phase)
+    assert rep["phase_results"]["fresh_install_restore"]["returncode"] == rc
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert rows["A"]["status"] == "error" and rows["I"]["status"] == "error"
+
+
+def test_the_real_child_scrubs_the_whole_of_the_file_it_leaves_not_only_its_error(fast, tmp_path):
+    """The child scrubs its OWN result before it writes it: the parent's scrub of a kept install comes later
+    and is the net beneath this one, so this test has to show the child did it, and not the parent. The real
+    helper is handed a backup path that contains the passphrase, so it reports it in a field other than its
+    error text; the file it leaves must not carry it, and the parent must have had nothing to rewrite."""
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], keep_fresh_install=True)))
+    ctx = FakeCtx()
+    backup = tmp_path / f"no-such-backup-{SECRET}"
+    ph = rr._run_phase(run, ctx, "fresh_install_restore",
+                       lambda: _REAL_RESTORE(ctx, run, backup, label="own-backup"))
+    assert ph["status"] == "error", ph
+    left = sorted(fast["dest"].glob(".restore-release-run-*.json"))
+    assert len(left) == 1, f"keep_fresh_install leaves the child's out file: {list(fast['dest'].iterdir())}"
+    written = json.loads(left[0].read_text(encoding="utf-8"))
+    assert written["ok"] is False and written["backup"].endswith("no-such-backup-***redacted***"), written["backup"]
+    assert SECRET not in left[0].read_text(encoding="utf-8")
+    assert SECRET not in json.dumps(ph)
+    assert ph["result"]["kept_install_scrub"] == {"rewritten": [], "removed": [], "failed": []}, (
+        "the child's own file was already clean when the parent looked: the parent's scrub did not do the child's"
+    )
+
+
+def _all_files(root: Path):
+    return sorted(p for p in root.rglob("*") if p.is_file())
+
+
+def test_a_kept_install_holds_the_passphrase_in_no_file_the_real_child_leaves(fast, tmp_path):
+    """``keep_fresh_install`` leaves the child's whole data directory on the drive. Its database is encrypted
+    under the passphrase, but the run journal the app writes while it restores records the backup's NAME (as
+    ``label`` and ``dest``), and a backup is a file a person names. The real child restores a real fixture
+    whose file name holds the passphrase; once it has exited the parent cleans what it left, and no file
+    under the destination carries the passphrase -- the encrypted database and its write-ahead log included."""
+    seeded = _seed_legacy_fixture(tmp_path)
+    named = seeded.with_name(f"fixture-{SECRET}.oobak")
+    seeded.rename(named)
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], keep_fresh_install=True)))
+    ctx = FakeCtx()
+    ph = rr._run_phase(run, ctx, "fresh_install_restore",
+                       lambda: _REAL_RESTORE(ctx, run, named, label="own-backup"))
+    assert ph["status"] == "measured", ph
+    scrub = ph["result"]["kept_install_scrub"]
+    assert scrub["failed"] == [] and scrub["removed"] == [], scrub
+    # the control: the journal really did hold the name, so the scrub had something to take out
+    assert any(n.startswith("imp-") and n.endswith(".jsonl") for n in scrub["rewritten"]), scrub
+    kept = [d for d in fast["dest"].glob(".restore-release-run-*") if d.is_dir()]
+    assert len(kept) == 1, list(fast["dest"].iterdir())
+    files = _all_files(fast["dest"])
+    assert any(f.suffix == ".db" for f in files), "the restored install is the thing that is kept"
+    assert [str(f) for f in files if SECRET.encode() in f.read_bytes()] == [], "a file still holds the passphrase"
+    # ... and what was cleaned is still a journal a reader can read: every line parses, the name is redacted
+    journals = [f for f in files if f.parent.name == "run_logs" and not f.name.endswith(".beat.jsonl")]
+    assert len(journals) == 1
+    records = [json.loads(line) for line in journals[0].read_text(encoding="utf-8").splitlines() if line.strip()]
+    begin = next(r for r in records if r["ev"] == "run_begin")
+    assert begin["label"] == "fixture-***redacted***.oobak" and begin["dest"].endswith("fixture-***redacted***.oobak")
+    assert {"hardware", "pid", "run_id", "kind"} <= set(begin), "the record keeps its other fields"
+    assert SECRET not in json.dumps(ph)
+
+
+def _kept_install_with(tmp_path: Path, secret: str = SECRET):
+    """A directory shaped like the one the child leaves, with the passphrase in its journal and its report."""
+    fresh = tmp_path / ".restore-release-run-own-backup-1"
+    (fresh / "run_logs").mkdir(parents=True)
+    (fresh / "import_reports").mkdir()
+    (fresh / "rings").mkdir()
+    journal = fresh / "run_logs" / "imp-1.jsonl"
+    journal.write_text(json.dumps({"ev": "run_begin", "label": f"b-{secret}.oobak"}) + "\n", encoding="utf-8")
+    beat = fresh / "run_logs" / "imp-1.beat.jsonl"
+    beat.write_text(json.dumps({"ev": "beat", "rss": 1}) + "\n", encoding="utf-8")
+    report = fresh / "import_reports" / "restore-1.json"
+    report.write_text(json.dumps({"import_run": {"label": f"b-{secret}.oobak"}}, indent=2), encoding="utf-8")
+    other = fresh / "rings" / "keyword_rings_local.yml"
+    other.write_text("rings: []\n", encoding="utf-8")
+    out_json = fresh.with_suffix(".json")
+    out_json.write_text(json.dumps({"ok": True}), encoding="utf-8")
+    return fresh, out_json, journal, beat, report, other
+
+
+def test_the_kept_install_scrub_cleans_the_journals_and_reports_and_leaves_every_other_file(tmp_path):
+    fresh, out_json, journal, beat, report, other = _kept_install_with(tmp_path)
+    before = {p: p.stat().st_mtime_ns for p in (beat, other, out_json)}
+    done = rr._scrub_kept_install(fresh, out_json, SECRET)
+    assert done == {"rewritten": ["imp-1.jsonl", "restore-1.json"], "removed": [], "failed": []}, done
+    assert json.loads(journal.read_text(encoding="utf-8"))["label"] == "b-***redacted***.oobak"
+    assert json.loads(report.read_text(encoding="utf-8"))["import_run"]["label"] == "b-***redacted***.oobak"
+    assert {p: p.stat().st_mtime_ns for p in (beat, other, out_json)} == before, "files with nothing in them are not rewritten"
+    assert rr._scrub_kept_install(fresh, out_json, SECRET) == {"rewritten": [], "removed": [], "failed": []}, "a second pass finds nothing"
+    assert rr._scrub_kept_install(fresh, out_json, "") == {"rewritten": [], "removed": [], "failed": []}, "no passphrase, no needle"
+    assert rr._scrub_kept_install(tmp_path / "gone", tmp_path / "gone.json", SECRET) == {
+        "rewritten": [], "removed": [], "failed": []}, "a child that died before it wrote anything left nothing to clean"
+
+
+def test_the_kept_install_scrub_removes_a_file_it_cannot_rewrite_and_names_one_it_cannot_remove(
+        tmp_path, monkeypatch, caplog):
+    """A journal that still holds the passphrase is the one thing a kept install may not carry: when it cannot
+    be rewritten (a full disk is the likely reason, and one this product meets) it is removed instead."""
+    fresh, out_json, journal, beat, report, other = _kept_install_with(tmp_path)
+
+    def cannot_rewrite(path, secret):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(rr, "_scrub_file", cannot_rewrite)
+    done = rr._scrub_kept_install(fresh, out_json, SECRET)
+    assert sorted(done["removed"]) == sorted(["imp-1.beat.jsonl", "imp-1.jsonl", "restore-1.json", out_json.name]), done
+    assert done["rewritten"] == [] and done["failed"] == []
+    assert not journal.exists() and not report.exists(), "what could not be cleaned is gone, not kept"
+    assert other.exists(), "only the files the scrub is responsible for are touched"
+
+    fresh2, out2, journal2, *_ = _kept_install_with(tmp_path / "second")
+    real_unlink = Path.unlink
+
+    def stuck(self, *a, **k):
+        if self.name == "imp-1.jsonl":
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", stuck)
+    with caplog.at_level(logging.WARNING):
+        done2 = rr._scrub_kept_install(fresh2, out2, SECRET)
+    assert done2["failed"] == ["imp-1.jsonl"] and journal2.exists(), done2
+    assert "could not be taken out of imp-1.jsonl" in caplog.text
+    assert SECRET not in caplog.text, "the warning names the file, never what it holds"
+
+
+def test_a_kept_run_cleans_the_out_file_a_child_left_with_the_passphrase_in_it(fast, monkeypatch, caplog):
+    """The stand-in child writes its result raw, as an older or a broken child would. A run that keeps its
+    fresh install cleans that file on the way out, says so in the phase's record, and carries no passphrase
+    anywhere; a run that does not keep it has nothing to clean and records nothing of the kind."""
+    _echoing_child(monkeypatch)
+    writes = _watch_every_write(monkeypatch)
+    with caplog.at_level(logging.WARNING):
+        res = rr.run_release_run(FakeCtx(), **_params(fast["dest"], keep_fresh_install=True))
+    rep = res["report"]
+    kept = rep["phase_results"]["fresh_install_restore"]
+    out_name = next(f.name for f in fast["dest"].glob(".restore-release-run-*.json"))
+    assert kept["kept_install_scrub"] == {"rewritten": [out_name], "removed": [], "failed": []}, kept["kept_install_scrub"]
+    assert json.loads((fast["dest"] / out_name).read_text(encoding="utf-8"))["error"].endswith("key '***redacted***'")
+    _the_secret_is_nowhere(fast["dest"].parent, rep, caplog)
+    _no_write_leaked(writes)
+
+
+def test_a_run_that_does_not_keep_its_fresh_install_has_nothing_to_clean(fast, monkeypatch):
+    _child_process(monkeypatch, payload=dict(_OK_CHILD), returncode=0)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    assert "kept_install_scrub" not in rep["phase_results"]["fresh_install_restore"]
+    assert not list(fast["dest"].glob(".restore-release-run-*"))
+
+
+def test_a_missing_file_error_from_the_rewrite_is_not_mistaken_for_a_file_that_is_not_there(tmp_path, monkeypatch):
+    """A missing-file error also comes out of the rewrite itself -- a ``.part`` path the platform refuses, a
+    directory that went away between the read and the write -- with the journal in place and still holding the
+    passphrase. Reading every such error as "nothing to clean" kept the file and recorded a clean scrub."""
+    from src.monitoring import secret_scrub
+
+    real_write_bytes = Path.write_bytes
+
+    def no_part(self, data):
+        if self.name.endswith(".part"):
+            raise FileNotFoundError(2, "No such file or directory")
+        return real_write_bytes(self, data)
+
+    fresh, out_json, journal, beat, report, other = _kept_install_with(tmp_path / "a")
+    with monkeypatch.context() as m:
+        m.setattr(Path, "write_bytes", no_part)
+        done = rr._scrub_kept_install(fresh, out_json, SECRET)
+    assert done == {"rewritten": [], "removed": ["imp-1.jsonl", "restore-1.json"], "failed": []}, done
+    assert not journal.exists() and not report.exists(), "what could not be cleaned is gone, not kept"
+    assert beat.exists() and other.exists() and out_json.exists(), "files with nothing in them are not touched"
+
+    def no_target(src, dst):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    fresh2, out2, journal2, beat2, report2, _ = _kept_install_with(tmp_path / "b")
+    with monkeypatch.context() as m:
+        m.setattr(secret_scrub.os, "replace", no_target)
+        done2 = rr._scrub_kept_install(fresh2, out2, SECRET)
+    assert done2["removed"] == ["imp-1.jsonl", "restore-1.json"] and done2["failed"] == [], done2
+    assert not journal2.exists() and not report2.exists()
+    assert not list((tmp_path / "b").rglob("*.part")), "no half-made copy is left either"
+
+
+def test_a_failure_that_is_no_oserror_loses_neither_the_result_nor_the_other_files(tmp_path, monkeypatch):
+    """Whatever stops one file's rewrite (here a RecursionError, which an OSError handler lets through and which
+    would have taken the phase's whole result with it), that file is removed and the others are still cleaned."""
+    fresh, out_json, journal, beat, report, other = _kept_install_with(tmp_path)
+    real = rr._scrub_file
+
+    def odd(path, secret):
+        if path.name == "imp-1.jsonl":
+            raise RecursionError("maximum recursion depth exceeded")
+        return real(path, secret)
+
+    monkeypatch.setattr(rr, "_scrub_file", odd)
+    done = rr._scrub_kept_install(fresh, out_json, SECRET)
+    assert done == {"rewritten": ["restore-1.json"], "removed": ["imp-1.jsonl"], "failed": []}, done
+    assert not journal.exists() and SECRET not in report.read_text(encoding="utf-8")
+
+
+def _journalling_child(monkeypatch, *, returncode, terminate_to=-15, communicate_raises=None):
+    """A stand-in for the restore child that does what the real one does at its start -- writes its run journal
+    into its own data dir, with the backup's name (which here holds the passphrase) in it -- and then ends the way
+    the test says. Returns the stand-ins that were started."""
+    made: list = []
+
+    class _Proc:
+        def __init__(self, argv, **kw):
+            logs = Path(kw["env"]["OO_DATA_DIR"]) / "run_logs"
+            logs.mkdir(parents=True, exist_ok=True)
+            (logs / "imp-1.jsonl").write_text(
+                json.dumps({"ev": "run_begin", "label": f"b-{SECRET}.oobak"}) + "\n", encoding="utf-8")
+            self.returncode = returncode
+            self.killed = False
+            made.append(self)
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = terminate_to
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def communicate(self, timeout=None):
+            if communicate_raises is not None:
+                raise communicate_raises
+            return "", ""
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=_Proc, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(rr, "_fresh_install_restore", _REAL_RESTORE)
+    return made
+
+
+class _ProgressFails(FakeCtx):
+    def set_progress(self, *, done=None, total=None, detail=None) -> None:
+        if detail and detail.startswith("fresh install ("):
+            raise RuntimeError("the progress callback broke")
+        super().set_progress(done=done, total=total, detail=detail)
+
+
+# (status the phase reads, the child's state when started, the context, the child ends by terminate, what
+# communicate raises, a child still running at the end is killed)
+_ENDINGS = {
+    "cancelled": ("cancelled", None, FakeCtx, -15, None, False),
+    "killed by a signal": ("error", -9, FakeCtx, -9, None, False),
+    "its progress callback raises": ("error", None, _ProgressFails, -15, None, True),
+    "its pipes cannot be read": ("error", None, FakeCtx, None, subprocess.TimeoutExpired("python", 30), True),
+}
+
+
+@pytest.mark.parametrize("ending", sorted(_ENDINGS))
+def test_a_kept_install_is_scrubbed_however_the_child_ended_and_a_running_child_is_ended_first(
+        fast, monkeypatch, ending):
+    """The scrub is not a step of the happy path: a cancel, a kill, a callback that raises and a pipe that cannot be
+    read all leave the child's journal on the drive, and each must leave it clean. A child still running when an
+    exception gets out is killed first, or it would go on writing into the directory being scrubbed."""
+    status, started_as, ctx_class, terminate_to, raises, must_kill = _ENDINGS[ending]
+    made = _journalling_child(monkeypatch, returncode=started_as, terminate_to=terminate_to, communicate_raises=raises)
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], keep_fresh_install=True)))
+    ctx = ctx_class()
+    if ending in ("cancelled", "its pipes cannot be read"):
+        ctx.cancel()
+    ph = rr._run_phase(run, ctx, "fresh_install_restore",
+                       lambda: _REAL_RESTORE(ctx, run, fast["dest"] / "backup", label="own-backup"))
+    assert ph["status"] == status, ph
+    (kept,) = [d for d in fast["dest"].glob(".restore-release-run-*") if d.is_dir()]
+    text = (kept / "run_logs" / "imp-1.jsonl").read_text(encoding="utf-8")
+    assert SECRET not in text and "b-***redacted***.oobak" in text, text
+    assert made[0].killed is must_kill, f"killed={made[0].killed}"
+    for p in fast["dest"].rglob("*"):
+        if p.is_file():
+            assert SECRET.encode() not in p.read_bytes(), p
+    assert SECRET not in json.dumps(ph, default=str)
+
+
+def test_rows_e_and_k_say_why_the_restored_installs_reading_is_absent_when_no_restore_ran(fast, monkeypatch):
+    """A restore that never started (here: no room for a second copy) is no restore that ended and was left out of
+    the count, so no row says NOT COUNTED -- but its rows must not show a bare null either: each says the reading
+    is absent because the restore did not complete, and row A names the phase's own reason."""
+    pre = rr._preflight
+    monkeypatch.setattr(rr, "_preflight", lambda run: {**pre(run), "fresh_install_fits": False})
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "not-measurable-here" and "lacks the room" in phase["detail"], phase
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert rows["A"]["status"] == "not-measurable-here" and "lacks the room" in rows["A"]["note"], rows["A"]["note"]
+    assert "absent because its restore did not complete here" in rows["E"]["note"], rows["E"]["note"]
+    assert "absent because its restore did not complete here" in rows["K"]["note"], rows["K"]["note"]
+    assert "lacks the room" in rows["I"]["note"], rows["I"]["note"]
+    assert not any("NOT COUNT" in rows[letter]["note"] for letter in "AEIK")
+
+
+def test_the_child_writes_a_result_with_the_passphrase_taken_out_of_every_string_in_it():
+    from src.monitoring import release_run_fresh_restore as child
+
+    result = {"backup": f"/b/{SECRET}", "path": Path(f"/x/{SECRET}"), "n": 2,
+              "restore": {"refused": f"bad {SECRET}", "committed": False}, "rows": [f"{SECRET}!", 1.5, None]}
+    text = child._result_text(result, SECRET)
+    assert SECRET not in text
+    out = json.loads(text)
+    assert out["backup"] == "/b/***redacted***" and out["path"] == "/x/***redacted***", "a default=str value too"
+    assert out["restore"] == {"refused": "bad ***redacted***", "committed": False}
+    assert out["rows"] == ["***redacted***!", 1.5, None] and out["n"] == 2
+    assert json.loads(child._result_text({"ok": True}, "")) == {"ok": True}, "no passphrase, nothing replaced"

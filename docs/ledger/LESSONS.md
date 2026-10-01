@@ -13203,3 +13203,66 @@ when no other trigger fires**: the guard's "was engaged" flag read only in the f
 the next tick reported a five-second-old pause as a new engagement (a mutant the suite now catches). What this does NOT do: it names the holder in the NEXT
 bundle, it does not stop the kill. Stopping cleanly when the guard stays engaged and memory does not recover is the user's open question 22, and a clean stop
 alone would not resume the run, because a relaunch starts offline under R117 (one click brings it online), so that choice has to be made with the launcher.
+
+### A PHASE'S STATUS WAS THE RUNNER'S, NOT THE CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED (release candidate diagnostics, 2026-10-01, `src/monitoring/release_run.py`)
+
+`_run_phase` records a phase `measured` when its function returns without raising, and `_fresh_install_restore`
+returned its dict whatever its child had done: it stored the `returncode` and the child's JSON and read neither. Two of the
+16 bundles of the 2026-09-30 round held a run whose restore had failed (`20260930-085218`: the engine's own staging check
+refused after 128 s, "needs about 38.0 GB, only 14.7 GB free"; `20260930-085230`: `OperationalError: Error creating
+function` after 53 minutes), and both reports read `fresh_install_restore: measured` with `returncode: 1` and `child.ok:
+false` inside the same record, and rows A and I `measured` over a `restore` block that was `null` (row K read `measured`
+from the P0 trio, its scan of the restored corpus `null`). Nothing raised, so nothing could tell: the evidence of the
+failure sat in the record beside the status that denied it. `if child:` was the second half of the same fault, since a
+failed child's `{ok: false, error: ...}` is a non-empty dict. **A status for work a spawned process did is that process's
+outcome (its exit status AND its own ok AND what it reports having done), never the parent's return: read them where the
+phase is recorded, and again where a row is BUILT from the record, because a record an earlier build wrote keeps its old
+status.** Corollaries from the fix: a failed restore reads `error`, because the resume rule keeps `refused` for ever and
+retakes `error` (R20), so the status choice IS the retry policy; a cancel that terminates the child is `cancelled`, so the
+failure check yields to `ctx.stopping`; `run_restore` RETURNS a refusal ("post-merge verification failed") without
+raising, so a child can say ok, exit 0 and have committed nothing, and a restore counts only with `restore.committed`
+true; the row text says "not counted", never "failed", because a child that wrote its ok and its commit and was then
+killed (`Popen` reads a signal as a negative status) may well have restored, so the exit status says "did not end
+cleanly" and nothing more; and the same reading found a latent crash, row K's `.get("child", {})` raising on a legacy
+restore whose child left no result, which would have cost a run its final report.
+Reporting the child's words widens where they go (the phase detail, the board notes, the log, the status route), and
+the endpoint scrubber `_p0_scrub` redacts by KEY name, so a passphrase the child echoed inside a VALUE would ride out:
+the run's passphrase is taken out of everything the child said, by the child where it writes its result and again by the
+parent where it enters the record (`src/monitoring/secret_scrub.py`), exact match only, tested on a first failure and on
+the retake a resume makes. A retake owes the passphrase for EVERY restore it has left, the pre-migration one included
+(`resume_preflight` counted only the backup and the run's own restore), because each restore is a child that is handed it.
+The reviews of the scrub found four faults in it, each a way a safety net hurts the thing it guards. **(1) A scrub
+that walks a record must leave its KEYS alone**: the first version renamed dict keys too, the record is read through
+`ok`, `restore`, `committed` and `child`, and a passphrase that was a piece of one (`ok`, `store`, `e`; the run puts no
+minimum on its length) turned a restore that committed into an error that every resume retook for ever. A key is a field
+name the code defines, a child builds none from what it is handed, and a passphrase has nothing to take out of one.
+**(2) A replacement can rebuild the secret**: a passphrase ending in `*` meets the marker's own asterisks, and a
+passphrase that is a piece of `***redacted***` (`red`) is in the marker itself, so the result is CHECKED and a marker that
+would give the secret back is replaced by one that does not. **(3) The parent can scrub only what it reads, and the child's
+result file is not the only record that outlives the run**: `keep_fresh_install` leaves the child's whole data directory on
+the drive, and beside the encrypted database (the passphrase is its key, not text in it) sit the app's own run journal
+(`run_logs/*.jsonl`, whose `label` is the backup's name and `dest` its full path) and its import reports, written by code that has never
+heard of the passphrase. The first fix scrubbed the child's result file and called it "the one record that can outlive the
+run" in two docstrings and in this entry; the next review put the passphrase in a backup's file name, ran the real child and
+found it in the journal. So the child scrubs the whole of its result, and the parent, once the child has exited, rewrites a
+kept install's journals and reports by what they are (JSON lines and documents are parsed, values scrubbed, keys left; a raw
+replace renames a key and cannot see a secret JSON escaped), REMOVES a file it cannot rewrite, and says what it did; a test
+restores a real fixture whose file name holds the passphrase and scans every file under the kept install. **A claim that a
+place is "the one" a secret can reach is a claim to test: name the secret in an input and look in every file.**
+**(4) A check that raises inside the code it watches can be swallowed by it**: the run writes its interim reports and its soak
+state under `contextlib.suppress(Exception)`, and an `AssertionError` is an `Exception`, so a watcher that asserted as each
+file was written passed whatever was written (a mutation that put the passphrase in every interim report went uncaught). A
+watcher RECORDS, and the test asserts on the record after the run.
+**(5) The handler is part of the net, and so is the place it runs**: the scrub read every missing-file error as "there is
+no file to clean", but the rewrite itself raises it (a `.part` path the platform refuses, a directory that went away
+between the read and the write) with the journal in place, so the file was KEPT, holding the passphrase, under a record that
+said nothing had been found (`os.path.lexists` decides now, and whatever else stops a rewrite removes the file); a handler for
+`OSError` let a `RecursionError` (a record nested past the interpreter's limit) through, which lost the phase's whole result,
+so it catches `Exception` file by file; the scrub ran only on the way through, so a cancel, a progress callback that raised
+or a pipe that could not be read left the journal as it was (it also runs from `finally` now, after a child that is still
+running has been killed, or it would go on writing into the directory being cleaned); and text that does not parse (a line
+cut by a kill) holds the secret in the form JSON escaped it to, which no search for the secret as typed finds, so it is
+scrubbed in both forms. What stays outside the net is stated where it is made: a parent killed outright leaves its
+`.restore-release-run-*` directory (nothing sweeps that destination, the claim that something does was wrong), and a path
+the operator typed that holds the passphrase is kept as typed. Each was found by simulating the case through the real
+function, none by reading the code for the cases it handles.

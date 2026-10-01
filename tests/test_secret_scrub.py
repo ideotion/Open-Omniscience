@@ -1,0 +1,284 @@
+"""``src/monitoring/secret_scrub.py`` takes a KNOWN secret out of text a child process said, and
+leaves none of it behind -- not beside the marker, not inside it, and never in the field names a
+record is read by.
+
+Two things the first version of the release run's scrub got wrong, found by the review of the
+commit that wrote it (2026-10-01): it renamed dict KEYS, so a passphrase that was a piece of a field
+name (``ok``, ``store``, ``e``) turned a good restore into an error; and its replacement could
+rebuild the secret (a passphrase ending in ``*``, or a piece of ``***redacted***``).
+
+The third, found by the next review: the scrub covered what the parent READS, and a kept fresh
+install leaves the restore child's run journal and reports on the drive as text the parent never
+reads. ``scrub_file`` cleans a file in place by what it is (JSON lines, a JSON document, text).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import stat
+import sys
+
+import pytest
+
+from src.monitoring import secret_scrub as ss
+
+SECRET = "hunter2-never-on-disk"
+
+
+def test_the_ordinary_secret_gets_the_readable_marker_and_an_empty_one_is_no_needle():
+    assert ss.scrub_text(f"a {SECRET} b {SECRET}", SECRET) == "a ***redacted*** b ***redacted***"
+    assert ss.scrub_text("nothing here", SECRET) == "nothing here"
+    assert ss.scrub_text("anything", "") == "anything", "an empty secret would match between every character"
+    assert ss.without_secret({"k": "x"}, "") == {"k": "x"}
+
+
+@pytest.mark.parametrize("text,secret", [
+    ("abcabc*", "abc*"),                    # the marker's own asterisks rebuild a secret that ends in one
+    ("*abcabc", "*abc"),                    # ... or begins with one
+    ("x red y red", "red"),                 # the secret is a piece of the marker
+    ("***redacted***", "*"),
+    ("a#b", "#"),
+    ("aaa", "aa"),                          # overlapping occurrences
+    ("x e y", "e"),
+    ("#*#*", "#*"),
+    ("***redacted*** and red", "red"),      # text that already holds the marker
+    (SECRET * 3, SECRET),
+    (f"{SECRET[:10]}{SECRET}{SECRET[10:]}", SECRET),   # an occurrence made of two halves once one is removed
+])
+def test_no_part_of_the_secret_is_left_in_what_is_returned(text, secret):
+    out = ss.scrub_text(text, secret)
+    assert secret not in out, (text, secret, out)
+    assert secret in text, "the case must hold something to take out"
+
+
+def test_a_secret_that_is_a_piece_of_the_marker_gets_another_marker_not_a_garbled_one():
+    assert ss.scrub_text("key red refused", "red") == "key ### refused"
+    # scrubbed twice, as the stderr tail is (once where it is cut, once with the whole record): nothing more happens
+    once = ss.scrub_text("key red refused", "red")
+    assert ss.scrub_text(once, "red") == once
+    # the readable marker stays wherever it does not give the secret back
+    assert ss.scrub_text("key abc refused", "abc") == "key ***redacted*** refused"
+
+
+def test_the_scrub_ends_even_when_no_marker_can_be_used(monkeypatch):
+    """Not reachable by a passphrase a person types; here so the guarantee holds for any input."""
+    monkeypatch.setattr(ss, "REDACTED", "xx")
+    monkeypatch.setattr(ss, "_FALLBACK_MARKERS", ("x",))
+    assert ss.scrub_text("axxb x", "x") == "ab "
+    assert ss.scrub_text("xxxx", "xx") == ""
+
+
+def test_values_are_scrubbed_through_lists_tuples_and_dicts_and_the_input_is_not_changed():
+    value = {"ok": True, "n": 1.5, "t": None,
+             "restore": {"committed": True, "note": f"the key {SECRET} was refused"},
+             "rows": [f"x{SECRET}", {"deep": [f"{SECRET}!"]}], "pair": (SECRET, 2)}
+    out = ss.without_secret(value, SECRET)
+    assert out == {"ok": True, "n": 1.5, "t": None,
+                   "restore": {"committed": True, "note": "the key ***redacted*** was refused"},
+                   "rows": ["x***redacted***", {"deep": ["***redacted***!"]}], "pair": ("***redacted***", 2)}
+    assert SECRET in value["restore"]["note"] and value["rows"][0] == f"x{SECRET}"
+
+
+def test_keys_are_never_touched():
+    """A key is a field name the code defines and its readers look up. The child builds none from what
+    it is handed, so a passphrase has nothing to take out of one, and renaming one loses the field."""
+    out = ss.without_secret({SECRET: 3, "ok": True}, SECRET)
+    assert out == {SECRET: 3, "ok": True}
+
+
+@pytest.mark.parametrize("secret", ["ok", "e", "a", "restore", "committed", "child", "store", "turn", "kind"])
+def test_a_secret_that_is_a_piece_of_a_field_name_leaves_the_record_readable(secret):
+    record = {"returncode": 0, "child": {"ok": True, "restore": {"kind": "volume-set", "committed": True}}}
+    out = ss.without_secret(record, secret)
+    assert set(out) == {"returncode", "child"} and set(out["child"]) == {"ok", "restore"}
+    assert set(out["child"]["restore"]) == {"kind", "committed"}
+    assert out["returncode"] == 0 and out["child"]["ok"] is True and out["child"]["restore"]["committed"] is True
+    assert secret not in out["child"]["restore"]["kind"]
+
+
+# --------------------------------------------------------------------------- #
+#  scrub_file: the files a kept fresh install leaves behind
+# --------------------------------------------------------------------------- #
+def _lines(path):
+    return path.read_text(encoding="utf-8").split("\n")
+
+
+def test_a_json_lines_file_is_scrubbed_record_by_record_and_the_clean_lines_are_not_touched(tmp_path):
+    clean = '{"ev":"stage_end","t":"2026-10-01T04:39:34+00:00","name":"stage_a:decrypt","seconds":0.0}'
+    dirty = {"ev": "run_begin", "label": f"fixture-{SECRET}.oobak", "dest": f"/tmp/{SECRET}/x", "n": 3}
+    p = tmp_path / "imp.jsonl"
+    p.write_text(clean + "\n" + json.dumps(dirty, separators=(",", ":")) + "\n\n" + clean + "\n", encoding="utf-8")
+    assert ss.scrub_file(p, SECRET) is True
+    lines = _lines(p)
+    assert lines[0] == clean and lines[3] == clean, "a line without the secret is kept byte for byte"
+    assert lines[2] == "" and lines[4] == "", "blank lines and the trailing newline stay"
+    assert json.loads(lines[1]) == {"ev": "run_begin", "label": "fixture-***redacted***.oobak",
+                                    "dest": "/tmp/***redacted***/x", "n": 3}
+    assert ", " not in lines[1] and ": " not in lines[1], "written back in the journal's compact form"
+    assert SECRET not in p.read_text(encoding="utf-8")
+    assert not list(tmp_path.glob("*.part")), "no copy left beside it"
+
+
+def test_a_file_without_the_secret_is_left_exactly_as_it_was_and_says_so(tmp_path):
+    for name, body in (("a.jsonl", '{"a":1}\n{"b":[1,2]}\n'), ("b.json", '{"a": {"b": [1, 2]}}'),
+                       ("c.txt", "nothing here\n")):
+        p = tmp_path / name
+        p.write_text(body, encoding="utf-8")
+        before = p.stat().st_mtime_ns
+        assert ss.scrub_file(p, SECRET) is False, name
+        assert p.read_text(encoding="utf-8") == body and p.stat().st_mtime_ns == before, name
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_the_secret_is_found_in_the_form_the_reader_sees_not_the_form_json_wrote(tmp_path):
+    """A raw replace cannot match a secret holding a quote, a backslash, a tab or a letter outside ASCII:
+    the file holds ``\\"``, ``\\\\``, ``\\t`` and ``\\u00e4``. Parsed first, the value is the one a reader gets."""
+    for secret in ('pa"ss', "back\\slash", "pässwörd", "tab\there"):
+        p = tmp_path / "j.jsonl"
+        p.write_text(json.dumps({"label": f"x-{secret}-y", "n": 1}) + "\n", encoding="utf-8")
+        assert secret not in p.read_text(encoding="utf-8"), "the control: a raw search finds nothing to replace"
+        assert ss.scrub_file(p, secret) is True, secret
+        assert json.loads(p.read_text(encoding="utf-8").split("\n")[0]) == {"label": "x-***redacted***-y", "n": 1}
+
+
+def test_a_secret_that_is_a_piece_of_a_key_renames_no_key(tmp_path):
+    p = tmp_path / "r.jsonl"
+    p.write_text(json.dumps({"ok": True, "restore": {"committed": True, "note": "the key ok was refused"}}) + "\n",
+                 encoding="utf-8")
+    assert ss.scrub_file(p, "ok") is True
+    out = json.loads(p.read_text(encoding="utf-8").split("\n")[0])
+    assert set(out) == {"ok", "restore"} and out["ok"] is True and out["restore"]["committed"] is True
+    assert out["restore"]["note"] == "the key ***redacted*** was refused"
+
+
+def test_a_secret_found_only_in_a_key_changes_nothing(tmp_path):
+    p = tmp_path / "k.json"
+    p.write_text(json.dumps({SECRET: 1}), encoding="utf-8")
+    assert ss.scrub_file(p, SECRET) is False, "keys are field names; this is the stated rule, not a leak this helper can fix"
+
+
+def test_a_json_document_is_scrubbed_and_a_nan_in_it_survives_and_is_no_change(tmp_path):
+    p = tmp_path / "report.json"
+    p.write_text(json.dumps({"import_run": {"label": f"{SECRET}.oobak"}, "n": float("nan"), "rows": [f"{SECRET}!"]},
+                            indent=2), encoding="utf-8")
+    assert ss.scrub_file(p, SECRET) is True
+    out = json.loads(p.read_text(encoding="utf-8"))
+    assert out["import_run"] == {"label": "***redacted***.oobak"} and out["rows"] == ["***redacted***!"]
+    assert out["n"] != out["n"], "the NaN is still one"
+    q = tmp_path / "nan.json"
+    q.write_text(json.dumps({"n": float("nan")}), encoding="utf-8")
+    assert ss.scrub_file(q, SECRET) is False, "a file whose only oddity is a NaN holds nothing to take out"
+    assert q.read_text(encoding="utf-8") == '{"n": NaN}'
+
+
+def test_a_line_cut_by_a_kill_and_a_file_of_text_are_scrubbed_as_text(tmp_path):
+    p = tmp_path / "cut.jsonl"
+    p.write_text('{"a":1}\n{"label":"x-' + SECRET + '","dest":"/tm', encoding="utf-8")
+    assert ss.scrub_file(p, SECRET) is True
+    assert _lines(p) == ['{"a":1}', '{"label":"x-***redacted***","dest":"/tm']
+    t = tmp_path / "note.log"
+    t.write_text(f"key {SECRET} refused\nagain {SECRET}\n", encoding="utf-8")
+    assert ss.scrub_file(t, SECRET) is True
+    assert t.read_text(encoding="utf-8") == "key ***redacted*** refused\nagain ***redacted***\n"
+    broken = tmp_path / "torn.json"
+    broken.write_text('{"label": "' + SECRET + '", "n"', encoding="utf-8")
+    assert ss.scrub_file(broken, SECRET) is True and SECRET not in broken.read_text(encoding="utf-8")
+
+
+def test_a_secret_that_would_rebuild_itself_is_not_left_in_a_file(tmp_path):
+    p = tmp_path / "r.jsonl"
+    p.write_text(json.dumps({"label": "key red refused"}) + "\n", encoding="utf-8")
+    assert ss.scrub_file(p, "red") is True
+    assert "red" not in json.loads(_lines(p)[0])["label"] and json.loads(_lines(p)[0])["label"] == "key ### refused"
+
+
+def test_a_file_that_is_not_text_is_refused_not_mangled(tmp_path):
+    p = tmp_path / "x.jsonl"
+    p.write_bytes(b"\xff\xfe\x00 not utf-8 " + SECRET.encode())
+    with pytest.raises(ValueError):
+        ss.scrub_file(p, SECRET)
+    assert p.read_bytes().startswith(b"\xff\xfe") and SECRET.encode() in p.read_bytes()
+    with pytest.raises(OSError):
+        ss.scrub_file(tmp_path / "missing.jsonl", SECRET)
+
+
+def test_an_empty_secret_rewrites_nothing(tmp_path):
+    p = tmp_path / "e.jsonl"
+    p.write_text('{"a":"b"}\n', encoding="utf-8")
+    assert ss.scrub_file(p, "") is False and p.read_text(encoding="utf-8") == '{"a":"b"}\n'
+
+
+def test_a_rewrite_that_fails_leaves_the_old_file_whole_and_no_copy_behind(tmp_path, monkeypatch):
+    p = tmp_path / "f.jsonl"
+    body = json.dumps({"label": SECRET}) + "\n"
+    p.write_text(body, encoding="utf-8")
+
+    def boom(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ss.os, "replace", boom)
+    with pytest.raises(OSError, match="disk full"):
+        ss.scrub_file(p, SECRET)
+    assert p.read_text(encoding="utf-8") == body, "the old file is whole; the caller decides about it"
+    assert not list(tmp_path.glob("*.part")), "the half-made copy is removed"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_the_rewritten_file_keeps_the_permissions_the_original_had(tmp_path):
+    p = tmp_path / "m.jsonl"
+    p.write_text(json.dumps({"label": SECRET}) + "\n", encoding="utf-8")
+    os.chmod(p, 0o600)
+    assert ss.scrub_file(p, SECRET) is True
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("ensure_ascii", [True, False])
+@pytest.mark.parametrize("secret", ['pa"ss', "back\\slash", "pässwörd", "tab\there", "emoji-😀-x", 'pä"ss'])
+def test_a_cut_line_is_scrubbed_for_the_secret_as_json_wrote_it_too(tmp_path, secret, ensure_ascii):
+    """The run journal writes ASCII JSON, so a line cut before it was whole holds the secret in its ESCAPED form
+    (a quote, a backslash, a tab and every letter outside ASCII is an escape sequence there), which no search for
+    the secret as typed finds; a writer that keeps its letters (``ensure_ascii`` off) escapes the rest and leaves
+    a third form. A cut line is not JSON, so it is scrubbed as text, in every form."""
+    full = json.dumps({"ev": "run_begin", "label": f"b-{secret}.oobak", "dest": "/tmp/somewhere/b.oobak"},
+                      separators=(",", ":"), ensure_ascii=ensure_ascii)
+    cut = full[: full.index('"dest"') + 9]
+    with pytest.raises(ValueError):
+        json.loads(cut)
+    escaped = json.dumps(secret, ensure_ascii=ensure_ascii)[1:-1]
+    assert escaped in cut, "the control: the line holds the form its writer produced"
+    p = tmp_path / "cut.jsonl"
+    p.write_text('{"a":1}\n' + cut, encoding="utf-8")
+    assert ss.scrub_file(p, secret) is True
+    text = p.read_text(encoding="utf-8")
+    for form in {secret, json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1]}:
+        assert form not in text, form
+    assert _lines(p)[0] == '{"a":1}', "the line before it is untouched"
+
+
+@pytest.mark.parametrize("depth", [5000, 100000])
+@pytest.mark.parametrize("name", ["deep.jsonl", "deep.json"])
+def test_a_file_nested_past_what_the_interpreter_can_walk_is_scrubbed_as_text_and_raises_nothing(
+        tmp_path, name, depth):
+    """5,000 levels are read by the JSON parser and overrun the walk that scrubs the values; 100,000 are refused by
+    the parser itself. Neither may raise out of ``scrub_file`` (the caller would lose the rest of its work), and
+    neither may leave the secret behind."""
+    body = '{"label":"x-' + SECRET + '","deep":' + "[" * depth + "]" * depth + "}"
+    with pytest.raises(RecursionError):
+        ss.without_secret(json.loads(body), SECRET)  # the control: the ordinary route cannot do it
+    p = tmp_path / name
+    p.write_text(body + "\n", encoding="utf-8")
+    assert ss.scrub_file(p, SECRET) is True
+    text = p.read_text(encoding="utf-8")
+    assert SECRET not in text and "***redacted***" in text
+
+
+def test_the_bytes_of_every_line_that_is_not_rewritten_are_kept_line_endings_included(tmp_path):
+    """A journal a Windows writer ended with CRLF stays CRLF, line by line: the lines without the secret are not
+    touched, and the one that is rewritten keeps its own ending."""
+    clean = b'{"a":1}\r\n'
+    dirty = json.dumps({"label": SECRET}, separators=(",", ":")).encode() + b"\r\n"
+    p = tmp_path / "w.jsonl"
+    p.write_bytes(clean + dirty + clean)
+    assert ss.scrub_file(p, SECRET) is True
+    assert p.read_bytes() == clean + b'{"label":"***redacted***"}\r\n' + clean
