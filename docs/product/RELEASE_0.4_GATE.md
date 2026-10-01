@@ -55,8 +55,8 @@ step: a session never moves a tag). Row G records it, and the release published 
 
 | # | Row | Owner | Origin | Status |
 |---|---|---|---|---|
-| A | A committed full import that re-checks **all** sources | operator | ruled 2026-08-13, moved from 0.3 row 4 | **OPEN — the button exists (2026-09-18):** Settings → Advanced → Diagnostics → *0.4 release run*; its report's row A is the committed fresh-install restore + the integrity reading. Pressing it is the operator's; reading its report is the maintainer's |
-| B | A multi-day (≥72 h) collector soak | operator | ruled 2026-08-23, moved from 0.3 row 7b | **OPEN — the button exists (2026-09-18):** the same run arms the unattended kit through the ONE online seam, heartbeats hourly for the hours entered (72 by default) and reads the soak window + P0.3 at the end |
+| A | A committed full import that re-checks **all** sources | operator | ruled 2026-08-13, moved from 0.3 row 4 | **OPEN — the button exists (2026-09-18):** Settings → Advanced → Diagnostics → *0.4 release run*; its report's row A is the committed fresh-install restore + the integrity reading. Pressing it is the operator's; reading its report is the maintainer's · **Field evidence 2026-09-30 (§2):** two instances already read `inversions-found`, three named domains; the merge fix is on `main` (PR #1278), its field proof is this row's |
+| B | A multi-day (≥72 h) collector soak | operator | ruled 2026-08-23, moved from 0.3 row 7b | **CLOSED 2026-10-01 (`R113`, «17a»)** on instance 090243's 72 h run of 19–22 September, its 73 hourly readings as the memory evidence; §2 says what the close does not claim. (The button of 2026-09-18, which arms the unattended kit and heartbeats hourly, is how that run was made) |
 | C | Diagnostics on the ~1M-article instance | operator | ruled 2026-08-23, moved from 0.3 row 3's earlier bar | **OPEN — the button exists (2026-09-18):** the second button (*Run as the ~1M-article instance*) makes the end-of-run all-diagnostics bundle the REQUIRED artifact and reads its coverage block and zero-byte members into the report |
 | D | Row B's evidence is readable from one artifact | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **BUILT, and DRIVEN end to end at fixture scale 2026-09-15** — four of six blocks measured, the other two `measured: false` with a reason; still awaiting a ≥ 72 h run to read |
 | E | Row A's demonstration has tooling that can state its own result | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **PARTIAL** — built, riding the bundle, and driven end to end 2026-09-15 in BOTH directions (clean → `consistent`; seeded laundering → `inversions-found`, named); the RUN is Row A's |
@@ -128,6 +128,54 @@ depends on the earlier one having actually run:
 That last clause is the whole point — a pass that only counts `qualified` rows cannot see the
 inversion this row exists to catch.
 
+**Field evidence, 2026-09-30 (the 16-instance diagnostics, rank 14; added 2026-10-01).** The
+failing shape this clause exists to catch has now been seen in the field twice, by the integrity
+check row E built. `qualification-integrity.json` reads `inversions-found` on `20260930-085639`
+(2 laundered: `psx.com.pk`, newest judging attempt `disqualified` on 2026-09-03, and `law.go.kr`,
+2026-09-04, both `oo-source-qualification-1`) and on `20260930-091717` (3: the same two plus
+`wiadomosci.onet.pl`, `oo-source-qualification-2`, 2026-09-08). Each is live `qualified` while its
+newest judging attempt reads `disqualified`, and each carries the catalogue's own stamp
+(`oo-curated-catalog-1`, one shared `qualified_at` per instance). Three other instances read
+`consistent` (`085454`, 20 sources with a judging attempt; `090243`, 657; `101538`, 511) and the
+other eleven carry no judging attempt at all, so their member reads `not-measurable-here`. The mechanism was **reproduced with the real `merge_corpus`** in PR #1278 (merged
+2026-10-01 00:25 UTC): the adoption `UPDATE` fired only where the local status was `unqualified`,
+and a curated stamp is `qualified`, so another instance's measured disqualification landed in
+the attempt history beside a live `qualified`. The merge now lets a curated stamp give way to an
+incoming measured verdict when that is the newest judging evidence either side holds (a locally
+measured verdict still wins, and an incoming curated stamp never replaces a curated stamp or a
+measured verdict this instance already holds), pinned by
+`tests/test_merge_source_qualification.py`. **That fix is unit-proved; its field proof is this
+row.**
+
+What this adds to the clause, none of it a new bar:
+
+1. The spot-check is answered by `inversions_total` in the integrity member, with
+   `checked.with_judging_attempt` as the denominator, as row E states — and an instance whose
+   member reads `inversions-found` with `laundered_total` above 0 fails it, because a
+   laundered row is a previously-disqualified source that is not still disqualified there (all
+   five inversions of the round are laundered; `demoted_total` is 0 on both instances).
+2. PR #1278 stops a merge from turning another instance's measured verdict into a new
+   inversion on a row that carries only the catalogue's curated stamp, which is the case the
+   field showed. It does not rewrite rows that are already inverted, and two shapes still arrive
+   inverted (both reproduced 2026-10-01 with the real `merge_corpus`; no test covers either).
+   A row holding THIS instance's own measured verdict keeps it while a newer, disagreeing
+   attempt from the backup is copied beside it, which reads `inversions-found` (laundered when
+   the local verdict is `qualified`, demoted when it is `disqualified`). And a backup from an
+   instance that is itself inverted carries its inversions in, because an incoming curated
+   stamp replaces neither a curated stamp nor a measured verdict while its attempt rows are
+   copied unchanged: a curated instance that imports `085639`'s shape (a live curated
+   `qualified` stamp whose newest judging attempt is `disqualified`; there the stamps are dated
+   2026-09-25 and the attempts 2026-09-03 and 04) reads `inversions-found` afterwards. A later
+   import that carries the agreeing measured verdict heals such a curated row, per the merge's
+   own comment. The direct way is `scripts/repair_qualification_inversions.py`,
+   on `main` since 2026-09-12 (PR #1117): operator-run, a dry run unless `--apply`, it sets
+   `Source.status` back to what the instance's own newest judging attempt recorded. Until this
+   entry no gate file named it (the ledger had it only in PR #1117's `shipped.csv` row).
+3. `checked.with_judging_attempt` and `basis: "measured"` are not evidence that a pass ran on that
+   build: the backup merge copies attempt rows unchanged, so a judgement made on another instance
+   counts. Read the report's verdict counts with that in mind (on `085639` and `091717` the
+   2,049 and 2,195 "measured" rows all carry the curated stamp).
+
 **The cheaper substitute, still available.** A *small* committed backup demonstrates (1) and
 (3) in minutes; only (2) genuinely needs the full corpus. This split was **proposed and
 declined for 0.3** (maintainer, 2026-08-13: *"mark it as a necessary step for v0.4, we won't do
@@ -136,7 +184,7 @@ re-invented, not because it has been re-proposed.
 
 ---
 
-### Row B — a multi-day (≥72 h) collector soak
+### Row B — a multi-day (≥72 h) collector soak · CLOSED 2026-10-01 (`R113`)
 
 **Carried from `0.3` §5.** Was the second half of row 7. Moved 2026-08-23: *"Postpone the >72h
 with the other P0 validation to the v0.4 release."* The cold-boot half (7a) stayed, because it
@@ -153,6 +201,59 @@ three-day label.
 
 **Closes when** one report shows P0.3 with samples spanning ≥ 72 h and no climb, **and** the
 soak-window artifact (row D) shows the process actually stayed up for the window it reports on.
+
+**CLOSED 2026-10-01 (`R113`, «17a»).** The maintainer closed this row on instance 090243's
+72-hour run of 19 to 22 September and accepted its hourly memory readings as the memory evidence.
+The question put to them (2026-09-30 22:23 UTC) was exactly the gap the "Read both signals"
+paragraph above names: `collect_perf.jsonl` keeps about two hours, so no report can show a P0.3
+reading that spans 72 h. The two options were «Yes, the hourly readings count as the memory
+evidence» (recommended) and «No, make the memory check cover a whole run, then run another 72-hour
+soak».
+
+*The evidence*, from that instance's own `release-run.json` and `chronology.json` (the
+`20260930-090243` diagnostics, re-read 2026-10-01): a `release-scale` run (256,341 articles at
+preflight, 257,951 when the soak was armed, 4 cores, 3,740 MB); the soak window ran 2026-09-19
+15:03:34 to 2026-09-22 15:03:36 (+02:00), 72.0 h, `ended_by` window-complete, `outcome` done, one
+stretch, no restart seen in the heartbeats, process `pid 3266`. There are 73 hourly heartbeats,
+every `elapsed_h` step 1.0 h (the beats' own timestamps 3,595 to 3,605 s apart) and none dropped,
+with the scheduler running and the kill switch off on every one and the memory guard never engaged
+(0 engagements). RSS: first 958.7 MB, minimum 788.2, maximum 1,623.1, last 1,260.9, and the medians
+of the three 24-beat days (beats 0 to 23, 24 to 47, 48 to 71) 1,349.15 / 1,307.05 / 1,322.95 — no
+climb. The same process ran 2026-09-19 04:36:15Z to 2026-09-24 14:14:03Z (129.6 h) and ended by its
+own shutdown hook (chronology: `clean`, `end_basis` «this session's own shutdown hook»), so it
+contains the whole window. The run's own soak-window block (`phase_results.collect.soak_window`,
+the artifact row D's table describes for its six blocks; the seventh, `wiki_lane` (the Wikipedia
+lane, row P's), is not in that table and reads `measured: false` on this run; this close does not
+change row D), taken by `pid 3266` as the window ended, reads 80.46 h of process uptime from
+2026-09-19T04:36:14Z (`reaches_bar: true`) and 0 memory-guard engagements over 3.35 days. The
+report's own P0.3 line reads `pass` (+79 MB over 2 passes, 1,718 → 1,797 MB) but covers only the
+retained ~2 h: it is **not** the multi-day evidence, the heartbeats are.
+
+**What this close does not claim** — recorded here so nobody has to rediscover it, none of it
+reopening the ruling:
+
+- `soak-window.json`'s `reaches_bar: true` on 090243 (119.69 h, basis «process uptime») and
+  chronology's `bar_reached: true` (basis «collection», a stretch of 430,600 s) are both read from
+  the instance's CURRENT process (`pid 2093`, started 2026-09-25T07:38Z), not from the soak
+  process: `soak-window.json` describes only the process that produced the export, and `pid
+  3266`'s build predates PR #1172, so its collection was not recorded (`collection_recorded`
+  false) and the collection-basis bar cannot count it. The close rests on the release run's own
+  soak-window block (80.46 h, above) and chronology's process basis (anchored at the run's start,
+  2026-09-19T04:39:01Z, 8.4 h before the soak was armed, it reaches 72 h on 2026-09-22T04:39:01Z:
+  `summary.process_bar.reached_at` in `chronology.json`).
+- That later process (`pid 2093`) engaged the memory guard **76 times in 119.7 h** (15.2 a day,
+  2,483.7 s engaged, 0.58 % of the time), in `soak-window.json`. It is outside this row's clause.
+- «The previous session ended cleanly» is read here from chronology's session list (`pid 3266`).
+  Session forensics' `previous_session` on 090243 is a later 786 s process (`pid 2164`, unclean),
+  so the key the "Read both signals" paragraph points at names a different process from the one
+  that ran the window.
+- The other windows of the round are recorded and do not close the row: `085214` (72.0 h, done)
+  climbs — day medians (the same beats) 2,116.55 / 2,481.25 / 2,545.35 MB, last beat 2,625.4, 7
+  guard engagements, P0.3 `not-measurable-here`, its window process ended unclean 8.2 h after the
+  window; `085218`'s 72.0 h exists only in its live state file (`live_run`, and chronology's
+  `release_run`, which reads the same file): its last liveness tick is 5.1 minutes after the
+  window, in the bundle phase, unclean, and its final report was never written; `085230` reached
+  30.0 h; `101538` was cancelled.
 
 **New in this window, and worth a glance while it runs (P6, 2026-09-11):** every
 `collect_perf.jsonl` sample now carries a `loop` block — the API server's own event-loop lag,
@@ -986,6 +1087,7 @@ The `0.3` gate's own log is the format.
 
 | Date | Change | Source |
 |---|---|---|
+| 2026-10-01 | **Row B CLOSED (`R113`, «17a»); row A gains the field evidence of the 16-instance diagnostics.** Row B closes on instance 090243's 72-hour run of 19 to 22 September with its 73 hourly readings as the memory evidence (the built-in memory check keeps about two hours, so no P0.3 reading can span 72 h). §2 records what the close does not claim: `soak-window.json`'s `reaches_bar` is the later process's (the release run's own soak-window block, taken by the soak process, reads 80.46 h), that later process engaged the memory guard 76 times, which process «ended cleanly» reads, and why the other windows of the round (085214 climbing, 085218's missing final report, 085230 at 30 h) do not close it. Row A stays OPEN and its bar is unchanged: §2 now records `inversions-found` on two instances (three named domains), the merge fix on `main` (PR #1278, unit-proved; its field proof is this row's), the two import shapes that still arrive inverted (a row holding the instance's own measured verdict beside a newer, disagreeing incoming attempt, and a backup from an instance that is itself inverted; both reproduced with the real merge, no test covers either), and the repair script that was on `main` since PR #1117 but named in no gate file. **A date corrected:** no release run started on 2026-09-26. The eight runs in the 16 bundles (five with a report file, three interrupted in the `row5_quarantine` phase (0.3's row 5, row W here) with no heartbeat) all started on 2026-09-19 (run ids `20260919T04…Z`; `085218` and `085230` were resumed on 2026-09-22, `085230` again on 2026-09-26, and armed their soaks on 2026-09-26: `soak.started_at` 15:23:51 and 15:07:57, +02:00). The «release run of 2026-09-26» of the 2026-09-28 entry below, and the sentence of `docs/CHANGES.md` that repeated it (replaced in this PR), therefore do not name the date a run started. | maintainer (project chat, 2026-10-01 00:12 UTC, «17a») · diagnostics ranks 13 and 14 · recorded by the session |
 | 2026-09-30 | **The older-rounds list, answered in the thread (03:35 UTC; recorded without code changes).** Rows carried onto the 0.5 list by `R92`: **row H** `PF07` = a (the three ride-along opt-outs fixed now, in their own small PR); **row T** `PF08` = a (the knob's words become kbit/s ×12 and invariant #4 is amended in that PR); **row U** `R99` = with eclipses (the eclipse canon is no longer unstated). | maintainer (project thread «Record the 37 answers», 2026-09-30 03:35 UTC) · recorded by the session |
 | 2026-09-29 | **The 37-question list, answered in chat (19:55 UTC; recorded without code changes).** **`R92` («21=b», over the recommended «keep them here»): every row still open at the `v0.4.0` tag — A, B, C, D, E and H to W — is now also a condition of the 0.5 exit** (`RELEASE_0.5_GATE.md` §1b); each keeps its text, bar and status HERE and closes here on its named artifact. **`R91` («20=a»): row H's 15 lane names, three headings and the 16th lane «Places and people» are kept** (H9 answered). **Q925 = a** (row Q: legislation.gov.uk → gesetze-im-internet → e-Gov → EUR-Lex → LEGI last); **Q1113 = a** (row S: the embassy platforms stay excluded, nothing published, nobody contacted — the status quo, confirmed). From the RC round: `RC02` = a (row K keeps the legacy single-file restore forever), `RC08` = a (`RC08.3` row C and `RC08.6` row U confirmed), `RC13` = b with eclipses (row U: the religious dates researched by a networked session and shipped PREINSTALLED, every religion covered, each shown or hidden by the user — the maintainer's note; the eclipse half is the recorded default), `RC15` = c (row T: Q1148's loopback figures stand AND the per-host egress politeness is to be adapted — no figure was written, so it is proposed and asked), `RC17` = a (row U, as built). **Still open, with the maintainer's words on their `RULINGS_INDEX.md` rows:** `RC05` and `D47` (to the thread «Keyword working session»), `RC06` (row S's re-check window — waits on the thread «Fix source qualification»: no source was added in 72 hours on eight instances despite more than 80,000 candidates, and re-qualification is to run as a queue), `RC16` (a later discussion). **No row changed status.** | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 | 2026-09-28 | **`v0.4.0` PUBLISHED from the moved tag (row G; no other row changed).** With the GitHub release deleted, the maintainer moved `v0.4.0` onto `00af1d9c`, the PR #1195 merge, from a GitHub Codespace at 10:13 UTC; a website attempt before it had re-published the release on the old tag without a run, since GitHub's website cannot move or delete a tag. `release.yml` run 36408430314 passed its full-suite job and the tag-matches-version step, then created the pre-release with the generated notes (no-telemetry re-check passing), the wheel, the sdist and `SHA256SUMS` at 11:00 UTC. The rows open at the tag are unchanged. | maintainer (Codespace, 10:13 UTC) · `release.yml` run 36408430314 · recorded by the session |
