@@ -10391,7 +10391,7 @@ nowhere. Instruments only; K2's value, n and verdict are unchanged. The latency 
 how each window ended, its first and slowest call and the slowest call's distance from the last unlock; the article
 list's browse is timed per phase into the search-timing record, whose self-test no longer wipes the live window; the
 durable logs are cut by a copy swapped in with os.replace. The same PR closes 0.4 row D on instance 090243's
-release-run report and records PR #1281 in row A. Lesson: `LESSONS.md`, the entry "A LIST THE PRODUCER CUT CANNOT BE
+release-run report and records PR #1281, with the export changes of PRs #1288 and #1294, in row A. Lesson: `LESSONS.md`, the entry "A LIST THE PRODUCER CUT CANNOT BE
 LOOKED UP IN".
 
 - **2026-10-01 · scheduler/pool-disk-unlock-findings (WAL / disk thread, the follow-up to #1287, #1289 and #1293).**
@@ -10413,3 +10413,15 @@ available memory and engaged in that crash, so no gate change was made. Cost bou
 stack caps, 8 kept, counters only, never `gc.get_objects`). Lesson: `LESSONS.md`, the entry "A PLATEAU UNDER THE MEMORY
 LINE WAS UNRECORDED BY DESIGN". Stopping cleanly when memory does not recover stays the user's question 22; a relaunch
 starts offline under R117, so a clean stop alone would not resume the run.
+
+- **2026-10-01 · monitoring/release-run-restore (release candidate diagnostics, PR #NNNN).** From the 16-instance
+diagnostics round: two of the four release runs that reached the restore had failed there (one refused by the restore
+engine's own staging check after 128 s, one dead after 53 minutes with `Error creating function`), and the report
+recorded both as `measured`, with rows A and I over an empty restore block. A phase's status is now the child's outcome:
+a restore counts only when its child reported ok, exited 0 and committed; otherwise the phase reads `error` with the
+child's own words, rows A and I read `error`, rows E and K say the restored install's reading is not counted, and a
+resume retakes it and owes the passphrase as a first run does (a state file an earlier build wrote keeps no restore
+this rule would not count). The passphrase is taken out of what the child says, and out of the run journal and import
+reports a kept fresh install leaves on the drive (`src/monitoring/secret_scrub.py`). Row A's evidence paragraph in the
+0.4 gate records the five reports' figures and what stays inferred. Lesson: `LESSONS.md`, the entry "A PHASE'S STATUS
+WAS THE RUNNER'S, NOT THE CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED".
