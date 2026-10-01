@@ -21,6 +21,7 @@ from src.config.machine_floor import machine_floor
 from src.database.models import Source
 from src.database.session import get_db
 from src.monitoring.server_load import server_load
+from src.scheduler import storage_guard
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
 from src.scheduler.runner import get_scheduler
 from src.scheduler.settings import (
@@ -364,6 +365,9 @@ def scheduler_start() -> dict:
     # try again (the guard re-trips after fresh sustained samples if memory is
     # still genuinely low — a retry, never a permanent override).
     memguard.memory_guard.reset(reason="operator started collection")
+    # Likewise the storage guard: a RETRY, never an override -- it re-trips after fresh
+    # over-limit samples if the WAL is still pinned or the drive still nearly full.
+    storage_guard.storage_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}
 
@@ -389,6 +393,7 @@ def scheduler_run_now() -> dict:
     note_operator_crossed_online()  # a user-triggered run IS crossing online
     # A user-triggered run releases a paused-low-memory latch (see /start).
     memguard.memory_guard.reset(reason="operator ran collection now")
+    storage_guard.storage_guard.reset(reason="operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""
     started = get_scheduler().run_now()
     return {"started": started, **_status_payload()}
@@ -405,6 +410,18 @@ def memory_guard_resume() -> dict:
     from src.scheduler import memguard
 
     memguard.memory_guard.reset(reason="operator resumed via the API")
+    return _status_payload()
+
+
+@router.post("/storage-guard/resume")
+def storage_guard_resume() -> dict:
+    """Release the storage guard's pause explicitly ("Try again now").
+
+    A retry, never an override of the measurement: the guard re-engages after fresh
+    over-limit samples if the WAL is still pinned past this machine's limit or the drive
+    is still nearly full. Status (incl. the guard's numbers) rides the response.
+    """
+    storage_guard.storage_guard.reset(reason="operator resumed via the API")
     return _status_payload()
 
 

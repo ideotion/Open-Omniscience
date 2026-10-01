@@ -934,6 +934,9 @@
     .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
+    /* The storage guard's paused-collection notice (task manager + /tasks): a caveat, so it
+       takes --caveat (contrast-verified on every theme) and is never folded away. */
+    .vwarn { margin:7px 0 5px; color:var(--caveat); font-size:12px; line-height:1.4; }
     /* Settings -> newsletters: the per-source rows reuse the .vr markup, whose rules above are
        scoped to the task manager, so the name and its count ran together ("BBC News1";
        2026-09-26 click-through U7). Name left, count right, as in the task manager. */

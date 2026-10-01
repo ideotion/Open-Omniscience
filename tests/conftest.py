@@ -51,6 +51,11 @@ os.environ.setdefault("OO_LLM_AUTOSTART", "0")
 # test that drives the lane must not reach out and shut down a developer's own backend.
 # Production default is ON.
 os.environ.setdefault("OO_LLM_AUTORELEASE", "0")
+# The storage guard (WAL pinned / drive nearly full) samples the REAL drive and runs a
+# supervisor thread: on a developer's nearly full disk it would pause collection tests, and
+# a supervisor that outlived its test would keep sampling into the next one. Off for the
+# suite; tests/test_storage_guard.py turns it back on for itself, with injected readings.
+os.environ.setdefault("OO_STORAGE_GUARD", "0")
 # Never auto-seed the ~3,200-source production catalog during tests. The seed moved
 # into run_deferred_startup on 2026-06-18, so it now fires on EVERY TestClient-context
 # lifespan -- slow, non-hermetic, and its auto-increment Source ids collide with tests
@@ -197,6 +202,19 @@ def _memory_guard_not_leaked():
     from src.scheduler.memguard import memory_guard
 
     memory_guard.reset(reason="test isolation")
+
+
+@pytest.fixture(autouse=True)
+def _storage_guard_not_leaked():
+    """The storage guard (WAL pinned / drive nearly full) is a process-global latch, the
+    same order-dependent-pollution class as the memory guard above: a test that engages it
+    (or feeds it a full-disk error) must never leak a paused collection into the next one.
+    Reset on the way in as well as out, like the caches below."""
+    from src.scheduler.storage_guard import storage_guard
+
+    storage_guard._reset_for_tests()
+    yield
+    storage_guard._reset_for_tests()
 
 
 @pytest.fixture(autouse=True)

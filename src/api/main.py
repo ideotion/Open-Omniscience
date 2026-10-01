@@ -385,6 +385,17 @@ def _run_startup_upkeep() -> None:
             _start_offline_maintenance()
         except Exception:  # noqa: BLE001 - maintenance must never block startup
             logger.warning("could not start the offline maintenance timer", exc_info=True)
+        # The storage guard's supervisor (WAL pinned past this machine's limit, or the drive
+        # nearly full: pause collection, name the holder, resume by itself). After unlock by
+        # construction -- this function only runs once the store is open -- and idempotent
+        # across unlocks. Reads file sizes and the drive's free bytes; zero network, and no
+        # database connection unless an engaged WAL latch runs its drain.
+        try:
+            from src.scheduler.storage_guard import start as _start_storage_guard
+
+            _start_storage_guard()
+        except Exception:  # noqa: BLE001 - a guard must never block startup
+            logger.warning("could not start the storage guard", exc_info=True)
 
     logger.info(f"Open Omniscience API {APP_VERSION} started")
 

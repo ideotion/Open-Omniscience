@@ -12805,3 +12805,74 @@ database. **After any mechanical rename, AST-scan the files for STRING constants
 contain the new name** (the scan of every migrated file is ten lines and came back empty after the one fix),
 and treat a string that carries an identifier as data until proven prose. The seam ratchet keeps
 `src/bulletin/sections.py` at one occurrence for this reason.
+
+### A WAL PINNED BY A READER CAN ONLY BE BOUNDED BY STOPPING THE WRITERS; AN `in_transaction` FLAG CANNOT EVEN FIND THE READER (WAL / disk thread, 2026-09-30, `tests/test_wal_pin_facts.py`)
+
+Six of sixteen field instances carried a `-wal` of 18.7 to 42.9 GB against the 64 MiB `journal_size_limit`, and
+the drive filled on three. MEASURED on real SQLite (the four facts are pinned as tests, so a future SQLite that
+changes them fails a test instead of shipping a guard for a problem that has moved): a reader holding a
+snapshot (an open SELECT cursor, or a BEGIN) makes `wal_checkpoint(PASSIVE)` backfill only up to its mark
+(97 of 7,554 frames in the bench) and `TRUNCATE` come back busy, while the file keeps growing by APPENDING;
+nothing inside the process can evict a foreign reader; once the reader ends, ONE TRUNCATE takes the file to zero
+and the next write does not regrow it. `journal_size_limit` only applies at a WAL reset, so it bounds nothing
+while a reader pins. **So the only lever on the FILE is to stop appending until the reader ends** (the storage
+guard: `src/scheduler/storage_guard.py`, a pause-and-drain latch modelled on `memguard.py`), not a cleverer
+checkpoint. And `sqlite3.Connection.in_transaction` is **False for an open SELECT cursor** (True only after a
+BEGIN), so a pool-level "is this checkout in a transaction" flag is structurally blind to the commonest pin;
+the instrument has to NAME the holder (thread, age, a stack captured on demand) and say what it cannot see (a
+read that is not a pooled checkout). The one DESIGNED pinner in the tree is the read-snapshot export, which holds
+ONE read transaction across a whole keyword export so its two scans agree: it was not registered with
+`pool_watch`, so a pin during an export read as "nobody is reading". Sizing rule that came out of it: a limit
+derived from the machine (`10% of the corpus file`, clamped, and never more than a tenth of free disk), each
+number stating what it protects, beats a constant: the ceiling is the next unlock's recovery time (measured 5.0
+to 39.2 s per GiB of boot WAL), the free-disk term protects the drive.
+
+### A REGISTER KEYED ON THE DBAPI CONNECTION KEEPS A ROW FOREVER FOR EVERY CONNECTION SQLAlchemy INVALIDATES OR DETACHES (WAL / disk thread, 2026-09-30, `tests/test_pool_watch_phantoms.py`)
+
+`pool_watch` (which checkouts hold the pool, so a busy checkpoint can name a pinner) was keyed on
+`id(dbapi_connection)`. SQLAlchemy clears `record.dbapi_connection` BEFORE it fires `checkin` on an invalidated
+connection, and a detached connection never checks in at all, so either left an immortal row whose age grew
+without bound, and every WAL diagnosis then named it as the oldest holder (reproduced against SQLAlchemy 2.1.1;
+the same hole `pool_reserve.py` documents for its slot table). (The field's "one API-thread checkout held for
+the whole process life", rank 12, turned out NOT to be a phantom: it was the status probe's deliberately pinned
+idle connection, PR B. The phantom class is real and would have been named as a pinner all the same.)
+**Key a checkout register on the connection
+RECORD (the one object `checkout`, `checkin`, `detach` and `invalidate` are all handed), validate at READ time
+(`record.fairy_ref is not None`), and count what the read pruned**, so a phantom is a reading rather than a
+silent lie. Before naming a long holder as a leak, rule out a phantom: list the pool from the holder's own side.
+
+### A FULL DRIVE ARRIVES AS THREE DIFFERENT EXCEPTIONS, AND THE ONE EVERY LATER STATEMENT SEES HIDES THE FIRST IN ITS TEXT (WAL / disk thread, 2026-09-30)
+
+One field machine logged no successful pass for 35 hours, each of 14 passes failing on the same full drive: the
+failure was recorded and nothing connected "the disk is full" to "do not start the next pass". The failure
+surfaces as `OperationalError: database or disk is full` (SQLITE_FULL, no errno), `OSError` errno 28 from a plain
+file write, and then, for every statement after it on the same session, `PendingRollbackError` whose MESSAGE
+carries the original ("Original exception was: (sqlite3.OperationalError) database or disk is full"). The
+classifier (`storage_guard.is_disk_full`) therefore walks `.orig`/`__cause__`/`__context__` AND matches the text.
+A real SQLITE_FULL can be forced for a test with `PRAGMA max_page_count=8`, so the classifier is pinned against
+SQLite's own message rather than one typed from memory.
+
+### A BACKGROUND THREAD STARTED AT BOOT NEEDS A TEST-SUITE OPT-OUT, AND A FIXTURE THAT RESETS ITS LATCH IS NOT ONE (WAL / disk thread review, 2026-09-30, `tests/conftest.py`)
+
+The storage guard's supervisor starts inside `_run_startup_upkeep`, and two tests unset `OO_NO_SCHEDULER` and run
+that upkeep, so the thread started in the middle of the suite and never stopped. The conftest fixture reset the
+LATCH per test, which is not the same thing: the leaked thread kept sampling the developer's real drive and
+polling whatever `storage_guard.storage_guard` was at that moment (a test's fake included), and on a nearly full
+drive it re-tripped the real singleton within ten seconds of every reset and ran `checkpoint_wal(force=True)`
+against the global engine, taking the write gate. In CI's serial order the boot tests run BEFORE
+`test_storage_guard`, so its own `assert supervisor_running() is False` failed there and nowhere else. The repo's
+precedent was already in the conftest (`OO_OFFLINE_MAINTENANCE=0`, `OO_LLM_AUTOSTART=0`): **a thing that starts a
+thread or samples the real machine gets an `OO_*` off-switch defaulted off for the suite, and its own test file
+turns it on for itself with injected readings.** Give every such thread's `stop()`/`start()` a per-start stop
+event, too: a shared event that `start()` clears revives the old thread, and one that it does not leaves none.
+
+### AN AFFECTED-TEST SWEEP IS NOT A SWEEP OF GUARDS: RUN THE WHOLE-TREE GUARDS AND EVERY NODE HARNESS THAT EXTRACTS WHAT YOU CHANGED (WAL / disk thread review, 2026-09-30)
+
+PR A went to review green on 178 "affected" test files and had two CI-red blockers that only a wider run found:
+a node harness (`tests/clickthrough_b16_node_test.js`) extracts `_renderVitals` BY NAME and evaluates it alone, so
+the new `_storageGuardHtml` call inside it was an undefined name (`ReferenceError`), and the repo-wide
+`test_source_slicing_discipline` budget (230) had gone to 231 through one test-file slice. **A function that gains
+a helper call breaks every harness that extracts it without the helper**: grep `tests/*_node_test.js` for the
+function's name and run ALL the node-wrapped tests, not the ones whose name sounds related; and run the repo-wide
+guard tests (slicing budget, ruff ratchet, i18n gates, inline-handler ratchet, planned index, repo invariants)
+before saying a change is verified.
