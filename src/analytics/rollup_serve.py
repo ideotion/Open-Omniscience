@@ -307,23 +307,24 @@ def _boot_order_verdict() -> dict | None:
     from src.api import boot_sequence
 
     if boot_sequence.warm_running():
-        return {"reason": "boot_order", "detail": "the start-up cache warm-up is running; the rollup is built right after it"}
+        return boot_sequence.heavy_step_verdict()
     return None
 
 
-def build_now_and_wait() -> None:
+def build_now_and_wait() -> str:
     """Build the rollup in the CALLING thread and return when it is done (the boot sequence).
 
-    If a build is already running (a serve kicked it) this waits for that one instead of starting a
-    second. A declined build (memory, an import's exclusive window) returns at once, exactly as the
-    background kick does: the serve keeps falling back to live queries and retries on its next check."""
+    Returns what happened: ``built``, ``declined`` (memory, an import's exclusive window: the serve
+    keeps falling back to live queries and retries on its next check, exactly as for the background
+    kick), ``failed``, or ``waited`` when a build a serve kicked was already running and this
+    waited for that one instead of starting a second."""
     if not _BUILD_LOCK.acquire(blocking=False):
         with _BUILD_LOCK:  # the running build releases it in its own finally
-            return
-    _build_and_swap()  # releases _BUILD_LOCK
+            return "waited"
+    return _build_and_swap() or "built"  # releases _BUILD_LOCK
 
 
-def _build_and_swap() -> None:
+def _build_and_swap() -> str:
     """Background (re)build dispatcher: the PERSISTED store when D1 is active, else the
     in-memory store. Always releases the build lock; a failure never crashes the app.
 
@@ -332,7 +333,9 @@ def _build_and_swap() -> None:
     ``columnar.build_keyword_daily`` directly) is never refused. Skipping leaves the
     previous rollup serving and ``change_pending`` true, so the next check retries; the
     serve also falls back to live queries, so a declined build costs latency, never an
-    answer."""
+    answer.
+
+    Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
         # `last_skip` always names the condition that actually stopped this build rather
@@ -349,13 +352,15 @@ def _build_and_swap() -> None:
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
             )
-            return
+            return "declined"
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:
             _build_inmemory_and_swap()
+        return "built"
     except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
         _LOG.warning("rollup serve: background build failed", exc_info=True)
+        return "failed"
     finally:
         _BUILD_LOCK.release()
 

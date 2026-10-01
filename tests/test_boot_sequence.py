@@ -93,8 +93,15 @@ def test_the_flag_comes_down_even_when_the_warm_step_raises(seq):
 
 def test_a_slow_step_is_a_warning_naming_what_waited_behind_it(seq, monkeypatch, caplog):
     _log, step = seq
-    ticks = iter([0.0, bs.SLOW_STEP_S, bs.SLOW_STEP_S, bs.SLOW_STEP_S + 1, bs.SLOW_STEP_S + 1, bs.SLOW_STEP_S + 2])
-    monkeypatch.setattr(bs.time, "monotonic", lambda: next(ticks))
+    ticks = [0.0, bs.SLOW_STEP_S]  # the warm step took SLOW_STEP_S; every later reading is the same instant
+    seq_clock = iter(ticks)
+    last = [bs.SLOW_STEP_S]
+
+    def clock():
+        last[0] = next(seq_clock, last[0])  # never runs out: another thread may read the clock too
+        return last[0]
+
+    monkeypatch.setattr(bs.time, "monotonic", clock)
     with caplog.at_level(logging.WARNING, logger=bs.__name__):
         bs.run(step("warm"))
     assert any("warm-cache took" in r.message and "the rollup build and the re-index waited" in r.message
@@ -204,3 +211,52 @@ def test_the_sequence_does_not_ask_the_rollup_for_a_build_when_serving_is_off(mo
     monkeypatch.setattr(rollup_serve, "build_now_and_wait", lambda: pytest.fail("built with serving off"))
     with pytest.raises(bs._Skipped):
         bs._rollup_first_build()
+
+
+def test_the_dispatcher_itself_declines_while_the_warm_step_runs(monkeypatch):
+    """The verdict function alone proves nothing if ``_build_and_swap`` stops consulting it."""
+    from src.analytics import rollup_serve
+
+    monkeypatch.setitem(bs._STATE, "warm", "running")
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", lambda: pytest.fail("built during the warm-up"))
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    assert not rollup_serve._BUILD_LOCK.locked()
+    assert rollup_serve.status()["last_skip"]["reason"] == "boot_order"
+
+
+def test_the_map_serve_declines_while_a_heavy_boot_step_runs(monkeypatch):
+    from src.analytics import map_serve
+
+    monkeypatch.setitem(bs._STATE, "warm", "pending")
+    bs._reset()
+    bs._STEPS["rollup"]["state"] = "running"
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    assert bs.heavy_step_verdict()["reason"] == "boot_order"
+    assert map_serve._BUILD_LOCK.acquire(blocking=False)
+    map_serve._build_and_swap()  # releases the lock; must not have built (no duckdb needed to decline)
+    assert not map_serve._BUILD_LOCK.locked()
+    assert map_serve.status()["last_skip"]["reason"] == "boot_order"
+
+
+def test_a_declined_rollup_build_and_a_refused_drain_are_not_shown_as_done(seq, monkeypatch):
+    log, step = seq
+    from src.analytics import rollup_serve
+    import src.backup.volume_job as vj
+
+    monkeypatch.undo()  # the fixture's fakes go; install exactly the two refusals under test
+    bs._reset()
+    bs.request_reindex(3)
+    monkeypatch.setattr(rollup_serve, "serve_enabled", lambda: True)
+    monkeypatch.setattr(rollup_serve, "build_now_and_wait", lambda: "declined")
+    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (False, "already running"))
+    bs.run(lambda: None)
+    rows = _by_step(bs.snapshot())
+    assert rows["rollup"]["state"] == "declined" and rows["reindex-resume"]["state"] == "declined"
+    monkeypatch.setattr(rollup_serve, "build_now_and_wait", lambda: "failed")
+    bs._reset()
+    bs.run(lambda: None)
+    assert _by_step(bs.snapshot())["rollup"]["state"] == "failed"

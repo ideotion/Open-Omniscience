@@ -41,7 +41,7 @@ _LOG = logging.getLogger(__name__)
 # for the afternoon is on record while it is still running.
 SLOW_STEP_S = 300.0
 
-# The steps, in the order they run. A step's state: pending | running | done | failed | skipped.
+# The steps, in the order they run. A step's state: pending | running | done | failed | skipped | declined.
 STEPS = ("warm-cache", "rollup", "reindex-resume")
 
 _LOCK = threading.Lock()
@@ -101,6 +101,19 @@ def warm_running() -> bool:
         return _STATE["warm"] == "running"
 
 
+def heavy_step_verdict() -> dict | None:
+    """The decline a serve-kicked heavy build (the map coverage serve, the rollup) answers with
+    while the boot's cache warm-up or rollup step runs, else ``None``."""
+    with _LOCK:
+        busy = _STATE["warm"] == "running" or _STEPS["rollup"]["state"] == "running"
+    if busy:
+        return {
+            "reason": "boot_order",
+            "detail": "the start-up cache warm-up or rollup build is running; this build waits its turn",
+        }
+    return None
+
+
 def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
     mono = time.monotonic()
     with _LOCK:
@@ -108,8 +121,8 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
     state = "done"
     try:
         step()
-    except _Skipped:
-        state = "skipped"
+    except _Skipped as skipped:
+        state = skipped.state
     except Exception:  # noqa: BLE001 - a start-up step must never take the others down
         state = "failed"
         _LOG.warning("boot step %s failed; the next step still runs", name, exc_info=True)
@@ -124,7 +137,12 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
 
 
 class _Skipped(Exception):  # noqa: N818 - a signal, not an error
-    """A step that had nothing to do: recorded as skipped, not failed."""
+    """A step that ended without doing its work: recorded as ``skipped`` (nothing to do) or
+    ``declined`` (it was refused, e.g. for memory), never as ``done`` and never as ``failed``."""
+
+    def __init__(self, state: str = "skipped") -> None:
+        super().__init__(state)
+        self.state = state
 
 
 def _rollup_first_build() -> None:
@@ -132,7 +150,11 @@ def _rollup_first_build() -> None:
 
     if not rollup_serve.serve_enabled():
         raise _Skipped
-    rollup_serve.build_now_and_wait()
+    outcome = rollup_serve.build_now_and_wait()
+    if outcome == "declined":
+        raise _Skipped("declined")
+    if outcome == "failed":
+        raise RuntimeError("the rollup's first build failed (see the rollup_serve block)")
 
 
 def _start_reindex() -> None:
@@ -147,6 +169,8 @@ def _start_reindex() -> None:
         "boot re-index auto-resume: %s (%s article(s) pending)",
         "started" if started else f"not started ({detail})", pending,
     )
+    if not started:
+        raise _Skipped("declined")
 
 
 def run(warm: Callable[[], None]) -> None:
