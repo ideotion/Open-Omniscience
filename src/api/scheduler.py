@@ -284,7 +284,7 @@ def scheduler_status() -> dict:
 
 
 @router.get("/activity")
-def scheduler_activity(db: Session = Depends(get_db)) -> dict:
+def scheduler_activity() -> dict:
     """The collection-activity panel (the top-bar chip's detail view): live run
     progress (domains only), the next pass's targets + an honest duration
     estimate (method stated), and per-host transfer rates measured from the
@@ -297,7 +297,10 @@ def scheduler_activity(db: Session = Depends(get_db)) -> dict:
     click-through, row T, P1)."""
     from src.ingest import kill_switch_active
 
-    out = get_scheduler().activity(db)
+    # No ``Depends(get_db)``: a poll must never wait on the database pool (it answered 500 after
+    # the pool's 30 s timeout on nine field instances). The plan comes from the last good
+    # preview, labelled with its age (src/scheduler/plan_cache.py).
+    out = get_scheduler().activity()
     out["online"] = not kill_switch_active()
     return out
 

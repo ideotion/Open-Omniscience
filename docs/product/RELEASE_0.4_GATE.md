@@ -419,6 +419,13 @@ instance as row D, read through `GET /api/diagnostics/qualification-integrity` a
   2026-08-11T17:54:21+00:00, criteria_version: v1}`. The finding arrives intact in the archive
   member, not only from the function — `test_the_bundle_member_carries_the_finding_not_a_stub`
   pins that layer, and this run confirms the HTTP layer above it.
+- **Reading `laundered_total` after an import (2026-10-01, rank 14).** A number above zero is not by
+  itself a laundering. The report splits it: `auto_repairable_total` is what the boot repair
+  withdraws by itself (a source still on the catalogue's own stamp), and
+  `not_auto_repaired_measured_here_total` is what it deliberately LEAVES (a verdict measured here or
+  adopted from an import is never changed by an imported history, rule 12 = b) until this install's
+  own re-check, which the forced re-check list brings forward. Row A's clause is answered by those
+  rows being named, not by the number being zero.
 
 So **"tooling that can state its own result" is true today**: it states a verdict, both
 directions apart, names the sources, and refuses to read a corpus with no judgements as a clean

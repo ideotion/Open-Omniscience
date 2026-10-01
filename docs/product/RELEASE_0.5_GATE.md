@@ -211,7 +211,7 @@ walk needs at full depth; if still blank, the walk runs under the existing store
 reached. **Closes when** the walk has run for a stated period on the reference VM inside the budget with its
 own coverage counters (pages seen / edition total per edition) read from one artifact, the lane's growth is
 read from its own counters at 72 hours of the run (`R116`; the budget surface (Q1006) keeps its own seven-day
-rule and shows the figure when its week is up), and analytics 4–5 render from real rows. `not-measurable-here` for the run;
+rule and its own figure), and analytics 4–5 render from real rows. `not-measurable-here` for the run;
 **operator:** the run and the transport choice. Brief `S05-06`.
 
 **2026-09-28 — built first (`R40`).** The maintainer asked whether the long walk should be built early and

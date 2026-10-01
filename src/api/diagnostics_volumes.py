@@ -57,6 +57,21 @@ had just recorded. So the two jobs are separated by name:
 ORDERING is deliberate: ``manifest.json`` (and the bundle journal) are placed FIRST,
 in volume 1, because they are what tells a reader what the run did. A reader who
 receives only the first volume still learns the shape of the whole run.
+
+THE 1 MB CAP, AND CUTS ON RECORD BOUNDARIES (maintainer-asked 2026-10-01: «cap the size of each
+zip to 1MB (same for diagnostics), by splitting and numbering the files adequately»). The
+default cap is now :data:`~src.analytics.upload_parts.UPLOAD_PART_BYTES` (1,000,000 bytes; the
+9 MB default protected the common attachment limit, and the maintainer's own uploads failed from
+about 1.2 MB), volumes are named ``<stem>-part-NN-of-MM.zip`` and the descriptor travels as
+``<stem>-manifest.zip`` (a zip: uploads of other formats are the ones that failed; the
+``volumes.json`` sidecar stays for the readers that want it). A member too large for a volume is
+no longer cut BY BYTES when it can be cut on RECORD boundaries: a JSON document becomes numbered
+``<name>.sNNN.json`` pieces that are each valid JSON on their own (see
+:func:`~src.analytics.upload_parts.split_json_value`), a line-oriented log (``.jsonl``, ``.txt``,
+``.log``, ``.csv``, ...) becomes numbered pieces cut between lines (a CSV's header is repeated),
+and the pieces are packed like any other member. Only a member that is neither (binary, or a JSON
+document too large for this machine to parse safely) keeps the old byte cut with its explicit
+rejoin instructions.
 """
 
 from __future__ import annotations
@@ -66,12 +81,24 @@ import hashlib
 import json
 import os
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.analytics.upload_parts import (
+    UPLOAD_PART_BYTES,
+    join_json_pieces,
+    part_file_name,
+    piece_document,
+    split_json_value,
+    write_manifest_zips,
+)
+
 MANIFEST_NAME = "volumes.json"
 README_NAME = "volumes-readme.json"
-VOLUME_KIND = "oo-diagnostics-volumes-1"
+# ``-2``: the 2026-10-01 shape (numbered ``part-NN-of-MM`` names, a manifest zip, members cut on
+# record boundaries). A set written under ``-1`` is refused by ``load_manifest`` and rebuilt.
+VOLUME_KIND = "oo-diagnostics-volumes-2"
 
 # Members written into volume 1 ahead of everything else, in this order, when present.
 # These are the "what is this and what ran" files; a reader holding only the first
@@ -92,6 +119,28 @@ _PER_ENTRY_OVERHEAD = 256
 # How many times the reserve may be re-solved before the cap is declared too small.
 _RESERVE_ROUNDS = 5
 
+#: Members cut between lines rather than parsed: logs and tables. A ``.csv``/``.tsv`` piece after
+#: the first repeats the header line, so each piece is a readable table.
+_LINE_SUFFIXES = (".jsonl", ".ndjson", ".txt", ".log", ".csv", ".tsv", ".md")
+_HEADER_SUFFIXES = (".csv", ".tsv")
+
+#: The share of a volume's budget that one cut piece may cost once deflated. What it protects: a
+#: piece is packed beside the other members, and one that cost the whole budget would take a
+#: volume to itself and leave the others a gap they cannot use. A chosen margin, not a measurement.
+_PIECE_COST_SHARE = 0.6
+
+#: How often a member is re-cut with smaller pieces when a piece comes out dearer than the budget
+#: (the member compressed unevenly) before it is left to the byte cut. Each round halves the
+#: piece size, so six rounds reach a sixty-fourth of the first guess.
+_CUT_ROUNDS = 6
+
+#: Bytes a parsed JSON document holds per raw byte (a list of small dicts, the shape of our
+#: reports, measured by ``tracemalloc`` at roughly 6-10 times its text). A member is parsed to be
+#: cut only when this many times its size is under half the memory available now: sized from the
+#: machine, never a fixed number of megabytes. What it protects: cutting a big report must not
+#: be what takes the app down, which is what this module's neighbours exist to prevent.
+_PARSE_EXPANSION = 12
+
 
 def _overhead_reserve(cap: int) -> int:
     """Bytes held back from ``cap`` for zip structure and the readme.
@@ -109,15 +158,16 @@ class VolumeError(RuntimeError):
 
 
 def volume_max_bytes() -> int:
-    """The per-volume ceiling, env-tunable via ``OO_DIAG_VOLUME_MAX_MB``.
+    """The per-volume ceiling: ``UPLOAD_PART_BYTES`` (1,000,000 bytes, the maintainer's number),
+    env-tunable via ``OO_DIAG_VOLUME_MAX_MB`` (in MiB, as before) for a channel that takes more.
 
-    Default 9 MB, matching ``_keyword_zip_max_bytes`` for the same reason: it keeps a
-    volume UNDER the common 10 MB attachment limit that the maintainer actually hit.
+    It was 9 MiB (under the common 10 MB attachment limit); the maintainer then asked for 1 MB
+    files because uploads of about 1.2 MB and up failed.
     """
     try:
-        mb = float(os.environ.get("OO_DIAG_VOLUME_MAX_MB", "9"))
-    except ValueError:
-        mb = 9.0
+        mb = float(os.environ["OO_DIAG_VOLUME_MAX_MB"])
+    except (KeyError, ValueError):
+        return UPLOAD_PART_BYTES
     # Floored at 4 KiB only to forbid a zero/negative cap. The small floor is what
     # makes the split-member path testable without generating a 9 MB fixture.
     return max(4096, int(mb * 1024 * 1024))
@@ -236,24 +286,187 @@ def _deflated_cost(data: bytes) -> int:
     return n + _PER_ENTRY_OVERHEAD
 
 
-def _ordered_entries(src: zipfile.ZipFile) -> list[tuple[str, int, int]]:
-    """Archive members as ``(name, deflated_cost, raw_bytes)``, orientation files first.
+def _member_cost(src: zipfile.ZipFile, name: str) -> tuple[int, int]:
+    """``(deflated cost, raw bytes)`` of one member, measured by streaming it through the
+    compressor a megabyte at a time: the member is never held whole (some reports are hundreds of
+    megabytes), and the number is the real one for the same reason :func:`_deflated_cost`'s is."""
+    import zlib
 
-    Reads and compresses every member once to measure it. That doubles the work of a
-    split (measure, then write), which is the price of a volume set that is actually
-    under its cap rather than predicted to be.
+    co = zlib.compressobj(9, zlib.DEFLATED, -15)
+    n = raw = 0
+    with src.open(name) as fh:
+        for blk in iter(lambda: fh.read(1 << 20), b""):
+            raw += len(blk)
+            n += len(co.compress(blk))
+    n += len(co.flush())
+    return n + _PER_ENTRY_OVERHEAD, raw
+
+
+class _Cut:
+    """A member cut on record boundaries: its pieces as ``(entry name, deflated cost, raw
+    bytes)`` and how to produce piece ``i``'s bytes when the volume that holds it is written.
+
+    ``kind`` is ``"json"`` (each piece a valid JSON document, see ``split_json_value``) or
+    ``"lines"`` (each piece a run of whole lines; ``header`` is the first line repeated at the top
+    of every piece after the first, for a table)."""
+
+    def __init__(
+        self, base: str, kind: str, pieces: list[tuple[str, int, int]],
+        render: Callable[[int, _SliceReader], bytes], *, header: bool = False,
+    ) -> None:
+        self.base, self.kind, self.pieces, self.render, self.header = base, kind, pieces, render, header
+
+
+def _piece_names(name: str, count: int) -> list[str]:
+    suffix = Path(name).suffix
+    stem = name[: len(name) - len(suffix)] if suffix else name
+    width = max(3, len(str(count)))
+    return [f"{stem}.s{i:0{width}d}{suffix}" for i in range(1, count + 1)]
+
+
+def _close_line_piece(
+    buf: bytearray, start: int, spans: list[tuple[int, int]], costs: list[tuple[int, int]],
+    header: bytes, budget: int,
+) -> bool:
+    """Record the piece held in ``buf`` (it began at ``start`` in the member): its span, and its
+    deflated cost as it will be written (a table piece after the first carries the header).
+    Returns whether it fits ``budget``."""
+    rendered = (header if spans else b"") + bytes(buf)
+    c = _deflated_cost(rendered)
+    spans.append((start, len(buf)))
+    costs.append((c, len(rendered)))
+    return c <= budget
+
+
+def _cut_lines(src: zipfile.ZipFile, name: str, raw: int, cost: int, budget: int) -> _Cut | None:
+    """Cut a line-oriented member between lines into pieces that each cost at most ``budget``
+    deflated, or ``None`` if some line is too dear for that even after several smaller tries."""
+    with_header = Path(name).suffix.lower() in _HEADER_SUFFIXES
+    limit = max(1024, int(budget * _PIECE_COST_SHARE * raw / max(1, cost)))
+    for _round in range(_CUT_ROUNDS):
+        header = b""
+        spans: list[tuple[int, int]] = []  # (offset in the member, length) of each piece's lines
+        costs: list[tuple[int, int]] = []  # (deflated cost, rendered bytes)
+        ok = True
+        buf = bytearray()
+        start = 0
+        with src.open(name) as fh:
+            for line in fh:
+                if with_header and not header:
+                    header = line
+                extra = len(header) if spans else 0
+                if buf and len(buf) + len(line) + extra > limit:
+                    ok = _close_line_piece(buf, start, spans, costs, header, budget)
+                    start += len(buf)
+                    buf = bytearray()
+                    if not ok:
+                        break
+                buf += line
+            if ok and (buf or not spans):
+                ok = _close_line_piece(buf, start, spans, costs, header, budget)
+        if ok:
+            return _Cut(
+                name, "lines",
+                list(zip(_piece_names(name, len(spans)), (c for c, _r in costs),
+                         (r for _c, r in costs), strict=True)),
+                _line_renderer(name, spans, header), header=with_header and len(spans) > 1,
+            )
+        limit = max(256, limit // 2)
+    return None
+
+
+def _line_renderer(
+    name: str, spans: list[tuple[int, int]], header: bytes
+) -> Callable[[int, _SliceReader], bytes]:
+    def render(i: int, reader: _SliceReader) -> bytes:
+        off, length = spans[i]
+        return (header if i else b"") + reader.read(name, off, length)
+
+    return render
+
+
+def _cut_json(src: zipfile.ZipFile, name: str, raw: int, cost: int, budget: int) -> _Cut | None:
+    """Cut a JSON document into pieces that are each valid JSON, or ``None`` when this machine
+    cannot parse it safely (see ``_PARSE_EXPANSION``), it does not parse, or one record is dearer
+    than a volume."""
+    import json as _json
+
+    from src.analytics.keyword_log_scan import available_bytes_now
+
+    free = available_bytes_now()
+    # With the memory unreadable nothing is assumed: only a document small enough to parse
+    # anywhere is parsed.
+    allowed = raw * _PARSE_EXPANSION <= free * 0.5 if free is not None else raw <= 32 * 1024 * 1024
+    if not allowed:
+        return None
+    try:
+        value = _json.loads(src.read(name))
+    except ValueError:
+        return _cut_lines(src, name, raw, cost, budget)
+    limit = max(1024, int(budget * _PIECE_COST_SHARE * raw / max(1, cost)))
+    for _round in range(_CUT_ROUNDS):
+        docs = [piece_document(p) for p in split_json_value(value, limit)]
+        if len(docs) > 1:
+            costs = [_deflated_cost(d) for d in docs]
+            if max(costs) <= budget:
+                names = _piece_names(name, len(docs))
+                return _Cut(
+                    name, "json",
+                    [(n, c, len(d)) for n, c, d in zip(names, costs, docs, strict=True)],
+                    _render_from(docs),
+                )
+        limit = max(256, limit // 2)
+    return None
+
+
+def _render_from(docs: list[bytes]) -> Callable[[int, _SliceReader], bytes]:
+    """A ``_Cut`` renderer that hands back piece ``i`` of documents already held in memory (the
+    JSON pieces are small by construction: each is at most one volume's budget)."""
+
+    def render(i: int, _reader: _SliceReader) -> bytes:
+        return docs[i]
+
+    return render
+
+
+def _cut_member(src: zipfile.ZipFile, name: str, raw: int, cost: int, budget: int) -> _Cut | None:
+    suffix = Path(name).suffix.lower()
+    if suffix == ".json":
+        return _cut_json(src, name, raw, cost, budget)
+    if suffix in _LINE_SUFFIXES:
+        return _cut_lines(src, name, raw, cost, budget)
+    return None
+
+
+def _ordered_entries(
+    src: zipfile.ZipFile, budget: int
+) -> tuple[list[tuple[str, int, int]], dict[str, _Cut]]:
+    """Archive members as ``(name, deflated_cost, raw_bytes)``, orientation files first, and the
+    members that were cut on record boundaries (their pieces stand in the list in the member's
+    place, each one a whole entry for the packer).
+
+    Streams every member through the compressor once to measure it, and once more for a member
+    that is cut. That doubles the work of a split, which is the price of a volume set that is
+    actually under its cap rather than predicted to be.
     """
     infos = {i.filename: i for i in src.infolist() if not i.is_dir()}
     names = [n for n in _FIRST_MEMBERS if n in infos]
     names += [n for n in infos if n not in _FIRST_MEMBERS]
     out: list[tuple[str, int, int]] = []
+    cuts: dict[str, _Cut] = {}
     for n in names:
-        data = src.read(n)
-        out.append((n, _deflated_cost(data), len(data)))
-    return out
+        cost, raw = _member_cost(src, n)
+        if cost > budget:
+            cut = _cut_member(src, n, raw, cost, budget)
+            if cut is not None:
+                cuts[n] = cut
+                out.extend(cut.pieces)
+                continue
+        out.append((n, cost, raw))
+    return out, cuts
 
 
-def _set_note(nvols: int, split: list[str], cap: int) -> str:
+def _set_note(nvols: int, split: list[str], cap: int, cut: list[str] | None = None) -> str:
     lines = [
         f"The all-diagnostics archive, split into {nvols} independently-openable ZIP "
         f"volume(s) of at most {cap} bytes each, so it can be sent through a channel "
@@ -261,19 +474,32 @@ def _set_note(nvols: int, split: list[str], cap: int) -> str:
         f"Every volume opens on its own in any unzip tool. {README_NAME} (present in "
         "every volume) lists the whole set and which volume carries each member; it "
         f"carries no checksums, because a file cannot contain its own hash -- those "
-        f"are in the {MANIFEST_NAME} sidecar written beside the volumes.",
+        f"are in the {MANIFEST_NAME} sidecar written beside the volumes (also sent as the "
+        "manifest zip, which lists every volume with its size and SHA-256).",
     ]
+    if cut:
+        lines.append(
+            "ONE OR MORE MEMBERS WERE CUT ON RECORD BOUNDARIES because they were larger than a "
+            "volume: " + ", ".join(sorted(cut)) + ". Each is a run of numbered pieces "
+            "(<name>.sNNN.<ext>) and every piece is complete on its own: a JSON document's "
+            "piece is valid JSON carrying its place in the original (oo_part: path and slice), "
+            "a log's piece is a run of whole lines (a table's header is repeated). Nothing "
+            "has to be rejoined to be read."
+        )
     if split:
         lines.append(
-            "ONE OR MORE MEMBERS ARE SPLIT and are NOT readable from a single volume: "
+            "ONE OR MORE MEMBERS ARE SPLIT BY BYTES and are NOT readable from a single volume: "
             + ", ".join(sorted(split))
-            + ". Each is stored as <name>.partNNNNofMMMM entries in consecutive "
+            + " (they are neither a log nor a document this machine could cut safely). Each is "
+            "stored as <name>.partNNNNofMMMM entries in consecutive "
             "volumes; extract every part and concatenate them in part order to rebuild "
             "the original file (shell: cat <name>.part* > <name>). Every OTHER member "
             "in those same volumes is whole and directly readable."
         )
-    else:
+    if not split and not cut:
         lines.append("No member is split: every member is complete inside one volume.")
+    elif not split:
+        lines.append("No member is split by bytes: every volume's files open as they are.")
     return " ".join(lines)
 
 
@@ -328,30 +554,54 @@ class _SliceReader:
 
 
 def _volume_name(stem: str, idx: int, total: int) -> str:
-    return f"{stem}.{idx:03d}of{total:03d}.zip"
+    """``<stem>-part-NN-of-MM.zip``, zero-padded to the width of the total (the one naming
+    every numbered set of this app shares: see :func:`src.analytics.upload_parts.part_file_name`)."""
+    return part_file_name(stem, idx, total)
 
 
-def _plan_and_names(src: zipfile.ZipFile, cap: int, stem: str, reserve: int):
-    plan = plan_volumes(_ordered_entries(src), cap=cap, reserve=reserve)
+def _plan_and_names(
+    entries: list[tuple[str, int, int]], cuts: dict[str, _Cut], cap: int, stem: str, reserve: int
+):
+    plan = plan_volumes(entries, cap=cap, reserve=reserve)
     nvols = len(plan)
     names = [_volume_name(stem, i, nvols) for i in range(1, nvols + 1)]
-    members = [
-        {
-            "name": entry.rsplit(".part", 1)[0] if part_of else entry,
-            "entry": entry,
-            "volume": vi,
-            "bytes": length,
-            "part_of": part_of,
-            "stored_uncompressed": stored,
-        }
-        for vi, vol in enumerate(plan, start=1)
-        for (entry, _off, length, part_of, stored) in vol
-    ]
-    return plan, names, members
+    pieces = {
+        entry: (cut, i)
+        for cut in cuts.values()
+        for i, (entry, _cost, _raw) in enumerate(cut.pieces)
+    }
+    members: list[dict[str, Any]] = []
+    for vi, vol in enumerate(plan, start=1):
+        for entry, _off, length, part_of, stored in vol:
+            if part_of and entry.rsplit(".part", 1)[0] in pieces:
+                # A reserve that grew after the cut can leave a piece dearer than a volume; the
+                # byte cut of a piece would break what a piece promises, so refuse instead.
+                raise VolumeError(
+                    f"cap of {cap} B is too small for this archive's volume index: a cut piece no "
+                    "longer fits a volume. Raise OO_DIAG_VOLUME_MAX_MB."
+                )
+            record: dict[str, Any] = {
+                "name": entry.rsplit(".part", 1)[0] if part_of else entry,
+                "entry": entry,
+                "volume": vi,
+                "bytes": length,
+                "part_of": part_of,
+                "stored_uncompressed": stored,
+            }
+            if entry in pieces:
+                cut, i = pieces[entry]
+                record["name"] = cut.base
+                record["cut"] = {
+                    "kind": cut.kind, "piece": i + 1, "of": len(cut.pieces),
+                    **({"header_repeated": True} if cut.header and i else {}),
+                }
+            members.append(record)
+    return plan, names, members, pieces
 
 
 def _readme_for(
-    *, vi: int, nvols: int, stem: str, src_path: Path, cap: int, members, split_members
+    *, vi: int, nvols: int, stem: str, src_path: Path, cap: int, members, split_members,
+    cut_members: list[str],
 ) -> str:
     """The orientation document carried INSIDE volume ``vi``.
 
@@ -377,10 +627,12 @@ def _readme_for(
             "volume_count": nvols,
             "volume_name": _volume_name(stem, vi, nvols),
             "volume_name_pattern": _volume_name(stem, 0, nvols).replace(
-                ".000of", ".NNNof"
+                "-part-" + "0" * max(2, len(str(nvols))) + "-of-",
+                "-part-" + "N" * max(2, len(str(nvols))) + "-of-",
             ),
             "members_in_this_volume": mine,
             "split_members": split_members,
+            "cut_members": cut_members,
             "full_member_map": (
                 f"not here -- it grows with the volume count; see {MANIFEST_NAME} "
                 "written beside the volumes"
@@ -389,7 +641,7 @@ def _readme_for(
                 f"not here -- a file cannot contain its own hash; see {MANIFEST_NAME} "
                 "written beside the volumes"
             ),
-            "note": _set_note(nvols, split_members, cap),
+            "note": _set_note(nvols, split_members, cap, cut_members),
         },
         ensure_ascii=False,
         indent=2,
@@ -401,13 +653,16 @@ def write_volume_set(
     out_dir: str | os.PathLike[str],
     *,
     cap: int | None = None,
-    stem: str = "oo-all-diagnostics",
+    stem: str | None = None,
 ) -> dict[str, Any]:
     """Split the finished archive ``src_zip`` into capped volumes under ``out_dir``.
 
     Returns the sidecar manifest. The source archive is only READ -- it stays where it
     is and keeps working as the single-file download, so this is an additional way to
-    collect the same evidence, never a replacement that could strand it.
+    collect the same evidence, never a replacement that could strand it. The volumes are named
+    ``<stem>-part-NN-of-MM.zip`` (``stem`` defaults to the archive's own name, timestamp
+    included, so the files of two bundles never mix) and the manifest is also written as
+    ``<stem>-manifest.zip``.
 
     THE RESERVE IS SOLVED, NOT GUESSED. Each volume carries a readme whose size depends
     on the plan, and the plan depends on how much room the readme leaves: a circle. It
@@ -422,16 +677,21 @@ def write_volume_set(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     src_path = Path(src_zip)
+    stem = stem or src_path.stem
 
     with zipfile.ZipFile(src_path) as src:
         reserve = _overhead_reserve(cap)
+        # Cut once, against the budget the first reserve leaves: a larger reserve found below
+        # can only shrink it, and a piece that no longer fits is refused rather than re-cut.
+        entries, cuts = _ordered_entries(src, max(1, cap - reserve))
         for _round in range(_RESERVE_ROUNDS):
-            plan, names, members = _plan_and_names(src, cap, stem, reserve)
+            plan, names, members, piece_at = _plan_and_names(entries, cuts, cap, stem, reserve)
             split_members = sorted({m["name"] for m in members if m["part_of"]})
+            cut_members = sorted(cuts)
             readmes = [
                 _readme_for(
                     vi=vi, nvols=len(names), stem=stem, src_path=src_path, cap=cap,
-                    members=members, split_members=split_members,
+                    members=members, split_members=split_members, cut_members=cut_members,
                 )
                 for vi in range(1, len(names) + 1)
             ]
@@ -454,6 +714,10 @@ def write_volume_set(
                 ) as z:
                     z.writestr(README_NAME, readmes[vi - 1])
                     for entry, off, length, part_of, stored in vol:
+                        if entry in piece_at:
+                            cut, i = piece_at[entry]
+                            z.writestr(entry, cut.render(i, reader))
+                            continue
                         base = entry.rsplit(".part", 1)[0] if part_of else entry
                         payload = reader.read(base, off, length)
                         if stored:
@@ -482,19 +746,30 @@ def write_volume_set(
         "kind": VOLUME_KIND,
         "source": src_path.name,
         "source_bytes": src_path.stat().st_size,
+        "stem": stem,
         "volume_max_bytes": cap,
         "volume_names": names,
         "volume_count": len(names),
         "volumes": volumes,
         "members": members,
         "split_members": split_members,
+        "cut_members": cut_members,
         "checksums": "per-volume SHA-256 of the volume file as written",
-        "note": _set_note(len(names), split_members, cap),
+        "note": _set_note(len(names), split_members, cap, cut_members),
     }
+    # The manifest travels as a zip too (uploads of other formats are the ones that failed). A
+    # file cannot hold its own hash, so the zip carries the document above and the sidecar adds
+    # the zip's own name, size and SHA-256 beside it.
+    zip_names = write_manifest_zips(out, stem, manifest, cap, inner=MANIFEST_NAME)
+    manifest_files = [
+        {"name": n, "sha256": _sha256_file(out / n), "bytes": (out / n).stat().st_size}
+        for n in zip_names
+    ]
+    sidecar = {**manifest, "manifest_files": manifest_files}
     (out / MANIFEST_NAME).write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    return manifest
+    return sidecar
 
 
 def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
@@ -520,7 +795,7 @@ def verify_volume_set(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
     out = Path(out_dir)
     bad: list[str] = []
     missing: list[str] = []
-    for v in m["volumes"]:
+    for v in [*m["volumes"], *m.get("manifest_files", [])]:
         p = out / v["name"]
         if not p.exists():
             bad.append(v["name"])
@@ -565,5 +840,50 @@ def reassemble_split_members(
             for part in parts:
                 with zipfile.ZipFile(out / m["volume_names"][part["volume"] - 1]) as z:
                     fh.write(z.read(part["entry"]))
+        written.append(str(target))
+    return written
+
+
+def reassemble_cut_members(
+    out_dir: str | os.PathLike[str], dest_dir: str | os.PathLike[str]
+) -> list[str]:
+    """Rebuild every member that was CUT ON RECORD BOUNDARIES from a complete volume set.
+
+    Nothing has to be rebuilt to be READ (each piece is whole on its own); this exists to prove,
+    and to let an analyst check, that the pieces put back are the original member: a JSON
+    document's pieces are joined by their recorded place in it, a log's by concatenation (a
+    table's repeated header dropped after the first piece). Refuses a set that does not verify.
+    """
+    ver = verify_volume_set(out_dir)
+    if not ver["ok"]:
+        raise VolumeError(f"volume set is incomplete or corrupt: {ver['bad']}")
+    m = load_manifest(out_dir)
+    out, dest = Path(out_dir), Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for base in m.get("cut_members", []):
+        pieces = sorted(
+            (e for e in m["members"] if e.get("cut") and e["name"] == base),
+            key=lambda e: e["cut"]["piece"],
+        )
+        kind = pieces[0]["cut"]["kind"]
+        datas = []
+        for e in pieces:
+            with zipfile.ZipFile(out / m["volume_names"][e["volume"] - 1]) as z:
+                datas.append(z.read(e["entry"]))
+        target = dest / base.replace("\\", "/").replace("/", "__").lstrip(".")
+        if kind == "json":
+            docs = [json.loads(d) for d in datas]
+            value = join_json_pieces([
+                {"path": d["oo_part"]["path"], "slice": d["oo_part"]["slice"], "value": d["value"]}
+                for d in docs
+            ])
+            target.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+        else:
+            with open(target, "wb") as fh:
+                for i, d in enumerate(datas):
+                    if i and pieces[i]["cut"].get("header_repeated"):
+                        d = d.split(b"\n", 1)[1] if b"\n" in d else b""
+                    fh.write(d)
         written.append(str(target))
     return written

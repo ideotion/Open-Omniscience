@@ -15,7 +15,9 @@ one answers itself.
 WHAT IT DOES. On any request slower than :func:`threshold_ms`, it takes a
 point-in-time reading of the three things that can hold this app's single worker --
 the single-writer gate, the event loop, and a slow SQL statement -- and files them
-with a CAUSE CLASS the evidence supports.
+with a CAUSE CLASS the evidence supports. It also files the POOL as it stands (who holds
+which connection, for how long, for which route), as evidence only: a request that waited its
+30 s pool timeout was waiting for exactly that, and the field bundles could not say whose.
 
 WHAT IT REFUSES TO DO. The class is a reading of correlated facts, not a proof, and
 it is phrased that way ("consistent with"): a stall can have two causes at once, and
@@ -149,6 +151,59 @@ def _statement_evidence(duration_ms: float) -> dict[str, Any]:
         return {"available": False, "reason": type(exc).__name__}
 
 
+#: How many checkouts the pool evidence names (oldest first). Enough to name the standing
+#: holders of a 12-slot small-tier pool; the count of ALL checkouts is carried beside it.
+_POOL_ROWS = 8
+
+
+def _pool_evidence() -> dict[str, Any]:
+    """Who holds the pool's connections at the moment the stall is filed.
+
+    A request is filed when it COMPLETES, so this reads the holders AFTER the wait, not the
+    ones it queued behind at the start: a correlation with what kept the pool busy, and stated
+    as that. Holders are listed by thread, route (the request the thread was serving at
+    checkout, ``None`` for a thread the app started) and age; the collector's slots are the
+    reservation's own count. Never a statement text or a stack.
+    """
+    try:
+        from src.database import pool_watch
+
+        if not pool_watch.is_registered():
+            return {"available": True, "attached": False}
+        rows = pool_watch.checked_out()
+        out: dict[str, Any] = {
+            "available": True,
+            "attached": True,
+            "checked_out": len(rows),
+            "collector_held": sum(1 for r in rows if r.get("collector")),
+            "holders": [
+                {
+                    "thread": r["thread"],
+                    "endpoint": r.get("endpoint"),
+                    "collector": bool(r.get("collector")),
+                    "age_s": r["age_s"],
+                }
+                for r in rows[:_POOL_ROWS]
+            ],
+            "invalidated_total": pool_watch.invalidations()["total"],
+        }
+        try:
+            from sqlalchemy.pool import QueuePool
+
+            from src.database.session import engine
+
+            reservation = getattr(engine.pool, "reservation", None)
+            if callable(reservation):
+                out["reservation"] = reservation()
+            if isinstance(engine.pool, QueuePool):
+                out["pool_size"] = int(engine.pool.size()) + int(getattr(engine.pool, "_max_overflow", 0))
+        except Exception:  # noqa: BLE001 - the holders still stand without the pool's own counts
+            pass
+        return out
+    except Exception as exc:  # noqa: BLE001 - an unreadable instrument is a gap, not a crash
+        return {"available": False, "reason": type(exc).__name__}
+
+
 def classify(evidence: dict[str, Any]) -> list[str]:
     """The cause classes this evidence SUPPORTS -- zero, one, or several.
 
@@ -188,6 +243,7 @@ def note_stall(route: str, status: int, duration_ms: float) -> dict[str, Any] | 
             "write_gate": _gate_evidence(),
             "event_loop": _loop_evidence(route),
             "statement": _statement_evidence(duration_ms),
+            "pool": _pool_evidence(),
         }
         classes = classify(evidence)
         rec = {

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
@@ -127,10 +128,14 @@ def test_the_pool_timeout_setting_refuses_a_value_the_pool_cannot_use_and_keeps_
 
     monkeypatch.delenv("OO_DB_POOL_TIMEOUT", raising=False)
     assert session_module._pool_timeout_s() == 30.0
-    for raw, want in (("45", 45.0), ("600", 600.0), ("86400", 86400.0), ("0", 0.0), ("2.5", 2.5), ("9000000000", 9e9)):
+    # The boundary is the platform's own (9223372036 s on Linux and macOS, 4294967 s on Windows).
+    top = float(threading.TIMEOUT_MAX)
+    kept = (("45", 45.0), ("600", 600.0), ("86400", 86400.0), ("0", 0.0), ("2.5", 2.5), (repr(top), top))
+    for raw, want in kept:
         monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
         assert session_module._pool_timeout_s() == want, raw
-    for raw in ("nan", "inf", "-inf", "Infinity", "NaN", "abc", "", "-1", "-0.5", "1e10", "9300000000"):
+    refused = ("nan", "inf", "-inf", "Infinity", "NaN", "abc", "", "-1", "-0.5", "1e10", "9300000000", repr(top * 2))
+    for raw in refused:
         monkeypatch.setenv("OO_DB_POOL_TIMEOUT", raw)
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="database.session"):

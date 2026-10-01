@@ -12816,7 +12816,7 @@ Creating "All keywords (.zip)" killed the app on 6-8 GB machines. Reproduced fir
 
 How the fix is shaped, because the shape is the reusable part: article -> language and -> source are flat arrays (12 bytes per article, not two dicts); the mention scan is ONE ordered pass feeding per-language bounded heaps that spill to SQLite when the rows would pass a budget taken from the memory AVAILABLE when the export starts (`memory_plan`; the floor keeps the default export in memory on a small box rather than writing to a disk that may be nearly full); the digests are streaming accumulators that reproduce the old ordering including ties through one global `order_key`; shards are zip members appended to as entries are built (`ZipFile.open(..., "w", force_zip64=True)`), and the families the summary embeds are grouped over the WHOLE window: `build_families` compared every multi-word entity with every other (quadratic: 267 s for 16,000 of them, which is what had pushed the export to group only the top 5,000), and now finds containment through a token index, so it is linear in its input and its only limit is memory (about 2 KB per keyword, sized from what is available when the export starts, disclosed in `families_provenance` with what the limit protects). The quadratic form is kept verbatim in `tests/_families_pairwise_reference.py` and the new one is compared with it on random entity sets. **Measured after** (same synthetic databases): digest 776 -> 267 MB (6 M keywords: +195 MB over a 79 MB idle process, against +190 MB at 2 M, i.e. flat in keywords); All-keywords zip 4.4 GB -> 0.5 GB with the ranking in memory and 0.27 GB on a simulated small machine, whose archive is byte-identical to the in-memory one. **The old and new outputs were compared byte for byte on random databases** (ties, orphans, NULL and empty languages, mentions naming missing articles): json, digest and zip shards identical.
 
-Three things to carry. **The bundle's RAM gate (`_MEMBER_RSS_NEED_MB`) held a number measured on the OLD code** (3,322.8 MiB); a measured constant is a claim about one version of the code and must be re-measured when the code it measures changes. **A gate that reads the MACHINE and not the WORK cannot see a big instance:** bundle `091717` (14.65 M keywords) was SIGKILLed inside the digest member with its total RAM reading 6,773 MiB, above the 6,645.6 MiB line that half of 3,322.8 implies, and 2,280 MiB available (the lower of two samples near the digest's start, in that bundle's `debug-bundle.json` (`data.collect_perf`) and `session-forensics.json` (`previous_session.previous_session_peaks.pressure`), not the gate's own reading, which nothing recorded); the gate is now sized from the instance's own counts times per-row costs that are each measured and pinned by value against the resident-size measurement, which a tracemalloc test can only bound from below (`EXPORT_ENTRY_BYTES`, `EXPORT_FIXED_BYTES`), and also held against what is available now minus the memory stop's floor (that second, available-memory check is a separate default: `091717` passes it, so the fix for that kill rests on the bounded builder and not on this check). **A cap is a promise only if the loop that enforces it can fail to keep it out loud:** the trim loop ran at most nine builds and could return an archive over its cap while the docstring said "guaranteed"; it now trims until the archive fits or every language is down to one keyword, and says, in its docstring and the manifest, that `summary.json` is never trimmed. **Measure before fixing, on the field's SHAPE:** the synthetic corpus copies the field's proportions (orphans are most keywords, languages are skewed, most mentions sit on a small head), because the cost of each structure depends on which of those it holds. And the digest path, which the bundle runs on every FULL diagnostic, had the same defect as the zip: R27 worked around it by DECLINING the member on small machines instead of fixing it. Two more from the review of #1277: **a structure that spills must bound its SPILL as it bounds its heap** (after the switch the ranking wrote every keyword to disk, 1.2-1.7 GB at 14.65 M keywords, past a check sized for the rows held at the switch: prune what ranks beyond the window, size the check from the table, watch the disk while writing, and answer SQLite's own full-disk error as the refusal it is); and **a constant measured at 15,000 entries is not measured at 410,000**: the per-entry cost was re-measured at 100,000, 205,000 and 410,000 (2,495-2,505 bytes each, fixed part 38 MiB) before the gate's admission rested on it, and a cleanup that hangs on a response's background task misses the paths a framework answers early (a malformed Range header skipped it), so the file is removed in a `finally`.
+Three things to carry. **The bundle's RAM gate (`_MEMBER_RSS_NEED_MB`) held a number measured on the OLD code** (3,322.8 MiB); a measured constant is a claim about one version of the code and must be re-measured when the code it measures changes. **A gate that reads the MACHINE and not the WORK cannot see a big instance:** bundle `091717` (14.65 M keywords) was SIGKILLed inside the digest member with its total RAM reading 6,773 MiB, above the 6,645.6 MiB line that half of 3,322.8 implies, and 2,280 MiB available (the lower of two samples near the digest's start, in that bundle's `debug-bundle.json` (`data.collect_perf`, 2,423.2 MiB at 07:10:02) and `session-forensics.json` (`previous_session.previous_session_peaks.pressure`, 2,280.4 MiB at 07:10:09), not the gate's own reading, which nothing recorded); the gate is now sized from the instance's own counts times per-row costs that are each measured and pinned by value against the resident-size measurement, which a tracemalloc test can only bound from below (`EXPORT_ENTRY_BYTES`, `EXPORT_FIXED_BYTES`), and also held against what is available now minus the memory stop's floor (that second, available-memory check is a separate default: `091717` passes it, so the fix for that kill rests on the bounded builder and not on this check). **A cap is a promise only if the loop that enforces it can fail to keep it out loud:** the trim loop ran at most nine builds and could return an archive over its cap while the docstring said "guaranteed"; it now trims until the archive fits or every language is down to one keyword, and says, in its docstring and the manifest, that `summary.json` is never trimmed. **Measure before fixing, on the field's SHAPE:** the synthetic corpus copies the field's proportions (orphans are most keywords, languages are skewed, most mentions sit on a small head), because the cost of each structure depends on which of those it holds. And the digest path, which the bundle runs on every FULL diagnostic, had the same defect as the zip: R27 worked around it by DECLINING the member on small machines instead of fixing it. Two more from the review of #1277: **a structure that spills must bound its SPILL as it bounds its heap** (after the switch the ranking wrote every keyword to disk, 1.2-1.7 GB at 14.65 M keywords, past a check sized for the rows held at the switch: prune what ranks beyond the window, size the check from the table, watch the disk while writing, and answer SQLite's own full-disk error as the refusal it is); and **a constant measured at 15,000 entries is not measured at 410,000**: the per-entry cost was re-measured at 100,000, 205,000 and 410,000 (2,495-2,505 bytes each, fixed part 38 MiB) before the gate's admission rested on it, and a cleanup that hangs on a response's background task misses the paths a framework answers early (a malformed Range header skipped it), so the file is removed in a `finally`.
 
 ### A WAL PINNED BY A READER CAN ONLY BE BOUNDED BY STOPPING THE WRITERS; AN `in_transaction` FLAG CANNOT EVEN FIND THE READER (WAL / disk thread, 2026-09-30, `tests/test_wal_pin_facts.py`)
 
@@ -12889,6 +12889,81 @@ function's name and run ALL the node-wrapped tests, not the ones whose name soun
 guard tests (slicing budget, ruff ratchet, i18n gates, inline-handler ratchet, planned index, repo invariants)
 before saying a change is verified.
 
+### A PART OF A SPLIT EXPORT IS FILLED BY MEASURING IT ON A COPY OF THE COMPRESSOR, NEVER BY PREDICTING A RATIO (1 MB parts, 2026-10-01, `src/analytics/upload_parts.py`)
+
+The maintainer's channel refuses files of about 1.2 MB and up, so "every file at most 1,000,000 bytes" is a correctness
+property of the export. A builder that guessed how many records fit from a deflate ratio filled real keyword parts only
+52-74% (and one wrong guess means a part over the cap, the one thing that must not happen). What works is one deflate
+stream per member and, before a chunk of 500 records is committed, compressing it on `compressobj.copy()` with
+`Z_SYNC_FLUSH` so the size the part would have if closed now is exact: if bytes so far + chunk + the zip directory +
+the `part.json` appended at the end fit, the copy becomes the compressor, otherwise the part closes and the chunk
+opens the next. Measured on a 2 M-keyword synthetic corpus, every part reached 998-999 KB (99.8%), the front part and
+the last being short by design. `zipfile` cannot snapshot its compressor, so the writer is ours (about a hundred lines)
+and the tests read every set back through `zipfile` (CRC-checked), one of them also through `unzip -t`, because a
+hand-written zip that only its own reader opens is not a zip (the browser walks run both on every file saved). A record larger than a part is never written whole: it goes out as numbered byte
+pieces named in the manifest, so the cap holds for any input.
+
+### TWO PARTS OF ONE SET MUST NEVER SHARE A MEMBER NAME, AND A READER MUST CHECK THAT THE SLICES FOLLOW EACH OTHER (1 MB parts, 2026-10-01)
+
+Rank-major order (rounds of 5,000 keywords per language, largest language first) puts the same language into several
+parts, and two members called `keywords/en.json` in different parts collide the moment a person unzips two parts
+into one folder, one overwriting the other without a word. Members are therefore `keywords/<lang>.from-NNNNNN.json`
+carrying `slice_from`, `slice_to` and `count`, and `read_group_records` raises when a slice does not start where the
+last one ended or its tail does not match: **a missing part must be an error, not a shorter list**, because a
+half-uploaded set that reads as a complete smaller one is how a diagnosis goes wrong. The only gap that is not an
+error is a record listed under `oversize_records`; the analyzer script (which must run without the app) names a
+missing or differing part on stderr and reads on, since evidence that arrived is not thrown away for evidence that did not.
+
+### AN AUTHOR `display` RULE BEATS THE `hidden` ATTRIBUTE, AND ONLY A REAL BROWSER SEES IT (1 MB parts walk, 2026-10-01, `src/static/app.css`)
+
+The Chromium walk of the new "Save the next 5" bar found a box labelled "Start at part number" visible at boot,
+before any set existed: `#parts-from-wrap` carried a `display:` rule, and an author `display` beats the user-agent's
+`[hidden]{display:none}`, so setting `hidden` did nothing. Every unit and node test passed, because they read the
+attribute, not the layout. **Any element that is toggled by `hidden` and also has its own `display` needs an explicit
+`X[hidden]{display:none}`**, and the test that pins it must read the CSS, not the DOM. Generally: a surface with a
+state machine (nothing built, built, partly saved, all saved, nothing kept) is walked in a browser through EVERY state
+including the empty ones, with each drop-down opened and an option picked, before it is called done.
+
+### A SAVE LOOP THAT AWAITS NEEDS AN IN-FLIGHT GUARD, A STALE-SET CHECK, AND WORDS THAT CLAIM ONLY WHAT THE PAGE KNOWS (1 MB parts review, 2026-10-01, `src/static/app-diagnostics.js`)
+
+An independent review drove the shipped save functions in node and found what no earlier test could: a loop that hands
+five files to the browser with a 400 ms wait between them, and advances its position only at the end, saves ten files
+(five of them `(1).zip` copies) when clicked twice, and an old loop whose set was replaced by another button keeps
+downloading the OLD set and then writes "All 31 files saved" over the NEW set's status. The fixes are small and
+general: a `saving` flag on the set (a second click does nothing; the buttons are disabled meanwhile), a check after
+every `await` that `_partsSet` is still the set the loop started with (and never a status for a set that is no longer
+shown), and a generation number on the actions that REPLACE the set (a slow build that finishes after a newer button took
+the bar leaves it alone). The same review found that "again" ignored the typed part number the manual promised, that the
+box after a full save read "13 of 12 parts" and had no button to use it, and that every message said "saved" when the page
+only ASKED the browser (a refused several-downloads question or a failed fetch looks identical from the page): the
+messages now say "asked your browser to save", the box names the last part after a full save, and a number past the end
+is clamped and said so. **Count what was offered by the set of indexes offered, not by a position**, so a part sent again
+is not counted twice, and **put a typed value's meaning on one control** (the "Save from this part" button; "again"
+reads it only for the same kind of set) instead of letting three buttons each half-honour the box.
+
+**A typed number that sends files again is a side trip.** The position the ordinary button continues from is the
+furthest file any click reached, never the typed one: setting it to the typed part sent "Save the next 5" back over
+files already handed to the browser, while on an untouched set the typed number still moves it on (a person resuming
+after a crash).
+
+**A generation number orders presses, not requests, and a fix for one ordering moves the damage to the next.** The
+diagnostics build runs for hours and finishes after buttons pressed beside it, so "the last action to arrive wins the
+bar" drops the NEWER request (a keyword set pressed while it ran), and each patch for one ordering broke another: a
+press that ended with nothing (a 409 or 404) holding a bar no set would ever fill, a half-saved set protected although
+the finishing split had just deleted its files on the server, an overtaken request still counted as in flight. Five
+review passes each found the next ordering. The rule that holds: the finished build takes the bar unless a KEYWORD set
+on it has been begun to save, or a press made since the build was asked for holds a keyword set or has not landed yet
+(the marker is the newest request's generation, cleared only by it; it stays set until that request's save ends, so a
+press that has already landed is told apart by the bar holding its set); a diagnostics set on the bar is of the
+previous archive and dead, unless it has this archive's own file NAMES (never just the same count: consecutive builds
+of one corpus have the same count), in which case it is already the answer. A split that FAILS after the server swept
+the previous files (a full disk, an answer lost on the way) empties such a bar too, except a 409, which sweeps nothing.
+The orderings are a table in `tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails
+without it, and the two mutants that survive cannot differ (the generation bump when a failed split empties the bar,
+and the order of the deferral and the same-archive clauses, which "has not landed yet" made equivalent). **State that
+a server action replaces (here the split's files) must be compared with what the server now holds, not assumed alive
+because the page remembers it.**
+
 ### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)
 
 The first build of the storage guard's button cleared the latch and let the next two samples re-trip it, and was
@@ -12922,3 +12997,56 @@ must not end what it did not start:** Start and Run now cleared the latches unde
 R112 does not list; they now leave an override alone while its cause is still over the limit or cannot be read against it (and end one whose cause is already under it, so no override outlives its cause for want of an exit). Test numbers
 must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not
 the floor, is what a naive test sees).
+### A CACHED "PINNED" CONNECTION IS A POOL SLOT NOBODY COUNTED: DETACH IT, AND CLOSE IT ON `engine_disposed` (WAL / disk thread, PR B, 2026-09-30, `tests/test_status_probe_detached.py`)
+
+All 16 field instances showed "one API-thread checkout held for the whole process life" (rank 12). Hands-on on the
+real app it was not a leak and not a phantom: it was the status probe behind `GET /api/articles`
+(`_browse_total_cached` -> `_data_version`), which keeps ONE raw connection for `PRAGMA data_version` on purpose and
+never returns it. It is idle, so it does not pin the WAL (`tests/test_wal_pin_facts.py` pins that), but it held one
+of the pool's slots for ever and nothing counted it: on the small tier (6 + 6, API margin 4) the app had three
+slots for API requests, and D44's "cap 8, pool 12, margin 4" held only on paper. **A connection the app keeps for
+its own reasons must not be a pooled checkout**: `raw_connection()` then `conn.detach()` frees the pool's slot
+(the fairy still works, and `close()` then really closes the DBAPI connection), and the price is that
+`Engine.dispose()` no longer closes it (dispose only closes CHECKED-IN connections), so a listener on the engine's
+`engine_disposed` event must (unlock, a restore's file swap and a shutdown all dispose; a probe left open reads a
+replaced file, and on Windows pins the old one). Guard the listener with a flag ON THE ENGINE OBJECT, not a set of
+ids: an `id()` is recycled onto a new engine, which would then never get its listener. And make the headroom
+arithmetic count what is REALLY free (`pool_watch.standing_holders`: old, non-collector checkouts), because a
+reservation bounds the collector and cannot free a slot someone else sits on.
+
+### A CONTEXTVAR SET IN `BaseHTTPMiddleware` BEFORE `call_next` REACHES THE ENDPOINT'S WORKER THREAD (WAL / disk thread, PR B, 2026-09-30, `tests/test_pool_watch_endpoint.py`)
+
+To list a pooled checkout under the route that took it, the pool's `checkout` listener reads a `ContextVar` the
+request middleware sets. It works (verified on the real app and pinned with a mini-app of the same shape): Starlette
+runs the endpoint in a task created AFTER the middleware's `set`, and anyio's `run_sync` copies the context into the
+worker thread, so a sync endpoint's checkout reads its own route. Threads the app starts itself carry no request and
+read `None` (their thread NAME identifies them). Reset the token in a `finally` around `call_next`, and treat a
+token from another context as a no-op (`ValueError`), because the middleware can unwind in a different context than
+it set in.
+
+### A POLLED GET SHOULD NEVER DEPEND ON THE DATABASE POOL: SERVE THE LAST GOOD ANSWER, LABELLED WITH ITS AGE (WAL / disk thread, PR B, 2026-09-30, `src/scheduler/plan_cache.py`)
+
+`GET /api/scheduler/activity` is polled by three surfaces and opened a pooled connection per poll to sample the
+source catalogue; when the pool was busy it waited the 30 s checkout timeout and answered 500 (333 of 329,968 polls
+on nine instances, 97 on one), so the task manager went blank exactly when the machine was busiest. The data is a
+deliberately loose preview (a re-randomised sample and stated arithmetic), so a preview a few seconds old is as true
+as a fresh one: the poll now reads an in-memory last-good preview, at most ONE background thread refreshes it (its own
+session, its own wait), and the answer carries `state` / `as_of` / `age_s` so the page says how old it is and never
+draws an old plan as a live one. It refuses two things: a preview for settings the operator has since changed (it
+says "computing"), and a silent failure (a failed refresh is recorded and the age keeps growing). This is NOT the
+ruling-gated 429 cap on polled GETs: nothing is rejected.
+
+
+### A MESSAGE TWO DIFFERENT FAILURES SHARE MUST NEVER LATCH A SAFETY STOP ON ITS OWN: SQLite's "disk I/O error" IS A FULL DRIVE AND A DYING ONE (WAL / disk thread, PR B, 2026-10-01, `src/scheduler/storage_guard.py`)
+
+The guard latched DISK at once on "database or disk is full" (SQLITE_FULL / ENOSPC). A full drive can also reach SQLite as
+a plain "disk I/O error" (SQLITE_IOERR and its extended codes): a copy-on-write or delayed-allocation filesystem reports
+ENOSPC late, at fsync, and SQLite names that an I/O error. The same message is what an unplugged or failing drive produces,
+which the data-drive watchdog (R86) already owns, so widening the strict full-drive classifier to include it would pause
+collection for a dying drive on a guess and hide the real cause. The classification is therefore a MEASUREMENT: on an I/O
+error the guard reads the drive's free space at that moment and latches only when it is below the reserve (the comparison
+its own samples trip on, brought forward to the failure); a drive with room, or one whose free space cannot be read, is
+recorded (`io_errors`, `last_io_error` with the figure it was judged against) and left alone. The hook that carries both
+sits on the corpus engine AND every lane engine, because a lane is written to the same drive (the corpus engine's hook alone
+never saw a lane's failed write). Stated limit: a copy-on-write drive that reports room (metadata exhausted while `df` says
+free) and fails with an I/O error is not classified as full.

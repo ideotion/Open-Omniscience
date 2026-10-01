@@ -413,8 +413,10 @@ def test_the_default_budget_lets_both_ordinary_kinds_advance_while_the_list_has_
     the disqualified and the qualified side instead of the disqualified side always winning."""
     flagged = [_inverted_qualified(db, f"f{i}.example") for i in range(3)]
     _flag(store, *flagged)
-    _due_disqualified(db, "dq.example")
-    _due_qualified(db, "ql.example")
+    _due_disqualified(db, "dq1.example")
+    _due_disqualified(db, "dq2.example")
+    _due_qualified(db, "ql1.example")
+    _due_qualified(db, "ql2.example", 1)
 
     def ordinary_kind(hours):
         before = {x.id for x in db.query(SourceQualificationAttempt).all()}
@@ -424,12 +426,21 @@ def test_the_default_budget_lets_both_ordinary_kinds_advance_while_the_list_has_
         names = {db.get(Source, x.source_id).domain for x in _new_attempts(db, before)}
         return sorted(n for n in names if not n.startswith("f"))
 
-    assert [ordinary_kind(h) for h in (1, 2)] == [["dq.example"], ["ql.example"]]
+    # Two of each, so a pass that did not flip the turn would take the same side twice running.
+    kinds = [ordinary_kind(h) for h in (1, 2, 3, 4)]
+    assert [k[0][:2] for k in kinds] == ["dq", "ql", "dq", "ql"] and all(len(k) == 1 for k in kinds)
     forced = [_S(1)]
     chosen, contested = q.allocate_rechecks_detail(forced, [_S(2)], [_S(3)], 2, odd_to_list=False)
     assert [x.id for x in chosen] == [1, 2] and contested
     chosen, contested = q.allocate_rechecks_detail(forced, [_S(2)], [_S(3)], 2, odd_to_list=True)
     assert [x.id for x in chosen] == [1, 3] and contested
+
+
+def test_a_flagged_source_that_is_also_due_in_a_pool_takes_one_slot_on_the_spare_path():
+    """Budget 4, one slot for the list's share beyond what the pools use: the spare is filled from
+    the flagged sources NOT already chosen. 3 is flagged AND due in the disqualified pool."""
+    chosen = q.allocate_rechecks([_S(1), _S(2), _S(3)], [_S(3)], [], 4)
+    assert [x.id for x in chosen] == [1, 2, 3]
 
 
 def test_an_entry_that_never_settles_stops_being_forced_after_a_few_tries(db, store):
@@ -451,8 +462,9 @@ def test_the_boot_step_keeps_the_tries_of_an_entry_it_lists_again(db, store, mon
     a = _inverted_qualified(db, "a.example")
     _flag(store, a)
     store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]["tries"] = 2
-    import src.database.session as sess
     from contextlib import contextmanager
+
+    import src.database.session as sess
 
     @contextmanager
     def scope():
@@ -461,6 +473,26 @@ def test_the_boot_step_keeps_the_tries_of_an_entry_it_lists_again(db, store, mon
     monkeypatch.setattr(sess, "session_scope", scope)
     qi.flag_inversions_for_recheck(now=NOW)
     assert store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]["tries"] == 2
+
+
+def test_a_newer_disagreement_starts_the_count_again(db, store, monkeypatch):
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    a = _inverted_qualified(db, "a.example")
+    _flag(store, a)
+    store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)].update(tries=3, judged_at="2000-01-01T00:00:00")
+    from contextlib import contextmanager
+
+    import src.database.session as sess
+
+    @contextmanager
+    def scope():
+        yield db
+
+    monkeypatch.setattr(sess, "session_scope", scope)
+    qi.flag_inversions_for_recheck(now=NOW)
+    entry = store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]
+    assert entry["tries"] == 0 and entry["judged_at"] != "2000-01-01T00:00:00"
+    assert [s.domain for s in pending_forced_rechecks(db)] == ["a.example"]
 
 
 def test_a_stored_entry_of_the_wrong_shape_does_not_fail_the_pass(db, store):

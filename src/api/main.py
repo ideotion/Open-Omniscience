@@ -878,8 +878,23 @@ async def monitor_requests(request: Request, call_next):
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _lat = None  # type: ignore[assignment]
 
+    # Name the route for the pool's checkout listener (src/database/pool_watch.py): the
+    # endpoint runs in a task started after this set, and anyio copies the context into
+    # its worker thread, so a connection a request takes is listed under its route.
     try:
-        response = await call_next(request)
+        from src.database import pool_watch as _pool_watch
+
+        _ep_token = _pool_watch.set_endpoint(f"{method} {endpoint}")
+    except Exception:  # noqa: BLE001 - instrumentation must never affect the request
+        _pool_watch = None  # type: ignore[assignment]
+        _ep_token = None
+
+    try:
+        try:
+            response = await call_next(request)
+        finally:
+            if _pool_watch is not None and _ep_token is not None:
+                _pool_watch.reset_endpoint(_ep_token)
     except Exception as e:
         ACTIVE_REQUESTS.dec()
         if _lat is not None:

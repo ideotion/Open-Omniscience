@@ -1882,6 +1882,7 @@ class BackgroundScheduler:
         with self._state_lock:
             self._active = True
         started = datetime.now(UTC)
+        started_mono = time.monotonic()
         report: dict = {"started_at": started.isoformat(timespec="seconds")}
         # Q1020 = a: every run is the press lane; there is no per-run mode to read.
         report["lane"] = "press"
@@ -1932,6 +1933,10 @@ class BackgroundScheduler:
             with _tail_phase("record-run", pass_id=report.get("pass_id")):
                 record_run(report)
             _tail_journal_trim()
+            # The storage guard's tail measure: if it first refused while this pass was in
+            # flight, how much did the drive lose before the pass ended (what the disk
+            # reserve protects). A no-op otherwise; never raises.
+            storage_guard.storage_guard.note_pass_ended(started_mono)
             _phase_set(None)
             with self._state_lock:
                 self._active = False
@@ -2080,7 +2085,12 @@ class BackgroundScheduler:
                     return
                 try:
                     with session_scope() as session:
-                        _activity("briefing", refresh_briefing(session))
+                        refreshed = refresh_briefing(session)
+                        # A refresh that kept the cached feed (memory short, or an enclosing
+                        # deadline that left no cards) did not act: a ledger line saying N cards
+                        # were surfaced would be false.
+                        if not (isinstance(refreshed, dict) and refreshed.get("kept_reason")):
+                            _activity("briefing", refreshed)
                 finally:
                     self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background refresh must never crash the thread
@@ -2442,17 +2452,41 @@ class BackgroundScheduler:
                 "resume_pending": resume_pending(),
             }
 
-    def activity(self, session) -> dict:
-        """The collection-activity panel's payload: status + plan + transfer rates."""
+    def _compute_plan(self, settings: SchedulerSettings, last: dict | None) -> dict:
+        """The preview on a session of its own (the refresh thread's, never a request's)."""
+        from src.database.session import SessionLocal
+
+        session = SessionLocal()
+        try:
+            return plan_preview(session, settings, last_result=last)
+        finally:
+            session.close()
+
+    def activity(self, session=None) -> dict:
+        """The collection-activity panel's payload: status + plan + transfer rates.
+
+        Polled by three surfaces, so it must not wait on the database pool: with no ``session``
+        (the endpoint's form) the plan preview comes from :mod:`src.scheduler.plan_cache` -- the
+        last good preview, labelled with its age, refreshed by at most one background thread.
+        A caller that already owns a session (tests, a one-shot report) passes it and gets the
+        synchronous, uncached computation.
+        """
         from src.ingest.fetch_verdict import fetch_failed_reasons
         from src.monitoring.activity import activity_monitor
         from src.monitoring.collect_perf import get_latest
+        from src.scheduler.plan_cache import plan_cache
 
         with self._state_lock:
             last = self._last_result
+        settings = self._settings_provider()
+        plan = (
+            plan_preview(session, settings, last_result=last)
+            if session is not None
+            else plan_cache.get(settings, lambda: self._compute_plan(settings, last))
+        )
         return {
             **self.status(),
-            "plan": plan_preview(session, self._settings_provider(), last_result=last),
+            "plan": plan,
             # The last housekeeping lane's own tallies (calendar import + the
             # progressive calendar-feed VERIFICATION, law, discovery, ...). It was
             # computed and stored but never exposed, so a ride-along's work was
