@@ -52,7 +52,7 @@ assert.ok(ceilMatch, "_ALL_DIAG_POLL_CEILING_MS must be declared in app.js");
 
 // --- the harness ------------------------------------------------------------------ //
 
-let clock, statusText, opened, apiCalls, respond;
+let clock, statusText, opened, apiCalls, respond, readyListings;
 
 function install() {
   clock = 1_000_000;           // any epoch; only differences matter
@@ -68,6 +68,9 @@ function install() {
   global.window = { open: (u) => opened.push(u) };
   global.$ = () => ({ set textContent(v) { statusText = v; }, get textContent() { return statusText; } });
   global._fmtBytes = (n) => n + " B";
+  readyListings = [];
+  global._partsReady = (m) => readyListings.push(m);   // the numbered-files bar, defined elsewhere
+  global._partsSet = null; global._partsGen = 0; global._partsBusy = 0;       // the bar's state: a finished build takes a number
   global.api = async (url) => { apiCalls.push(url); return respond(url); };
 }
 
@@ -111,12 +114,16 @@ async function ceilingReportsInsteadOfFreezing() {
   );
 }
 
-// --- 2. the twin: a finished build still downloads -------------------------------- //
+// --- 2. the twin: a finished build is still OFFERED ------------------------------- //
+// Since 2026-10-01 "offered" means the numbered files of at most 1 MB: the poller asks for the
+// split listing and hands it to the parts bar, and never opens the single big archive.
 
-async function readyStillDownloads() {
+async function readyStillOffersTheFiles() {
   install();
   let polls = 0;
+  const listing = { set: "x", files: [{ name: "x-manifest.zip", kind: "manifest" }] };
   respond = (url) => {
+    if (url.endsWith("/all-job/volumes")) return listing;
     if (!url.endsWith("/status")) return { started: true };
     polls++;
     return polls < 3
@@ -127,11 +134,19 @@ async function readyStillDownloads() {
   await runAllDiagnostics(null);
 
   assert.deepStrictEqual(
-    opened, ["/api/diagnostics/all-job/download"],
-    "a finished build must still be downloaded -- an honest ceiling message must not have " +
-    "replaced the normal path",
+    opened, [],
+    "a finished build must never open the single big archive: the page offers numbered files",
   );
-  assert.ok(/Ready/.test(statusText), "got: " + JSON.stringify(statusText));
+  assert.strictEqual(
+    apiCalls.filter((u) => u === "/api/diagnostics/all-job/volumes").length, 1,
+    "a finished build must ask for its numbered files exactly once",
+  );
+  assert.deepStrictEqual(
+    readyListings, [listing],
+    "the listing the server returned must reach the parts bar -- an honest ceiling message " +
+    "must not have replaced the normal path",
+  );
+  assert.ok(!/Could not split|Still building|Build failed/.test(statusText || ""), "got: " + JSON.stringify(statusText));
 }
 
 // --- 3. the twin, other direction: a real failure still reads as a failure --------- //
@@ -157,7 +172,7 @@ async function errorStillReportsFailure() {
 
 (async () => {
   await ceilingReportsInsteadOfFreezing();
-  await readyStillDownloads();
+  await readyStillOffersTheFiles();
   await errorStillReportsFailure();
   console.log("ok - all-diagnostics poll loop: ceiling speaks, terminal states still win");
 })().catch((e) => { console.error(e); process.exit(1); });

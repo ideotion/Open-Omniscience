@@ -49,6 +49,11 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     # 2026-09-18, gate row S / B5: the qualification-merge action, the run that used to
     # mean `python scripts/merge_source_qualification.py` on the maintainer's machine.
     "source_qualification_merge",
+    # 2026-10-01, the 1 MB parts of the keyword log: the newest set's listing, and one file of
+    # a set by name. Registered BEFORE the release run, whose eight routes
+    # test_release_run pins as the package's last.
+    "keyword_parts_latest",
+    "keyword_part_download",
     # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,
     # six routes, imported last -- the button the maintainer asked for.
     "release_run_start",

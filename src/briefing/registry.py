@@ -34,6 +34,29 @@ def _deadline_expired(session) -> bool:
     except Exception:  # noqa: BLE001 - no DB layer, or a stub session
         return False
 
+
+def _memory_short() -> tuple[float, float] | None:
+    """``(available_mb, floor_mb)`` when the machine is at or below the memory guard's
+    floor, else ``None``.
+
+    Same local-import guard as :func:`_deadline_expired`, and the same honest default: a
+    machine that cannot report its memory, a guard that is off (``OO_READ_MEMORY_STOP=0``)
+    or a stub environment reads as NOT short, never as short. The numbers are the ones a
+    deadlined read already stops on (``src.database.maintenance``), so the two cannot
+    disagree about what "nearly out of memory" means.
+    """
+    try:
+        from src.database.maintenance import _available_mb, _read_memory_floor_mb
+
+        floor = _read_memory_floor_mb()
+        avail = _available_mb()
+    except Exception:  # noqa: BLE001 - no DB layer, or no reading
+        return None
+    if floor is None or avail is None or avail > floor:
+        return None
+    return float(avail), float(floor)
+
+
 _LOG = logging.getLogger(__name__)
 
 # _WalGuardResult: the minimum real-clock gap between two WAL-releasing closes of
@@ -507,6 +530,7 @@ def run_all_bounded(
     deadline: float | None = None,
     as_of: "date | None" = None,
     lanes: bool = False,
+    memory_stop: bool = False,
 ) -> tuple[list[Card], dict]:
     """Run every registered producer, isolating failures. Returns ``(cards, stats)``
     where ``stats`` is ``{"producers_run", "producers_total", "truncated"}`` plus, when
@@ -529,6 +553,12 @@ def run_all_bounded(
 
     ``deadline`` is a :func:`time.monotonic` instant after which no FURTHER producer is
     started; None (Home's path) is unbounded, exactly as before.
+
+    ``memory_stop`` makes the loop stop BETWEEN producers while available memory is at or
+    below the memory guard's floor (``stats["truncated_reason"] == "memory_short"``). Off by
+    default, and only Home's own refresh turns it on: the other callers (a bulletin edition,
+    the leads-quality export, the card audit) print their own words for a short run and know
+    only a spent time budget, so a memory stop there would be reported as the wrong cause.
 
     ``lanes`` runs :data:`LANE_ONLY_PRODUCERS` too. Off by default: the skipped names travel
     in ``stats["held_q823"]`` so a document can say which cards it does not carry and why.
@@ -554,12 +584,14 @@ def run_all_bounded(
     disabled = _disabled_names()
     ran = 0
     truncated = False
+    truncated_reason: str | None = None
     anchorable = period_anchorable() if as_of is not None else {}
     anchored_names: list[str] = []
     unanchored_names: list[str] = []
     for i, (name, producer) in enumerate(registry):
         if deadline is not None and time.monotonic() >= deadline:
             truncated = True
+            truncated_reason = "budget"
             _LOG.warning(
                 "run_all: budget spent after %d/%d producers; stopping before %r",
                 ran, total, name,
@@ -574,9 +606,27 @@ def run_all_bounded(
         # is control flow the isolation cannot intercept.
         if _deadline_expired(session):
             truncated = True
+            truncated_reason = "statement_deadline"
             _LOG.warning(
                 "run_all: enclosing statement deadline expired after %d/%d producers; "
                 "stopping before %r", ran, total, name,
+            )
+            break
+        # The same idea for MEMORY (diagnostics rank 4, 2026-09-30): a producer that
+        # starts while the machine is at the memory guard's floor can be the allocation
+        # that ends the process, and the briefing runs at the tail of every collection
+        # pass, which is exactly when memory is scarcest. Stopping BETWEEN producers is
+        # the part this loop owns; a single producer's own allocation is bounded by the
+        # deadlined read it runs under, not here. The producers not run say so in
+        # ``stats`` -- the caller keeps what it already had for them.
+        short = _memory_short() if memory_stop else None
+        if short is not None:
+            truncated = True
+            truncated_reason = "memory_short"
+            _LOG.warning(
+                "run_all: machine nearly out of memory (%.0f MB available, floor %.0f MB) "
+                "after %d/%d producers; stopping before %r",
+                short[0], short[1], ran, total, name,
             )
             break
         ran += 1
@@ -665,6 +715,8 @@ def run_all_bounded(
         "truncated": truncated,
         "held_q823": held,
     }
+    if truncated_reason is not None:
+        stats["truncated_reason"] = truncated_reason
     if as_of is not None:
         # Both lists, always, and BY NAME. A count alone would say how many were
         # anchored and not which — and "which" is the only form a document can use
