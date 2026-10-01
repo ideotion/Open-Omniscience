@@ -206,6 +206,11 @@
     <div class="prep-bar" aria-hidden="true"><div class="prep-fill"></div></div>
     <p class="prep-phase" id="prep-phase" role="status" aria-live="polite">opening the database</p>
     <p class="prep-phase" id="prep-elapsed" aria-live="polite"></p>
+    <!-- Filled only while the passphrase check is recovering a large log (rank 5, phase 0). -->
+    <div id="prep-recovery" class="hidden">
+      <p class="prep-phase" id="prep-rec-1" role="status" aria-live="polite"></p>
+      <p class="prep-phase" id="prep-rec-2" aria-live="polite"></p>
+    </div>
   </div>
 </div>
 

@@ -13050,3 +13050,33 @@ recorded (`io_errors`, `last_io_error` with the figure it was judged against) an
 sits on the corpus engine AND every lane engine, because a lane is written to the same drive (the corpus engine's hook alone
 never saw a lane's failed write). Stated limit: a copy-on-write drive that reports room (metadata exhausted while `df` says
 free) and fails with an I/O error is not classified as full.
+### sqlcipher3's `Connection.close()` HOLDS THE GIL THROUGH THE CLOSE-TIME CHECKPOINT; `execute("PRAGMA wal_checkpoint(...)")` DOES NOT (WAL / disk thread, unlock phase 0, 2026-10-01)
+
+Measured with a ticker thread that sleeps 10 ms in a loop and records its worst gap while the main thread does the
+step, on a 600 MiB leftover `-wal` (a child process writes it with autocheckpoint off and leaves through
+`os._exit`): sqlcipher3 `close()` of the last connection took 2.1 s with a worst gap of 2.1 s, so every other
+Python thread, **the uvicorn event loop included**, stood still for the whole backfill; the same checkpoint run as
+`execute("PRAGMA wal_checkpoint(PASSIVE)")` took 1.7 s with a worst gap of 0.01 s, a `TRUNCATE` on the emptied log
+0.3 s with 0.01 s, and the first read that RECOVERS the log (0.6 s) 0.02 s; stdlib sqlite3's own `close()` (2.4 s)
+holds the GIL for nothing (0.01 s). So on an encrypted store the unlock's verify connection froze the process for
+the backfill (the field's 24.7 s and 981 s unlocks), which is also why no progress sentence could be shown: the
+poll for it was not answered until the close returned. **Before closing the last connection to an encrypted store
+that may have a log, checkpoint it through `execute`**; `close()` then has nothing to hold the GIL over
+(`src/api/unlock.py::_close_after_checkpoint`). Still unfixed, by their owners' files: the failed-candidate
+`conn.close()` inside `connect._try_open_encrypted` (a wrong passphrase, or a store at a non-default page size,
+pays the backfill on the FIRST failed candidate, under the GIL: the unlock page's sentence arrived at 3.6 s in
+that walk instead of 1.1 s), and `engine.dispose()` at shutdown and in a restore swap.
+
+### THE UNLOCK'S WAL COST IS TWO COSTS THAT NEITHER DOMINATES, SO NO SPLIT IS WORTH BUILDING (WAL / disk thread, unlock phase 0, 2026-10-01)
+
+On a 1 GiB encrypted leftover log (sandbox, an NVMe-class disk, the full suite running beside it), the keyed open
+that RECOVERS it (every frame read and its checksum chain validated) took 3.1 s cold and 0.6 s warm, and the close
+that WRITES IT BACK took 1.1 s and 2.4 s for a log whose hot index pages were rewritten (23k distinct pages in 65k
+frames: 382 MB written) and 2.1 s and 4.8 s for an append-only log (all 65k pages distinct: 1.0 GB written). The
+open is a READ of the whole log and the backfill is a WRITE of its distinct pages plus an fsync, so which one
+dominates depends on whether the page cache still holds the log and on how many distinct pages it carries: warm,
+the backfill is 4 to 7 times the open; cold, the open is 1.5 to 3 times the close. Totals ran 3.1 to 5.4 s per GiB
+here against the field's 5.0 to 39.2 s per GiB, so the only honest predictor of a machine's unlock is THAT MACHINE'S
+last measured one (`forensics.last_recovery`, kept apart from `last_unlock`, which an unlock with no log
+overwrites) and the only lever on the cost is the log's size at boot (the storage guard's bound). The driver offers
+no way to skip the close-time backfill, so deferring it was not available either.
