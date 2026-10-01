@@ -12956,13 +12956,16 @@ on it has been begun to save, or a press made since the build was asked for hold
 (the marker is the newest request's generation, cleared only by it; it stays set until that request's save ends, so a
 press that has already landed is told apart by the bar holding its set); a diagnostics set on the bar is of the
 previous archive and dead, unless it has this archive's own file NAMES (never just the same count: consecutive builds
-of one corpus have the same count), in which case it is already the answer. A split that FAILS after the server swept
-the previous files (a full disk, an answer lost on the way) empties such a bar too, except a 409, which sweeps nothing.
-The orderings are a table in `tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails
-without it, and the two mutants that survive cannot differ (the generation bump when a failed split empties the bar,
-and the order of the deferral and the same-archive clauses, which "has not landed yet" made equivalent). **State that
-a server action replaces (here the split's files) must be compared with what the server now holds, not assumed alive
-because the page remembers it.**
+of one corpus usually have the same count), in which case it is already the answer. A split that FAILS may have swept the
+previous files (a full disk, an answer lost on the way), and the page cannot tell a failure before the sweep from one
+after it, so it empties such a bar too (a set still being saved included: the loop would ask for dead files), except
+after a 404 or a 409, which the route refuses before it sweeps anything; the price is a live set dropped when the answer
+of a split that swept nothing is lost, in a window of about two seconds. The orderings are a table in
+`tests/parts_delivery_node_test.js`; every clause of the rule has a test that fails without it, and the mutants that
+survive cannot change what a person sees (the generation bump when a failed split empties the bar, since the button allows
+one build per page; the re-render of a bar that is then hidden; and the order of the deferral and the same-archive
+clauses, which "has not landed yet" made equivalent). **State that a server action replaces (here the split's files)
+must be compared with what the server now holds, not assumed alive because the page remembers it.**
 
 ### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)
 
@@ -13050,3 +13053,43 @@ recorded (`io_errors`, `last_io_error` with the figure it was judged against) an
 sits on the corpus engine AND every lane engine, because a lane is written to the same drive (the corpus engine's hook alone
 never saw a lane's failed write). Stated limit: a copy-on-write drive that reports room (metadata exhausted while `df` says
 free) and fails with an I/O error is not classified as full.
+### sqlcipher3's `Connection.close()` HOLDS THE GIL THROUGH THE CLOSE-TIME CHECKPOINT; `execute("PRAGMA wal_checkpoint(...)")` DOES NOT (WAL / disk thread, unlock phase 0, 2026-10-01)
+
+Measured with a ticker thread that sleeps 10 ms in a loop and records its worst gap while the main thread does the
+step, on a 600 MiB leftover `-wal` (a child process writes it with autocheckpoint off and leaves through
+`os._exit`): sqlcipher3 `close()` of the last connection took 2.1 s with a worst gap of 2.1 s, so every other
+Python thread, **the uvicorn event loop included**, stood still for the whole backfill; the same checkpoint run as
+`execute("PRAGMA wal_checkpoint(PASSIVE)")` took 1.7 s with a worst gap of 0.01 s, a `TRUNCATE` on the emptied log
+0.3 s with 0.01 s, and the first read that RECOVERS the log (0.6 s) 0.02 s; stdlib sqlite3's own `close()` (2.4 s)
+holds the GIL for nothing (0.01 s). So on an encrypted store the unlock's verify connection froze the process for
+the backfill (the field's 24.7 s and 981 s unlocks), which is also why no progress sentence could be shown: the
+poll for it was not answered until the close returned. **Before closing the last connection to an encrypted store
+that may have a log, checkpoint it through `execute`**; `close()` then has nothing to hold the GIL over
+(`src/api/unlock.py::_close_after_checkpoint`). **A FAILED KEYED OPEN HAS NO SUCH FIX, AND ONLY ONE KIND OF FAILURE
+PAYS THE STALL** (measured the same way on a 300 MiB log, data reopened with the right key afterwards: every row
+intact): in `connect._try_open_encrypted` a WRONG PASSPHRASE at the store's right page size still has its `close()`
+checkpoint the log (0.69 s, worst gap 0.43 s, about 1.5 s per GiB) and remove it, once per log, because the frames are
+copied raw and no key is needed; a right key at a WRONG page size never reaches the log (0.32 s, gap 0.01 s, log
+untouched). `execute("PRAGMA wal_checkpoint(...)")` on the failed connection raises `MemoryError` (the codec is in its
+sticky error state) and a keyless stdlib `sqlite3` connection answers `file is not a database`, so there is no call-site
+checkpoint-before-close to add and `connect.py` stays as it is; `tests/test_failed_open_wal_facts.py` pins the four
+facts so a later session neither re-derives them nor "fixes" it the wrong way, and fails loudly if the library ever
+makes a fix possible. **One idea is recorded UNTESTED, for whoever takes slice S04-08 (the coordinator's note,
+2026-10-01; nothing was built or run for it):** in WAL mode an idle open connection keeps its shared lock on the
+database file, so a failed candidate kept OPEN is not the last connection and should not backfill; if it stays open
+until the right key's phase 0 has checkpointed the log, its `close()` should find nothing left to copy. Still
+unfixed, in its owner's file: `engine.dispose()` at shutdown and in a restore swap.
+
+### THE UNLOCK'S WAL COST IS TWO COSTS THAT NEITHER DOMINATES, SO NO SPLIT IS WORTH BUILDING (WAL / disk thread, unlock phase 0, 2026-10-01)
+
+On a 1 GiB encrypted leftover log (sandbox, an NVMe-class disk, the full suite running beside it), the keyed open
+that RECOVERS it (every frame read and its checksum chain validated) took 3.1 s cold and 0.6 s warm, and the close
+that WRITES IT BACK took 1.1 s and 2.4 s for a log whose hot index pages were rewritten (23k distinct pages in 65k
+frames: 382 MB written) and 2.1 s and 4.8 s for an append-only log (all 65k pages distinct: 1.0 GB written). The
+open is a READ of the whole log and the backfill is a WRITE of its distinct pages plus an fsync, so which one
+dominates depends on whether the page cache still holds the log and on how many distinct pages it carries: warm,
+the backfill is 4 to 7 times the open; cold, the open is 1.5 to 3 times the close. Totals ran 3.1 to 5.4 s per GiB
+here against the field's 5.0 to 39.2 s per GiB, so the only honest predictor of a machine's unlock is THAT MACHINE'S
+last measured one (`forensics.last_recovery`, kept apart from `last_unlock`, which an unlock with no log
+overwrites) and the only lever on the cost is the log's size at boot (the storage guard's bound). The driver offers
+no way to skip the close-time backfill, so deferring it was not available either.

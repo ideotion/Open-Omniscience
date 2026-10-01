@@ -4,7 +4,8 @@ A verdict measured here that an imported history disagrees with is never changed
 (rule 12 = b), but a copied-in attempt resets the re-verification clock, so its own re-check would
 come a whole interval after the OTHER instance's attempt. The boot step lists such sources
 (``qualification.recheck_first``); the pass takes them ahead of its two ordinary pools, within the
-same re-check budget, least recently tried first, and never more than half of the slots.
+same re-check budget, least recently tried first, in half of the slots plus any the ordinary queue cannot use (the odd
+slot alternates, so it is half only on average over two passes).
 
 Scheduling only: no network, the trial fetch is skipped and the cohort is injected, exactly like
 tests/test_qualification_recheck.py, whose fixtures and helpers are reused.
@@ -436,6 +437,14 @@ def test_the_default_budget_lets_both_ordinary_kinds_advance_while_the_list_has_
     assert [x.id for x in chosen] == [1, 3] and contested
 
 
+def test_the_spare_path_never_takes_a_source_twice_when_the_list_is_longer_than_its_share():
+    """The shape that duplicated before the fix: forced [1,2,3,4], the disqualified pool [3],
+    budget 4 gave [1,2,3,3]."""
+    chosen = q.allocate_rechecks([_S(1), _S(2), _S(3), _S(4)], [_S(3)], [], 4)
+    ids = [x.id for x in chosen]
+    assert len(ids) == len(set(ids)) and ids == [1, 2, 3, 4]
+
+
 def test_a_flagged_source_that_is_also_due_in_a_pool_takes_one_slot_on_the_spare_path():
     """Budget 4, one slot for the list's share beyond what the pools use: the spare is filled from
     the flagged sources NOT already chosen. 3 is flagged AND due in the disqualified pool."""
@@ -473,6 +482,59 @@ def test_the_boot_step_keeps_the_tries_of_an_entry_it_lists_again(db, store, mon
     monkeypatch.setattr(sess, "session_scope", scope)
     qi.flag_inversions_for_recheck(now=NOW)
     assert store[q.RECHECK_FIRST_KEY]["flagged"][str(a.id)]["tries"] == 2
+
+
+def test_the_boot_step_never_changes_a_measured_verdict(db, store, monkeypatch):
+    """Rule 12 = b: listing an inversion for an early re-check changes nothing about the row."""
+    import contextlib
+
+    import src.database.session as sess
+
+    @contextlib.contextmanager
+    def scope():
+        yield db
+
+    monkeypatch.setattr(sess, "session_scope", scope)
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    a = _inverted_qualified(db, "a.example")
+    before = (a.status, a.qualified_at, a.qualification_criteria_version,
+              db.query(SourceQualificationAttempt).count())
+    qi.flag_inversions_for_recheck(now=NOW)
+    qi.flag_inversions_for_recheck(now=NOW + timedelta(days=1))
+    db.refresh(a)
+    assert str(a.id) in store[q.RECHECK_FIRST_KEY]["flagged"]
+    assert (a.status, a.qualified_at, a.qualification_criteria_version,
+            db.query(SourceQualificationAttempt).count()) == before
+
+
+def test_the_boot_step_leaves_a_list_of_a_shape_it_did_not_write_as_it_is(db, store, monkeypatch):
+    import contextlib
+
+    import src.database.session as sess
+
+    @contextlib.contextmanager
+    def scope():
+        yield db
+
+    monkeypatch.setattr(sess, "session_scope", scope)
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    _inverted_qualified(db, "a.example")
+    store[q.RECHECK_FIRST_KEY] = {"flagged": ["not", "a", "mapping"], "turn": "list"}
+    before = copy.deepcopy(store[q.RECHECK_FIRST_KEY])
+    assert qi.flag_inversions_for_recheck(now=NOW)["flagged"] == 0
+    assert store[q.RECHECK_FIRST_KEY] == before
+
+
+def test_only_the_slice_a_pass_can_use_is_loaded_but_every_entry_is_counted(db, store):
+    flagged = [_inverted_qualified(db, f"f{i}.example") for i in range(5)]
+    _flag(store, *flagged)
+    sources, ids = q.pending_forced(db, 2)
+    assert len(sources) == 2 and len(ids) == 5
+    assert [int(x.id) for x in sources] == ids[:2]
+    assert q.pending_forced(db, 0)[0] == [] and len(q.pending_forced(db, 0)[1]) == 5
+    assert [int(x.id) for x in q.pending_forced(db)[0]] == ids
+    view = qualification_queue(db, now=NOW, recheck_per_pass=2, next_limit=2)
+    assert view["rechecks"]["flagged"] == 5
 
 
 def test_a_newer_disagreement_starts_the_count_again(db, store, monkeypatch):

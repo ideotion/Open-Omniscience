@@ -149,27 +149,36 @@ def held_domains(*, strict: bool = False) -> set[str]:
         return set()
 
 
-def repaired_domains() -> set[str]:
-    """Domains the boot repair withdrew and nobody has reverted (read-only; raises if the index
-    cannot be read, so a caller says so rather than read "none repaired").
+def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
+    """``({domain: judged_at}, unreadable_run_ids)`` for the repairs nobody has reverted (read-only;
+    raises if the INDEX cannot be read, so a caller says so rather than read "none repaired").
 
-    A row in this set carries a verdict taken from an imported history, not one this install
-    measured, so the qualification export labels it ``inherited``. A run record that cannot be
-    read is skipped (its domains are unknown) and named by :func:`repair_summary`.
+    ``judged_at`` is the date of the imported attempt the repair followed. A row in this mapping
+    carries a verdict taken from an imported history, not one this install measured, so the
+    qualification export labels it ``inherited`` only while its newest judging attempt is still that
+    one (a later local judgement, in either direction, makes it this install's own). A run record
+    that cannot be read is skipped (its domains are unknown) and its id is returned, so the caller
+    can say that the list is incomplete.
     """
     from src.config.kv_store import kv_invalidate
 
     kv_invalidate(REPAIR_INDEX_KEY)
     idx = _read_repair_index(strict=True)
-    records, _unreadable = _read_runs(list(idx["runs"]))
-    domains: set[str] = set()
-    for run in records.values():
-        if not run.get("applied"):
-            continue                       # planned but never applied: nothing was repaired
+    records, unreadable = _read_runs(list(idx["runs"]))
+    rows: dict[str, str | None] = {}
+    for run_at in idx["runs"]:             # oldest first: the newest run decides a domain
+        run = records.get(run_at)
+        if run is None or not run.get("applied"):
+            continue                       # unreadable, or planned but never applied
         for r in run.get("repairs") or []:
             if r.get("domain") and not r.get("reverted_at"):
-                domains.add(str(r["domain"]))
-    return domains
+                rows[str(r["domain"])] = r.get("judged_at")
+    return rows, sorted(unreadable)
+
+
+def repaired_domains() -> set[str]:
+    """Domains the boot repair withdrew and nobody has reverted (see :func:`repaired_rows`)."""
+    return set(repaired_rows()[0])
 
 
 def _newest_judging(session: Session, source_id: int):
@@ -780,6 +789,8 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
                 run_at = last
         except UnreadableRunRecord:
             _LOG.warning("qualification repair: run %s cannot be read, kept as it is", last)
+            if run_at == last:     # the same key would overwrite it (a clock stepped back): wait
+                return {"repaired": 0, "skipped": "the newest run record cannot be read and the clock has not moved"}
     run_key = REPAIR_RUN_PREFIX + run_at
     # 2. record and index the intent (outside any ORM write transaction: kv_set_json's contract)
     kv_set_json(run_key, {"run_at": run_at, "applied": False, "repairs": rows})
@@ -863,6 +874,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     try:
         raw = kv_get_json_strict(RECHECK_FIRST_KEY) or {}
         stored = raw.get("flagged") or {}
+        if not isinstance(stored, dict):          # a shape this step did not write: leave it as it is
+            raise TypeError(f"flagged is a {type(stored).__name__}, not a mapping")
     except Exception:  # noqa: BLE001 - reported, never raised
         _LOG.warning("recheck-first list skipped: it cannot be read", exc_info=True)
         return {"flagged": 0, "skipped": "the list cannot be read"}

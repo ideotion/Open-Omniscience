@@ -570,15 +570,28 @@ def concept_arms(
                     continue
                 counts[kid] = counts.get(kid, 0) + int(n)
         top = [(k, v) for k, v in counts.items() if v >= min_cooccur]
-        top.sort(key=lambda kv: -kv[1])
-        top = top[: max(0, assoc_limit) * 2]
-        labels = {
-            kid: term
-            for kid, term, norm in session.query(Keyword.id, Keyword.term, Keyword.normalized_term).filter(
-                Keyword.id.in_([k for k, _ in top][:_IN_CHUNK])
-            )
-            if not is_hidden(norm)  # a stoplisted word is hidden at read time (R111 step T2)
-        } if top else {}
+        top.sort(key=lambda kv: (-kv[1], kv[0]))  # ties by id: the cut is the same on every engine
+        # A word the filters hide (the stoplist, a user exclusion, too short, numeric: R111 step T2)
+        # is dropped BEFORE the cut, so it never uses one of the slots a shown word could take.
+        want = max(0, assoc_limit) * 2
+        labels: dict[int, str] = {}
+        kept: list[tuple[int, int]] = []
+        for i in range(0, len(top), _IN_CHUNK):
+            if len(kept) >= want:
+                break
+            chunk = top[i : i + _IN_CHUNK]
+            names = {
+                kid: term
+                for kid, term, norm in session.query(Keyword.id, Keyword.term, Keyword.normalized_term).filter(
+                    Keyword.id.in_([k for k, _ in chunk])
+                )
+                if not is_hidden(norm)
+            }
+            for k, v in chunk:
+                if k in names and len(kept) < want:
+                    kept.append((k, v))
+                    labels[k] = names[k]
+        top = kept
         # Ranked as TYPED PAIRS and only then rendered: sorting the payload dicts means
         # sorting on `object`, and an unlabelled keyword would otherwise sort by its id.
         ranked = [(str(labels[k]), v) for k, v in top if labels.get(k)]
