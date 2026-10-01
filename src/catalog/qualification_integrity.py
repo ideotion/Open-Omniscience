@@ -874,6 +874,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     try:
         raw = kv_get_json_strict(RECHECK_FIRST_KEY) or {}
         stored = raw.get("flagged") or {}
+        if not isinstance(stored, dict):          # a shape this step did not write: leave it as it is
+            raise TypeError(f"flagged is a {type(stored).__name__}, not a mapping")
     except Exception:  # noqa: BLE001 - reported, never raised
         _LOG.warning("recheck-first list skipped: it cannot be read", exc_info=True)
         return {"flagged": 0, "skipped": "the list cannot be read"}
