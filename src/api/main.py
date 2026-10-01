@@ -540,6 +540,16 @@ async def lifespan(app: FastAPI):
         _stop_offline_maintenance()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.warning("Error stopping offline maintenance on shutdown", exc_info=True)
+    try:
+        # The storage guard's supervisor drains the WAL through the corpus engine: stop it
+        # BEFORE the engine is disposed. stop() waits up to two seconds for a drain in flight; one
+        # queued longer on the write gate may still be running, and a checkout after the disposal
+        # only opens a fresh connection on a process that is going down.
+        from src.scheduler.storage_guard import stop as _stop_storage_guard
+
+        _stop_storage_guard()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.warning("Error stopping the storage guard on shutdown", exc_info=True)
 
     dispose_engine()
     try:

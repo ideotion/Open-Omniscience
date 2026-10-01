@@ -138,7 +138,12 @@ def pruned_total() -> int:
         return _PRUNED
 
 
-def stacks_for(idents: list[int], *, depth: int = 12) -> dict[int, list[str]]:
+#: Frames per stack by default; the storage guard's ``PIN_STACK_DEPTH`` is the same number
+#: (a test pins that), so the one report and the one on-demand capture agree.
+STACK_DEPTH = 12
+
+
+def stacks_for(idents: list[int], *, depth: int = STACK_DEPTH) -> dict[int, list[str]]:
     """The current stack of each named thread, innermost last, trimmed to ``depth``.
 
     On demand only (a WAL that will not reset, a pool that timed out): a stack taken at

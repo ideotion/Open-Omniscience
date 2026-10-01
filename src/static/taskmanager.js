@@ -380,8 +380,10 @@
   // machine's limit, or the data drive is nearly full. The server sends each sentence as a
   // frame with its numbers (bytes) apart, so the sentence is written in the UI language and
   // the sizes through this page's byte formatter. Visible by default; the method is one hover
-  // away; the button is a RETRY (the guard re-engages on fresh over-limit samples).
-  function storagePausedText(phase) {
+  // away; the button is the operator's OVERRIDE (R112, see app-core.js _storageGuardHtml): none
+  // is offered while one holds.
+  function storagePausedText(phase, g) {
+    if (g && g.overridden) return null; // see app-core.js _storagePausedText
     return { "paused-wal-pinned": "Paused: the database log has grown too large",
              "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
   }
@@ -395,8 +397,20 @@
       Object.keys(n.vars || {}).forEach(function (k) { vars[k] = fmtBytes(n.vars[k]); });
       return '<div class="vwarn">' + esc(tf(n.frame, vars)) + "</div>";
     }).join("");
-    return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, the reserve protects the writes still in flight. Collection resumes by itself; this button only asks for an earlier look. If the log does not clear by itself, quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer).")) + '">' +
-      lines + '<button class="tiny secondary" data-tm="storage-resume">' + esc(t("Try again now")) + "</button></div>";
+    return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer).")) + '">' +
+      lines + storageGuardTail(g) + "</div>";
+  }
+  // What stands under the notice (see app-core.js _storageGuardTail): the button when the last
+  // sample says a click would be granted, the server's own refusal sentence in its place when it
+  // would not, nothing while an override holds; a withdrawal note already says the refusal.
+  function storageGuardTail(g) {
+    if (g.overridden) return "";
+    var rf = g.override_refusal;
+    if (!rf) return '<button class="tiny secondary" data-tm="storage-resume">' + esc(t("Resume anyway")) + "</button>";
+    if ((g.kinds || []).indexOf("override-withdrawn") >= 0) return "";
+    var vars = {};
+    Object.keys(rf.vars || {}).forEach(function (k) { vars[k] = fmtBytes(rf.vars[k]); });
+    return '<div class="vnote">' + esc(tf(rf.frame, vars)) + "</div>";
   }
 
   // ---- Schedule — the scheduler's own facts, AIRPLANE-AWARE ---- //
@@ -408,7 +422,7 @@
     var sect = function (x) { return '<div class="vsect">' + x + "</div>"; };
     // Airplane mode is the truth: a pass winding down while offline is NOT
     // "collection in progress" — show it as paused, in the engaged-airplane colour.
-    var pausedTxt = storagePausedText(a.phase);
+    var pausedTxt = storagePausedText(a.phase, a.storage_guard);
     var state = offline ? '<span class="pill err">' + esc(t("paused — airplane mode")) + "</span>"
               : a.active ? '<span class="pill ok">' + esc(t("running — collection in progress")) + "</span>"
               : pausedTxt ? '<span class="pill warn">' + esc(t(pausedTxt)) + "</span>"
@@ -654,12 +668,22 @@
       try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Resumed.")); }
       catch (e) { toast(e.message, "err"); }
     },
-    // The storage guard's "Try again now": a RETRY, never an override -- the guard re-engages
-    // after fresh over-limit samples if the log is still held open or the drive still full.
+    // The storage guard's "Resume anyway" (R112): the operator's OVERRIDE. The server grants it
+    // within its bounds or refuses with a sentence frame, which is shown with the sizes through
+    // this page's formatter (see app-core.js storageGuardResume).
     storageResume: async function () {
       try {
-        await api("/api/scheduler/storage-guard/resume", { method: "POST" });
-        toast(t("Trying again. Collection pauses again by itself if the limit is still exceeded."));
+        var r = await api("/api/scheduler/storage-guard/resume", { method: "POST" });
+        var o = (r && r.storage_guard_override) || {};
+        if (o.refused) {
+          var vars = {};
+          Object.keys(o.refused.vars || {}).forEach(function (k) { vars[k] = fmtBytes(o.refused.vars[k]); });
+          toast(tf(o.refused.frame, vars), "err");
+        } else if (o.overridden) {
+          toast(t("Collection resumed although the limit is still exceeded. It stops again by itself if free space falls too low."));
+        } else {
+          toast(t("Resumed."));
+        }
       } catch (e) { toast(e.message, "err"); }
     },
     move: async function (key, dir, kind) {

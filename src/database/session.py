@@ -30,6 +30,7 @@ of producing a half-working app that looks fine.
 from __future__ import annotations
 
 import logging
+import math
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -56,6 +57,29 @@ DATA_DIR = data_dir()
 
 DATABASE_URL = os.getenv("DATABASE_URL", default_sqlite_url())
 _IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+
+def _pool_timeout_s() -> float:
+    """``OO_DB_POOL_TIMEOUT``: how long a checkout waits for a pooled connection (default 30 s).
+
+    A value that is not a finite number (``nan``, ``inf``, ``abc``, empty) is refused and the
+    default used, with a log line: SQLAlchemy's pool spins a core at full speed for ever on
+    ``nan``, raises ``OverflowError`` from the first checkout that has to wait on ``inf`` (or
+    anything past about 9e9), and an unparseable value used to stop the app at import. Every
+    finite number the operator sets is kept as it is; this is not a clamp."""
+    raw = os.getenv("OO_DB_POOL_TIMEOUT", "30")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
+    if not math.isfinite(value):
+        # Resolved by NAME: this runs inside the module-level ``_build_engine()`` call, above the
+        # module's ``_LOG``.
+        logging.getLogger("database.session").warning(
+            "OO_DB_POOL_TIMEOUT=%r is not a finite number of seconds; using the default, 30 s", raw
+        )
+        return 30.0
+    return value
 
 
 def _build_engine() -> Engine:
@@ -98,7 +122,7 @@ def _build_engine() -> Engine:
             creator=_creator,
             pool_size=int(_b["db_pool_size"]),
             max_overflow=int(_b["db_max_overflow"]),
-            pool_timeout=float(os.getenv("OO_DB_POOL_TIMEOUT", "30")),
+            pool_timeout=_pool_timeout_s(),
             # D44 = a: collector-role checkouts leave the API's margin free.
             poolclass=ReservingQueuePool,
         )
