@@ -1383,6 +1383,17 @@ def _browse_total_cached(session) -> int:
     intervening write reuse the count (a HIT); a commit by ANY connection (including a
     quarantine write) bumps ``data_version`` so the count stays EXACT — never a
     drifting counter. Probe unavailable -> the live count (never a wrong cache hit)."""
+    return _browse_total_with_source(session)[0]
+
+
+def _browse_total_with_source(session) -> tuple[int, str]:
+    """``(total, how)``: the same total as :func:`_browse_total_cached`, and how it was got --
+    ``count_cached`` (served from the cache) or ``count_recomputed`` (counted now, because nothing
+    was cached for this data version: the first browse since the app started or unlocked, an
+    entry that had expired or been evicted, or a write by any connection since the last count; or
+    the cache is off, or the probe was unavailable). The browse's per-phase timing names its count
+    phase from this, so a recomputed COUNT(*) over the corpus is never filed under the name of the
+    cheap case."""
     from src.api.insights import _cached, _data_version
 
     try:
@@ -1392,7 +1403,7 @@ def _browse_total_cached(session) -> int:
     dv = _data_version(bind) if bind is not None else None
     if dv is None:
         # no probe -> live, never a wrong hit
-        return int(session.query(Article).filter(Article.quarantined.isnot(True)).count())
+        return int(session.query(Article).filter(Article.quarantined.isnot(True)).count()), "count_recomputed"
     # _cached persists DICT payloads only, so wrap the scalar in a dict (else it is a
     # silent no-op that recomputes COUNT(*) every page — the skeptic finding). The value
     # stays EXACT: data_version invalidates the key on any write.
@@ -1400,18 +1411,27 @@ def _browse_total_cached(session) -> int:
         f"articles-total|{id(bind)}|{dv}",
         lambda: {"count": int(session.query(Article).filter(Article.quarantined.isnot(True)).count())},
     )
-    return int(cached["count"])
+    # `cached` is True only for a hit; a miss (or a TTL of 0, which returns the bare payload) is a
+    # count that was just made.
+    return int(cached["count"]), ("count_cached" if cached.get("cached") is True else "count_recomputed")
 
 
-def _new_search_timer(query: str | None):
-    """S5: a per-phase timer for a TEXT search (None for a browse). Best-effort — a timing
-    fault must never change what /api/articles returns (the instrument_search discipline)."""
-    if not query:
+def _new_search_timer(
+    query: str | None, *, browse: bool = False, limit: int | None = None, offset: int = 0
+):
+    """S5: a per-phase timer for a TEXT search. A BROWSE (no text query) gets one only when the
+    caller opts in with ``browse`` -- the article list's own call does, the AI, evidence and
+    analysis callers that happen to browse do not -- and its record carries the page size and
+    offset. Best-effort — a timing fault must never change what /api/articles returns (the
+    instrument_search discipline)."""
+    if not query and not browse:
         return None
     try:
-        from src.monitoring.search_timing import SearchPhaseTimer
+        from src.monitoring.search_timing import KIND_BROWSE, SearchPhaseTimer
 
-        return SearchPhaseTimer()
+        if query:
+            return SearchPhaseTimer()
+        return SearchPhaseTimer(kind=KIND_BROWSE, meta={"limit": limit, "offset": offset})
     except Exception:  # noqa: BLE001 - instrumentation is optional, never blocks a search
         return None
 
@@ -1488,6 +1508,7 @@ def _query_articles(
     keyword_id: int | None = None,
     expand: object | None = None,
     adv: object | None = None,
+    time_browse: bool = False,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
 
@@ -1508,6 +1529,9 @@ def _query_articles(
     ``QueryExpander``); ``None`` leaves the matched set byte-identical to before it
     existed. The caller keeps the object so it can publish WHAT was expanded -- the
     search and the sentence describing it then come from one place and cannot disagree.
+
+    ``time_browse`` asks for a BROWSE (no text query) to be timed per phase, count then rows,
+    into the search-timing log. Off by default, which leaves every other caller byte-identical.
     """
     from sqlalchemy import and_
 
@@ -1545,7 +1569,8 @@ def _query_articles(
             query = None
 
     fts_ids: list | None = None
-    _timer = _new_search_timer(query)  # S5: per-phase search timing (best-effort, near-zero)
+    # S5: per-phase search timing (best-effort, near-zero); a browse only when asked for
+    _timer = _new_search_timer(query, browse=time_browse, limit=limit, offset=offset)
     if query:
         try:
             fts_ids = search_ids(
@@ -1632,12 +1657,16 @@ def _query_articles(
     # and `_browse_total_cached` is itself quarantine-aware so the S2.3 cached-total
     # optimisation is preserved rather than forced onto the live-count path below.
     q = session.query(Article).filter(*_q_gate)
+    count_phase = "count_live"
     if filters or adv.include_quarantined:
         if filters:
             q = q.filter(and_(*filters))
         total = q.count()  # filtered: bounded by the filter, computed live
     else:
-        total = _browse_total_cached(session)  # S2.3: data-aware cached corpus COUNT(*)
+        # S2.3: data-aware cached corpus COUNT(*); the phase says whether it was served or made
+        total, count_phase = _browse_total_with_source(session)
+    if _timer is not None:
+        _timer.phase(count_phase)
     # Annotated because the branches are genuinely different SQLAlchemy types (a
     # CollationClause for the two text columns, a mapped attribute for the rest) and
     # inference takes whichever branch it reads first, then rejects every other one.
@@ -1666,7 +1695,11 @@ def _query_articles(
     q = q.order_by(order_col.desc() if descending else order_col.asc(), Article.id.desc())
     if limit is not None:
         q = q.offset(offset).limit(limit)
-    return q.all(), total
+    rows = q.all()
+    if _timer is not None:
+        _timer.phase("rows")
+    _record_search_timing(_timer)
+    return rows, total
 
 
 # API Endpoints
@@ -1855,6 +1888,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         keyword_id=kw_id,
         expand=expander,
         adv=adv,
+        time_browse=True,
     )
 
     # Per-article keyword count for the displayed page only (a cheap mentions-only

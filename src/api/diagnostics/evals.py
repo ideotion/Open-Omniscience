@@ -187,12 +187,12 @@ def kpi(download: bool = Query(False)) -> JSONResponse:
 
 @router.get("/search-timing")
 def search_timing(download: bool = Query(False)) -> JSONResponse:
-    """§4: the per-search intra-request timing aggregate — per-phase (FTS MATCH · content fetch ·
-    serialization) percentiles over a bounded recent-window of instrumented searches, and the
-    MEASURED dominant phase (highest p95 wall-clock = the §4 optimization target chosen by
-    evidence, not theory). Read-only; degrades to an honest empty report before any search is
-    instrumented (wiring instrument_search into the search endpoint on the operator's live
-    encrypted corpus is the §4 CI/operator step — see search_timing.py). No composite score.
+    """§4: the per-search intra-request timing aggregate — per-phase percentiles (fts · resolve · load
+    for a text search; the count and rows of a browse of the article list, under ``browse``) over a
+    bounded recent-window of instrumented searches, and the MEASURED dominant phase (highest p95
+    wall-clock = the §4 optimization target chosen by evidence, not theory). Read-only; degrades to an
+    honest empty report before any search is instrumented (the article list's own handler records
+    them; see search_timing.py for what each clock does and does not cover). No composite score.
     ``download=1`` returns a dated attachment."""
     from src.monitoring.search_timing import search_timing_report
 

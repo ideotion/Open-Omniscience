@@ -457,7 +457,18 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
 
 def record_unlock_timing(record: dict[str, Any]) -> None:
     """Persist the unlock path's own timing record (wal bytes before open,
-    per-phase ms, total) into the sentinel file. Best-effort."""
+    per-phase ms, total) into the sentinel file. Best-effort.
+
+    It also stamps WHEN the unlock finished (``unlock_marker``): every finished unlock passes
+    through here, and the request-latency and search-timing logs measure each call's distance
+    from that moment. Stamped first, so a sentinel file that cannot be written (the very
+    condition this log exists to diagnose) does not also lose the stamp."""
+    try:
+        from src.monitoring.unlock_marker import note_unlock_done
+
+        note_unlock_done()
+    except Exception:  # noqa: BLE001 - a stamp must never break the unlock it describes
+        _LOG.debug("could not stamp the unlock", exc_info=True)
     state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
     state["last_unlock"] = {**record, "at": _now()}
     _write_state(state)

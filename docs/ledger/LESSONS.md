@@ -12997,3 +12997,34 @@ must not end what it did not start:** Start and Run now cleared the latches unde
 R112 does not list; they now leave an override alone while its cause is still over the limit or cannot be read against it (and end one whose cause is already under it, so no override outlives its cause for want of an exit). Test numbers
 must respect the latches (a 2 GiB log on a 500 GiB drive has a 2 GiB floor BELOW the 10 GiB reserve, so the disk latch, not
 the floor, is what a naive test sees).
+
+### A LIST THE PRODUCER CUT CANNOT BE LOOKED UP IN: A MISSING ROW READS AS "NOBODY CALLED IT" (release candidate diagnostics, 2026-10-01, `src/monitoring/latency.py`)
+
+The latency summary cut its `routes` list at 60 rows (slowest first) and its `breaching_routes` at 20, and said so
+nowhere in the payload. On the 16 field exports `routes` was exactly 60 rows long on every instance, and
+`breaching_routes` held 282 rows in all, beside counters that summed to 306 routes over the bar. The soak-window artifact
+finds `GET /api/database/stats` by looking it up in that list, so on 5 of the 16 instances it published
+`measured: false, "this route has not been called in this process"`, and the route had a row on the other eleven. A
+cut list cannot tell "nobody called it" from "it fell off the end", and a fast route on a busy instance is exactly
+what a slowest-first cut drops: the reason string was written as a fact about the process and was a fact about the
+cut. **Publish the whole list and bound the KEYSPACE instead, counting what the bound drops and publishing that
+count beside the list (`route_keyspace.dropped_requests`), so the only way left for a called route to have no row
+is a counted one and the reader can say so.** Where a cut is unavoidable, publish the total beside it and word
+every absence "not in this list". This is the lookup twin of "a cap may bound which EXAMPLES are listed; it must
+never bound a displayed NUMBER" (2026-07-18) and of the truncated-head lesson of 2026-08-11 above.
+
+### A SELF-TEST THAT RESETS THE PROCESS'S OWN STATE RUNS INSIDE THE EXPORT THAT READS IT (release candidate diagnostics, 2026-10-01, `src/monitoring/search_timing.py`)
+
+The search-timing self-test called the module's `_reset_for_tests()`, the hook that empties the in-process record
+window, to prove that the window is bounded. Every diagnostics bundle runs that self-test (as a gate of
+`recursive-loop.json`) BEFORE it reads `search-timing.json`, and the bundle journal shows that order on 16 of 16
+exports, so the report emptied the very window it was about to publish: `searches: 0` on all 16 instances of the
+2026-09-30 round said nothing about whether anyone had searched, and the reading written for it ("none since this
+process started") was a second wrong explanation of a number the export itself had made. Reproduced: record one search
+and two browses, run `recursive_loop_report()`, and the report reads 0 and 0 while the durable log still holds 1 and 2.
+**A self-test that runs on a production path must never call a hook that clears production state. Prove the bound on a
+LOCAL structure through the same helper the live code uses (`_append_bounded`), so the check is of the real code and
+touches nothing, and pin it with a test that records first, runs the self-test, then reads the live report.** The
+reset shipped with the instrument on 2026-07-13 (`b7efad2b`) and survived eleven weeks of its tests; the review of the
+PR that fixed it found it, because no test recorded anything before it ran the self-test (the window was always empty
+there, so emptying it changed nothing a test could see), which is the order that hides the bug.

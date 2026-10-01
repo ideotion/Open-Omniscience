@@ -81,6 +81,46 @@ def _result_size(result: object) -> int | None:
     return None
 
 
+#: ``AppSettings().default_result_limit``: the page size used only when the setting cannot be read.
+_FIRST_PAGE_FALLBACK = 50
+
+
+def _first_page_limit() -> int:
+    """The page size the Search tab asks for: the ``default_result_limit`` setting (50 unless the
+    operator changed it). The UI sends it as ``limit`` on every article-list request
+    (``DEFAULT_LIMIT``, app-settings.js), so the benchmark reads the same setting rather than the
+    handler's own default of 100, which the UI never uses.
+
+    It is read while the case list is BUILT, outside the per-case isolation, so a settings store
+    that cannot be read falls back to the setting's own default (the case notes name the page size
+    they ran with) instead of costing the whole benchmark."""
+    try:
+        from src.config.app_settings import load_settings
+
+        return max(1, int(load_settings().default_result_limit))
+    except Exception:  # noqa: BLE001 - a settings fault must not take the benchmark with it
+        return _FIRST_PAGE_FALLBACK
+
+
+def _article_page(session: Session, query: str | None, limit: int | None = None) -> dict:
+    """The article list's first page, through ``api.main._query_articles`` ITSELF.
+
+    Not a copy of its SQL: a copy would measure what the query used to be after somebody rewrites
+    it, which is the one moment the number matters. Called inside ``search_timing.suppressed()``
+    so these runs do not turn up in the field record as searches nobody made. ``limit`` is the
+    page size the case's note names (the setting, read once for the whole run)."""
+    from src.api.main import _query_articles
+    from src.monitoring import search_timing
+
+    with search_timing.suppressed():
+        rows, total = _query_articles(
+            session, query=query, source=None, start_date=None, end_date=None,
+            language=None, tags=None, limit=limit if limit is not None else _first_page_limit(),
+            offset=0,
+        )
+    return {"rows": rows, "total": total}
+
+
 def _top_term(session: Session) -> tuple[str | None, int]:
     """The busiest keyword (highest maintained mention_count) — the heaviest, most
     representative term to stress associations / the mind-map graph. None on an empty
@@ -152,6 +192,7 @@ def _build_cases(session: Session) -> list[_Case]:
     from src.database.fts import search_ids
 
     term, _mentions = _top_term(session)
+    page = _first_page_limit()  # once: the page the cases run and the page their notes name are one number
 
     cases: list[_Case] = [
         _Case(
@@ -206,8 +247,37 @@ def _build_cases(session: Session) -> list[_Case]:
                 f"Full-text search for the busiest keyword ({term!r})",
                 lambda: search_ids(session, term),
             ),
+            _Case(
+                "search_first_page",
+                f"Article search, first page, for the busiest keyword ({term!r})",
+                lambda: _article_page(session, term, page),
+                note="The whole text-search path a person waits on (candidate ids, resolving "
+                     f"them, loading a page of {page}: the page size the Search tab "
+                     "asks for), where fts_search above is only its first step. Called through "
+                     "api.main._query_articles itself. Cold = the first call in THIS export, "
+                     "not the first call after an unlock.",
+            ),
         ]
     cases += [
+        _Case(
+            "browse_first_page",
+            "Article list, first page (what the Search tab loads before anything is typed)",
+            lambda: _article_page(session, None, page),
+            note="Diagnostics 2026-09-30, rank 9: GET /api/articles was K2's worst interactive "
+                 "route on 8 of the 16 instances and no export carried a number for its first "
+                 f"page. A page of {page} (the page size the Search tab asks for), "
+                 "newest first, through api.main._query_articles itself, so a rewrite of the "
+                 "browse query is measured here without anyone editing this case. Cold = the "
+                 "first call in THIS export, not the first call after an unlock, and it pays "
+                 "the corpus-wide COUNT(*) unless a browse had already cached it for this data "
+                 "version; warm (runs 2..N) is served that count from the data-version cache and "
+                 "leaves the COUNT(*) out, unless a commit landed between runs (collection "
+                 "commits continuously), the cache's entry expired (120 s by default) or was "
+                 "evicted (it holds 128 entries), the cache is off, or the data-version probe "
+                 "is unavailable: that run pays the COUNT(*) again. The "
+                 "per-phase split of the same query as people really click it is in "
+                 "search-timing.json, under `browse`.",
+        ),
         _Case("layered_graph_family", "Mind-map graph, family level",
               lambda: q.layered_graph(session, level="family")),
         _Case("layered_graph_supergroup", "Mind-map graph, super-group level",
