@@ -1126,6 +1126,26 @@ def test_a_command_that_cannot_limit_core_dumps_refuses_before_reading_the_passp
     assert "core dumps cannot be limited" in capsys.readouterr().out
 
 
+def test_a_plan_never_opens_the_passphrase_file(tmp_path, monkeypatch, _core_limit):
+    # The command's core-dump limit is not asked of a plan, so a plan must not hold the key at all.
+    opened: list = []
+    real = Path.read_text
+
+    def _spy(self, *a, **kw):
+        opened.append(self.name)
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "read_text", _spy)
+    key = tmp_path / "key"
+    key.write_text("a-passphrase-only-a-run-may-read", "utf-8")
+    rc, out = _cli("--plan", "--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"),
+                   "--passphrase-file", str(key))
+    assert rc in (0, 2) and "a-passphrase-only-a-run-may-read" not in out
+    assert "key" not in opened and _core_limit == []
+    report, _ = _run(tmp_path, plan_only=True, passphrase_file=tmp_path / "does-not-exist")  # not even looked for
+    assert report["status"] == "plan"
+
+
 def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):
     report = {"status": "interrupted", "reason": "x", "phases": [], "store": {"deleted": True}}
     monkeypatch.setattr(R, "run", lambda **kw: (report, None))

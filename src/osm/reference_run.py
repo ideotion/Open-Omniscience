@@ -882,17 +882,6 @@ def _run(
         raise ValueError("--keep-store needs --passphrase-file: a file you make holding any passphrase (for example "
                          "`python -c \"import secrets; print(secrets.token_urlsafe(24))\" > key`), so the later "
                          "gazetteer build can open the kept store; this tool writes no secret to disk")
-    if passphrase_file is not None:
-        try:
-            passphrase = Path(passphrase_file).read_text("utf-8").strip()
-        except UnicodeDecodeError:  # its message would name a byte of the file and its position: say neither
-            raise ValueError("the passphrase file is not valid UTF-8") from None
-        except OSError as exc:
-            raise ValueError(f"cannot read the passphrase file ({type(exc).__name__})") from None
-        if not passphrase:
-            raise ValueError("the passphrase file is empty")
-    else:
-        passphrase = secrets.token_urlsafe(24)
     if gazetteer not in GAZETTEER_MODES:
         raise ValueError(f"--gazetteer {gazetteer!r} is not offered here; the Wikidata join is a separate step on a kept store")
     probe = probe or Probe()
@@ -950,7 +939,6 @@ def _run(
     g_out = Path(gazetteer_out).resolve() if gazetteer_out else None
     if gazetteer != "off" and g_out is None:
         g_out = base / f"places_gazetteer-{stamp}.yml"
-    secrets_ = (passphrase,)
     try:
         home: Path | None = Path.home()
     except (RuntimeError, KeyError):  # no home directory to name: nothing of it to scrub
@@ -981,6 +969,20 @@ def _run(
         report["status"] = "plan"
         report["not_measured"] = ["everything: --plan runs nothing"]
         return _finish(None, None)
+    # The key is read only now: a plan runs nothing, so it never holds the passphrase (the command's core-dump limit is
+    # not asked of a plan, which therefore must not carry a key in memory).
+    if passphrase_file is not None:
+        try:
+            passphrase = Path(passphrase_file).read_text("utf-8").strip()
+        except UnicodeDecodeError:  # its message would name a byte of the file and its position: say neither
+            raise ValueError("the passphrase file is not valid UTF-8") from None
+        except OSError as exc:
+            raise ValueError(f"cannot read the passphrase file ({type(exc).__name__})") from None
+        if not passphrase:
+            raise ValueError("the passphrase file is empty")
+    else:
+        passphrase = secrets.token_urlsafe(24)
+    secrets_ = (passphrase,)
     if not pf["ok"]:
         report["status"] = "refused-preflight"
         report["reason"] = (f"free disk is {pf['free_bytes']} bytes and the run needs {pf['needed_bytes']} "
