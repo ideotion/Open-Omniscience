@@ -188,11 +188,30 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
     except Exception:  # noqa: BLE001 - even opening the session must never break the loop
         _LOG.warning("off-peak maintenance could not open a session", exc_info=True)
         return {"skipped": "error"}
+    if not stop():
+        # After the session above has closed: the recompute takes its own short transaction per
+        # chunk, and no read transaction of this window may be open under it.
+        out["stoplist_recompute"] = _stoplist_recompute(stop)
     return out
 
 
+def _stoplist_recompute(stop: Callable[[], bool]) -> dict:
+    """R111 step T3: bring the stored top keywords up to the shipped stoplist, resumably.
+
+    A no-op (``{"skipped": "current"}``) once the shipped list's fingerprint is recorded. It
+    never raises and yields to a stop request and to the storage and memory guards at every
+    chunk, which is why the window itself can stay a plain call."""
+    try:
+        from src.analytics.stoplist_recompute import maybe_recompute_top_keywords
+
+        return maybe_recompute_top_keywords(should_stop=stop)
+    except Exception:  # noqa: BLE001 - a background safety net must never break the loop
+        _LOG.warning("off-peak stoplist recompute failed")
+        return {"skipped": "error"}
+
+
 def run_cleanup_continuation(*, should_stop: Callable[[], bool] | None = None) -> dict:
-    """Resume ONLY the keyword cleanup, in its own session, best-effort. Never raises.
+    """Resume ONLY the keyword cleanup (and an unfinished stoplist recompute), best-effort. Never raises.
 
     ``maybe_cleanup_keywords`` already resumes just the incomplete orphan prune while its
     12-hour freshness gate still holds, so calling it alone is the whole continuation.
@@ -203,11 +222,15 @@ def run_cleanup_continuation(*, should_stop: Callable[[], bool] | None = None) -
         return {"skipped": "stopping"}
     from src.database.session import session_scope
 
+    out: dict = {}
     try:
         with session_scope() as session:
             from src.analytics.store import maybe_cleanup_keywords
 
-            return {"cleanup": maybe_cleanup_keywords(session)}
+            out["cleanup"] = maybe_cleanup_keywords(session)
     except Exception:  # noqa: BLE001 - even opening the session must never break the loop
         _LOG.warning("keyword cleanup continuation failed", exc_info=True)
         return {"skipped": "error"}
+    if not stop():
+        out["stoplist_recompute"] = _stoplist_recompute(stop)
+    return out

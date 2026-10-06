@@ -16385,3 +16385,22 @@ counts and no `top_source_share`), so the feeds behind each cause are NOT named 
 **TOOL GAP (found by the guard, not by the tool):** `scripts/stopword_batch.py --apply` writes a batch to the file of the language it was run for, so a Latin-script word read in a log of a
 non-Latin language lands in a file the script test (`tests/test_stopword_file_scripts.py`) refuses. The batch-1 ko words were moved to `_multilingual.yml` by hand. Teach `--apply` that rule before
 any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will otherwise fail on its first non-Latin language.
+
+## 2026-10-06 — R111 STEP T3 BUILT (the stored top keywords and the Home cards follow the shipped stoplist); T2 STILL OPEN IN PART
+
+**T3 (built; the PR that carries this note):** `src/analytics/stoplist_recompute.py`. The fingerprint is the sha256 of the sorted SHIPPED list (`global_stopwords()`; never the user's exclusions, minimum
+length or built-in switch, which are read-time settings). The Home cache records the fingerprint it was made under and goes stale through the existing background refresh when it differs, under the
+marker repair's throttle (a cache written before the field refreshes once). The stored `top_keyword_*` columns are recomputed by one resumable job in the off-peak window and its offline timer, only for
+articles whose top set held a hidden word (a hidden NON-lowest member of a tie included), written to those three columns only (`updated_at` is written back as itself, no mention row moves, no epoch
+bump: nothing but the Articles list reads these columns, grep-checked). The fingerprint is recorded after the last chunk, never before. **Measured** (synthetic stores, local disk, 12 KB article bodies, 2,555 hidden words, an independent recompute over every article after each run: 0 mismatches in all of them).
+**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten:** plaintext 6.4 s, longest write window 0.27 s, peak log 4.9 MiB, 267 MiB resident; the SAME store as an
+ENCRYPTED copy (SQLCipher, the app's own `reencrypt_plain_to`, opened through the app's own connection factory, unlocked with a passphrase): 7.3 s, longest window 0.29 s, peak log 4.6 MiB, 202 MiB
+resident (about 14 % slower; same shape; the chunk-size controller held every window near its 0.25 s target on both). **Worst case (50,000 articles, each holding about 22 hidden mentions and a hidden
+top word, so every article is rewritten), plaintext only:** 14.0 s (about 28 s per 100,000 articles touched), longest window 0.21 s, peak log 19.7 MiB. **The in-pass memory (`SEEN_CAP`, 500,000
+ids):** a Python set of ints costs about 63 bytes an id (2 million ids took 125 MiB resident, so the cap is about 31 MiB, under 1 % of the 4 GiB tier); it protects memory only: on the worst-case
+store a cap one fifth of the corpus took 67 s and no memory at all took 86 s against 14 s, with the same answer, so a cap below the corpus costs time and never correctness, and a corpus under
+500,000 articles never meets it. The in-pass memory is not yet derived from the memory tier (`memory_budget.resolved_reading()`; the tier PR has not landed); derive it there if that PR lands.
+
+**T2 still open:** bulletin coverage, stories and articles (through the export thread, the sole pusher of the bulletin code), `supergroup_rising`/`supergroup_stats`, `source_topics`, the AI keywords. **Left on
+purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage
+worklist may deliberately include stoplisted words).
