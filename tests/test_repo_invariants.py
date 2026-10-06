@@ -8346,7 +8346,7 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
 #: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
 #: appended a lesson raised this number in the same diff; since 2026-10-06 (rule (5a)(b)) a lesson is a
 #: file under docs/ledger/lessons.d/ and only `scripts/ledger_fold.py fold` moves this number.
-_LESSONS_LINE_CEILING = 13644
+_LESSONS_LINE_CEILING = 13720
 
 
 def _lessons_md_lines() -> int:

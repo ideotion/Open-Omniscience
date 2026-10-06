@@ -559,3 +559,454 @@ def test_an_unserialisable_leaf_is_never_silently_stringified():
     out = json.loads(d._member_bytes({"x": _Weird()}))
     assert out["x"] != "totally normal text"
     assert isinstance(out["x"], dict) and out["x"][d._UNSERIALISABLE] is True
+
+
+# --------------------------------------------------------------------------- #
+#  A killed run's journal rides the NEXT bundle (field diagnostics 2026-09-30, B4)
+# --------------------------------------------------------------------------- #
+def _dead_run_journal(directory, stamp, *, unfinished=None, finished=("a.json",), tail=""):
+    """A journal as a hard-killed run leaves it: complete begin/end pairs, then a `begin` with no
+    `end` (``unfinished``), then optionally a torn line (``tail``)."""
+    path = directory / f"oo-all-diagnostics-{stamp}.zip.journal.jsonl"
+    lines = []
+    for i, name in enumerate(finished):
+        lines.append({"event": "begin", "file": name, "i": i, "total": 9, "started_at": f"2026-09-30T07:0{i}:00"})
+        lines.append({"event": "end", "file": name, "outcome": "ok", "wall_s": 1.5})
+    if unfinished:
+        lines.append({"event": "begin", "file": unfinished, "i": len(finished), "total": 9,
+                      "started_at": "2026-09-30T07:10:00"})
+    path.write_text("".join(json.dumps(x) + "\n" for x in lines) + tail, encoding="utf-8")
+    return path
+
+
+def test_the_member_running_at_the_kill_is_named_in_the_next_bundle(tiny_members):
+    """THE DEFECT: the next run swept the dead run's journal, so the culprit never reached a
+    maintainer. Now the worker reads it first; the journal is marked, and the manifest names it."""
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="keyword-log-digest.json")
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        manifest = json.loads(z.read("manifest.json"))
+        journal = [json.loads(ln) for ln in z.read("bundle-journal.jsonl").decode().splitlines()]
+    prev = manifest["run"]["previous_runs"]
+    assert len(prev) == 1
+    assert prev[0]["journal"] == "oo-all-diagnostics-20260930-070500.zip.journal.jsonl"
+    assert prev[0]["unfinished"] == ["keyword-log-digest.json"]
+    assert prev[0]["members_begun"] == 2 and prev[0]["members_ended"] == 1
+    assert prev[0]["outcomes"] == {"ok": 1} and prev[0]["started_at"] == "2026-09-30T07:00:00"
+    marked = [r for r in journal if r.get("previous_run")]
+    assert marked and all(r["previous_run"] == prev[0]["journal"] for r in marked)
+    assert [r["event"] for r in marked][-1] == "begin" and marked[-1]["file"] == "keyword-log-digest.json"
+    # This run's own lines follow, unmarked, and are still complete pairs.
+    own = [r for r in journal if "previous_run" not in r]
+    assert [r["event"] for r in own if r["file"] == "a.json"] == ["begin", "end"]
+    assert journal.index(marked[-1]) < journal.index(own[0]), "a dead run's lines come first"
+    # The sidecar is swept only AFTER it has been carried.
+    assert list(tiny_members.glob("*.journal.jsonl")) == []
+
+
+def test_a_run_with_no_dead_predecessor_says_it_looked(tiny_members):
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        manifest = json.loads(z.read("manifest.json"))
+        journal = z.read("bundle-journal.jsonl").decode()
+    assert manifest["run"]["previous_runs"] == []
+    assert "previous_run" not in journal, "no dead run, no marked line: the file is as it was"
+    assert "previous_runs_not_carried" not in manifest["run"]
+
+
+def test_the_in_memory_route_has_no_journal_and_does_not_pretend_to_have_looked():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        d._write_all_diagnostics_zip([("a.json", lambda: {"x": 1})], z)
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as z:
+        manifest = json.loads(z.read("manifest.json"))
+        assert "bundle-journal.jsonl" not in z.namelist()
+    assert "previous_runs" not in manifest["run"], "absent means nothing looked; [] means it did"
+
+
+def test_a_torn_last_line_is_kept_as_evidence_not_dropped(tiny_members):
+    """A kill can land in the middle of a write. The fragment is itself part of the record."""
+    fragment = '{"event": "end", "fi'
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json", tail=fragment)
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        manifest = json.loads(z.read("manifest.json"))
+        journal = [json.loads(ln) for ln in z.read("bundle-journal.jsonl").decode().splitlines()]
+    assert manifest["run"]["previous_runs"][0]["unparsed_lines"] == 1
+    torn = [r for r in journal if r.get("event") == "unparsed"]
+    assert len(torn) == 1 and torn[0]["raw"] == fragment and torn[0]["chars"] == len(fragment)
+    assert torn[0]["previous_run"].startswith("oo-all-diagnostics-20260930-070500")
+
+
+def test_an_unparsed_line_keeps_its_first_200_characters_and_says_how_long_it_was(tiny_members):
+    """The record of a torn line is bounded: the head is kept, the length says how much was not."""
+    long_tail = '{"event": "end", "file": "' + "z" * 700
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json", tail=long_tail)
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        journal = [json.loads(ln) for ln in z.read("bundle-journal.jsonl").decode().splitlines()]
+    (torn,) = [r for r in journal if r.get("event") == "unparsed"]
+    assert len(torn["raw"]) == 200 and torn["raw"] == long_tail[:200]
+    assert torn["chars"] == min(len(long_tail), d._PREVIOUS_JOURNAL_MAX_LINE_CHARS)
+
+
+def test_several_dead_runs_are_carried_oldest_first_and_the_cap_names_what_it_leaves(
+    tiny_members, monkeypatch
+):
+    monkeypatch.setattr(_diag_bundle, "_PREVIOUS_JOURNAL_MAX_RUNS", 3)
+    for day in range(1, 6):  # five dead runs: 1..5, oldest first by name
+        _dead_run_journal(tiny_members, f"2026090{day}-000000", unfinished=f"m{day}.json")
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        run = json.loads(z.read("manifest.json"))["run"]
+    carried = [r["journal"] for r in run["previous_runs"]]
+    assert carried == [f"oo-all-diagnostics-2026090{n}-000000.zip.journal.jsonl" for n in (3, 4, 5)], (
+        "the newest deaths are kept, in chronological order"
+    )
+    left = [r["journal"] for r in run["previous_runs_not_carried"]]
+    assert left == [f"oo-all-diagnostics-2026090{n}-000000.zip.journal.jsonl" for n in (2, 1)]
+    assert all(r["bytes"] > 0 for r in run["previous_runs_not_carried"])
+
+
+def test_an_oversize_journal_keeps_its_tail_where_the_last_begin_is(tiny_members, monkeypatch):
+    monkeypatch.setattr(_diag_bundle, "_PREVIOUS_JOURNAL_MAX_BYTES", 400)
+    _dead_run_journal(
+        tiny_members, "20260930-070500", unfinished="the-culprit.json",
+        finished=tuple(f"member-{i}.json" for i in range(12)),
+    )
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        prev = json.loads(z.read("manifest.json"))["run"]["previous_runs"][0]
+    assert prev["truncated"] is True and prev["bytes"] > 400
+    assert prev["unfinished"] == ["the-culprit.json"], "the kill evidence is at the END of the file"
+    assert prev["unparsed_lines"] == 0, "the line a tail read starts in the middle of is dropped, not kept"
+    with zipfile.ZipFile(res["path"]) as z:
+        carried = [
+            json.loads(ln) for ln in z.read("bundle-journal.jsonl").decode().splitlines()
+            if "previous_run" in ln
+        ]
+    # THE BOUND ON BYTES READ, observed on the output: the head of the file (a sentinel) must not
+    # be in what was carried, or the cap read the whole file and only claimed to have truncated.
+    assert all(r.get("file") != "member-0.json" for r in carried)
+    assert carried[-1]["file"] == "the-culprit.json"
+
+
+def test_a_cancelled_run_leaves_the_dead_runs_journal_for_the_next_one(tiny_members):
+    """Only a run that publishes an archive carrying the journal may delete it."""
+    kept = _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
+    res = d._all_diagnostics_worker(_Ctx(stop=True))
+    assert res.get("cancelled") is True
+    assert kept.exists(), "a cancelled run carried nothing out, so it must delete nothing"
+
+
+def test_this_runs_own_journal_is_never_read_as_a_predecessor(tmp_path):
+    own = _dead_run_journal(tmp_path, "20260930-080000", unfinished="x.json")
+    other = _dead_run_journal(tmp_path, "20260930-070000", unfinished="y.json")
+    got = _diag_bundle._read_previous_run_journals(tmp_path, own)
+    assert [c["journal"] for c in got["carried"]] == [other.name]
+    assert got["not_carried"] == []
+
+
+def test_a_missing_directory_carries_nothing(tmp_path):
+    got = _diag_bundle._read_previous_run_journals(tmp_path / "missing", tmp_path / "x.journal.jsonl")
+    assert got == {"carried": [], "not_carried": []}
+
+
+def test_a_reader_that_fails_costs_the_bundle_nothing_and_says_so(tiny_members, monkeypatch):
+    """Whatever goes wrong reading the left-overs, THIS bundle is still written, and the manifest
+    says the read failed (an empty list would claim it looked and found none)."""
+    def _boom(out_dir, own):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", _boom)
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        run = json.loads(z.read("manifest.json"))["run"]
+    assert run["previous_runs"] == []
+    assert run["previous_runs_error"].startswith("PermissionError")
+
+
+def test_a_fold_that_fails_costs_the_bundle_nothing_and_says_so(tiny_members, monkeypatch):
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
+
+    def _boom(previous):
+        raise RuntimeError("fold broke")
+
+    monkeypatch.setattr(_diag_bundle, "_fold_previous_run_journals", _boom)
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        run = json.loads(z.read("manifest.json"))["run"]
+        journal = z.read("bundle-journal.jsonl").decode()
+    assert run["previous_runs_error"].startswith("RuntimeError")
+    assert "previous_run" not in journal
+
+
+_KEY = "p4ss'ph\"rase\\w\u00e9th"   # both kinds of quote, a backslash and a letter outside ASCII: the eight written forms all differ
+
+
+def _written_forms(secret):
+    """The eight forms an engine and the drivers write ``secret`` in, built from THEIR helpers (not from
+    the scrub under test): the raw and the quote-doubled string, each as a statement carries it, as
+    ``repr`` shows a parameter, and as JSON writes it (escaped ASCII or not)."""
+    from src.database import connect as _connect
+
+    doubled = _connect._sql_literal_escape(secret)
+    return [
+        secret, doubled,
+        repr((secret,))[2:-3], repr((doubled,))[2:-3],
+        json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1],
+        json.dumps(doubled)[1:-1], json.dumps(doubled, ensure_ascii=False)[1:-1],
+    ]
+
+
+def _engine_failures(secret):
+    """EIGHT short failure lines, one for each form the key is written in, each with the key in that form
+    only. SHORT ON PURPOSE: the manifest keeps the first 160 characters of the text it did not write, so
+    one long line holding every form puts only the first two inside the window and the assertions
+    over the rest read a clipped text (they pass whatever the net did); one line for each form puts every
+    form inside it."""
+    from src.database import connect as _connect
+
+    doubled = _connect._sql_literal_escape(secret)
+    return [
+        f"syntax error near '{secret}'",
+        f"syntax error [SQL: PRAGMA key = '{doubled}']",
+        f"syntax error [parameters: {(secret,)!r}]",
+        f"syntax error [parameters: {(doubled,)!r}]",
+        f"syntax error {json.dumps({'k': secret})}",
+        f"syntax error {json.dumps({'k': secret}, ensure_ascii=False)}",
+        f"syntax error {json.dumps({'k': doubled})}",
+        f"syntax error {json.dumps({'k': doubled}, ensure_ascii=False)}",
+    ]
+
+
+@pytest.mark.parametrize("which", range(8))
+def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_passphrase(
+    tiny_members, monkeypatch, which
+):
+    """The coordinator's checks of the error-text scrub: the manifest's ``previous_runs_error`` and the
+    block a failed fold leaves are made from an exception's words, like every member's, and an engine's
+    words can carry the statement it failed on, in each form the key is written in (a statement, a
+    parameter list, a JSON body; raw and quote-doubled). One run for each of the eight forms, each with a
+    failure line short enough that its form is INSIDE the 160 characters the manifest keeps: the form
+    under test is in the clipped text before the scrub and absent after it, which the test checks."""
+    from src.database import connect as _connect
+
+    monkeypatch.setattr(_connect, "_passphrase", _KEY)
+    forms = _written_forms(_KEY)
+    assert len(set(forms)) == len(forms), "every form differs, so each is a different place the key could remain"
+    # the manifest clips what it did not write to ASCII, which writes a letter outside it as an escape: the
+    # clipped form of each is looked for too, so a key left in the text cannot hide behind that rewrite
+    forms = forms + [_diag_bundle._ascii_clip(f, 10**6) for f in forms]
+    failure = _engine_failures(_KEY)[which]
+    unscrubbed = _diag_bundle._ascii_clip(f"PermissionError: denied: {failure}", 160)
+    assert forms[which] in unscrubbed or _diag_bundle._ascii_clip(forms[which], 10**6) in unscrubbed, (
+        "the form under test sits inside the window the manifest keeps, or this test says nothing"
+    )
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
+    real_read = _diag_bundle._read_previous_run_journals
+
+    def _read_boom(out_dir, own):
+        raise PermissionError(f"denied: {failure}")
+
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", _read_boom)
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        read_text = json.loads(z.read("manifest.json"))["run"]["previous_runs_error"]
+    # parsed, not searched in the encoded file: JSON writes a backslash and a letter outside ASCII
+    # differently, so a search of the raw bytes would pass for a text that still carries the key
+    assert read_text.startswith("PermissionError: denied") and "syntax error" in read_text
+    assert all(f not in read_text for f in forms), read_text
+
+    def _fold_boom(previous):
+        raise RuntimeError(f"fold broke {failure}")
+
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", real_read)
+    _dead_run_journal(tiny_members, "20260930-080500", unfinished="x.json")
+    monkeypatch.setattr(_diag_bundle, "_fold_previous_run_journals", _fold_boom)
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        fold_text = json.loads(z.read("manifest.json"))["run"]["previous_runs_error"]
+    assert fold_text.startswith("RuntimeError: fold broke") and "syntax error" in fold_text
+    assert all(f not in fold_text for f in forms), fold_text
+
+
+def test_the_two_warnings_for_a_left_over_journal_log_the_scrubbed_text_and_no_traceback(
+    tiny_members, monkeypatch, caplog
+):
+    """The log's tail rides the same zip (``recent_errors``) and the console gets it too: a warning with
+    ``exc_info=True`` writes the exception's text raw, so these two log the scrubbed text and carry no
+    traceback."""
+    import logging
+
+    from src.database import connect as _connect
+
+    monkeypatch.setattr(_connect, "_passphrase", _KEY)
+    failure = f"[SQL: PRAGMA key = '{_connect._sql_literal_escape(_KEY)}'] [parameters: {(_KEY,)!r}]"
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
+    real_read = _diag_bundle._read_previous_run_journals
+
+    def _read_boom(out_dir, own):
+        raise PermissionError(f"denied: {failure}")
+
+    def _fold_boom(previous):
+        raise RuntimeError(f"fold broke {failure}")
+
+    caplog.set_level(logging.DEBUG)
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", _read_boom)
+    d._all_diagnostics_worker(_Ctx())
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", real_read)
+    _dead_run_journal(tiny_members, "20260930-080500", unfinished="x.json")
+    monkeypatch.setattr(_diag_bundle, "_fold_previous_run_journals", _fold_boom)
+    d._all_diagnostics_worker(_Ctx())
+    mine = [r for r in caplog.records if "previous runs' journals" in r.getMessage()]
+    assert len(mine) == 2, [r.getMessage() for r in caplog.records]
+    assert "PermissionError" in mine[0].getMessage() and "RuntimeError" in mine[1].getMessage()
+    # The record's text went through the ASCII clip, which writes a letter outside ASCII as an escape: the
+    # clipped form of each is searched too (a log argument that was clipped but not scrubbed would pass
+    # a search of the raw forms alone), and the marker must be there, so the test cannot pass on a
+    # message that never carried the failure.
+    forms = _written_forms(_KEY)
+    forms = forms + [_diag_bundle._ascii_clip(f, 10**6) for f in forms]
+    for rec in mine:
+        assert rec.exc_info is None and rec.exc_text is None
+        assert "***redacted***" in rec.getMessage(), rec.getMessage()
+        for form in forms:
+            assert form not in rec.getMessage(), (form, rec.getMessage())
+
+
+# --------------------------------------------------------------------------- #
+#  A left-over file is NOT trusted: whatever is in it, this bundle is still written
+# --------------------------------------------------------------------------- #
+def _carried_lines(*lines, bytes_=None):
+    """A hand-built ``carried`` item, bypassing the read's caps, to put a line in front of the fold."""
+    return {"carried": [{
+        "journal": "oo-all-diagnostics-20260930-070500.zip.journal.jsonl", "bytes": bytes_ or 1,
+        "truncated": False, "lines_dropped": 0, "modified": "2026-09-30T07:05:00+00:00",
+        "lines": list(lines),
+    }], "not_carried": []}
+
+
+def _strict(text):
+    """Parse as STRICT JSON: a bare NaN/Infinity is refused, as a browser's JSON.parse refuses it."""
+    def _no(name):
+        raise ValueError(name)
+
+    return json.loads(text, parse_constant=_no)
+
+
+def test_json_nested_deeper_than_the_parser_takes_is_an_unparsed_line_not_a_lost_bundle():
+    # 200,000 openers: the C parser on this Python takes far more than the 5,000 that used to
+    # stand here before it raises RecursionError, so a smaller line never reached that branch.
+    depth = 200_000
+    with pytest.raises(RecursionError):
+        json.loads("[" * depth)
+    text, block = _diag_bundle._fold_previous_run_journals(_carried_lines("[" * depth))
+    assert block["runs"][0]["unparsed_lines"] == 1
+    (rec,) = [json.loads(ln) for ln in text.splitlines()]
+    assert rec["event"] == "unparsed" and rec["chars"] == depth and len(rec["raw"]) == 200
+
+
+def test_a_lone_surrogate_in_a_left_over_line_cannot_stop_the_archive_encoding(tiny_members):
+    bad = '{"event": "begin", "file": "\\ud800-member", "started_at": "\\udfffT"}'
+    (tiny_members / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl").write_text(
+        bad + "\n", encoding="utf-8",
+    )
+    res = d._all_diagnostics_worker(_Ctx())  # raised UnicodeEncodeError in writestr before
+    with zipfile.ZipFile(res["path"]) as z:
+        run = _strict(z.read("manifest.json").decode("utf-8"))["run"]
+        body = z.read("bundle-journal.jsonl").decode("ascii")  # ASCII by construction
+    assert run["previous_runs"][0]["unfinished"] == ["\\ud800-member"], "the escape is text now"
+    assert "\\ud800-member" in body
+
+
+def test_a_bare_nan_never_reaches_the_manifest_or_the_folded_journal(tiny_members):
+    (tiny_members / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl").write_text(
+        '{"event": "end", "file": "a.json", "outcome": "ok", "wall_s": NaN}\n'
+        '{"event": "begin", "file": "b.json", "started_at": Infinity}\n',
+        encoding="utf-8",
+    )
+    res = d._all_diagnostics_worker(_Ctx())
+    with zipfile.ZipFile(res["path"]) as z:
+        manifest = _strict(z.read("manifest.json").decode("utf-8"))  # strict: NaN would raise
+        for ln in z.read("bundle-journal.jsonl").decode().splitlines():
+            _strict(ln)
+    assert manifest["run"]["previous_runs"][0]["unparsed_lines"] == 2
+
+
+def test_a_record_that_names_no_member_never_invents_a_culprit(tiny_members):
+    """A journal from another schema: begin/end lines without a string ``file``. The old code
+    named the culprit ``"None"``."""
+    _text, block = _diag_bundle._fold_previous_run_journals(_carried_lines(
+        '{"event": "begin", "i": 1}', '{"event": "begin", "file": 7}', '{"event": "end"}',
+    ))
+    run = block["runs"][0]
+    assert run["unfinished"] == [] and run["unrecognised_lines"] == 3
+    assert run["members_begun"] == 0 and run["members_ended"] == 0
+
+
+def test_the_lines_kept_from_one_journal_are_bounded_not_just_the_bytes_read(tmp_path, monkeypatch):
+    """The cap on bytes bounds what is READ; every line becomes a record, so a megabyte of
+    one-character lines was half a million records (measured +2 GB of resident size from ten
+    files). The tail is kept, the count of what was left is recorded."""
+    own = tmp_path / "oo-all-diagnostics-20260930-090000.zip.journal.jsonl"
+    path = tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl"
+    path.write_bytes(b"x\n" * (1 << 19))  # exactly the byte cap: 524,288 lines
+    got = _diag_bundle._read_previous_run_journals(tmp_path, own)
+    (item,) = got["carried"]
+    assert len(item["lines"]) == d._PREVIOUS_JOURNAL_MAX_LINES
+    assert item["lines_dropped"] == (1 << 19) - d._PREVIOUS_JOURNAL_MAX_LINES
+    text, block = _diag_bundle._fold_previous_run_journals(got)
+    assert len(text) < 200_000, "what the bundle carries is bounded by lines, not by what was on disk"
+    assert block["runs"][0]["lines_dropped"] == item["lines_dropped"]
+
+
+def test_a_journal_without_a_trailing_newline_is_held_to_the_line_cap_too(tmp_path):
+    """``rsplit`` with a count returns one piece more than the cap, and a file that ends in a
+    newline makes the last piece empty (filtered): only a file whose last line has no newline
+    reaches the cap itself, and without it the fold kept one line too many."""
+    own = tmp_path / "oo-all-diagnostics-20260930-090000.zip.journal.jsonl"
+    path = tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl"
+    path.write_bytes(b"x\n" * 5000 + b"x")  # 5,001 lines, the last one torn (no newline)
+    (item,) = _diag_bundle._read_previous_run_journals(tmp_path, own)["carried"]
+    assert len(item["lines"]) == d._PREVIOUS_JOURNAL_MAX_LINES
+    assert item["lines_dropped"] == 5001 - d._PREVIOUS_JOURNAL_MAX_LINES
+
+
+def test_a_long_line_is_cut_before_it_is_parsed_or_kept(tmp_path):
+    own = tmp_path / "oo-all-diagnostics-20260930-090000.zip.journal.jsonl"
+    path = tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl"
+    path.write_text("y" * 50_000 + "\n", encoding="utf-8")
+    (item,) = _diag_bundle._read_previous_run_journals(tmp_path, own)["carried"]
+    assert [len(ln) for ln in item["lines"]] == [d._PREVIOUS_JOURNAL_MAX_LINE_CHARS]
+
+
+def test_the_total_folded_text_has_a_budget_and_the_newest_journals_spend_it_first(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(_diag_bundle, "_PREVIOUS_JOURNAL_MAX_TOTAL_CHARS", 700)
+    own = tmp_path / "oo-all-diagnostics-20260930-090000.zip.journal.jsonl"
+    for day in (1, 2, 3):
+        _dead_run_journal(tmp_path, f"2026090{day}-000000", unfinished=f"m{day}.json")
+    got = _diag_bundle._read_previous_run_journals(tmp_path, own)
+    assert [c["journal"][19:27] for c in got["carried"]] == ["20260903"], "the newest is carried"
+    left = got["not_carried"]
+    assert [n["journal"][19:27] for n in left] == ["20260902", "20260901"]
+    assert all("budget" in n["reason"] for n in left)
+
+
+def test_a_journal_that_cannot_be_statted_is_named_not_skipped(tmp_path, monkeypatch):
+    own = tmp_path / "oo-all-diagnostics-20260930-090000.zip.journal.jsonl"
+    path = _dead_run_journal(tmp_path, "20260930-070500", unfinished="x.json")
+    real_stat = type(path).stat
+
+    def _stat(self, *a, **k):
+        if self.name == path.name:
+            raise PermissionError("denied")
+        return real_stat(self, *a, **k)
+
+    monkeypatch.setattr(type(path), "stat", _stat)
+    got = _diag_bundle._read_previous_run_journals(tmp_path, own)
+    assert got["carried"] == []
+    assert got["not_carried"][0]["journal"] == path.name
+    assert got["not_carried"][0]["reason"].startswith("could not stat it: PermissionError")

@@ -380,6 +380,8 @@
        lines the "Start at part number" box showed on a page that had built nothing (found in the
        Chromium walk of 2026-10-01; the unit tests read attributes, not what the browser draws). */
     #parts-bar[hidden], #parts-from-wrap[hidden] { display:none; }
+    #parts-bar { margin-top:6px; }
+    #parts-from { width:5em; }
     .egress-bar .egress-msg { flex:1 1 260px; }
     /* Inherits --caveat from .egress-bar deliberately. This span carries the
        HONEST LIMIT ("which hosts the installer contacts is not restricted"),
