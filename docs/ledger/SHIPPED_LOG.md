@@ -10415,7 +10415,7 @@ stack caps, 8 kept, counters only, never `gc.get_objects`). Lesson: `LESSONS.md`
 LINE WAS UNRECORDED BY DESIGN". Stopping cleanly when memory does not recover stays the user's question 22; a relaunch
 starts offline under R117, so a clean stop alone would not resume the run.
 
-- **2026-10-01 · monitoring/release-run-restore (release candidate diagnostics, PR #NNNN).** From the 16-instance
+- **2026-10-01 · monitoring/release-run-restore (release candidate diagnostics, PR #1312).** From the 16-instance
 diagnostics round: two of the four release runs that reached the restore had failed there (one refused by the restore
 engine's own staging check after 128 s, one dead after 53 minutes with `Error creating function`), and the report
 recorded both as `measured`, with rows A and I over an empty restore block. A phase's status is now the child's outcome:

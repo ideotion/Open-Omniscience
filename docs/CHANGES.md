@@ -98,7 +98,7 @@ this section were still open.
   the launcher after an update, an operator's own value is kept, and the diagnostics say which
   instances run with it.
 - The 0.4 release run (Settings → Advanced → Diagnostics) no longer records a restore that failed as
-  measured (#NNNN): a restore its engine refused, or that died, now reads `error` with its own words,
+  measured (#1312): a restore its engine refused, or that died, now reads `error` with its own words,
   a resumed run retakes it and asks for the passphrase again, and the passphrase is kept out of what a
   kept fresh install leaves on the drive.
 
