@@ -7,7 +7,8 @@
 // 45 runs). `loadAiBackendPanel` writes the select from the server's stored value, so a load that was
 // already in flight when the operator picked held the OLD value and put the select back for seconds,
 // until the load that follows the save corrected it. A second, rarer ordering: two quick picks, where
-// the first save's reload reaches the server before the second save and writes the older value.
+// the first save's reload reaches the server before the second save and writes the older value; and a third,
+// a load that began before a save landed answering after it (a panel refresh, or the first save's reload).
 //
 // WHY THIS IS BEHAVIOURAL. A text pin of the guard passes when the guard's capture is moved after its
 // `await` (the mutation that neutralises it). So the real functions are extracted from the shipped file
@@ -87,13 +88,20 @@ function harness() {
       p.resolve({});
     } else p.resolve(payload(p.snapshot));
   };
+  // Release the n-th pending call of a path (0 = oldest): the order answers arrive in is the test's to choose.
+  const releaseNth = (path, n) => {
+    const hits = pending.map((p, i) => (p.path === path ? i : -1)).filter((i) => i >= 0);
+    assert.ok(hits.length > n, "no pending " + path + " #" + n);
+    const [p] = pending.splice(hits[n], 1);
+    p.resolve(payload(p.snapshot));
+  };
   const fail = (path) => {
     const at = pending.findIndex((p) => p.path === path);
     const [p] = pending.splice(at, 1);
     p.reject(new Error("refused"));
   };
   const tick = () => new Promise((r) => setImmediate(r));
-  return { sel, server, pending, release, fail, tick, ...fns };
+  return { sel, server, pending, release, releaseNth, fail, tick, ...fns };
 }
 
 async function settle(h) { for (let i = 0; i < 5; i++) await h.tick(); }
@@ -150,6 +158,39 @@ async function settle(h) { for (let i = 0; i < 5; i++) await h.tick(); }
     while (h.pending.length) h.release("/api/llm/backend");
     await settle(h);
     assert.strictEqual(h.sel.value, "vllm");
+  }
+  // 2b. Two picks in the SAME tick, both saves landing before the first save's reload answers, and that
+  // reload answering LAST with the value it saw (the first pick's): a landed save must invalidate it.
+  {
+    const h = harness();
+    h.sel.value = "ollama"; h.setAiBackend("ollama");
+    h.sel.value = "vllm"; h.setAiBackend("vllm");
+    await settle(h);
+    h.release("/api/settings");                // first save lands: its reload asks and sees "ollama"
+    await settle(h);
+    h.release("/api/settings");                // second save lands: its reload asks and sees "vllm"
+    await settle(h);
+    h.releaseNth("/api/llm/backend", 1);       // the SECOND reload answers first ("vllm")
+    await settle(h);
+    h.releaseNth("/api/llm/backend", 0);       // the first reload answers last ("ollama")
+    await settle(h);
+    assert.strictEqual(h.sel.value, "vllm", "the first save's reload, answering last, wrote the older value");
+  }
+  // 2c. One pick, and ANOTHER load (a refresh of the panel, or opening the AI subtab) started before the
+  // save landed answers after the save's own reload with the old value.
+  {
+    const h = harness();
+    h.sel.value = "ollama"; h.setAiBackend("ollama");
+    await settle(h);
+    h.loadAiBackendPanel();                    // the refresh: asks now and sees "auto"
+    await settle(h);
+    h.release("/api/settings");                // the save lands: its reload asks and sees "ollama"
+    await settle(h);
+    h.releaseNth("/api/llm/backend", 1);       // the save's reload answers first
+    await settle(h);
+    h.releaseNth("/api/llm/backend", 0);       // the refresh answers last with the old value
+    await settle(h);
+    assert.strictEqual(h.sel.value, "ollama", "a load that began before the save landed wrote the old value");
   }
   // 3. A refused save: the select honestly returns to what the server holds.
   {

@@ -16,16 +16,24 @@ WHAT "TAKES EFFECT" MEANS HERE, STATED SO THE RECORD CANNOT OVERSTATE IT. For ea
                    binding (``REVERTED``); a select that is gone or was rebuilt with other options
                    cannot be read back, and is ``unread`` -- never counted as held. ``held`` shows
                    that the pick STUCK; it does not show the pick did anything.
-  * ``effect``  -- what the pick visibly did beyond what the page does on its own in the same
-                   400 ms (measured first as ``idle_net`` / ``idle_mut``): ``dom`` (more DOM
-                   mutations than idle), ``net`` (more requests to this app than idle), ``ui`` (the
-                   stored UI state or the theme/lang attribute changed), or ``none`` (nothing
+  * ``effect``  -- what the pick visibly did beyond what the page did on its own in ONE 400 ms
+                   sample taken just before (``idle_net`` / ``idle_mut``): ``dom`` (more DOM
+                   mutations than that sample), ``net`` (more requests to this app than it), ``ui``
+                   (the stored UI state or the theme/lang attribute changed), or ``none`` (nothing
                    observable: some selects are only READ by a later button, which is a different
-                   fact from a dead binding and is reported as such).
+                   fact from a dead binding and is reported as such). THIS REDUCES THE PAGE'S OWN
+                   ACTIVITY BUT DOES NOT REMOVE IT: one sample cannot see a sporadic request, so
+                   ``net`` and ``dom`` include requests the page makes on its own (``fetch-mode`` and
+                   ``feeddir-sort`` send none from their handlers and still score ``net`` in some
+                   runs, always with ``idle_net`` 0). ``effect`` is evidence of activity, not proof
+                   that the pick caused it.
 
-The sweep refuses a non-loopback ``--url`` and a server that is online (``GET /api/system/network``
-must say ``online:false``: boot the app WITHOUT ``OO_NO_SCHEDULER``, which skips the offline engage),
-so a run can neither reach the internet nor claim it did not.
+The sweep starts only from an offline loopback app: it refuses a non-loopback ``--url`` and a server
+that is online (``GET /api/system/network`` must say ``online:false``: boot the app WITHOUT
+``OO_NO_SCHEDULER``, which skips the offline engage). That is asserted when each width's browser
+context starts, once per run of the script and not on every pick; the app being offline at the END
+of a run is a separate check the operator makes. A run therefore cannot start where it could reach
+the internet, and does not claim it observed egress.
 
 It then restores the original value, so the next select starts from the state it found.
 
@@ -201,16 +209,21 @@ def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = 
     print(f"    {where}: {len(sels)} selects, {time.time() - t_start:.1f}s", file=sys.stderr, flush=True)
 
 
+def require_loopback(url: str) -> None:
+    """Refuse a ``url`` whose HOST (as a URL parser reads it, so ``http://127.0.0.1@other.host/`` is ``other.host``) is not loopback."""
+    host = urlparse(url).hostname or ""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit(f"refusing --url {url}: the sweep only runs against a loopback app")
+
+
 def require_loopback_offline(url: str, request) -> None:
     """Refuse a non-loopback ``url`` and an app that is ONLINE; ``request`` is a Playwright APIRequestContext.
 
     ``OO_NO_SCHEDULER=1`` skips the boot's kill-switch engage, so an app booted with it answers
     ``online:true`` and the record cannot say "airplane mode" about it. A sweep that picks every
-    drop-down is only allowed to run where nothing it does can reach the internet.
+    drop-down is only allowed to START where nothing it does can reach the internet.
     """
-    host = urlparse(url).hostname or ""
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        raise SystemExit(f"refusing --url {url}: the sweep only runs against a loopback app")
+    require_loopback(url)
     mode = request.get(url.rstrip("/") + "/api/system/network").json()
     if mode.get("online") is not False:
         raise SystemExit(
@@ -251,6 +264,9 @@ def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_
     for theme in themes:
         t0 = time.time()
         console.clear()
+        # CSP events are kept across reloads in sessionStorage, which outlives the theme: reset them per
+        # theme so one early event is counted in ITS theme's stats and not repeated in every later one.
+        page.evaluate("() => { window.__csp = []; try { sessionStorage.removeItem('__oo_csp'); } catch (e) {} }")
         page.evaluate("t => setTheme(t)", theme)
         page.wait_for_timeout(200)
         results: list = []

@@ -12,10 +12,11 @@ surface and per theme given:
     picker);
   * opened: ``aria-expanded`` flips to true, the panel is visible, and where it sits (over the map,
     or stacked below it);
-  * every drop-down inside the opened ``.oomap-panel``: another option is picked and the sweep's own
-    judgement (read-back held / effect) is recorded, exactly as ``csp_sweep.py`` does it; the verdict
-    needs every one READ BACK holding the pick, the panel below the map and covering none of it, and
-    the closed toggle covering at most 6 % of the map;
+  * every drop-down inside THAT host's opened ``.oomap-panel`` (marked, so another open map's panel
+    is not read into the row): another option is picked and the sweep's own judgement (read-back
+    held / effect) is recorded, exactly as ``csp_sweep.py`` does it; the verdict needs at least one
+    drop-down, every one READ BACK holding the pick, the panel below the map and covering none of
+    it, and the closed toggle covering at most 6 % of the map;
   * closed again: the panel is hidden once more;
   * the console text, CSP violations included.
 
@@ -69,6 +70,18 @@ i => {
 """
 
 
+_MARK_PANEL = r"""
+i => {
+  document.querySelectorAll('[data-pf10-panel]').forEach(e => e.removeAttribute('data-pf10-panel'));
+  const vis0 = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const t = [...document.querySelectorAll('[data-oomap-ctl]')].filter(vis0)[i];
+  const host = t.closest('.oomap-host, .oomap, [data-oomap]') || t.parentElement.parentElement;
+  const panel = host.querySelector('.oomap-panel');
+  if (panel) panel.setAttribute('data-pf10-panel', '1');
+}
+"""
+
+
 def look(page, where: str, theme: str, out: list, console: list) -> None:
     hosts = page.evaluate(_HOSTS)
     for h in hosts:
@@ -81,7 +94,9 @@ def look(page, where: str, theme: str, out: list, console: list) -> None:
             page.wait_for_timeout(500)
             row["opened"] = page.evaluate(_MEASURE, h["i"])
             picks: list = []
-            sweep_selects(page, f"{where} (map panel)", picks, console.append, set(), scope=".oomap-panel")
+            # Scope to THIS host's panel: with two maps open another panel's drop-downs would join the row.
+            page.evaluate(_MARK_PANEL, h["i"])
+            sweep_selects(page, f"{where} (map panel)", picks, console.append, set(), scope="[data-pf10-panel]")
             row["panel_selects"] = [p for p in picks if "map panel" in p["where"]]
             tog.click(timeout=3000)
             page.wait_for_timeout(400)
@@ -90,6 +105,7 @@ def look(page, where: str, theme: str, out: list, console: list) -> None:
             sel_ok = all(p["status"] == "ok" for p in row["panel_selects"])
             row["verdict"] = {
                 # a panel drop-down is judged only when it was READ BACK holding the pick (unread is not ok)
+                "panel_has_dropdown": len(row["panel_selects"]) > 0,
                 "panel_selects_read_back_held": sel_ok,
                 "panel_below_map": bool(o["panel_below_map"]),
                 "panel_covers_none_of_map": o["panel_covers_map_pct"] == 0,

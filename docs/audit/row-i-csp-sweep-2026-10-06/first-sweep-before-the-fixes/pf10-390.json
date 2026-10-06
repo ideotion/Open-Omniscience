@@ -9,7 +9,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
@@ -21,7 +21,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -35,19 +35,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 707.359375,
+    "y": 579.109375,
     "w": 316,
     "h": 120.640625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -58,14 +58,12 @@
   "panel_selects": [
    {
     "where": "library > coverage (map panel)",
-    "id": "coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -74,7 +72,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
@@ -86,7 +84,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -95,11 +93,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -116,7 +109,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 3144.890625,
+    "y": 3016.640625,
     "w": 316,
     "h": 153.796875
    },
@@ -128,7 +121,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 3152.890625,
+    "y": 3024.640625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -142,19 +135,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 400.890625,
+    "y": 400.640625,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 560.6875,
+    "y": 560.4375,
     "w": 316,
     "h": 120.640625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 408.890625,
+    "y": 408.640625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -165,14 +158,12 @@
   "panel_selects": [
    {
     "where": "living > law (map panel)",
-    "id": "law-amend-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -181,7 +172,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 400.890625,
+    "y": 400.640625,
     "w": 316,
     "h": 153.796875
    },
@@ -193,7 +184,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 408.890625,
+    "y": 408.640625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -202,11 +193,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -223,7 +209,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -235,7 +221,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -249,19 +235,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 723.421875,
+    "y": 595.171875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -272,14 +258,12 @@
   "panel_selects": [
    {
     "where": "timemap (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -288,7 +272,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -300,7 +284,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -309,11 +293,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -330,7 +309,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -342,7 +321,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -356,19 +335,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 723.421875,
+    "y": 595.171875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -379,14 +358,12 @@
   "panel_selects": [
    {
     "where": "timemap > coverage (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -395,7 +372,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -407,7 +384,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -416,11 +393,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -437,7 +409,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 731.34375,
+    "y": 603.09375,
     "w": 316,
     "h": 153.796875
    },
@@ -449,7 +421,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 739.34375,
+    "y": 611.09375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -463,19 +435,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 731.34375,
+    "y": 603.09375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 891.140625,
+    "y": 762.890625,
     "w": 316,
     "h": 302.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 739.34375,
+    "y": 611.09375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -486,14 +458,12 @@
   "panel_selects": [
    {
     "where": "timemap > stories (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "net"
    }
   ],
   "closed_again": {
@@ -502,7 +472,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 731.34375,
+    "y": 603.09375,
     "w": 316,
     "h": 153.796875
    },
@@ -514,7 +484,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 739.34375,
+    "y": 611.09375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -523,11 +493,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -544,7 +509,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -556,7 +521,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -570,19 +535,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 723.421875,
+    "y": 595.171875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -593,14 +558,12 @@
   "panel_selects": [
    {
     "where": "timemap > places (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -609,7 +572,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -621,7 +584,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -630,11 +593,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -651,7 +609,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
@@ -663,7 +621,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -677,19 +635,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 746.671875,
+    "y": 618.421875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -700,14 +658,12 @@
   "panel_selects": [
    {
     "where": "timemap > servers (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "net",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -716,7 +672,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
@@ -728,7 +684,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -737,11 +693,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -758,7 +709,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
@@ -770,7 +721,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -784,19 +735,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 707.359375,
+    "y": 579.109375,
     "w": 316,
     "h": 120.640625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -807,14 +758,12 @@
   "panel_selects": [
    {
     "where": "library (map panel)",
-    "id": "coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -823,7 +772,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
@@ -835,7 +784,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -844,11 +793,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -865,7 +809,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
@@ -877,7 +821,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -891,19 +835,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 707.359375,
+    "y": 579.109375,
     "w": 316,
     "h": 120.640625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -914,14 +858,12 @@
   "panel_selects": [
    {
     "where": "library > coverage (map panel)",
-    "id": "coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -930,7 +872,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 547.5625,
+    "y": 419.3125,
     "w": 316,
     "h": 153.796875
    },
@@ -942,7 +884,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 555.5625,
+    "y": 427.3125,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -951,11 +893,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -972,7 +909,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 3144.890625,
+    "y": 3016.640625,
     "w": 316,
     "h": 153.796875
    },
@@ -984,7 +921,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 3152.890625,
+    "y": 3024.640625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -998,19 +935,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 400.890625,
+    "y": 400.640625,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 560.6875,
+    "y": 560.4375,
     "w": 316,
     "h": 120.640625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 408.890625,
+    "y": 408.640625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1021,14 +958,12 @@
   "panel_selects": [
    {
     "where": "living > law (map panel)",
-    "id": "law-amend-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "net",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1037,7 +972,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 400.890625,
+    "y": 400.640625,
     "w": 316,
     "h": 153.796875
    },
@@ -1049,7 +984,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 408.890625,
+    "y": 408.640625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1058,11 +993,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1079,7 +1009,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
@@ -1091,7 +1021,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1105,19 +1035,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 746.671875,
+    "y": 618.421875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1128,14 +1058,12 @@
   "panel_selects": [
    {
     "where": "timemap (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1144,7 +1072,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
@@ -1156,7 +1084,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1165,11 +1093,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1186,7 +1109,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -1198,7 +1121,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1212,19 +1135,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 723.421875,
+    "y": 595.171875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1235,14 +1158,12 @@
   "panel_selects": [
    {
     "where": "timemap > coverage (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1251,7 +1172,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -1263,7 +1184,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1272,11 +1193,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1293,7 +1209,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 731.34375,
+    "y": 603.09375,
     "w": 316,
     "h": 153.796875
    },
@@ -1305,7 +1221,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 739.34375,
+    "y": 611.09375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1319,19 +1235,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 731.34375,
+    "y": 603.09375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 891.140625,
+    "y": 762.890625,
     "w": 316,
     "h": 302.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 739.34375,
+    "y": 611.09375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1342,14 +1258,12 @@
   "panel_selects": [
    {
     "where": "timemap > stories (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1358,7 +1272,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 731.34375,
+    "y": 603.09375,
     "w": 316,
     "h": 153.796875
    },
@@ -1370,7 +1284,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 739.34375,
+    "y": 611.09375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1379,11 +1293,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1400,7 +1309,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -1412,7 +1321,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1426,19 +1335,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 723.421875,
+    "y": 595.171875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1449,14 +1358,12 @@
   "panel_selects": [
    {
     "where": "timemap > places (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1465,7 +1372,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 563.625,
+    "y": 435.375,
     "w": 316,
     "h": 153.796875
    },
@@ -1477,7 +1384,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 571.625,
+    "y": 443.375,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1486,11 +1393,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1507,7 +1409,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
@@ -1519,7 +1421,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1533,19 +1435,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 746.671875,
+    "y": 618.421875,
     "w": 316,
     "h": 247.015625
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1556,14 +1458,12 @@
   "panel_selects": [
    {
     "where": "timemap > servers (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1572,7 +1472,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 586.875,
+    "y": 458.625,
     "w": 316,
     "h": 153.796875
    },
@@ -1584,7 +1484,7 @@
    },
    "toggle": {
     "x": 233.4375,
-    "y": 594.875,
+    "y": 466.625,
     "w": 111.5625,
     "h": 26.59375
    },
@@ -1593,11 +1493,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1614,7 +1509,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 528.96875,
+    "y": 400.71875,
     "w": 316,
     "h": 153.796875
    },
@@ -1626,7 +1521,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 536.96875,
+    "y": 408.71875,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1640,19 +1535,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 528.96875,
+    "y": 400.71875,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 688.765625,
+    "y": 560.515625,
     "w": 316,
     "h": 121.640625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 536.96875,
+    "y": 408.71875,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1663,14 +1558,12 @@
   "panel_selects": [
    {
     "where": "library (map panel)",
-    "id": "coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1679,7 +1572,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 528.96875,
+    "y": 400.71875,
     "w": 316,
     "h": 153.796875
    },
@@ -1691,7 +1584,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 536.96875,
+    "y": 408.71875,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1700,11 +1593,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1721,7 +1609,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 528.96875,
+    "y": 400.71875,
     "w": 316,
     "h": 153.796875
    },
@@ -1733,7 +1621,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 536.96875,
+    "y": 408.71875,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1747,19 +1635,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 528.96875,
+    "y": 400.71875,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 688.765625,
+    "y": 560.515625,
     "w": 316,
     "h": 121.640625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 536.96875,
+    "y": 408.71875,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1770,14 +1658,12 @@
   "panel_selects": [
    {
     "where": "library > coverage (map panel)",
-    "id": "coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "net",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1786,7 +1672,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 528.96875,
+    "y": 400.71875,
     "w": 316,
     "h": 153.796875
    },
@@ -1798,7 +1684,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 536.96875,
+    "y": 408.71875,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1807,11 +1693,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1828,7 +1709,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 2968.609375,
+    "y": 2840.359375,
     "w": 316,
     "h": 153.796875
    },
@@ -1840,7 +1721,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 2976.609375,
+    "y": 2848.359375,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1854,19 +1735,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 400.609375,
+    "y": 400.359375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 560.40625,
+    "y": 560.15625,
     "w": 316,
     "h": 121.640625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 408.609375,
+    "y": 408.359375,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1877,14 +1758,12 @@
   "panel_selects": [
    {
     "where": "living > law (map panel)",
-    "id": "law-amend-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -1893,7 +1772,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 400.609375,
+    "y": 400.359375,
     "w": 316,
     "h": 153.796875
    },
@@ -1905,7 +1784,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 408.609375,
+    "y": 408.359375,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1914,11 +1793,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -1935,7 +1809,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -1947,7 +1821,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1961,19 +1835,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 682.171875,
+    "y": 553.921875,
     "w": 316,
     "h": 248.015625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -1984,14 +1858,12 @@
   "panel_selects": [
    {
     "where": "timemap (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -2000,7 +1872,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2012,7 +1884,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2021,11 +1893,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -2042,7 +1909,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2054,7 +1921,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2068,19 +1935,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 682.171875,
+    "y": 553.921875,
     "w": 316,
     "h": 248.015625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2091,14 +1958,12 @@
   "panel_selects": [
    {
     "where": "timemap > coverage (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -2107,7 +1972,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2119,7 +1984,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2128,11 +1993,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -2149,7 +2009,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 690.09375,
+    "y": 561.84375,
     "w": 316,
     "h": 153.796875
    },
@@ -2161,7 +2021,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 698.09375,
+    "y": 569.84375,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2175,19 +2035,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 690.09375,
+    "y": 561.84375,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 849.890625,
+    "y": 721.640625,
     "w": 316,
     "h": 303.015625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 698.09375,
+    "y": 569.84375,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2198,14 +2058,12 @@
   "panel_selects": [
    {
     "where": "timemap > stories (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -2214,7 +2072,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 690.09375,
+    "y": 561.84375,
     "w": 316,
     "h": 153.796875
    },
@@ -2226,7 +2084,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 698.09375,
+    "y": 569.84375,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2235,11 +2093,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -2256,7 +2109,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2268,7 +2121,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2282,19 +2135,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 682.171875,
+    "y": 553.921875,
     "w": 316,
     "h": 248.015625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2305,14 +2158,12 @@
   "panel_selects": [
    {
     "where": "timemap > places (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
-    "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "picked": "contested",
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -2321,7 +2172,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2333,7 +2184,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2342,11 +2193,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,
@@ -2363,7 +2209,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2375,7 +2221,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2389,19 +2235,19 @@
    "panel_visible": true,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
    "panel": {
     "x": 37,
-    "y": 682.171875,
+    "y": 553.921875,
     "w": 316,
     "h": 248.015625
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2412,14 +2258,12 @@
   "panel_selects": [
    {
     "where": "timemap > servers (map panel)",
-    "id": "oo-coverage-map[0]",
+    "id": "#0",
     "options": 34,
     "status": "ok",
     "picked": "iso",
-    "held": true,
-    "effect": "dom",
-    "idle_net": 0,
-    "idle_mut": 0
+    "held": null,
+    "effect": "dom"
    }
   ],
   "closed_again": {
@@ -2428,7 +2272,7 @@
    "panel_visible": false,
    "map": {
     "x": 37,
-    "y": 522.375,
+    "y": 394.125,
     "w": 316,
     "h": 153.796875
    },
@@ -2440,7 +2284,7 @@
    },
    "toggle": {
     "x": 242.4375,
-    "y": 530.375,
+    "y": 402.125,
     "w": 102.5625,
     "h": 26.59375
    },
@@ -2449,11 +2293,6 @@
    "panel_below_map": false
   },
   "verdict": {
-   "panel_has_dropdown": true,
-   "panel_selects_read_back_held": true,
-   "panel_below_map": true,
-   "panel_covers_none_of_map": true,
-   "toggle_covers_at_most_6_pct": true,
    "closed_hides_panel": true,
    "open_flips_aria": true,
    "open_shows_panel": true,

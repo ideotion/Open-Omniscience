@@ -1,0 +1,25 @@
+# Server-log check of the second sweep (the app that served it booted offline; log /tmp/claude-0/oo-sweep/server3.log, not committed: it is 52,698 lines of access log)
+# commands run on it, with their outputs
+$ wc -l server3.log
+52703
+$ grep -i 'airplane\|kill switch\|offline' server3.log | sed 's/^[0-9: -]*//' | sort | uniq -c
+      1 api - INFO - Booted in airplane mode (offline); awaiting the online consent to collect.
+$ grep -ioE 'https?://[a-z0-9.-]+' server3.log | grep -v '127.0.0.1\|localhost' | sort | uniq -c   (hosts other than loopback named in the log)
+0
+$ grep -ci 'error\|exception\|traceback' server3.log
+0
+$ GET /api/system/network after the PF10 look
+{"online":false}
+# NOTE: the log was written by the sweep, the 11-run redo and the first PF10 look; the final-code Settings re-sweep and the final PF10 look ran on a second boot (server4.log), checked the same way below
+
+# Second boot (server4.log): the repro, the final-code Settings re-sweep and the final PF10 look
+$ wc -l server4.log
+6808
+$ grep -i 'airplane\|kill switch\|offline' server4.log | sed 's/^[0-9: -]*//' | sort | uniq -c
+      1 api - INFO - Booted in airplane mode (offline); awaiting the online consent to collect.
+$ hosts other than loopback named in server4.log
+0
+$ grep -ci 'error\|exception\|traceback' server4.log
+0
+$ GET /api/system/network after the PF10 look
+{"online":false}

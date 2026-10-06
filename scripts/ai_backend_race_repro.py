@@ -34,6 +34,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from csp_sweep import require_loopback_offline  # noqa: E402
+
 _DELAYS = r"""
 ([delayBackendLoads, delayPutAt]) => {
   const of = window.fetch; let loads = 0, puts = 0;
@@ -50,10 +53,15 @@ _DELAYS = r"""
 """
 
 
-def run_variant(browser, url: str, label: str, js: str | None) -> dict:
+def _restore(request, url: str, value: str) -> None:
+    """Put the backend setting back to what the run found (a PUT to the loopback app only)."""
+    request.put(url.rstrip("/") + "/api/settings", data={"llm_backend": value})
+
+
+def _open_models(browser, url: str, body: str | None):
+    """A fresh page on the Settings > models panel, serving ``body`` as app-ai-tools.js when given."""
     page = browser.new_page(viewport={"width": 1440, "height": 900})
-    if js is not None:
-        body = Path(js).read_text(encoding="utf-8")
+    if body is not None:
         page.route("**/static/app-ai-tools.js*", lambda route: route.fulfill(
             status=200, content_type="application/javascript", body=body))
     page.goto(url, wait_until="load")
@@ -64,55 +72,51 @@ def run_variant(browser, url: str, label: str, js: str | None) -> dict:
     page.evaluate("document.querySelectorAll('#set-models details').forEach(d => d.open = true)")
     page.evaluate("loadAiBackendPanel()")
     page.wait_for_selector("#ai-backend-select", timeout=5000)
+    return page
+
+
+def run_variant(browser, request, url: str, label: str, js: str | None) -> dict:
+    body = Path(js).read_text(encoding="utf-8") if js is not None else None
+    page = _open_models(browser, url, body)
     sel = page.locator("#ai-backend-select")
     opts = sel.evaluate("e => [...e.options].map(o => o.value)")
     start = page.evaluate("async () => (await (await fetch('/api/llm/backend')).json()).stored_override || 'auto'")
-    others = [v for v in opts if v != start]
     out: dict = {"variant": label, "options": opts, "stored_at_start": start}
+    try:
+        # one pick, a load already in flight
+        page.evaluate(_DELAYS, [[1], []])
+        page.evaluate("void loadAiBackendPanel()")
+        page.wait_for_timeout(100)
+        pick = [v for v in opts if v != start][0]
+        sel.select_option(pick)
+        seen = []
+        for _ in range(14):
+            page.wait_for_timeout(250)
+            seen.append(sel.input_value())
+        out["one_pick"] = {"picked": pick, "readings": seen, "held": all(v == pick for v in seen)}
+        page.close()
 
-    # one pick, a load already in flight
-    page.evaluate(_DELAYS, [[1], []])
-    page.evaluate("void loadAiBackendPanel()")
-    page.wait_for_timeout(100)
-    pick = others[0]
-    sel.select_option(pick)
-    seen = []
-    for _ in range(14):
-        page.wait_for_timeout(250)
-        seen.append(sel.input_value())
-    out["one_pick"] = {"picked": pick, "readings": seen, "held": all(v == pick for v in seen)}
-    page.close()
-
-    # two picks in one tick, the second save held back
-    page = browser.new_page(viewport={"width": 1440, "height": 900})
-    if js is not None:
-        page.route("**/static/app-ai-tools.js*", lambda route: route.fulfill(
-            status=200, content_type="application/javascript", body=body))
-    page.goto(url, wait_until="load")
-    page.wait_for_timeout(1500)
-    page.evaluate("showTab('settings')")
-    page.wait_for_timeout(300)
-    page.evaluate("() => { const b = document.querySelector('[data-tab=models]'); if (b) b.click(); }")
-    page.evaluate("document.querySelectorAll('#set-models details').forEach(d => d.open = true)")
-    page.evaluate("loadAiBackendPanel()")
-    page.wait_for_selector("#ai-backend-select", timeout=5000)
-    sel = page.locator("#ai-backend-select")
-    cur = sel.input_value()
-    others = [v for v in opts if v != cur]
-    p1, p2 = others[0], others[1] if len(others) > 1 else others[0]
-    page.evaluate(_DELAYS, [[], [2]])
-    page.evaluate(
-        "([a, b]) => { const s = document.getElementById('ai-backend-select');"
-        " s.value = a; void setAiBackend(a); s.value = b; void setAiBackend(b); }", [p1, p2])
-    seen = []
-    for _ in range(16):
-        page.wait_for_timeout(250)
-        seen.append(sel.input_value())
-    stored = page.evaluate("async () => (await (await fetch('/api/llm/backend')).json()).stored_override || 'auto'")
-    out["two_picks"] = {"picked": [p1, p2], "readings": seen, "stored_after": stored,
-                        "held_second_pick_throughout": all(v == p2 for v in seen), "stored_is_second_pick": stored == p2}
-    page.evaluate("v => api('/api/settings', {method: 'PUT', body: JSON.stringify({llm_backend: v})})", start)
-    page.close()
+        # two picks in one tick, the second save held back
+        page = _open_models(browser, url, body)
+        sel = page.locator("#ai-backend-select")
+        cur = sel.input_value()
+        others = [v for v in opts if v != cur]
+        p1, p2 = others[0], others[1] if len(others) > 1 else others[0]
+        page.evaluate(_DELAYS, [[], [2]])
+        page.evaluate(
+            "([a, b]) => { const s = document.getElementById('ai-backend-select');"
+            " s.value = a; void setAiBackend(a); s.value = b; void setAiBackend(b); }", [p1, p2])
+        seen = []
+        for _ in range(16):
+            page.wait_for_timeout(250)
+            seen.append(sel.input_value())
+        stored = page.evaluate("async () => (await (await fetch('/api/llm/backend')).json()).stored_override || 'auto'")
+        out["two_picks"] = {"picked": [p1, p2], "readings": seen, "stored_after": stored,
+                            "held_second_pick_throughout": all(v == p2 for v in seen),
+                            "stored_is_second_pick": stored == p2}
+    finally:
+        _restore(request, url, start)  # whatever happened, the setting goes back to what the run found
+        page.close()
     return out
 
 
@@ -121,14 +125,14 @@ def main() -> int:
     ap.add_argument("--url", required=True)
     ap.add_argument("--variant", action="append", default=[], help="label=path of an app-ai-tools.js to serve")
     a = ap.parse_args()
-    if not a.url.startswith(("http://127.0.0.1", "http://localhost")):
-        raise SystemExit("refusing a non-loopback --url")
     variants = [(v.split("=", 1)[0], v.split("=", 1)[1]) for v in a.variant] or [("served", None)]
     results = []
     with sync_playwright() as p:
         b = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        request = p.request.new_context()
+        require_loopback_offline(a.url, request)  # loopback host (parsed, not prefix-matched) and offline
         for label, js in variants:
-            results.append(run_variant(b, a.url, label, js))
+            results.append(run_variant(b, request, a.url, label, js))
         b.close()
     print(json.dumps(results, indent=1))
     last = results[-1]

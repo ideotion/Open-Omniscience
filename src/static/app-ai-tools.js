@@ -1906,7 +1906,8 @@
     // select flipped the pick back for about a second until the load that follows the save corrected it
     // (measured in Chromium, the 2026-10-06 sweep). Each pick counts; a load only writes the select when
     // no pick happened since it started AND no save is still in flight (two quick picks: the first save's
-    // reload can reach the server before the second save and would write the older value).
+    // reload can reach the server before the second save and would write the older value); and a save that
+    // LANDED counts as a pick too, so every load that began before it is stale however late it answers.
     let _aiBackendPicks = 0;
     let _aiBackendSaving = 0;
 
@@ -2049,7 +2050,7 @@
         await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_backend: value})});
         toast(t("AI backend preference saved."));
       } catch (e) { toast(_failMsg("Backend: {error}", e), "err"); }
-      finally { _aiBackendSaving--; }
+      finally { _aiBackendSaving--; _aiBackendPicks++; }  // a landed save invalidates every load that began before it
       loadAiBackendPanel();
       loadLlmHealth();
     }
