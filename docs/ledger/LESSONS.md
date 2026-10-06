@@ -13397,3 +13397,46 @@ caller's environment already carried is never taken for this launcher's word abo
 an operator's own value, which carries no marker. The tests that count run the real launcher against fake server, browser and `curl` programs
 that record what they were started with, on both launcher paths, plus a source tie between the two spellings of the marker, because bash and
 Python share nothing else.
+
+### A BACKUP THAT CANNOT FOLD THE LOG INTO THE MAIN FILE COPIES THE CORPUS; IT NEVER SHIPS THE LOG, AND IT DECIDES FROM THE CHECKPOINT'S ROW, NOT THE LOG'S SIZE (WAL / disk thread, 2026-10-06)
+
+The volume backup drained the write-ahead log into the main file and, when a reader older than a later commit kept
+frames only in the log, streamed the `-wal` file as a second archive member for the restore to fold back in; the space check
+and the volume sizing meanwhile read the MAIN file's `stat()`. Measured on real files, three facts the old code had wrong.
+(1) **The size of the `-wal` file does not say whether the main file is a complete image.** A reader that started AFTER the
+last commit leaves a 428 KB `-wal` and `PRAGMA wal_checkpoint(PASSIVE)` returns `(0, 102, 102)` (a TRUNCATE, which waits,
+returns `(1, 102, 102)`): every frame is already in the main file and a main-file-only copy had every row. A reader OLDER
+than a later commit leaves `log > checkpointed` (`(.., 206, 104)`): frames 105-206 exist only in the log. The decision is
+`log == checkpointed`, read from the row; a file-size rule copies the first case for nothing (the tests pin both, and a
+mutant that decides from the size fails the first). **`(1, -1, -1)` is NOT "not in WAL mode"**: SQLite answers it, to a
+PASSIVE or a TRUNCATE alike, while ANOTHER connection holds the checkpoint lock (measured: a main-file-only copy then
+lacked its tables), so it reads as unknown, and unknown copies; only `(0, -1, -1)` is a store with no log. (2) **The main file can be
+a few kilobytes while the store is megabytes**: a log that holds growth leaves the file at 8,192 bytes against a logical
+size (`page_count` x `page_size`) of 8,220,672, so sizing or refusing for lack of room from `stat()` promised space the
+copy then did not have; the logical size now feeds the volume sizing and the free-space check (the facts read the file). (3) **A
+plaintext copy cannot be interrupted and an encrypted one can**: `Connection.interrupt()` aborts `sqlcipher_export` within
+a second (the watcher polls every 0.25 s) but not `sqlite3.Connection.backup`, and the backup API must stay ONE step
+(stepping it in chunks restarts it whenever another connection commits), so a stop takes effect when a plaintext copy
+ends. The shape that follows: a free PASSIVE probe with no pause and no gate; a complete image keeps today's sequence call
+for call; an incomplete one (or an unreadable row) opens ONE early pause window that drains under the gate and, if the log
+still holds frames, copies under the pause alone, because the copy is one read transaction and a gate held for it stalls
+every writer for minutes (the incident `tests/test_export_pauses_collection.py` records); a reader that appears AFTER the
+sizing is copied late inside the freeze, under the same pause. The copy goes in the export's staging directory on the
+DESTINATION drive, is refused for lack of room BEFORE a byte is written in `preflight_free_space`'s own words (how much
+is needed, how much is free and where, free space or choose another location; no "run it again", no plumbing; the other
+members' reusable volumes are credited, up to their own size, and a LATE copy does not ask again for the side members and
+blobs already written, and does not take the credit off as well: it counts those same bytes, and taking both off once asked
+for the copy alone while the corpus volumes and the parity were still to be written), and is
+swept after a crash by its OWNER (a marker with the pid, the start time, the machine's name and a hash of its machine id: a
+dead owner's directory goes at once, another live process's never, a recycled pid is a dead owner, including THIS process's own
+pid with another start time (a container or a service that is given the same pid at every start), and one from another
+machine on a shared drive, an unmarked one, or a live job of the running process itself keeps the 24 h rule) because a crash left 8 to 40 GB on
+the user's drive and the age rule refused the retry for the very space it held. The destinations that were ever given a
+copy are remembered in the data dir (newest 16) and swept at boot on a thread of their own, since asking a stale network
+mount whether it exists can block for minutes. Restore still reads a `corpus-wal` member, so an old archive restores. The newsletter-excluded path is refused for room
+before its copy too, and says only what is true of it: an encrypted copy is re-encrypted, so its corpus volumes are rewritten
+and earn no credit; a plaintext one reuses them. A stop in the middle of a run still replaces the previous run's resume log with
+this run's entries (the guard covers only the run that emitted nothing; older than this PR, and reuse re-hashes every slice, so
+nothing wrong is reused). **A
+test of a WAL decision needs a real WAL**: the two reader cases look identical to any fake (both have a log and `busy=1`);
+only the real PRAGMA rows told them apart, which is why these tests run on real SQLite files behind the patched engine.
