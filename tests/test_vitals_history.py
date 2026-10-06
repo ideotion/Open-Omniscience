@@ -982,7 +982,7 @@ def test_a_failed_flush_is_retried_in_a_minute_not_on_every_tick(hist, monkeypat
     monkeypatch.setattr(v.os, "replace", full)
     for k in range(10):
         v.tick(now=float(HOUR0 + 5 * k))
-    assert len(attempts) == 1 and _member()["cost"]["flush_failures"] == 1
+    assert len(attempts) == 1 and _member()["errors"]["flush_failures"] == 1
     remaining = v.FLUSH_S - (time.monotonic() - v._LAST_FLUSH)
     assert v.FLUSH_RETRY_S - 2 < remaining <= v.FLUSH_RETRY_S  # the next try is a retry interval away
     v._LAST_FLUSH -= v.FLUSH_RETRY_S + 1  # that interval passes
@@ -1063,3 +1063,113 @@ def test_the_state_document_takes_the_main_lock_before_the_log_lock(hist, monkey
     monkeypatch.setattr(v, "_LOG_LOCK", _Spy())
     v._state_doc()
     assert held == [True]
+
+
+# --- failures show in the vitals themselves; the cuts and caps that had no test ------------------------
+def test_a_failed_flush_is_counted_and_named_in_the_member_without_a_path(hist, monkeypatch):
+    """A failing disk used to show only in a debug log. The reason is kept, the message (which names a
+    path under the data folder) is not."""
+
+    def full(*_a, **_k):
+        raise OSError(28, "No space left on device", "/home/someone/Open-Omniscience/data/diagnostics/x.tmp")
+
+    monkeypatch.setattr(v.os, "replace", full)
+    _ticks(hist, HOUR0, 10, rss=1.0)
+    errors = _member()["errors"]
+    assert errors["flush_failures"] == 1
+    assert errors["last_flush_error"]["error"] == "OSError: No space left on device"
+    assert "someone" not in json.dumps(_member()) and "x.tmp" not in json.dumps(_member())
+    assert _member()["errors"].get("tick_failures") is None  # a failed write is not a failed tick
+
+
+def test_a_failed_tick_is_counted_by_type_only(hist, monkeypatch):
+    def boom():
+        raise RuntimeError("psutil fell over at /private/place")
+
+    monkeypatch.setattr(v, "_fast_readings", boom)
+    v.tick(now=float(HOUR0))
+    v.tick(now=float(HOUR0 + 5))
+    errors = _member()["errors"]
+    assert errors["tick_failures"] == 2 and errors["last_tick_error"]["error"] == "RuntimeError"
+    assert "private" not in json.dumps(_member())
+    v.reset_for_tests()
+    assert _member()["errors"] == {}
+
+
+def test_the_hourly_table_keeps_its_newest_336_rows(hist):
+    hist["fast"] = {"rss": 1.0}
+    for k in range(v.COARSE_KEEP + 25):
+        v.tick(now=float(HOUR0 + v.COARSE_S * k))
+    assert len(v._COARSE) == v.COARSE_KEEP
+    # an hour closes when the bucket AFTER its last one closes, so hour 358 is the newest closed of 361
+    assert v._COARSE[-1][0] == HOUR0 + v.COARSE_S * (v.COARSE_KEEP + 22)
+    assert v._COARSE[0][0] == HOUR0 + v.COARSE_S * 23  # 359 closed, the oldest 23 went
+
+
+def test_the_log_table_keeps_its_newest_168_hours(hist):
+    _ticks(hist, HOUR0, 5, rss=1.0)
+    for k in range(v.LOG_KEEP + 12):
+        _emit("src.x", logging.WARNING)
+        v.tick(now=float(HOUR0 + v.COARSE_S * (k + 1)))
+    assert len(v._LOGS) == v.LOG_KEEP
+    assert v._LOGS[-1]["t"] == HOUR0 + v.COARSE_S * (v.LOG_KEEP + 11)
+    assert v._LOGS[0]["t"] == HOUR0 + v.COARSE_S * 12
+
+
+def test_only_the_newest_fifty_gaps_are_listed(hist):
+    hist["fast"] = {"rss": 1.0}
+    for k in range(v.GAPS_KEEP + 20):  # a row every three buckets: a gap between each pair
+        v.tick(now=float(HOUR0 + 3 * v.FINE_S * k))
+    gaps = _member(max_bytes=10_000_000)["gaps"]
+    assert len(gaps) == v.GAPS_KEEP
+    last_row = HOUR0 + 3 * v.FINE_S * (v.GAPS_KEEP + 19)
+    assert gaps[-1]["to"] == v._iso(last_row)  # the newest gap is the one kept
+
+
+def test_a_minute_names_at_most_three_threads_the_busiest_first(threads):
+    threads["snap"] = [_t(i, 0.0, f"oo-{i}") for i in range(1, 6)]
+    v._busiest(None, now=0.0)
+    threads["snap"] = [_t(i, float(i * 10), f"oo-{i}") for i in range(1, 6)]
+    rows, _ = v._busiest(None, now=60.0)
+    assert [r["thread"] for r in rows] == ["oo-5", "oo-4", "oo-3"] and len(rows) == v.BUSIEST_THREADS
+
+
+def test_the_slow_group_rides_the_tick_once_a_minute(monkeypatch, tmp_path):
+    """The tick takes the drive, the sizes, the thread count and the swap from the slow group at
+    most once a minute and repeats them between: 24 ticks over two minutes make two reads."""
+    base = tmp_path / "data"
+    base.mkdir()
+    monkeypatch.setenv("OO_DATA_DIR", str(base))
+    (base / "open_omniscience.db").write_bytes(b"\0" * (4 * 1024 * 1024))
+    v.reset_for_tests()
+    reads: list[int] = []
+
+    class _Usage:
+        free = 9 * 1024 * 1024
+
+    monkeypatch.setattr(v.shutil, "disk_usage", lambda _p: reads.append(1) or _Usage())
+    monkeypatch.setattr(v, "_fast_readings", lambda: {"rss": 1.0})
+    monkeypatch.setattr(v, "_busiest", lambda _avail: ([], None))
+    real_time, real_perf, real_cpu = time.time, time.perf_counter, time.thread_time
+    clock = [1000.0]
+
+    class _Clock:
+        time = staticmethod(real_time)
+        perf_counter = staticmethod(real_perf)
+        thread_time = staticmethod(real_cpu)
+
+        @staticmethod
+        def monotonic():
+            return clock[0]
+
+    monkeypatch.setattr(v, "time", _Clock())
+    v.start(now=float(HOUR0))
+    try:
+        for k in range(24):
+            clock[0] = 1000.0 + 5 * k
+            v.tick(now=float(HOUR0 + 5 * k))
+        row = _member()["fine"][-1]
+    finally:
+        v.reset_for_tests()
+    assert len(reads) == 2  # at 1000 s and at 1060 s of the monotonic clock
+    assert row[COL["db_max"]] == 4 and row[COL["drive_free_min"]] == 9 and row[COL["threads_max"]] is not None

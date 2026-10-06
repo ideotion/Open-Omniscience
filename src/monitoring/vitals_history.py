@@ -74,7 +74,11 @@ _FILE = "vitals_history.json"
 #: rows is what a 72 h soak needs to show the shape of the last two days and still be a few
 #: dozen kilobytes; 14 days of hourly rows is what an update-and-restart cycle can be read
 #: against; the log table is the one that grows with the number of loggers, so it is the
-#: shortest.
+#: shortest. FINE_S protects the per-minute extremes: five minutes is the coarsest bucket in
+#: which a burst of hundreds of megabytes in seconds (bundle 091717's RSS rose at up to 64 MB/s)
+#: still shows in the bucket's min and max. MINUTE_S x MINUTE_KEEP is the last hour at the
+#: resolution of one thread sample a minute: finer would put the thread walk (0.3-0.6 s under a
+#: GIL-holding burst) on the tick more often than the load it is meant to explain.
 FINE_S = 300
 FINE_KEEP = 576
 COARSE_S = 3600
@@ -89,11 +93,15 @@ LOG_LOGGERS_PER_HOUR = 8
 #: logger's, so it can never be mistaken for one called "other".
 _LOG_NAMES_CAP = 64
 _OVERFLOW = "(past the name cap)"
-#: Written to disk this often, and at a clean end.
+#: Written to disk this often, and at a clean end. It bounds what a kill loses (up to this much of
+#: the history) against the cost of writing the whole document (about 2 ms of CPU at full
+#: retention): more often is more CPU for minutes the 15-second pressure snapshot records better.
 FLUSH_S = 300.0
-#: The slow readings (stat calls, the thread sample) are taken this often.
+#: The slow readings (stat calls, the thread count, the swap) are taken this often: none of them
+#: moves in seconds, and each is a system call that waits a GIL hand-off under busy threads.
 SLOW_S = 60.0
-#: Threads named per minute.
+#: Threads named per minute: enough to tell one runaway thread from a pool, few enough that a
+#: minute row stays a few hundred bytes (60 of them are in the member).
 BUSIEST_THREADS = 3
 #: Rows of a previous session's tail kept (the minutes before it stopped), and how many sessions'
 #: tails: a crash loop restarts every few minutes, and the tail that matters is the first one, the
@@ -101,11 +109,15 @@ BUSIEST_THREADS = 3
 #: otherwise push out.
 PREVIOUS_TAIL_KEEP = 30
 PREVIOUS_SESSIONS_KEEP = 3
+#: Session starts kept (a month of daily restarts, or a crash loop's last half hour), gaps listed
+#: (the member lists where rows stop; the newest fifty are the ones an investigation reads) and
+#: clock steps recorded: each is one short row, bounded so a clock that keeps stepping cannot
+#: grow the file.
 SESSIONS_KEEP = 30
 GAPS_KEEP = 50
 CLOCK_STEPS_KEEP = 20
 #: A clock that steps back by up to this much (two five-minute buckets, the same line the gaps
-#: use) is held in the open bucket; a bigger step closes everything that is open and starts again,
+#: use, and more than a network time correction ever steps) is held in the open bucket; a bigger step closes everything that is open and starts again,
 #: so a step never piles an hour of ticks into one row.
 CLOCK_HOLD_S = 2 * FINE_S
 #: After a failed write the next try is this soon, not on every five-second tick.
@@ -186,6 +198,9 @@ _BASELINE_MAX_AGE_S = 2 * MINUTE_S + 30
 _PROC: Any = None
 _HANDLER: _CountHandler | None = None
 _COST: dict[str, float] = {}
+#: Failures of the recorder's own work this session, counted and named by type, so a failing disk
+#: shows in the vitals themselves and not only in a debug log nobody reads. Messages carry no path.
+_ERRORS: dict[str, Any] = {}
 
 
 class _Acc:
@@ -501,7 +516,7 @@ def _busiest(avail_mb: float | None, now: float | None = None) -> tuple[list[dic
 
 def _close_fine() -> None:
     """Finish the open five-minute bucket and fold it into its hour."""
-    global _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T
+    global _FINE_ACC, _COARSE_ACC, _COARSE_T
     acc, t = _FINE_ACC, _FINE_T
     if acc is None:
         return
@@ -631,8 +646,20 @@ def tick(now: float | None = None) -> None:
         _note_cost("tick", started_wall, started_cpu)
         if time.monotonic() - _LAST_FLUSH >= FLUSH_S:
             flush()
-    except Exception:  # noqa: BLE001 - a recorder never raises into its caller
+    except Exception as exc:  # noqa: BLE001 - a recorder never raises into its caller
+        _note_error("tick", exc)
         _LOG.debug("vitals history tick failed", exc_info=True)
+
+
+def _note_error(what: str, exc: BaseException) -> None:
+    """Count a failure of the recorder's own work and keep the last one's type and, for an
+    operating-system error, its reason (never its message, which names a path)."""
+    with contextlib.suppress(Exception):
+        reason = type(exc).__name__
+        if isinstance(exc, OSError) and exc.strerror:
+            reason += f": {exc.strerror}"
+        _ERRORS[f"{what}_failures"] = _ERRORS.get(f"{what}_failures", 0) + 1
+        _ERRORS[f"last_{what}_error"] = {"at": _iso(time.time()), "error": reason[:120]}
 
 
 def _note_cost(what: str, started_wall: float, started_cpu: float) -> None:
@@ -724,10 +751,10 @@ def flush() -> None:
             tmp = target.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
             os.replace(tmp, target)
-        except Exception:
+        except Exception as exc:
             with _LOCK:
                 _LAST_FLUSH = time.monotonic() - FLUSH_S + FLUSH_RETRY_S
-                _COST["flush_failures"] = _COST.get("flush_failures", 0) + 1
+            _note_error("flush", exc)
             raise
         with _LOCK:
             _LAST_FLUSH = time.monotonic()
@@ -858,10 +885,12 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             with _LOCK:
                 last_flush_at = _LAST_FLUSH_AT
                 cost = dict(_COST)
+            errors = dict(_ERRORS)
         else:
             doc = _load() or {}
             last_flush_at = doc.get("saved_at")
             cost = {}
+            errors = {}
         previous = [p for p in doc.get("previous_sessions") or [] if isinstance(p, dict) and p.get("minutes")]
         view = _view_from_doc(doc)
         flush_age: int | None = None
@@ -907,7 +936,8 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             "cost_note": (
                 "`cpu` is the CPU time of the thread that took the reading; `wall` includes waiting "
                 "for the interpreter, which under busy threads is most of it and is the machine's "
-                "load, not the recorder's work."
+                "load, not the recorder's work. `errors` counts this session's failed ticks and failed "
+                "writes of the recorder itself, with the last one's type (no message, which can name a path)."
             ),
             "columns": list(COLUMNS),
             "bucket_s": {"fine": FINE_S, "coarse": COARSE_S, "minutes": MINUTE_S},
@@ -930,6 +960,7 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             "clock_stepped_back": int(doc.get("clock_stepped_back") or 0),
             "clock_steps": [c for c in doc.get("clock_steps") or [] if isinstance(c, dict)],
             "cost": cost,
+            "errors": errors,
             "fine": view["fine"],
             "coarse": view["coarse"],
             "logs": view["logs"],
@@ -1006,4 +1037,5 @@ def reset_for_tests() -> None:
         _HANDLER = None
         _PROC = None
         _COST = {}
+        _ERRORS.clear()
         TAIL_IN = None
