@@ -32,8 +32,8 @@ Two conventions are load-bearing here and neither is negotiable:
 Daily is the floor cadence. Hourly is BLOCKED, not merely unimplemented: the
 mention clock is a ``Date`` and the time is destroyed at write
 (``store.py:285``), while ``KeywordMentionRead.created_at`` is unusable because
-re-index deletes and re-inserts every row stamped ``now()`` — one keyword
-clean-up would collapse the entire history into a single hour.
+re-index stamps every row it writes ``now()`` (a changed row is stamped again, a new one is
+inserted) — one keyword clean-up would collapse that history into a single hour.
 """
 
 from __future__ import annotations
