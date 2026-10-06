@@ -218,16 +218,35 @@ def test_build_now_and_wait_waits_for_a_build_already_running_instead_of_startin
     assert got == ["declined"], "the waiter reported its own success instead of the build it waited for"
 
 
-def test_a_build_that_declined_or_failed_is_reported_to_the_step_that_waited_for_it(monkeypatch):
-    """The boot step must not read ``done`` for a build a serve kicked that then declined or failed."""
+def test_a_waiter_is_told_the_outcome_of_the_real_build_it_waited_for(monkeypatch):
+    """The ordering the fix depends on: the real ``_build_and_swap`` writes its outcome BEFORE it
+    releases the lock, so a thread blocked in ``build_now_and_wait`` reads that build's outcome and
+    never an older one. Run for real, in two threads, with the build held inside its verdict."""
     from src.analytics import rollup_serve
 
-    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: {"reason": "exclusive"})
-    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    inside = threading.Event()
+    go = threading.Event()
+
+    def held_verdict():
+        inside.set()
+        assert go.wait(5)
+        return {"reason": "exclusive"}  # the build declines once released
+
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", held_verdict)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")  # what a stale reader would see
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
-    assert rollup_serve._build_and_swap() == "declined"
-    assert rollup_serve._LAST_OUTCOME["value"] == "declined"
-    assert rollup_serve.build_now_and_wait() == "declined"  # the next caller starts its own build
+    builder = threading.Thread(target=rollup_serve._build_and_swap)  # releases the lock in its finally
+    builder.start()
+    assert inside.wait(5)
+    got: list[str] = []
+    waiter = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+    waiter.start()
+    waiter.join(0.3)
+    assert waiter.is_alive(), "the waiter returned while the build still held the lock"
+    go.set()
+    builder.join(5)
+    waiter.join(5)
+    assert got == ["declined"], "the waiter read a stale outcome instead of the build it waited for"
 
 
 def test_the_sequence_does_not_ask_the_rollup_for_a_build_when_serving_is_off(monkeypatch):
