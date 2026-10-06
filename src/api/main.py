@@ -26,6 +26,7 @@ For inquiries, contact: open-omniscience@ideotion.com
 # Author: Ideotion
 
 import csv
+import functools
 import io
 import mimetypes
 import os
@@ -146,6 +147,36 @@ def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
     boot_sequence.request_reindex(articles_pending)
 
 
+def _arm_database_check() -> bool:
+    """After an unexpected stop, hold collection from THIS call until the data files have been read once
+    (database/verify.py). The upkeep's FIRST statement, before its first slow step (the planner statistics can take
+    minutes on a large store): armed after it, an operator who goes online in that time would start a pass that
+    writes to a file nothing has read. The boot-sequence thread, started at the upkeep's end, runs the check (its
+    first step); it does nothing after a clean end."""
+    if os.getenv("OO_NO_SCHEDULER", "0") == "1":
+        return False
+    from src.database import verify
+
+    return verify.arm_at_boot()
+
+
+def _ends_the_check_wait(fn):
+    """The wait for the start-up check ends however ``fn`` ends unless the boot-sequence thread, which runs the check,
+    was started: an exception on the way to that thread must not leave collection waiting for a check no one runs."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            from src.database import verify
+
+            verify.withdraw_unless_handed_over()
+
+    return wrapper
+
+
+@_ends_the_check_wait
 def _run_startup_upkeep() -> None:
     """The post-``init_db`` startup work (planner stats, error log, janitor, seeds,
     metrics, cache warm, airplane). Split out so the unlock path can run it in a
@@ -153,6 +184,7 @@ def _run_startup_upkeep() -> None:
     and idempotent; phases are published for the unlock progress view."""
     from src.api.startup_status import mark_phase
 
+    _arm_database_check()
     mark_phase("refreshing search statistics")
     # Query-planner statistics (performance batch 2026-06-12): bounded ANALYZE
     # on first boot at a schema, PRAGMA optimize after — best-effort, never
@@ -357,25 +389,16 @@ def _run_startup_upkeep() -> None:
             except Exception:  # noqa: BLE001 - a cache warm must never affect the app
                 logger.warning("boot-time insights cache warm failed", exc_info=True)
 
-        # After an unexpected stop the app reads each table of its data files once before collection writes
-        # to them again (database/verify.py). ARMED here, before the thread exists, so collection waits from
-        # this moment and an operator who goes online in the next seconds does not start a pass first; the
-        # sequence's first step runs the check. It does nothing after a clean end.
-        from src.database import verify
-
-        verify.arm_at_boot()
-
         # The warm-up, the rollup's first build and the re-index resume run one after the other
         # in this one thread (diagnostics cause C: all three at once got the process killed).
         from src.api import boot_sequence
 
-        try:
-            threading.Thread(
-                target=boot_sequence.run, args=(_warm_insights_cache,), name="oo-boot-sequence", daemon=True
-            ).start()
-        except Exception:  # noqa: BLE001 - collection must never wait for a check no thread is going to run
-            verify.disarm()
-            raise
+        threading.Thread(
+            target=boot_sequence.run, args=(_warm_insights_cache,), name="oo-boot-sequence", daemon=True
+        ).start()
+        from src.database import verify
+
+        verify.hand_over()  # the check (the sequence's first step) is that thread's now
 
     # Content-first (maintainer 2026-06-13): the app BOOTS IN AIRPLANE MODE
     # (offline) every time — nothing scrapes until the operator crosses online
@@ -523,6 +546,14 @@ async def lifespan(app: FastAPI):
         run_deferred_startup()
     else:
         logger.info(f"started LOCKED ({state}): serving the unlock flow only")
+        # The files cannot be read without the key, so nothing is armed; a check that is due is written down as
+        # owed, so closing the app from the lock screen does not cancel it.
+        try:
+            from src.database import verify as _verify_owed
+
+            _verify_owed.owe_at_locked_boot()
+        except Exception:  # noqa: BLE001 - bookkeeping must never take the lock screen down
+            logger.debug("could not record the database check as owed", exc_info=True)
     # Event-loop-block watchdog (recursive-augmentation log #2) — runs on the live loop
     # for the whole app lifetime; records loop lag (heavy sync work on the loop) with the
     # in-flight requests. Best-effort; started regardless of lock state (freezes can

@@ -831,6 +831,29 @@ class DamageRegistry:
             }
         self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
 
+    def verification_file_owed(self, file_key: str, *, path: Path | None, trigger: str, attempts: int) -> None:
+        """Record that the check of ``file_key`` is DUE and has not begun (``state: owed``). The next start reads it as an
+        unfinished check, so a session that ended before it began does not cancel it. ``attempts`` is carried over,
+        not counted: only a check that begins counts toward :data:`MAX_VERIFY_ATTEMPTS`. A file this process has
+        already begun, finished or skipped is left as it is."""
+        self._ensure_loaded()
+        at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+        with self._lock:
+            cur = self._verification.get(file_key)
+            if cur is not None and cur.get("process") == self._process and cur.get("state") in ("running", "done", "skipped"):
+                return
+            self._verification[file_key] = {
+                "file": file_key,
+                "file_name": path.name if path is not None else None,
+                "process": self._process,
+                "session_id": _current_session_id(),
+                "trigger": trigger,
+                "state": "owed",
+                "attempts": int(attempts),
+                "owed_at": at,
+            }
+        self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+
     def verification_file_skipped(self, file_key: str, *, path: Path | None, attempts: int, reason: str) -> None:
         """Say that the check of ``file_key`` was NOT run (an earlier check was left unfinished on every one of
         the last ``MAX_VERIFY_ATTEMPTS`` starts): the next unexpected stop starts the count again."""

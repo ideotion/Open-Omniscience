@@ -22,13 +22,18 @@ The results go into the damage record (``verification``, per file, a few hundred
 damaged table latches its file by the SAME door a corruption error does (``DamageRegistry._apply_incident``):
 the scope is ``search-index`` only when every damaged table belongs to the full-text index, else ``data``.
 
-WHEN, AND WHY THEN. ``arm_at_boot`` is called where the boot sequence thread is created, and arms the
+WHEN, AND WHY THEN. ``arm_at_boot`` is the start-up upkeep's FIRST statement and arms the
 registry (``verifying()``): from then until the check ends collection waits (the storage guard's
 ``"verifying"`` kind), so an operator who goes online in the seconds before the sequence reaches the check
-does not slip a pass in first. The check is the sequence's FIRST step, ahead of the cache warm-up, the rollup
-and the re-index, so nothing heavy competes with it. The app is offline at boot (R117) and starts no
+does not slip a pass in first. The check is the boot sequence's FIRST step, ahead of the cache warm-up, the
+rollup and the re-index, so nothing heavy competes with it. The app is offline at boot (R117) and starts no
 collection by itself, so the read pins nothing a writer needs; the startup upkeep's own small writes
-(statistics, the catalogue seed) happen before it and are not stopped.
+(statistics, the catalogue seed) happen before the sequence's thread starts and are not stopped.
+
+A check that is DUE is also written down as ``state: owed`` the moment it is armed, and by a boot that stays
+locked (``owe_at_locked_boot``: it cannot arm, the key is not there). The ledger reads a session that closed
+before the check began as a CLEAN end, so without the record the next start would forget the unexpected stop
+that made the check due. ``owed`` is read as an unfinished check and is not an attempt.
 
 WHAT IT DOES NOT DO. It does not repair or salvage (E3), and it does not release a latch: a clean verdict
 says what this read found, not that an earlier error was wrong. It checks the STRUCTURE of each table and
@@ -74,6 +79,8 @@ _PROGRESS_STEPS = 100_000
 _LOCK = threading.Lock()
 _PLAN: dict[str, Any] | None = None
 _CANCEL = threading.Event()
+#: Whether the thread that runs the armed check has been started (see :func:`hand_over`).
+_HANDED_OVER = False
 
 Opener = Callable[[Path], Any]
 
@@ -253,7 +260,9 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         if damage.registry.checked_by_this_process(key):
             continue
         last = damage.registry.previous_verification(key)
-        unfinished = last is not None and last.get("state") == "running"
+        # "running": a check began and the process ended before it finished. "owed": a check was due and the process
+        # ended before it began (a boot that stayed locked, or a quit between arming and the first table).
+        unfinished = last is not None and last.get("state") in ("running", "owed")
         if not (unclean or unfinished):
             continue
         attempts = int(last.get("attempts") or 0) if (last is not None and unfinished) else 0
@@ -266,12 +275,36 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     return {"trigger": TRIGGER_UNCLEAN_END if unclean else TRIGGER_UNFINISHED, "files": files, "skipped": skipped}
 
 
+def _owe(plan: dict[str, Any]) -> None:
+    """Write down, per file, that its check is DUE (``state: owed``), before anything has read it: a session that
+    ends without reaching the check (a boot that stays locked, a quit in the seconds between arming and the first
+    table) must not read, in the next session's ledger, as the clean end that cancels the check."""
+    for key, path, attempts in plan["files"]:
+        damage.registry.verification_file_owed(key, path=path, trigger=plan["trigger"], attempts=attempts)
+
+
+def owe_at_locked_boot() -> None:
+    """A boot that starts LOCKED cannot read the files (the key is not here), so it arms nothing; it still records
+    that the check is owed, because if the app is closed from the lock screen this session ends cleanly and the
+    unexpected stop before it would otherwise be forgotten. Never raises."""
+    try:
+        plan = plan_boot()
+        if plan is not None:
+            _owe(plan)
+    except Exception:  # noqa: BLE001 - a bookkeeping failure must never take the lock screen down
+        _LOG.warning("database check: could not record the check as owed", exc_info=True)
+
+
 def arm_at_boot() -> bool:
     """Decide, and when a check is due ARM it (collection waits from this call). Returns whether a check is
-    armed. Never raises: a failure to decide is logged and collection is not held for a check that will not
-    run."""
-    global _PLAN
+    armed. Called once the database is open and BEFORE the slow start-up work, so the wait covers it; a second
+    call while armed changes nothing. Never raises: a failure to decide is logged and collection is not held for
+    a check that will not run."""
+    global _PLAN, _HANDED_OVER
     try:
+        with _LOCK:
+            if _PLAN is not None:
+                return True
         plan = plan_boot()
         if plan is None:
             return False
@@ -286,7 +319,9 @@ def arm_at_boot() -> bool:
             return False
         with _LOCK:
             _PLAN = plan
+            _HANDED_OVER = False
         damage.registry.verification_arm(plan["trigger"])
+        _owe(plan)
         _LOG.info(
             "database check armed (%s): %s",
             plan["trigger"],
@@ -296,6 +331,24 @@ def arm_at_boot() -> bool:
     except Exception:  # noqa: BLE001 - never hold collection for a check that cannot be planned
         _LOG.warning("database check: could not plan the start-up check", exc_info=True)
         return False
+
+
+def hand_over() -> None:
+    """The thread whose first step runs the armed check has been started: ending the wait is its job from here
+    (:func:`run_armed` ends it however the run ends)."""
+    global _HANDED_OVER
+    with _LOCK:
+        _HANDED_OVER = True
+
+
+def withdraw_unless_handed_over() -> None:
+    """The start-up upkeep ended. If the thread that runs the check was never started (the upkeep raised on the way
+    to it, or the scheduler is off), withdraw the wait: collection must never wait for a check nothing is going to
+    make. A no-op when nothing is armed."""
+    with _LOCK:
+        if _HANDED_OVER:
+            return
+    disarm()
 
 
 def disarm() -> None:
@@ -385,7 +438,8 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
 
 
 def _reset_for_tests() -> None:
-    global _PLAN
+    global _PLAN, _HANDED_OVER
     with _LOCK:
         _PLAN = None
+        _HANDED_OVER = False
     _CANCEL.clear()

@@ -33,6 +33,7 @@ import pytest
 from src.database import damage, verify
 from src.database.damage import (
     FILE_CORPUS,
+    FILE_WIKI,
     MAX_VERIFY_ATTEMPTS,
     SCOPE_DATA,
     SCOPE_SEARCH_INDEX,
@@ -875,15 +876,144 @@ def _main_source() -> str:
     return (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
 
 
-def test_the_startup_arms_before_the_thread_exists_and_withdraws_when_it_cannot_start():
-    """Anchored to the source (a test that reads ``app.routes`` or boots the app is flaky; this is the order)."""
-    src = _main_source()
-    arm = src.index("verify.arm_at_boot()")
-    start = src.index('name="oo-boot-sequence"')
-    disarm = src.index("verify.disarm()")
-    assert arm < start < disarm, "the check must be armed before the sequence thread starts, and withdrawn if it cannot"
-    block = src[src.rindex('if os.getenv("OO_NO_SCHEDULER", "0") != "1":', 0, arm) : arm]
-    assert "threading" in block, "the arming sits in the scheduler-enabled block (tests and headless runs skip it)"
+def test_the_check_is_armed_before_the_upkeeps_first_slow_step_and_withdrawn_when_no_thread_took_it(
+    files, healthy, monkeypatch
+):
+    """The upkeep opens with the planner statistics (minutes on a large store): armed after it, an operator who goes
+    online in that time would start a pass that writes to a file nothing has read. And an upkeep that ends before
+    the boot-sequence thread exists leaves nothing to wait for."""
+    import src.api.main as M
+    import src.api.startup_status as status
+
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)
+    seen: dict[str, bool] = {}
+
+    class Stop(Exception):
+        pass
+
+    def first_phase(name, *a, **k):
+        seen["armed_at_first_phase"] = damage.registry.verifying()
+        raise Stop
+
+    monkeypatch.setattr(status, "mark_phase", first_phase)
+    with pytest.raises(Stop):
+        M._run_startup_upkeep()
+    assert seen == {"armed_at_first_phase": True}
+    assert not damage.registry.verifying() and verify._PLAN is None, "the wait outlived an upkeep that ended"
+
+
+def test_the_scheduler_off_arms_nothing(files, healthy, monkeypatch):
+    import src.api.main as M
+
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+    assert M._arm_database_check() is False and not damage.registry.verifying()
+
+
+def test_the_wait_is_left_to_the_thread_that_took_the_check(files, healthy, monkeypatch):
+    """Once the boot-sequence thread is started the wait is its to end (``run_armed`` does, however the run ends);
+    the upkeep's own ending must not cut it short."""
+    import src.api.main as M
+
+    _arm(files, healthy, monkeypatch)
+    verify.hand_over()
+    M._ends_the_check_wait(lambda: None)()
+    assert damage.registry.verifying() and verify._PLAN is not None
+    assert verify.run_armed() is True and not damage.registry.verifying()
+
+
+def test_a_new_arming_starts_not_handed_over(tmp_path, files, healthy, monkeypatch):
+    """The hand-over belongs to one arming: a file that appears after the first check is read gets its own."""
+    import shutil
+
+    _arm(files, healthy, monkeypatch)
+    verify.hand_over()
+    assert verify.run_armed() is True
+    second = tmp_path / "wikipedia.db"
+    shutil.copy(healthy, second)
+    files[FILE_WIKI] = second
+    assert verify.arm_at_boot() is True and [k for k, _p, _a in verify._PLAN["files"]] == [FILE_WIKI]
+    assert verify._HANDED_OVER is False
+    verify.withdraw_unless_handed_over()
+    assert not damage.registry.verifying(), "an arming nobody took was left holding collection"
+
+
+def test_a_second_arming_changes_nothing(files, healthy, monkeypatch):
+    _arm(files, healthy, monkeypatch)
+    plan = verify._PLAN
+    assert verify.arm_at_boot() is True and verify._PLAN is plan
+
+
+def _new_process(tmp_path, monkeypatch):
+    reg = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json")
+    monkeypatch.setattr(damage, "registry", reg)
+    verify._reset_for_tests()
+    return reg
+
+
+def test_an_armed_check_is_recorded_as_owed_before_anything_is_read(tmp_path, files, healthy, monkeypatch):
+    _arm(files, healthy, monkeypatch)
+    record = _record(tmp_path)
+    assert record["verification"][FILE_CORPUS]["state"] == "owed"
+    assert record["verification"][FILE_CORPUS]["trigger"] == verify.TRIGGER_UNCLEAN_END
+
+
+def test_a_session_that_ended_before_the_check_began_does_not_cancel_it(tmp_path, files, healthy, monkeypatch):
+    """The ledger reads that session as a CLEAN end; the owed record is what keeps the earlier unexpected stop from
+    being forgotten."""
+    _arm(files, healthy, monkeypatch)  # armed, and the app is closed before the sequence's first step
+    _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is True, "the owed check was forgotten"
+    assert verify._PLAN["trigger"] == verify.TRIGGER_UNFINISHED
+    assert verify.run_armed() is True
+    assert damage.registry.state(detail=True)["verification"][FILE_CORPUS]["state"] == "done"
+    _new_process(tmp_path, monkeypatch)
+    assert verify.arm_at_boot() is False, "a finished check is not owed again"
+
+
+def test_a_boot_that_stays_locked_owes_the_check(tmp_path, files, healthy, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.owe_at_locked_boot()
+    assert not damage.registry.verifying(), "a locked boot cannot read the files and arms nothing"
+    assert _record(tmp_path)["verification"][FILE_CORPUS]["state"] == "owed"
+    _new_process(tmp_path, monkeypatch)  # closed from the lock screen: the next session's ledger says clean
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is True
+
+
+def test_a_locked_boot_followed_by_the_unlock_in_one_process_still_checks(tmp_path, files, healthy, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.owe_at_locked_boot()
+    assert verify.arm_at_boot() is True and verify.run_armed() is True
+    assert damage.registry.state(detail=True)["verification"][FILE_CORPUS]["state"] == "done"
+
+
+def test_owing_does_not_count_toward_the_attempt_cap(tmp_path, files, healthy, monkeypatch):
+    """Only a check that BEGINS counts: a machine that is closed from the lock screen many times is not a machine
+    whose check keeps dying."""
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.owe_at_locked_boot()
+    for _ in range(MAX_VERIFY_ATTEMPTS + 2):
+        _new_process(tmp_path, monkeypatch)
+        monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)  # each locked session ended cleanly
+        verify.owe_at_locked_boot()
+    _new_process(tmp_path, monkeypatch)
+    assert verify.arm_at_boot() is True and verify._PLAN["files"][0][2] == 0
+
+
+def test_an_owed_record_is_not_written_over_a_file_this_process_has_begun(tmp_path, files, healthy, monkeypatch):
+    _arm(files, healthy, monkeypatch)
+    reg = damage.registry
+    reg.verification_file_started(FILE_CORPUS, path=healthy, trigger=verify.TRIGGER_UNCLEAN_END, tables_total=2, attempts=1)
+    reg.verification_file_owed(FILE_CORPUS, path=healthy, trigger=verify.TRIGGER_UNCLEAN_END, attempts=0)
+    assert reg.state(detail=True)["verification"][FILE_CORPUS]["state"] == "running"
 
 
 def test_the_module_names_no_write_statement():

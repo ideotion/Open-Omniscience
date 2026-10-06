@@ -16360,4 +16360,10 @@ maintainer as a card.
   `clean is False`: a stop the ledger could not classify (`None`) holds nothing, and a machine that lost power with the ledger line written
   by an earlier boot is read as the ledger reads it. (f) A clean verdict releases nothing: a latch set by a corruption error stays until the
   operator starts collection again, because a check says what this read found, not that the earlier error was wrong. (g) Repair and salvage
-  are E3 and wait for question 27.
+  are E3 and wait for question 27. (h) A due check is recorded as `owed` the moment it is armed, and by a boot that stays locked, so a session closed
+  before the check began does not cancel it (the ledger reads such a session as a clean end); it costs one small write to the damage record at the
+  start after an unexpected stop. (i) NOT DONE: the planner-statistics refresh (`optimize_at_boot`, which can ANALYZE and so write the small
+  `sqlite_stat1` table) runs at the start of the upkeep, BEFORE the check (the boot-sequence thread, whose first step is the check, is started at
+  the upkeep's end), so the boot's own statistics write reaches a file the check has not yet read; collection and the other lanes wait for the check, this
+  write does not. It is a few small pages, the least of the writes the app makes, and holding it until the check ends would leave a large store
+  without planner statistics for the length of the check; if a ruling wants it held, it becomes a step of the sequence after "verify-database".

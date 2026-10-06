@@ -13672,10 +13672,11 @@ unexpected stop. (2) **Not reading is not a verdict**: only `SQLITE_CORRUPT` (th
 locked, an I/O error, an interrupt, a missing file, a wrong or missing passphrase (code 26 is both, E1's stated blind spot) and a stop are `unchecked` with the reason in plain words, and a
 `file_verdict` of no tables is `unchecked`, never `ok`. A stopped run (shutdown asks it) leaves the file's entry `running` and records no verdict, so the next start reads it again. (3)
 **`connect()` CREATES a missing file** (plaintext under `OO_DB_PLAINTEXT=1`, encrypted when a key is held), so a read-only check built on it must test `is_file()` first: the plan skips an absent or
-empty file, and `_open` refuses a path that vanished in between (a test pins that no file appears). (4) **ARM before the thread exists, END in a `finally`**: `arm_at_boot` runs in the upkeep
-where the boot-sequence thread is created, because an operator who goes online in the seconds before the sequence reaches its first step would otherwise start a pass first; `run_armed` ends the
-arming however the run ends (a test makes the run raise), `disarm` ends it when the thread cannot start, and a file is read once per process (the upkeep can run twice, an unlock after a locked
-boot). (5) **The pause is ONE global kind in the guard, so the lanes need no branch of their own**: the housekeeping lane asks `admit()` before every kind, so `"verifying"` already pauses
+empty file, and `_open` refuses a path that vanished in between (a test pins that no file appears). (4) **ARM as the upkeep's FIRST statement, END in a `finally`**: `main._arm_database_check()` is the first line of `_run_startup_upkeep`, BEFORE its first slow step, the planner statistics (minutes
+on a large store); armed after it, an operator who goes online in that time starts a pass first (a test records that the wait is up at the upkeep's first phase). `run_armed` ends the arming however
+the run ends (a test makes the run raise), and the upkeep's decorator `_ends_the_check_wait` ends it in a `finally` unless `verify.hand_over()` was called, which the upkeep does the moment the
+boot-sequence thread, which runs the check, has started: an exception on the way to that thread must not leave collection waiting for a check no one runs. Arming twice changes nothing, and a
+file is read once per process (the upkeep can run twice, an unlock after a locked boot). (5) **The pause is ONE global kind in the guard, so the lanes need no branch of their own**: the housekeeping lane asks `admit()` before every kind, so `"verifying"` already pauses
 all of it, and a per-file `writes_paused("law")` branch there was dead code (its test showed the lane stop for the storage reason first and was rewritten); the Wikipedia lane has no `admit()` and
 uses `writes_paused(WIKI_FILE)`. `"damage"` is named before `"verifying"`, a storage limit before both, and "Resume anyway" is refused with its own sentence for the check as for damage. (6)
 **The progress sentence carries the server's counts** (`table {index} of {total}`), is drawn in a line of its own and never under the damage hover (it is the app reading its files, not a
@@ -13685,3 +13686,7 @@ pages, index agreement), not row content. **`quick_check(<virtual table>)` runs 
 `article_fts`: 0.65 s against 0.20 s for `articles` alone, so the index costs about three times the table it indexes because it reads the content too, and it reports damage with the words "malformed inverted index
 for FTS5 table"); a build older than 3.44 reads nothing for it and the shadow tables are all there is. Damage found only in `article_fts` and its shadow tables is filed as the search
 index, anything else, or both together, as data, through the SAME `_apply_incident` a corruption error uses, so the two doors cannot latch differently.
+(8) **A DUE CHECK IS WRITTEN DOWN BEFORE IT RUNS (`state: owed`)**: the ledger writes a session that closed before the check began as a CLEAN end, and the next start reads that and forgets the earlier
+unexpected stop. So arming records every planned file as `owed` (a boot that stays locked records it too, `owe_at_locked_boot`, because it cannot arm: the key is not there), the next start
+reads an `owed` entry as an unfinished check, and `owed` is NOT an attempt: only a check that begins counts toward the cap, so a machine closed from the lock screen many times is not a machine
+whose check keeps dying (a test closes it five times and the check is still there with no attempt used).
