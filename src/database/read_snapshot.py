@@ -75,9 +75,10 @@ def _build_read_engine(url: str) -> Engine:
     # engine nobody registered was invisible to it: a pinned WAL during an export read as
     # "nobody is reading". Registering names the export's thread and how long it has held.
     _pool_watch.register(eng, label="read_snapshot")
-    # The backup export and the diagnostics bundle read the WHOLE corpus through this engine, which is
-    # exactly the read most likely to meet a bad page: it must name the damage and not only fail
-    # (database/damage.py). It cannot write (query_only), so it adds no false-positive source.
+    # The diagnostics routes read the WHOLE corpus through this engine (the backup reads through raw
+    # drivers, which carry no listener: OPEN_QUEUE "(h)"), which is exactly the read most likely to meet a
+    # bad page: it must name the damage and not only fail (database/damage.py). It cannot write
+    # (query_only), so it adds no false-positive source.
     from src.database import damage as _damage
 
     _damage.attach(eng, _damage.FILE_CORPUS)

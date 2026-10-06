@@ -2016,6 +2016,16 @@
         sources: fmtNum(v.sources, 0), delay: fmtNum(v.delay, 1), fetches: fmtNum(v.fetches, 1),
       });
     }
+    // The database-damage notice: a file the database itself reported as damaged (database/damage.py).
+    // Unlike the limits below it is a fact about the data, not about collection running, so it shows
+    // whether or not the scheduler is on and in airplane mode. Frames carry no numbers; the hover is
+    // the long form.
+    function _damageHtml(a, t, tf) {
+      const d = a && a.storage_guard && a.storage_guard.database_damage;
+      if (!d || !Array.isArray(d.notes) || !d.notes.length) return "";
+      const lines = d.notes.map((n) => `<div class="vwarn">${esc(tf(n.frame, {}))}</div>`).join("");
+      return `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so releases the pause; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
+    }
     // The storage guard's notice (2026-09-30, ranks 1/2/6): collection is PAUSED because the
     // database's write-ahead log is held open past this machine's limit, or the data drive is
     // nearly full. The server sends each sentence as a FRAME with its numbers (bytes) apart
@@ -2026,16 +2036,6 @@
     // server (it ends by itself when the cause clears, stops again at the override floor or on a
     // write error, and is refused with a sentence when it cannot be granted). While an
     // override holds the notice says so and offers no button.
-    // The database-damage notice: a file the database itself reported as damaged (database/damage.py).
-    // Unlike the limits below it is a fact about the data, not about collection running, so it shows
-    // whether or not the scheduler is on and in airplane mode. Frames carry no numbers; the hover is
-    // the long form.
-    function _damageHtml(a, t, tf) {
-      const d = a && a.storage_guard && a.storage_guard.database_damage;
-      if (!d || !Array.isArray(d.notes) || !d.notes.length) return "";
-      const lines = d.notes.map((n) => `<div class="vwarn">${esc(tf(n.frame, {}))}</div>`).join("");
-      return `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only what writes to the file named in the sentence, so as not to make it worse, and nothing is deleted. The sentence says how to try again; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
-    }
     function _storageGuardHtml(a, t, tf) {
       // Only while collection is meant to be running: "Collection is paused" about a stopped
       // scheduler or airplane mode would be a claim about a state that is not the case.

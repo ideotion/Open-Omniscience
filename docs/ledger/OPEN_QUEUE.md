@@ -16327,13 +16327,17 @@ maintainer as a card.
   sentence; Home needs its own placement); (b) "part of your library could not be read" instead of a 500 on the list and count routes
   (a read that hits a bad page still fails per request, and the failing statement is named in the record); (c) the storage guard's drain
   and forced checkpoints under damage (a checkpoint rewrites pages of the file that could not be read: E2 decides whether one is safe);
-  (d) the post-restore re-index backlog, the briefing and the Insights background writers (they are corpus writers outside the passes the
-  latch stops); (e) the backup's early window; (f) the `corpus: {error}` pointer in the diagnostics bundle (the bundle carries the state
+  (d) the post-restore re-index backlog, the briefing, the Insights background writers and the bulk qualification job (which the unattended
+  start launches right after releasing the latch): they are corpus writers outside the passes the latch stops, so the sentence says it pauses
+  collection's writes and not every writer; (e) the backup's early window; (f) the `corpus: {error}` pointer in the diagnostics bundle (the bundle carries the state
   through `storage_guard.state(detail=True)["database_damage"]`; `damage.diagnostics_member(max_bytes)` is ready for the slot table of the
   single Diagnostics zip and has no caller yet); (g) the plan's record fields the incident does not carry (the file's size against its header
   page count, the last checkpoint row, free memory); (h) **a known limit:** the observer is on the corpus engine, every lane engine and the
   read-snapshot engine; the migration engine (`src/database/migrate.py`) and the raw `sqlite3` / `sqlcipher3` connections (backup, merge,
   stream backup) never reach a `handle_error` listener, so damage met there is raised, not named. **Not done, and said so in the sentences themselves:** nothing verifies, repairs or salvages
   (E2 and E3), and the Wikipedia lane's `paused` state is not drawn in Living Sources (the lane's own status carries it, `database-damaged`).
-  **A known blind spot, in the method text:** damage to the first page of a file that is NOT encrypted reads as code 26, the code a wrong
-  passphrase gives, so it is not named.
+  **A known blind spot, in the method text:** damage to the first page of a file, encrypted or not, reads as code 26, the code a wrong
+  passphrase gives (measured: an encrypted file with its first page overwritten, opened with the right key), so it is not named.
+  **(i) Two release gaps:** the in-place encryption swaps each live data file with `os.replace` (`src/database/encrypt_tool.py`) and nothing
+  releases a latch on a file just replaced (a start does); and the lane files' own indexes (`wiki_lane_fts`, `law_version_fts`, `osm_names`,
+  `osm_addresses`) are not in the index-table list, so their incidents carry scope `data` (record only: no sentence differs).

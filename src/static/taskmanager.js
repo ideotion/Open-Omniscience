@@ -415,7 +415,7 @@
     var lines = d.notes.map(function (n) {
       return '<div class="vwarn">' + esc(tf(n.frame, {})) + "</div>";
     }).join("");
-    return '<div title="' + esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only what writes to the file named in the sentence, so as not to make it worse, and nothing is deleted. The sentence says how to try again; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder.")) + '">' + lines + "</div>";
+    return '<div title="' + esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so releases the pause; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder.")) + '">' + lines + "</div>";
   }
   function storageGuardHtml(a) {
     // Only while collection is meant to be running (see app-core.js _storageGuardHtml).

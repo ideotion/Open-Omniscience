@@ -2755,6 +2755,11 @@ def resume_after_exclusive_operation(
     immediately: a single backup finishing inside a multi-backup import run must
     not put collection back on the machine for the rest of the run (field ruling
     item 10). Only the window itself resumes, once, at the end.
+
+    A COURTESY, NOT THE OPERATOR TRYING AGAIN: this and the pending-resume watcher below put back a
+    collector that an exclusive operation (a backup, a restore) stopped, so they do NOT go through
+    ``damage.retry_for_collection_start``: a file the database reported damaged stays paused across them,
+    and only the operator's own start releases it (``tests/test_database_damage.py``).
     """
     if exclusive_window_open():
         return
@@ -2790,6 +2795,8 @@ def resume_after_exclusive_operation(
 # --------------------------------------------------------------------------- #
 #  The pending resume (SCHED-1, 2026-09-24)
 # --------------------------------------------------------------------------- #
+#
+# Like :func:`resume_after_exclusive_operation` it is a courtesy and never releases a database-damage latch.
 #
 # One watcher at a time, keyed by a GENERATION so a cancel (a shutdown) or a newer
 # watcher retires an older one without either racing on shared state. It never starts

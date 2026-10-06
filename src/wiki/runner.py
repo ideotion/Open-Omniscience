@@ -616,6 +616,13 @@ class WikiLaneRunner:
             self.last_error = "the lane setting could not be read; the loop stopped (the next Start or online click restarts it)"
             return True
 
+    def _writing_stopped(self) -> bool:
+        """What the TIERS stop on: the lane is stopped, or the database reported its file damaged. The
+        stream thread does not stop on the second (it keeps filling its bounded buffer: it writes nothing),
+        so this is not ``_should_stop``. Read between tiers and inside each, so a latch set by one tier's
+        failed read stops the next within the window and not after it."""
+        return self._should_stop() or damage.registry.latched(WIKI_FILE)
+
     def _stream_body(self) -> None:
         resume = None
         if self._resume_from is not None:
@@ -900,20 +907,20 @@ class WikiLaneRunner:
         def left() -> float:
             return seconds - (self._monotonic() - start)
 
-        if self._indexer is not None and not self._should_stop():
+        if self._indexer is not None and not self._writing_stopped():
             from src.wiki.lane_search import INDEX_SHARE
 
             index_t0 = self._monotonic()
             try:
                 index_report = self._indexer.index_for(
-                    max(0.0, min(left(), seconds * INDEX_SHARE)), should_stop=self._should_stop
+                    max(0.0, min(left(), seconds * INDEX_SHARE)), should_stop=self._writing_stopped
                 )
                 self.last_index = index_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the index must not end the lane
                 _LOG.warning("the Wikipedia lane search index window failed: %s", exc, exc_info=True)
                 self.last_index = {"error": f"{type(exc).__name__}"}
             self._tick_part("index", self._ms_since(index_t0))
-        if self._warm is not None and not self._should_stop():
+        if self._warm is not None and not self._writing_stopped():
             # WARM'S WINDOW LEAVES THE WALK ITS RESERVE while the walk is on: WARM is lazy and
             # takes whatever it is given, so without a reserve the last tier never ran.
             warm_window = max(0.0, left())
@@ -921,16 +928,16 @@ class WikiLaneRunner:
                 warm_window *= 1.0 - WALK_RESERVE
             warm_t0 = self._monotonic()
             try:
-                warm_report = self._warm.warm_for(warm_window, should_stop=self._should_stop)
+                warm_report = self._warm.warm_for(warm_window, should_stop=self._writing_stopped)
                 self.last_warm = warm_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
                 _LOG.warning("the Wikipedia window for fetching other changed pages failed: %s", exc, exc_info=True)
                 self.last_warm = {"error": f"{type(exc).__name__}"}
             self._tick_part("warm", self._ms_since(warm_t0))
-        if self._walker is not None and not self._should_stop() and left() > 0:
+        if self._walker is not None and not self._writing_stopped() and left() > 0:
             walk_t0 = self._monotonic()
             try:
-                report = self._walker.walk_for(left(), should_stop=self._should_stop)
+                report = self._walker.walk_for(left(), should_stop=self._writing_stopped)
                 self.last_walk = report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
                 _LOG.warning("the Wikipedia walk window failed: %s", exc, exc_info=True)
