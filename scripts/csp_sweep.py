@@ -208,7 +208,7 @@ def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = 
     print(f"    {where}: {len(sels)} selects, {time.time() - t_start:.1f}s", file=sys.stderr, flush=True)
 
 
-_LOOPBACK_URL = re.compile(r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?(?:/[^\s\\]*)?")
+_LOOPBACK_URL = re.compile(r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::[0-9]{1,5})?(?:/[^\s\\]*)?")
 
 
 def require_loopback(url: str) -> None:
@@ -332,6 +332,12 @@ def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_
             encoding="utf-8")
         (out / f"selects-{wname}-{theme}.json").write_text(json.dumps(results, indent=1), encoding="utf-8")
         print(f"{wname} {theme}: {stat}", flush=True)
+    try:  # events that landed after the LAST theme's read are counted too
+        n_last = page.evaluate("() => window.__csp.length")
+        if prev is not None and n_last > prev[1]:
+            summary["themes"][prev[0]]["csp_events"] += n_last - prev[1]
+    except Exception:  # noqa: BLE001
+        pass
     ctx.close()
     return summary
 

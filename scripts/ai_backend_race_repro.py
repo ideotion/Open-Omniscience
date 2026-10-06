@@ -142,7 +142,7 @@ def main() -> int:
     with sync_playwright() as p:
         b = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
         request = p.request.new_context()
-        require_loopback_offline(a.url, request)  # loopback host (parsed, not prefix-matched) and offline
+        require_loopback_offline(a.url, request)  # a plain loopback URL (full match) and an offline app
         for label, js in variants:
             results.append(run_variant(b, request, a.url, label, js))
         b.close()
