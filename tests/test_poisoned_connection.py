@@ -28,6 +28,7 @@ marks a SQLCipher code-11 error as a disconnect for that one connection. What is
 """
 from __future__ import annotations
 
+import logging
 import random
 import sqlite3
 import types
@@ -38,7 +39,7 @@ import pytest
 pytest.importorskip("sqlcipher3")
 
 from sqlalchemy import create_engine, text  # noqa: E402
-from sqlalchemy.exc import DBAPIError, PendingRollbackError  # noqa: E402
+from sqlalchemy.exc import DBAPIError, InvalidRequestError, PendingRollbackError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 from sqlalchemy.pool import QueuePool  # noqa: E402
 from sqlcipher3 import dbapi2 as sqc  # noqa: E402
@@ -86,8 +87,11 @@ _LONG = random.Random(7).randbytes(120_000)  # a value of about eight pages: its
 
 def _build_overflow(path: Path, damaged: str) -> int:
     """An encrypted store whose ``ov`` table holds ONE row, a value longer than seven pages, so that the file's
-    last page is the last page of that value's overflow chain. ``damaged`` names which page of the chain is
-    overwritten: ``"last"``, ``"middle"`` or ``"first"``. Returns the page number overwritten."""
+    last page is the last page of that value's overflow chain. The page that holds the cell (the leaf) is the one
+    just before the chain, and the chain is seven pages long: ``pages - 7`` is the leaf, ``pages - 6`` the FIRST
+    overflow page, ``pages - 3`` a middle one and ``pages`` the last (the tests below tell a leaf from an
+    overflow page by what still reads: a key lookup reads the leaf and no overflow page). ``damaged`` names which
+    page is overwritten: ``"leaf"``, ``"first"``, ``"middle"`` or ``"last"``. Returns the page number overwritten."""
     con = connect(path, key=_KEY, create_encrypted=True, check_same_thread=False)
     con.execute("CREATE TABLE small (a INTEGER)")
     con.execute("INSERT INTO small VALUES (1), (2), (3)")
@@ -97,7 +101,7 @@ def _build_overflow(path: Path, damaged: str) -> int:
     con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     con.close()
     pages = path.stat().st_size // _PAGE
-    target = {"last": pages, "middle": pages - 3, "first": pages - 7}[damaged]
+    target = {"last": pages, "middle": pages - 3, "first": pages - 6, "leaf": pages - 7}[damaged]
     with open(path, "r+b") as f:
         f.seek((target - 1) * _PAGE)
         f.write(random.Random(target).randbytes(_PAGE))
@@ -292,6 +296,10 @@ def test_a_session_that_flushed_before_the_bad_read_cannot_commit_and_loses_the_
                 s.execute(text("SELECT 1"))
             with pytest.raises(PendingRollbackError):
                 s.commit()
+            # a failed commit leaves the session "prepared": more SQL is refused with a different error
+            # (PendingRollbackError is an InvalidRequestError too, so the text is what tells them apart)
+            with pytest.raises(InvalidRequestError, match="'prepared' state"):
+                s.execute(text("SELECT 1"))
             s.rollback()
             assert s.execute(text("SELECT count(*) FROM small WHERE a = 99")).scalar_one() == 0
             assert s.execute(text("SELECT count(*) FROM small")).scalar_one() == 3
@@ -303,14 +311,21 @@ def test_a_session_that_flushed_before_the_bad_read_cannot_commit_and_loses_the_
 # -- the first error is not always code 11 (the overflow chain of a long value) ----------------------------------
 
 
-@pytest.mark.parametrize("damaged", ["first", "middle"])
-def test_a_damaged_first_or_middle_overflow_page_raises_code_11_on_that_read(tmp_path, damaged):
+@pytest.mark.parametrize("damaged", ["leaf", "first", "middle"])
+def test_a_damaged_leaf_or_first_or_middle_overflow_page_raises_code_11_on_that_read(tmp_path, damaged):
     path = tmp_path / "ov.db"
     _build_overflow(path, damaged)
     con = connect(path, key=_KEY, check_same_thread=False)
     try:
-        with pytest.raises(sqc.DatabaseError) as info:
-            con.execute("SELECT v FROM ov WHERE id = 1").fetchone()
+        if damaged == "leaf":
+            # the page that holds the cell: even the key lookup, which reads no overflow page, fails
+            with pytest.raises(sqc.DatabaseError) as info:
+                con.execute("SELECT id FROM ov WHERE id = 1").fetchone()
+        else:
+            # an overflow page: the leaf, and the key with it, reads fine; only the value fails
+            assert con.execute("SELECT id FROM ov WHERE id = 1").fetchone() == (1,)
+            with pytest.raises(sqc.DatabaseError) as info:
+                con.execute("SELECT v FROM ov WHERE id = 1").fetchone()
         assert getattr(info.value, "sqlite_errorcode", None) == 11
         with pytest.raises(MemoryError):
             con.execute("SELECT count(*) FROM small").fetchall()  # and the poison follows
@@ -327,6 +342,7 @@ def test_a_damaged_last_overflow_page_returns_the_wrong_tail_with_no_error_and_p
     _build_overflow(path, "last")
     con = connect(path, key=_KEY, check_same_thread=False)
     try:
+        assert con.execute("SELECT id FROM ov WHERE id = 1").fetchone() == (1,)  # the leaf is intact
         value = con.execute("SELECT v FROM ov WHERE id = 1").fetchone()[0]
         assert len(value) == len(_LONG) and value != _LONG, "the read raised or returned the right bytes"
         with pytest.raises(MemoryError) as info:
@@ -391,6 +407,26 @@ def _real_code_11(store) -> sqc.DatabaseError:
     pytest.fail("no range of the wide table failed")
 
 
+def _build_plain(path: Path) -> Path:
+    """A PLAIN (unencrypted) SQLite file with a wide table, one page of it overwritten."""
+    pc = sqlite3.connect(path)
+    pc.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
+    pc.executemany("INSERT INTO t (v) VALUES (?)", [(random.Random(i).randbytes(3000),) for i in range(900)])
+    pc.commit()
+    pc.close()
+    size = path.stat().st_size
+    with open(path, "r+b") as f:
+        f.seek((size // 4096 // 2) * 4096)
+        f.write(random.Random(1).randbytes(4096))
+    return path
+
+
+def _plain_bad_read(driver_connection) -> None:
+    """Read ranges of the plain file's wide table on ``driver_connection`` until one raises."""
+    for start in range(1, 901, 50):
+        driver_connection.execute("SELECT id, v FROM t WHERE id BETWEEN ? AND ?", (start, start + 49)).fetchall()
+
+
 def test_only_code_11_from_the_sqlcipher_driver_is_reclassified(store, tmp_path):
     # a real code-11 error from SQLCipher: reclassified, for this one connection only
     real = _real_code_11(store)
@@ -423,24 +459,13 @@ def test_only_code_11_from_the_sqlcipher_driver_is_reclassified(store, tmp_path)
     assert damage.discard_poisoned_connection(ctx) is False and ctx.is_disconnect is False
 
     # a plain-SQLite file's corruption does not poison its connection and is not reclassified
-    plain = tmp_path / "plain.db"
-    pc = sqlite3.connect(plain)
-    pc.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
-    pc.executemany("INSERT INTO t (v) VALUES (?)", [(random.Random(i).randbytes(3000),) for i in range(900)])
-    pc.commit()
-    pc.close()
-    size = plain.stat().st_size
-    with open(plain, "r+b") as f:
-        f.seek((size // 4096 // 2) * 4096)
-        f.write(random.Random(1).randbytes(4096))
+    plain = _build_plain(tmp_path / "plain.db")
     pc = sqlite3.connect(plain)
     err = None
-    for start in range(1, 901, 50):
-        try:
-            pc.execute("SELECT id, v FROM t WHERE id BETWEEN ? AND ?", (start, start + 49)).fetchall()
-        except sqlite3.DatabaseError as exc:
-            err = exc
-            break
+    try:
+        _plain_bad_read(pc)
+    except sqlite3.DatabaseError as exc:
+        err = exc
     pc.close()
     assert err is not None and damage.is_corruption(err)
     ctx = _ctx(err, dbapi=sqlite3.connect(":memory:"))
@@ -575,6 +600,58 @@ def test_the_guard_discards_the_poisoned_connection_for_a_pooled_connection(stor
         eng.dispose()
 
 
+@pytest.mark.parametrize("kind", ["connection", "pooled"])
+def test_the_guard_invalidates_only_the_connection_that_failed_when_the_pool_holds_three(store, registry, kind):
+    """The guard tests above use a pool of one, where discarding one connection and discarding the whole pool look
+    the same. With three held at once, only the failing one is replaced and the other two are the same objects."""
+    eng, opened = _engine(store, observed=True, pool_size=3, url=True)
+    take = eng.connect if kind == "connection" else eng.raw_connection
+    driver = (lambda h: h.connection.dbapi_connection) if kind == "connection" else (lambda h: h.dbapi_connection)
+    try:
+        held = [take() for _ in range(3)]
+        originals = [driver(h) for h in held]
+        assert len(opened) == 3
+        with pytest.raises(sqc.DatabaseError), damage.guard_raw_driver(held[0], engine=eng):
+            _raw_bad_read(originals[0])
+        if kind == "connection":
+            assert [h.invalidated for h in held] == [True, False, False]
+        for h in held:
+            h.close()
+        held = [eng.connect() for _ in range(3)]  # hold all three at once: which driver connections is the pool now?
+        try:
+            now = [h.connection.dbapi_connection for h in held]
+            kept = [c for c in now if any(c is o for o in originals)]
+            assert len(kept) == 2, f"{len(kept)} of 3 pooled connections are the originals: the pool was replaced"
+            assert not any(c is originals[0] for c in now), "the poisoned connection went back to the pool"
+            assert len(opened) == 4, f"{len(opened)} connections were opened for one bad raw read"
+            for h in held:
+                assert h.execute(text("SELECT count(*) FROM small")).scalar_one() == 3
+        finally:
+            for h in held:
+                h.close()
+    finally:
+        eng.dispose()
+
+
+def test_the_guard_latches_a_plain_sqlite_corruption_error_and_leaves_its_connection_alone(tmp_path, registry):
+    """A plain SQLite file's code 11 does not poison its connection, so nothing is discarded, and it is still
+    damage: the file is named and latched whatever the connection does afterwards."""
+    plain = _build_plain(tmp_path / "plain.db")
+    eng = create_engine(f"sqlite:///{plain}", poolclass=QueuePool, pool_size=1, max_overflow=0)
+    damage.attach(eng, FILE_CORPUS)
+    try:
+        with eng.connect() as c:
+            with pytest.raises(sqlite3.DatabaseError) as info, damage.guard_raw_driver(c):
+                _plain_bad_read(c.connection.dbapi_connection)
+            assert damage.is_corruption(info.value)
+            assert not c.invalidated, "a plain SQLite connection is not poisoned: nothing to discard"
+            assert damage.note_raw_driver_error(c, info.value) is False  # and it says it did not invalidate
+        assert registry.latched(FILE_CORPUS), "a plain SQLite corruption error read on a raw cursor named no file"
+        assert registry.state()["incident_count"] == 2  # the guard's and the direct call's, one each
+    finally:
+        eng.dispose()
+
+
 def test_the_guard_files_the_error_against_the_file_the_engine_is_attached_for(store, registry, tmp_path):
     eng, _opened = _engine(store, observed=False, pool_size=1, url=True)
     damage.attach(eng, damage.FILE_LAW)
@@ -671,7 +748,7 @@ def test_the_country_code_scan_goes_through_the_guard(store, registry, monkeypat
         eng.dispose()
 
 
-def test_the_incremental_vacuum_goes_through_the_guard(tmp_path, registry, monkeypatch):
+def test_the_incremental_vacuum_goes_through_the_guard(tmp_path, registry, monkeypatch, caplog):
     from src.database.maintenance import maybe_incremental_vacuum
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
@@ -680,8 +757,15 @@ def test_the_incremental_vacuum_goes_through_the_guard(tmp_path, registry, monke
     _build(path, incremental=True)
     eng, opened = _engine(path, observed=True, pool_size=1, url=True, faulty="incremental_vacuum")
     try:
-        report = maybe_incremental_vacuum(eng)
+        with caplog.at_level(logging.WARNING, logger="src.database.maintenance"):
+            report = maybe_incremental_vacuum(eng)
         assert report == {"skipped": "error"}, report
+        # The error the pass reports is the corruption error. The cursor is closed while its connection is still
+        # open and only then does the guard invalidate it; the other order closes the cursor on a closed
+        # connection, and that ProgrammingError replaces the real error.
+        failed = [r for r in caplog.records if r.getMessage() == "off-peak incremental vacuum failed"]
+        assert len(failed) == 1 and failed[0].exc_info is not None, [r.getMessage() for r in caplog.records]
+        assert damage.is_corruption(failed[0].exc_info[1]), repr(failed[0].exc_info[1])
         assert registry.latched(FILE_CORPUS), "the incremental vacuum named no file for a damaged page"
         assert _healthy_read(eng) == 3, "the incremental vacuum left a poisoned connection in the pool"
         assert len(opened) == 2

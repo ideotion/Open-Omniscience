@@ -16391,8 +16391,10 @@ any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will o
   (`damage.guard_raw_driver`: the country-code scan, `PRAGMA incremental_vacuum`, the WAL checkpoint). **Left, on purpose:** (a) **a damaged LAST overflow page of a long value is not named by
   the read that touched it** (the read returns the right length with wrong tail bytes and no error, measured), so the first thing that fails is the NEXT statement on that connection, once, with an empty `MemoryError`
   (discarded, never latched: it names no file); only `cipher_integrity_check` (E2's page pass) names the page, and a corpus whose only damage is such a tail reads wrong bytes until a check runs. (b) **The
-  raw driver statements that read no page are not guarded:** `PRAGMA shrink_memory` (`src/scheduler/release.py`, `_shrink_sqlite`), `PRAGMA data_version` (`src/api/insights.py`, `_data_version`), `set_progress_handler`
-  (`src/database/maintenance.py`) and the function registration in `src/database/fts.py` and `fts_reindex.py`; none can raise code 11 and none poisons a connection that was healthy. The raw connections that are NOT
+  raw driver statements that need no guard:** `PRAGMA shrink_memory` (`src/scheduler/release.py`, `_shrink_sqlite`), `set_progress_handler` (`src/database/maintenance.py`) and the function registration in
+  `src/database/fts.py` and `fts_reindex.py` read no page, so none can raise code 11. **`PRAGMA data_version` (`src/api/insights.py`, `_data_version`) DOES read page 1 and can raise it** (corrected 2026-10-06; this
+  entry first said it read none). It is left unguarded for another reason: its probe connection is DETACHED from the pool (`insights.py` 674-679, for the queue and null pools the app builds) and is dropped and rebuilt on
+  ANY exception (690-699), so it never goes back to the pool poisoned, which is what the guard is for. What it does not do is name a file: the error is swallowed there and the probe rebuilt. The raw connections that are NOT
   pooled (stream backup, the artifact and merge readers) open their own file and close it. Whoever adds a raw cursor on a pooled connection that reads pages goes through the guard. (c) An error
   raised while a connection is being OPENED never discards (there is none to discard, and SQLAlchemy's cleanup fails an assertion if it is told otherwise).
   (d) **E1's in-app latch pauses collection on the first code 11 it sees, from one read on one connection (the coordinator's ruling of 2026-10-06: build the re-read).** A code 11 that a fresh read would not

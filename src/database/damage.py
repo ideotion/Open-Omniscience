@@ -912,6 +912,8 @@ def _dbapi_of(handle: Any) -> Any:
     what is already there: asking a ``Connection`` that was invalidated for its ``.connection`` would open a new
     one."""
     cur = handle
+    # Three hops at most: a ``Connection``, then its pooled connection, then the driver connection. A handle that
+    # reaches no driver connection in three hops has none.
     for _ in range(3):
         if getattr(cur, "invalidated", False) is True:
             return None
@@ -1010,29 +1012,31 @@ def note_raw_driver_error(handle: Any, exc: BaseException | None, *, engine: Any
     ``Connection`` it belongs to). SQLAlchemy raises no ``handle_error`` for those, so without this a code 11
     there neither latches nor discards, and the poisoned connection goes back to the pool.
 
-    Invalidates ``handle`` when :func:`poisons_connection` says the failure poisons it, and records and latches
-    the corruption error against the file the engine is attached for (``file_key`` is the fallback for an engine
-    that is not attached; with neither, nothing is latched, so a file is never named wrongly). An empty
-    ``MemoryError`` discards and names nothing. Returns whether the connection was invalidated. Never raises and
-    never replaces ``exc``."""
+    Invalidates ``handle`` when :func:`poisons_connection` says the failure poisons it, and, independently,
+    records and latches a corruption error against the file the engine is attached for (``file_key`` is the
+    fallback for an engine that is not attached; with neither, nothing is latched, so a file is never named
+    wrongly). The two are separate questions: a plain SQLite file's code 11 does not poison its connection and
+    is still damage; an empty ``MemoryError`` discards and names nothing. Returns whether the connection was
+    invalidated. Never raises and never replaces ``exc``."""
     discarded = False
     try:
         engine = engine if engine is not None else getattr(handle, "engine", None)
-        kind = poisons_connection(exc, _dbapi_of(handle))
-        if kind is not None:
+        if poisons_connection(exc, _dbapi_of(handle)) is not None:
             with contextlib.suppress(Exception):
                 handle.invalidate()
                 discarded = True
-        if kind == "corrupt":
-            seen = attached(engine) if engine is not None else None
-            key = seen[0] if seen else file_key
-            if key is not None:
-                path = None
-                with contextlib.suppress(Exception):
-                    database = engine.url.database
-                    if database and database != ":memory:":
-                        path = Path(database)
-                registry.note(key, exc, statement=statement, path=path)
+        # Latching does not depend on what the connection does afterwards: a plain SQLite file's corruption error
+        # does not poison its connection, but it is still damage, and ``registry.note`` itself answers False
+        # (and records nothing) for an error that is not corruption, an empty ``MemoryError`` included.
+        seen = attached(engine) if engine is not None else None
+        key = seen[0] if seen else file_key
+        if key is not None:
+            path = None
+            with contextlib.suppress(Exception):
+                database = engine.url.database
+                if database and database != ":memory:":
+                    path = Path(database)
+            registry.note(key, exc, statement=statement, path=path)
     except Exception:  # noqa: BLE001 - an observer never replaces the real error
         pass
     return discarded
