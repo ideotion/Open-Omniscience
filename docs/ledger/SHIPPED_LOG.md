@@ -10387,12 +10387,13 @@ data (the bulletin's method sentence is the key of its 11 translations). Lesson:
 - **2026-10-01 · monitoring/diagnostics-instruments (release candidate diagnostics, ranks 9 and 10).** From the
 16-instance diagnostics round: K2 read red on 16 of 16 instances, 287 of the 306 breaching routes (summed over the
 sixteen exports) on fewer than 20 samples, and the article list's browse (K2's worst route on 8 of 16) was timed
-nowhere. Instruments only; K2's value, n and verdict are unchanged. The latency summary lists every route and says
+nowhere. Instruments only; K2's formula is unchanged (it reads a route list that is now whole, so where the old cut at
+60 had dropped the worst route its number can move toward the true worst). The latency summary lists every route and says
 how each window ended, its first and slowest call and the slowest call's distance from the last unlock; the article
 list's browse is timed per phase into the search-timing record, whose self-test no longer wipes the live window; the
 durable logs are cut by a copy swapped in with os.replace. The same PR closes 0.4 row D on instance 090243's
-release-run report and records PR #1281, with the export changes of PRs #1288 and #1294, in row A. Lesson: `LESSONS.md`, the entry "A LIST THE PRODUCER CUT CANNOT BE
-LOOKED UP IN".
+release-run report and records PR #1281, with the export changes of PRs #1288 and #1294, in row A. Lessons: `LESSONS.md`, the entries "A LIST THE PRODUCER CUT CANNOT BE
+LOOKED UP IN" and "A SELF-TEST THAT RESETS THE PROCESS'S OWN STATE RUNS INSIDE THE EXPORT THAT READS IT".
 
 - **2026-10-01 · scheduler/pool-disk-unlock-findings (WAL / disk thread, the follow-up to #1287, #1289 and #1293).**
 Every finding of the Opus reads and the coordinator's checks of the three merged PRs. Unlock: the verify

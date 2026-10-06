@@ -387,6 +387,11 @@ def test_the_browse_aggregate_says_which_page_sizes_it_mixes():
     method = rep["browse"]["method"]
     assert "every call to GET /api/articles that has no text query and no explicit `ids` set" in method
     assert "a call for a fixed set of ids is not timed" in method
+    # A browse is recorded after its rows are in hand (src/api/main.py, with no try/finally), so a
+    # call that raised is in neither the window nor the durable log: the report says so, and says
+    # where those calls are counted instead (the coordinator's check of #1292, S1).
+    assert "once it has returned a page: a call that failed is not in it" in method
+    assert "route latency log counts those" in method
     assert "page_sizes" in method
 
 
@@ -560,6 +565,22 @@ def test_a_browse_with_no_data_version_probe_is_counted_again_and_says_so(monkey
     _, total = _q(s, None, time_browse=True, limit=2)
     assert total == 3, "the live count is exact"
     assert search_timing._snapshot()[0]["phases"][0]["phase"] == "count_recomputed"
+
+
+def test_a_browse_with_the_cache_off_is_counted_again_every_time_and_says_so(monkeypatch):
+    """A TTL of 0 switches the cache off: ``_cached`` then returns the bare payload, with no
+    ``cached`` key, and that payload is a count made just now. It must read ``count_recomputed``,
+    never the cheap name, on every browse (and the total stays exact)."""
+    from src.api import insights
+
+    monkeypatch.setattr(insights, "_data_version", lambda bind: "1")
+    monkeypatch.setattr(insights, "_CACHE_TTL_S", 0)
+    s = _session()
+    for _ in range(2):
+        before = len(search_timing._snapshot())
+        _, total = _q(s, None, time_browse=True, limit=2)
+        assert total == 3, "the count is exact"
+        assert search_timing._snapshot()[before]["phases"][0]["phase"] == "count_recomputed"
 
 
 def test_a_filtered_browse_names_its_count_as_live():

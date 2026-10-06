@@ -269,6 +269,10 @@ def _snapshot() -> list[dict]:
         return [*_recent[KIND_TEXT], *_recent[KIND_BROWSE]]
 
 
+# Page sizes listed one by one in a report's ``page_sizes``; the rest are summed under ``other``.
+# What this protects is the size of that map in the export: its keys are the ``limit`` a CLIENT chose,
+# so without a bound a caller trying many different limits would make the map as long as the number
+# it tried. Ten is far more than the handful of page sizes the app itself asks for.
 _PAGE_SIZES_MAX = 10
 
 
@@ -314,8 +318,9 @@ def build_report(records: list[dict], durable: dict | None = None) -> dict:
         "(no text query), counted from when the query starts to when the page is in hand; the "
         "dominant phase is the highest measured p95. It holds every call to GET /api/articles "
         "that has no text query and no explicit `ids` set, whoever makes it (the Search tab, "
-        "the Home cards, a channel's list, the analysis); a call for a fixed set of ids is not "
-        "timed. So one p95 spans page sizes from a handful of rows to a thousand: "
+        "the Home cards, a channel's list, the analysis), once it has returned a page: a call "
+        "that failed is not in it (the route latency log counts those); a call for a fixed set "
+        "of ids is not timed. So one p95 spans page sizes from a handful of rows to a thousand: "
         "`page_sizes` counts the browses by the page size they asked for. A browse that "
         "has a source, a source type, tags, a provenance, the advanced search's countries "
         "or regions, or a query of field filters only looks that up BEFORE its clock starts, "
@@ -382,13 +387,14 @@ def _trim_jsonl(kind: str = KIND_TEXT) -> None:
 def _trim_if_due(kind: str) -> None:
     """Cut a log back to the cap once every ``_TRIM_EVERY`` appends, and on a process's first one.
 
-    Cutting reads and rewrites the whole file. Measured once on the development container, warm page
-    cache, with 5,000 records of each kind (a record carries its ``method`` and ``caveat`` text, so the
-    sizes move with that wording): the browse log is about 9.7 MB (1.9 KB a record), read in about 13 ms
-    and rewritten in about 12; the text log about 2.8 MB (0.55 KB a record), about 3 ms each. A cold read
-    costs more. Cutting after EVERY append would put that on each article-list call the moment a log
-    reached its cap, so it is done once every ``_TRIM_EVERY``. The first append of a process cuts too,
-    so a log never carries the growth of the process before it."""
+    Cutting reads and rewrites the whole file. Measured on the development container, warm page
+    cache, over seven cuts of a log holding 5,250 records of one kind (a record carries its ``method``
+    and ``caveat`` text, so the sizes move with that wording, and they did when the browse and the
+    unlock distance joined it): the browse log is about 9.7 MB at the cap (1.9 KB a record) and a cut
+    took 38-94 ms, 22-31 ms of it the read; the text log about 5.2 MB (1.04 KB a record), 22-51 ms,
+    12-18 ms of it the read. A cold read costs more. Cutting after EVERY append would put that on each
+    article-list call the moment a log reached its cap, so it is done once every ``_TRIM_EVERY``. The
+    first append of a process cuts too, so a log never carries the growth of the process before it."""
     with _LOCK:
         _appends_since_trim[kind] += 1
         due = _appends_since_trim[kind] >= _TRIM_EVERY
