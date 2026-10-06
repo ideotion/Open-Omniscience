@@ -8295,7 +8295,9 @@ def test_docs_index_covers_live_docs():
 #: RAISED 2026-09-30 (PF11 = D07 = b): 785 -> 792, seven lines amending protocol rule (1) --
 #: LESSONS.md is consulted by grep through scripts/lessons.py instead of read in full. A protocol
 #: amendment is the growth the clause above calls normal.
-_CLAUDE_MD_LINE_CEILING = 792
+#: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
+#: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
+_CLAUDE_MD_LINE_CEILING = 796
 
 
 def _claude_md_lines() -> int:
@@ -8355,11 +8357,16 @@ def test_lessons_md_stays_within_its_ratchet():
     """LESSONS.md may not grow past its recorded ceiling. If this fails because you appended a
     lesson (rule (5a)(b)), raise _LESSONS_LINE_CEILING to the reported number in the same PR --
     that IS the intended use. If the growth is not yours, compress per rule (5), never a pending
-    ruling."""
+    ruling.
+
+    AMENDED 2026-10-06: a new lesson is no longer appended here at all -- it is a new file under
+    docs/ledger/lessons.d/ (``python scripts/lessons.py --new SLUG``), and the ceiling moves only when
+    ``scripts/ledger_fold.py fold`` merges those at a release."""
     n = _lessons_md_lines()
     assert n <= _LESSONS_LINE_CEILING, (
-        f"LESSONS.md is {n} lines, over its ceiling of {_LESSONS_LINE_CEILING}. Raise "
-        "_LESSONS_LINE_CEILING to the real count in the PR that appended the lesson."
+        f"LESSONS.md is {n} lines, over its ceiling of {_LESSONS_LINE_CEILING}. Do not append a lesson to "
+        "LESSONS.md: write it as a new file with `python scripts/lessons.py --new SLUG` (it lands in "
+        "docs/ledger/lessons.d/ and never conflicts). Only a fold raises this number."
     )
 
 

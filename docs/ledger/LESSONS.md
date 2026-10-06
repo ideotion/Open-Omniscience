@@ -15,13 +15,13 @@
 > exact class of change a session is likely to be asked to make, so before touching one, look
 > for it: `python scripts/lessons.py <words>` lists the entries that contain every word,
 > `python scripts/lessons.py --index` lists every title, `--show LINE` prints one entry. The
-> index is generated on the spot, never committed. A size ratchet
-> (`tests/test_repo_invariants.py::test_lessons_md_stays_within_its_ratchet`) fails when this
-> file grows past its recorded line ceiling: raise the ceiling in the PR that appends a lesson.
+> index is generated, never committed. A size ratchet (`test_lessons_md_stays_within_its_ratchet`) caps this file.
 >
-> **Appending:** a new reusable lesson or empirical fact is appended HERE per `CLAUDE.md`
-> THE PROTOCOL rule (5a)(b), alongside its verbatim entry in
-> [`SHIPPED_LOG.md`](SHIPPED_LOG.md) and its row in [`shipped.csv`](shipped.csv).
+> **Appending (amended 2026-10-06):** a new lesson is a NEW FILE, `lessons.d/<date>-<slug>.md`
+> (`python scripts/lessons.py --new SLUG`), never a paragraph appended here: that moved one shared
+> ceiling and put every open PR's text at one tail, so each landing conflicted the others.
+> `lessons.py` searches both; `python scripts/ledger_fold.py fold` merges them in at a release. Its shipped-log
+> entry is a file under `shipped_log.d/` ([`SHIPPED_LOG.md`](SHIPPED_LOG.md)), its row one under `shipped.d/`, per rule (5a)(b).
 >
 > **Eight more lessons are NOT here yet.** They were recorded in the Open queue by the
 > sessions that earned them and could not be moved verbatim on 2026-09-07 without editing

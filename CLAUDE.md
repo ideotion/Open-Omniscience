@@ -40,11 +40,15 @@ date · area · item · status · refs · key_paths · summary) — NEVER a line
 [`docs/ledger/shipped.csv`](docs/ledger/shipped.csv), because GitHub does not apply its `merge=union`
 rule and every open PR then conflicts after every merge (amended 2026-09-30; the readers take the
 file first and the fragments after it; `ledger_shipped.py fold` merges them at a release). If it carries a reusable LESSON or
-EMPIRICAL FACT, ALSO (a) append the verbatim entry to
-[`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md) and (b) copy the
-lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (so a session
-that greps it per rule (1) finds it; location amended 2026-09-07 per A3(1); raise the
-lessons ratchet in the same PR).
+EMPIRICAL FACT, ALSO (a) add the verbatim entry as ONE NEW FILE,
+`docs/ledger/shipped_log.d/<date>-<slug>.md` (`python scripts/ledger_fold.py new-log SLUG`; archive:
+[`SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md)) and (b) the lesson as ONE NEW FILE,
+`docs/ledger/lessons.d/<date>-<slug>.md` (`python scripts/lessons.py --new SLUG`; archive:
+[`LESSONS.md`](docs/ledger/LESSONS.md), and `lessons.py` finds both). **NEVER append to either archive and
+never move `_LESSONS_LINE_CEILING`** (amended 2026-10-06, the same reasoning as (5a)'s shipped rows: a shared
+tail and a shared number re-conflicted every open PR after every landing); the ceiling moves only when
+`python scripts/ledger_fold.py fold` merges the fragments at a release; a fragment over
+`LESSON_FRAGMENT_MAX_LINES` fails `tests/test_ledger_fragments.py`.
 Do NOT grow a "## Shipped batch log" wall in this file again. Pending rulings,
 contingencies, and deliberate-omissions STILL go in `docs/ledger/OPEN_QUEUE.md`
 as prose (rule 5 protects them — never moved to the CSV).
