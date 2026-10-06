@@ -145,3 +145,64 @@ def test_choosing_the_stream_alone_never_switches_the_walk_or_warm_on(data_dir):
     now = _read()
     assert now["wiki_lane_state"] == "running"
     assert now["wiki_walk_enabled"] is False and now["wiki_warm_enabled"] is False
+
+
+@pytest.mark.parametrize("route", ["/api/scheduler/start", "/api/scheduler/run-now"])
+@pytest.mark.parametrize(
+    ("state", "builds"),
+    [("running", 1), ("halted", 0), ("stopped", 0)],
+)
+def test_the_collection_start_buttons_resume_only_a_lane_that_was_on(
+    data_dir, monkeypatch, route, state, builds
+):
+    """R117 on the two callers the October fix added: Start and Run-now give the lane its go with
+    the REAL ``start_wiki_lane``, so a lane the operator switched off is not built by them."""
+    import src.api.scheduler as sched
+    import src.wiki.service as svc
+
+    class _Scheduler:
+        def start(self):
+            return True
+
+        def run_now(self):
+            return True
+
+        def status(self):
+            return {"running": True, "settings": {}}
+
+    class _ReadableRunner(_Runner):
+        """The start route's status payload reads the runner's service state."""
+
+        drains = 0
+        last_drain = None
+
+        def stream_counters(self):
+            return None
+
+        def drain_status(self):
+            return {}
+
+        def walk_status(self):
+            return None
+
+        def warm_status(self):
+            return None
+
+        def index_status(self):
+            return None
+
+    built: list[_Runner] = []
+    monkeypatch.setattr(sched, "get_scheduler", lambda: _Scheduler())
+    monkeypatch.setattr(svc, "_build", lambda: built.append(_ReadableRunner()) or built[-1])
+    save_settings({"wiki_lane_state": state})
+    app = FastAPI()
+    app.include_router(sched.router)
+    try:
+        assert TestClient(app).post(route).status_code == 200
+        assert len(built) == builds
+        assert _read()["wiki_lane_state"] == state, "the button never rewrites the setting"
+    finally:
+        svc.stop_wiki_lane(timeout=1.0)
+        import src.ingest as ingest
+
+        ingest.activate_kill_switch()

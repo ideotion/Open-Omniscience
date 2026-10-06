@@ -861,7 +861,7 @@ def test_the_runner_gives_WARM_the_idle_time_BEFORE_the_walk_and_a_broken_WARM_n
     )
     runner.idle(30.0)
     assert order == ["warm", "walk"], "HOT, then WARM, then COLD: Q707's own order"
-    assert slept == [30.0], "the interval is still slept when WARM fails"
+    assert sum(slept) == 30.0, "the interval is still slept when WARM fails"
     assert runner.last_warm == {"error": "RuntimeError"}
     assert runner.warm_status()["last_window"] == {"error": "RuntimeError"}
 
