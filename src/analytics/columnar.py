@@ -650,7 +650,9 @@ def build_keyword_read_model(con, session, *, batch_size: int | None = None) -> 
     A byte-identical projection of ``Keyword.mention_count`` / ``article_count`` (the
     Slice-2 counters) — NOT a recompute, so it inherits their honesty envelope. Off the
     request path (a background/maintenance step). Returns the row count written. The
-    canonical store is unchanged; this is a disposable derived table.
+    canonical store is unchanged; this is a disposable derived table. Each batch is its own
+    read, so a counter bumped while the build runs can land in one batch and not in another
+    (the table is rebuilt wholesale and only the tests read it today).
 
     STREAMED, never one list of ORM entities: the same shape that held 7.5 to 8.8 GB for the
     in-memory rollup build (October 2026 diagnostics). Keywords come out by keyset over
@@ -1060,6 +1062,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     )
     con.execute("DROP TABLE keyword_daily_stage")
     daily_rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+    if on_batch is not None:
+        on_batch("keywords", 0)  # the GROUP BY is over: the keywords stage (and its rate) starts here
 
     # -- keyword metadata projection (for the windowed serve's JOIN) --------------------- #
     # Same keyset shape and the same close-then-commit as the mention loops above, for the same

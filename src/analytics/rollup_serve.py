@@ -580,21 +580,23 @@ _PROGRESS_LOCK = threading.Lock()
 
 def _progress_begin() -> None:
     global _PROGRESS
-    now = time.time()
+    now = time.monotonic()
     with _PROGRESS_LOCK:
         _PROGRESS = {"started_at": now, "stage": "start", "rows_done": 0, "stage_started_at": now,
                      "updated_at": now}
 
 
 def _progress_note(stage: str, rows_done: int) -> None:
-    now = time.time()
+    now = time.monotonic()
     with _PROGRESS_LOCK:
         p = _PROGRESS
         if p is None:
             return
         if stage != p["stage"]:
-            # a stage begins when the previous one last moved, so its first batch is inside its own rate
-            p.update(stage=stage, stage_started_at=p["updated_at"])
+            # a stage begins when the previous one last moved, so its first batch is inside its own rate;
+            # one announced at zero rows (the keywords stage after the GROUP BY) begins now, so the
+            # statement before it is not charged to its rate
+            p.update(stage=stage, stage_started_at=now if int(rows_done) == 0 else p["updated_at"])
         p.update(rows_done=int(rows_done), updated_at=now)
 
 
@@ -608,7 +610,7 @@ def build_progress() -> dict | None:
     """The build in flight: its stage, the rows streamed in that stage so far, rows/s over that stage (absent
     when it cannot be measured, never ``0``: an unmeasurable rate is not a stall) and the seconds since it last
     moved. ``None`` while no build runs."""
-    now = time.time()
+    now = time.monotonic()
     with _PROGRESS_LOCK:
         p = dict(_PROGRESS) if _PROGRESS is not None else None
     if p is None:
@@ -621,7 +623,10 @@ def build_progress() -> dict | None:
     }
     span = p["updated_at"] - p["stage_started_at"]
     if p["stage"] in ("mentions", "keywords") and p["rows_done"] > 0 and span > 0:
-        out["rows_per_s"] = round(p["rows_done"] / span)
+        rate = p["rows_done"] / span
+        out["rows_per_s"] = round(rate) if rate >= 10 else round(rate, 1)  # never a measured 0 from rounding
+        if not out["rows_per_s"]:
+            del out["rows_per_s"]
     return out
 
 

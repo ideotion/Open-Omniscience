@@ -978,7 +978,7 @@ def test_build_progress_is_absent_when_no_build_runs_and_counts_only_when_one_do
     monkeypatch.setattr(rollup_serve, "_PROGRESS", None)
     assert rollup_serve.build_progress() is None
     now = [100.0]
-    monkeypatch.setattr(rollup_serve.time, "time", lambda: now[0])
+    monkeypatch.setattr(rollup_serve.time, "monotonic", lambda: now[0])
     rollup_serve._progress_begin()
     first = rollup_serve.build_progress()
     assert first["stage"] == "start" and first["rows_done"] == 0 and "rows_per_s" not in first
@@ -994,6 +994,36 @@ def test_build_progress_is_absent_when_no_build_runs_and_counts_only_when_one_do
     assert rollup_serve.build_progress() is None
 
 
+def test_the_keywords_rate_does_not_count_the_group_by_before_it(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(rollup_serve.time, "monotonic", lambda: now[0])
+    rollup_serve._progress_begin()
+    now[0] = 10.0
+    rollup_serve._progress_note("mentions", 4_000)
+    rollup_serve._progress_note("aggregate", 4_000)  # announced, then a statement that runs 100 s
+    now[0] = 110.0
+    rollup_serve._progress_note("keywords", 0)  # the build says the statement is over
+    now[0] = 112.0
+    rollup_serve._progress_note("keywords", 1_000)
+    assert rollup_serve.build_progress()["rows_per_s"] == 500, "1,000 rows in the 2 s since the statement ended"
+    rollup_serve._progress_end()
+
+
+def test_a_rate_that_rounds_to_nothing_keeps_a_decimal_or_is_absent_never_zero(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(rollup_serve.time, "monotonic", lambda: now[0])
+    rollup_serve._progress_begin()
+    now[0] = 1.0
+    rollup_serve._progress_note("mentions", 0)
+    now[0] = 11.0
+    rollup_serve._progress_note("mentions", 4)  # 0.4 rows/s
+    assert rollup_serve.build_progress()["rows_per_s"] == 0.4
+    now[0] = 10_000_011.0
+    rollup_serve._progress_note("mentions", 5)  # about 0.0000005 rows/s: below any honest decimal
+    assert "rows_per_s" not in rollup_serve.build_progress()
+    rollup_serve._progress_end()
+
+
 def test_a_real_build_reports_progress_and_clears_it(serve_env, session, monkeypatch):
     _seed(session, keywords=40, mentions_per=5)
     seen: list[dict] = []
@@ -1004,7 +1034,8 @@ def test_a_real_build_reports_progress_and_clears_it(serve_env, session, monkeyp
         seen.append(rollup_serve.build_progress())
 
     monkeypatch.setattr(rollup_serve, "_progress_note", spy)
-    assert rollup_serve._build_inmemory_and_swap() is None
+    with rollup_serve._BUILD_LOCK:  # a leftover real rollup-build thread would share _PROGRESS: wait for it
+        assert rollup_serve._build_inmemory_and_swap() is None
     assert {p["stage"] for p in seen} == {"mentions", "aggregate", "keywords"}
     assert rollup_serve.build_progress() is None, "nothing is reported once the build has ended"
     assert rollup_serve.status()["build_progress"] is None
@@ -1014,15 +1045,17 @@ def test_the_boot_snapshot_shows_the_running_rollup_steps_progress(monkeypatch):
     from src.api import boot_sequence as bs
 
     bs._reset()
-    with bs._LOCK:
-        bs._STEPS["rollup"].update(state="running", started_at=time.time() - 5)
-        bs._SEQUENCE["started_at"] = time.time() - 9
-    monkeypatch.setattr(rollup_serve, "build_progress", lambda: {"stage": "mentions", "rows_done": 12, "idle_s": 1.0, "running_s": 4.0})
-    rows = {r["step"]: r for r in bs.snapshot()["steps"]}
-    assert rows["rollup"]["progress"]["rows_done"] == 12 and "progress" not in rows["warm-cache"]
-    monkeypatch.setattr(rollup_serve, "build_progress", lambda: None)
-    assert "progress" not in {r["step"]: r for r in bs.snapshot()["steps"]}["rollup"]
-    bs._reset()
+    try:
+        with bs._LOCK:
+            bs._STEPS["rollup"].update(state="running", started_at=time.time() - 5)
+            bs._SEQUENCE["started_at"] = time.time() - 9
+        monkeypatch.setattr(rollup_serve, "build_progress", lambda: {"stage": "mentions", "rows_done": 12, "idle_s": 1.0, "running_s": 4.0})
+        rows = {r["step"]: r for r in bs.snapshot()["steps"]}
+        assert rows["rollup"]["progress"]["rows_done"] == 12 and "progress" not in rows["warm-cache"]
+        monkeypatch.setattr(rollup_serve, "build_progress", lambda: None)
+        assert "progress" not in {r["step"]: r for r in bs.snapshot()["steps"]}["rollup"]
+    finally:
+        bs._reset()
 
 
 def test_the_slow_step_watch_warns_once_then_only_when_progress_has_stopped(monkeypatch, caplog):
@@ -1041,16 +1074,42 @@ def test_the_slow_step_watch_warns_once_then_only_when_progress_has_stopped(monk
         watch = bs._SlowWatch("rollup", "the re-index")
         watch.start()
         threading.Event().wait(0.4)  # several intervals; the build keeps moving (idle_s stays 0)
-        moving = [r.getMessage() for r in caplog.records]
+        moving = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
         state["idle"] = 999.0  # ... and now it has not moved for longer than the limit
         threading.Event().wait(0.3)
         watch.cancel()
     assert len(moving) == 1 and "still running" in moving[0] and "7,000 rows at 500 rows/s" in moving[0]
-    stuck = [r.getMessage() for r in caplog.records if "no progress" in r.getMessage()]
+    stuck = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name and "no progress" in r.getMessage()]
     assert stuck and "999 s" in stuck[0] and "the re-index waiting behind it" in stuck[0]
     after = len(caplog.records)
     threading.Event().wait(0.3)
     assert len(caplog.records) == after, "a cancelled watch is silent"
+
+
+def test_a_long_aggregate_statement_is_not_called_stuck_and_a_step_without_a_channel_warns_once(monkeypatch, caplog):
+    import logging
+    import threading
+
+    from src.api import boot_sequence as bs
+
+    monkeypatch.setattr(bs, "SLOW_STEP_S", 0.05)
+    monkeypatch.setattr(
+        rollup_serve, "build_progress",
+        lambda: {"stage": "aggregate", "rows_done": 9_000, "idle_s": 999.0, "running_s": 1000.0},
+    )
+    with caplog.at_level(logging.WARNING, logger=bs._LOG.name):
+        watch = bs._SlowWatch("rollup", "the re-index")
+        watch.start()
+        threading.Event().wait(0.3)
+        watch.cancel()
+        other = bs._SlowWatch("warm-cache", "the re-index")
+        other.start()
+        threading.Event().wait(0.3)
+        other.cancel()
+    msgs = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
+    assert any("single aggregate statement" in m and "999 s" in m for m in msgs)
+    assert not any("made no progress" in m for m in msgs), "a statement that cannot report is not a stuck build"
+    assert sum("boot step warm-cache" in m for m in msgs) == 1, "no channel, no re-arm: one warning"
 
 
 def test_a_stop_with_no_total_is_held_on_what_was_observed(serve_env, monkeypatch):
@@ -1068,7 +1127,7 @@ def test_a_stop_with_no_total_is_held_on_what_was_observed(serve_env, monkeypatc
         lambda: {"reason": "mem-low", "at": time.time(), "stage": "mentions", "rows_done": 1_000_000,
                  "mentions_total": None, "rss_mb": 1500.0, "begin_rss_mb": 500.0, "epoch": None},
     )
-    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._BUILD_LOCK.acquire(timeout=60)
     assert rollup_serve._build_and_swap() == "declined"
     held = rollup_serve._STATE["stopped"]
     assert held["observed_grew_mb"] == 1000.0 and held["grew_mb"] == 1000.0

@@ -90,7 +90,7 @@ def snapshot() -> dict:
                 "the re-index has started builds beside it, and declines when memory is short. "
                 "No timeout: a step that does not end shows here as running, with its seconds; the rollup step "
                 "also shows its build's stage, rows streamed, rows/s and seconds since it last moved, and the "
-                "log says so when it has not moved for five minutes."
+                f"log says so when it has not moved for {SLOW_STEP_S:.0f} s (checked every {SLOW_STEP_S:.0f} s)."
             ),
         }
 
@@ -120,10 +120,14 @@ def heavy_step_verdict() -> dict | None:
     return None
 
 
+#: The steps that carry their own progress channel (see ``_progress_of``).
+_PROGRESS_STEPS = frozenset({"rollup"})
+
+
 def _progress_of(name: str) -> dict | None:
     """What the step reports about its own progress: today only the rollup build does (rows streamed, the
     rate and when it last moved). ``None`` for a step with no progress channel, or when none is readable."""
-    if name != "rollup":
+    if name not in _PROGRESS_STEPS:
         return None
     try:
         from src.analytics import rollup_serve
@@ -180,10 +184,21 @@ class _SlowWatch:
         else:
             p = _progress_of(self.name)
             if p is not None and p["idle_s"] >= SLOW_STEP_S:
-                _LOG.warning(
-                    "boot step %s has made no progress for %.0f s; %s waiting behind it (%s)",
-                    self.name, p["idle_s"], self.holds, _progress_text(p),
-                )
+                if p["stage"] == "aggregate":
+                    # one statement over the whole staging table: it reports nothing until it ends, so
+                    # the honest wording is "waiting on it", not "stuck"
+                    _LOG.warning(
+                        "boot step %s has been in its single aggregate statement for %.0f s, which reports no "
+                        "progress while it runs; %s waiting behind it (%s)",
+                        self.name, p["idle_s"], self.holds, _progress_text(p),
+                    )
+                else:
+                    _LOG.warning(
+                        "boot step %s has made no progress for %.0f s; %s waiting behind it (%s)",
+                        self.name, p["idle_s"], self.holds, _progress_text(p),
+                    )
+        if self.name not in _PROGRESS_STEPS:
+            return  # nothing more it could ever report: one warning, as before
         with contextlib.suppress(RuntimeError):  # a machine too starved for a thread ends the watch quietly
             self._arm()
 
