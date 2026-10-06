@@ -309,7 +309,13 @@ _CACHE: dict[str, Any] | None = None
 #: moment -- and on a virtual machine whose memory is ballooned the total moves afterwards,
 #: so "which moment" is part of the fact. Kept beside the cache and set with it.
 _RESOLVED: dict[str, Any] | None = None
-_LOCK = threading.Lock()
+#: Held while the budget resolves, so two early threads cannot leave a cache from one reading
+#: and a stamp from the other. RE-ENTRANT ON PURPOSE: nothing in ``resolve()`` asks for the
+#: budget again, but a later change that made it do so would, behind a plain lock, HANG the
+#: thread that imports the engine (measured: a child that did it never returned) -- an app
+#: that never starts and says nothing -- where the unlocked code failed loudly with a
+#: ``RecursionError``. This keeps the loud failure.
+_LOCK = threading.RLock()
 
 
 def budget() -> dict[str, Any]:

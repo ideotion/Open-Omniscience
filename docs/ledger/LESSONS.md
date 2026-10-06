@@ -13418,8 +13418,8 @@ the new reading on a look: a look that re-resolved would move the pool under a r
 decided just now.** `memory_budget.resolved_reading()` is what the cached budget was resolved from (its facts are the cache's own, so they cannot disagree
 with what the process runs on; the moment is the resolve's) and `reading_vs_now()` pairs it with the tier the machine would resolve to now. The resolve
 itself is now under a lock with a double check, because the engine is built while several threads ask for the budget in the first moments of a boot and
-two resolves would leave a cache from one reading and a stamp from the other. The boot record, the session's high-water header (read at the next boot as
+two resolves would leave a cache from one reading and a stamp from the other. The lock is re-entrant on purpose: behind a plain one, a resolve that ever asked for the budget again would hang the thread that imports the engine (a child that did it never returned) where it used to raise a `RecursionError`, and an app that never starts says nothing. The boot record, the session's high-water header (read at the next boot as
 the previous session's, so a death is read against the tier THAT session ran under), the crash report and the soak window carry it; chronology `sessions`
-carry it once and the boot event does not repeat it. Twenty-five tests, with thirty-three mutations each caught, pin the rest as negative space: the budget resolves once however often it is
+carry it once and the boot event does not repeat it. Twenty-six tests, with thirty-four mutations each caught, pin the rest as negative space: the budget resolves once however often it is
 looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
 record and never a failed boot.

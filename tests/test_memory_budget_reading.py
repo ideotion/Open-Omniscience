@@ -25,9 +25,13 @@ shown as a fact and never as a verdict.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -41,6 +45,7 @@ from src.monitoring import forensics, session_hwm
 from src.monitoring import session_history as sh
 from src.monitoring import soak_window as sw
 
+ROOT = Path(__file__).resolve().parent.parent
 T0 = 1_700_000_000.0
 _UNCAPPED = {"allocator": "glibc 2.39", "arena_cap": None, "effective": False,
              "source": "the environment the process started with",
@@ -171,6 +176,24 @@ def test_two_threads_asking_at_once_resolve_it_once(monkeypatch, fresh_budget):
         t.join(5)
     assert len(calls) == 1 and len(seen) == 4
     assert all(r == seen[0] for r in seen), "one reading, whichever thread asked"
+
+
+def test_a_resolve_that_asks_for_the_budget_again_fails_loudly_and_never_hangs():
+    """MUTATION TARGET (``RLock`` -> ``Lock``). The lock is held while the budget resolves, so a
+    resolve that reached ``budget()`` again would, behind a plain lock, never return -- the thread
+    that imports the engine stuck and the app silent -- where the code before the lock raised a
+    ``RecursionError``. Run in a child so a hang cannot take this process's lock with it: the child
+    must end, and say why."""
+    code = (
+        "from src.config import memory_budget as mb\n"
+        "mb.resolve = lambda: mb.budget()\n"
+        "mb.budget()\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code], cwd=ROOT, env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode != 0 and "RecursionError" in proc.stderr, proc.stderr[-400:]
 
 
 def test_a_budget_that_was_injected_has_no_moment_and_the_facts_follow_it(monkeypatch, fresh_budget):
