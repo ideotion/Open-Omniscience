@@ -347,6 +347,62 @@ def test_a_memory_refusal_on_the_last_item_discards_the_whole_group_and_names_ea
     assert q._group is None and not group_dir.exists()
 
 
+_PW = "pa'ss\"w;rd\\x"
+
+
+def _forms(secret: str) -> list[str]:
+    return [secret, secret.replace("'", "''"), json.dumps(secret)[1:-1], repr(secret)[1:-1]]
+
+
+def test_the_failure_text_is_scrubbed_in_every_form_before_the_cut(tmp_path):
+    """The reason is saved for every item of the group and the failure text is the engine's own, which
+    may quote what it was handed. The scrub comes BEFORE the 600-character cut, or a passphrase that
+    straddles the cut would survive as a half that no scrub can match."""
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
+    q._passphrase = _PW
+    keep = ImportQueueManager._FAILURE_TEXT_KEEP
+    for form in _forms(_PW):
+        # the secret sits across the cut: the first half is inside the kept part, the rest is not
+        text = "x" * (keep - len(form) // 2) + form + " and more"
+        out = q._failure_text(RuntimeError(text))
+        assert _PW not in out and form not in out and len(out) <= keep
+        assert form[: len(form) // 2] not in out or len(form) // 2 < 3, "half a secret survived the cut"
+    out = q._failure_text(RuntimeError("refused: " + " | ".join(_forms(_PW))))
+    assert not any(f in out for f in _forms(_PW)), out
+
+
+def test_a_failure_text_that_cannot_be_scrubbed_is_withheld_whole(tmp_path, monkeypatch):
+    import src.monitoring.secret_scrub as ss
+
+    def boom(*_a, **_k):
+        raise RuntimeError("scrub broke")
+
+    monkeypatch.setattr(ss, "scrub_text", boom)
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
+    q._passphrase = _PW
+    out = q._failure_text(RuntimeError(f"the key was {_PW}"))
+    assert _PW not in out and "withheld" in out
+
+
+def test_the_saved_discard_reason_and_item_error_carry_no_passphrase(tmp_path, monkeypatch):
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d", "report": {"held": True}}}
+    mgr = _FakeVolumeManager([held, {"state": "error", "error": f"driver said KEY '{_PW}' failed"}])
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
+    gdir = tmp_path / "grp"
+    monkeypatch.setattr(iq, "_new_group_dir", lambda: (gdir.mkdir(exist_ok=True), gdir)[1])
+    _no_lookahead(monkeypatch, True)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=3)
+    q._passphrase = _PW
+    q._drive()
+    saved = json.dumps(q._items) + (tmp_path / "queue.json").read_text(encoding="utf-8")
+    assert [it["state"] for it in q._items] == ["discarded", "error"]
+    assert not any(f in saved for f in _forms(_PW)), "the passphrase reached the saved queue"
+
+
 def test_a_refused_verification_discards_the_group_rather_than_carrying_it_on(tmp_path):
     q, gdir = _with_open_group(tmp_path)
     q._after_item(

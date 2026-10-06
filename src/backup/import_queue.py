@@ -662,9 +662,10 @@ class ImportQueueManager:
                         _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), exc)
                     else:
                         _LOG.exception("import item %s failed", item.get("id"))
+                    detail = self._failure_text(exc)
                     with self._lock:
                         item["state"] = "stopped" if stopped_here else "error"
-                        item["error"] = str(exc)
+                        item["error"] = detail
                     # A failure ANYWHERE in an item that had an open group taints the
                     # group: windowed merge steps commit mid-merge, so the working
                     # copy may carry a half-merged artifact, and a half-merged copy
@@ -678,7 +679,7 @@ class ImportQueueManager:
                     # of the group carries it.
                     self._discard_group(
                         f"the import of {item.get('label') or item.get('id')} "
-                        + ("was stopped" if stopped_here else f"failed ({str(exc)[:600]})")
+                        + ("was stopped" if stopped_here else f"failed ({detail})")
                         + ", so the shared working copy was thrown away and the backups merged "
                         "into it before this one were NOT written to your corpus; "
                         "importing them again is safe"
@@ -865,6 +866,35 @@ class ImportQueueManager:
             except Exception:  # noqa: BLE001 - a registry release must never fail a run
                 _LOG.warning("releasing the checkpoint group's staging guard failed", exc_info=True)
         return group
+
+    #: How much of a failure's own text a discarded item's reason keeps. It protects the one sentence
+    #: a refusal gives (the memory refusal runs to about 250 characters) while the reason is saved to the
+    #: queue file for EVERY item of the group; the cut is made AFTER the scrub, never before it.
+    _FAILURE_TEXT_KEEP = 600
+
+    def _failure_text(self, exc: BaseException) -> str:
+        """``str(exc)`` for the queue file and the status, with the backup's passphrase and the corpus
+        passphrase taken out in every form the code writes (as typed, SQL ''-doubled, JSON-escaped, repr)
+        BEFORE the cut, and withheld whole if the scrub itself fails: a failure text is a sink, and the
+        engine's text may quote what it was handed."""
+        try:
+            from src.database.connect import get_passphrase
+            from src.monitoring.secret_scrub import scrub_text
+
+            text = str(exc)
+            for secret in {self._passphrase, get_passphrase() or ""}:
+                if not secret:
+                    continue
+                for form in (
+                    secret,
+                    secret.replace("'", "''"),
+                    json.dumps(secret)[1:-1],
+                    repr(secret)[1:-1],
+                ):
+                    text = scrub_text(text, form)
+            return text[: self._FAILURE_TEXT_KEEP]
+        except Exception:  # noqa: BLE001 - fail closed: no text rather than unscrubbed text
+            return "the failure text was withheld because it could not be checked for a passphrase"
 
     def _discard_group(self, reason: str) -> None:
         """Throw the carried working copy away and SAY which items went with it."""
