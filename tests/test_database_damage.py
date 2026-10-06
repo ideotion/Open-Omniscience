@@ -823,16 +823,16 @@ def _bare_runner(**kw):
     tests then fail on a missing name, not on what they test."""
     from src.wiki import runner as wr
 
-    args = dict(
-        adapter=object(),
-        stream=object(),
-        lane_session=lambda: None,
-        state_of=lambda: "running",
-        hot_sets=dict,
-        budget=lambda: None,
-        drain_interval_s=0.0,
-        sleep=lambda seconds: None,
-    )
+    args = {
+        "adapter": object(),
+        "stream": object(),
+        "lane_session": lambda: None,
+        "state_of": lambda: "running",
+        "hot_sets": dict,
+        "budget": lambda: None,
+        "drain_interval_s": 0.0,
+        "sleep": lambda seconds: None,
+    }
     args.update(kw)
     return wr.WikiLaneRunner(**args)
 

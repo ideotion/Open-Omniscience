@@ -199,8 +199,14 @@ def _apply_key(conn, key: str) -> None:
         cur.close()
 
 
+def _read_only_target(p: Path) -> str:
+    """The URI of ``p`` opened ``mode=ro`` (``uri=True`` goes with it). The path is made absolute and
+    percent-encoded by ``Path.as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax."""
+    return p.resolve().as_uri() + "?mode=ro"
+
+
 def _try_open_encrypted(
-    p: Path, key: str, check_same_thread: bool, timeout: float, page_size, *, last_error=None
+    p: Path, key: str, check_same_thread: bool, timeout: float, page_size, *, last_error=None, read_only: bool = False
 ):
     """One attempt: a FRESH sqlcipher3 connection, keyed, optionally declaring
     ``page_size``, verified readable. Returns the connection on success or
@@ -216,12 +222,16 @@ def _try_open_encrypted(
     surfacing a raw, untyped exception out of ``connect()``. If ``last_error``
     (a one-slot mutable list) is given, the raised exception is stashed there
     so the caller can chain it into a final ``from exc`` for debuggability —
-    never lost even though this function itself never raises."""
+    never lost even though this function itself never raises. ``read_only`` opens the file ``mode=ro`` (see
+    :func:`connect`)."""
     from sqlcipher3 import dbapi2 as sqc
 
     conn = None
     try:
-        conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
+        if read_only:
+            conn = sqc.connect(_read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
+        else:
+            conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         _apply_key(conn, key)
         if page_size is not None:
             conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
@@ -243,6 +253,7 @@ def _connect(
     check_same_thread: bool = True,
     timeout: float = 30.0,
     cipher_page_size: int | None = None,
+    read_only: bool = False,
 ):
     """Open ``path`` with the right driver and key for ITS state.
 
@@ -284,10 +295,24 @@ def _connect(
     blindly — a wrong/stale entry just falls through to the full probe.
     Ignored for plaintext files (their page size is self-describing; no
     reopen hazard).
+
+    ``read_only`` opens an EXISTING file ``mode=ro``: the connection cannot write the file, its log or the
+    key, and it never creates one (a missing or empty file raises ``FileNotFoundError``). It exists because
+    ``PRAGMA query_only`` does NOT make a connection harmless: the LAST connection on a file that closes
+    checkpoints a leftover ``-wal`` into the file and deletes it, with the right key and with a wrong one
+    (measured on a real encrypted store: 65 KB of log folded into the file by a read that closed, a wrong
+    key included), and that destroys the leftover log a crash left for whoever reads it next. A read-only
+    connection leaves the file and its log as they were (the ``-shm`` beside them is the log's index in shared
+    memory, rebuilt by any reader; it may create an empty ``-wal`` and a ``-shm`` beside a file that had none,
+    which the next read-write open takes over). The
+    price: it needs a directory its process can write to, for those two files, and where it cannot have
+    them the open fails and reads as a wrong key.
     """
     p = Path(path)
     state = is_encrypted_file(p)
     use_key = key if key is not None else get_passphrase()
+    if read_only and state is None:
+        raise FileNotFoundError(f"{p.name} does not exist or is empty: a read-only open never creates a file")
 
     if state is True:
         if not have_driver():  # pragma: no cover - core dependency
@@ -323,7 +348,7 @@ def _connect(
         last_error: list = []
         for candidate in candidates:
             conn = _try_open_encrypted(
-                p, use_key, check_same_thread, timeout, candidate, last_error=last_error
+                p, use_key, check_same_thread, timeout, candidate, last_error=last_error, read_only=read_only
             )
             if conn is not None:
                 winning_candidate = candidate
@@ -338,6 +363,10 @@ def _connect(
         return conn
 
     if state is False:
+        if read_only:
+            return sqlite3.connect(
+                _read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout
+            )
         return sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
 
     # Fresh file. Decide its at-rest fate EXPLICITLY (never by accident):
@@ -392,13 +421,17 @@ def connect(
     check_same_thread: bool = True,
     timeout: float = 30.0,
     cipher_page_size: int | None = None,
+    read_only: bool = False,
 ):
     """Open ``path`` (see :func:`_connect` for the driver and key rules) with the search
     index's transform functions registered.
 
     The article index's sync triggers call them (Q506/Q507, ``src/database/fts_norm.py``),
     so a raw connection without them could not write ``articles`` -- the merge's working
-    copy is written through exactly this factory."""
+    copy is written through exactly this factory.
+
+    ``read_only=True`` opens an existing file ``mode=ro`` and writes nothing, its leftover log included:
+    see :func:`_connect` for why ``PRAGMA query_only`` is not that."""
     conn = _connect(
         path,
         key=key,
@@ -406,6 +439,7 @@ def connect(
         check_same_thread=check_same_thread,
         timeout=timeout,
         cipher_page_size=cipher_page_size,
+        read_only=read_only,
     )
     from src.database.fts_norm import register
 

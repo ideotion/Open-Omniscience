@@ -630,7 +630,8 @@ def unlock(body: PassphraseBody) -> dict:
         # Re-asked INSIDE the lock: an attempt that queued behind one that succeeded finds the app
         # already open. Run again, it would dispose the live engine, mark the app unqueryable for the
         # whole verify and start a second start-up upkeep thread beside the first, to prove a
-        # passphrase that is already proven. The answer it gets is the true one: the app is open.
+        # passphrase that is already proven. It does not run again; the key it brings is asked of the
+        # file below, and that answer is the true one.
         if app_lock_state() == "unlocked-encrypted":
             # "Open" says a key is in memory, NOT that the key in memory opened the file: it is also set at boot from
             # ``OO_DB_PASSPHRASE`` and trusted for the state, and a wrong one reads as open until a connection is made.
@@ -642,8 +643,9 @@ def unlock(body: PassphraseBody) -> dict:
             if held is not None and hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
                 # The held key, submitted again (a stale tab, a double click that lands late): there is nothing to
                 # replace and nothing to run again (no engine disposal, no second start-up upkeep thread), so the
-                # file is only READ with it. A wrong held key is refused here as any wrong key is, and the right
-                # one, typed next, takes the repair below.
+                # file is only READ with it, read-only, so that the read cannot fold a leftover log into the file.
+                # A wrong held key is refused here as any wrong key is, and the right one, typed next, takes the
+                # repair below.
                 _file_opens_with(p, body.passphrase)
                 return {"unlocked": True, "state": "unlocked-encrypted"}
             # Not the held key: ``_unlock_locked`` verifies it against the file too. A wrong one is refused there
@@ -652,13 +654,20 @@ def unlock(body: PassphraseBody) -> dict:
 
 
 def _file_opens_with(p: Path, passphrase: str) -> None:
-    """Prove ``passphrase`` opens the store at ``p`` and change nothing: one read connection, closed. A wrong key is
-    the same 403 as in ``_unlock_locked``. No recovery notice, no checkpoint, no key swap and no finish: the app is
-    open and its pool is live, so this is a question to the file and not an unlock."""
+    """Prove ``passphrase`` opens the store at ``p`` and change nothing: one READ-ONLY connection, closed. A wrong
+    key is the same 403 as in ``_unlock_locked``. No recovery notice, no key swap and no finish: this is a question
+    to the file and not an unlock.
+
+    Read-only on purpose, because the app's pool may hold nothing on the file (a held key that was never used, or a
+    pool that was disposed): the connection would then be the LAST one on it, and the last connection to close
+    checkpoints a leftover ``-wal`` into the file and deletes it, with a wrong key as with the right one, and
+    ``PRAGMA query_only`` does not prevent that (measured; see ``connect.connect``). A leftover log is what a crash
+    leaves for whoever reads it next, and a question must not consume it. A read-only connection leaves the file and
+    its log as they were."""
     from src.database.connect import WrongPassphraseError, connect
 
     try:
-        conn = connect(p, key=passphrase, check_same_thread=False)
+        conn = connect(p, key=passphrase, check_same_thread=False, read_only=True)
     except WrongPassphraseError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     conn.close()

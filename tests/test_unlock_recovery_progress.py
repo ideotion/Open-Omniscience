@@ -612,10 +612,10 @@ def test_two_overlapping_attempts_run_one_after_the_other(held_key, monkeypatch)
     assert answers == [{"unlocked": True, "state": "unlocked-encrypted"}] * 2, answers
 
 
-def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, monkeypatch):
+def test_an_attempt_on_an_app_that_is_already_open_only_asks_the_file_read_only(held_key, monkeypatch):
     """Not only a queued attempt: a request that arrives after the unlock finished (a stale tab, a
     double click that lands late) is not run again. The held key it brings is asked of the FILE (one
-    read connection, closed plainly) and nothing else happens: no checkpoint, no finish, no key swap."""
+    READ-ONLY connection, closed plainly) and nothing else happens: no checkpoint, no finish, no key swap."""
     from src.api import unlock as unlock_mod
     from src.api.unlock import PassphraseBody, unlock
     from src.database import connect as connect_mod
@@ -627,7 +627,7 @@ def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, mon
             calls.append("close")
 
     def read(*a, **k):
-        calls.append(("connect", k.get("key")))
+        calls.append(("connect", k.get("key"), k.get("read_only")))
         return _Conn()
 
     connect_mod.set_passphrase(_KEY)
@@ -636,7 +636,7 @@ def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, mon
     monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: calls.append("checkpoint"))
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
-    assert calls == [("connect", _KEY), "close"], calls
+    assert calls == [("connect", _KEY, True), "close"], calls
     assert connect_mod.get_passphrase() == _KEY
 
 
@@ -666,8 +666,36 @@ def test_the_held_key_is_asked_of_the_real_file_too(crashed_store, held_key, fin
     assert held_key.get_passphrase() == _KEY and len(finish_calls) == 1
 
 
+def _log_and_file(db: Path) -> tuple[bytes, bytes]:
+    return db.read_bytes(), Path(str(db) + "-wal").read_bytes()
+
+
+def test_asking_the_file_about_the_held_key_leaves_the_leftover_log_in_place(crashed_store, held_key, monkeypatch):
+    """The check of the check (coordinator, #1325): with no pool open the question's connection is the LAST one on the
+    file, and the last connection to close checkpoints a leftover log into the file and deletes it, with a wrong key
+    as with the right one (``PRAGMA query_only`` does not stop that). The log a crash left is for whoever reads it
+    next, so the question is asked read-only: right key, wrong key, and the log and the file are the same bytes."""
+    pytest.importorskip("sqlcipher3")
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    db, wal = crashed_store
+    before = _log_and_file(db)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    held_key.set_passphrase("a wrong key from the environment")
+    with pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase="a wrong key from the environment"))
+    assert err.value.status_code == 403
+    assert wal.exists() and _log_and_file(db) == before, "a refused question consumed the leftover log"
+    held_key.set_passphrase(_KEY)
+    assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
+    assert wal.exists() and _log_and_file(db) == before, "an answered question consumed the leftover log"
+
+
 def test_a_wrong_passphrase_on_an_open_app_is_refused_not_told_it_worked(held_key, monkeypatch):
-    """The short-circuit answers from the state, so it must still check WHICH key: a second tab that types a
+    """The state alone does not answer, so which key it is must still be checked: a second tab that types a
     misremembered passphrase after the first tab unlocked used to get 200 (THE passphrase has no recovery, so
     'that one was right' is the one false answer that costs something later). A key that is not the held one is
     checked against the file, which refuses a wrong one (403) and starts no work."""
