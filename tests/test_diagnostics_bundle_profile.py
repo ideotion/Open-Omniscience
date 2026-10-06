@@ -416,7 +416,7 @@ def _estimated(monkeypatch, need_mb, *, total, available, floor=256.0):
 
     monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
     monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: total)
-    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, lambda _db: need_mb)
+    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, lambda _db, _avail=None: need_mb)
     monkeypatch.setattr("src.database.maintenance._available_mb", lambda: available)
     monkeypatch.setattr("src.database.maintenance._read_memory_floor_mb", lambda: floor)
     return object()  # the gate only hands the session to the estimator
@@ -478,7 +478,7 @@ def test_an_estimate_that_cannot_be_made_falls_back_to_the_measured_constant(mon
 
     _estimated(monkeypatch, 0.0, total=4029.0, available=10.0)
 
-    def _boom(_db):
+    def _boom(_db, _avail=None):
         raise RuntimeError("no such table")
 
     monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, _boom)
@@ -562,7 +562,7 @@ def test_the_counts_an_estimate_was_made_from_travel_with_it(monkeypatch):
     db = _estimated(monkeypatch, 0.0, total=8192.0, available=5000.0)
     monkeypatch.setitem(
         bundle._MEMBER_NEED_ESTIMATORS, _EST,
-        lambda _db: {
+        lambda _db, _avail=None: {
             "need_mb": 1170.25, "articles": 1_825_094, "keyword_id_bound": 14_654_527,
             "languages": 83, "exportable_keywords": 415_000, "per_language": 5000,
         },
@@ -633,7 +633,7 @@ def test_an_estimate_that_failed_says_so_in_the_reading(monkeypatch):
 
     _estimated(monkeypatch, 0.0, total=4029.0, available=2000.0)
 
-    def _boom(_db):
+    def _boom(_db, _avail=None):
         raise RuntimeError("no such table: keywords")
 
     monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, _boom)
@@ -647,7 +647,7 @@ def test_a_gated_member_nothing_could_size_is_recorded_as_unavailable_never_blan
     from src.api.diagnostics import bundle
 
     _estimated(monkeypatch, 0.0, total=4029.0, available=2000.0)
-    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, lambda _db: 1 / 0)
+    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, lambda _db, _avail=None: 1 / 0)
     monkeypatch.delitem(bundle._MEMBER_RSS_NEED_MB, _EST)
     reading: dict = {}
     assert bundle.ram_declined_reason(_EST, db=object(), reading=reading) is None

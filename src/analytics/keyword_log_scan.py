@@ -85,17 +85,27 @@ ROW_BYTES = 200
 HEAP_SHARE = 0.10
 
 #: Bytes one keyword costs while the families are grouped over it: the entry's `fam` item, the
-#: grouping's own record for it, and the family it lands in. MEASURED (a 60,000-entry basis
-#: peaked at 1.47-1.85 KB per entry depending on how many were multi-token phrases), rounded up;
-#: ``test_family_row_budget_constant_matches_the_measured_size`` fails if it drifts.
-FAMILY_ROW_BYTES = 2000
+#: grouping's own record for it, and the family it lands in. MEASURED 2026-10-06 as the grouping's
+#: peak resident rise per keyword, in its own process, over terms shaped like the field's: 2,069 /
+#: 2,134 / 2,228 bytes at 200,000 / 100,000 / 50,000 keywords of Cyrillic phrases (three in five of
+#: them two to four tokens), against 2,027 for Latin phrases of the same shape and 1,483 for short
+#: single-token terms. The constant is the worst of those plus twelve per cent. The margin sits on
+#: THIS constant because it is the one that scales with the length of a term (the entry constant,
+#: ``EXPORT_ENTRY_BYTES``, holds ids, counts and dates, not a term), and a field corpus holds longer
+#: terms than any synthetic one. Two tests hold it: one fails when it stops covering the Python
+#: allocation of the grouping on both shapes (tracemalloc, a LOWER bound on what the process
+#: takes), and one pins the value against the resident measurement above, so changing it means
+#: measuring again, not editing a number.
+FAMILY_ROW_BYTES = 2500
 
 #: The share of AVAILABLE memory the family grouping may use, on top of the ranker's own tenth.
 #: What it protects: the grouping runs after the scan, while the process still holds its own
 #: baseline, the article arrays, the ranker's heaps (``HEAP_SHARE``) and the archive's buffers, and
 #: the rest of the machine is the operator's other programs. A tenth, like ``HEAP_SHARE``, is a
 #: DEFAULT chosen for that margin, not a measurement: the memory stop, not this number, is what
-#: ends a run that still runs short, and a machine with more free memory groups more.
+#: ends a run that still runs short, and a machine with more free memory groups more. Below about
+#: 1.25 GB available the floor (``MIN_FAMILY_ROWS`` keywords) is larger than a tenth: at 640 MiB
+#: available it is about a fifth, at 425 MiB more than a quarter.
 FAMILY_SHARE = 0.10
 
 #: The most page cache the spill file's connection may hold, in KiB (SQLite reads a negative
@@ -807,6 +817,9 @@ class Ranker:
 
     def close(self) -> None:
         con, self._con = self._con, None
+        # The heap form holds a copy of every row of the window until it is read out; nothing
+        # reads a closed ranker, and the grouping that follows is the peak, so the copy goes now.
+        self._heaps = {}
         try:
             if con is not None:
                 con.close()
@@ -829,29 +842,38 @@ class Ranker:
 # --------------------------------------------------------------------------- the scan
 
 
-#: What the single-file / digest form of the export holds per keyword it exports, at its peak:
-#: the survivor row, its metadata and language signature, the digests' items and the families'
-#: grouping. The R27 gate multiplies the instance's exportable keywords by it, and the admission
-#: of a 4 GB machine rests on the product. MEASURED at the size that matters (2026-09-30, a
-#: synthetic database of 82 languages x 5,000 exported keywords, the shape of the largest
-#: instance's export): the process's peak resident size rose by 277 / 528 / 1,015 MiB at
-#: 100,000 / 205,000 / 410,000 entries, a slope of 2,495-2,505 bytes per entry (and the same with
-#: multi-language signatures), against 2,100 by tracemalloc at 15,000-30,000 entries (the gap is
-#: the allocator's own overhead). The constant is that slope plus ten per cent, because real
-#: terms are longer than the synthetic ones. Two tests hold it: one fails if it stops covering the
-#: Python-allocation cost (tracemalloc, a LOWER bound on what the process takes), and one pins
-#: the value itself, so changing it means re-measuring the resident size on purpose. The
-#: measuring scripts (a synthetic database of N languages x 5,000 keywords and a peak-RSS probe of
-#: the digest) are kept with the project's shared files, not in this repository; the method is
-#: the one in the sentence above.
-EXPORT_ENTRY_BYTES = 2750
+#: What the DIGEST holds per keyword it exports, once the window is ranked: the survivor row, and
+#: the copy of it the ranking's heaps hold until the ranker is closed (which drops them, before the
+#: grouping). It is NOT the cost of a keyword's metadata, its language signature or its entry: the
+#: digest builds those a batch at a time and lets them go (``_DigestPass`` in the route). Kept for
+#: every keyword of the window together, as the digest used to, they were part of a 1,057 MiB peak
+#: at 82 languages x 5,000 (measured 2026-10-06 on the code this replaces: 226 MiB for the
+#: entries, 199 MiB for the metadata and signatures behind them, +535 MiB inside ``build_families``
+#: and 200 MiB for a dict of every family). The families' grouping is sized separately
+#: (``FAMILY_ROW_BYTES`` per grouped keyword, a budget taken from the memory available). The
+#: single-file JSON form is NOT priced by this constant: it still holds every survivor's metadata
+#: and signature at once (about 2.5 KB each, as measured), and the bundle gate prices only the
+#: digest (``_MEMBER_NEED_ESTIMATORS``), the one form the bundle runs.
+#: MEASURED 2026-10-06 (synthetic databases of 21, 41 and 82 languages x 5,000 exported
+#: keywords, 105,000 / 205,000 / 410,000 entries, the process's peak resident rise in its own
+#: process with the grouping held at 50,000 keywords): +145.7 / +192.0 / +272.8 MiB, a slope of
+#: 413-485 bytes per entry. The constant is the largest slope rounded up to 500 (3 % over). The
+#: margin for the length of real terms is NOT here, since a survivor row holds ids, counts and
+#: dates and no term: it sits on ``FAMILY_ROW_BYTES``, the constant that scales with a term, and
+#: the fixed part below covers the rest (priced at 60 MiB, measured at 38). Two tests hold it: one
+#: fails if it stops covering the Python-allocation cost (tracemalloc, a LOWER bound on what the
+#: process takes), and one pins the value itself, so changing it means re-measuring the resident
+#: size on purpose. The measuring scripts (a synthetic database of N languages x 5,000 keywords
+#: and a peak-RSS probe of the digest) are kept with the project's shared files, not in this
+#: repository; the method is the one in the sentences above.
+EXPORT_ENTRY_BYTES = 500
 
 #: The rest of the export's rise in resident memory that does not scale with the corpus: the
 #: reading connection's SQLite page cache (not the spill's, which ``SPILL_CACHE_KIB`` names and
 #: the gate does not count), the accumulators, the interpreter's own growth. MEASURED: the
-#: intercept of the fit above is 38 MiB (37.8-38.8 at the three sizes), and a digest over 13
-#: languages x 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M. 60
-#: MiB is 1.6x the measured intercept; ``test_export_fixed_constant_covers_the_measured_intercept`` fails
+#: intercept of the fit above, once the 50,000-keyword grouping and the entries' own cost are
+#: taken out, is 29-38 MiB (29 MiB at 21 languages; 38 MiB in the earlier fit on the old code).
+#: 60 MiB is 1.6x the larger; ``test_export_fixed_constant_covers_the_measured_intercept`` fails
 #: if it drops below the 38 MiB that was measured, and the value itself is pinned, so a change is
 #: a re-measurement and not a drift.
 EXPORT_FIXED_BYTES = 60 * 2**20
@@ -862,16 +884,22 @@ _ARRAY_BYTES_PER_ID = 12
 _SPARSE_BYTES_PER_ARTICLE = 200
 
 
-def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
+def estimate_export_need(
+    db, *, per_language: int, available_bytes: float | None = None
+) -> dict[str, Any]:
     """What one export over THIS database is expected to add to the process, from its own counts.
 
-    ``per_language`` is the window the export is asked for per language (the digest and the
-    JSON stream use the classic 5,000). The estimate is the fixed part, plus one keyword's cost
-    times the keywords that can be exported (at most ``per_language`` for each language and never
-    more than the keyword table holds), plus the article arrays (12 bytes per article id) and
-    the keyword mark (a byte per id). The ranker is NOT in it: its heaps are bounded by a share
-    of the memory available at the start and spill to disk past that, so it cannot be what
-    makes the export too big for the machine.
+    ``per_language`` is the window the export is asked for per language (the digest uses the
+    classic 5,000). It prices the DIGEST: the single-file JSON stream holds more per keyword (see
+    ``EXPORT_ENTRY_BYTES``) and is not priced here. The estimate is the fixed part, plus one
+    keyword's cost times the keywords that can be exported (at most ``per_language`` for each language and never
+    more than the keyword table holds), plus the families' grouping (``FAMILY_ROW_BYTES`` for each
+    keyword it is given: the window, or the budget ``memory_plan`` takes from ``available_bytes``
+    when the window is larger), plus the article arrays (12 bytes per article id) and the keyword
+    mark (a byte per id). ``available_bytes`` is the memory the machine has now (``None``: the
+    plan's floor, which is what an unmeasured machine gets). The ranker is NOT in it: its heaps
+    are bounded by a share of the memory available at the start and spill to disk past that, so it
+    cannot be what makes the export too big for the machine.
 
     Three statements: one aggregate over the articles' ids (COUNT, MIN and MAX in one pass), the
     keyword table's highest id (a primary-key read), and the number of distinct languages the
@@ -884,7 +912,7 @@ def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
     "?"), because counting the keyword table's own languages would scan the whole table, which has
     no index on it. A mention-bearing keyword always lands in one of its articles' languages, so
     only ORPHANS in a language no article carries are missed (at most one window for each such
-    language: 5,000 entries, about 13 MiB at the default, and how many such languages there are is
+    language: 5,000 entries, at most 12 MiB at the default, and how many such languages there are is
     not measured); an instance with many thin languages is over-counted, since each is priced at
     a full window. The error is on the side of declining a machine slightly early.
     """
@@ -899,7 +927,12 @@ def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
         _ARRAY_BYTES_PER_ID * (max_art + 1) if dense else _SPARSE_BYTES_PER_ARTICLE * n_art
     )
     entries = min(max_kid, languages * per_language)
-    need = EXPORT_FIXED_BYTES + entries * EXPORT_ENTRY_BYTES + article_bytes + (max_kid + 1)
+    budget = memory_plan(available_bytes)["family_rows"]
+    grouped = min(entries, budget)
+    need = (
+        EXPORT_FIXED_BYTES + entries * EXPORT_ENTRY_BYTES + grouped * FAMILY_ROW_BYTES
+        + article_bytes + (max_kid + 1)
+    )
     return {
         "need_mb": need / 2**20,
         "articles": n_art,
@@ -907,6 +940,8 @@ def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
         "languages": languages,
         "exportable_keywords": entries,
         "per_language": per_language,
+        "grouped_keywords": grouped,
+        "grouping_budget_keywords": budget,
     }
 
 

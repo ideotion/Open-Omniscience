@@ -13,12 +13,14 @@ register on one router in that order.
 
 from __future__ import annotations
 
+import heapq
 import json
 import os
 import re
 import shutil
 import tempfile
 import time
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +31,7 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from src.analytics import queries as q
-from src.analytics.families import build_families
+from src.analytics.families import Family, build_families
 from src.analytics.keyword_log_export import (
     MIN_ENTRY_BYTES,
     PARTS_DIR_PREFIX,
@@ -53,7 +55,9 @@ from src.analytics.keyword_log_export import (
     zip_disk_preflight,
 )
 from src.analytics.keyword_log_scan import (
+    FAMILY_ROW_BYTES,
     IN_LIST_IDS,
+    MIN_FAMILY_ROWS,
     ArticleMaps,
     ExportRefused,
     Ranker,
@@ -165,6 +169,98 @@ def _new_ring_acc(is_hidden) -> RingAcc:
     )
 
 
+class _DigestPass:
+    """What the digest keeps from its window, built one batch of keywords at a time.
+
+    The digest used to fetch the metadata and the language signature of EVERY keyword of its
+    window before it built a single entry, so at the window's full size (5,000 keywords for each
+    of 82 languages) the process held 410,000 metadata tuples and 410,000 signatures at once: a
+    peak resident rise of 1,057 MiB measured on a synthetic database of that shape. The numbered
+    archive never did that (``ZipJob`` builds a batch, feeds the digests and drops it). This does
+    the same for the digest: the stop-word and ring digests are fed as each entry is built, the
+    families' input keeps only the five fields a family needs (for the first
+    ``basis_per_language`` keywords of each language when the machine cannot group the whole
+    window, as the archive does), and the 100 keywords the digest prints are kept as built. The
+    metadata is gone once its batch is, so the cost of one more keyword is the survivor's row and,
+    inside the basis, the family item.
+
+    The same entries in the same order as the all-at-once loop. Every block of the document covers
+    the whole window except the families and what is computed from them (``families_summary``),
+    which cover the keywords the grouping was given: the whole window when the machine can hold it
+    (then the document is the one the all-at-once loop wrote, apart from the provenance keys this
+    change added), and otherwise the first ``basis_per_language`` keywords of each language, which
+    the document says in ``families_provenance`` and in the summary's own flags.
+    ``tests/test_keyword_export_bounded.py`` holds that the document does not depend on the batch,
+    that the whole-window families are those the entries give, and which keywords a cut hands to the
+    grouping.
+    """
+
+    __slots__ = (
+        "fam_items", "sw", "ring", "basis_per_language", "basis_counts",
+        "_pos", "_sample", "_n", "_check", "_check_every",
+    )
+
+    def __init__(
+        self, is_hidden, basis_per_language: int | None = None, *,
+        check: Callable[[], None] | None = None, check_every: int = 2_000,
+    ) -> None:
+        self.fam_items: list[dict] = []
+        # The memory stop, read before every ``check_every``-th keyword is built (the cadence the
+        # all-at-once loop had): a stop raised here is the 503 with the numbers, as in the scan.
+        self._check, self._check_every = check, check_every
+        # The families are grouped over the first ``basis_per_language`` keywords of each
+        # language's window, or over the whole window when that is None (see ``memory_plan``).
+        self.basis_per_language = basis_per_language
+        self.basis_counts: dict[str, int] = {}
+        self._pos: dict[str, int] = {}
+        self.sw = _new_stopword_acc(is_hidden)
+        self.ring = _new_ring_acc(is_hidden)
+        # (mentions, -rank, entry): a min-heap whose smallest member is the one to drop, so what it
+        # keeps is the ``_DIGEST_SAMPLE`` highest mention counts, ties in the order the window is
+        # in (what a stable sort, highest first, has always done). Ranks are unique, so the entry
+        # dict is never compared.
+        self._sample: list[tuple[int, int, dict]] = []
+        self._n = 0
+
+    def feed(self, survivors: list[tuple], meta: dict, sigs: dict, is_hidden) -> None:
+        """Take one batch of consecutive survivors, with the metadata and signatures of those."""
+        for s in survivors:
+            if self._check is not None and self._n % self._check_every == 0:
+                self._check()
+            kw = entry_for(s, meta, sigs, is_hidden)
+            # The window's rank inside its language: the survivors come in the global order, which
+            # is each language's own order (``order_key``), so a language's nth survivor is its nth.
+            lg = s[6]
+            pos = self._pos.get(lg, 0)
+            self._pos[lg] = pos + 1
+            if self.basis_per_language is None or pos < self.basis_per_language:
+                self.basis_counts[lg] = self.basis_counts.get(lg, 0) + 1
+                if not kw["hidden"]:
+                    self.fam_items.append(
+                        {
+                            "term": kw["term"],
+                            "normalized": kw["normalized"],
+                            "kind": kw["kind"],
+                            "mentions": kw["mentions"],
+                            "articles": kw["articles"],
+                        }
+                    )
+            okey = order_key(s[0], s[1], s[5] is not None)
+            mt = meta.get(s[0], ("?", "?", None, False, None))
+            self.sw.feed(okey, s[1], s[2], s[5], mt)
+            self.ring.feed(okey, s[1], s[2], s[5], mt)
+            item = (s[1], -self._n, kw)
+            if len(self._sample) < _DIGEST_SAMPLE:
+                heapq.heappush(self._sample, item)
+            elif item[:2] > self._sample[0][:2]:
+                heapq.heapreplace(self._sample, item)
+            self._n += 1
+
+    def sample(self) -> list[dict]:
+        """The entries the digest prints: highest mentions first, ties in window order."""
+        return [kw for _m, _r, kw in sorted(self._sample, key=lambda t: (-t[0], -t[1]))]
+
+
 def _ring_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
     """Per dominant-signature language, the highest article-SPREAD TERMS that are
     NOT yet in any cross-language RING — the ring GAP, the worklist for the
@@ -269,8 +365,46 @@ def _quantiles(values: list[int]) -> dict:
     }
 
 
-def _families_summary(families: list[dict]) -> dict:
-    """Facts about EVERY family, so capping the printed list costs no aggregate answer.
+def _digest_basis_note(digest_pass: _DigestPass, budget: int) -> str:
+    """The sentence the digest adds to its families note when the machine could not group the whole
+    window, and nothing when it could (the note is then the one it has always been)."""
+    if digest_pass.basis_per_language is None:
+        return ""
+    return (
+        " The families were grouped over the first "
+        f"{digest_pass.basis_per_language} keywords of each language's window "
+        f"({sum(digest_pass.basis_counts.values())} keywords in all, the largest set that fits the "
+        f"{budget}-keyword budget); the rest of the window is counted in the stop-word and ring "
+        "digests but is not in a family, and so is not in families_summary either. The budget is a "
+        "tenth of the memory available when the export started, at about "
+        f"{FAMILY_ROW_BYTES / 1000:.1f} KB per keyword, or {MIN_FAMILY_ROWS} keywords when that is "
+        "more: it protects the machine, and a machine with more free memory groups more."
+    )
+
+
+def _family_facts(f: Family) -> dict:
+    """The seven fields :func:`_families_summary` reads from one family, without the members
+    list ``Family.to_dict`` carries: a summary over 400,000 families needs a few words each,
+    not every variant of every family at once."""
+    return {
+        "term": f.canonical,
+        "normalized": f.normalized,
+        "kind": f.kind,
+        "mentions": f.mentions,
+        "variants": f.variant_count,
+        "manual": f.manual,
+        "conflated_by": f.conflated_by,
+    }
+
+
+def _families_summary(families: Iterable[dict], *, basis_per_language: int | None = None,
+                      scoped: bool = False) -> dict:
+    """Facts about EVERY family it is given, so capping the printed list costs no aggregate answer.
+
+    ``scoped`` says the caller states what the families were grouped over (the digest does):
+    the summary then carries ``basis_is_whole_window`` and ``basis_per_language`` itself, so a
+    reader of this block alone knows whether its tail is the whole window's, and when it is not
+    the ``method`` texts name the prefix instead of claiming the window.
 
     The maintainer's objection to the 2026-09-11 families cap was that capping biases
     future diagnostics, and it was correct: a global top-N by mentions is the same
@@ -282,13 +416,21 @@ def _families_summary(families: list[dict]) -> dict:
     here is computed over the full list before any cap is applied, so "how long is the
     tail", "what is the mention distribution", "how many families are of kind X" and
     "which families did the lemma merge join" all stay answerable from the digest alone.
+
+    "The full list" is the families the grouping was given. On a machine that could not group the
+    whole window that is a prefix of each language's window (``memory_plan``), and a keyword
+    beyond it is in no family and in none of these counts: the tail this summary answers for is
+    then the prefix's, and it says so.
     """
-    mentions = sorted(int(f.get("mentions") or 0) for f in families)
-    variants = sorted(int(f.get("variants") or 0) for f in families)
+    cut = scoped and basis_per_language is not None
+    mentions: list[int] = []
+    variants: list[int] = []
     by_kind: dict[str, int] = {}
     conflated: list[dict] = []
     manual = 0
     for f in families:
+        mentions.append(int(f.get("mentions") or 0))
+        variants.append(int(f.get("variants") or 0))
         by_kind[str(f.get("kind") or "unknown")] = by_kind.get(str(f.get("kind") or "unknown"), 0) + 1
         if f.get("manual"):
             manual += 1
@@ -303,11 +445,13 @@ def _families_summary(families: list[dict]) -> dict:
                     "conflated_by": f.get("conflated_by"),
                 }
             )
+    mentions.sort()
+    variants.sort()
     # Rarest first: the whole point is that the tail is where a bad merge hides, so the
     # ordering must not re-create the popularity bias this block exists to remove.
     conflated.sort(key=lambda c: (int(c.get("mentions") or 0), str(c.get("normalized") or "")))
     return {
-        "total_families": len(families),
+        "total_families": len(mentions),
         "by_kind": dict(sorted(by_kind.items(), key=lambda kv: (-kv[1], kv[0]))),
         "manual_overrides": manual,
         "mentions": _quantiles(mentions),
@@ -320,16 +464,30 @@ def _families_summary(families: list[dict]) -> dict:
             "count": len(conflated),
             "families": conflated,
             "method": (
-                "Every family carrying conflated_by (the lemma merge joined it), listed "
-                "in full and ordered rarest-first -- selected by the signal, never by "
+                "Every family carrying conflated_by (the lemma merge joined it)"
+                + (" among the families the grouping was given" if cut else "")
+                + ", listed in full and ordered rarest-first -- selected by the signal, never by "
                 "mentions, because a wrong merge is likelier among rare terms."
             ),
         },
         "method": (
-            "Computed over ALL families before the print cap is applied, so the capped "
-            "`families` list costs no aggregate answer about the tail. Counts only; no "
-            "scores."
+            (
+                "Computed over ALL the families the grouping was given, before the print cap "
+                f"is applied: those of the first {basis_per_language} keywords of each "
+                "language's window, which is what the memory this machine had when the export "
+                "started could hold. The capped `families` list costs no aggregate answer about "
+                "THEM; a keyword beyond that prefix is in no family and in none of these counts. "
+                "Counts only; no scores."
+            )
+            if cut
+            else (
+                "Computed over ALL families before the print cap is applied, so the capped "
+                "`families` list costs no aggregate answer about the tail. Counts only; no "
+                "scores."
+            )
         ),
+        **({"basis_is_whole_window": not cut, "basis_per_language": basis_per_language}
+           if scoped else {}),
     }
 
 
@@ -820,10 +978,31 @@ def keyword_log(
             # Metadata + full language signatures for SURVIVORS only.
             meta: dict[int, tuple] = {}
             lang_sig: dict[int, dict[str, int]] = {}
-            for batch in batched(iter([s[0] for s in survivors]), IN_LIST_IDS):
-                check()
-                meta.update(fetch_meta(db, batch))
-                lang_sig.update(fetch_signatures(db, maps, batch))
+            digest_pass: _DigestPass | None = None
+            if digest:
+                # One batch at a time: the digest prints 100 entries and counts the rest, so it
+                # never needs every survivor's metadata at once (see _DigestPass).
+                digest_pass = _DigestPass(
+                    is_hidden, fit_window(per_lang_taken, plan["family_rows"]),
+                    check=check, check_every=check_every,
+                )
+                # THE BUNDLE'S DEADLINE NOW COVERS THIS LOOP: the entries are built between batches
+                # of SQL, so a ``statement_deadline`` that expires while the digest is being built
+                # interrupts the NEXT batch's statement (a 503, and the member is lost), where the
+                # metadata used to be read whole before any entry was built and an expiry during
+                # the building did nothing. Measured: about 4 s of building inside a 6 s pass at
+                # 205,000 entries. It matters only for a member already near its 300 s.
+                for i in range(0, len(survivors), plan["batch"]):
+                    chunk = survivors[i : i + plan["batch"]]
+                    ids = [s[0] for s in chunk]
+                    digest_pass.feed(
+                        chunk, fetch_meta(db, ids), fetch_signatures(db, maps, ids), is_hidden
+                    )
+            else:
+                for batch in batched(iter([s[0] for s in survivors]), IN_LIST_IDS):
+                    check()
+                    meta.update(fetch_meta(db, batch))
+                    lang_sig.update(fetch_signatures(db, maps, batch))
     except StatementTimeout as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ExportRefused as exc:
@@ -835,35 +1014,44 @@ def keyword_log(
     def _entry(s: tuple) -> dict:
         return entry_for(s, meta, lang_sig, is_hidden)
 
-    # THE PHASE AFTER THE SCAN holds every survivor, its metadata and signature, the families'
-    # grouping and the digests at once (~2.5 KB per survivor, the measured resident cost): bounded by the
-    # languages, never by the corpus, but the largest instance reaches about a gigabyte here.
-    # The memory stop reads between steps, and a stop answers 503 with the numbers, as it does
-    # inside the scan.
+    # THE PHASE AFTER THE SCAN. The digest has already read its survivors' metadata and signatures
+    # a batch at a time (``_DigestPass``: about 500 bytes an entry, and 2.5 KB for each keyword it
+    # groups, which is a tenth of the memory available when the export started, or 50,000 keywords
+    # when that is more). The JSON form still holds every survivor's metadata and signature at
+    # once, about 2.5 KB a survivor as measured: bounded by the languages, never by the corpus, but
+    # the largest instance reaches about a gigabyte here. The bundle's gate prices the digest only,
+    # the one form the bundle runs. The memory stop reads between steps, and a stop answers 503
+    # with the numbers, as it does inside the scan.
     try:
-        fam_items = []
-        sw_acc = _new_stopword_acc(is_hidden)
-        ring_acc = _new_ring_acc(is_hidden)
-        for i, s in enumerate(survivors):
-            if i % check_every == 0:
-                check()
-            kw = _entry(s)
-            if not kw["hidden"]:
-                fam_items.append(
-                    {
-                        "term": kw["term"],
-                        "normalized": kw["normalized"],
-                        "kind": kw["kind"],
-                        "mentions": kw["mentions"],
-                        "articles": kw["articles"],
-                    }
-                )
-            okey = order_key(s[0], s[1], s[5] is not None)
-            mt = meta.get(s[0], ("?", "?", None, False, None))
-            sw_acc.feed(okey, s[1], s[2], s[5], mt)
-            ring_acc.feed(okey, s[1], s[2], s[5], mt)
+        if digest_pass is not None:
+            fam_items, sw_acc, ring_acc = digest_pass.fam_items, digest_pass.sw, digest_pass.ring
+        else:
+            fam_items = []
+            sw_acc = _new_stopword_acc(is_hidden)
+            ring_acc = _new_ring_acc(is_hidden)
+            for i, s in enumerate(survivors):
+                if i % check_every == 0:
+                    check()
+                kw = _entry(s)
+                if not kw["hidden"]:
+                    fam_items.append(
+                        {
+                            "term": kw["term"],
+                            "normalized": kw["normalized"],
+                            "kind": kw["kind"],
+                            "mentions": kw["mentions"],
+                            "articles": kw["articles"],
+                        }
+                    )
+                okey = order_key(s[0], s[1], s[5] is not None)
+                mt = meta.get(s[0], ("?", "?", None, False, None))
+                sw_acc.feed(okey, s[1], s[2], s[5], mt)
+                ring_acc.feed(okey, s[1], s[2], s[5], mt)
         check()
-        families = [f.to_dict() for f in build_families(fam_items, overrides)]
+        family_objs = build_families(fam_items, overrides)
+        # The digest prints a few families and summarises the rest, so it keeps the objects and
+        # turns only the printed ones into dicts; the single-file stream prints every one.
+        families: list[dict] = [] if digest else [f.to_dict() for f in family_objs]
         check()
 
         # Compact per-language stopword-candidate digest (reuses the survivors already
@@ -898,9 +1086,10 @@ def keyword_log(
         if digest:
             # Top-N by mentions (s[1]); ties keep scan order. The aggregates below
             # are unchanged — they ARE the analysis; only the long tail is dropped.
-            sample = sorted(survivors, key=lambda s: s[1], reverse=True)[:_DIGEST_SAMPLE]
+            assert digest_pass is not None
+            sample = digest_pass.sample()
             yield ', "keywords": [' + ",".join(
-                json.dumps(_entry(s), separators=(",", ":")) for s in sample
+                json.dumps(kw, separators=(",", ":")) for kw in sample
             ) + "]"
             yield ', "keywords_digest": ' + json.dumps(
                 {
@@ -960,42 +1149,76 @@ def keyword_log(
             # printed in full:
             #   * every family is counted in `families_summary`, computed over ALL of
             #     them -- totals, per-kind counts, and the mention/variant distributions
-            #     -- so no AGGREGATE question about the tail becomes unanswerable;
+            #     -- so no AGGREGATE question about the tail becomes unanswerable. "All" is
+            #     the families the grouping was given: the whole window, unless the machine
+            #     could not hold it (then a prefix of each language's window, and the summary
+            #     and the provenance both say so: a keyword beyond it is in no family);
             #   * every conflated family is listed, selected ON THE SIGNAL rather than on
             #     popularity, so the defect-bearing subset is never rank-filtered;
             #   * the popularity sample is still there for a human glance, and is now
             #     LABELLED as unrepresentative instead of being left to look complete.
             # The full per-family record remains one endpoint away, and that export is
             # per-language fair by construction.
+            assert digest_pass is not None
             _fam_cap = _keyword_zip_families_cap()
             _fam_shown = (
-                families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
+                family_objs[:_fam_cap] if _fam_cap and len(family_objs) > _fam_cap else family_objs
             )
-            yield ', "families": ' + json.dumps(_fam_shown, separators=(",", ":"))
+            yield ', "families": ' + json.dumps(
+                [f.to_dict() for f in _fam_shown], separators=(",", ":")
+            )
             yield ', "families_summary": ' + json.dumps(
-                _families_summary(families), separators=(",", ":")
+                _families_summary(
+                    (_family_facts(f) for f in family_objs),
+                    basis_per_language=digest_pass.basis_per_language, scoped=True,
+                ),
+                separators=(",", ":"),
             )
             yield ', "families_provenance": ' + json.dumps(
                 {
                     "shown": len(_fam_shown),
-                    "total": len(families),
-                    "omitted": len(families) - len(_fam_shown),
+                    "total": len(family_objs),
+                    "omitted": len(family_objs) - len(_fam_shown),
                     "sorted_by": "mentions (desc)",
                     "sample_is_representative": False,
                     "selection_bias": (
                         "This list is the top families BY MENTIONS, which is a global "
                         "mentions-ranked cut and therefore skews English and skews "
-                        "popular. Do NOT reason about the tail from it. Every family is "
-                        "still counted in families_summary, and every conflated family "
-                        "is listed there in full regardless of rank."
+                        "popular. Do NOT reason about the tail from it. "
+                        + (
+                            "Every family is still counted in families_summary, and every "
+                            "conflated family is listed there in full regardless of rank."
+                            if digest_pass.basis_per_language is None
+                            else "families_summary counts every family the grouping was given, "
+                            "and lists every conflated one in full regardless of rank, but "
+                            "the grouping was given only the first "
+                            f"{digest_pass.basis_per_language} keywords of each language's "
+                            "window: a keyword beyond that is in no family, so the summary "
+                            "says nothing about the tail of the window. The full keyword "
+                            "export (the 'All keywords' link) covers it, per language."
+                        )
                     ),
                     "note": (
                         "Only the top families are printed in full here (the complete "
                         "per-family dump is large and is redundant with the per-language "
-                        "shards). Nothing is DROPPED: the tail is summarised in "
-                        "families_summary. Set OO_KEYWORD_LOG_FAMILIES=0 to print all, "
-                        "or use the full keyword export, which is per-language fair."
+                        "shards). "
+                        + (
+                            "Nothing is DROPPED: the tail is summarised in families_summary. "
+                            "Set OO_KEYWORD_LOG_FAMILIES=0 to print all, "
+                            if digest_pass.basis_per_language is None
+                            else "The tail of the families is summarised in families_summary, "
+                            "which covers the keywords the grouping was given and not the rest "
+                            "of the window. Set OO_KEYWORD_LOG_FAMILIES=0 to print all of those "
+                            "families, "
+                        )
+                        + "or use the full keyword export, which is per-language fair."
+                        + _digest_basis_note(digest_pass, plan["family_rows"])
                     ),
+                    # What the grouping was given, as the archive's summary says it.
+                    "basis_per_language": digest_pass.basis_per_language,
+                    "basis_keywords": sum(digest_pass.basis_counts.values()),
+                    "basis_is_whole_window": digest_pass.basis_per_language is None,
+                    "basis_budget_keywords": plan["family_rows"],
                 },
                 separators=(",", ":"),
             )

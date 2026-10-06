@@ -651,7 +651,8 @@ def _fixity_bundle_member(db: Session) -> dict:
 #: that, rounded up, for a corpus of 13 languages (65,000 exported entries). THIS IS A
 #: SYNTHETIC-CORPUS READING and the FALLBACK used only when no session is at hand: with one, the
 #: gate uses the estimate from the instance's own counts (82 languages x 5,000 entries measured
-#: 1,015 MiB). The operator's next FULL bundle records this member on the real corpus --
+#: 1,057 MiB before the digest read its keywords in batches, 330 MiB with 2 GB free after). The
+#: operator's next FULL bundle records this member on the real corpus --
 #: `rss_peak_above_start_kb` if the high-water mark moves for it (NOT `rss_peak_rise_kb`: that is
 #: the mark's own rise, which understates the member's whenever the mark started above it),
 #: otherwise `rss_delta_kb` and an upper bound (`rss_peak_rise_at_most_kb`), with the gate's own
@@ -662,29 +663,34 @@ _MEMBER_RSS_NEED_MB: dict[str, float] = {
 
 #: A member declines when its need exceeds this share of TOTAL RAM.
 #: Half, per R27's own words. The keyword digest's need is no longer one constant: it is
-#: estimated from the instance's own counts (``_MEMBER_NEED_ESTIMATORS``), about 2.75 KB per
-#: exported keyword (2.5 KB measured at up to 410,000 entries, plus ten per cent). On the largest
-#: instance seen (14.65 M keywords, 1.83 M articles, about 82 languages) that is about 1,170 MiB,
-#: so a 4 GB machine with 2.5 GB free is admitted where the old 3,322.8 MiB (the unbounded
-#: builder, code that no longer exists) declined it. The ruling's "below the floor" shape is TWO
+#: estimated from the instance's own counts (``_MEMBER_NEED_ESTIMATORS``) and from the memory
+#: available now: about 0.5 KB per exported keyword (the survivor rows), plus the families'
+#: grouping, which the digest sizes from that same availability (a tenth of it, at about 2.5 KB per
+#: grouped keyword, never fewer than 50,000), plus the fixed part. On the largest instance seen
+#: (14.65 M keywords, 1.83 M articles, about 82 languages) that is about 410 MiB with 1.2 GB free
+#: and 670 MiB with 4 GB free; it was 1,060 MiB whatever the machine had, because the digest held
+#: every keyword's metadata at once (the 2026-10-06 measurement; the batches in
+#: ``_DigestPass`` are what changed it), and that is why four of the 17 machines in the 2026-10-06
+#: diagnostics declined it. The old 3,322.8 MiB (the unbounded builder, code that no longer
+#: exists) declined 4 GB machines outright. The ruling's "below the floor" shape is TWO
 #: checks, in this order (``ram_declined_reason``): the need against half of total RAM (R27's own
 #: text), and, for an ESTIMATED need only, the need plus the memory stop's floor against the memory
 #: available NOW. The second is a default taken under "size from the machine", not ruled by R27
 #: (OPEN_QUEUE): it is for a machine busier than its total says. On bundle 091717's own numbers it
-#: ADMITS the digest (1,426 MiB needed against 2,280 MiB available, the lower of two samples
-#: in LESSONS.md): that run was killed by the
-#: OLD, unbounded builder, which needed more than the machine had. The old gate's constant
-#: (3,322.8 MiB, one 4 GB instance's reading at 11 M keywords, not what 091717 needed) sat under
-#: half of 091717's total RAM (3,386 MiB), so the gate admitted it, and a fixed constant cannot see
-#: a bigger instance. The second check did not exist then: it is new, and the bounded builder is
-#: what answers that kill.
+#: ADMITS the digest (about 520 MiB needed, 775 with the floor, against 2,280 MiB available, the
+#: lower of two samples in LESSONS.md): that run was killed by the OLD, unbounded builder, which needed more than the
+#: machine had. The old gate's constant (3,322.8 MiB, one 4 GB instance's reading at 11 M
+#: keywords, not what 091717 needed) sat under half of 091717's total RAM (3,386 MiB), so the gate
+#: admitted it, and a fixed constant cannot see a bigger instance. The second check did not exist
+#: then: it is new, and the bounded builder is what answers that kill.
 _MEMBER_RAM_SHARE = 0.5
 
 
-def _keyword_digest_need(db) -> dict[str, Any]:
+def _keyword_digest_need(db, available_mb: float | None = None) -> dict[str, Any]:
     """What the keyword digest is expected to add to the process on THIS instance, with the
     counts it was computed from (``need_mb`` plus ``articles``, ``keyword_id_bound``,
-    ``languages``, ``exportable_keywords``, ``per_language``).
+    ``languages``, ``exportable_keywords``, ``per_language``, ``grouped_keywords``,
+    ``grouping_budget_keywords``).
 
     From the instance's own counts (articles, the keyword id range, the languages its articles
     carry) times the per-row costs MEASURED for the bounded export -- see
@@ -694,21 +700,31 @@ def _keyword_digest_need(db) -> dict[str, Any]:
     it so the manifest can say WHICH counts a decision was made from.
     """
     from src.analytics.keyword_log_scan import estimate_export_need
+    from src.database import maintenance as _mt
 
-    return estimate_export_need(db, per_language=_MAX_KEYWORDS_PER_LANG)
+    # THE reading the gate decides from: the digest groups its families over a tenth of what is
+    # available when it starts, so what it needs depends on it, and a need priced on one reading
+    # and a decision taken on another would disagree about one quantity. ``ram_declined_reason``
+    # reads it once and hands it down; a caller with no gate reads it here.
+    avail = _mt._available_mb() if available_mb is None else available_mb
+    return estimate_export_need(
+        db, per_language=_MAX_KEYWORDS_PER_LANG,
+        available_bytes=None if avail is None else avail * 2**20,
+    )
 
 
-def _keyword_digest_need_mb(db) -> float:
+def _keyword_digest_need_mb(db, available_mb: float | None = None) -> float:
     """The need alone, in MiB (the number :func:`_keyword_digest_need` carries)."""
-    return float(_keyword_digest_need(db)["need_mb"])
+    return float(_keyword_digest_need(db, available_mb)["need_mb"])
 
 
 #: Members whose need is ESTIMATED from the instance's counts, not read from one earlier run:
-#: ``name -> fn(db) -> MiB`` (or a dict with ``need_mb`` and the counts behind it). The static
+#: ``name -> fn(db, available_mb) -> MiB`` (or a dict with ``need_mb`` and the counts behind it),
+#: where ``available_mb`` is the one reading the gate decides from. The static
 #: map above stays as the fallback for a call without a session (and for a count that cannot be
 #: read) and keeps R27's half-of-RAM rule; an estimated member is ALSO held against the memory
 #: that is available right now, because a fixed reading cannot know that the machine is busy.
-_MEMBER_NEED_ESTIMATORS: dict[str, Callable[[Any], float | dict[str, Any]]] = {
+_MEMBER_NEED_ESTIMATORS: dict[str, Callable[[Any, float | None], float | dict[str, Any]]] = {
     "keyword-log-digest.json": _keyword_digest_need,
 }
 
@@ -743,15 +759,23 @@ def ram_declined_reason(
     it decided. It stays empty for a member the gate does not know (no reading, because the gate
     made no decision), and it never changes the answer.
     """
+    from src.database import maintenance as _mt
+
     measured = _MEMBER_RSS_NEED_MB.get(name)
     estimator = _MEMBER_NEED_ESTIMATORS.get(name)
     need: float | None = None
     estimated = False
     counts: dict[str, Any] | None = None
     estimate_error: str | None = None
+    # The memory available is read ONCE, here, and both the estimate and the decision use it: the
+    # reading has a quarter-second cache, and a slow count between two reads (or a caller's own
+    # ``available_mb``) would otherwise price the need on one figure and judge it on another.
+    avail: float | None = available_mb
+    avail_read = available_mb is not None
     if estimator is not None and db is not None:
+        avail, avail_read = (_mt._available_mb() if available_mb is None else available_mb), True
         try:
-            got = estimator(db)
+            got = estimator(db, avail)
             if isinstance(got, dict):
                 need = float(got["need_mb"])
                 counts = {k: v for k, v in got.items() if k != "need_mb"}
@@ -775,10 +799,10 @@ def ram_declined_reason(
         return None
     from src.config.machine_floor import _override_requested
     from src.config.memory_budget import total_ram_mb
-    from src.database import maintenance as _mt
 
     total = total_ram_mb() if total_mb is None else total_mb
-    avail = _mt._available_mb() if available_mb is None else available_mb
+    if not avail_read:
+        avail = _mt._available_mb()
     floor = _mt._read_memory_floor_mb()
     override = bool(_override_requested())
     ceiling = total * _MEMBER_RAM_SHARE if total is not None and total > 0 else None
@@ -843,7 +867,9 @@ _LIGHT_DECLINED: dict[str, str] = {
         "test machine) and measured a 3,322.8 MB peak RSS rise on the operator's 4 GB "
         "instance (finding F12) before the export was made memory-bounded. The bounded "
         "export has only been measured on synthetic corpora (about 190 MB at 65,000 "
-        "exported keywords, about 1 GB at 410,000), so the light profile keeps skipping it "
+        "exported keywords; at 410,000, about 1 GB before the digest read its keywords a "
+        "batch at a time and between 250 and 820 MB after, by how much memory is free), so "
+        "the light profile keeps skipping it "
         "until a FULL bundle on the operator's own machine records its real "
         "resident-size reading (rss_peak_above_start_kb, or rss_delta_kb and an upper bound "
         "where the process's high-water mark does not move)"
