@@ -13302,7 +13302,7 @@ those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
-holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #NNNN,
+holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #1336,
 `stream_backup.py`, `volume_job.py`, `import_queue.py`, the route layer's `backup_v2.py` and the lock screen's `unlock.py`), to using the caught exception
 only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
 `_log_phase_failure`, and `secret_scrub`'s `scrubbed`, `traceback_text` and `log_failure`, which must be given EVERY secret the
@@ -13775,7 +13775,7 @@ check of the premise belongs in the suite, not in the comment**: `test_merge_enc
 store builds an index under FILE (the control, which must leak, and goes red the day the driver stops, which is the cue to re-read the decision) and under MEMORY (which must not). **Two
 other places that look the same are not**: the other merge connections never set `temp_store` (the bundled driver's default is MEMORY, TEMP_STORE=2), and `merge_diag._probe_arm` sorts
 synthetic rows only. The two design notes that say "set `temp_store=FILE` on its own connection" for the future derived-index and GC passes now carry the caveat: not on an encrypted connection.
-### EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE (release candidate diagnostics, 2026-10-06, PR #NNNN, `src/monitoring/secret_scrub.py`, `src/backup/volume_job.py`, `src/backup/import_queue.py`, `src/api/backup_v2.py`, `src/api/unlock.py`, `src/api/safety.py`, `src/api/main.py`, `src/monitoring/errorlog.py`, `src/jobs/background.py`)
+### EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE (release candidate diagnostics, 2026-10-06, PR #1336, `src/monitoring/secret_scrub.py`, `src/backup/volume_job.py`, `src/backup/import_queue.py`, `src/api/backup_v2.py`, `src/api/unlock.py`, `src/api/safety.py`, `src/api/main.py`, `src/monitoring/errorlog.py`, `src/jobs/background.py`)
 
 The coordinator's check of #1318 (B1) named the volume job's own error handlers as the family of the engine's failure line, and its next relay asked that the route layer's log
 lines come with them. The job's runners catch `Exception` with the passphrase a parameter of the same call (a restore holds a second, the corpus's) and wrote what the exception
