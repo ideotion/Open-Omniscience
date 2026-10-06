@@ -346,6 +346,7 @@ def _connect(
         conn = None
         winning_candidate: int | None = None
         last_error: list = []
+        first_error: list = []
         for candidate in candidates:
             conn = _try_open_encrypted(
                 p, use_key, check_same_thread, timeout, candidate, last_error=last_error, read_only=read_only
@@ -353,10 +354,15 @@ def _connect(
             if conn is not None:
                 winning_candidate = candidate
                 break
+            if not first_error and last_error:
+                first_error = list(last_error)
         if conn is None:
+            # Chained from the FIRST candidate's error, which is the page size that opened this path last time when
+            # there is one: the LAST candidate is the undeclared default size, whose failure is always code 26
+            # (the HMAC check), so a damaged schema page under the right key and size read as a wrong passphrase.
             raise WrongPassphraseError(
                 f"the passphrase does not open {p.name} (or the file is damaged)"
-            ) from (last_error[0] if last_error else None)
+            ) from (first_error[0] if first_error else None)
         if cipher_page_size is None:
             with _lock:
                 _last_good_page_size[str(p.resolve())] = winning_candidate

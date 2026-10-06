@@ -1087,8 +1087,7 @@ FRAME_RECORDED = (
 )
 FRAME_VERIFYING = (
     "The app is checking your data files after an unexpected stop, before collection writes to them again: "
-    "table {index} of {total}. The check only reads, so it changes and deletes nothing, and collection starts "
-    "by itself when it ends."
+    "table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends."
 )
 FRAME_PAUSE_OFF = (
     "The database reported damage in one of your data files, and the pause for it is switched off on "

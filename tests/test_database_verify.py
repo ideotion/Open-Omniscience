@@ -345,6 +345,48 @@ def test_the_list_carries_the_files_facts_and_no_internal_table(healthy):
     assert facts["page_size"] == PAGE and facts["page_count"] > 0 and facts["file_bytes"] == healthy.stat().st_size
 
 
+def test_a_damaged_schema_page_under_the_right_key_is_damage_not_a_wrong_passphrase(tmp_path, monkeypatch):
+    """``connect()`` tries the page size that opened the path last (then the standard sizes, then the undeclared one)
+    and used to chain the LAST candidate's error, which is always code 26 (the HMAC check) whatever the file's state:
+    a schema page damaged under the right key and size read as ``the passphrase did not open the file``."""
+    pytest.importorskip("sqlcipher3.dbapi2")
+    from src.database import connect as C
+
+    path = tmp_path / "enc.db"
+    con = C.connect(path, key="the-right-passphrase", check_same_thread=False)
+    con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+    con.commit()
+    con.close()
+    tried: list[int | None] = []
+
+    def fake(_p, _key, _cst, _timeout, page_size, *, last_error=None):
+        tried.append(page_size)
+        if last_error is not None:
+            err = _driver_corrupt() if len(tried) == 1 else _driver_hmac()
+            last_error[:] = [err]
+        return None
+
+    monkeypatch.setattr(C, "_try_open_encrypted", fake)
+    with pytest.raises(C.WrongPassphraseError) as caught:
+        C.connect(path, key="the-right-passphrase", check_same_thread=False)
+    assert len(tried) > 1, "the first candidate was the only one tried"
+    assert verify.classify_error(caught.value)[0] == VERDICT_DAMAGED, "the FIRST candidate's error was not chained"
+    # and with nothing but the HMAC failure (a wrong passphrase) it stays unchecked, in its own words
+    monkeypatch.setattr(
+        C, "_try_open_encrypted", lambda *a, last_error=None, **k: last_error.__setitem__(slice(None), [_driver_hmac()])
+    )
+    with pytest.raises(C.WrongPassphraseError) as wrong:
+        C.connect(path, key="a-wrong-passphrase", check_same_thread=False)
+    verdict, reason = verify.classify_error(wrong.value)
+    assert verdict == VERDICT_UNCHECKED and "passphrase" in reason
+
+
+def _driver_hmac():
+    err = sqlite3.DatabaseError("file is not a database")
+    err.sqlite_errorcode = 26  # type: ignore[attr-defined]
+    return err
+
+
 def test_a_file_that_does_not_open_as_a_database_says_nothing(tmp_path):
     """Code 26 is a wrong passphrase as much as a damaged first page (E1's stated blind spot): unchecked."""
     junk = tmp_path / "junk.db"
@@ -747,6 +789,45 @@ def test_a_file_the_list_could_not_be_read_from_is_unchecked_unless_its_schema_i
     verify.run_armed(opener=refused)
     entry = _record(tmp_path)["verification"][FILE_CORPUS]
     assert entry["verdict"] == VERDICT_UNCHECKED and entry["reason"] and not damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_damaged_schema_page_latches_the_file_and_names_the_schema(tmp_path, files, monkeypatch):
+    """The list of tables itself cannot be read: that is damage, not 'unchecked' (the plaintext path; an encrypted
+    file reads the same through the chained error, see the connect test above)."""
+    path = tmp_path / "corpus.db"
+    _build_store(path, rows=50)
+    con = sqlite3.connect(path)
+    for i in range(120):  # a schema that spans several pages, so one leaf can go and the file still opens
+        con.execute(f"CREATE TABLE extra_table_with_a_long_name_{i} (id INTEGER PRIMARY KEY, a TEXT, b TEXT, c TEXT)")
+    con.commit()
+    con.close()
+    leaves = [pg for pg in _leaf_pages(path, "sqlite_schema") if pg != 1]
+    assert leaves, "the schema fits one page in this build"
+    _overwrite(path, [leaves[len(leaves) // 2]])
+    files[FILE_CORPUS] = path
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.arm_at_boot()
+    verify.run_armed()
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_DAMAGED, entry
+    assert [t["table"] for t in entry["tables"]] == ["(schema)"]
+    assert damage.registry.latched(FILE_CORPUS)
+
+
+def test_the_progress_total_is_the_count_of_tables_the_run_will_read(healthy, files, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.arm_at_boot()
+    seen: list[dict] = []
+    real = damage.registry.verification_progress
+
+    def spy(file_key, table, index):
+        seen.append(dict(damage.registry._verifying or {}))
+        real(file_key, table, index)
+
+    monkeypatch.setattr(damage.registry, "verification_progress", spy)
+    verify.run_armed()
+    assert seen and all(v["total"] == 2 for v in seen), seen  # articles and notes
 
 
 def test_the_check_started_is_on_disk_before_the_first_table_is_read(tmp_path, healthy, files, monkeypatch):

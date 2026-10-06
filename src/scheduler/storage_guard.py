@@ -263,7 +263,7 @@ PHASE_DISK = "paused-low-disk"
 #: the damage registry's, and it is released by the operator starting collection again.
 PHASE_DAMAGE = "paused-damaged"
 #: The check after an unexpected stop is reading the data files (``database/verify.py``): collection waits for
-#: it, and starts by itself when it ends. Not a storage reading either: the registry's ``verifying()``.
+#: it, and the pause ends by itself when it ends. Not a storage reading either: the registry's ``verifying()``.
 PHASE_VERIFY = "paused-verifying"
 
 #: The plain-words sentences, as frames the page fills with the numbers in its own
@@ -350,8 +350,8 @@ FRAME_OVERRIDE_DAMAGE = (
 #: The check after an unexpected stop is still reading the data files: forcing collection on would write
 #: into files the check has not finished reading, so the click is refused with a sentence.
 FRAME_OVERRIDE_VERIFYING = (
-    "Collection cannot be forced on while the app checks your data files after an unexpected stop. It "
-    "starts by itself when the check ends."
+    "Collection cannot be forced on while the app checks your data files after an unexpected stop. The "
+    "pause ends by itself when the check ends."
 )
 
 
@@ -788,7 +788,7 @@ class StorageGuard:
         """None = start the next unit of work; else ``"disk"``, ``"wal"``, ``"damage"`` or ``"verifying"``.
 
         ``"verifying"`` is the check after an unexpected stop (``database/verify.py``): collection waits for it
-        and starts by itself when it ends. Like ``"damage"`` it is not a storage reading, so it follows
+        and the pause ends by itself when it ends. Like ``"damage"`` it is not a storage reading, so it follows
         neither this guard's switch nor the operator's override (its own switch is ``OO_BOOT_VERIFY``).
 
         ``"damage"`` is the CORPUS file's latch in ``database/damage.py``: the database reported it

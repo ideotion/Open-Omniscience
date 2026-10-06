@@ -1872,7 +1872,7 @@ class BackgroundScheduler:
                     self._next_run = None
                 if kind == "verifying":
                     # Not a limit either: the app is reading the data files after an unexpected stop, and
-                    # collection starts by itself when that ends (database/verify.py).
+                    # the pause ends by itself when that ends (database/verify.py).
                     _LOG.warning(
                         "collection paused (database check): the app is checking the data files after an "
                         "unexpected stop -- it resumes when the check ends"
