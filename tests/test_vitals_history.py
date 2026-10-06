@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 
@@ -1653,6 +1654,41 @@ def test_a_row_with_a_cell_of_the_wrong_type_costs_that_row_and_never_the_histor
     assert [r[COL["t"]] for r in m["fine"]] == kept  # nine rows, not none
     assert len(m["session_starts"]) == 2  # the rest of the history was read
     assert isinstance(m["gaps"], list)  # ``_gaps`` ran over the rows: a text t used to raise there
+
+
+def test_a_row_or_a_session_start_with_an_absurd_number_costs_that_row_and_never_the_history(hist):
+    """D1 of the coordinator's check of 044513993. The cell check above holds for the wrong type; a number of
+    the right type but an absurd size raised too: ``math.isfinite`` on an integer of 309 digits (valid JSON)
+    emptied the history at start, and a time past the calendar reached ``_iso`` in ``_gaps`` and turned the
+    member off until 576 newer rows pushed the row out. Both are bounded and the row that carries one goes."""
+    _ticks(hist, HOUR0, 4300, rss=1.0)
+    v.flush()
+    doc = json.loads(v._path().read_text(encoding="utf-8"))
+    assert len(doc["fine"]) == 14 and len(doc["coarse"]) == 1 and doc["open_fine"]
+    doc["fine"][0][0] = 10**15  # a time in the year 31,688,738: _iso raises on it
+    doc["fine"][1][2] = 10**400  # an integer that math.isfinite raises on
+    doc["fine"][3][1] = 10**12  # more ticks than a row can count
+    doc["fine"][4][4] = -10**16  # a reading past what a counter can hold
+    doc["fine"][5][0] = -300  # a time before the epoch is not one this build wrote
+    doc["coarse"][0][3] = 1e300
+    doc["open_fine"][0] = 10**15
+    doc["session_starts"] += [{"t": 5 * 10**14, "pid": 7}, {"t": float("nan"), "pid": 8}, {"t": -5, "pid": 9}]
+    v._path().write_text(json.dumps(doc), encoding="utf-8")
+    v.reset_for_tests()
+    v.start(now=float(HOUR0 + 9000))
+    m = _member()
+    assert m["available"] is True and "error" not in m
+    kept = [HOUR0 + 300 * k for k in range(14) if k not in (0, 1, 3, 4, 5)]
+    assert [r[COL["t"]] for r in m["fine"]] == kept  # nine rows, not none
+    assert [r[COL["t"]] for r in m["coarse"]] == [HOUR0 + 3600]  # the stored hour was the bad one; the open hour closed at start
+    assert [s["pid"] for s in m["session_starts"]] == [doc["session_starts"][0]["pid"], os.getpid()]
+    assert isinstance(m["gaps"], list)  # and _iso never saw the bad time
+
+
+def test_the_method_text_says_a_deeper_step_inside_the_rate_limit_window_lands_in_no_record():
+    """D3 of the coordinator's check of 044513993: a hold is one record at the size it began with."""
+    text = _member()["method"]
+    assert "lands in no record" in text and "new_history_at" in text
 
 
 def test_the_members_own_failure_names_the_type_and_the_systems_reason_never_the_message(hist, monkeypatch):
