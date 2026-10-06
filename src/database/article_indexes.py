@@ -41,8 +41,12 @@ THE REFUSALS, in the order they are asked:
     a temporary file to avoid the question: every connection of the app sets ``temp_store=MEMORY`` and that
     is load-bearing here. Measured 2026-10-06 on the bundled SQLCipher, an encrypted store with
     ``temp_store=FILE``: the sorter's spill file holds the titles IN THE CLEAR (the marker string was found in
-    it), where VACUUM's temporary database stays encrypted. A spill of that kind is what the at-rest
-    encryption exists to prevent, so the cost of this build is memory, and memory is what is gated;
+    it; so did the b-tree of a ``SELECT DISTINCT``: what SQLCipher keys is the main and attached databases,
+    never a temporary or ephemeral one). A spill of that kind is what the at-rest encryption exists to
+    prevent, so the cost of this build is memory, and memory is what is gated. The same setting is NOT a way
+    to give VACUUM's rebuild a file either: at the app's 16 KiB page size a VACUUM with ``temp_store=FILE``
+    wrote a corrupt store (see the open queue), which is why ``maintenance.vacuum_database`` keeps the pooled
+    connection;
   * a figure that cannot be read (free space, available memory) is NOT a refusal (the ``vacuum_preflight``
     rule: an unreadable ``statvfs`` must not manufacture one); the build goes ahead and the report says it
     was not measured.
@@ -100,11 +104,11 @@ FRAME_NO_ROOM = (
     "language filter and the sort by title stay slow."
 )
 #: What a refusal for memory shows (the sort holds its keys in RAM; same numbers: MB available, MB wanted
-#: including the memory guard's floor, the article count).
+#: INCLUDING the memory guard's floor, which the words say, and the article count).
 FRAME_NO_MEMORY = (
-    "The article list's indexes were not built: sorting up to {rows} titles needs about {needed} MB of free "
-    "memory and this computer has {free} MB. Close other programs and restart the app; until then the language "
-    "filter and the sort by title stay slow."
+    "The article list's indexes were not built: they need about {needed} MB of free memory (sorting up to {rows} "
+    "titles, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and "
+    "restart the app; until then the language filter and the sort by title stay slow."
 )
 #: What the refusal after two unfinished starts shows (see :data:`MAX_UNFINISHED_STARTS`, which the word "two" states).
 FRAME_UNFINISHED = (
@@ -125,11 +129,16 @@ NAMES: tuple[str, ...] = ("idx_article_language_published", "idx_article_title_n
 BYTES_PER_ARTICLE = 400
 
 #: RAM the sort of the LARGER index holds per article (the title index; the two are built one after the
-#: other, so it is the peak): measured on 600,000 articles with titles of 76 characters, +73 MB resident
-#: (about 122 bytes an article) under ``temp_store=MEMORY``. WHAT IT PROTECTS: a machine that has less than
-#: this much memory free (plus the memory guard's floor) is not asked to hold the sort: the kernel's
-#: out-of-memory kill during the build would end the whole app, at start-up, every start.
-RAM_BYTES_PER_ARTICLE = 125
+#: other, so it is the peak), under ``temp_store=MEMORY``. Measured 2026-10-06 on an encrypted store: 600,000
+#: titles of 76 Latin characters: +73.3 MiB resident = 128 bytes an article; 300,000 titles of 76 Devanagari
+#: characters (224 bytes in UTF-8): +77.8 MiB = 272 bytes. The cost is about the title's bytes in UTF-8 plus 50,
+#: so a script of three bytes a character is more than twice a Latin one. 300 covers a title of that kind at 76
+#: characters; a Latin corpus is asked for about two and a third times what it holds, on purpose: the asymmetry
+#: is that a refusal costs a slow article list until memory is freed, and an out-of-memory kill during the build
+#: ends the whole app at start-up. NOT in the estimate: the page cache (``cache_mb`` of the connection, bounded
+#: and already inside the process) and anything another program takes while the sort runs. WHAT IT PROTECTS: a machine that has less than this
+#: much memory free (plus the memory guard's floor) is not asked to hold the sort.
+RAM_BYTES_PER_ARTICLE = 300
 
 #: How many starts in a row may begin this build and end without it ending before it is no longer tried (until
 #: the app is updated: the record carries the version). WHAT THE 2 PROTECTS: a build that itself brings the
@@ -326,7 +335,7 @@ def _unfinished_starts() -> int:
         if not isinstance(doc, dict) or doc.get("version") != __version__:
             return 0
         return max(0, int(doc.get("attempts") or 0))
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, ArithmeticError):  # ArithmeticError: ``1e400`` is an infinity, and ``int`` of one overflows
         return 0
 
 
@@ -430,6 +439,7 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
     report: dict[str, Any] = {"outcome": "skipped", "built": {}, "started_at": time.time()}
     _replace(**report)
     armed = False
+    began = False  # the build itself ran (or tried to): the peak after is worth reading even when the record could not be kept
     try:
         state, missing = pending(engine)
         if state != "work":
@@ -488,6 +498,7 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             rows_bound=rows,
             ram_available_mb=None if room.get("ram_available_bytes") is None else round(room["ram_available_bytes"] / 1048576),
         )
+        began = True
         report["peak_rss_mb_before"] = _peak_rss_mb()
         total = len(missing)
         built: dict[str, float] = report["built"]
@@ -524,12 +535,13 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
         raise
     finally:
         report["finished_at"] = time.time()
-        if armed:
+        if began:
             report["peak_rss_mb_after"] = _peak_rss_mb()
             report["peak_rss_note"] = (
                 "the process's peak resident set (a high-water mark: it never goes down, so a build that fits "
                 "under an earlier peak adds nothing to it)"
             )
+        if armed:
             _disarm()
         _record(**report)
 

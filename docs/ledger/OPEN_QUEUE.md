@@ -16460,11 +16460,29 @@ maintainer as a card.
 - **THE FREE-SPACE FIGURE IS AN ESTIMATE, AND SAYS SO**: 400 bytes an article on the DATABASE's volume only (what it protects: a disk that fills while the
   write-ahead log grows, which would fail every writer in the app). The temporary-file volume is NOT measured: every connection sets `temp_store=MEMORY` and the bundled
   SQLCipher is compiled `SQLITE_TEMP_STORE=2` (LESSONS L2862), so the sorter holds every key in RAM and never writes a temporary file; measured by the deep read at
-  +73 MB resident for 600,000 articles (about 122 bytes an article, 175 MB on the 2026-08-05 field corpus), stated as `RAM_BYTES_PER_ARTICLE = 125` in the report and the
-  manual and **NOT GATED** (a refusal on a synthetic measurement would hold the indexes back on machines it may not fit; the build runs inside the boot step that exists because
-  boot memory pressure killed the process, so a later session that sees it killed there should gate it on the memory tier). Sized on titles twice the synthetic store's; the row
-  count is `MAX(id)`, an upper bound read without touching a row. A figure that cannot be read is NOT a refusal (the `vacuum_preflight` rule). `maintenance.vacuum_preflight` uses
-  the same temp-volume model and has the same flaw (VACUUM measured +266 MB RSS under MEMORY against +4 MB under FILE on a 257 MB file): NOT touched here.
+  +73.3 MiB resident for 600,000 articles of 76 Latin characters (128 bytes an article) and +77.8 MiB for 300,000 of 76 Devanagari characters (272 bytes: about the title's UTF-8 bytes plus 50),
+  stated as `RAM_BYTES_PER_ARTICLE = 300` in the report and the manual and **GATED** (the build is declined when the machine's available memory is below the estimate plus the memory guard's floor,
+  `FRAME_NO_MEMORY`, keyed x12; the first version of this entry said NOT GATED, and the deep reads moved it). A Latin corpus is over-asked about two and a third times, on purpose: a refusal costs a slow article list, an
+  out-of-memory kill ends the app at start-up. The row count is `MAX(id)`, an upper bound read without touching a row. A figure that cannot be read is NOT a refusal (the `vacuum_preflight` rule).
+  **WHAT THE GATE DOES NOT SEE:** a process limit (psutil reads the machine, not an `RLIMIT_AS` or a cgroup: under `RLIMIT_AS` = VmSize + 200 MiB the gate said sufficient and the title sort failed with `MemoryError` at every
+  start, without counting as an unfinished one), the page cache (`cache_mb`, bounded and already in the process), and `OO_MEM_GUARD=0`, which still adds the 256 MiB floor. **VACUUM'S RAM COST NEEDS ITS OWN DECISION:**
+  `maintenance.vacuum_preflight` uses the same temp-volume model and has the same flaw (VACUUM measured +266 MB RSS under MEMORY against +4 MB under FILE on a 257 MB file) and is NOT touched here. A first attempt, a
+  connection of its own with `temp_store=FILE`, was REVERTED after the deep delta read: **at the app's 16 KiB page size a VACUUM whose temporary database spills writes a CORRUPT store under SQLCipher** (the internal `vacuum_db`
+  is keyed at the default 4,096-byte cipher page; reproduced through `maintenance.vacuum_database`, silent, and it would have latched the corpus file the app itself broke). The only knob that makes FILE safe,
+  `cipher_default_page_size`, is process-global, so it is not a local fix. The candidate rule is the index build's own (refuse below about the file's size plus the memory guard's floor, state the RAM). ANY later attempt needs a
+  test that creates the store through `connect()` (16 KiB), forces a spill (`cache_size=10` on the VACUUM connection reproduces it at 30,000 rows in under a second) and asserts `PRAGMA quick_check` is ok. Observers VACUUM would lose by
+  leaving the pool (the storage guard's `handle_error` on `SQLITE_FULL`, `pool_watch`, the slow-query log) are the other half of that decision.
+- **`backup/merge.py` SETS `temp_store=FILE` ON THE WORKING COPY OF AN ENCRYPTED STORE (PRE-EXISTING; the same measurement found it):** under FILE SQLCipher writes the temporary b-trees and sorters of the main
+  connection IN THE CLEAR (a `SELECT DISTINCT` spilled 138,330 marker hits into an 11 MB temporary file; so did an `ORDER BY`). Every `DISTINCT`, `GROUP BY`, `IN` subquery, `ORDER BY` or temporary table of that merge that is large
+  enough to spill is a plaintext copy of the user's rows in the temporary directory. NOT measured on the merge itself (this slice did not touch it); the statements need reading, and the setting probably needs to become MEMORY with
+  the memory cost stated, which is the same question as VACUUM's above.
+- **THE ATTEMPT RECORD (deliberate, `article-indexes-attempt.json` in the data folder; it had no entry):** written before the first statement, cleared when the build ends however it ends, given back by an orderly quit; two
+  unfinished starts in a row decline the third (`MAX_UNFINISHED_STARTS`, keyed `FRAME_UNFINISHED`) until the app is UPDATED (the record carries the package version) or the file is deleted. WHAT IT PROTECTS: a build that brings the
+  process down becoming a boot loop that never reaches collection. KNOWN LIMITS (deep delta read), none fixed: (a) a SIGTERM from a user-space out-of-memory killer (earlyoom) is an orderly quit and gives the attempt back, so the cap
+  never engages for exactly the memory case (a refinement: do not give back when the memory guard reads available memory at or below its floor at `stop()` time); (b) a directory squatting on the record's name makes the record
+  unwritable (the build goes ahead, says so in the report, and leaves a `.tmp` beside it); (c) a record survives for ever when the indexes arrive by another route (a restore); (d) a build that fails because the data drive vanished
+  cannot unlink and is counted at the next start; (e) a declined start between two killed ones does not reset the count ("two in a row" is "two killed builds since the last end"); (f) the version key is the package version, so a
+  developer checkout stays capped across commits until the version flips.
 - **THE BUILD IS NOT CANCELLABLE** (a single statement is opaque, so the row offers no Cancel) and holds the write gate for each statement; the app starts
   offline, so no collection normally waits behind it, and the gate's watchdog names a hold past its threshold. Every gated write waits, not only a new article's (settings, tags, notes,
   a session flush), and the caveat now says so. A refusal for space is a FAILED row whose KEYED detail (`FRAME_NO_ROOM`, whole MB and the article count) both task managers draw in

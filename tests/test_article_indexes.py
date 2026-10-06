@@ -446,7 +446,7 @@ def test_when_nothing_could_be_read_the_answer_is_unknown_and_the_build_goes_ahe
 
 def test_the_space_asked_scales_with_the_articles_and_names_what_it_protects(eng):
     rep = ai.preflight(eng, 1_500_000)
-    assert ai.BYTES_PER_ARTICLE == 400 and ai.RAM_BYTES_PER_ARTICLE == 125, "a figure changed: update the words that quote it"
+    assert ai.BYTES_PER_ARTICLE == 400 and ai.RAM_BYTES_PER_ARTICLE == 300, "a figure changed: update the words that quote it"
     assert rep["needed_bytes"] == 1_500_000 * ai.BYTES_PER_ARTICLE
     assert "write-ahead log" in rep["method"] and f"about {ai.BYTES_PER_ARTICLE} bytes per article" in rep["method"]
     assert f"about {ai.RAM_BYTES_PER_ARTICLE} bytes per article" in rep["method"], "the RAM the sort holds is not said"
@@ -597,6 +597,7 @@ def test_a_worker_thread_that_cannot_start_leaves_no_phantom_running_job(eng, mo
     assert ai.run_now_and_wait(eng) == "failed"
     st = ai.ARTICLE_INDEX_JOB.status()
     assert st["state"] == "error" and "could not start" in (st["error"] or ""), st
+    assert isinstance(st["ended_at"], float), "the failed start left no end time, so the row reads as one still running"
     assert ai.ARTICLE_INDEX_JOB.join(0.5) is True
     assert jobs_api.list_jobs()["db_writers_busy"] is False
 
@@ -631,7 +632,7 @@ def test_too_little_memory_refuses_with_the_numbers_and_the_row_carries_the_keye
     with pytest.raises(ai.Declined) as exc:
         ai.build_missing(eng)
     msg = str(exc.value)
-    assert "50,000 bytes of memory available" in msg and "75,000" in msg and "up to 600 articles" in msg and "restart" in msg
+    assert "50,000 bytes of memory available" in msg and f"{600 * ai.RAM_BYTES_PER_ARTICLE:,}" in msg and "up to 600 articles" in msg and "restart" in msg
     assert not ({LANG, TITLE} & _names(eng))
     assert _marker() is None, "a refusal never began the build and must not count as a start"
     assert ai.run_now_and_wait(eng) == "declined"
@@ -641,13 +642,28 @@ def test_too_little_memory_refuses_with_the_numbers_and_the_row_carries_the_keye
     assert row["detail"] == ai.FRAME_NO_MEMORY.format(**row["detail_vars"])
 
 
+def test_the_memory_frames_number_is_the_estimate_plus_the_floor_and_the_words_say_so(eng, monkeypatch):
+    """The deep delta read's G14 and note 2: the row's ``needed`` is what the gate compares (the sort PLUS the memory the guard
+    keeps free), so the words must not call all of it the sort's, and a floor that is dropped from the number must be seen."""
+    from src.api import jobs as jobs_api
+
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 1_000_000)
+    monkeypatch.setattr(ai, "_floor_bytes", lambda: 5_000_000)
+    assert ai.run_now_and_wait(eng) == "declined"
+    row = next(j for j in jobs_api.list_jobs()["jobs"] if j["id"] == "article-indexes")
+    estimate = 600 * ai.RAM_BYTES_PER_ARTICLE
+    assert row["detail_vars"] == {"free": 1, "needed": -(-(estimate + 5_000_000) // 1_000_000), "rows": 600}, row["detail_vars"]
+    assert "plus the memory the app always keeps free" in ai.FRAME_NO_MEMORY
+    assert "sorting up to {rows} titles needs" not in ai.FRAME_NO_MEMORY, "the sort alone is not what {needed} counts"
+
+
 def test_the_memory_asked_is_the_estimate_plus_the_guards_floor_and_the_boundary_is_exact(eng, monkeypatch):
     monkeypatch.setattr(ai, "_floor_bytes", lambda: 1_000)
     need = 1_000 * ai.RAM_BYTES_PER_ARTICLE + 1_000
     monkeypatch.setattr(ai, "_available_ram_bytes", lambda: need)
     ok = ai.preflight(eng, 1_000)
     assert ok["sufficient"] is True and "short_on" not in ok
-    assert ok["ram_estimate_bytes"] == 125_000 and ok["ram_floor_bytes"] == 1_000 and ok["ram_available_bytes"] == need
+    assert ok["ram_estimate_bytes"] == 1_000 * ai.RAM_BYTES_PER_ARTICLE and ok["ram_floor_bytes"] == 1_000 and ok["ram_available_bytes"] == need
     monkeypatch.setattr(ai, "_available_ram_bytes", lambda: need - 1)
     short = ai.preflight(eng, 1_000)
     assert short["sufficient"] is False and short["short_on"] == ["memory"]
@@ -765,12 +781,26 @@ def test_a_record_that_cannot_be_read_is_not_a_reason_to_refuse(eng, content):
     assert ai.build_missing(eng)["outcome"] == "built"
 
 
+@pytest.mark.parametrize("attempts", ['"x"', '["x"]', '{"a": 1}', "1e400", "-1e400", "null", "-5"])
+def test_a_record_of_this_version_whose_count_is_not_a_number_is_not_a_reason_to_refuse(eng, attempts):
+    """The deep reads' A09 and note 1: the record above carries ANOTHER version, so ``int()`` was never reached. These carry
+    the CURRENT version and reach it with a string (``ValueError``), a list or object (``TypeError``) and a number too big for
+    an int, which JSON reads as an infinity (``OverflowError``, an ``ArithmeticError``, which the first version let escape and
+    so failed the build at every start)."""
+    from src import __version__
+
+    ai._marker_path().write_text('{"schema": 1, "version": %s, "attempts": %s}' % (json.dumps(__version__), attempts), encoding="utf-8")
+    assert ai._unfinished_starts() == 0
+    assert ai.build_missing(eng)["outcome"] == "built"
+
+
 def test_a_record_that_cannot_be_kept_is_said_in_the_report_and_the_build_goes_ahead(eng, monkeypatch, tmp_path):
     blocker = tmp_path / "a-file-not-a-folder"
     blocker.write_text("x", encoding="utf-8")
     monkeypatch.setattr(ai, "_marker_path", lambda: blocker / ai.ATTEMPT_FILE)
     rep = ai.build_missing(eng)
     assert rep["outcome"] == "built" and rep["attempt_recorded"] is False
+    assert "peak_rss_mb_after" in rep and "peak_rss_note" in rep, "a build on a folder that cannot take the record reports the peak before and not after"
 
 
 def _quit_during_the_first_statement(eng, left: list):
@@ -826,8 +856,12 @@ def test_the_report_carries_the_peak_before_and_after_labelled_as_the_high_water
 
 
 def test_the_peak_is_read_in_mib_from_the_kernels_high_water_mark():
+    """The deep delta read's A18: ``peak > 1`` holds for KiB too. The high-water mark can never be below what the process holds
+    now, and a unit that is wrong by 1,024 is far above any honest peak of a test process."""
+    psutil = pytest.importorskip("psutil")
     peak = ai._peak_rss_mb()
-    assert peak is None or peak > 1.0, "a Python process holds more than a MiB"
+    now = psutil.Process().memory_info().rss / (1024 * 1024)
+    assert peak is None or now * 0.9 <= peak <= now * 100, (peak, now)
 
 
 def test_a_refused_build_reports_no_peak_because_it_never_ran(eng, monkeypatch):
@@ -952,3 +986,15 @@ def test_the_label_and_the_progress_frame_are_keys_in_every_locale():
 def test_the_switch_is_documented_in_the_manual():
     manual = (ROOT / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8")
     assert "OO_ARTICLE_INDEXES" in manual
+
+
+def test_the_manual_row_states_what_the_build_asks_and_what_a_killed_build_leads_to():
+    """The deep delta read's S4: the row said "a start that ends mid-build begins it again" (false after two), "130 MB", "saving new
+    articles waits" and nothing of the memory. It is pinned to the code's own figures so a figure that moves moves the words."""
+    manual = (ROOT / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8")
+    row = next(ln for ln in manual.splitlines() if ln.startswith("| `OO_ARTICLE_INDEXES`"))
+    assert f"about {ai.BYTES_PER_ARTICLE} bytes of free space per article" in row
+    assert f"about {ai.RAM_BYTES_PER_ARTICLE} bytes per article" in row and "memory" in row
+    assert ai.ATTEMPT_FILE in row and "two starts in a row" in row and "until the app is updated" in row
+    assert "190 MB per 1.5 million articles" in row and "130 MB" not in row
+    assert "anything the app saves waits" in row and "saving new articles waits" not in row
