@@ -22,7 +22,8 @@ line, and OSM-built files may ship in the repository) and Q1009 = a (`y, OOENC2,
 artifact** — a report file, a merged PR, a measured number, a recorded click-through — that a later reader can
 re-open and check. "It was built" is not closure; *merged ≠ green ≠ verified*. The verification bar is the
 one ruled for 0.4 (Q1128 = a): Chromium in the sandbox plus the maintainer's click-through = verified; Gecko
-best-effort. A row that cannot be measured in the sandbox says `not-measurable-here` and names the operator
+best-effort. **Read as R126 (2026-10-06): Claude's Chromium walks close the UX passes and the maintainer's own
+click-through is optional.** A row that cannot be measured in the sandbox says `not-measurable-here` and names the operator
 step.
 
 **Entry.** `v0.4.0` tagged (`RELEASE_0.4_GATE.md` rows A–E, G–W closed; row W was added 2026-09-27 by `RC01` = a). Two 0.4 rows are hard preconditions
@@ -309,6 +310,10 @@ identifiers from rules, never the model (Q920); the versioning primitive of 0.4 
 **Closes when** a law's 2019 text is findable by point-in-time search on the fixture jurisdiction and on one
 real source, the reader's diff is Chromium-verified + click-through beside the wiki reader's (same controls,
 same disclosures), and the map of amendment activity states its vintage. Brief `S05-07`.
+
+**2026-10-06 — R125.** The real-source half of the 2019 check runs in the cloud: the maintainer allows
+`www.legislation.gov.uk` in the environment's network settings and a thread does the fetches; row G joins no
+operator step. Until the site is reachable the row says `not-measurable-here` and names this ruling.
 
 **2026-09-28 — built (PR #1203).** ONE version reader, `src/static/ooversions.js`, mounted by the standalone law
 page, the Living sources Law panel and the Wikipedia tracked-changes panel, fed by one payload shape
