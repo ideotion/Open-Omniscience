@@ -57,9 +57,9 @@ _LOCK = threading.Lock()
 # write would be lost; an append that had opened the file just before the cut replaced it would write
 # into the old file; and a read that has the file open while a cut swaps it makes the swap fail on
 # Windows, where a file that is open cannot be replaced. Held only around the write itself, around a
-# cut (tens of milliseconds, every 250th append: see ``_trim_if_due``) and around the read of a log's
-# bytes, never while taking ``_LOCK``. ONE lock per log: the browse log's cut, the longer of the two,
-# never holds up a text search's append, nor the other way round.
+# cut (a few milliseconds, tens while a log still holds lines written whole; every 250th append: see
+# ``_trim_if_due``) and around the read of a log's bytes, never while taking ``_LOCK``. ONE lock per log:
+# one log's cut never holds up the other kind's append.
 _FILE_LOCKS = {KIND_TEXT: threading.Lock(), KIND_BROWSE: threading.Lock()}
 _recent: dict[str, list[dict]] = {KIND_TEXT: [], KIND_BROWSE: []}
 
@@ -71,6 +71,59 @@ _LOG_FILES = {KIND_TEXT: "search_timing.jsonl", KIND_BROWSE: "search_timing_brow
 # this many more for each cut that failed (a full disk; on Windows a file another program holds open).
 _TRIM_EVERY = 250
 _appends_since_trim: dict[str, int] = {KIND_TEXT: _TRIM_EVERY, KIND_BROWSE: _TRIM_EVERY}
+# The two texts every finished record carries (``SearchPhaseTimer.finish``). The report carries them once
+# per kind (``record_method`` and ``record_caveat``, below), so a log line repeating them said the same
+# words on each of its 5,000 lines: 1,741 of a browse line's 1,937 bytes, 850 of a text line's 1,043.
+# Nothing reads them back (``_read_log`` counts lines and reads ``at``; the aggregate reads ``phases``,
+# ``total_ms`` and ``limit``), so a DURABLE line is the measurement only. The in-process window keeps the
+# record whole.
+_STATIC_TEXT_KEYS = ("method", "caveat")
+
+# What a finished record says about itself (``SearchPhaseTimer.finish``), defined ONCE: the in-process window
+# keeps it on every record and the report carries it once per kind (``record_method`` and ``record_caveat``
+# on the text aggregate and on ``browse``), so what a reader of the export has is the words each
+# measurement was made under: the phase names and what each covers, where the clock starts and stops.
+_RECORD_METHOD = {
+    KIND_BROWSE: (
+        "Wall-clock over one browse of the article list (no text query), split by "
+        "phase: the count of the matching set (count_cached when the corpus-wide "
+        "total was served from the data-version cache, count_recomputed when it was "
+        "counted now because nothing was cached for this data version -- the first "
+        "browse since the app started or unlocked, an entry that had expired or been "
+        "evicted, a write by any connection since the last count, the cache off, or no "
+        "data-version probe -- count_live when a filter or the quarantine view made it "
+        "a live COUNT) and the page of "
+        "rows; total is the wall from the start of the query to the page in hand, so "
+        "unmarked time is total minus the phase sum. It begins after the request has "
+        "waited for a worker, and ends before the response is built (building it is "
+        "not in it). A database connection is taken by the first statement. A browse "
+        "that looks nothing up first (a language, a date range and the advanced "
+        "search's source ids are plain conditions) runs that statement inside the "
+        "timed span, so any wait for a connection, and the cost of opening it, are "
+        "INSIDE the first phase that runs a statement: the count phase, or the rows "
+        "phase when the count was served from the cache (the data-version probe has "
+        "a connection of its own). A browse that has a source, a source type, tags, a "
+        "provenance, the advanced search's countries or regions, or a query of field "
+        "filters only (source:x) looks something up first, BEFORE the clock starts, "
+        "and on such a browse the wait for a connection and the lookup itself are in "
+        "no phase and not in the total either."
+    ),
+    KIND_TEXT: (
+        "Wall-clock over one text search, split by phase (fts: the FTS MATCH and its "
+        "candidate ids · resolve: the candidates that survive the filters · load: their "
+        "order and the page of rows); total is the wall from the start of the query to "
+        "the page in hand, so unmarked time is total minus the phase sum. It begins after "
+        "the request has waited for a worker, after the keyword the handler looks up for "
+        "the per-article counts, and after the lookups a source, a source type, tags, a "
+        "provenance, or the advanced search's countries or regions make; it ends before "
+        "the response is built (the per-article counts, the translated titles, the "
+        "did-you-mean and the JSON are not in it)."
+    ),
+}
+_RECORD_CAVEAT = (
+    "One request — a single sample, not a distribution; feed many into the "
+    "aggregate for percentiles. Deduced from wall-clock, never a quality score."
+)
 
 
 class SearchPhaseTimer:
@@ -118,46 +171,13 @@ class SearchPhaseTimer:
         ``at`` is when it finished (UTC), and ``started_after_unlock_s`` how far from the latest
         unlock to have finished by then it BEGAN: signed, and ``None`` -- never 0 -- when this
         process had finished no unlock (see ``unlock_marker``). Neither existed before 2026-10-01,
-        so no older record can be placed in time."""
+        so no older record can be placed in time.
+
+        ``method`` and ``caveat`` are the same words on every record of a kind: the in-process window
+        keeps them, the report carries them once per kind (``record_method``, ``record_caveat``), and
+        the durable log does not write them (``append_search_timing``)."""
         total = round((self._mono() - self._t0) * 1000, 3)
         ended = self._wall()
-        if self._kind == KIND_BROWSE:
-            method = (
-                "Wall-clock over one browse of the article list (no text query), split by "
-                "phase: the count of the matching set (count_cached when the corpus-wide "
-                "total was served from the data-version cache, count_recomputed when it was "
-                "counted now because nothing was cached for this data version -- the first "
-                "browse since the app started or unlocked, an entry that had expired or been "
-                "evicted, a write by any connection since the last count, the cache off, or no "
-                "data-version probe -- count_live when a filter or the quarantine view made it "
-                "a live COUNT) and the page of "
-                "rows; total is the wall from the start of the query to the page in hand, so "
-                "unmarked time is total minus the phase sum. It begins after the request has "
-                "waited for a worker, and ends before the response is built (building it is "
-                "not in it). A database connection is taken by the first statement. A browse "
-                "that looks nothing up first (a language, a date range and the advanced "
-                "search's source ids are plain conditions) runs that statement inside the "
-                "timed span, so any wait for a connection, and the cost of opening it, are "
-                "INSIDE the first phase that runs a statement: the count phase, or the rows "
-                "phase when the count was served from the cache (the data-version probe has "
-                "a connection of its own). A browse that has a source, a source type, tags, a "
-                "provenance, the advanced search's countries or regions, or a query of field "
-                "filters only (source:x) looks something up first, BEFORE the clock starts, "
-                "and on such a browse the wait for a connection and the lookup itself are in "
-                "no phase and not in the total either."
-            )
-        else:
-            method = (
-                "Wall-clock over one text search, split by phase (fts: the FTS MATCH and its "
-                "candidate ids · resolve: the candidates that survive the filters · load: their "
-                "order and the page of rows); total is the wall from the start of the query to "
-                "the page in hand, so unmarked time is total minus the phase sum. It begins after "
-                "the request has waited for a worker, after the keyword the handler looks up for "
-                "the per-article counts, and after the lookups a source, a source type, tags, a "
-                "provenance, or the advanced search's countries or regions make; it ends before "
-                "the response is built (the per-article counts, the translated titles, the "
-                "did-you-mean and the JSON are not in it)."
-            )
         return {
             # The caller's scalars go FIRST, so a key of the same name as one below can never
             # override what the timer itself says.
@@ -167,11 +187,8 @@ class SearchPhaseTimer:
             "total_ms": total,
             "at": datetime.fromtimestamp(ended, tz=UTC).isoformat(timespec="seconds"),
             "started_after_unlock_s": unlock_marker.started_after_unlock_s(ended - total / 1000.0),
-            "method": method,
-            "caveat": (
-                "One request — a single sample, not a distribution; feed many into the "
-                "aggregate for percentiles. Deduced from wall-clock, never a quality score."
-            ),
+            "method": _RECORD_METHOD[KIND_BROWSE if self._kind == KIND_BROWSE else KIND_TEXT],
+            "caveat": _RECORD_CAVEAT,
         }
 
 
@@ -269,6 +286,10 @@ def _snapshot() -> list[dict]:
         return [*_recent[KIND_TEXT], *_recent[KIND_BROWSE]]
 
 
+# Page sizes listed one by one in a report's ``page_sizes``; the rest are summed under ``other``.
+# What this protects is the size of that map in the export: its keys are the ``limit`` a CLIENT chose,
+# so without a bound a caller trying many different limits would make the map as long as the number
+# it tried. Ten is far more than the handful of page sizes the app itself asks for.
 _PAGE_SIZES_MAX = 10
 
 
@@ -305,17 +326,23 @@ def build_report(records: list[dict], durable: dict | None = None) -> dict:
         "browses of the article list are under `browse`, and what the durable logs hold across "
         "restarts is under `durable_log`"
     )
+    out["record_method"] = _RECORD_METHOD[KIND_TEXT]
+    out["record_caveat"] = _RECORD_CAVEAT
     pages = aggregate_phases(browse)
     pages["pages"] = pages.pop("searches")
     pages["kind"] = KIND_BROWSE
+    pages["record_method"] = _RECORD_METHOD[KIND_BROWSE]
+    pages["record_caveat"] = _RECORD_CAVEAT
     pages["page_sizes"] = _page_sizes(browse)
     pages["method"] = (
         "Per-phase percentiles over a bounded recent window of in-process article-list browses "
         "(no text query), counted from when the query starts to when the page is in hand; the "
         "dominant phase is the highest measured p95. It holds every call to GET /api/articles "
         "that has no text query and no explicit `ids` set, whoever makes it (the Search tab, "
-        "the Home cards, a channel's list, the analysis); a call for a fixed set of ids is not "
-        "timed. So one p95 spans page sizes from a handful of rows to a thousand: "
+        "the Home cards, a channel's list, the analysis), once its query has returned the page: "
+        "a call that failed before then is not in it (the route latency log counts those) and "
+        "one that fails after it, while its response is built, is; a call for a fixed set "
+        "of ids is not timed. So one p95 spans page sizes from a handful of rows to a thousand: "
         "`page_sizes` counts the browses by the page size they asked for. A browse that "
         "has a source, a source type, tags, a provenance, the advanced search's countries "
         "or regions, or a query of field filters only looks that up BEFORE its clock starts, "
@@ -382,13 +409,20 @@ def _trim_jsonl(kind: str = KIND_TEXT) -> None:
 def _trim_if_due(kind: str) -> None:
     """Cut a log back to the cap once every ``_TRIM_EVERY`` appends, and on a process's first one.
 
-    Cutting reads and rewrites the whole file. Measured once on the development container, warm page
-    cache, with 5,000 records of each kind (a record carries its ``method`` and ``caveat`` text, so the
-    sizes move with that wording): the browse log is about 9.7 MB (1.9 KB a record), read in about 13 ms
-    and rewritten in about 12; the text log about 2.8 MB (0.55 KB a record), about 3 ms each. A cold read
-    costs more. Cutting after EVERY append would put that on each article-list call the moment a log
-    reached its cap, so it is done once every ``_TRIM_EVERY``. The first append of a process cuts too,
-    so a log never carries the growth of the process before it."""
+    Cutting reads and rewrites the whole file. Measured on the development container, warm page
+    cache, with the module's own cut over seven cuts of a log holding 5,250 records of one kind, the
+    whole set taken twice (2026-10-06). A line is the measurement only (``_STATIC_TEXT_KEYS`` are not
+    written): a browse line is about 195 bytes (the log 0.98 MB at the cap) and a cut took 2.3-4.7 ms,
+    1.0-1.3 ms of it the read; a text line is about 190 bytes (0.95 MB), 2.2-3.9 ms, 1.0-1.9 ms of it the
+    read. The same records written whole, as every line was until 2026-10-06 (the sizes moved with that
+    wording, and did when the browse and the unlock distance joined it), were about 1,940 and 1,040
+    bytes (9.7 and 5.2 MB at the cap), and a cut took 39-97 ms (23-35 ms of it the read) and 12-16 ms
+    (6-9 ms): a log still holds lines of that shape until the cuts drop them. A cold read costs more.
+    Cutting after EVERY append would still put a rewrite of the whole file
+    on each article-list call the moment a log reached its cap, so it is done once every
+    ``_TRIM_EVERY`` (the number protects the rewrite, not the log's size, so the smaller line does not
+    move it). The first append of a process cuts too, so a log never carries the growth of the process
+    before it."""
     with _LOCK:
         _appends_since_trim[kind] += 1
         due = _appends_since_trim[kind] >= _TRIM_EVERY
@@ -475,7 +509,12 @@ def durable_log_summary() -> dict:
             f"cut back to its newest {_CAP_LINES} lines once every {_TRIM_EVERY} appends, so it can "
             f"hold up to {_TRIM_EVERY} more than that, and {_TRIM_EVERY} more for each cut that "
             "failed (a full disk; on Windows a file another program holds open), which is tried "
-            "again at the next one. `undated` lines carry no usable `at` (none, "
+            "again at the next one. A line is the measurement only (kind, phases, total_ms, at, "
+            "started_after_unlock_s and, for a browse, its page size and offset): the words each "
+            "measurement was made under (what each phase covers, where the clock starts and stops) are "
+            "in this report, once per kind, as `record_method` and `record_caveat` of the text "
+            "aggregate and of `browse`, and a line written before 2026-10-06 still carries them, so "
+            "both shapes can share a file until the cuts drop the older one. `undated` lines carry no usable `at` (none, "
             "or one with no time zone) and cannot be placed in time; dated_from and dated_to bound "
             "the dated ones."
         ),
@@ -509,16 +548,22 @@ def suppressed() -> Iterator[None]:
 
 def append_search_timing(record: dict) -> None:
     """Durably append one record to the bounded JSONL log of its kind AND feed the in-process
-    aggregate. Best-effort — a logging failure never touches the search that produced it."""
+    aggregate. Best-effort — a logging failure never touches the search that produced it.
+
+    The line is the measurement only: the record without ``_STATIC_TEXT_KEYS``. The in-process window
+    gets the record whole and the caller's own dict is never changed. A log written before 2026-10-06
+    has lines that still carry the two texts; every reader counts a line by its ``at`` whatever else it
+    holds, and the cuts drop the older shape as they drop any old line, so the two can share a file."""
     if _SUPPRESSED.get():
         return
     record_search_phases(record)
     kind = _kind_of(record)
     try:
+        line = {k: v for k, v in record.items() if k not in _STATIC_TEXT_KEYS}
         path = _log_path(kind)
         path.parent.mkdir(parents=True, exist_ok=True)
         with _FILE_LOCKS[kind], open(path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+            fh.write(json.dumps(line, separators=(",", ":")) + "\n")
         _trim_if_due(kind)
     except Exception:  # noqa: BLE001
         _LOG.debug("search_timing append failed", exc_info=True)
