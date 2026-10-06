@@ -789,6 +789,7 @@ def test_a_guard_stop_in_the_mentions_stage_is_held_on_the_projected_total(serve
     monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
     monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 4096.0)  # a ceiling above the projection
     monkeypatch.setattr(
         rollup_serve, "_build_inmemory_and_swap",
         lambda: {"reason": "mem-low", "at": time.time(), "stage": "mentions", "rows_done": 1_000_000,
@@ -802,6 +803,39 @@ def test_a_guard_stop_in_the_mentions_stage_is_held_on_the_projected_total(serve
     monkeypatch.setattr(rollup_serve, "_guard_floor_mb", lambda: 256.0)
     monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 500.0, "avail_mb": 2000.0})
     assert rollup_serve._stopped_build_verdict()["needs_available_mb"] == 4256.0, "2,000 MB is what it failed with"
+
+
+def test_the_projection_never_asks_for_more_than_the_start_check_does(serve_env, monkeypatch):
+    """E1: a stop at 2M of 40M mentions with 400 MB observed would project 8,000 MB on a machine with 4.8 GB in
+    total, whose start check needs about 1.4 GB: the hold would keep the rollup off until a restart."""
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_boot_order_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(
+        rollup_serve, "_build_inmemory_and_swap",
+        lambda: {"reason": "mem-low", "at": time.time(), "stage": "mentions", "rows_done": 2_000_000,
+                 "mentions_total": 40_000_000, "rss_mb": 900.0, "begin_rss_mb": 500.0, "epoch": 3},
+    )
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    held = rollup_serve._STATE["stopped"]
+    ceiling = 740.0 * rollup_serve._LIMIT_OVERSHOOT + rollup_serve.columnar_batch_mb()
+    assert held["observed_grew_mb"] == 400.0 and held["grew_mb"] == round(ceiling, 1) < 8000.0
+
+
+def test_a_connect_that_raises_still_removes_the_folder_it_made(serve_env, monkeypatch, tmp_path):
+    def boom(*a, **kw):
+        raise RuntimeError("duckdb cannot start")
+
+    monkeypatch.setattr(columnar, "connect", boom)
+    with pytest.raises(RuntimeError):
+        rollup_serve._build_inmemory_and_swap()
+    assert list((tmp_path / "duckdb_tmp").iterdir()) == []
 
 
 def test_the_stop_hold_does_not_gate_the_persisted_refresh(serve_env, monkeypatch):

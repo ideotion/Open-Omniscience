@@ -224,7 +224,11 @@ def _build_inmemory_and_swap() -> dict | None:
 
     # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
     spill = _spill_setting()
-    con = columnar.connect(passphrase=None, spill=spill)
+    try:
+        con = columnar.connect(passphrase=None, spill=spill)
+    except BaseException:
+        _remove_spill(spill)
+        raise
     if con is None:
         _remove_spill(spill)
         return None
@@ -237,7 +241,8 @@ def _build_inmemory_and_swap() -> dict | None:
             # recorded token compare "changed" next check -> one extra rebuild, never a
             # silently-missed one).
             token = serve_gate.change_token(s)
-            total_hint = _mentions_total(s)
+            # the token's second element IS the newest mention id (read in this same session already)
+            total_hint = int(token[1]) if token and len(token) > 1 and token[1] is not None else _mentions_total(s)
             skip: dict | None
             try:
                 columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
@@ -284,6 +289,13 @@ def _build_inmemory_and_swap() -> dict | None:
         _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
     return None
+
+
+def columnar_batch_mb() -> float:
+    """What one batch of the build costs in Python, in MB (the start check's own figure)."""
+    from src.analytics import columnar
+
+    return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
 
 
 def _mentions_total(session) -> int | None:
@@ -400,15 +412,13 @@ def _affordability_verdict() -> dict | None:
     does not start; the readings are returned. Unreadable memory is no evidence: the build proceeds,
     and the guard polled after every batch is the net beneath."""
     try:
-        from src.analytics import columnar
-
         if _persisted_serve_active():
             return None  # the persisted refresh is incremental and does not hold a corpus in memory
         avail = _readings()["avail_mb"]
         if avail is None:
             return None
         limit = _duckdb_limit_mb()
-        chunk = columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
+        chunk = columnar_batch_mb()
         floor = _guard_floor_mb()
         need = limit * _LIMIT_OVERSHOOT + chunk + floor
         if avail >= need:
@@ -716,6 +726,12 @@ def _build_and_swap() -> str:
                     if stopped.get("stage") == "mentions" and isinstance(done, int) and done > 0 \
                             and isinstance(total, int) and total > done:
                         grew = round(observed * total / done, 1)
+                    # The build is bounded by DuckDB's limit (times the measured overshoot) plus one batch, so a
+                    # projection past that is the linear extrapolation outrunning the build's own ceiling (and
+                    # MAX(id) overstates the rows after re-index churn): never ask for more than the start check does.
+                    chunk = columnar_batch_mb()
+                    ceiling = round(_duckdb_limit_mb() * _LIMIT_OVERSHOOT + chunk, 1)
+                    grew = min(grew, max(ceiling, observed))
                 with _LOCK:
                     _STATE["last_skip"] = stopped
                     _STATE["stopped"] = {
