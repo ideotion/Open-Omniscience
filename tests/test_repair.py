@@ -625,3 +625,52 @@ def test_an_encrypted_library_is_repaired_into_an_encrypted_file_and_the_passphr
     )
     assert H.KEY not in blob, "the passphrase reached a record, a snapshot or a log"
     assert b"Title 5 " not in live.read_bytes(), "article text was written in the clear"
+
+
+def test_a_failed_repair_and_a_failed_step_after_the_switch_record_the_type_of_the_failure_never_its_text(
+    tmp_path, monkeypatch, reg, caplog
+):
+    """The passphrase rule: the copy and the steps after the switch run on keyed connections, so what a driver says (and the error
+    it was raised from, which a traceback prints) can carry a ``PRAGMA key`` statement; a record's traceback rides the diagnostics
+    bundle. The repair's own record carries the driver's first line scrubbed; the log carries only the type."""
+    import sqlite3
+
+    from src.database import connect, session
+
+    secret = "correct horse battery staple 8842"
+    previous = connect.get_passphrase()
+    connect.set_passphrase(secret)
+    try:
+        live = _live(tmp_path, monkeypatch, reg)
+        before = H.sha(live)
+
+        def driver_error():
+            try:
+                raise sqlite3.OperationalError(f"PRAGMA key = '{secret}' failed")
+            except sqlite3.OperationalError as driver:
+                raise RuntimeError("could not open the library") from driver
+
+        def boom(self):
+            driver_error()
+
+        monkeypatch.setattr(salvage.Salvage, "run", boom)
+        with caplog.at_level(logging.DEBUG), pytest.raises(RuntimeError):
+            repair.run(repair.plan())
+        assert H.sha(live) == before
+        assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+        assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error a driver's was raised from"
+        assert "database repair failed (RuntimeError)" in caplog.text, caplog.text
+        rec = reg.repairs()[-1]
+        assert secret not in json.dumps(rec, default=str), "the repair's own record is scrubbed too"
+
+        caplog.clear()
+        monkeypatch.setattr(session, "session_scope", driver_error)
+        with caplog.at_level(logging.DEBUG):
+            out = repair._after_the_swap()
+        assert out == {"corpus_epoch": None, "source_counts_cleared": None}
+        assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+        assert all(r.exc_info is None for r in caplog.records)
+        assert "the corpus epoch was not bumped (RuntimeError)" in caplog.text, caplog.text
+        assert "the stored source counts were not cleared (RuntimeError)" in caplog.text, caplog.text
+    finally:
+        connect.set_passphrase(previous)

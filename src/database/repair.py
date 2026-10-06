@@ -512,7 +512,10 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         raise Declined(refusal.code, refusal.detail) from refusal
     except Exception as exc:
         report.update(outcome="failed", reason="copy-failed", failure=salvage._failure_text(exc))
-        _LOG.warning("database repair failed", exc_info=True)
+        # The TYPE only, never the text or a traceback: the copy runs on keyed connections, so what a driver says (and the error it
+        # was raised from, which a traceback prints too) can carry a statement that holds the passphrase. The record above carries
+        # the driver's first line, scrubbed; this log carries neither.
+        _LOG.warning("database repair failed (%s)", type(exc).__name__)
         raise
     finally:
         report["finished_at"] = time.time()
@@ -920,8 +923,9 @@ def _after_the_swap() -> dict[str, Any]:
 
         with session_scope() as session:
             out["corpus_epoch"] = bump_corpus_epoch(session, reason="salvage")
-    except Exception:  # noqa: BLE001
-        _LOG.warning("database repair: the corpus epoch was not bumped", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        # The TYPE only (see ``run``): these two write through the keyed engine.
+        _LOG.warning("database repair: the corpus epoch was not bumped (%s)", type(exc).__name__)
         out["corpus_epoch"] = None
     try:
         from sqlalchemy import update
@@ -932,8 +936,8 @@ def _after_the_swap() -> dict[str, Any]:
         with session_scope() as session:
             result = session.execute(update(Source).values(article_count=None))
             out["source_counts_cleared"] = int(getattr(result, "rowcount", 0) or 0)
-    except Exception:  # noqa: BLE001
-        _LOG.warning("database repair: the stored source counts were not cleared", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("database repair: the stored source counts were not cleared (%s)", type(exc).__name__)
         out["source_counts_cleared"] = None
     return out
 
