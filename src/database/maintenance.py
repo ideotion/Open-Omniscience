@@ -2064,19 +2064,23 @@ def _vacuum_copy_bytes(engine: Engine) -> int | None:
     return in_use * size
 
 
-def _unread_notes(unread: list[str], *, wal_unread: bool, whole_file: bool, log_read: bool) -> list[str]:
-    """The sentences that say which figures of a preflight were not read, in the words the report's ``detail`` ends with."""
-    notes = []
-    if unread:
-        notes.append("Not checked, because it could not be read: " + " and ".join(unread) + ".")
+def _unread_notes(
+    unread: list[str], *, wal_unread: bool, whole_file: bool, log_read: bool
+) -> tuple[list[str], list[str]]:
+    """The sentences that say which figures of a preflight were not read, in the words the report's ``detail`` ends with, as
+    ``(not_checked, counted)``: the sentence naming the figures that were NOT CHECKED (the free space, the memory), kept apart so
+    that the one branch which already says so in its main sentence can drop it by what it is rather than by how it starts, and the
+    sentences about the log and the pages in use, which say what was COUNTED in place of a figure that could not be read."""
+    not_checked = ["Not checked, because it could not be read: " + " and ".join(unread) + "."] if unread else []
+    counted = []
     if wal_unread:
-        notes.append("The size of the file's log could not be read and was counted as none.")
+        counted.append("The size of the file's log could not be read and was counted as none.")
     if whole_file:
-        notes.append(
+        counted.append(
             "The pages in use could not be read, so the whole file "
             + ("and its log were counted." if log_read else "was counted.")
         )
-    return notes
+    return not_checked, counted
 
 
 def _with_notes(detail: str, notes: list[str]) -> str:
@@ -2102,8 +2106,9 @@ def vacuum_preflight(engine: Engine) -> dict:
     FROM WHAT VACUUM COPIES, not from the file on disk: the pages in use (the pages
     still only in the log count, the free pages a delete left do not), read on a
     connection; when that cannot be read, the file plus its log is used and the report
-    says so. The log's own size is added to the disk figure (over-counting is the safe
-    side). The temporary-file volume is NOT measured: every pooled connection sets
+    says so. The log's own size is added to the disk figure; a log that exists and
+    cannot be measured is counted as none, which can under-ask, so the report says it
+    was and lists it in ``not_read``. The temporary-file volume is NOT measured: every pooled connection sets
     ``temp_store=MEMORY``, so nothing is written there, and a refusal for a small
     ``/tmp`` would point the operator at a volume the rebuild never touches.
 
@@ -2162,7 +2167,9 @@ def vacuum_preflight(engine: Engine) -> dict:
         unread.append("the free space on the database's volume")
     if available is None:
         unread.append("the memory available")
-    notes = _unread_notes(unread, wal_unread=wal_bytes is None, whole_file=live_bytes is None, log_read=wal_bytes is not None)
+    not_checked, counted = _unread_notes(
+        unread, wal_unread=wal_bytes is None, whole_file=live_bytes is None, log_read=wal_bytes is not None
+    )
     if wal_bytes is None:
         unread.append("the size of the file's log")
 
@@ -2192,9 +2199,9 @@ def vacuum_preflight(engine: Engine) -> dict:
     }
     if not readable and available is None:
         report["sufficient"] = None
+        # the main sentence already says that neither figure was read: the "not checked" sentence would say it twice
         report["detail"] = _with_notes(
-            "neither the free space nor the available memory could be read; this VACUUM was not preflighted",
-            [n for n in notes if not n.startswith("Not checked")],
+            "neither the free space nor the available memory could be read; this VACUUM was not preflighted", counted
         )
         return report
 
@@ -2207,14 +2214,14 @@ def vacuum_preflight(engine: Engine) -> dict:
         parts = []
         if "database" in short:
             parts.append(
-                f"the database volume has {readable['database']:,} bytes free and this "
+                f"The database volume has {readable['database']:,} bytes free and this "
                 f"VACUUM needs about {needed:,} ({VACUUM_HEADROOM:g} times the {copy_bytes:,} {copy_what}, plus "
                 + (f"the {wal_bytes:,}-byte log" if wal_bytes is not None else "a log whose size could not be read")
                 + "). Free space, then retry."
             )
         if "memory" in short:
             parts.append(
-                f"this computer has {available:,} bytes of memory available and the rebuilt "
+                f"This computer has {available:,} bytes of memory available and the rebuilt "
                 f"copy of the {copy_bytes:,} {copy_what} is held in memory (about {ram_needed:,}) on top "
                 f"of the {floor:,} the memory guard keeps free. Close other programs and retry. "
                 "The copy is held in memory (every connection of the app keeps its temporary data there), "
@@ -2228,7 +2235,7 @@ def vacuum_preflight(engine: Engine) -> dict:
         report["detail"] = f"enough {what} for this VACUUM"
     else:
         report["detail"] = "enough free space and memory for this VACUUM"
-    report["detail"] = _with_notes(report["detail"], notes)
+    report["detail"] = _with_notes(report["detail"], not_checked + counted)
     return report
 
 

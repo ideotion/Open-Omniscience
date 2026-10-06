@@ -39,6 +39,7 @@ than absent.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -433,8 +434,9 @@ def test_the_text_of_a_failed_read_never_reaches_the_log_because_it_can_carry_th
     monkeypatch.setattr(sqlite_engine, "connect", _boom, raising=False)
     with caplog.at_level(logging.DEBUG):
         assert maintenance._vacuum_copy_bytes(sqlite_engine) is None
-        vacuum_preflight(sqlite_engine)
+        report = vacuum_preflight(sqlite_engine)
     assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+    assert secret not in json.dumps(report, default=str), "the report is returned to the API and rides the diagnostics bundle too"
     assert all(r.exc_info is None for r in caplog.records), "no traceback is attached to the record"
     assert "RuntimeError" in caplog.text, "the type is what is kept, so the record still says what kind of failure it was"
 
@@ -562,7 +564,8 @@ def test_a_log_that_exists_and_cannot_be_measured_is_named_as_unread_and_is_not_
     report = vacuum_preflight(sqlite_engine)
     assert report["wal_bytes"] is None and "the size of the file's log" in report["not_read"], report
     assert report["sufficient"] is True, "an unreadable log is not a refusal"
-    assert "The size of the file's log could not be read and was counted as none." in report["detail"], report["detail"]
+    assert report["detail"].count("The size of the file's log could not be read and was counted as none.") == 1, report["detail"]
+    assert "Not checked" not in report["detail"], "the log has its own sentence: it is not also a figure that was not checked"
     assert report["needed_bytes"] == int(report["copy_bytes"] * VACUUM_HEADROOM), "counted as none, and said so"
 
 
@@ -629,3 +632,74 @@ def test_neither_figure_readable_still_says_the_whole_file_was_counted(tmp_path,
     assert "The pages in use could not be read, so the whole file and its log were counted." in report["detail"], report["detail"]
     assert "Not checked" not in report["detail"], "the free space and the memory are said once, in the main sentence"
     engine.dispose()
+
+
+# --------------------------------------------------------------------------- #
+#  the log and the pages together, and the memory sentence in each state
+# --------------------------------------------------------------------------- #
+def test_pages_unread_and_a_log_that_cannot_be_measured_say_the_file_alone_was_counted_and_say_each_once(
+    sqlite_engine, monkeypatch
+) -> None:
+    """Both fallbacks at once: the copy is the file alone (the log could not be read, so it is not in the sum), and neither the
+    refusal nor the notes may say 'and its log'. The two notes come in the order the figures were meant to be read."""
+    from src.database import maintenance
+
+    _wal_getsize_raises(monkeypatch, PermissionError("no"))
+    monkeypatch.setattr(maintenance, "_vacuum_copy_bytes", lambda engine: None)
+    real = shutil.disk_usage
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: type(real(path))(real(path).total, real(path).used, 1))
+    _memory(monkeypatch, 1)
+    report = vacuum_preflight(sqlite_engine)
+    detail = report["detail"]
+    assert report["short_on"] == ["database", "memory"] and report["wal_bytes"] is None and report["copy_bytes_read"] is False, report
+    assert report["copy_bytes"] == report["db_bytes"] and report["needed_bytes"] == int(report["db_bytes"] * VACUUM_HEADROOM), report
+    assert "bytes in the file" in detail and "and its log" not in detail and "bytes in use" not in detail, detail
+    log_note = "The size of the file's log could not be read and was counted as none."
+    pages_note = "The pages in use could not be read, so the whole file was counted."
+    assert detail.count(log_note) == 1 and detail.count(pages_note) == 1, detail
+    assert detail.index(log_note) < detail.index(pages_note), "the log's sentence first, then the pages'"
+    assert detail.endswith(pages_note) and "Not checked" not in detail, detail
+
+
+def test_the_memory_sentence_names_what_was_counted_in_each_state(tmp_path, monkeypatch) -> None:
+    """A memory-only refusal (the disk is plentiful) says 'bytes in use' when the pages were read and names the file and its log
+    when they were not; the figure it prints is the one the gate used."""
+    from src.database import maintenance
+
+    engine = _engine_with_rows(tmp_path / "w5.db", wal=True, rows=400)
+    _memory(monkeypatch, 1)
+    read = vacuum_preflight(engine)
+    assert read["short_on"] == ["memory"], read
+    assert f"copy of the {read['copy_bytes']:,} bytes in use is held in memory" in read["detail"], read["detail"]
+    monkeypatch.setattr(maintenance, "_vacuum_copy_bytes", lambda engine: None)
+    unread = vacuum_preflight(engine)
+    assert unread["short_on"] == ["memory"], unread
+    assert f"copy of the {unread['copy_bytes']:,} bytes in the file and its log is held in memory" in unread["detail"], unread["detail"]
+    assert "bytes in use" not in unread["detail"]
+    engine.dispose()
+
+
+def test_an_unreadable_log_is_said_once_when_neither_figure_could_be_read_either(sqlite_engine, monkeypatch) -> None:
+    """The early return: the main sentence already says that nothing was preflighted, so the 'not checked' sentence is dropped
+    and the log's own sentence is not."""
+    _wal_getsize_raises(monkeypatch, PermissionError("no"))
+
+    def _boom(path):
+        raise OSError("statvfs is unavailable here")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    _memory(monkeypatch, None)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["sufficient"] is None and "not preflighted" in report["detail"], report
+    assert report["detail"].count("The size of the file's log could not be read and was counted as none.") == 1, report["detail"]
+    assert "Not checked" not in report["detail"], report["detail"]
+    assert "the size of the file's log" in report["not_read"], report
+
+
+def test_the_refusal_sentences_start_with_a_capital_letter(sqlite_engine, monkeypatch) -> None:
+    """Each part of a refusal is a sentence of its own, joined by a space: neither begins in lower case."""
+    real = shutil.disk_usage
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: type(real(path))(real(path).total, real(path).used, 1))
+    _memory(monkeypatch, 1)
+    detail = vacuum_preflight(sqlite_engine)["detail"]
+    assert detail.startswith("The database volume has ") and ". This computer has " in detail, detail
