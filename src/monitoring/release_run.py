@@ -83,7 +83,7 @@ from pathlib import Path
 from typing import Any
 
 from src.monitoring.secret_scrub import scrub_file as _scrub_file
-from src.monitoring.secret_scrub import without_secret as _without_secret
+from src.monitoring.secret_scrub import scrub_value as _scrub_value
 
 _LOG = logging.getLogger("monitoring.release_run")
 
@@ -1082,7 +1082,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _scrub_kept_install(fresh: Path, out_json: Path, secret: str) -> dict[str, list[str]]:
+def _scrub_kept_install(fresh: Path, out_json: Path, needle: str) -> dict[str, list[str]]:
     """Take the passphrase out of what a KEPT fresh install leaves on the drive, once the child that
     wrote it has gone.
 
@@ -1095,7 +1095,7 @@ def _scrub_kept_install(fresh: Path, out_json: Path, secret: str) -> dict[str, l
     passphrase is the one thing a kept install may not carry. ``failed`` is what could be neither
     rewritten nor removed. The lists name files, never a path or a line that could carry the secret."""
     done: dict[str, list[str]] = {"rewritten": [], "removed": [], "failed": []}
-    if not secret:
+    if not needle:
         return done
     targets = [
         *sorted((fresh / "run_logs").glob("*.jsonl")),
@@ -1104,7 +1104,7 @@ def _scrub_kept_install(fresh: Path, out_json: Path, secret: str) -> dict[str, l
     ]
     for path in targets:
         try:
-            if _scrub_file(path, secret):
+            if _scrub_file(path, needle):
                 done["rewritten"].append(path.name)
         except Exception:  # noqa: BLE001 - whatever stopped the rewrite, the file must not stay as it is
             # A missing-file error is NOT "no file": it also comes out of the rewrite itself (a ``.part``
@@ -1181,7 +1181,7 @@ def _fresh_install_restore(
             "returncode": proc.returncode,
             # Scrubbed BEFORE the cut: a cut through the passphrase would leave a fragment that no
             # later replacement could find.
-            "stderr_tail": _without_secret(stderr or "", run.params.passphrase)[-4000:],
+            "stderr_tail": _scrub_value(stderr or "", run.params.passphrase)[-4000:],
         }
         payload: dict[str, Any] | None = None
         with contextlib.suppress(OSError, ValueError):
@@ -1197,7 +1197,7 @@ def _fresh_install_restore(
             scrubbed = _scrub_kept_install(fresh, out_json, run.params.passphrase)
             result["kept_install_scrub"] = scrubbed
         # Before anything reads, stores or logs it (the failure text below included).
-        result = _without_secret(result, run.params.passphrase)
+        result = _scrub_value(result, run.params.passphrase)
         if not ctx.stopping:
             # The phase is a restore only if the child restored: its own ok and its exit status
             # decide, not the parent returning. What the child measured stays in the record

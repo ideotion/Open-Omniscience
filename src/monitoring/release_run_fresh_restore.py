@@ -107,10 +107,10 @@ def _result_text(result: dict, passphrase: str) -> str:
     and the parent scrubs what it READS; the journal and reports the app writes while this process runs
     are cleaned by the parent after it exits. The round trip through JSON first turns whatever
     ``default=str`` would have stringified into a string the scrub can see."""
-    from src.monitoring.secret_scrub import without_secret
+    from src.monitoring.secret_scrub import scrub_value
 
     plain = json.loads(json.dumps(result, default=str))
-    return json.dumps(without_secret(plain, passphrase))
+    return json.dumps(scrub_value(plain, passphrase))
 
 
 def main() -> int:

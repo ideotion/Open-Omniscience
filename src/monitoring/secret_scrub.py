@@ -29,7 +29,7 @@ WHAT IT GUARANTEES, and the two things a naive ``str.replace`` does not:
     (``ok``, ``restore``, ``committed``), and the child builds none from what it is handed; a
     passphrase that is a piece of one (``ok``, ``store``, ``e``) used to rename it, which turned a
     good restore into an error. A passphrase carries nothing a record needs under its keys.
-    :func:`without_secret` walks what JSON produces (dicts, lists, tuples, strings); bytes, sets
+    :func:`scrub_value` walks what JSON produces (dicts, lists, tuples, strings); bytes, sets
     and other objects pass through as they are, so a caller round-trips through JSON first when
     it holds anything else (the child's ``_result_text`` does).
 
@@ -51,50 +51,52 @@ REDACTED = "***redacted***"
 _FALLBACK_MARKERS: tuple[str, ...] = ("###", "~~~", "???", "@@@")
 
 
-def scrub_text(text: str, secret: str) -> str:
-    """``text`` with every occurrence of ``secret`` replaced, and the secret in no part of what is
-    returned. An empty ``secret`` is no needle (it would match between every character)."""
-    if not secret or secret not in text:
+def scrub_text(text: str, needle: str) -> str:
+    """``text`` with every occurrence of ``needle`` replaced, and the needle in no part of what is
+    returned. An empty ``needle`` matches nothing (replacing it would put the marker between every
+    character), so the text comes back as it was. Written as ``split`` and ``join``, which give the text
+    ``str.replace`` would for a needle that is not empty."""
+    if not needle or needle not in text:
         return text
     for marker in (REDACTED, *_FALLBACK_MARKERS):
-        out = text.replace(secret, marker)
-        if secret not in out:
+        out = marker.join(text.split(needle))
+        if needle not in out:
             return out
     # Not reachable for a passphrase a person types (it would have to contain every marker's
     # characters and be rebuilt by each replacement); here so the guarantee holds for any input.
     # Each pass shortens the text, so the loop ends.
-    while secret in text:
-        text = text.replace(secret, "")
+    while needle in text:
+        text = "".join(text.split(needle))
     return text
 
 
-def without_secret(value: Any, secret: str) -> Any:
-    """``value`` with ``secret`` taken out of every string in it, through lists, tuples and dicts. Keys
+def scrub_value(value: Any, needle: str) -> Any:
+    """``value`` with ``needle`` taken out of every string in it, through lists, tuples and dicts. Keys
     are kept as they are (see the module docstring); numbers, booleans and None pass through."""
-    if not secret:
+    if not needle:
         return value
     if isinstance(value, str):
-        return scrub_text(value, secret)
+        return scrub_text(value, needle)
     if isinstance(value, dict):
-        return {k: without_secret(v, secret) for k, v in value.items()}
+        return {k: scrub_value(v, needle) for k, v in value.items()}
     if isinstance(value, list):
-        return [without_secret(v, secret) for v in value]
+        return [scrub_value(v, needle) for v in value]
     if isinstance(value, tuple):
-        return tuple(without_secret(v, secret) for v in value)
+        return tuple(scrub_value(v, needle) for v in value)
     return value
 
 
-def _scrub_cut_text(text: str, secret: str) -> str:
+def _scrub_cut_text(text: str, needle: str) -> str:
     """Text that does not parse as JSON (a line a killed process left unfinished, a document too deep to
     read) with the secret taken out in every form a journal writes it: as typed, and as JSON escapes it
     (a quote, a backslash or a letter outside ASCII becomes an escape sequence), with the non-ASCII
     letters escaped or not. A secret that needs no escaping has one form."""
-    for form in dict.fromkeys((secret, json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1])):
+    for form in dict.fromkeys((needle, json.dumps(needle)[1:-1], json.dumps(needle, ensure_ascii=False)[1:-1])):
         text = scrub_text(text, form)
     return text
 
 
-def _scrub_record(line: str, secret: str) -> str:
+def _scrub_record(line: str, needle: str) -> str:
     """One line of a JSON-lines file: the line as it was when its values hold no secret, else the
     record with the secret taken out of them, written in the compact form the journals use (and with the
     carriage return a Windows writer ended it with, if it had one). A line that does not parse (the last
@@ -104,27 +106,27 @@ def _scrub_record(line: str, secret: str) -> str:
         return line
     try:
         record = json.loads(line)
-        clean = without_secret(record, secret)
+        clean = scrub_value(record, needle)
         if clean == record:
             return line
         return json.dumps(clean, separators=(",", ":"), default=str) + ("\r" if line.endswith("\r") else "")
     except (ValueError, RecursionError):  # every step of a walk can run out of depth
-        return _scrub_cut_text(line, secret)
+        return _scrub_cut_text(line, needle)
 
 
-def _scrub_document(text: str, secret: str) -> str:
+def _scrub_document(text: str, needle: str) -> str:
     """A whole JSON document: as it was when its values hold no secret, else rewritten indented. A document
     that does not parse, or is nested past what the interpreter can walk, is scrubbed as text."""
     try:
         doc = json.loads(text)
-        clean = without_secret(doc, secret)
+        clean = scrub_value(doc, needle)
         return text if clean == doc else json.dumps(clean, indent=2, default=str)
     except (ValueError, RecursionError):  # every step of a walk can run out of depth
-        return _scrub_cut_text(text, secret)
+        return _scrub_cut_text(text, needle)
 
 
-def scrub_file(path: Path, secret: str) -> bool:
-    """Take ``secret`` out of the file at ``path``, in place, and say whether the file was rewritten.
+def scrub_file(path: Path, needle: str) -> bool:
+    """Take ``needle`` out of the file at ``path``, in place, and say whether the file was rewritten.
 
     By what the file IS, never by a blind text replace -- which renames a key the secret is a piece of
     and cannot see the secret in the form JSON escapes it to (a quote, a backslash, a letter outside
@@ -148,16 +150,16 @@ def scrub_file(path: Path, secret: str) -> bool:
     The rewrite goes to ``<name>.part`` and is moved over the original, so a failure part of the way
     leaves the old file whole -- and still holding the secret, which is the CALLER's to decide about.
     Raises ``OSError`` (the file is missing, unreadable, or cannot be replaced) or ``ValueError`` (it is
-    not UTF-8 text); an empty ``secret`` rewrites nothing."""
-    if not secret:
+    not UTF-8 text); an empty ``needle`` rewrites nothing."""
+    if not needle:
         return False
     text = path.read_bytes().decode("utf-8")
     if path.suffix == ".jsonl":
-        new = "\n".join(_scrub_record(line, secret) for line in text.split("\n"))
+        new = "\n".join(_scrub_record(line, needle) for line in text.split("\n"))
     elif path.suffix == ".json":
-        new = _scrub_document(text, secret)
+        new = _scrub_document(text, needle)
     else:
-        new = _scrub_cut_text(text, secret)
+        new = _scrub_cut_text(text, needle)
     if new == text:
         return False
     part = path.with_name(path.name + ".part")
