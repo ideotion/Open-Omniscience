@@ -7,8 +7,8 @@ DB-10 §2 carry-over, recorded in ``docs/ledger/OPEN_QUEUE.md``: the frontend's
 ``_confirmVacuum`` discloses an estimated DURATION and confirms, but
 ``POST /api/database/vacuum`` would start a full rebuild on a corpus of any size
 with no disk check at all. SQLite's VACUUM writes a COMPLETE second copy of the
-file and only then swaps it in, so the peak requirement is about twice the
-current size — and running out of space mid-rebuild is the worst possible moment
+file's live pages and only then swaps them in, so the peak requirement is about twice the
+pages in use, plus the log — and running out of space mid-rebuild is the worst possible moment
 to discover it.
 
 THREE THINGS THIS PINS, each of which is a way the check could be wrong rather
@@ -155,10 +155,10 @@ def _memory(monkeypatch, available, floor=0):
     monkeypatch.setattr(article_indexes, "_floor_bytes", lambda: floor)
 
 
-def test_the_memory_asked_is_the_files_size_times_the_factor_plus_the_guards_floor_and_the_boundary_is_exact(
+def test_the_memory_asked_is_the_pages_in_use_times_the_factor_plus_the_guards_floor_and_the_boundary_is_exact(
     sqlite_engine, monkeypatch
 ) -> None:
-    """The coordinator's gate: the MEMORY VACUUM's copy holds the whole file in RAM, so it is refused when the machine cannot
+    """The coordinator's gate: the MEMORY VACUUM's copy holds the pages in use in RAM, so it is refused when the machine cannot
     hold it and the memory guard's floor, with the reason and the numbers, and passes at exactly the figure."""
     copy_bytes = vacuum_preflight(sqlite_engine)["copy_bytes"]
     need = int(copy_bytes * VACUUM_RAM_FACTOR) + 7_000
@@ -201,7 +201,7 @@ def test_when_the_disk_and_the_memory_both_fall_short_the_detail_says_both(sqlit
     report = vacuum_preflight(sqlite_engine)
     assert report["short_on"] == ["database", "memory"], report
     assert "volume has 1 bytes free" in report["detail"] and "bytes of memory available" in report["detail"]
-    assert report["not_read"] == [] and "not checked" not in report["detail"], "both were read: nothing is said to be unread"
+    assert report["not_read"] == [] and "Not checked" not in report["detail"], "both were read: nothing is said to be unread"
 
 
 def test_an_unreadable_memory_figure_is_not_a_refusal_and_neither_is_an_unreadable_disk_figure(sqlite_engine, monkeypatch) -> None:
@@ -267,14 +267,14 @@ def test_a_volume_holding_the_file_but_not_its_copy_is_still_refused(
     sqlite_engine, monkeypatch
 ) -> None:
     """The headroom is the load-bearing number, and asserting
-    ``needed == db_bytes * VACUUM_HEADROOM`` pins nothing -- it is true for any
+    ``needed == copy_bytes * VACUUM_HEADROOM`` pins nothing -- it is true for any
     value of the constant, including 1.0, which is the value that says "the
     rebuild needs no room of its own". Dropping the constant to 1.0 passed every
     other test in this file.
 
     So the claim is made behaviourally: a volume with room for the FILE but not
-    for the SECOND COPY must be refused. That is exactly the disk on which the
-    old, unchecked VACUUM would have failed halfway through.
+    for the SECOND COPY must be refused (here the file is all pages in use, so its size is the copy). That is exactly the disk on
+    which the old, unchecked VACUUM would have failed halfway through.
     """
     real = shutil.disk_usage
     db_bytes = vacuum_preflight(sqlite_engine)["db_bytes"]
@@ -290,8 +290,8 @@ def test_a_volume_holding_the_file_but_not_its_copy_is_still_refused(
         f"beside it; the preflight accepted it: {report}"
     )
     assert VACUUM_HEADROOM >= 2.0, (
-        "VACUUM rebuilds into a complete second copy before swapping, so 2.0x is "
-        f"the floor of the requirement, not a margin on top of it (found {VACUUM_HEADROOM})"
+        "what VACUUM writes back is the live bytes, once through the log and once into the file at the swap, and the measured "
+        f"growth was one copy: 2.0x the pages in use is twice that, a margin and not a floor (found {VACUUM_HEADROOM})"
     )
 
 
@@ -312,10 +312,11 @@ def test_ample_space_is_still_accepted(sqlite_engine, monkeypatch) -> None:
 # --------------------------------------------------------------------------- #
 #  the copy is sized from what VACUUM copies, not from the file on disk
 # --------------------------------------------------------------------------- #
-def _engine_with_rows(path, *, wal: bool, rows: int, keep: int | None = None):
+def _engine_with_rows(path, *, wal: bool, rows: int, keep: int | None = None, page_size: int = 4096):
     """A store of ``rows`` one-kilobyte rows. ``wal``: in WAL mode with the automatic checkpoint off, so the rows stay in the
     log (the file on disk is a few pages) and the pooled connection keeps it from being folded away. ``keep``: rows kept after
-    a delete, which leaves the file as large as it was and most of its pages free."""
+    a delete, which leaves the file as large as it was and most of its pages free. ``page_size``: the file's page size (the app's
+    encrypted stores use 16 KiB), set before anything is written."""
     from sqlalchemy import create_engine, event, text
 
     engine = create_engine(f"sqlite:///{path}")
@@ -323,6 +324,7 @@ def _engine_with_rows(path, *, wal: bool, rows: int, keep: int | None = None):
     @event.listens_for(engine, "connect")
     def _pragmas(dbapi, _record):
         cur = dbapi.cursor()
+        cur.execute(f"PRAGMA page_size={int(page_size)}")
         if wal:
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA wal_autocheckpoint=0")
@@ -394,22 +396,110 @@ def test_pages_in_use_that_cannot_be_read_fall_back_to_the_whole_file_and_its_lo
     monkeypatch.setattr(maintenance, "_vacuum_copy_bytes", lambda engine: None)
     report = vacuum_preflight(engine)
     assert report["copy_bytes_read"] is False and report["copy_bytes"] == report["db_bytes"] + report["wal_bytes"], report
-    assert "the pages in use could not be read" in report["detail"] and report["sufficient"] is True
+    assert "The pages in use could not be read, so the whole file and its log were counted." in report["detail"] and report["sufficient"] is True
     engine.dispose()
 
 
-def test_a_connection_that_fails_to_answer_is_an_unread_figure_and_never_a_refusal(sqlite_engine, monkeypatch) -> None:
+@pytest.mark.parametrize("exc", [OSError("no connection to ask"), RuntimeError("the factory refused"), ValueError("bad key"), KeyError("x")])
+def test_a_connection_that_fails_to_answer_is_an_unread_figure_and_never_a_refusal_whatever_it_raises(sqlite_engine, monkeypatch, exc) -> None:
+    """Whatever the engine or the connection factory raises (an ``OSError`` is only one of the things a keyed connection can
+    do), the figure is unread: a narrowed ``except`` would turn a driver's own error into a failed compaction request."""
     from src.database import maintenance
 
     real_connect = sqlite_engine.connect
 
     def _boom(*a, **k):
-        raise OSError("no connection to ask")
+        raise exc
 
     monkeypatch.setattr(sqlite_engine, "connect", _boom, raising=False)
     assert maintenance._vacuum_copy_bytes(sqlite_engine) is None
+    assert vacuum_preflight(sqlite_engine)["copy_bytes_read"] is False, "the preflight carries on from the whole file"
     monkeypatch.setattr(sqlite_engine, "connect", real_connect, raising=False)
     assert maintenance._vacuum_copy_bytes(sqlite_engine) is not None
+
+
+def test_the_text_of_a_failed_read_never_reaches_the_log_because_it_can_carry_the_passphrase(sqlite_engine, monkeypatch, caplog) -> None:
+    """The passphrase rule: an engine's or a connection factory's message can hold the key (the factory builds ``PRAGMA key``
+    statements), and a log record's ``exc_info`` rides the diagnostics bundle. Only the exception's TYPE is recorded."""
+    import logging
+
+    from src.database import maintenance
+
+    secret = "correct horse battery staple 8842"
+
+    def _boom(*a, **k):
+        raise RuntimeError(f"PRAGMA key = '{secret}' failed")
+
+    monkeypatch.setattr(sqlite_engine, "connect", _boom, raising=False)
+    with caplog.at_level(logging.DEBUG):
+        assert maintenance._vacuum_copy_bytes(sqlite_engine) is None
+        vacuum_preflight(sqlite_engine)
+    assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+    assert all(r.exc_info is None for r in caplog.records), "no traceback is attached to the record"
+    assert "RuntimeError" in caplog.text, "the type is what is kept, so the record still says what kind of failure it was"
+
+
+class _FakeConn:
+    def __init__(self, answers):
+        self._answers = answers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, statement):
+        word = str(statement).split("=")[0].split()[-1].lower() if "=" in str(statement) else str(statement).split()[-1].lower()
+        value = self._answers[word]
+
+        class _R:
+            def scalar(self_inner):
+                return value
+
+        return _R()
+
+
+class _FakeEngine:
+    def __init__(self, **answers):
+        self._answers = answers
+
+    def connect(self):
+        return _FakeConn(self._answers)
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"page_count": 5, "freelist_count": 5, "page_size": 4096},  # every page free: not a reading of zero bytes
+        {"page_count": 5, "freelist_count": 9, "page_size": 4096},  # more free pages than pages
+        {"page_count": 0, "freelist_count": 0, "page_size": 4096},
+        {"page_count": 5, "freelist_count": 0, "page_size": 0},
+    ],
+)
+def test_a_page_count_that_says_nothing_is_in_use_was_not_read_and_is_never_a_zero_copy(answers) -> None:
+    from src.database import maintenance
+
+    assert maintenance._vacuum_copy_bytes(_FakeEngine(**answers)) is None
+    assert maintenance._vacuum_copy_bytes(_FakeEngine(page_count=6, freelist_count=2, page_size=8192)) == 4 * 8192
+
+
+@pytest.mark.parametrize("page", [8192, 16384])
+def test_the_copy_is_sized_in_the_files_own_page_size_not_in_4_kib_pages(tmp_path, page) -> None:
+    """The app's encrypted stores use 16 KiB pages; a 4,096 written into the sum would under-ask by a factor of four."""
+    import sqlite3
+
+    engine = _engine_with_rows(tmp_path / f"p{page}.db", wal=False, rows=600, keep=100, page_size=page)
+    assert _page(engine) == page
+    con = sqlite3.connect(tmp_path / f"p{page}.db")
+    try:
+        want = (con.execute("PRAGMA page_count").fetchone()[0] - con.execute("PRAGMA freelist_count").fetchone()[0]) * page
+    finally:
+        con.close()
+    report = vacuum_preflight(engine)
+    assert report["copy_bytes_read"] is True and report["copy_bytes"] == want, report
+    assert report["copy_bytes"] % page == 0
+    engine.dispose()
 
 
 # --------------------------------------------------------------------------- #
@@ -419,8 +509,8 @@ def test_a_memory_figure_that_was_not_read_is_named_in_the_detail_and_the_vacuum
     _memory(monkeypatch, None)
     report = vacuum_preflight(sqlite_engine)
     assert report["sufficient"] is True and report["not_read"] == ["the memory available"], report
-    assert report["detail"].startswith("enough free space for this VACUUM")
-    assert "not checked" in report["detail"] and "the memory available" in report["detail"]
+    assert report["detail"].startswith("enough free space for this VACUUM. Not checked"), report["detail"]
+    assert "Not checked, because it could not be read: the memory available." in report["detail"]
     assert "free space and memory" not in report["detail"], "it must not claim a memory it did not measure"
 
 
@@ -431,8 +521,8 @@ def test_a_disk_figure_that_was_not_read_is_named_in_the_detail(sqlite_engine, m
     monkeypatch.setattr(shutil, "disk_usage", _boom)
     report = vacuum_preflight(sqlite_engine)
     assert report["sufficient"] is True and report["not_read"] == ["the free space on the database's volume"], report
-    assert report["detail"].startswith("enough memory for this VACUUM")
-    assert "not checked" in report["detail"] and "free space" in report["detail"]
+    assert report["detail"].startswith("enough memory for this VACUUM. Not checked"), report["detail"]
+    assert "Not checked, because it could not be read: the free space on the database's volume." in report["detail"]
 
 
 def test_a_refusal_for_the_figure_that_was_read_still_names_the_one_that_was_not(sqlite_engine, monkeypatch) -> None:
@@ -443,3 +533,99 @@ def test_a_refusal_for_the_figure_that_was_read_still_names_the_one_that_was_not
     _memory(monkeypatch, 1)
     report = vacuum_preflight(sqlite_engine)
     assert report["short_on"] == ["memory"] and "the free space on the database's volume" in report["detail"], report
+
+
+# --------------------------------------------------------------------------- #
+#  the log: absent is a reading of nothing, unreadable is not
+# --------------------------------------------------------------------------- #
+def _wal_getsize_raises(monkeypatch, exc):
+    real = os.path.getsize
+
+    def _size(path, *a, **k):
+        if str(path).endswith("-wal"):
+            raise exc
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(os.path, "getsize", _size)
+
+
+def test_a_log_that_is_not_there_is_a_log_of_nothing_and_says_nothing(sqlite_engine, monkeypatch) -> None:
+    _wal_getsize_raises(monkeypatch, FileNotFoundError("no log"))
+    report = vacuum_preflight(sqlite_engine)
+    assert report["wal_bytes"] == 0 and report["not_read"] == [], report
+    assert report["detail"] == "enough free space and memory for this VACUUM"
+
+
+@pytest.mark.parametrize("exc", [PermissionError("no"), OSError(5, "I/O error"), NotADirectoryError("x")])
+def test_a_log_that_exists_and_cannot_be_measured_is_named_as_unread_and_is_not_a_zero(sqlite_engine, monkeypatch, exc) -> None:
+    _wal_getsize_raises(monkeypatch, exc)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["wal_bytes"] is None and "the size of the file's log" in report["not_read"], report
+    assert report["sufficient"] is True, "an unreadable log is not a refusal"
+    assert "The size of the file's log could not be read and was counted as none." in report["detail"], report["detail"]
+    assert report["needed_bytes"] == int(report["copy_bytes"] * VACUUM_HEADROOM), "counted as none, and said so"
+
+
+def test_a_refusal_with_an_unreadable_log_does_not_print_a_zero_byte_log(sqlite_engine, monkeypatch) -> None:
+    _wal_getsize_raises(monkeypatch, PermissionError("no"))
+    real = shutil.disk_usage
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: type(real(path))(real(path).total, real(path).used, 1))
+    report = vacuum_preflight(sqlite_engine)
+    assert report["short_on"] == ["database"]
+    assert "0-byte log" not in report["detail"] and "a log whose size could not be read" in report["detail"], report["detail"]
+
+
+# --------------------------------------------------------------------------- #
+#  the detail reads as sentences, whichever branch wrote it
+# --------------------------------------------------------------------------- #
+def test_a_refusal_that_also_carries_a_note_reads_as_sentences_not_as_a_stray_semicolon(sqlite_engine, monkeypatch) -> None:
+    def _boom(path):
+        raise OSError("statvfs is unavailable here")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    _memory(monkeypatch, 1)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["short_on"] == ["memory"]
+    assert ".;" not in report["detail"] and "; not checked" not in report["detail"], report["detail"]
+    assert report["detail"].endswith("(measured). Not checked, because it could not be read: the free space on the database's volume."), report["detail"]
+
+
+def test_the_fallback_note_is_said_on_a_refusal_and_the_refusal_names_what_was_counted(tmp_path, monkeypatch) -> None:
+    """When the pages in use cannot be read the whole file and its log are counted: the refusal says that, and does not call
+    those bytes 'in use'; with the pages read it does."""
+    from src.database import maintenance
+
+    engine = _engine_with_rows(tmp_path / "w3.db", wal=True, rows=800)
+    real = shutil.disk_usage
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: type(real(path))(real(path).total, real(path).used, 1))
+    read = vacuum_preflight(engine)
+    assert read["short_on"] == ["database"] and "bytes in use" in read["detail"], read["detail"]
+    assert "could not be read" not in read["detail"]
+    monkeypatch.setattr(maintenance, "_vacuum_copy_bytes", lambda engine: None)
+    fell_back = vacuum_preflight(engine)
+    assert fell_back["short_on"] == ["database"], fell_back
+    assert "bytes in the file and its log" in fell_back["detail"] and "bytes in use" not in fell_back["detail"], fell_back["detail"]
+    assert "The pages in use could not be read, so the whole file and its log were counted." in fell_back["detail"]
+    assert ".;" not in fell_back["detail"]
+    _memory(monkeypatch, 1)
+    both = vacuum_preflight(engine)
+    assert "bytes in the file and its log" in both["detail"] and "bytes in use" not in both["detail"], "the memory sentence too"
+    engine.dispose()
+
+
+def test_neither_figure_readable_still_says_the_whole_file_was_counted(tmp_path, monkeypatch) -> None:
+    from src.database import maintenance
+
+    engine = _engine_with_rows(tmp_path / "w4.db", wal=True, rows=300)
+
+    def _boom(path):
+        raise OSError("statvfs is unavailable here")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    _memory(monkeypatch, None)
+    monkeypatch.setattr(maintenance, "_vacuum_copy_bytes", lambda engine: None)
+    report = vacuum_preflight(engine)
+    assert report["sufficient"] is None and "not preflighted" in report["detail"]
+    assert "The pages in use could not be read, so the whole file and its log were counted." in report["detail"], report["detail"]
+    assert "Not checked" not in report["detail"], "the free space and the memory are said once, in the main sentence"
+    engine.dispose()

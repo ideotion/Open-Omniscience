@@ -2018,9 +2018,9 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
 #: margin and not a floor.
 VACUUM_HEADROOM = 2.0
 
-#: What a VACUUM holds in RAM per byte of the file, under ``temp_store=MEMORY``. Measured
-#: 2026-10-06 on a 257 MB file: +266 MB resident (1.03x, against +4 MB under ``FILE``);
-#: 1.25 leaves room for the page cache the rebuild fills. WHAT IT PROTECTS: a machine that
+#: What a VACUUM holds in RAM per byte of the pages it copies (the pages in use), under ``temp_store=MEMORY``. Measured
+#: 2026-10-06 on a 257 MB file: +266 MB resident (1.03x of the file, whose free pages that measurement did not separate;
+#: against +4 MB under ``FILE``); 1.25 leaves room for the page cache the rebuild fills. WHAT IT PROTECTS: a machine that
 #: has less memory than the copy needs, plus the memory guard's own floor, is not asked to
 #: build it (the kernel's out-of-memory kill would end the whole app, the failure the
 #: rollup's in-memory build brought down the 4.81 GiB machines with). It is NOT moved to a
@@ -2052,12 +2052,39 @@ def _vacuum_copy_bytes(engine: Engine) -> int | None:
             pages = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
             free = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
             size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
-    except Exception:  # noqa: BLE001 - an unreadable figure is reported as unread, never as a refusal
-        _LOG.debug("vacuum preflight: the page count could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable figure is reported as unread, never as a refusal
+        # The TYPE only, never the text: the engine's and the connection factory's messages can carry the passphrase, and this
+        # record is one a diagnostics bundle carries.
+        _LOG.debug("vacuum preflight: the page count could not be read (%s)", type(exc).__name__)
         return None
-    if pages <= 0 or size <= 0:
+    in_use = pages - free
+    if pages <= 0 or size <= 0 or in_use <= 0:
+        # a store always holds its first page: a count that says otherwise was not read, and zero must never stand for it
         return None
-    return max(pages - free, 0) * size
+    return in_use * size
+
+
+def _unread_notes(unread: list[str], *, wal_unread: bool, whole_file: bool, log_read: bool) -> list[str]:
+    """The sentences that say which figures of a preflight were not read, in the words the report's ``detail`` ends with."""
+    notes = []
+    if unread:
+        notes.append("Not checked, because it could not be read: " + " and ".join(unread) + ".")
+    if wal_unread:
+        notes.append("The size of the file's log could not be read and was counted as none.")
+    if whole_file:
+        notes.append(
+            "The pages in use could not be read, so the whole file "
+            + ("and its log were counted." if log_read else "was counted.")
+        )
+    return notes
+
+
+def _with_notes(detail: str, notes: list[str]) -> str:
+    """``detail`` followed by ``notes`` as sentences of their own (a detail that ends in a full stop is not joined to the next
+    clause by a semicolon)."""
+    if not notes:
+        return detail
+    return detail.rstrip(".") + ". " + " ".join(notes)
 
 
 def vacuum_preflight(engine: Engine) -> dict:
@@ -2102,13 +2129,20 @@ def vacuum_preflight(engine: Engine) -> dict:
                 "detail": "no database file on disk to measure"}
 
     db_bytes = os.path.getsize(db_path)
+    wal_bytes: int | None
     try:
         wal_bytes = os.path.getsize(db_path + "-wal")
+    except FileNotFoundError:
+        wal_bytes = 0  # no log file is a log of nothing: that is a reading
     except OSError:
-        wal_bytes = 0
+        wal_bytes = None  # a log that exists and cannot be measured (permissions, a failing drive) is not a log of nothing
+    log = wal_bytes or 0
     live_bytes = _vacuum_copy_bytes(engine)
-    copy_bytes = live_bytes if live_bytes is not None else db_bytes + wal_bytes
-    needed = int(copy_bytes * VACUUM_HEADROOM) + wal_bytes
+    copy_bytes = live_bytes if live_bytes is not None else db_bytes + log
+    copy_what = (
+        "bytes in use" if live_bytes is not None else "bytes in the file and its log" if wal_bytes is not None else "bytes in the file"
+    )
+    needed = int(copy_bytes * VACUUM_HEADROOM) + log
 
     def _free(where: str) -> int | None:
         try:
@@ -2127,14 +2161,14 @@ def vacuum_preflight(engine: Engine) -> dict:
         unread.append("the free space on the database's volume")
     if available is None:
         unread.append("the memory available")
-    counted_whole = (
-        "the pages in use could not be read, so the whole file and its log were counted" if live_bytes is None else ""
-    )
+    notes = _unread_notes(unread, wal_unread=wal_bytes is None, whole_file=live_bytes is None, log_read=wal_bytes is not None)
+    if wal_bytes is None:
+        unread.append("the size of the file's log")
 
     report: dict = {
         "checked": bool(readable) or available is not None,
         "db_bytes": db_bytes,
-        "wal_bytes": wal_bytes,
+        "wal_bytes": wal_bytes,  # None when the log exists and its size could not be read
         "copy_bytes": copy_bytes,
         "copy_bytes_read": live_bytes is not None,
         "needed_bytes": needed,
@@ -2157,9 +2191,9 @@ def vacuum_preflight(engine: Engine) -> dict:
     }
     if not readable and available is None:
         report["sufficient"] = None
-        report["detail"] = (
-            "neither the free space nor the available memory could be read; this "
-            "VACUUM was not preflighted"
+        report["detail"] = _with_notes(
+            "neither the free space nor the available memory could be read; this VACUUM was not preflighted",
+            [n for n in notes if not n.startswith("Not checked")],
         )
         return report
 
@@ -2173,13 +2207,14 @@ def vacuum_preflight(engine: Engine) -> dict:
         if "database" in short:
             parts.append(
                 f"the database volume has {readable['database']:,} bytes free and this "
-                f"VACUUM needs about {needed:,} ({VACUUM_HEADROOM:g} times the {copy_bytes:,} bytes in use, plus the "
-                f"{wal_bytes:,}-byte log). Free space, then retry."
+                f"VACUUM needs about {needed:,} ({VACUUM_HEADROOM:g} times the {copy_bytes:,} {copy_what}, plus "
+                + (f"the {wal_bytes:,}-byte log" if wal_bytes is not None else "a log whose size could not be read")
+                + "). Free space, then retry."
             )
         if "memory" in short:
             parts.append(
                 f"this computer has {available:,} bytes of memory available and the rebuilt "
-                f"copy of the {copy_bytes:,} bytes in use is held in memory (about {ram_needed:,}) on top "
+                f"copy of the {copy_bytes:,} {copy_what} is held in memory (about {ram_needed:,}) on top "
                 f"of the {floor:,} the memory guard keeps free. Close other programs and retry. "
                 "The copy is held in memory (every connection of the app keeps its temporary data there), "
                 "and a temporary file instead would corrupt an encrypted library at the app's page size (measured)."
@@ -2192,10 +2227,7 @@ def vacuum_preflight(engine: Engine) -> dict:
         report["detail"] = f"enough {what} for this VACUUM"
     else:
         report["detail"] = "enough free space and memory for this VACUUM"
-    if unread:
-        report["detail"] += "; not checked, because it could not be read: " + " and ".join(unread)
-    if counted_whole:
-        report["detail"] += f"; {counted_whole}"
+    report["detail"] = _with_notes(report["detail"], notes)
     return report
 
 
