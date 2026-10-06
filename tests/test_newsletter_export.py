@@ -185,7 +185,9 @@ def test_no_deleted_word_survives_in_the_decrypted_copy(corpus, tmp_path):
     assert _MARK not in _clear_text(corpus, tmp_path)
 
 
-def test_no_deleted_word_survives_on_the_secure_delete_path_either(corpus, tmp_path, monkeypatch):
+def test_no_deleted_word_reaches_a_restore_on_the_secure_delete_path_either(corpus, tmp_path, monkeypatch):
+    """What a restore READS (a decrypting export sees live rows and the index only). The file's own
+    unused space is not read here and is not guaranteed clean on this path: see ``NOTE_DELETE``."""
     def refuse(*_a, **_k):
         raise RuntimeError("no room")
 
@@ -415,8 +417,9 @@ def test_secure_delete_is_what_leaves_no_text_in_the_pages_the_deletes_free(tmp_
     build, and a decrypting export copies live rows only), so the same statements run on a plaintext
     twin and its RAW bytes are read. The twin is opened by the SQLCipher driver WITHOUT a key, which
     is the engine the encrypted copy is opened by: the stdlib ``sqlite3`` is whatever SQLite the
-    platform's Python was linked with, and one such build (macOS CI) leaves a stale cell copy and an
-    index leaf behind under ``secure_delete``, a fact about that build and not about this module. The
+    platform's Python was linked with. The twin is BUILT with the pragma on (see ``_plain_twin``): a
+    page that split while it was off kept a stale copy of its cells, which failed this test on macOS
+    CI and is also why the secure-delete fallback is the weaker path (``NOTE_DELETE``). The
     control (``secure`` False) must still hold the words, or the check sees nothing; the module's own
     use of the pragma is pinned by its statement order."""
     from sqlcipher3 import dbapi2 as sqlcipher

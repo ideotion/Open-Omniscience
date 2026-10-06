@@ -55,7 +55,8 @@ _SIDE_FILES = ("-wal", "-shm", "-journal")
 NOTE_EXPORT = "newsletters excluded by rewriting the survivors into a fresh encrypted file"
 NOTE_DELETE = (
     "newsletters excluded by secure delete (the rewrite into a fresh file did not complete: {why}); "
-    "fragments of the excluded text can remain in the copy's unused space, which the rewrite removes"
+    "fragments of the excluded newsletters can remain in this backup's unused space, encrypted with it "
+    "(a restore does not bring them back); a backup made when the rewrite can run has none"
 )
 
 
