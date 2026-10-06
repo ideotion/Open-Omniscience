@@ -86,7 +86,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import (
+    UNREADABLE_TEXT,
+    exception_text,
+    log_failure,
+    scrubbed,
+    scrubbed_value,
+)
 from src.monitoring.secret_scrub import scrub_file as _scrub_file
 
 _LOG = logging.getLogger("monitoring.release_run")
@@ -1141,6 +1147,18 @@ def _scrub_kept_install(fresh: Path, out_json: Path, needle: str) -> dict[str, l
     return done
 
 
+def _child_pipe_text(raw: bytes | None) -> str | None:
+    """What the child wrote to a pipe, as the UTF-8 it was told to write: ``""`` for nothing, ``None`` when the bytes are not valid
+    UTF-8 -- text no scrub can vouch for (a key's letters in a code page, a cut through a character) is withheld whole, never
+    decoded with replacement characters, which would put a form of the key into the report that no carrier writes."""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8").replace("\r\n", "\n")
+    except UnicodeDecodeError:
+        return None
+
+
 def _fresh_install_restore(
     ctx: Any, run: _Run, backup_path: Path, *, label: str
 ) -> dict[str, Any]:
@@ -1168,6 +1186,11 @@ def _fresh_install_restore(
         "OO_DB_PASSPHRASE": run.params.passphrase,
         "OO_NO_SCHEDULER": "1",
         "OO_AUTOSEED": "0",
+        # The child writes UTF-8 whatever the console's code page is, and the parent reads its pipes as bytes: on Windows the
+        # child's stderr is the ANSI page with a backslash escape for a letter outside it, a form of a passphrase no carrier
+        # of the scrub writes (a key that mixes a cp1252 letter with one outside that page reached the report half raw).
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
         "OO_RELEASE_RUN_BACKUP": str(backup_path),
         "OO_RELEASE_RUN_OUT": str(out_json),
     }
@@ -1182,7 +1205,6 @@ def _fresh_install_restore(
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
         )
     except BaseException:
         # No child ran, so nothing wrote into the directory just made: take it away, kept install or
@@ -1193,7 +1215,7 @@ def _fresh_install_restore(
             fresh.rmdir()
         raise
     try:
-        said: tuple[str, str] | None = None
+        said: tuple[bytes, bytes] | None = None
         while proc.poll() is None:
             if ctx.stopping:
                 proc.terminate()
@@ -1212,7 +1234,9 @@ def _fresh_install_restore(
             except subprocess.TimeoutExpired:
                 continue
             break
-        stdout, stderr = said if said is not None else proc.communicate(timeout=30)
+        raw_out, raw_err = said if said is not None else proc.communicate(timeout=30)
+        stdout = _child_pipe_text(raw_out)
+        stderr = _child_pipe_text(raw_err)
         result: dict[str, Any] = {
             "label": label,
             "backup": str(backup_path),
@@ -1221,7 +1245,11 @@ def _fresh_install_restore(
             "returncode": proc.returncode,
             # Scrubbed BEFORE the cut: a cut through the passphrase would leave a fragment that no
             # later replacement could find.
-            "stderr_tail": scrubbed(stderr or "", run.params.passphrase)[-4000:],
+            "stderr_tail": (
+                UNREADABLE_TEXT
+                if stderr is None
+                else scrubbed(stderr, run.params.passphrase)[-4000:]
+            ),
         }
         payload: dict[str, Any] | None = None
         with contextlib.suppress(OSError, ValueError):

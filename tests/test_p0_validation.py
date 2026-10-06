@@ -497,8 +497,9 @@ def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verify_verdict_and_
 def test_the_passphrase_is_out_of_the_reason_when_joining_two_lines_would_rebuild_it(tmp_path, monkeypatch):
     """The reason joins the engine's lines with ``"; "``: a passphrase that holds ``"; "`` and whose halves end
     one line and start the next is in neither line and in the joined text (the coordinator's check of #1318,
-    N5). The lines stay as the engine made them, and the lead stays the check's own words. MUTATION TARGET: the
-    scrub of the joined tail."""
+    N5). The lead stays the check's own words; the measurement is the clean joined text alone, because the lines as the engine
+    made them would leave each half in its list (the coordinator's check of fold 3, F4). MUTATION TARGET: the scrub of the joined
+    tail, and the replacement of the list by the clean text when the join changes."""
     import src.backup.stream_backup as stream_backup
 
     _live_corpus(tmp_path, monkeypatch)
@@ -510,7 +511,8 @@ def test_the_passphrase_is_out_of_the_reason_when_joining_two_lines_would_rebuil
     )
     verify = out["report"]["checks"]["p0_1_verify"]
     assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
-    assert verify["measurements"]["problems"] == lines
+    assert verify["measurements"]["problems"] == ["volume 2 failed its checksum, ***redacted*** was not read"]
+    assert "left half" not in json.dumps(out) and "right half" not in json.dumps(out)
     assert secret not in json.dumps(out)
     assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
 
@@ -766,6 +768,19 @@ def _is_a_builder_call(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _RESPONSE_BUILDERS
 
 
+def _cuts_the_exception(carrying: ast.AST, name: str | None) -> bool:
+    """Whether the argument a scrubbing call carries cuts the caught exception's text with a slice INSIDE the call
+    (``scrubbed(f"{exc}"[:300])``): the cut comes before the scrub, and a secret that starts before it and ends after it leaves
+    its first half in the text, which no later scrub can match. The cut belongs after the call (``scrubbed(...)[:300]``) or in
+    ``exception_text(..., limit=)``, which does it in that order."""
+    return bool(name) and any(
+        isinstance(n, ast.Subscript)
+        and isinstance(n.slice, ast.Slice)
+        and any(isinstance(m, ast.Name) and m.id == name for m in ast.walk(n.value))
+        for n in ast.walk(carrying)
+    )
+
+
 def _caught_exception_leaks(
     source: str, *, responses: bool = False, every: bool = False
 ) -> tuple[list[str], list[str], int]:
@@ -801,12 +816,24 @@ def _caught_exception_leaks(
     holders: list[str] = []
     offenders: dict[int, str] = {}
     routed: set[int] = set()
-    for fn in ast.walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
+    in_a_function = {
+        id(h)
+        for f in ast.walk(tree)
+        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+        for h in ast.walk(f)
+        if isinstance(h, ast.ExceptHandler)
+    }
+    # A handler at module level (an import guard, a bootstrap) is a scope of its own: it holds what it names and is read like a function.
+    scopes = [
+        (getattr(n, "name", "<module>"), n)
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        or (isinstance(n, ast.ExceptHandler) and id(n) not in in_a_function)
+    ]
+    for fname, fn in scopes:
         held = _Held(fn)
         if held.keys:
-            holders.append(fn.name)
+            holders.append(fname)
         elif not every:
             continue
         covered = _covered_by_a_scrubbing_block(fn, held)
@@ -823,10 +850,12 @@ def _caught_exception_leaks(
                         and held.keys == {held.key_of(node.args[spec[1]])}
                     ):
                         routed.add(id(node))
-                        allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
+                        if not _cuts_the_exception(node.args[spec[0]], handler.name):
+                            allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
                     elif many and len(node.args) >= many[1] and held.covered_by(node.args[many[1] :]):
                         routed.add(id(node))
-                        allowed |= {id(n) for n in ast.walk(node.args[many[0]])}
+                        if not _cuts_the_exception(node.args[many[0]], handler.name):
+                            allowed |= {id(n) for n in ast.walk(node.args[many[0]])}
                     elif (node.func.id == "type" or node.func.id in _CLASSIFIERS) and len(node.args) == 1:
                         allowed.add(id(node.args[0]))
                 elif isinstance(node, ast.Attribute) and node.attr in _PLAIN_FIELDS and _is_a_phase_error_handler(handler):
@@ -844,7 +873,7 @@ def _caught_exception_leaks(
                     isinstance(node, ast.Call)
                     and _writes_a_traceback(node, traceback_modules, traceback_functions, sys_modules)
                 ):
-                    offenders.setdefault(id(node), f"{fn.name}, line {node.lineno}")
+                    offenders.setdefault(id(node), f"{fname}, line {node.lineno}")
                 elif (
                     isinstance(node, ast.Raise)
                     and isinstance(node.exc, ast.Call)
@@ -852,7 +881,7 @@ def _caught_exception_leaks(
                     and id(node) not in covered
                     and not (responses and _is_a_builder_call(node.exc))
                 ):
-                    offenders.setdefault(id(node), f"{fn.name}, line {node.lineno} (raised with no `from`)")
+                    offenders.setdefault(id(node), f"{fname}, line {node.lineno} (raised with no `from`)")
     return holders, sorted(offenders.values()), len(routed)
 
 
@@ -1636,10 +1665,15 @@ _EVERY_LEAKS = {
     "a new exception with the caught one as its context": _guarded(_NAMED, 'raise RuntimeError("it failed")', head=_NO_SECRET),
     "a helper that is handed it": _guarded(_NAMED, "record(exc)", head=_NO_SECRET),
     "a scrubbing call that does not carry it": _guarded(_NAMED, 'record(exception_text(exc), exc)', head=_NO_SECRET),
+    "a cut inside the scrubbing call": _guarded(_NAMED, 'err = scrubbed(f"{type(exc).__name__}: {exc}"[:300])', head=_NO_SECRET),
+    "a handler at module level": "try:\n    go()\nexcept Exception as exc:\n    err = str(exc)\n",
+    "a cut of the exception's text inside the scrubbing call": _guarded(_NAMED, "err = scrubbed(str(exc)[:300])", head=_NO_SECRET),
 }
 _EVERY_FINE = {
     "exception_text": (_guarded(_NAMED, "err = exception_text(exc, limit=300)", head=_NO_SECRET), 1),
     "exception_text untyped": (_guarded(_NAMED, "err = exception_text(exc, typed=False, limit=300)", head=_NO_SECRET), 1),
+    "a scrubbed handler at module level": ("try:\n    go()\nexcept Exception as exc:\n    err = exception_text(exc, limit=300)\n", 1),
+    "a cut after the scrubbing call": (_guarded(_NAMED, "err = scrubbed(str(exc))[:300]", head=_NO_SECRET), 1),
     "scrubbed text": (_guarded(_NAMED, 'err = scrubbed(f"{type(exc).__name__}: {exc}")', head=_NO_SECRET), 1),
     "log_failure": (_guarded(_NAMED, 'log_failure(log, "it failed", exc)', head=_NO_SECRET), 1),
     "the class alone": (_guarded(_NAMED, "err = type(exc).__name__", head=_NO_SECRET), 0),
@@ -1842,7 +1876,7 @@ def test_the_passphrase_the_process_holds_is_out_of_the_p0_report_beside_the_typ
 def test_a_held_passphrase_split_across_two_lines_is_out_of_the_joined_reason(tmp_path, monkeypatch):
     """The reason joins the engine's lines, so a passphrase the PROCESS holds that holds ``"; "`` can end one line and start the
     next: the join is scrubbed of the held ones too, not only of the typed one. MUTATION TARGET: the scrub of the joined tail
-    that names the typed passphrase alone."""
+    that names the typed passphrase alone, and the replacement of the list by the clean text when the join changes."""
     import src.backup.stream_backup as stream_backup
     from src.monitoring import secret_scrub as ss
 
@@ -1856,12 +1890,16 @@ def test_a_held_passphrase_split_across_two_lines_is_out_of_the_joined_reason(tm
     )
     verify = out["report"]["checks"]["p0_1_verify"]
     assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
+    # The measurement is the clean joined text alone: neither half of the key stays in any item of the list.
+    assert verify["measurements"]["problems"] == ["volume 2 failed its checksum, ***redacted*** was not read"]
+    assert "left half" not in json.dumps(out) and "right half" not in json.dumps(out)
     assert held not in json.dumps(out) and held not in Path(out["path"]).read_text(encoding="utf-8")
 
 
 def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception_they_write(monkeypatch):
-    """Three handlers hold no secret and wrote the exception by hand; the session's passphrase can be in an engine's words
-    there too. MUTATION TARGET: the helper at any of the three."""
+    """Handlers that hold no secret wrote the exception by hand; the session's passphrase can be in an engine's words there too.
+    MUTATION TARGET: the helper at any of the three that read an engine (the unlock check, the collector check, the last report),
+    each DRIVEN here, so a handler that goes back to the f-string fails its own line."""
     from src.monitoring import forensics
     from src.monitoring import secret_scrub as ss
 
@@ -1874,3 +1912,13 @@ def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception
     monkeypatch.setattr(forensics, "session_forensics", boom)
     unlock = p0._check_unlock()
     assert held not in json.dumps(unlock) and "RuntimeError: engine said ***redacted***" in json.dumps(unlock)
+
+    from src.monitoring import collect_perf
+
+    monkeypatch.setattr(collect_perf, "recent_samples", boom)
+    collector = p0._check_collector()
+    assert held not in json.dumps(collector) and "RuntimeError: engine said ***redacted***" in json.dumps(collector)
+
+    monkeypatch.setattr(p0, "_report_dir", boom)
+    last = p0.last_p0_validation_report()
+    assert held not in json.dumps(last) and last["error"] == "engine said ***redacted***", last

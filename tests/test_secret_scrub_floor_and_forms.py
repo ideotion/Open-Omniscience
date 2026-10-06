@@ -671,6 +671,22 @@ def test_scrub_file_refuses_a_file_that_holds_a_secret_under_the_floor_and_touch
     assert ss.scrub_file(long_one, "") is False
 
 
+def test_scrub_file_refuses_a_short_secret_in_the_shapes_a_writer_gives_it_not_only_as_typed(tmp_path):
+    """A needle under the floor is in a file as ``json.dumps`` wrote it (a letter outside ASCII as a backslash-u escape) or as an SQL
+    literal holds it (a quote doubled), and a refusal that read only the raw needle would leave both in a file the caller keeps.
+    Each file is refused and left byte for byte as it was. MUTATION TARGET: the refusal reading the raw needle alone."""
+    escaped = tmp_path / "escaped.jsonl"
+    escaped.write_text(json.dumps({"label": "b-\u00e99x.oobak"}) + "\n", encoding="utf-8")
+    assert "\\u00e9" in escaped.read_text(encoding="utf-8") and "\u00e9" not in escaped.read_text(encoding="utf-8")
+    doubled = tmp_path / "doubled.txt"
+    doubled.write_text("ATTACH 'b-o''k.oobak' failed\n", encoding="utf-8")
+    for path, needle in ((escaped, "\u00e99x"), (doubled, "o'k")):
+        before = path.read_bytes()
+        with pytest.raises(ValueError, match="too short"):
+            ss.scrub_file(path, needle)
+        assert path.read_bytes() == before and not (tmp_path / (path.name + ".part")).exists(), path.name
+
+
 def test_scrubbed_value_checks_a_leaf_that_is_not_a_string_as_the_text_it_is_written_as(monkeypatch):
     """A report round-tripped through ``json.dumps(default=str)`` writes bytes, a path or an exception as text; the walk
     checks that text instead of passing the object. MUTATION TARGET: the leaf branch (back to pass-through), a ``str()`` that

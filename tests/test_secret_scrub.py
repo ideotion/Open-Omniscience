@@ -666,7 +666,7 @@ def test_no_shape_of_the_secret_is_in_the_text_for_any_secret_and_text_made_of_t
     repr's escape and JSON's among them, each written again by the others, up to three deep): each secret of one or two
     characters, against every text of one to three pieces from the shapes ONE writer makes of it, a quote, a star and a
     letter. The pieces are the first shapes only (the helper's own closure is what must be gone from the output): all of the
-    closure as pieces is 170 to the third power for one secret."""
+    closure as pieces is up to 518 to the third power for one secret (518 shapes at most, :func:`_shapes`)."""
     from itertools import product
 
     alphabet = ("*", "'", '"', "\\", "#", "x")

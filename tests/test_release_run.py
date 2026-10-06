@@ -1587,6 +1587,10 @@ _OK_CHILD = {"ok": True, "restore": {"kind": "volume-set", "committed": True},
              "country_code_scan": {"duplicates": 0}, "peak_rss_mb": 120.0}
 
 
+#: The keyword arguments of every child the stand-in below was asked to start.
+_SPAWNED: list[dict] = []
+
+
 def _child_process(monkeypatch, *, payload, returncode,
                    stderr="INFO  [alembic.runtime.migration] Context impl SQLiteImpl."):
     """Put a stand-in for the restore child behind the REAL ``_fresh_install_restore``: a
@@ -1598,6 +1602,7 @@ def _child_process(monkeypatch, *, payload, returncode,
     class _Proc:
         def __init__(self, argv, **kw):
             self.returncode = returncode
+            _SPAWNED.append(kw)
             if payload is not None:
                 Path(kw["env"]["OO_RELEASE_RUN_OUT"]).write_text(json.dumps(payload), encoding="utf-8")
 
@@ -1605,7 +1610,9 @@ def _child_process(monkeypatch, *, payload, returncode,
             return self.returncode
 
         def communicate(self, timeout=None):
-            return (json.dumps(payload) if payload is not None else ""), stderr
+            # The pipes are read as BYTES (no ``text=True``); ``stderr`` may be given as bytes to say what a code page wrote.
+            said = stderr if isinstance(stderr, bytes) else stderr.encode("utf-8")
+            return (json.dumps(payload).encode("utf-8") if payload is not None else b""), said
 
     monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
         Popen=_Proc, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
@@ -2863,6 +2870,67 @@ def test_the_pause_and_resume_handlers_take_the_held_passphrase_out_and_cut_afte
     for said in (paused["scheduler_error"], resumed["scheduler_error"]):
         assert said.startswith("RuntimeError: xxx") and len(said) == 300, said
         assert HELD not in said and HELD[:6] not in said and said.endswith("***red"), said
+
+
+def test_the_wiki_lane_handlers_and_the_last_report_take_the_held_passphrase_out_and_cut_after_it(monkeypatch):
+    """The two wiki-lane handlers (the pause and the resume) and the last-report reader write the exception through the helper as
+    well, and the scheduler's pair above is not those lines: each is DRIVEN here with the held key at character 294. MUTATION
+    TARGET: any of the three making the text by hand (a cut before the scrub, or none)."""
+    import src.wiki.service as wiki_service
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+
+    def boom(*_a, **_k):
+        raise RuntimeError("x" * 280 + HELD + " tail")
+
+    monkeypatch.setattr(wiki_service, "lane_service_status", boom)
+    monkeypatch.setattr(wiki_service, "start_wiki_lane", boom)
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    paused = rr._pause_collection()
+    resumed = rr._resume_collection({"scheduler_was_running": False, "wiki_lane_was_streaming": True})
+
+    def boom_untyped(*_a, **_k):
+        raise RuntimeError("x" * 294 + HELD + " tail")
+
+    monkeypatch.setattr(rr, "read_state", lambda: {})  # the live run is read outside the handler
+    monkeypatch.setattr(rr, "_run_dir", boom_untyped)  # no class in front, so the key starts at 294 here too
+    last = rr.last_release_run_report()
+    for said in (paused["wiki_lane_error"], resumed["wiki_lane_error"], last["error"]):
+        assert len(said) == 300, said
+        assert HELD not in said and HELD[:6] not in said and said.endswith("***red"), said
+    assert paused["wiki_lane_error"].startswith("RuntimeError: xxx") and last["error"].startswith("xxx"), last
+
+
+MIXED_KEY = "k\u00e9y-\u0416-7x9"  # a letter of the ANSI page (cp1252) and one outside it
+
+
+def test_the_child_writes_utf8_and_its_stderr_is_read_as_bytes_so_a_mixed_page_key_is_taken_out(fast, monkeypatch):
+    """On Windows the child's stderr is the ANSI page with a backslash escape for a letter outside it, so a key that mixes a cp1252
+    letter with one outside the page reached the report as raw text plus an escape, a form no carrier writes. The child is told to
+    write UTF-8, its pipes are read as bytes and decoded strictly, so the key is in the one form the scrub takes out. MUTATION
+    TARGET: the two environment settings, the bytes read (``text=True`` again), the strict decode."""
+    _SPAWNED.clear()
+    params = _params(fast["dest"], passphrase=MIXED_KEY)
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=f"trace {MIXED_KEY} end")
+    rep = rr.run_release_run(FakeCtx(), **params)["report"]
+    kw = _SPAWNED[-1]
+    assert kw["env"]["PYTHONUTF8"] == "1" and kw["env"]["PYTHONIOENCODING"] == "utf-8", kw["env"]
+    assert not kw.get("text") and not kw.get("universal_newlines") and not kw.get("encoding"), kw
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert tail == "trace ***redacted*** end", tail
+    assert MIXED_KEY not in json.dumps(rep) and "7x9" not in json.dumps(rep)
+
+
+def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):
+    """The key as a code page wrote it (cp1252 for the letter, an escape for the other) is not UTF-8: the tail is withheld whole,
+    never decoded with replacement characters around a form the scrub does not know. MUTATION TARGET: a lenient decode."""
+    written = ("trace k\u00e9y-\\u0416-7x9 end").encode("cp1252")
+    assert b"\xe9" in written
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=written)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
+    assert rep["phase_results"]["fresh_install_restore"]["stderr_tail"] == rr.UNREADABLE_TEXT
+    assert "7x9" not in json.dumps(rep)
 
 
 def test_a_held_passphrase_a_cut_would_split_is_taken_out_before_the_child_s_stderr_is_cut(fast, monkeypatch):

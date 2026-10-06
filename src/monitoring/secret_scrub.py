@@ -14,8 +14,8 @@ an endpoint, ``src/safety/scrub.py`` for the run journal's own notes -- so a pas
 inside a VALUE rides straight through both; this helper is told the passphrase and takes it out
 of every value. It is DEFENCE IN DEPTH, never the primary guarantee: no path on the child's side
 is known to print the passphrase, and this is the net beneath that. Exact match, in the shapes the code
-writes a secret in (:func:`_forms`: as typed and as an SQL literal holds it, each as ``repr`` writes it and as JSON
-writes it, and every one of those written again by the same writers, up to three deep); a copy made any other way (a
+writes a secret in (:func:`_forms`: as typed and as an SQL literal holds it, each as ``repr`` writes it, as JSON
+writes it and as the ``repr`` of its UTF-8 bytes writes it, and every one of those written again by the same writers, up to three deep); a copy made any other way (a
 re-encoding, a hash, a piece of it, a text cut through it) is not recognised in free text. The JSON files :func:`scrub_file`
 reads are parsed first, so the secret is found in the form their READER sees, and text it cannot parse is scrubbed in every
 one of those shapes. The P0 check, which is handed the same passphrase, writes the exception texts of its report
@@ -413,7 +413,7 @@ def scrubbed_value(value: Any, *secrets: str | None, withheld: str = UNREADABLE_
     checked is replaced by ``withheld``, and a value that cannot be walked (nested past what the interpreter can read) is
     replaced by ``withheld`` itself: it never raises and never returns a text it did not check. This is the call for the
     structured results a report carries (a child's result, the engine's failure lines); :func:`scrub_value` is the per-needle
-    helper for a needle the run made itself."""
+    helper for a needle the caller made itself."""
     try:
         shapes = _forms_now(secrets)
         return _walk_checked(value, shapes, withheld)

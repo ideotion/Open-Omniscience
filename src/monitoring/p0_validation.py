@@ -447,6 +447,13 @@ def _check_backup(
     # this is the net where the lines are copied, line by line, never the verdicts and the success sentence
     # around them (the coordinator's delta check of #1312, F2; its check of #1318, B1).
     problems = scrubbed_value(None if vrep is None else vrep.get("problems"), passphrase)
+    # A passphrase that holds "; " (or any line break the lines were split at) can END one line and START the next, and no line
+    # holds either half whole. The lines read as one text are the check the line-by-line pass cannot make: when that text changes,
+    # the measurement is the clean text alone, so no half of the key stays in any item of the list.
+    joined = _joined_problems(problems)
+    clean_joined = scrubbed(joined, passphrase)
+    if isinstance(problems, list) and clean_joined != joined:
+        problems = [clean_joined]
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
         "ok": None if vrep is None else vrep.get("ok"),
@@ -474,7 +481,7 @@ def _check_backup(
     else:
         # The join puts two lines side by side, so the tail is scrubbed once more (a passphrase that holds "; "
         # could end one line and start the next); the lead is the check's own words and is left alone.
-        probs = scrubbed("; ".join(problems or ["unknown"]), passphrase)
+        probs = clean_joined
         verify_check = _verdict(
             "fail", f"verification failed: {probs}", verify_measurements, bars["p0_1_verify"]
         )
@@ -484,6 +491,11 @@ def _check_backup(
 # --------------------------------------------------------------------------- #
 #  P0.2 — staged restore round-trip + dry-run merge preview (never commits)
 # --------------------------------------------------------------------------- #
+def _joined_problems(problems: Any) -> str:
+    """The engine's failure lines as ONE text, the way the reason prints them (``"unknown"`` when it gave none)."""
+    return "; ".join(str(p) for p in problems) if isinstance(problems, list) and problems else "unknown"
+
+
 def _check_restore(
     ctx: Any, dest_dir: Path, passphrase: str, staging_root: Path
 ) -> dict:
