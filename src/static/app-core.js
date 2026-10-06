@@ -1856,6 +1856,8 @@
       "volume backup (it first makes a temporary copy of your data)":
         "Volume backup (it first makes a temporary copy of your data)",
       "restore staging": "Unpacking the backup to restore it",
+      "newsletter filter and search-index merge (no backup was written)":
+        "Filtering the newsletters out of the backup copy (no backup was written yet)",
     };
     const _OO_SIZE_RE = "([0-9]+(?:\\.[0-9]+)?) (B|KB|MB|GB|TB)";
     const _OO_SPACE_RES = [

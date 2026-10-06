@@ -374,9 +374,15 @@ def test_a_drive_with_room_for_the_merge_but_not_the_rewrite_takes_the_secure_de
 
 
 def _plain_twin(path: Path) -> None:
-    import sqlite3
+    """A small corpus with 20 newsletter articles and 10 others. Built with ``secure_delete`` ON, so
+    that the only bytes the deletes could leave behind are the ones the deletes themselves free: a
+    page that splits while the pragma is off keeps a stale copy of the cells it moved in its free
+    space (the root page of ``articles``, once it becomes an interior page), which ``secure_delete``
+    cannot reach afterwards and which differs from one SQLite build to the next."""
+    from sqlcipher3 import dbapi2 as sqlcipher
 
-    con = sqlite3.connect(path)
+    con = sqlcipher.connect(str(path))
+    con.execute("PRAGMA secure_delete = ON")
     con.executescript(
         """
         CREATE TABLE sources (id INTEGER PRIMARY KEY, domain TEXT);
@@ -392,10 +398,13 @@ def _plain_twin(path: Path) -> None:
         """
     )
     con.execute("INSERT INTO sources VALUES (1, ?)", (_NEWSLETTER_DOMAINS[0],))
+    con.execute("INSERT INTO sources VALUES (2, 'news.example')")
     for i in range(20):
         con.execute(
             "INSERT INTO articles VALUES (?, 1, ?, ?)", (i, f"nl{i}", f"{_MARK.decode()}{i} " * 400)
         )
+    for i in range(10):
+        con.execute("INSERT INTO articles VALUES (?, 2, ?, ?)", (1000 + i, f"keep{i}", f"ordinary words {i} " * 50))
     con.commit()
     con.close()
 
@@ -404,15 +413,19 @@ def _plain_twin(path: Path) -> None:
 def test_secure_delete_is_what_leaves_no_text_in_the_pages_the_deletes_free(tmp_path, secure):
     """The encrypted copy's free pages cannot be read from here (no ``sqlite_dbpage`` in the driver
     build, and a decrypting export copies live rows only), so the same statements run on a plaintext
-    twin and its RAW bytes are read. The control (``secure`` False) must still hold the words, or
-    the check sees nothing; the module's own use of the pragma is pinned by its statement order."""
-    import sqlite3
+    twin and its RAW bytes are read. The twin is opened by the SQLCipher driver WITHOUT a key, which
+    is the engine the encrypted copy is opened by: the stdlib ``sqlite3`` is whatever SQLite the
+    platform's Python was linked with, and one such build (macOS CI) leaves a stale cell copy and an
+    index leaf behind under ``secure_delete``, a fact about that build and not about this module. The
+    control (``secure`` False) must still hold the words, or the check sees nothing; the module's own
+    use of the pragma is pinned by its statement order."""
+    from sqlcipher3 import dbapi2 as sqlcipher
 
     from src.backup.artifact import _drop_newsletter_rows
 
     path = tmp_path / "twin.db"
     _plain_twin(path)
-    con = sqlite3.connect(path)
+    con = sqlcipher.connect(str(path))
     con.execute(f"PRAGMA secure_delete = {'ON' if secure else 'OFF'}")
     assert _drop_newsletter_rows(con, vacuum=False) == 20
     con.close()

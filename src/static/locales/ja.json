@@ -1825,6 +1825,7 @@
   "Filter the sources list": "情報源リストを絞り込む",
   "Filtered": "フィルター済み",
   "Filtered search": "フィルター検索",
+  "Filtering the newsletters out of the backup copy (no backup was written yet)": "バックアップのコピーからニュースレターを除外する処理(バックアップはまだ書き込まれていません)",
   "Financial": "金融",
   "Financial data": "金融データ",
   "Find coverage in your corpus": "コーパス内のカバレッジを探す",

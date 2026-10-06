@@ -18,7 +18,10 @@ THE RULES THIS FILE HOLDS, each pinned by a test that fails without it:
     over (a plaintext header, which needs a salt of its own) refuses the export instead.
   * Any failure takes the other path: the rows are already deleted with ``secure_delete`` on and the
     index merged, so the copy is left as that and the partial file is removed. The note says which
-    path ran. Neither path leaves the deleted text readable.
+    path ran, and that this path is the weaker one: ``secure_delete`` zeroes what the deletes free,
+    but it cannot reach stale bytes already sitting in a page's free space from an earlier split
+    (measured: the root page of ``articles``, once it turned into an interior page, kept a copy of
+    the first rows it held), so only the rewrite guarantees that no deleted text is in the copy.
 """
 
 from __future__ import annotations
@@ -50,7 +53,10 @@ _ALIAS = "nlout"
 _SIDE_FILES = ("-wal", "-shm", "-journal")
 
 NOTE_EXPORT = "newsletters excluded by rewriting the survivors into a fresh encrypted file"
-NOTE_DELETE = "newsletters excluded by secure delete (the rewrite into a fresh file did not complete: {why})"
+NOTE_DELETE = (
+    "newsletters excluded by secure delete (the rewrite into a fresh file did not complete: {why}); "
+    "fragments of the excluded text can remain in the copy's unused space, which the rewrite removes"
+)
 
 
 class _ExportRefused(Exception):
@@ -191,7 +197,7 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
             merge_room,
             what="newsletter filter and search-index merge (no backup was written)",
         )
-        # The deleted pages are zeroed, so the path that does not rewrite the file leaves nothing.
+        # The pages the deletes free are zeroed; stale bytes older than this run are not (see the note).
         con.execute("PRAGMA secure_delete = ON")
         dropped = _drop_newsletter_rows(con, vacuum=False)
         if not dropped:

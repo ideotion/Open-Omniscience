@@ -143,7 +143,8 @@ _FOLDER_FRAME = "Not enough free space at {path}: needs {needed}, only {free} fr
 
 def test_the_free_space_frames_are_keyed_everywhere():
     _keyed_everywhere(_SPACE_FRAME, _FOLDER_FRAME, "Backup", "Restore", "Volume backup",
-                      "Unpacking the backup to restore it")
+                      "Unpacking the backup to restore it",
+                      "Filtering the newsletters out of the backup copy (no backup was written yet)")
     # ...and every `what` the server passes has a name here (a new one would read raw).
     import ast
 
