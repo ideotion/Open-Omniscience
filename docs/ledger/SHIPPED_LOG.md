@@ -10455,15 +10455,19 @@ does not see a secret held as `**kwargs`, a `pw` or a closure (the job worker's 
 their result and are handed no secret), a helper that reads the exception for itself, a bare re-raise, a raise without `from`, a
 `finally`, an alias of the `traceback` module or `repr(locals())`, the engine's failure lines handed back as data, or any other
 module; its own walk is tested on thirty-three ways a caught exception can reach a text or a function can hold the secret, ten forms
-it must leave alone and a function it must not read, and forty mutations of the walk are each caught. The delta check's F2 is the
-one route of that shape the walk cannot see, the engine's failure lines returned as data (`problems`): scrubbed line by line where
-the verify check copies them, with a test that the verdict and the check's own words are left alone for a passphrase of `pass` or
-`fail`. The run's parameters no longer print the passphrase in their repr, a failed start removes its
+it must leave alone and a function it must not read, and forty mutations of the walk are each caught. One of the routes the walk
+cannot see is the engine's failure lines returned as data (`problems`): the delta check's F2 found it, and its check of #1318 (B1)
+found a second consumer of the same line, the volume-verify job whose status an endpoint serves. A decrypt failure's line carries
+the exception's own words, so they are scrubbed where `verify_stream_backup` makes the line (never the member's name beside them)
+and again, line by line, where the verify check copies the lines, with tests that the verdict and the check's own words are left
+alone for a passphrase of `pass` or `fail`. The run's parameters no longer print the passphrase in their repr, a failed start removes its
 directory with `rmdir` (an empty directory and nothing else), and a failure that wraps another is scrubbed from its whole
 traceback, with a test for `__cause__` and for `__context__`. Recorded, not fixed (small, and the PR carries no logic for them): a
 cancel that lands after the restore committed reads the phase as `cancelled` while its install exists, the scrub's own
 result is not recorded when it runs from `finally`, and the test that ties `UNLOCK_ROUTES` to the unlock router's own routes
-catches a route the router lost but not one it gained (`OPEN_QUEUE.md` holds the three as deliberate omissions). Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
+catches a route the router lost but not one it gained (`OPEN_QUEUE.md` holds the three as deliberate omissions, and the volume
+job's own error handlers, which return the exception's text and log its traceback with the passphrase in scope, in an entry of
+their own). Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
 CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING
 THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS", "CODEQL READS NAMES: A HELPER THAT TAKES A
 SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE" and "THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF".

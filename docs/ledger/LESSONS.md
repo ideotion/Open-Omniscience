@@ -13301,12 +13301,13 @@ worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` o
 handed no secret); a helper the handler calls that reads the exception for itself, a bare re-raise or a raise without `from`
 (which let the original out as it is or as the context), a `finally` that reads the traceback, an alias (`import traceback as
 tb`, `from sys import exc_info as ei`) and `repr(locals())`; the engine's own failure lines handed back as DATA
-(`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed line by line where the verify
-check copies them, and pinned by its own test), and a phase error's `partial` (what a phase measured before it failed, scrubbed
-where the phase makes it); and every other module (the endpoint that receives the passphrase, the engines it is handed to). **A
-scrub of a value
-code compares changes the value: scrub the
-text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
+(`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed where the engine makes the
+line, so that every consumer of the report gets it clean (the P0 check, the volume-verify job whose status an endpoint serves, the
+dev bench), and again line by line where the P0 check copies the lines, each pinned by its own test), and a phase error's
+`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every other module (the endpoint that
+receives the passphrase, the engines it is handed to; the volume job's own error handlers are one, recorded in `OPEN_QUEUE.md`).
+**A scrub of a value code compares changes the value: scrub the text a person reads at the place it is made, and leave the fields
+a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
 traceback, and a test names the passphrase only in the cause (`from`, and an implicit context).
 

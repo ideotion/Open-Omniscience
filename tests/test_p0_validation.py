@@ -478,7 +478,9 @@ def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verify_verdict_and_
         tmp_path, monkeypatch, secret):
     """The scrub is on the engine's lines and on nothing around them: the verdict is ``fail`` and the check's own
     words lead its reason whatever the passphrase is (the run puts no minimum on its length). MUTATION TARGET: a
-    scrub of the check's reason, or of the whole report, in place of the lines."""
+    scrub of the check's reason, or of the whole report, in place of the lines. Only ``fail`` breaks under it
+    (the lead's own ``fail`` would become the marker); ``pass`` pins the line's own replacement for a verdict
+    word, and the next test pins the verdicts a whole-report scrub would turn into the marker."""
     import src.backup.stream_backup as stream_backup
 
     _live_corpus(tmp_path, monkeypatch)
@@ -490,6 +492,27 @@ def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verify_verdict_and_
     verify = out["report"]["checks"]["p0_1_verify"]
     assert verify["verdict"] == "fail" and verify["measurements"]["ok"] is False
     assert verify["reason"] == "verification failed: " + line.replace(secret, "***redacted***"), verify["reason"]
+
+
+def test_the_passphrase_is_out_of_the_reason_when_joining_two_lines_would_rebuild_it(tmp_path, monkeypatch):
+    """The reason joins the engine's lines with ``"; "``: a passphrase that holds ``"; "`` and whose halves end
+    one line and start the next is in neither line and in the joined text (the coordinator's check of #1318,
+    N5). The lines stay as the engine made them, and the lead stays the check's own words. MUTATION TARGET: the
+    scrub of the joined tail."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    secret = "left half; right half"
+    lines = ["volume 2 failed its checksum, left half", "right half was not read"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
+    assert verify["measurements"]["problems"] == lines
+    assert secret not in json.dumps(out)
+    assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
 
 
 def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verdicts_and_the_success_texts_alone(
