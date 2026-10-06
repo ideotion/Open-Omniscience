@@ -33,6 +33,7 @@ import pytest
 from src.database import damage, verify
 from src.database.damage import (
     FILE_CORPUS,
+    FILE_LAW,
     FILE_WIKI,
     MAX_VERIFY_ATTEMPTS,
     SCOPE_DATA,
@@ -2117,9 +2118,9 @@ def test_a_locked_boot_closed_from_the_lock_screen_twice_still_carries_the_findi
         assert _record(tmp_path)["verification"][FILE_CORPUS]["earlier_damaged"] == ["articles"]
 
 
-def _held_by_the_cap(tmp_path, healthy, files, monkeypatch, *, tables=("articles",)):
+def _held_by_the_cap(tmp_path, healthy, files, monkeypatch, *, tables=("articles",), key=FILE_CORPUS, attempts=MAX_VERIFY_ATTEMPTS):
     """Process N: an earlier check reported ``tables`` and every start since ended before a check finished."""
-    files[FILE_CORPUS] = healthy
+    files[key] = healthy
     (tmp_path / "database-damage.json").write_text(
         json.dumps(
             {
@@ -2127,11 +2128,11 @@ def _held_by_the_cap(tmp_path, healthy, files, monkeypatch, *, tables=("articles
                 "files": {},
                 "incidents": [],
                 "verification": {
-                    FILE_CORPUS: {
-                        "file": FILE_CORPUS,
+                    key: {
+                        "file": key,
                         "process": "another-process",
                         "state": "running",
-                        "attempts": MAX_VERIFY_ATTEMPTS,
+                        "attempts": attempts,
                         "earlier_damaged": list(tables),
                     }
                 },
@@ -2155,6 +2156,8 @@ def test_the_attempt_cap_stops_re_running_the_check_and_never_clears_what_it_fou
     entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
     assert entry["state"] == "skipped" and entry["earlier_damaged"] == ["articles"]
     assert _file_state()["check_tables"] == ["articles"] and _file_state()["incidents"] == 1
+    assert _file_state()["scope"] == damage.SCOPE_DATA, "a finding in a data table was scoped as the search index"
+    assert any(n["frame"] == damage.FRAME_DATA for n in damage.registry.notes()), damage.registry.notes()
     stopped = [n for n in damage.registry.notes() if n["frame"] == damage.FRAME_CHECK_STOPPED]
     assert [n["vars"] for n in stopped] == [{"tries": MAX_VERIFY_ATTEMPTS}], damage.registry.notes()
     # a start of collection reads the reported table again; clean releases the latch and the note with it
@@ -2193,13 +2196,18 @@ def test_a_file_that_cannot_be_examined_is_unchecked_and_an_earlier_finding_stan
     assert damage.registry.latched(FILE_CORPUS), "a file that could not be examined was released"
 
 
-def test_a_file_that_cannot_be_examined_and_has_no_earlier_finding_plans_nothing(tmp_path, files, healthy, monkeypatch):
+def test_a_file_that_cannot_be_examined_and_has_no_earlier_finding_plans_no_check(tmp_path, files, healthy, monkeypatch):
+    """Nothing can be run on a file nothing can read: no check is planned. A check that was DUE (an unclean end) is written
+    down as owed instead, and with nothing due nothing is planned or recorded at all."""
+
     class Unexaminable(type(Path())):
         def is_file(self, **kw):
             raise OSError(5, "Input/output error")
 
     files[FILE_CORPUS] = Unexaminable(healthy)
-    assert verify.plan_boot(previous_end=UNCLEAN) is None
+    plan = verify.plan_boot(previous_end=UNCLEAN)
+    assert plan["files"] == [] and [s["owe"] for s in plan["skipped"]] == [verify.TRIGGER_UNCLEAN_END]
+    assert verify.plan_boot(previous_end=CLEAN) is None
 
 
 def test_a_re_read_of_a_file_that_cannot_be_examined_keeps_the_latch_instead_of_releasing_it(tmp_path, files, damaged, monkeypatch):
@@ -2325,3 +2333,263 @@ def test_a_replaced_file_ends_the_cap_note_for_a_later_latch_too(tmp_path, healt
     assert damage.registry.retry(reason="the file was replaced", files=(FILE_CORPUS,), file_replaced=True) == [FILE_CORPUS]
     damage.registry._note_verified_damage(FILE_CORPUS, ["articles"], path=healthy, at="2026-10-06T03:00:00+00:00")
     assert damage.registry.latched(FILE_CORPUS) and not _stopped_notes(), "a latch on the new file inherited the old file's note"
+
+
+# --------------------------------------------------------------------------- #
+#  the coordinator's check of the fold (F1, F2, F4, F6, F7, F8)
+# --------------------------------------------------------------------------- #
+def _restart(tmp_path, monkeypatch, end):
+    """A new process over the same record, whose previous session ended as ``end`` says."""
+    reg = _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: end)
+    return reg
+
+
+def test_a_file_held_at_the_cap_stays_held_at_every_clean_start_and_a_new_unclean_end_starts_the_count_again(
+    tmp_path, healthy, files, monkeypatch
+):
+    """F1: the hold writes a ``skipped`` entry, which the next start used to read as "no attempts", so the check ran three
+    more times (a crashing check: 3 runs, 1 held start, 3 runs, ...). The cap protects against a boot loop, so a hold lasts until
+    something new asks for a check."""
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch)
+    assert verify.arm_at_boot() is False  # the first held start
+    for _ in range(3):  # and the clean starts after it
+        _restart(tmp_path, monkeypatch, CLEAN)
+        plan = verify.plan_boot(previous_end=CLEAN)
+        assert plan["files"] == [], "a held file was planned again at a clean start"
+        assert [s["tables"] for s in plan["skipped"]] == [["articles"]]
+        assert plan["skipped"][0]["attempts"] == MAX_VERIFY_ATTEMPTS
+        assert verify.arm_at_boot() is False and not damage.registry.verifying()
+        assert damage.registry.latched(FILE_CORPUS), "the hold released the file"
+        assert len(_stopped_notes()) == 1, "the note was not shown again"
+        entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+        assert entry["state"] == "skipped" and entry["attempts"] == MAX_VERIFY_ATTEMPTS and entry["earlier_damaged"] == ["articles"]
+    # a new unexpected stop is a new reason to check: the count starts again
+    _restart(tmp_path, monkeypatch, UNCLEAN)
+    plan = verify.plan_boot(previous_end=UNCLEAN)
+    assert plan["files"] == [(FILE_CORPUS, healthy, 0)] and plan["skipped"] == []
+
+
+def test_a_held_file_whose_finding_was_cleared_is_not_held_any_more(tmp_path, healthy, files, monkeypatch):
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch)
+    verify.arm_at_boot()
+    damage.retry_for_collection_start("t")  # the reported table reads clean (the file is healthy)
+    _join_rechecks()
+    assert not damage.registry.latched(FILE_CORPUS)
+    _restart(tmp_path, monkeypatch, CLEAN)
+    assert verify.plan_boot(previous_end=CLEAN) is None, "a held entry with no finding left kept the file planned"
+
+
+def test_the_stopped_note_does_not_say_collection_re_reads_a_file_it_never_re_reads():
+    """F2: the Wikipedia file is released by its lane's own start, so the note must not promise a re-read at "starting
+    collection"; the damage sentence above it says how to try again."""
+    assert "Starting collection" not in damage.FRAME_CHECK_STOPPED
+    assert "reads clean again" in damage.FRAME_CHECK_STOPPED and "the note above" in damage.FRAME_CHECK_STOPPED
+    base = json.loads((ROOT / "src/static/locales/en.json").read_text(encoding="utf-8"))
+    assert damage.FRAME_CHECK_STOPPED in base
+
+
+@pytest.mark.parametrize("key", [FILE_WIKI, FILE_LAW])
+def test_the_lane_files_are_held_at_the_cap_say_so_and_are_released_the_way_their_lane_releases_them(
+    tmp_path, healthy, files, monkeypatch, key
+):
+    """F4: the cap hold, the note and the re-read for the Wikipedia and law files (the corpus was the only file tested)."""
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch, key=key)
+    assert verify.plan_boot(previous_end=CLEAN)["skipped"][0]["file"] == key
+    assert verify.arm_at_boot() is False
+    assert damage.registry.latched(key), "the cap released a lane file"
+    assert _file_state(key)["check_tables"] == ["articles"]
+    own_frame = damage.FRAME_WIKI if key == FILE_WIKI else damage.FRAME_LAW
+    notes = damage.registry.notes()
+    assert any(n["file"] == key and n["frame"] == own_frame for n in notes), notes
+    assert [n["vars"] for n in notes if n["file"] == key and n["frame"] == damage.FRAME_CHECK_STOPPED] == [{"tries": MAX_VERIFY_ATTEMPTS}]
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    if key == FILE_WIKI:
+        assert damage.registry.latched(key), "a start of collection released the Wikipedia file, which has its own start"
+        assert len([n for n in damage.registry.notes() if n["frame"] == damage.FRAME_CHECK_STOPPED]) == 1
+        damage.registry.retry(reason="the Wikipedia lane was started", files=(FILE_WIKI,))  # the lane's own start re-reads
+        _join_rechecks()
+    assert not damage.registry.latched(key), "the reported table read clean and the lane file stayed paused"
+    assert not [n for n in damage.registry.notes() if n["file"] == key and n["frame"] == damage.FRAME_CHECK_STOPPED]
+
+
+def test_a_shadow_table_only_finding_is_scoped_as_the_search_index_even_when_it_is_only_carried(tmp_path, healthy, files, monkeypatch):
+    """F4: the scope is decided over every table the latch names, carried ones included (a carried finding alone has no
+    tables of its own, and ``all([])`` is true)."""
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch, tables=("article_fts_data",))
+    verify.arm_at_boot()
+    assert _file_state()["scope"] == damage.SCOPE_SEARCH_INDEX
+    assert any(n["frame"] == damage.FRAME_SEARCH_INDEX for n in damage.registry.notes())
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch, tables=("article_fts_data", "articles"))
+    verify.arm_at_boot()
+    assert _file_state()["scope"] == damage.SCOPE_DATA, "a data table beside a shadow table was scoped as the index only"
+
+
+def test_the_note_needs_the_cap_itself_an_unexaminable_file_under_it_is_held_without_one(tmp_path, files, healthy, monkeypatch):
+    """F4: the hold carries the attempts it found; a note says "after N starts" only when the cap was the reason."""
+
+    class Unexaminable(type(Path())):
+        def is_file(self, **kw):
+            raise OSError(5, "Input/output error")
+
+    for attempts, expect_note in ((MAX_VERIFY_ATTEMPTS - 1, False), (MAX_VERIFY_ATTEMPTS, True)):
+        _held_by_the_cap(tmp_path, healthy, files, monkeypatch, attempts=attempts)
+        files[FILE_CORPUS] = Unexaminable(healthy)
+        assert verify.plan_boot(previous_end=CLEAN)["skipped"][0]["attempts"] == attempts
+        assert verify.arm_at_boot() is False
+        assert damage.registry.latched(FILE_CORPUS), "a file that could not be examined was released"
+        assert bool(_stopped_notes()) is expect_note, (attempts, damage.registry.notes())
+
+
+def test_the_stopped_note_is_not_said_when_the_pause_is_switched_off(tmp_path, healthy, files, monkeypatch):
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch)
+    verify.arm_at_boot()
+    assert len(_stopped_notes()) == 1
+    monkeypatch.setenv("OO_DAMAGE_GUARD", "0")
+    notes = damage.registry.notes()
+    assert not _stopped_notes() and any(n["frame"] == damage.FRAME_PAUSE_OFF for n in notes), notes
+
+
+def test_the_stopped_note_is_set_in_the_latchs_own_block_so_a_release_in_between_cannot_leave_it_behind(
+    tmp_path, healthy, files, monkeypatch
+):
+    """F7: a second lock block after the latch let a retry land between them, leaving the note on an unlatched file for the
+    next latch to inherit."""
+    reg = _new_process(tmp_path, monkeypatch)
+    real = reg._apply_incident
+
+    def latch_then_release(*a, **kw):
+        out = real(*a, **kw)
+        reg.retry(reason="the file was replaced", files=(FILE_CORPUS,), file_replaced=True)  # lands right after the latch
+        return out
+
+    monkeypatch.setattr(reg, "_apply_incident", latch_then_release)
+    reg.verification_file_held(FILE_CORPUS, path=healthy, attempts=MAX_VERIFY_ATTEMPTS, reason="r", tables=["articles"])
+    monkeypatch.setattr(reg, "_apply_incident", real)
+    assert not reg.latched(FILE_CORPUS) and "check_stopped_after" not in _file_state()
+    reg._note_verified_damage(FILE_CORPUS, ["articles"], path=healthy, at="2026-10-06T03:00:00+00:00")
+    assert reg.latched(FILE_CORPUS) and not _stopped_notes(), "a later latch inherited a sentence about a check it never saw"
+    # and with no release the note is there, beside the latch it belongs to
+    reg._reset_for_tests()
+    reg.verification_file_held(FILE_CORPUS, path=healthy, attempts=MAX_VERIFY_ATTEMPTS, reason="r", tables=["articles"])
+    assert reg.latched(FILE_CORPUS) and len(_stopped_notes()) == 1
+    reg.verification_file_held(FILE_CORPUS, path=healthy, attempts=1, reason="r", tables=["articles"])
+    assert len(_stopped_notes()) == 1, "a hold below the cap took the note away"
+
+
+def test_a_file_released_because_it_is_gone_loses_the_stopped_note_and_a_later_latch_does_not_inherit_it(
+    tmp_path, healthy, files, monkeypatch
+):
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch)
+    verify.arm_at_boot()
+    assert len(_stopped_notes()) == 1
+    healthy.unlink()  # nothing to read: a start releases the latch as a plain retry does
+    assert damage.retry_for_collection_start("t") == [FILE_CORPUS]
+    assert not damage.registry.latched(FILE_CORPUS) and not _stopped_notes()
+    damage.registry._note_verified_damage(FILE_CORPUS, ["articles"], path=healthy, at="2026-10-06T03:00:00+00:00")
+    assert damage.registry.latched(FILE_CORPUS) and not _stopped_notes(), "a later latch inherited the note of the one that was released"
+
+
+def test_a_held_file_whose_re_read_was_overtaken_by_a_failed_read_keeps_its_latch_and_loses_the_stopped_note(
+    tmp_path, healthy, files, monkeypatch
+):
+    """F4: the reported part read clean, so "the pause ends only when it reads clean" is no longer what holds the file; a failed
+    read of the app's own is, and the next start releases that latch the E1 way."""
+    _held_by_the_cap(tmp_path, healthy, files, monkeypatch)
+    verify.arm_at_boot()
+    assert len(_stopped_notes()) == 1
+    gate, reached = threading.Event(), threading.Event()
+    real = verify.check_table
+
+    def slow(p, t, **kw):
+        reached.set()
+        assert gate.wait(30)
+        return real(p, t, **kw)
+
+    monkeypatch.setattr(verify, "check_table", slow)
+    damage.retry_for_collection_start("first")
+    assert reached.wait(30)
+    try:
+        damage.registry.note(FILE_CORPUS, _driver_corrupt())
+    finally:
+        gate.set()
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS), "a clean re-read released a file that failed a read after it began"
+    assert not _stopped_notes(), "the note kept saying the pause waits for the reported part"
+
+
+def test_an_unexaminable_file_whose_check_was_due_keeps_it_owed_and_one_that_was_not_due_records_nothing(
+    tmp_path, files, healthy, monkeypatch
+):
+    """F6: an I/O error from ``stat`` on a file with no earlier finding recorded nothing, so after an unexpected stop the
+    owed check was forgotten once the session ended clean."""
+
+    class Unexaminable(type(Path())):
+        def is_file(self, **kw):
+            raise OSError(5, "Input/output error")
+
+    files[FILE_CORPUS] = Unexaminable(healthy)
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is False and not damage.registry.verifying()
+    owed = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert owed["state"] == "owed" and owed["trigger"] == verify.TRIGGER_UNCLEAN_END and owed["attempts"] == 0, owed
+    assert not damage.registry.latched(FILE_CORPUS), "nothing was found, so nothing is latched"
+    assert _record(tmp_path)["verification"][FILE_CORPUS]["state"] == "owed"
+    # the next session ends clean and can examine the file: the check that was due is still due
+    _restart(tmp_path, monkeypatch, CLEAN)
+    files[FILE_CORPUS] = healthy
+    plan = verify.plan_boot(previous_end=CLEAN)
+    assert plan["trigger"] == verify.TRIGGER_UNFINISHED and plan["files"] == [(FILE_CORPUS, healthy, 0)]
+    # a clean end with nothing due writes nothing about a file that cannot be examined
+    other = tmp_path / "other"
+    other.mkdir()
+    _new_process(other, monkeypatch)
+    files[FILE_CORPUS] = Unexaminable(healthy)
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is False
+    assert FILE_CORPUS not in damage.registry.state(detail=True)["verification"]
+
+
+def test_an_unexaminable_file_whose_earlier_check_was_left_unfinished_keeps_that_checks_reason_and_its_attempts(
+    tmp_path, healthy, files, monkeypatch
+):
+    """F6, the mutation run's two gaps: a CLEAN end after a check that was left running, on a file that cannot be examined now,
+    owes the check for the reason it had and with the attempts it had used, not as a fresh unexpected stop with none spent (that
+    would give a check that keeps dying its three tries again at every start the file cannot be read)."""
+
+    class Unexaminable(type(Path())):
+        def is_file(self, **kw):
+            raise OSError(5, "Input/output error")
+
+    (tmp_path / "database-damage.json").write_text(
+        json.dumps(
+            {
+                "schema": damage.SCHEMA,
+                "files": {},
+                "incidents": [],
+                "verification": {
+                    FILE_CORPUS: {
+                        "file": FILE_CORPUS, "process": "another-process", "state": "running", "attempts": 2,
+                        "trigger": verify.TRIGGER_DAMAGE_FOUND,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    files[FILE_CORPUS] = Unexaminable(healthy)
+    _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is False and not damage.registry.verifying()
+    owed = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert owed["state"] == "owed" and owed["trigger"] == verify.TRIGGER_DAMAGE_FOUND and owed["attempts"] == 2, owed
+
+
+def test_the_virtual_table_check_tests_run_in_ci():
+    """F8: the tests that need SQLite's own FTS5 integrity check (3.44) skip silently on an older library, and a skip is how a
+    check that never ran looks green. CI must have a library that runs them."""
+    if os.getenv("CI"):
+        assert sqlite3.sqlite_version_info >= (3, 44), (
+            f"CI's SQLite is {sqlite3.sqlite_version}: the full-text index's integrity check tests are skipped on it"
+        )

@@ -125,6 +125,9 @@ _FLUSH_JOB: tuple = ("flush",)
 #: a boot loop that never reaches collection. A check that finishes resets the count. THE CAP STOPS RE-RUNNING
 #: THE CHECK; IT NEVER CLEARS A FINDING: a file an earlier check reported as damaged is latched from that record
 #: (``FRAME_CHECK_STOPPED`` says why) and stays paused until the tables reported read clean or the file is replaced.
+#: THE HOLD LASTS: it is not one start's, a file held at the cap stays held at every clean start until a new unexpected
+#: stop (a new reason to check) starts the count again at 0; without that a check that keeps dying would run three more times
+#: after every hold, which is the loop this cap exists to stop.
 MAX_VERIFY_ATTEMPTS = 3
 
 #: The ways a per-table check ends (``database/verify.py``).
@@ -608,7 +611,14 @@ class DamageRegistry:
             return False
 
     def _apply_incident(
-        self, file_key: str, scope: str, shape: str | None, at: str, *, check_tables: tuple[str, ...] = ()
+        self,
+        file_key: str,
+        scope: str,
+        shape: str | None,
+        at: str,
+        *,
+        check_tables: tuple[str, ...] = (),
+        stopped_after: int | None = None,
     ) -> tuple[bool, dict[str, Any] | None, bool]:
         """Count one incident against ``file_key`` and latch it, under the lock: ``(newly latched, the record
         of this very incident when this process already has one, whether its repeat is due to be written
@@ -632,6 +642,11 @@ class DamageRegistry:
             if check_tables:
                 # What a start of collection re-reads before it releases this latch (see :meth:`retry`).
                 st["check_tables"] = sorted(set(st.get("check_tables") or ()) | set(check_tables))
+            if stopped_after:
+                # The check was not run again (the cap), said beside the latch it belongs to: set in THIS block, because a
+                # retry that landed between the latch and a second block would leave it on an unlatched file, and the
+                # next latch of that file would inherit a sentence about a check it never saw.
+                st["check_stopped_after"] = int(stopped_after)
             known = self._known_locked(file_key, scope, shape)
             due = self._count_repeat_locked(known, at) if known is not None else False
         return newly, known, due
@@ -1123,12 +1138,10 @@ class DamageRegistry:
         try:
             self.verification_file_skipped(file_key, path=path, attempts=attempts, reason=reason, earlier_damaged=list(tables))
             at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
-            self._note_verified_damage(file_key, [], path=path, at=at, carried=list(tables))
-            if attempts >= MAX_VERIFY_ATTEMPTS:
-                with self._lock:
-                    st = self._files.get(file_key)
-                    if st is not None:
-                        st["check_stopped_after"] = int(attempts)
+            self._note_verified_damage(
+                file_key, [], path=path, at=at, carried=list(tables),
+                stopped_after=int(attempts) if attempts >= MAX_VERIFY_ATTEMPTS else None,
+            )
         except Exception:  # noqa: BLE001 - a check's bookkeeping must never take the boot down
             _LOG.debug("database damage: could not hold a file on an earlier finding", exc_info=True)
 
@@ -1184,7 +1197,14 @@ class DamageRegistry:
         return sorted(left - damaged)
 
     def _note_verified_damage(
-        self, file_key: str, tables: list[str], *, path: Path | None, at: str, carried: list[str] | tuple[str, ...] = ()
+        self,
+        file_key: str,
+        tables: list[str],
+        *,
+        path: Path | None,
+        at: str,
+        carried: list[str] | tuple[str, ...] = (),
+        stopped_after: int | None = None,
     ) -> None:
         """A table the per-table check read as damaged: latch the file and record one incident. The scope is
         ``search-index`` only when EVERY damaged table is the full-text index's (its shadow tables), else
@@ -1211,7 +1231,9 @@ class DamageRegistry:
                 else "an earlier per-table check found damage in: " + shown
             ) + "; it has not read clean since"
         shape = "PRAGMA quick_check(" + ", ".join(all_names[:6]) + ")"
-        newly, known, due = self._apply_incident(file_key, scope, shape, at, check_tables=tuple(all_names))
+        newly, known, due = self._apply_incident(
+            file_key, scope, shape, at, check_tables=tuple(all_names), stopped_after=stopped_after
+        )
         if newly:
             _log_latched(file_key, "SQLITE_CORRUPT", scope, shape)
         if known is not None:
@@ -1428,8 +1450,8 @@ FRAME_RECHECKING = (
 )
 FRAME_CHECK_STOPPED = (
     "The app stopped trying to check your data file after {tries} starts in a row that ended before the check "
-    "finished. An earlier check had found damage in it, so it stays paused. Starting collection reads the reported "
-    "part again, and the pause ends only if that reads clean."
+    "finished. An earlier check had found damage in it, so it stays paused. The pause ends only when the part that was "
+    "reported reads clean again; the note above says how to try again."
 )
 FRAME_PAUSE_OFF = (
     "The database reported damage in one of your data files, and the pause for it is switched off on "

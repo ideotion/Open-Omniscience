@@ -4618,7 +4618,7 @@
   "The app measures structure — coordination, novelty, output capacity, transparency — and you decide. There is deliberately no trust score: a single number over incommensurable dimensions would bake in bias and silence small, foreign, new or dissident sources. Surface, never suppress.": "应用衡量的是结构——协同、新颖性、产出能力、透明度——而由你决定。这里刻意没有信任评分：用单一数字概括不可通约的维度会固化偏见，并让弱小、外国、新兴或异见来源噤声。呈现，绝不压制。",
   "The app starts offline. Nothing connects until you choose to go online — and you confirm before anything connects.": "应用以离线方式启动。在您选择联网之前，不会建立任何连接——而且任何连接前都需要您确认。",
   "The app stopped answering": "应用已停止响应",
-  "The app stopped trying to check your data file after {tries} starts in a row that ended before the check finished. An earlier check had found damage in it, so it stays paused. Starting collection reads the reported part again, and the pause ends only if that reads clean.": "应用在连续 {tries} 次启动都于检查完成前结束后，不再尝试检查你的数据文件。先前的检查曾在其中发现损坏，因此它保持暂停。启动采集会重新读取已报告的那部分，只有读取无误时暂停才会结束。",
+  "The app stopped trying to check your data file after {tries} starts in a row that ended before the check finished. An earlier check had found damage in it, so it stays paused. The pause ends only when the part that was reported reads clean again; the note above says how to try again.": "应用在连续 {tries} 次启动都于检查完成前结束后，不再尝试检查你的数据文件。先前的检查曾在其中发现损坏，因此它保持暂停。只有已报告的那部分重新读取无误时，暂停才会结束；如何重试，见上面的说明。",
   "The app will close in {n} s to protect your data.": "应用将在 {n} 秒后关闭以保护您的数据。",
   "The app's own bookkeeping. No article's content is changed.": "应用自身的记账。不会更改任何文章的内容。",
   "The archive is ready. Press “All diagnostics, again” to save it as numbered files.": "存档已准备好。点击“全部诊断，再次保存”即可将其保存为带编号的文件。",

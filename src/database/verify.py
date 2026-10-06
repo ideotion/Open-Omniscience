@@ -297,8 +297,11 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     (an I/O error from ``stat``) is UNCHECKED, not absent. A file whose check has been left unfinished
     ``MAX_VERIFY_ATTEMPTS`` starts in a row is SKIPPED, and said: the cap stops re-running the check, and a finding
     an earlier check made for that file (or for a file that could not be examined) is NOT given up with it: such a file is
-    listed in ``skipped`` with its ``tables`` and :func:`arm_at_boot` latches it from them. The record an earlier
-    process left is carried through every entry that replaces it (``damage.carried_damage``)."""
+    listed in ``skipped`` with its ``tables`` and :func:`arm_at_boot` latches it from them. THE HOLD LASTS: a file held at
+    the cap stays held at every CLEAN start after it (its ``skipped`` entry carries the attempts it used), and only a new
+    unexpected stop, a new reason to check, starts the count again at 0. A file that cannot be examined while its check is
+    due is written down as OWED, with the reason and the attempts it had (a clean end does not cancel it). The record an
+    earlier process left is carried through every entry that replaces it (``damage.carried_damage``)."""
     if not switch_on():
         return None
     prev = previous_end if previous_end is not None else damage._previous_end()
@@ -317,10 +320,22 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
                 continue
         except OSError:
             # Could not tell whether there is a file: UNCHECKED, never "nothing to read". An earlier finding stands.
+            reason = "the file could not be examined (an I/O error), so the check of it was not run"
+            unfinished_before = last is not None and last.get("state") in ("running", "owed")
             if carried:
+                skipped.append({"file": key, "path": path, "attempts": _attempts_of(last or {}), "tables": carried, "reason": reason})
+            elif unclean or unfinished_before:
+                # Nothing earlier to hold, but a check that was due is still due: written down as owed (see ``_owe``), so
+                # the session that could not read the file ending cleanly does not cancel it.
+                due_for = TRIGGER_UNCLEAN_END if unclean else str((last or {}).get("trigger") or TRIGGER_UNFINISHED)
                 skipped.append(
-                    {"file": key, "path": path, "attempts": _attempts_of(last or {}), "tables": carried,
-                     "reason": "the file could not be examined (an I/O error), so the check of it was not run"}
+                    {
+                        "file": key,
+                        "path": path,
+                        "attempts": _attempts_of(last or {}) if unfinished_before else 0,
+                        "owe": due_for,
+                        "reason": reason,
+                    }
                 )
             continue
         if damage.registry.checked_by_this_process(key):
@@ -333,7 +348,18 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         unfinished = last is not None and (last.get("state") == "running" or (last.get("state") == "owed" and not own_owed))
         if not (unclean or unfinished or own_owed or carried):
             continue
-        attempts = _attempts_of(last) if (last is not None and (unfinished or own_owed)) else 0
+        # A file HELD at the cap on an earlier finding stays held at every clean start that follows: the hold writes a
+        # ``skipped`` entry that is neither unfinished nor owed, and reading it as "no attempts" would run the check
+        # another ``MAX_VERIFY_ATTEMPTS`` times (a crashing check: 3 runs, 1 held start, 3 runs, ...). A new unexpected
+        # stop is a new reason to check, so it starts the count again.
+        held_before = (
+            last is not None
+            and last.get("state") == "skipped"
+            and bool(carried)
+            and not unclean
+            and _attempts_of(last) >= damage.MAX_VERIFY_ATTEMPTS
+        )
+        attempts = _attempts_of(last) if (last is not None and (unfinished or own_owed or held_before)) else 0
         if attempts >= damage.MAX_VERIFY_ATTEMPTS:
             skipped.append({"file": key, "path": path, "attempts": attempts, **({"tables": carried} if carried else {})})
             continue
@@ -356,6 +382,10 @@ def _owe(plan: dict[str, Any]) -> None:
     table) must not read, in the next session's ledger, as the clean end that cancels the check."""
     for key, path, attempts in plan["files"]:
         damage.registry.verification_file_owed(key, path=path, trigger=plan["trigger"], attempts=attempts)
+    for sk in plan["skipped"]:
+        if sk.get("owe"):
+            # A file that could not be examined: its check is still due, and nothing here read it.
+            damage.registry.verification_file_owed(sk["file"], path=sk["path"], trigger=sk["owe"], attempts=sk["attempts"])
 
 
 def owe_at_locked_boot() -> None:
@@ -384,6 +414,8 @@ def arm_at_boot() -> bool:
         if plan is None:
             return False
         for sk in plan["skipped"]:
+            if sk.get("owe"):
+                continue  # written down as owed by ``_owe``, not skipped: its check is still due
             tables = sk.get("tables")
             if tables:
                 # The cap stops re-running the check; it does not give up what an earlier check found. The file is
@@ -406,6 +438,7 @@ def arm_at_boot() -> bool:
             _LOG.warning("database check skipped: %s", reason)
             damage.registry.verification_file_skipped(sk["file"], path=sk["path"], attempts=sk["attempts"], reason=reason)
         if not plan["files"]:
+            _owe(plan)  # the files that could not be examined (there is nothing to run)
             return False
         with _LOCK:
             _PLAN = plan

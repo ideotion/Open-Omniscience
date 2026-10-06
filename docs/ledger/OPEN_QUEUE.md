@@ -16387,3 +16387,16 @@ maintainer as a card.
   candidate that got past page 1, whichever position its size has in the list. NOT DONE: arming in `_finish_unlock` before `mark_queryable()` (the milliseconds between them), "Run now" during a re-read runs an
   empty pass (the continuous loop waits and resumes), a restore swap between a stale guard's decision and its re-latch re-latches the new file with the old answer (fail-safe, rare), a key derivation per table on an
   encrypted store is unstated, and a skipped check is never said in the UI.
+  (l) BUILT, THE COORDINATOR'S CHECK OF (k)'S FOLD (2026-10-06). (F1) A file HELD at the cap on an earlier finding stays held at every clean start that follows (the hold's `skipped` entry
+  was read as "no attempts", so a crashing check ran 3 times, was held for one start, and ran 3 more); only a new unexpected stop starts the count again, which makes (c) true for a held file as well
+  (a later-process test pins both). (F2) The stopped note no longer says that starting collection re-reads the file (the Wikipedia file is released by its lane's own start): it says the pause ends only
+  when the reported part reads clean again and points at the note above, which says how to try again (x12). (F6) A file that could not be examined (an I/O error from `stat`) with no earlier finding but a
+  check that was DUE (an unclean end, or an entry left `running` or `owed`) is written down as `owed`, so the session that could not read it ending cleanly does not cancel the check. (F7) The stopped note
+  is set in the latch's own lock block, so a release that lands between two blocks cannot leave it on an unlatched file for the next latch to inherit. (F8) CI asserts a SQLite that runs the 3.44 full-text
+  integrity tests. STATED LIMITS: a table that is absent from the file still counts as read (see (k)); a skipped check that has no earlier finding behind it is still never said in the UI; the re-read of a
+  held file covers the reported tables only, not the whole file.
+  (m) STATED LIMIT, PRE-EXISTING (the coordinator's F9): an unreadable or malformed `database-damage.json` (`DamageRegistry._ensure_loaded`: an `OSError` or a `ValueError` on the read, or a
+  document of the wrong shape) is now the one way a finding is lost without a read of the file it described. The record is what carries a finding across a restart, so when it cannot be parsed the
+  next start sees no earlier finding and, unless the stop was unclean, does not read the file; the failure is said (`prior_record_unreadable`) and the NEXT incident or verification write REPLACES the
+  unreadable file, so the evidence of what it held goes with it. Nothing re-derives the finding from the data file. If a ruling wants it closed, the way is one more reason for the start-up check (a
+  record that could not be read), and keeping the unreadable file under another name before it is replaced, not a second copy of the findings.
