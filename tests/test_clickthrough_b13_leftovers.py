@@ -161,12 +161,18 @@ def test_the_free_space_frames_are_keyed_everywhere():
         assert f'"{what}":' in table, f"what={what!r} has no keyed name in _OO_SPACE_WHAT"
 
 
-def _run_server_text(messages: list[str]) -> list[str]:
+def _run_server_text(messages: list[str], *, translate: bool = False) -> list[str]:
+    """``ooServerText`` over ``messages`` in node. With ``translate`` a stub translator wraps every string
+    it is asked to translate as ``T[...]``, so a sentence the page did NOT route through the keyed
+    table comes back without the wrapper (the identity translator cannot tell the two apart)."""
     js = app_js()
     size_re = re.search(r'const _OO_SIZE_RE = "[^"\n]*";', js)
     assert size_re, "the _OO_SIZE_RE string is gone -- re-point this test"
     prog = "\n".join([
-        "const window = {};",
+        ("const OOI18N = {t: (x) => 'T[' + x + ']', tf: (x, v) => 'T[' + x.replace("
+         "/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m) + ']'};\n"
+         "const window = {OOI18N};")
+        if translate else "const window = {};",
         function_source(js, "_sizeText"),
         "const _OO_SPACE_WHAT = " + object_literal(js, "_OO_SPACE_WHAT") + ";",
         size_re.group(0),
@@ -208,12 +214,10 @@ def test_the_page_reads_the_stopped_newsletter_free_backup_notices():
         ne.MESSAGE_SPACE,
         ne.MESSAGE_OTHER.format(reason="OSError"),
         "The backup without newsletters was stopped for another reason.",
-    ])
-    assert space == ne.MESSAGE_SPACE, "the English page keeps the sentence"
-    assert other_reason.startswith("The backup without newsletters was stopped: the clean copy"), other_reason
-    assert "⁨OSError⁩" in other_reason, "the reason is isolated for right-to-left pages"
-    assert "{reason}" not in other_reason
-    assert unknown == "The backup without newsletters was stopped for another reason."
+    ], translate=True)
+    assert space == "T[" + ne.MESSAGE_SPACE + "]", "the sentence goes through the keyed table"
+    assert other_reason == "T[" + ne.MESSAGE_OTHER.format(reason="\u2068OSError\u2069") + "]", other_reason
+    assert unknown == "The backup without newsletters was stopped for another reason.", "unknown stays as sent"
     from src.backup.newsletter_export import MESSAGE_OTHER, MESSAGE_SPACE
 
     _keyed_everywhere(MESSAGE_SPACE, MESSAGE_OTHER)

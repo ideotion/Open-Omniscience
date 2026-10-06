@@ -115,6 +115,26 @@ def test_a_failed_volume_backup_writes_no_passphrase_to_the_journal_the_log_or_t
     assert not any(r.exc_info for r in caplog.records), "a raw traceback was logged"
 
 
+def test_a_stopped_newsletter_free_backup_is_served_whole_even_if_the_passphrase_is_a_word_in_it(tmp_path):
+    """The two sentences are the server's own fixed text; the page matches them whole, so scrubbing them
+    for a passphrase that is a word in the sentence would redact the match and leave the user a broken
+    notice (and a passphrase that is only a class name is not a leak: the sentence holds no user text)."""
+    from src.backup.newsletter_export import MESSAGE_OTHER, MESSAGE_SPACE, NewsletterFilterRefused
+
+    for refusal, said in (
+        (NewsletterFilterRefused("there is not enough free space for the rewrite", space=True), MESSAGE_SPACE),
+        (NewsletterFilterRefused("OSError", space=False), MESSAGE_OTHER.format(reason="OSError")),
+    ):
+        def fail(*_a, _r=refusal, **_k):
+            raise _r
+
+        mgr = VolumeBackupManager()
+        mgr._run_backup(tmp_path / "drive", "newsletters", True, 0.1, [], False, fail)
+        st = mgr.status()
+        assert st["state"] == "error"
+        assert st["error"] == said
+
+
 def test_a_failed_volume_restore_writes_no_passphrase_of_either_kind(tmp_path, caplog):
     def fail(*_a, **_k):
         raise _quoting(_PW, _CORPUS_PW)

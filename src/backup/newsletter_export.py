@@ -16,7 +16,8 @@ THE RULES THIS FILE HOLDS, each pinned by a test that fails without it:
   * Every cipher setting of the source is copied, not only the page size, and the result is read back
     through the production open path before it replaces the copy. A setting the export cannot carry
     over (a plaintext header, which needs a salt of its own) refuses the export instead.
-  * Any failure STOPS the newsletter-free backup (``NewsletterFilterRefused``): the copy is thrown
+  * Any failure of the rewrite STOPS the newsletter-free backup (``NewsletterFilterRefused``; an earlier
+    failure stops it with its own error): the copy is thrown
     away, the partial file is removed, earlier backups are untouched, and it never falls back to a
     backup with the newsletters in it. The other way out, leaving the filtered copy as it is, was
     dropped (question 37, option a): ``secure_delete`` zeroes what the deletes free but
@@ -188,7 +189,9 @@ def _read_back(out: Path, key: str, settings: dict[str, Any], shape: dict[str, A
 def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) -> int:
     """Remove the imported-newsletter articles from the encrypted copy at ``db_path``, in place.
     Returns how many articles were dropped; ``notes`` receives the line saying the rewrite ran. Any
-    failure raises :class:`NewsletterFilterRefused`: the copy is not left as a filtered file."""
+    failure of the rewrite raises :class:`NewsletterFilterRefused`: the copy is not left as a filtered
+    file. A failure before it (the room check's ``BackupSpaceError``, the connection, the deletes, the
+    index merge) stops the backup with its own error."""
     from src.backup.artifact import _drop_newsletter_rows, preflight_free_space
     from src.backup.folder_backup import free_bytes
     from src.database.connect import connect, get_passphrase

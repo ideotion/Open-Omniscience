@@ -461,8 +461,14 @@ class VolumeBackupManager:
             _LOG.warning("volume backup failed (%s); the run journal carries the scrubbed text", fields["cls"])
             runlog.milestone("error", **fields)
             runlog.end("error", cls=type(exc).__name__)
+            from src.backup.newsletter_export import NewsletterFilterRefused
+
+            # A stopped newsletter-free backup is served as it is: its text is one of two fixed
+            # sentences whose only slot holds this module's own text or a class name, and the page
+            # matches it whole (a passphrase that is a word in it would otherwise redact the match).
+            served = str(exc) if isinstance(exc, NewsletterFilterRefused) else fields["msg"]
             with self._lock:
-                self._state, self._error = "error", fields["msg"]
+                self._state, self._error = "error", served
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
