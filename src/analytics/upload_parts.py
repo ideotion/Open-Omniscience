@@ -424,8 +424,9 @@ class PartWriter:
         if self._piece_limit < _MIN_PIECE_BYTES:
             needed = self._fixed + math.ceil(_MIN_PIECE_BYTES / _PIECE_ROOM_SHARE)
             raise ValueError(
-                f"a part cap of {cap} bytes is too small: a part's own index needs {self._fixed} "
-                f"and a piece at least {_MIN_PIECE_BYTES} more, so the cap needs at least {needed}"
+                f"a part cap of {cap} bytes is too small: a part's own index needs {self._fixed}, a piece "
+                f"needs at least {_MIN_PIECE_BYTES}, and a piece may take at most {_PIECE_ROOM_SHARE:.0%} "
+                f"of what is left, so the cap needs at least {needed}"
             )
         self.out_dir.mkdir(parents=True, exist_ok=True)
 

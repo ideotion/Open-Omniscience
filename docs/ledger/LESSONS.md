@@ -13527,7 +13527,7 @@ The WAL checkpoint record lists the pool's CHECKOUTS, oldest first (`pool_watch`
 aged 26 s to 3,172 s beside logs of up to 1.19 GB. It was written up (PR #1315's queue entry, then the coordinator's order) as "the build holds one read transaction
 for its whole run, so the WAL cannot be checkpointed meanwhile". That was read off the list; it is not what the code does. Measured with the real 77 members on an
 empty corpus: the shared engine runs pysqlite in its legacy mode, where a SELECT starts no BEGIN (only `read_snapshot.py` takes the explicit-BEGIN recipe), and
-SQLite's own `connection.in_transaction` was False after EVERY member, while the SQLAlchemy session was still in a transaction after 75 of them. So between members the
+SQLite's own `connection.in_transaction` was False after EVERY member (which shows that no BEGIN was open, not that nothing was pinned: see the last paragraph), while the SQLAlchemy session was still in a transaction after 75 of them. So between members the
 standing thing was the pooled session and its connection; a snapshot pins the log only while a member's statement or an open cursor is running, which is that
 member's own time. The build now ends the session's transaction at every member boundary (`_release_read_between_members`, over `release_idle_connection`, the one
 release that declines a session which has written, so a member's flushed work is never rolled back) and the manifest says how each boundary went

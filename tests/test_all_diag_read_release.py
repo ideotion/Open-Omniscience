@@ -274,6 +274,12 @@ def test_the_manifest_says_how_each_boundary_went(wal_db):
     assert block["declined"] == 0
     assert block["method"] and block["caveat"], "the figures carry what they measure and what they do not"
     assert "does not bound ONE member" in block["caveat"]
+    # what the figures claim to measure, and what they do not: the wording is the contract (a method
+    # that said a standing reader "is no longer seen" overclaimed, because a statement or a cursor a
+    # member left open is not ended by a release)
+    assert "ends its session's transaction" in block["method"]
+    assert "not ended by it" in block["method"]
+    assert "could not say" in block["caveat"]
 
 
 def test_no_session_means_no_block_not_a_zero(wal_db):

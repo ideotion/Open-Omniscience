@@ -1396,13 +1396,44 @@ def _run_nondb_member_bounded(fn, budget_s: float):
     return box.get("value")
 
 
+def _without_the_passphrase(text: str) -> str | None:
+    """``text`` with the database passphrase this process holds, and the one in its environment, taken
+    out; ``None`` when that could not be done (the caller then withholds the text rather than keeping
+    it).
+
+    WHERE IT RUNS: a member's error text enters the bundle here (``.error.txt``, the manifest's
+    ``error``, ``.skipped-deadline.txt``, a ``reason``), and the engine's own words can carry the
+    statement it failed on (SQLAlchemy puts ``[SQL: ...]`` in an exception's text, SQLite quotes the
+    token it stopped at). No member builds a statement from the passphrase today, and the key is
+    applied through the driver, not through SQLAlchemy; this is the net beneath that, at the one
+    place the text is made, so a statement added later cannot carry the key into a zip that is handed
+    to someone else. Exact match (``secret_scrub.scrub_text``): a transformed copy is not recognised.
+    An install with no passphrase has nothing to scrub."""
+    try:
+        from src.database.connect import get_passphrase
+        from src.monitoring.secret_scrub import scrub_text
+
+        for needle in dict.fromkeys(filter(None, (get_passphrase(), os.environ.get("OO_DB_PASSPHRASE")))):
+            text = scrub_text(text, needle)
+    except Exception:  # noqa: BLE001 - failing CLOSED: the caller withholds what it could not scrub
+        return None
+    return text
+
+
 def _all_diag_err_str(exc: Exception) -> str:
     """Render a member's exception for the envelope/error-file -- even a broken ``__str__``
-    must still yield a marker (S8 lesson: a failed member must never be silently lost)."""
+    must still yield a marker (S8 lesson: a failed member must never be silently lost).
+
+    The passphrase is taken out of the WHOLE text and the text is cut afterwards: a cut that fell
+    inside the passphrase would leave the part it kept, which a scrub of the cut text cannot see."""
     try:
-        return str(exc)[:300]
+        text = str(exc)
     except Exception:  # noqa: BLE001
         return f"<{type(exc).__name__}: unrenderable>"
+    clean = _without_the_passphrase(text)
+    if clean is None:
+        return f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
+    return clean[:300]
 
 
 # RATCHET (2026-07-17) + RUNTIME COVERAGE (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the
@@ -2881,7 +2912,8 @@ def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: 
     free, and the diagnostics are for the machines that are nearly full. Without a check at all the
     split ran into a full disk after sweeping the old set and reported a raw operating-system error.
     ``had_set``: a set was on disk before (the text only says its files were not touched when they
-    were there to touch)."""
+    were there to touch, and says nothing about what the sweep of a killed build's leftovers removed
+    before this ran: they are not a set)."""
     from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR, room_for
     from src.api import diagnostics_volumes as dvol
 
@@ -2894,9 +2926,9 @@ def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: 
             f"{reserve / 2**30:.1f} GiB is kept free on it for whatever else writes to it, the "
             "database's own log included). "
             + (
-                "The files of the previous archive were not touched. "
+                "The earlier set of files was not touched. "
                 if had_set
-                else "Nothing on the server was changed. "
+                else "There was no earlier set of files, and none was written. "
             )
             + "Free some space and press the button again."
         )
@@ -2928,6 +2960,11 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
         with contextlib.suppress(Exception):
             current = dvol.load_manifest(out)
             had_set = True
+            # Whatever a killed publish or a refused removal left beside this set (files the sidecar
+            # does not name) goes now, whether the set is the current one or about to be replaced: it
+            # is never served, it is a set's worth of disk, and clearing it can be what lets the next
+            # build fit.
+            dvol.retire_unnamed(out, current)
             # The cap is part of what makes it "the current set": one built under another cap
             # (OO_DIAG_VOLUME_MAX_MB changed, or the 9 MiB default this replaced) is rebuilt.
             if (
@@ -2935,9 +2972,6 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
                 and current.get("volume_max_bytes") == dvol.volume_max_bytes()
                 and dvol.verify_volume_set(out)["ok"]
             ):
-                # Files a killed publish or a refused removal left (the previous set's, once the
-                # sidecar had moved) are swept here too, or they would outlive the set they belong to.
-                dvol.retire_unnamed(out, current)
                 return current
         _check_room_for_volumes(src, out.parent, had_set=had_set)
         build = pathlib.Path(tempfile.mkdtemp(prefix=_VOLUME_BUILD_PREFIX, dir=out.parent))
@@ -3011,9 +3045,10 @@ def all_diagnostics_volumes() -> JSONResponse:
             status_code=507,
             detail=(
                 f"the drive ran out of room, or turned read-only, while the numbered files were being "
-                f"written ({exc.strerror or type(exc).__name__}). The set that was there before was "
-                "not touched and the half-written files were removed. Free some space and press the "
-                "button again."
+                f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "
+                "was one, was not touched, and the half-written files are removed now or, if the "
+                "drive will not let them go, at the next press at the latest. Free some space and "
+                "press the button again."
             ),
         ) from exc
     except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500

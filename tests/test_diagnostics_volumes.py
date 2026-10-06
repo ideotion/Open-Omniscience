@@ -771,10 +771,14 @@ def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
     assert exc.value.status_code == 507
     assert "MiB" in exc.value.detail and "free" in exc.value.detail
     if with_a_previous_set:
-        assert "were not touched" in exc.value.detail and "Nothing on the server" not in exc.value.detail
+        assert "The earlier set of files was not touched" in exc.value.detail
+        assert "no earlier set" not in exc.value.detail
     else:
-        assert "Nothing on the server was changed" in exc.value.detail
-        assert "still there" not in exc.value.detail and "not touched" not in exc.value.detail
+        # nothing is claimed about files that were never there, and nothing about "the server": the
+        # sweep of a killed build's leftovers runs before this check, so "nothing was changed" would
+        # not be true in every case
+        assert "There was no earlier set of files, and none was written" in exc.value.detail
+        assert "not touched" not in exc.value.detail and "Nothing on the server" not in exc.value.detail
     assert sorted(p.name for p in vol_dir.iterdir()) == before
     assert not list(_diag_dir.glob("volumes-build-*"))
     if old is not None:
@@ -848,6 +852,28 @@ def test_a_second_click_on_a_full_drive_re_serves_the_current_set(_diag_dir, mon
     assert [f["name"] for f in again["files"]] == [f["name"] for f in first["files"]]
 
 
+def test_what_a_killed_publish_left_goes_even_when_the_set_is_about_to_be_replaced_and_the_drive_refuses(
+    _diag_dir, monkeypatch
+):
+    """The sweep of files the sidecar does not name runs for whichever sidecar loads, not only for the
+    current set: a newer archive that then meets a full drive (507) still clears the leftovers, which are
+    a set's worth of disk and can be what lets the next press fit, and the set the person has stays."""
+    from fastapi import HTTPException
+
+    from src.api import diagnostics as d
+
+    old, _newer = _two_archives(_diag_dir)
+    vol_dir = d._all_diagnostics_volumes_dir()
+    leftover = vol_dir / "older-bundle-part-01-of-02.zip"
+    leftover.write_bytes(b"PK" + b"0" * 50)
+    _fake_disk(monkeypatch, free=1 * 2**20)
+    with pytest.raises(HTTPException) as exc:
+        d.all_diagnostics_volumes()
+    assert exc.value.status_code == 507
+    assert not leftover.exists()
+    assert {p.name for p in vol_dir.iterdir()} == {f["name"] for f in old["files"]} | {dv.MANIFEST_NAME}
+
+
 def test_a_current_set_is_re_served_and_what_a_killed_publish_left_goes(_diag_dir):
     """A publish killed between the sidecar's move and the end of its sweep, or a file the system
     refused to remove, left the previous set's files beside the new one; the re-serving path swept
@@ -871,7 +897,11 @@ def test_a_current_set_is_re_served_and_what_a_killed_publish_left_goes(_diag_di
     assert {p.name for p in vol_dir.iterdir()} == named, "and nothing the sidecar names went with them"
 
 
-@pytest.mark.parametrize("code, status", [(errno.ENOSPC, 507), (errno.EROFS, 507), (errno.EIO, 500)])
+@pytest.mark.parametrize(
+    "code, status",
+    [(errno.ENOSPC, 507), (errno.EROFS, 507), (errno.EIO, 500)]
+    + ([(errno.EDQUOT, 507)] if hasattr(errno, "EDQUOT") else []),
+)
 def test_a_split_that_runs_out_of_room_halfway_is_the_507_the_preflight_gives(_diag_dir, monkeypatch, code, status):
     """The same condition got two statuses: 507 at the start of the split and 500 when the drive filled
     during it. Another operating-system error is still the 500 it was (it may be a bug)."""
@@ -890,7 +920,12 @@ def test_a_split_that_runs_out_of_room_halfway_is_the_507_the_preflight_gives(_d
     assert exc.value.status_code == status
     assert os.strerror(code) in exc.value.detail
     if status == 507:
-        assert "not touched" in exc.value.detail and "Free some space" in exc.value.detail
+        assert "Free some space" in exc.value.detail
+        # true on a first split too (no earlier set to touch), and true when the removal of the
+        # half-written files was itself refused: they go now or at the next press at the latest
+        assert "The earlier set of files, if there was one, was not touched" in exc.value.detail
+        assert "at the next press at the latest" in exc.value.detail
+        assert "files were removed" not in exc.value.detail
     for f in old["files"]:
         assert Path(d.all_diagnostics_volume_download(f["name"]).path).is_file()
 
