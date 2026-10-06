@@ -716,6 +716,7 @@ _GUARDED_MODULES = {
     "stream_backup": ("backup", {"verify_stream_backup"}, 1, False),
     "import_queue": ("backup", {"start", "_drive", "_run_corpus", "_run_legacy"}, 4, False),
     "backup_v2": ("api", {"_stage_upload", "restore_legacy_path", "volume_backup_start", "import_queue_start"}, 1, True),
+    "unlock": ("api", {"unlock", "_unlock_locked", "create_db", "encrypt_db"}, 1, True),
 }
 
 

@@ -10572,8 +10572,10 @@ one set of helpers in `src/monitoring/secret_scrub.py` (`scrubbed`, `traceback_t
 marker would rebuild an earlier one in; the journal's cuts (2,000, 8,000, 500) are made after the scrub; a log line leads with the exception's own line (the error journal cuts a
 record at 500 characters) and carries the scrubbed traceback as text and no `exc_info`. The route's responses to a caller are left as they are, on the condition that no recorder keeps
 a response's text, which was read: `errorlog.note_http_error` keeps the status, the method and the path (a test pins that no caller passes a `detail`), the frontend reporter keeps
-uncaught UI errors only, and the queue now scrubs where it records. The static walk of the release run (`tests/test_p0_validation.py`) now holds seven modules (the route layer's
-exception may feed a response, nothing else), reads `corpus_passphrase` and the queue's `self._passphrase` as secrets, accepts `status` and `partial` only on a `_PhaseError` handler
+uncaught UI errors only, and the queue now scrubs where it records. The static walk of the release run (`tests/test_p0_validation.py`) now holds eight modules (the route layer's
+exception may feed a response, nothing else; the eighth is the lock screen's `src/api/unlock.py`: the findings PR (#1319) had put a handler there that wrote the failure of a pool
+dispose with `exc_info=True`, inside a function that holds `body.passphrase`, the coverage test found it on this branch's first merge of main, and it writes through `log_failure` now,
+with a behaviour test that makes the dispose fail with the passphrase in its message), reads `corpus_passphrase` and the queue's `self._passphrase` as secrets, accepts `status` and `partial` only on a `_PhaseError` handler
 (the coordinator's D3), and a coverage test holds its table to every module under `src/` that holds the passphrase and writes what it catches, five left out each with its reason.
 Tests: 18 behaviour tests for the job, 8 for the route and the queue, the helpers' own, the walk's cases, and 32 mutations of the helpers, the route, the queue, the middleware
 and the guard plus 21 of the job's own scrub sites, each caught. The check's D1 (the field count of the crash read) and D2 (which argument position a guard reads) are fixed in the

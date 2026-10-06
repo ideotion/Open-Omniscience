@@ -31,6 +31,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.monitoring.secret_scrub import log_failure
+
 # Re-exported so the first-launch page and the module that creates the folder cannot
 # disagree about the subfolder's name (the maintainer named it; see data_location.py).
 from src.safety.data_location import DATA_SUBDIR
@@ -684,8 +686,12 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             from src.database.session import dispose_engine
 
             dispose_engine()
-        except Exception:  # noqa: BLE001 - the retry disposes the engine again before it connects
-            _LOG.debug("engine dispose after a failed unlock finish failed", exc_info=True)
+        except Exception as dispose_exc:  # noqa: BLE001 - the retry disposes the engine again before it connects
+            # Written through ``log_failure`` with the passphrase out of it, as every handler that holds one is: this
+            # function holds ``body.passphrase`` and ``tests/test_p0_validation.py`` reads its handlers.
+            log_failure(
+                _LOG, "engine dispose after a failed unlock finish failed", dispose_exc, body.passphrase, level=logging.DEBUG
+            )
         raise
     _LOG.info("store unlocked")
     return {"unlocked": True, "state": app_lock_state()}

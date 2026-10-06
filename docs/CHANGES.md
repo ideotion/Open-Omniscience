@@ -129,7 +129,8 @@ this section were still open.
   manager reads), its log, its run journal and an import item's `error` carry the exception's words with the passphrase,
   and a restore's corpus passphrase, taken out. No message on those paths named one when this was written; the rule is that
   no path that could is left unscrubbed, and a test now holds the next handler in those files, and the next module that
-  holds the passphrase and writes what it catches, to it.
+  holds the passphrase and writes what it catches, to it. The lock screen's one handler that wrote a traceback (the failed
+  drop of the pool's connections after a failed unlock) writes through the same helper, and its module is held to the rule too.
 
 ### Interface and translations
 
