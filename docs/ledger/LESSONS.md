@@ -13203,3 +13203,10 @@ when no other trigger fires**: the guard's "was engaged" flag read only in the f
 the next tick reported a five-second-old pause as a new engagement (a mutant the suite now catches). What this does NOT do: it names the holder in the NEXT
 bundle, it does not stop the kill. Stopping cleanly when the guard stays engaged and memory does not recover is the user's open question 22, and a clean stop
 alone would not resume the run, because a relaunch starts offline under R117 (one click brings it online), so that choice has to be made with the launcher.
+- **A SUPERVISOR THAT GIVES UP IS A SECOND WAY TO DIE (Wikipedia lane, 2026-10-06, PR #1314).** Two hard stops hid in the lane: the stream thread ended for good when the
+  kill switch refused a reconnect, and the drain loop ended for good after three failed drains with the setting still reading "running". Neither was visible: the
+  bundles carried the run clock but not the service state, so two machines (hP from 10-04 08:07, NUC from 09-30) read as "quiet" for days with no reason in the file. A
+  long-running loop either recovers or says why it cannot: it now restarts a dead stream before each drain, waits 30 s growing to a 300 s ceiling after the third failure
+  (the ceiling protects how long a recovered lane sits idle and how long the corpus's single writer is left alone) and reports `degraded` and `retry_in_s`. Collection
+  Start and Run-now call `start_wiki_lane` too, so every path that brings the network back brings the lane back. A zero-byte lane file reads as "never stored anything",
+  not as an error. Mutation-checked: removing the revive call, or restoring end-at-three, fails the new tests.

@@ -16264,3 +16264,10 @@ maintainer as a card.
   (`tests/test_wiki_online_resume.py`). Home shows a line while the run is waiting on airplane mode. The diagnostics read of the
   crashing instance adds that nothing relaunches the app after a crash (`launch.sh` exits when the server dies) and that boot
   records carry no build id, so an update reads like a crash; the boot-record fix belongs to the Export thread.
+- **ROW F, FOUND IN THE 2026-10-06 BUNDLES AND NOT FIXED BY PR #1314 (recorded 2026-10-06):** (1) the walk lists about 24 pages per request, not
+  the planned 50 (en 18, fr 29 on hP; bn 1.4 and pt 1.2 on Lenovo, es 46): the bundles do not carry answer bodies, so the cause (a batch that continues for its
+  page properties, or an edition that answers short) is still to be read on a live request; (2) WARM is switched on and has no rows on both machines that
+  switched it on (`warm-never-run`): its queue is fed inside the idle window only, and the new `service` block in the soak window will show whether the drain
+  loop ever reached it; (3) the machines are Qubes AppVMs and the user says every instance went through Tor, while the walk's transport label is `direct` (it
+  means no proxy or pool in the app's session): throughput per transport is not separable, and no bundle records the transport setting or a build id.
+  `R119` is not needed: nothing here is a new ruling.
