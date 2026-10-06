@@ -12,7 +12,6 @@ import io
 import json
 import os
 import socket
-import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -128,12 +127,13 @@ def test_the_report_holds_no_passphrase_and_no_path_outside_the_run(tmp_path):
 
 
 def test_a_kept_store_is_readable_by_the_gazetteer_build_and_cleanup_deletes_it(tmp_path):
-    report, kept = _run(tmp_path, keep_store=True)
+    key = tmp_path / "operators.key"  # the operator's own file; the runner only reads it
+    key.write_text("an-operator-passphrase-0123456789\n", "utf-8")
+    report, kept = _run(tmp_path, keep_store=True, passphrase_file=key)
     assert report["status"] == "ok" and kept is not None and kept.is_dir()
     assert report["store"]["kept"] is True
-    key = kept / ".throwaway-passphrase"
-    assert key.is_file() and stat.S_IMODE(key.stat().st_mode) == 0o600
-    secret = key.read_text("utf-8")
+    assert not list(kept.rglob(".throwaway-passphrase"))  # the runner wrote no secret to disk
+    secret = key.read_text("utf-8").strip()
     assert secret not in json.dumps(report)
     for log in (kept / "logs").glob("*"):
         assert secret not in log.read_text("utf-8", errors="replace")
@@ -154,6 +154,17 @@ def test_a_kept_store_is_readable_by_the_gazetteer_build_and_cleanup_deletes_it(
 
     rec = R.cleanup(kept)
     assert rec["deleted"] is True and rec["bytes_freed"] > 0 and not kept.exists()
+
+
+def test_keep_store_without_the_operators_passphrase_file_is_refused_and_writes_nothing(tmp_path):
+    with pytest.raises(ValueError, match="passphrase-file"):
+        _run(tmp_path, keep_store=True)
+    assert not (tmp_path / "work").exists() or not list((tmp_path / "work").glob("oo-osm-reference-run-*"))
+    empty = tmp_path / "empty.key"
+    empty.write_text("\n")
+    with pytest.raises(ValueError, match="empty"):
+        _run(tmp_path, keep_store=True, passphrase_file=empty)
+    assert not list((tmp_path / "work").glob("oo-osm-reference-run-*"))
 
 
 def test_cleanup_refuses_a_directory_without_the_runners_marker(tmp_path):

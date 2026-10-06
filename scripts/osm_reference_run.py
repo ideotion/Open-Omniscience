@@ -19,7 +19,7 @@ the thing being measured). It refuses before reading a byte if the disk cannot p
 (the floor is a GUESS until a report exists: pass ``--prior-report`` to use a measured one), and it
 stops a phase cleanly, recording why, if free disk falls below the reserve (``--reserve-gb``, default
 2) or available memory below ``--min-available-mb`` (default 256) during the run. The throwaway store
-is deleted at the end and the report records the deletion; ``--keep-store`` leaves it so the
+is deleted at the end and the report records the deletion; ``--keep-store`` (with your own ``--passphrase-file``) leaves it so the
 gazetteer build can read it separately (``--gazetteer osm-only`` runs the OSM-only build inside the run), and
 ``--cleanup RUN_DIR`` deletes a kept one.
 
@@ -54,7 +54,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--gazetteer-out", type=Path, help="where the gazetteer artifact is written (outside the throwaway store)")
     ap.add_argument("--workdir", type=Path, help="where the throwaway store is made (default: beside the extract)")
     ap.add_argument("--report", type=Path, help="the JSON report (default: ./osm-reference-run-<time>.json)")
-    ap.add_argument("--keep-store", action="store_true", help="leave the throwaway store for a separate gazetteer build")
+    ap.add_argument("--keep-store", action="store_true",
+                    help="leave the throwaway store for a separate gazetteer build (needs --passphrase-file)")
+    ap.add_argument("--passphrase-file", type=Path,
+                    help="a file YOU made holding the store's passphrase; the runner only reads it and writes no secret "
+                         "to disk (required with --keep-store, so the gazetteer build can open the kept store)")
     ap.add_argument("--cleanup", type=Path, metavar="RUN_DIR", help="delete a kept store this runner made; nothing else")
     ap.add_argument("--plan", action="store_true", help="print the disk the run needs and what it would do; run nothing")
     ap.add_argument("--prior-report", type=Path, help="a previous report: its measured disk per input byte replaces the guess")
@@ -89,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report, kept = R.run(
             extract=args.extract, country=args.country, history=args.history, workdir=args.workdir, reader=args.reader,
-            gazetteer=args.gazetteer, gazetteer_out=args.gazetteer_out, keep_store=args.keep_store,
+            gazetteer=args.gazetteer, gazetteer_out=args.gazetteer_out, keep_store=args.keep_store, passphrase_file=args.passphrase_file,
             reserve_bytes=int(args.reserve_gb * R.GIB), min_available_bytes=int(args.min_available_mb * R.MIB),
             floor_factor=args.floor_factor,
             min_free_override=int(args.min_free_gb * R.GIB) if args.min_free_gb is not None else None,

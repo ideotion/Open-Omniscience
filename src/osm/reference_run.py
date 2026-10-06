@@ -30,8 +30,11 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   recorded ``refused-mid-run`` with the figures, and the rest of the run is not started. The same
   holds for available MEMORY (default 256 MiB): a 3.5 GB VM that is out of memory is a VM the
   operator cannot log into, and the ingest's own spill-to-disk path is what should be absorbing it.
-* **A KEPT STORE** holds a ``.throwaway-passphrase`` file, created owner-only (0600) from its first
-  byte, outside the repository (the runner refuses a workdir inside it) and removed with the store.
+* **THIS TOOL WRITES NO SECRET TO DISK.** A run that deletes its store uses a random passphrase that
+  lives only in the children's environment. ``--keep-store`` needs the operator's own
+  ``--passphrase-file`` (a file they made, holding any passphrase), so that a separate gazetteer build
+  can open the kept store with the same file; the runner only reads it. The runner refuses a workdir
+  inside the repository, where the store and its logs would sit in the working tree.
 * **THE REPORT** carries no secret and no path outside this run's own data directory: inputs by
   file name, children's error text scrubbed of the passphrase and of every absolute path.
 
@@ -544,6 +547,7 @@ def run(
     gazetteer: str = "off",
     gazetteer_out: Path | None = None,
     keep_store: bool = False,
+    passphrase_file: Path | None = None,
     reserve_bytes: int = DEFAULT_RESERVE_BYTES,
     min_available_bytes: int = DEFAULT_MIN_AVAILABLE_BYTES,
     floor_factor: float = DEFAULT_FLOOR_FACTOR,
@@ -561,6 +565,19 @@ def run(
     deleted; with ``keep_store`` it is the directory to hand to ``--cleanup`` later.
     ``phases_override`` exists for tests (a scripted child in place of the app's scripts).
     """
+    if keep_store and passphrase_file is None:
+        raise ValueError("--keep-store needs --passphrase-file: a file you make holding any passphrase (for example "
+                         "`python -c \"import secrets; print(secrets.token_urlsafe(24))\" > key`), so the later "
+                         "gazetteer build can open the kept store; this tool writes no secret to disk")
+    if passphrase_file is not None:
+        try:
+            passphrase = Path(passphrase_file).read_text("utf-8").strip()
+        except OSError as exc:
+            raise ValueError(f"cannot read the passphrase file ({type(exc).__name__})") from None
+        if not passphrase:
+            raise ValueError("the passphrase file is empty")
+    else:
+        passphrase = secrets.token_urlsafe(24)
     if gazetteer not in GAZETTEER_MODES:
         raise ValueError(f"--gazetteer {gazetteer!r} is not offered here; the Wikidata join is a separate step on a kept store")
     probe = probe or Probe()
@@ -627,19 +644,10 @@ def run(
     data_dir = run_dir / "data"
     data_dir.mkdir(parents=True)
     (run_dir / MARKER).write_text("a throwaway store made by scripts/osm_reference_run.py; safe to delete\n", "utf-8")
-    passphrase = secrets.token_urlsafe(24)
     secrets_ = (passphrase,)
     env = {k: v for k, v in os.environ.items()
            if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR")}
     env.update({"OO_DATA_DIR": str(data_dir), "OO_DB_PASSPHRASE": passphrase, "PYTHONUNBUFFERED": "1"})
-    if keep_store:
-        # Owner-only from the first byte (never written 0644 and then chmod'ed), outside the repository
-        # (the guard above), and removed with the store by --cleanup. The passphrase protects nothing
-        # of value -- the store holds public OpenStreetMap data -- it exists so the measured path is
-        # the encrypted one and so a separate gazetteer build can open the kept store.
-        fd = os.open(run_dir / ".throwaway-passphrase", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(passphrase)
 
     g_out = Path(gazetteer_out).resolve() if gazetteer_out else None
     if gazetteer != "off" and g_out is None:
