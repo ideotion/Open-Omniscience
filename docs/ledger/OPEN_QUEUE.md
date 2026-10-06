@@ -49,6 +49,13 @@
   one's. The one SIGKILL that landed during a build (the previous
   session in the `OOS-8` bundle, 15:58:19 UTC, peak RSS 3.86 GB with 424 MB available, the build thread running beside the
   collectors and the rollup build) is the crash-diagnostics thread's reading, not this one's.
+- **THE SLOW MEMBERS OF THE ALL-DIAGNOSTICS BUILD ARE OPTIMISATION CANDIDATES, AFTER D+E (the coordinator's order, 2026-10-06; keyword-export
+  thread).** Measured on `OOS-12`'s bundle (builds took 9 to 48 minutes across the ten): `keyword-engine` 250 s, `leads-quality` 275 s, `bulletin-weekly` 302 s (at its
+  deadline, so partial) and `debug-bundle` 92 s. They are where the build's time and its pin on the log are spent: a statement or cursor inside a member pins SQLite for that
+  member's wall time, which the boundary release between members (`run.read_release`, LESSONS "A READER LIST NAMES CHECKOUTS") cannot shorten. **NOT started, in this order:**
+  D+E first (the bundle gaps), then per member measure what it reads and whether it can be bounded, cached, or declined on a small machine the way the keyword digest is
+  (R27/R28). **Also open and not this thread's:** the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which the
+  build's session does not explain (the WAL / disk thread).
 - **THE "ALL KEYWORDS" ZIP CRASH: WHAT SHIPPED, THE DEFAULTS TAKEN ON ITS FORKS, AND WHAT IS STILL OPEN (keyword-export
   thread, 2026-09-30; the maintainer's message 20:13 UTC; the mechanism is in `LESSONS.md`).** The export no longer holds the
   corpus in memory: `src/analytics/keyword_log_scan.py` (the scan and the per-language ranking, heaps that spill to SQLite

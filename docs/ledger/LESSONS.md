@@ -13262,3 +13262,22 @@ journalctl's own "not seeing messages from other users" notice as a kernel line 
 the other's "this user cannot read the journal" on ten of ten pairs; the constant is now shared, and a witness that could not
 look is a gap in the evidence, never evidence of absence. A lifetime minimum or maximum also carries the time of its reading,
 taken at the moment it was read (the slow walks that follow are slowest exactly when memory is short).
+
+### A READER LIST NAMES CHECKOUTS, NOT SNAPSHOTS: THE BUILD'S "ONE READ TRANSACTION" WAS A POOLED SESSION (keyword-export thread, 2026-10-06, `bundle.py`)
+
+The WAL checkpoint record lists the pool's CHECKOUTS, oldest first (`pool_watch`), and in six of the ten bundles of 2026-10-06 the oldest was `bgjob-all-diagnostics`,
+aged 26 s to 3,172 s beside logs of up to 1.19 GB. It was written up (PR #1315's queue entry, then the coordinator's order) as "the build holds one read transaction
+for its whole run, so the WAL cannot be checkpointed meanwhile". That was read off the list; it is not what the code does. Measured with the real 77 members on an
+empty corpus: the shared engine runs pysqlite in its legacy mode, where a SELECT starts no BEGIN (only `read_snapshot.py` takes the explicit-BEGIN recipe), and
+SQLite's own `connection.in_transaction` was False after EVERY member, while the SQLAlchemy session was still in a transaction after 75 of them. So between members the
+standing thing was the pooled session and its connection; a snapshot pins the log only while a member's statement or an open cursor is running, which is that
+member's own time. The build now ends the session's transaction at every member boundary (`_release_read_between_members`, over `release_idle_connection`, the one
+release that declines a session which has written, so a member's flushed work is never rolled back) and the manifest says how each boundary went
+(`run.read_release`: `released`, `none_held`, `declined`, with its method and its caveat). What that buys is real and smaller than the story: the pool slot and the D44
+reservation's "standing holder" count come back between members, and the reader list stops naming the build at times it holds nothing; it does NOT shorten a long
+statement inside `keyword-engine` (250 s), `leads-quality` (275 s), `bulletin-weekly` (302 s, its deadline) or `debug-bundle` (92 s), the figures from `OOS-12`'s bundle.
+**Reusable:** before writing "pinned", ask the connection (`dbapi_connection.in_transaction`, or a TRUNCATE checkpoint from a third connection with no busy wait), not a
+list of checkouts; and when a test needs a pin, MODEL it (an explicit BEGIN) and prove the model with a negative control (the same sequence with the release switched off
+leaves the checkpoint busy), because on the shared engine's own mode the pin is absent whether or not the code under test ran. Not explained here and not this thread's:
+the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which a build of 9 to 48 minutes does not obviously
+explain.
