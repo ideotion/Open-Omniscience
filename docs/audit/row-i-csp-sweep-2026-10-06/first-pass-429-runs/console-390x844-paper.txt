@@ -1,0 +1,42 @@
+# console (error + warning) and pageerror text, width 390x844, theme paper
+# CSP violation events (securitypolicyviolation): []
+[http 429] GET /api/articles?tags=news&sort_by=date&sort_dir=desc&limit=8
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?tags=via%3Acurated&sort_by=date&sort_dir=desc&limit=8
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 429] GET /api/articles?limit=50&ui_lang=en
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)

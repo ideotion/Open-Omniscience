@@ -912,9 +912,10 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     single-writer gate (``src/database/writer.py``) serialises every commit in real
     wall-clock order, so ``created_at`` is a genuinely monotonic, reuse-immune ordering
     key (unlike ``id``). Any row committed AT OR BEFORE ``scan_bound`` is eligible; a
-    concurrent delete-then-reinsert ALWAYS produces a fresh row whose ``created_at`` is
-    STRICTLY AFTER ``scan_bound`` (the reinsert happens during, never before, the scan
-    started) -- so it is excluded from THIS build regardless of which id it lands on,
+    concurrent rewrite ALWAYS produces a row whose ``created_at`` is STRICTLY AFTER
+    ``scan_bound`` (a re-inserted row, and since 2026-10-06 a row CHANGED IN PLACE, which
+    is stamped now; an UNCHANGED row is not touched at all) -- so it is excluded from THIS
+    build regardless of which id it lands on,
     closing both the double-count and the id-reuse-drop directions BY CONSTRUCTION, not
     by luck. A NULL ``created_at`` (a pre-migration or otherwise unset row) is included,
     never silently excluded on a data gap -- originally by treating it as maximally old
@@ -976,7 +977,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
 
     # -- capture the scan boundary ONCE, before the loop begins (see the docstring's
-    # PR-D / W2 correction) -- a concurrent delete-then-reinsert can never land inside it.
+    # PR-D / W2 correction) -- a concurrent re-index's rewrite can never land inside it.
     scan_bound = session.execute(_sql("SELECT MAX(created_at) FROM keyword_mentions")).scalar()
 
     # -- stream mentions -> DuckDB staging (dates kept as text; cast in the GROUP BY) ---- #
@@ -1023,8 +1024,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     # -- PHASE A: the NULL-created_at rows (see the docstring's PHASE SPLIT note).
     # Ordered by id alone, which is safe HERE and only here: no insert path can add a
     # row to this phase mid-scan, so the set can only shrink, and a shrinking set has
-    # neither the double-count nor the reuse-drop direction. A re-indexed row leaves
-    # the phase entirely (its fresh row carries a real created_at). No upper bound is
+    # neither the double-count nor the reuse-drop direction. A re-indexed row that changed
+    # leaves the phase (it is stamped now); one that did not keeps its NULL and stays in it. No upper bound is
     # needed for the same reason -- and none is available, since MAX(created_at) says
     # nothing about rows that have none.
     _drain(
@@ -1243,13 +1244,16 @@ def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
 # docs/design/SCALING_DERIVED_LAYER_1000X.md). Keeps the rollup fresh WITHOUT a full
 # rebuild every pass, while a re-index can never make it double-count.
 #
-# THE TRAP (grounded in this repo): ``index_article`` does delete-then-reinsert of an
-# article's mentions (store.py). So an id-watermark MERGE-ADD (tail = ``id > last_mention_id``)
+# THE TRAP (grounded in this repo): ``index_article`` REWRITES an article's mentions (store.py;
+# since 2026-10-06 only the difference -- a changed row is updated in place under its OLD id, a
+# gone one deleted, a new one inserted -- where it used to delete and re-insert
+# every row). So an id-watermark MERGE-ADD (tail = ``id > last_mention_id``)
 # is correct ONLY for APPEND — a brand-new article's mentions carry strictly higher ids the
 # tail captures once. EVERY path that re-runs ``index_article`` over an EXISTING article
 # (reindex_all_batch / reindex_articles / reindex_imported_articles [restore] / clean-up-
 # keywords) AND ``prune_orphan_keywords`` (deletes rows) leaves the OLD contribution in the
-# rollup AND re-inserts higher-id rows into the tail = a fabricated (doubled) number. So those
+# rollup: a row changed in place keeps its id, below the tail, and is never seen (a stale
+# number), and a row deleted and inserted again would be counted twice (a doubled one). So those
 # mutators bump a CORPUS EPOCH; a changed epoch forces a FULL rebuild, never an incremental
 # merge. Normal new-article ingest does NOT bump the epoch (else we full-rebuild every pass).
 #
