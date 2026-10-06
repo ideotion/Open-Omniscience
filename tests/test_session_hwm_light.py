@@ -478,6 +478,57 @@ def test_a_member_over_its_budget_keeps_the_newest_and_says_how_many_it_cut(rig,
     assert _compact(out) <= budget, "the member fits the budget it was given"
 
 
+def test_the_previous_sessions_tail_is_cut_oldest_first_too_and_the_whole_member_fits(rig, no_heavy, monkeypatch):
+    """MUTATION TARGET: leaving the PREVIOUS ring uncut (``prev_ring, cut = list(...), 0``). It is the
+    ring an unclean end is read from, so it is the one that must never push the member over its budget."""
+    ticks = iter(f"2026-10-06T00:00:{i:02d}+00:00" for i in range(60))
+    monkeypatch.setattr(session_hwm, "_now", lambda: next(ticks))
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    for _ in range(6):
+        rig(15.0)
+    ring = session_hwm.current()["pressure_light"]
+    assert len(ring) == 6
+    # the next boot: this session's tail becomes the previous one's
+    session_hwm._PREV_LOADED, session_hwm._PREV = False, None
+    session_hwm.capture_previous()
+    one = _compact(ring[-1])
+    fixed = session_hwm.diagnostics_member(10**7)
+    assert fixed["previous_session"]["found"] and len(fixed["previous_session"]["snapshots"]) == 6
+    fixed["this_session"]["snapshots"] = fixed["previous_session"]["snapshots"] = []
+    budget = _compact(fixed) + session_hwm._MEMBER_SLACK + 2 * (2 * one + 10)
+    out = session_hwm.diagnostics_member(budget)
+    theirs = out["previous_session"]
+    assert theirs["snapshots"] and theirs["dropped_oldest_to_fit"] == 6 - len(theirs["snapshots"]) > 0
+    assert theirs["snapshots"] == ring[-len(theirs["snapshots"]):], "the NEWEST is what stays"
+    assert _compact(out) <= budget, "the WHOLE member fits the budget it was given, not only one ring"
+
+
+def test_the_real_guard_line_is_read_from_the_memory_guards_own_attributes(monkeypatch):
+    """Every other light test patches ``_guard_line``: if the guard's attribute names drifted, the light
+    snapshot would silently stop firing by readings and every test would stay green."""
+    from src.scheduler import memguard
+
+    guard = memguard.MemoryGuard(avail_floor_mb=300, rss_pct=70)
+    monkeypatch.setattr(memguard, "memory_guard", guard)
+    assert session_hwm._guard_line() == (300.0, 70.0)
+    near = session_hwm._light_near({"avail_mb": 440.0, "total_mb": 5000.0, "rss_mb": 100.0}, None)
+    assert near == "available memory near the guard's floor", "1.5 x 300 MB is 450 MB, so 440 MB is near it"
+    assert session_hwm._light_near({"avail_mb": 460.0, "total_mb": 5000.0, "rss_mb": 100.0}, None) is None
+    monkeypatch.setattr(guard, "avail_floor_mb", None)  # unreadable is None, never a zero line
+    monkeypatch.setattr(guard, "rss_pct", 0)
+    assert session_hwm._guard_line() == (None, None)
+
+
+def test_a_failing_light_snapshot_does_not_skip_the_marks_of_that_tick(rig, no_heavy, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("the light snapshot failed")
+
+    monkeypatch.setattr(session_hwm, "_light_snapshot", boom)
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    rig(15.0)
+    assert session_hwm.current().get("rss_max_mb") == NEAR_AVAIL["rss_mb"], "the marks fold must still run"
+
+
 def test_a_budget_below_the_fixed_part_gets_a_note_naming_the_floor_not_a_larger_member(rig, no_heavy):
     """A ``max_bytes`` of 100 used to be raised silently to a 768-byte member, which the bundle's
     per-member cap then drops whole without saying why."""

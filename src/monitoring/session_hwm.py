@@ -151,7 +151,9 @@ _LIGHT_METHOD = (
     "found (cpu_read_for says how many were read of working_threads). Memory is not measured per "
     "thread (CPython has no such counter): the pairing of the blocks gained with the busiest "
     "threads is an INFERENCE about who allocated. took_ms is the time to take the readings and "
-    "choose the threads; writing the file is not in it."
+    "choose the threads; writing the file is not in it. The file is replaced whole and atomically "
+    "(it survives the process being killed) but is not fsynced, so a hard stop of the machine "
+    "itself can lose the newest few seconds."
 )
 # A thread whose innermost frame is in one of these is waiting, not working: a lock, a
 # queue, a socket, the event loop's select.
@@ -937,7 +939,11 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
             if pressure is not None and burst is not None:
                 pressure.update(burst)
             if pressure is None and (near := _light_due(readings, guard, now)) is not None:
-                light = _light_snapshot(readings, near, guard)
+                try:
+                    light = _light_snapshot(readings, near, guard)
+                except Exception:  # noqa: BLE001 - its own failure must not skip the marks below
+                    # (retried at the next 15 s claim, which ``_light_due`` already made).
+                    _LOG.debug("light pressure snapshot failed", exc_info=True)
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
         at_peak = None

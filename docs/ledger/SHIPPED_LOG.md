@@ -10441,7 +10441,7 @@ planned with the button, and until it decides which file keeps them the previous
 The pin report names the pool each holder came from and no longer says every checkout pins the log; the light snapshot reads each thread's own CPU clock (the
 `/proc` reads cost seconds under the burst it is for); a driver's error code is trusted over its words. The unlock re-ask checks the held key
 (a wrong passphrase on an open app is refused) and a failed finish is not answered "unlocked". Each item has a test; the mutants of the main ones were run
-(the unlock re-ask and its key, head-only classification, the age bound, the per-path key and its clearing, the start-time match, the newest kept); the engine hook's
+(the unlock re-ask and its key, head-only classification, the age bound, the per-path key and its clearing, the start-time match, the newest kept, the member's whole-size bound and the previous ring's cut, the real guard-line reader, a failing light snapshot not skipping the marks); the engine hook's
 detail is hardening with no change in behaviour (the driver's exception never carried the statement), pinned through a real engine.
 Also recorded: the post-10-01 reading of the 10-06 bundles (the log is held near 1 GB by the guard; the pins are long background
 reads). Lessons: `LESSONS.md`, the entries "AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT", "A SAMPLER THAT ONLY FITS EVERY

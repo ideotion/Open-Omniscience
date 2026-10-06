@@ -997,7 +997,9 @@ def test_the_first_seconds_after_the_machines_boot_are_recorded(hwm, monkeypatch
     burst for five whole minutes (two burst tests failed on a 284 s host, 2026-09-27)."""
     clock, blocks = [1.0], [5_000_000]
     avail = [3000.0]
-    monkeypatch.setattr(session_hwm, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(
+        session_hwm, "time", types.SimpleNamespace(monotonic=lambda: clock[0], perf_counter=time.perf_counter)
+    )
     monkeypatch.setattr(sys, "getallocatedblocks", lambda: blocks[0])
     monkeypatch.setattr(session_hwm, "_readings",
                         lambda: {"avail_mb": avail[0], "total_mb": 4000.0, "rss_mb": 900.0})
