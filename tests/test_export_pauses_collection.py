@@ -66,7 +66,7 @@ def events(monkeypatch, tmp_path):
         dest.write_bytes(b"x")
 
     monkeypatch.setattr(connect, "snapshot_preserving", fake_snapshot)
-    monkeypatch.setattr(stream_backup, "_drop_newsletters_in_file", lambda _p: 0)
+    monkeypatch.setattr(stream_backup, "_drop_newsletters_in_file", lambda _p, _n=None: 0)
     return log, tmp_path
 
 

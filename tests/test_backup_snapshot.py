@@ -893,7 +893,7 @@ def test_the_newsletter_excluded_copy_is_remembered_and_its_note_is_true(
     rewritten, and the check credits them."""
     stage = tmp_path / "drive" / ".bak-build-x"
     stage.mkdir(parents=True)
-    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p: 0)
+    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p, _n=None: 0)
     notes: list[str] = []
     src = sb._live_corpus_source(stage, False, notes)
     assert src.path == stage / "corpus.db" and src.path.exists()
@@ -909,7 +909,7 @@ def test_an_encrypted_newsletter_excluded_copy_says_it_is_rewritten_and_earns_no
 ):
     stage = tmp_path / "drive" / ".bak-build-x"
     stage.mkdir(parents=True)
-    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p: 0)
+    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p, _n=None: 0)
     monkeypatch.setattr(connect_mod, "is_encrypted_file", lambda _p: True)
     # the live fixture is plaintext: a stand-in copy keeps the test on the path under test
     monkeypatch.setattr(connect_mod, "snapshot_preserving", lambda src, dest, **_k: shutil.copy(src, dest))

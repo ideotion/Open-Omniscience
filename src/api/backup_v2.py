@@ -35,7 +35,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
-from src.backup.merge import MergeError, RestoreRefused, run_restore
+from src.backup.merge import MergeError, RestoreRefused, check_memory_before_staging, run_restore
 from src.jobs.background import BackgroundJob, Framed, register_job
 from src.scheduler.runner import exclusive_window_open
 
@@ -205,6 +205,12 @@ def restore_legacy_path(
     p = _Path(path)
     if not p.is_file():
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
+    # Before a byte is read or staged: an encrypted corpus that this machine cannot hold a merge
+    # for is told so now, not after the staging (see check_memory_before_staging).
+    try:
+        check_memory_before_staging()
+    except MergeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         data = p.read_bytes()
     except OSError as exc:

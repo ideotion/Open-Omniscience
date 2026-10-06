@@ -638,6 +638,12 @@ class VolumeBackupManager:
                 )
                 return
 
+            # The memory an ENCRYPTED corpus's merge needs, asked before the hours of reassembly and
+            # staging rather than after them (the merge's own check stays, with the exact figure).
+            from src.backup.merge import check_memory_before_staging
+
+            check_memory_before_staging()
+
             # "Import owns the machine" (field-feedback Session A §4, ruled):
             # a large volume restore competes for the single-writer gate and
             # CPU with any in-flight background collection pass, so
