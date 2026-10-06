@@ -76,7 +76,7 @@ leads-quality.json,28032,keep,leads-quality.json,,
 card-audit.json,202492,keep,card-audit.json,,
 bulletin-weekly.json,65709,keep,bulletin-weekly.json,,
 runs.json,,new,runs.json,export,"every Diagnostics run, including a failed, killed or never-saved one: start, end, outcome, profile, members by outcome, bytes, and each file the page was served (name, bytes, time); last 10 runs; closes FINDINGS 8.6"
-vitals.json,,new,vitals.json,export,"process RSS, available memory, swap, drive free, database size, threads and log-line counts by logger and level: 5-minute buckets for 48 h and hourly for 14 days, plus the last 60 minutes; the memory-growth curve and the minutes before a kill"
+vitals.json,,new,vitals.json,export,"process RSS, available memory, swap, drive free, database size, threads and log-line counts by logger and level: 5-minute buckets for 48 h and hourly for 14 days, plus the last 60 minutes; the memory-growth curve (the minutes before a kill are NOT claimed: it is written every five minutes, and says which record carries them)"
 selftests.json,,new,selftests.json,export,one verdict per self-test (13 of them)
 database-damage.json,,new,database-damage.json,WAL,"incident records, per-table quick_check verdicts, file pages against the header's page count at every boot, salvage counts (WAL needs 4)"
 transfers.json,,new,transfers.json,WAL,"last 10 runs of each kind of backup, export and restore, with outcome, seconds, bytes and the destination's free space; staging swept at boot (WAL needs 5)"

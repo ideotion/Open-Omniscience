@@ -13220,3 +13220,16 @@ the data existed was wrong**: 160 KB would have cut the 48 hours the member exis
 zipped, so the budget is 200 KB and the plan says why. Measure at the full retention, with the worst-case row, before a number is fixed. (4) **An open accumulator
 restored from a stored, ROUNDED row needs its weight** (the tick count): without it the mean across a restart quietly becomes a mean of means, and the open bucket is
 kept apart from the closed rows in the file so a tick is counted once (both are mutants the suite now kills).
+(5) **A "leaf" lock inside a logging handler is RE-ENTRANT or it is a deadlock** (the Opus read reproduced it): CPython runs the cyclic collector and Python-level signal handlers
+between any two bytecodes, so a finalizer that logs (SQLAlchemy's pool does, asyncio's "Task exception was never retrieved" does) or a SIGHUP handler that logs re-enters
+`emit` on the thread already inside it; a plain `Lock` makes that thread wait for itself while it holds the handler's own lock, and every other thread that logs waits
+behind it. The standard library's handler locks are `RLock`s for this reason, and the test re-enters `emit` from inside `emit` with its own lock of the module's kind, so a
+regression fails instead of hanging every later test. (6) **A minute's CPU is a difference between two readings, so the baseline has an age and the row says its span**: a
+baseline kept across ten minutes of skipped samples charged all ten to one minute (605 s in a row of 60), a thread parked in its queue at the sample instant has no figure
+that minute and needs its last one carried, and "no baseline yet" is `null` with a reason, never `[]` (which says "none was busy"). (7) **State restored from a DISPLAY row
+loses what the display summed**: the open log hour came back with its quiet loggers' sum as a logger named "other" and a real logger of that name overwritten, so a
+crash loop's second restart in an hour lost lines; persist the raw (logger, level, count) triples and build the display row at read time. (8) **A clock step is counted once and
+bounded**: a hold that keeps adding to the open bucket until the clock catches up piled an hour into one row of 721 ticks and counted 719 "steps" for one; a step beyond two
+buckets closes everything open, starts again at the clock's time and records the step, rows staying in the order they were written. (9) **A member's cost keeps CPU and wall
+apart and says which is which**: the same tick reads 1 ms of CPU and 532 ms of wall under three busy threads, and a reader who takes the wall figure for work blames the
+recorder for the machine's load, which is the mistake (1) records.
