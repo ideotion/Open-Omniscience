@@ -155,6 +155,8 @@ def _rollup_first_build() -> None:
         raise _Skipped("declined")
     if outcome == "failed":
         raise RuntimeError("the rollup's first build failed (see the rollup_serve block)")
+    if outcome != "built":  # only a build that happened reads as done, whatever else comes back
+        raise RuntimeError(f"the rollup's first build reported {outcome!r}, not a finished build")
 
 
 def _start_reindex() -> None:
