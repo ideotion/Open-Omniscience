@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, held_passphrases, scrubbed
 from src.paths import data_dir
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
@@ -128,17 +129,33 @@ def _append(entry: dict) -> None:
 
 
 class _JsonlErrorHandler(logging.Handler):
+    """Every WARNING-or-above record of every logger in the process enters the journal here, and the debug bundle carries
+    the journal (``recent_errors``): the one place where the text of every module's exception, however it was logged,
+    becomes a record. The message and the traceback are scrubbed of every passphrase the process holds
+    (``secret_scrub.scrubbed``: as typed, as an SQL literal, as ``repr`` and as JSON write it) BEFORE the cut that keeps
+    their first 500 and last 1,500 characters, because a text cut first can split a passphrase and keep half of it. It is
+    the net under the per-site scrubs (``log_failure`` and the handlers the static guard reads), and it knows only the
+    passphrases the process holds: one typed into a request being served, or a backup's, is the site's to take out."""
+
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
         try:
+            held = held_passphrases()
             entry = {
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "level": record.levelname,
                 "logger": record.name,
-                "message": record.getMessage()[:500],
+                "message": scrubbed(record.getMessage(), *held)[:500],
             }
             if record.exc_info and record.exc_info[0] is not None:
-                tb = "".join(traceback.format_exception(*record.exc_info))
+                tb = scrubbed("".join(traceback.format_exception(*record.exc_info)), *held)
                 entry["traceback_tail"] = tb[-1500:]
+            else:
+                # A handler that holds a passphrase logs through ``secret_scrub.log_failure``, which writes the
+                # traceback as TEXT with the secrets out of it (a record's ``exc_info`` carries the message as raised)
+                # and hands it over as an attribute, so the bundle keeps the frames that say where the failure was.
+                text = getattr(record, TRACEBACK_ATTRIBUTE, None)
+                if isinstance(text, str) and text:
+                    entry["traceback_tail"] = scrubbed(text, *held)[-1500:]
         except Exception:  # noqa: BLE001 - the log must never break the app
             return
         _append(entry)
@@ -179,7 +196,7 @@ def note_http_error(method: str, path: str, status: int, *, detail: str | None =
         # _append (which re-acquires _LOCK) runs AFTER the `with` block releases it.
         msg = f"HTTP {status} {method} {path}"
         if detail:
-            msg = f"{msg} — {str(detail)[:200]}"
+            msg = f"{msg} — {scrubbed(str(detail), *held_passphrases())[:200]}"
         _append(
             {
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -215,7 +232,14 @@ def note_frontend_error(
     identical (kind, message, source) is throttled so a render loop can't flood the log.
     """
     try:
-        k = (str(kind)[:40], str(message)[:200], str(source or "")[:200])
+        held = held_passphrases()
+
+        def clean(value: object, cut: int) -> str:
+            """The browser's words with the passphrases the process holds out of them, and only then cut: a text cut first can
+            split a passphrase and keep half of it."""
+            return scrubbed(str(value), *held)[:cut]
+
+        k = (clean(kind, 40), clean(message, 200), clean(source or "", 200))
         now = time.monotonic()
         with _LOCK:
             last = _frontend_last.get(k)
@@ -228,17 +252,17 @@ def note_frontend_error(
             "at": datetime.now(UTC).isoformat(timespec="seconds"),
             "level": _FRONTEND_LEVEL,
             "logger": "frontend",
-            "kind": str(kind)[:40],
-            "message": str(message)[:500],
+            "kind": clean(kind, 40),
+            "message": clean(message, 500),
         }
         if source:
-            entry["source"] = str(source)[:300]
+            entry["source"] = clean(source, 300)
         if endpoint:
-            entry["endpoint"] = str(endpoint)[:300]
+            entry["endpoint"] = clean(endpoint, 300)
         if lineno is not None:
             entry["lineno"] = int(lineno)
         if ui_lang:
-            entry["ui_lang"] = str(ui_lang)[:16]
+            entry["ui_lang"] = clean(ui_lang, 16)
         _append(entry)
     except Exception:  # noqa: BLE001 - diagnostics must never break the app
         return

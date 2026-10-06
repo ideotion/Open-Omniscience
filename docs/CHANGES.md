@@ -129,8 +129,17 @@ this section were still open.
   manager reads), its log, its run journal and an import item's `error` carry the exception's words with the passphrase,
   and a restore's corpus passphrase, taken out. No message on those paths named one when this was written; the rule is that
   no path that could is left unscrubbed, and a test now holds the next handler in those files, and the next module that
-  holds the passphrase and writes what it catches, to it. The lock screen's one handler that wrote a traceback (the failed
-  drop of the pool's connections after a failed unlock) writes through the same helper, and its module is held to the rule too.
+  holds the passphrase and writes what it catches, to it. The one handler of the lock screen that wrote a traceback in a
+  function holding the passphrase (the failed drop of the pool's connections after a failed unlock) writes through the
+  same helper, and its module is held to the rule too.
+- The places where any module's exception becomes a record take every passphrase the process holds (the unlocked session's
+  and `OO_DB_PASSPHRASE`) out of the exception's words, in the forms the code writes one in (as typed, as an SQL statement
+  quotes it, as `repr` and as JSON write it) and with a passphrase that contains another leaving no tail of the longer
+  one: the 500 response and the log record of the global error handler, the error journal the debug bundle carries (before
+  its 500-character and 1,500-character cuts, the frames of a traceback kept) and a failed background job's error line
+  (`/api/jobs`, the task manager). When the scrub itself cannot run, the exception's class is written and none of its
+  words. The server's own log of the exception after the handler has answered, and a passphrase typed into the request
+  being served, stay outside and are recorded in the open queue.
 
 ### Interface and translations
 

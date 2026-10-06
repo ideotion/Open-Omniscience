@@ -13290,11 +13290,11 @@ run puts no minimum on its length) turns every verdict into the marker and a goo
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
 holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #NNNN,
-`stream_backup.py`, `volume_job.py`, `import_queue.py` and the route layer's `backup_v2.py`), to using the caught exception
+`stream_backup.py`, `volume_job.py`, `import_queue.py`, the route layer's `backup_v2.py` and the lock screen's `unlock.py`), to using the caught exception
 only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
 `_log_phase_failure`, and `secret_scrub`'s `scrubbed`, `traceback_text` and `log_failure`, which must be given EVERY secret the
 function holds; a missing, empty or other secret argument does not count, read at the second place, and from the fourth for
-`_log_phase_failure` and `log_failure`), as its class, or as a `_PhaseError`'s `status` and `partial` (read by name only in an `except _PhaseError`:
+`_log_phase_failure` and `log_failure`; a helper that takes ONE secret counts only in a function that holds that one secret), as its class, or as a `_PhaseError`'s `status` and `partial` (read by name only in an `except _PhaseError`:
 `status` goes through the closed vocabulary `PHASE_STATUSES`, and `partial` is scrubbed where the restore makes it while the other
 two phases never hold the secret), and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
 `sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
@@ -13637,7 +13637,7 @@ bytes and weighed up to 118 more; measure with the notes in. **A test that takes
 pinned with the literals 600 and 601 (and `v.CLOCK_HOLD_S == 600`), at two phases of the bucket.
 (12) **The coordinator's own delta check found four more by running the control flow, not by reading the diff**: (a) the END of a hold is not a second step: a big clock step that was held open (it came too soon after the last rebase) and rebased later was recorded again with a size of 0 or -5 and counted twice, because the rebase measured the step from the clock's last reading, which was already on the stepped clock; the test that covered it passed because it asserted the `kept_open` FLAGS and never the sizes or the count: assert the values a record exists to carry, and put the end of a hold on the record the hold made (`new_history_at`); (b) a reason that says "an idle process" must be true where the platform gives a working thread no CPU figure (macOS), or every minute of a busy session reads as idle: say idle only when every thread was waiting; (c) one bad cell inside a stored row emptied the whole history at start (`int("x")` inside the try that resets everything): check every cell and drop that row alone; (d) a comment that calls a number "the heaviest it can be" describes the test's FIXTURE: say "sized above the fixture" where the input has no ceiling (a logger name has none), and keep ONE rule for what a failure leaves in a zip (its type and the system's reason, never its message, which can name a path).
 
-### EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE (release candidate diagnostics, 2026-10-06, PR #NNNN, `src/monitoring/secret_scrub.py`, `src/backup/volume_job.py`, `src/backup/import_queue.py`, `src/api/backup_v2.py`)
+### EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE (release candidate diagnostics, 2026-10-06, PR #NNNN, `src/monitoring/secret_scrub.py`, `src/backup/volume_job.py`, `src/backup/import_queue.py`, `src/api/backup_v2.py`, `src/api/main.py`, `src/monitoring/errorlog.py`, `src/jobs/background.py`)
 
 The coordinator's check of #1318 (B1) named the volume job's own error handlers as the family of the engine's failure line, and its next relay asked that the route layer's log
 lines come with them. The job's runners catch `Exception` with the passphrase a parameter of the same call (a restore holds a second, the corpus's) and wrote what the exception
@@ -13664,7 +13664,42 @@ cause name the passphrase through the status, the file and every log record. **B
 that does.** **(5) A table of modules is a list nobody sees short.** The guard read a table, so a module that began to hold the passphrase and write `{exc}` was seen by nothing. A test now
 reads `src/` for the modules the walk would flag and holds `_GUARDED_MODULES` and `_NOT_GUARDED` to what it finds, both ways, every module left out with a written reason (five
 today; the columnar store's three `exc_info` records are the one that is NOT BUILT, and ride with the key-derivation change). The table's first merge of main proved the point: the findings PR (#1319) had added a handler to `src/api/unlock.py` that wrote the failure of a pool dispose with `exc_info=True`, inside a function that holds `body.passphrase`, and no one who wrote it was looking at this guard, because the rule lives in a test and not in the brief of the thread that touches the module; the coverage test found it, `unlock.py` writes through `log_failure` now, and it is a row of the table, with a behaviour test that makes the dispose fail with the passphrase in its message. **(6) `raise ... from None` stops the traceback printing a cause
-that named the passphrase, but the exception object still holds it as its `__context__`:** the scrub is where the reason is made, and the cause is not carried on. What stays outside
-all of this is the entry in `OPEN_QUEUE.md` that replaced the volume job's: the responses and the global handler, `runlog.run`'s journal, a path that is the passphrase, a form that is not
-the passphrase as typed, and what a syntax walk cannot follow. Thirty-two mutations of the helpers, the route, the queue, the request middleware and the guard, and twenty-one of the
-volume job's own scrub sites, are each caught by the tests that name them.
+that named the passphrase, but the exception object still holds it as its `__context__`:** the scrub is where the reason is made, and the cause is not carried on.
+**(7) The net goes where the text is MADE, and there are three places every module's exception passes through** (the coordinator's relays of 12:23, 12:32 and 12:33 UTC). The per-site
+scrub left them out. The global handler (`unhandled_exception_handler`, `src/api/main.py`) wrote `internal error: {exc}` to the caller and the traceback to the log with
+`logger.exception`; the error journal (`_JsonlErrorHandler.emit`, `src/monitoring/errorlog.py`, a root-logger handler that the debug bundle reads) kept the first 500 characters of every
+message and the last 1,500 of every traceback of every logger; and a failed background job published `str(exc)[:300]` as its `error` (`/api/jobs`, the task manager). An engine's error
+can quote the statement that held the key, and none of the three is a function that was handed a passphrase, so there is no name to scrub with, and the static guard cannot read them
+(the global handler's exception is its parameter, not a caught one, and the walk reads `except` blocks). They take every passphrase the process HOLDS (`secret_scrub.held_passphrases()`:
+the unlocked session's and `OO_DB_PASSPHRASE`, read at the moment of the error and never kept, so a lock or an erase leaves no copy) and scrub before they cut. The journal is under
+every other handler, so it is the one place that catches a record whichever module wrote it and however it carried the exception; its two other entries (`note_frontend_error`, the
+browser's words, and the optional `detail` of `note_http_error`) are scrubbed the same way; it is the net under the per-site scrubs, not instead of them, and it knows only what the
+process holds (a passphrase typed into the request being served, or a backup's, is the site's to take out). A scrub that cannot run writes the exception's class and none of its words,
+never the raw text, and a test that reads the global handler's source holds it to that (its exception is used only inside a scrub given `*held`, no `exc_info`, no `.exception()`). A
+record that `log_failure` writes carries no `exc_info`, so the journal could not take a traceback tail from it and the bundle would have lost the frames that say where a failure
+happened: the scrubbed traceback rides on the record as an attribute of its own (`Logger.log(extra={"exc_text": ...})` is refused with a `KeyError`, because that name is a record's
+own), and the journal scrubs it again.
+**(8) A secret has SHAPES, and every shape of every secret goes out in ONE read of the text.** The first scrub took out the secret as typed and the two forms JSON writes. A statement an
+engine quotes holds it as an SQL literal does (every `'` doubled: `PRAGMA key = 'it''s-the-key'`; an engine's parse error quotes a window of the statement); a tuple or a dict that holds
+it is written with `repr` (where a quote inside a text that has both kinds is backslash-escaped); JSON writes it with its letters escaped or kept. The shapes are listed in one place,
+`secret_scrub._forms`, for every caller. Three faults of a `str.replace` per secret and shape were found by a read and by tests: a secret that CONTAINS another, taken out second, leaves
+the longer one's tail (the restore's two, `correct horse` and `correct horse battery staple`, in the order the job passes them, gave `***redacted*** battery staple`; the coordinator's
+check), two secrets that overlap in the text leave a tail, and what is put in can be searched again and taken for an occurrence. `_redact` reads the text once, left to right, takes the
+UNION of every occurrence of every shape of every secret (an occurrence inside, or overlapping, another is one stretch with one marker, in whatever order the secrets were given) and
+never searches what it put in; the result is checked for every shape and the next marker tried, and a text that no marker can be put into without giving a shape back is withheld, as the
+first marker that holds none of them. An exhaustive test (every secret of one or two characters from the shapes' own punctuation against every text of one to three of its pieces, over
+ten thousand pairs) proves that no shape is left in what `scrub_text` or `scrubbed` returns.
+**(9) The guard's own idea of "the secret" had two holes, found by widening it.** Its table of names was a set, so `passphrase`, `secret` and `needle` (one passphrase under three names
+in the release run) and `corpus_passphrase` (the restore's second secret) were all just "a secret": a helper that takes one (`scrub_text`, `_exception_text`, `_scrub_value`) passed in a
+function that holds two, and a function that read `body.passphrase` and `body.corpus_passphrase` was satisfied by a scrub of one. The names and the attributes now map to WHICH secret
+each is (`_SECRET_NAMES`, `_SECRET_ATTRIBUTES`), a function holds a SET of those, a helper that takes one secret is routed only when the function holds that one, a helper over several
+(`scrubbed`, `traceback_text`, `log_failure`) is routed only when it names all of them, and two names for one secret are one secret. Each of these is a case in the guard's own tables,
+and a mutation of the lookup, of the equality or of the "names every secret" test fails them. The guard still reads names and follows no call.
+**(10) What stays outside, beyond the entry in `OPEN_QUEUE.md`** (the responses of the route layer, `runlog.run`'s journal, a path that is the passphrase, what a syntax walk cannot
+follow): Starlette's `ServerErrorMiddleware` ALWAYS re-raises after the application's `Exception` handler has answered, so uvicorn writes the traceback itself, unscrubbed, to stderr,
+from a logger whose parent does not propagate to the root (so the error journal never carries it; a filter on uvicorn's handler takes it out: the core-limit change); a passphrase typed
+into the request being served is not held yet, so the global handler cannot know it; and the lone-surrogate `UnicodeEncodeError`, which names the character and its offset in a text no
+scrub of the passphrase finds, has one site that sits in no handler of its own, the unlock screen's compare of the typed passphrase with the held one (`src/api/unlock.py:643`), so its
+error reaches the global handler's response and log. Thirty-two mutations of the helpers, the route, the queue, the request middleware and the guard, twenty-one of the volume job's own
+scrub sites and forty-six of the scrub core, the global handler, the error journal, the job's error line and the guard's lookup of which secret a name is, are each caught by the tests that
+name them.

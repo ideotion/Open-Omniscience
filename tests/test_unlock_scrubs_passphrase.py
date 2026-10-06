@@ -58,11 +58,11 @@ def _record_text(record: logging.LogRecord) -> str:
 
 def test_a_dispose_that_fails_after_a_failed_finish_is_written_without_the_passphrase(failing_unlock, caplog):
     held, path = failing_unlock
-    with caplog.at_level(logging.DEBUG, logger="api.unlock"):
-        with pytest.raises(RuntimeError, match="the finish failed"):
-            unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
+    with caplog.at_level(logging.DEBUG, logger="api.unlock"), pytest.raises(RuntimeError, match="the finish failed"):
+        unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
     written = [r for r in caplog.records if "engine dispose after a failed unlock finish failed" in r.getMessage()]
     assert len(written) == 1, "the failure of the dispose is still written: a net that drops the line is not a scrub"
+    assert written[0].levelno == logging.DEBUG, "the line was a debug line and a net must not turn it into a warning"
     assert "RuntimeError" in written[0].getMessage(), "what failed leads the record"
     assert "***redacted***" in written[0].getMessage()
     assert all(_PASS not in _record_text(r) for r in caplog.records), "the passphrase reached a log record"

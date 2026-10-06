@@ -34,6 +34,8 @@ import threading
 import time
 from typing import Any, Callable
 
+from src.monitoring.secret_scrub import held_passphrases, log_failure, scrubbed
+
 _LOG = logging.getLogger("jobs.background")
 
 
@@ -183,10 +185,17 @@ class BackgroundJob:
                 # late cancel() never mislabels a finished-with-full-result run.
                 self._state = "cancelled" if (self.cancellable and self._stop.is_set()) else "done"
         except Exception as exc:  # noqa: BLE001 - a worker crash must not take the app down
+            # The error is shown in the task manager and /api/jobs, and an engine's error can quote the statement that held
+            # the key: the text is scrubbed of every passphrase the process holds BEFORE the cut, and withheld when it cannot be.
+            held = held_passphrases()
+            try:
+                error = scrubbed(f"{type(exc).__name__}: {exc}", *held)[:300]
+            except Exception:  # noqa: BLE001 - the text could not be made or scrubbed: the class says what failed
+                error = f"{type(exc).__name__}: its text is withheld"
             with self._lock:
-                self._error = f"{type(exc).__name__}: {exc}"[:300]
+                self._error = error
                 self._state = "error"
-            _LOG.warning("background job %s failed", self.kind, exc_info=True)
+            log_failure(_LOG, f"background job {self.kind} failed", exc, *held, level=logging.WARNING)
         finally:
             with self._lock:
                 self._ended_at = time.time()

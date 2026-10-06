@@ -68,6 +68,7 @@ from src.catalog.provenance import (
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
+from src.monitoring.secret_scrub import held_passphrases, log_failure, scrubbed
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
@@ -1017,15 +1018,30 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     real cause (field test 2026-06-19 P0-3: an OLD backup's restore-preview surfaced
     exactly this). Return a JSON {detail} for all otherwise-unhandled errors so the
     UI can show the real message. Local single-user app: the operator IS the user, so
-    the message is included to aid debugging (no untrusted clients)."""
-    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    the message is included to aid debugging (no untrusted clients).
+
+    THE PASSPHRASE (2026-10-06). An engine's error can quote the statement that held the key, and this handler writes
+    the exception's text twice, to the log and to the caller. Both go through ``secret_scrub`` with every passphrase the
+    process holds (``secret_scrub.held_passphrases``): the log as ``log_failure`` writes it (the exception's own line, then the
+    traceback as scrubbed text), the response as ``scrubbed``; and when the scrub itself cannot run, nothing the
+    exception said is written. Stays outside, in docs/ledger/OPEN_QUEUE.md: the server logs the exception once more
+    itself, as the middleware re-raises it after this handler has answered, and a passphrase that is typed into the
+    request being served (the unlock screen's) is not held yet, so this handler does not know it."""
+    try:
+        held = held_passphrases()
+        what = scrubbed(f"unhandled error on {request.method} {request.url.path}", *held)
+        log_failure(logger, what, exc, *held)
+        detail = scrubbed(f"internal error: {exc}", *held)
+    except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
+        logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
+        detail = "internal error (its text is withheld: the scrub could not run)"
     try:
         REQUEST_COUNT.labels(
             method=request.method, endpoint=request.url.path, http_status=500
         ).inc()
     except Exception:  # noqa: BLE001 - metrics must never mask the original error
         pass
-    return JSONResponse(status_code=500, content={"detail": f"internal error: {exc}"})
+    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 def _validate_date(value: str | None, field_name: str) -> None:

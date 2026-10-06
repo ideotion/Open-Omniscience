@@ -67,6 +67,7 @@ def test_the_scrub_ends_even_when_no_marker_can_be_used(monkeypatch):
     monkeypatch.setattr(ss, "REDACTED", "xx")
     monkeypatch.setattr(ss, "_FALLBACK_MARKERS", ("x",))
     assert ss.scrub_text("axxb x", "x") == "ab "
+    monkeypatch.setattr(ss, "_FALLBACK_MARKERS", ("xxx",))  # every marker holds the two-letter secret now
     assert ss.scrub_text("xxxx", "xx") == ""
 
 
@@ -384,20 +385,31 @@ def test_scrubbed_matches_nothing_for_an_empty_or_a_missing_secret():
     assert ss.scrubbed(f"{text} {PASS}", None, PASS, "") == f"{text} {ss.REDACTED}"
 
 
-def test_scrubbed_withholds_a_text_the_second_scrub_rebuilt_the_first_secret_in():
-    """A's marker is never in the text a scrub leaves, but B's marker beside a neighbour can rebuild A: A is the marker and
-    an ``x``, B is ``bb``, and ``bbx`` becomes the marker and an ``x``. The result is checked, so the text is withheld."""
+def test_scrubbed_uses_the_next_marker_when_the_first_would_give_a_secret_back():
+    """A is the marker and an ``x``, B is ``bb``, and with the marker in place of ``bb`` the text ``bbx`` reads as A again.
+    The result is checked, so the next marker is used and the words around it are kept."""
     first, second = f"{ss.REDACTED}x", "bb"
     out = ss.scrubbed("bbx", first, second)
-    assert out == ss.REDACTED
+    assert out == "###x"
     assert first not in out and second not in out
 
 
-def test_a_withheld_text_is_a_marker_that_holds_none_of_the_secrets():
-    """``red`` is a piece of the readable marker, so B's scrub brings it back into the text A's scrub had cleaned; the text
-    is withheld, and the marker that stands in for it is not the one that holds ``red``."""
-    out = ss.scrubbed("x bb y", "red", "bb")
-    assert out == "###" and "red" not in out and "bb" not in out
+def test_a_secret_that_is_a_piece_of_the_marker_gets_the_next_marker_in_a_text_with_two_secrets():
+    """``red`` is a piece of the readable marker, so that marker is not used for either secret."""
+    out = ss.scrubbed("x bb y red z", "red", "bb")
+    assert out == "x ### y ### z" and "red" not in out and "bb" not in out
+
+
+def test_a_text_no_marker_can_be_put_in_without_giving_a_secret_back_is_withheld_as_a_marker_that_holds_none(monkeypatch):
+    """Not reachable by a passphrase a person types; here so the guarantee holds for any input. The first marker, ``#``, is
+    the start of ``#x`` and the text beside it finishes it; the second, ``y``, is a secret. The text is replaced by the
+    first marker that holds none of the secrets (``#``), and by nothing when there is none."""
+    monkeypatch.setattr(ss, "REDACTED", "#")
+    monkeypatch.setattr(ss, "_FALLBACK_MARKERS", ("y",))
+    out = ss.scrubbed("yx", "#x", "y")
+    assert out == "#" and "#x" not in out and "y" not in out
+    monkeypatch.setattr(ss, "REDACTED", "y")
+    assert ss.scrubbed("yx", "#x", "y") == ""
 
 
 def test_scrubbed_gives_back_text_that_holds_no_secret_as_it_was():
@@ -496,3 +508,158 @@ def test_log_failure_names_the_failure_of_an_exception_that_was_never_raised(cap
     ss.log_failure(log, "nothing raised", ValueError(f"the key {PASS}"), PASS)
     message = caplog.records[-1].getMessage()
     assert PASS not in message and f"ValueError: the key {ss.REDACTED}" in message
+
+
+# --------------------------------------------------------------------------- #
+# Every shape of every secret (2026-10-06). An engine quotes the statement that carried the key (an SQL literal, every quote
+# doubled), Python writes a tuple, a list or a dict with ``repr`` and a record or a response with JSON, and none of those is the
+# secret as typed: a scrub that knew only the typed one left them all.
+# --------------------------------------------------------------------------- #
+def _sql(secret: str) -> str:
+    return f"PRAGMA key = '{secret.replace(chr(39), chr(39) * 2)}'"
+
+
+#: (what writes the text, the secret, the function that writes a text holding it, the shape the secret takes in that text --
+#: written by hand here, so that the table does not lean on the helper that lists the shapes)
+_SHAPES = [
+    ("typed", "it's", lambda s: f"bad key {s} given", "it's"),
+    ("an SQL literal", "it's", lambda s: f"near {_sql(s)}: syntax error", "it''s"),
+    ("an SQL literal inside a repr of the message", "it's", lambda s: repr(f'near "x": {_sql(s)}'), "it\\'\\'s"),
+    ("a quote kept by repr", "it's", lambda s: repr(f"bad key {s}"), "it's"),
+    ("a quote escaped by repr, in a text with both kinds", "it's", lambda s: repr(f"x 'y' \"z\" {s}"), "it\\'s"),
+    ("a quote and a control character in a tuple", "it's\x01x", lambda s: str((s, 1)), "it's\\x01x"),
+    ("a backslash in a tuple", "back\\slash", lambda s: str((s, 1)), "back\\\\slash"),
+    ("a backslash in JSON", "back\\slash", lambda s: json.dumps({"detail": s}), "back\\\\slash"),
+    ("letters outside ASCII in a dict", "pässwörd", lambda s: str({"k": s}), "pässwörd"),
+    ("letters outside ASCII in ASCII JSON", "pässwörd", lambda s: json.dumps({"detail": s}), "p\\u00e4ssw\\u00f6rd"),
+    ("letters outside ASCII in JSON that keeps them", "pässwörd",
+     lambda s: json.dumps({"detail": s}, ensure_ascii=False), "pässwörd"),
+    ("a double quote in JSON", 'say "hi"', lambda s: json.dumps(s), 'say \\"hi\\"'),
+    ("a quote and a backslash in an SQL literal in JSON", "a'b\\c", lambda s: json.dumps(_sql(s)), "a''b\\\\c"),
+    ("a quote and a backslash in an SQL literal in repr", "a'b\\c", lambda s: repr(_sql(s)), "a''b\\\\c"),
+]
+
+
+@pytest.mark.parametrize("how,secret,write,shape", _SHAPES, ids=[row[0] for row in _SHAPES])
+def test_the_secret_is_taken_out_in_every_shape_the_code_writes_it_and_the_text_around_it_is_kept(
+        how, secret, write, shape):
+    """MUTATION TARGET: a shape dropped from ``_forms``. The text is written the way the case says; the shape is what that
+    writer made of the secret (checked to be in the text first), and what comes back is the text with exactly it replaced."""
+    written = write(secret)
+    assert shape in written, "the control: the text holds the secret in the shape this case names"
+    out = ss.scrub_text(written, secret)
+    assert out == written.replace(shape, ss.REDACTED), out
+    assert ss.scrubbed(written, "other", secret, None) == out
+    assert ss.scrub_value({"k": [written], "n": 1}, secret) == {"k": [out], "n": 1}
+
+
+@pytest.mark.parametrize("secret", ["x", "e", "'", "\\", '"', "é", "\t"])
+def test_a_one_character_secret_is_taken_out_in_every_shape_wherever_it_stands(secret):
+    """A one-character passphrase is a bad one and a person can type it: every shape of it goes, the text between the
+    pieces stays, and ``e`` (a piece of the readable marker) and ``'`` (the quote an SQL literal doubles) are the cases that
+    break a replacement written for the ordinary secret."""
+    writers = [secret, repr(secret)[1:-1], json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1],
+               secret.replace("'", "''"), _sql(secret)]
+    text = " | ".join(writers) + " | 7"
+    out = ss.scrub_text(text, secret)
+    for shape in set(writers[:5]):
+        assert shape not in out, (shape, out)
+    assert out.count(" | ") == len(writers) and out.endswith(" | 7"), out
+
+
+def test_a_secret_that_holds_another_leaves_no_tail_of_the_longer_one_whichever_is_given_first():
+    """The held passphrase is ``pass`` and the environment's is ``pass2``: taking ``pass`` out first would leave the ``2``."""
+    text = "env pass2 held pass end"
+    for secrets in (("pass", "pass2"), ("pass2", "pass")):
+        assert ss.scrubbed(text, *secrets) == f"env {ss.REDACTED} held {ss.REDACTED} end", secrets
+
+
+def test_a_passphrase_that_starts_the_other_leaves_no_tail_of_the_longer_in_either_order_in_a_text_a_traceback_and_a_log(caplog):
+    """The restore holds the artifact's passphrase and the corpus's, and a person who types a phrase and extends it for the
+    other holds a pair where one CONTAINS the other. Taken out first, the shorter would leave ``battery staple``, most of the
+    longer one. The two orders are the restore's own (the artifact's, then the corpus's) and the reverse; the text is made by
+    the engine, so the pair is in it twice and the longer one beside the shorter."""
+    backup, corpus = "correct horse", "correct horse battery staple"
+    text = f"unlock {backup} then {corpus} and {corpus}!"
+    log = logging.getLogger("tests.secret_scrub.containing_pair")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    for secrets in ((backup, corpus), (corpus, backup)):
+        assert ss.scrubbed(text, *secrets) == f"unlock {ss.REDACTED} then {ss.REDACTED} and {ss.REDACTED}!", secrets
+        try:
+            raise RuntimeError(text)
+        except RuntimeError as exc:
+            tb = ss.traceback_text(exc, *secrets)
+            ss.log_failure(log, "volume restore failed", exc, *secrets)
+        written = [tb, caplog.text, getattr(caplog.records[-1], ss.TRACEBACK_ATTRIBUTE)]
+        for shape in ("battery staple", "correct horse", "horse"):
+            assert not any(shape in w for w in written), (secrets, shape)
+        assert f"RuntimeError: unlock {ss.REDACTED} then {ss.REDACTED} and {ss.REDACTED}!" in tb, secrets
+
+
+def test_two_secrets_that_overlap_in_the_text_and_one_secret_that_overlaps_itself_leave_no_tail():
+    assert ss.scrubbed("my passwd here", "my pass", "sswd") == f"{ss.REDACTED} here"
+    assert ss.scrubbed("my passwd here", "sswd", "my pass") == f"{ss.REDACTED} here"
+    assert ss.scrub_text("xaaay", "aa") == f"x{ss.REDACTED}y"
+
+
+def test_what_is_put_in_is_never_searched_again():
+    """MUTATION TARGET: the single read. ``_redact`` does not check its result, so the marker here, a star, makes the text
+    ``*"`` (the secret as typed) out of the star and the quote that follows the escaped shape ``*\\"``: read again, that
+    would be replaced once more and the text would end in two stars. ``_redacted`` is the one that catches the rebuild
+    and uses the next marker (the cut-text case above)."""
+    assert ss._redact('*"x*\\""', ('*\\"', '*"'), "*") == '*x*"'
+
+
+def test_a_plain_secret_has_one_shape_and_an_empty_or_missing_one_has_none():
+    assert ss._forms("hunter2") == ("hunter2",)
+    assert ss._forms("") == () and ss._forms(None) == ()
+    assert ss._all_forms(("a", "a", None, "", "b")) == ("a", "b")
+    assert ss.scrub_text("anything", "") == "anything" and ss.scrubbed("anything", None, "") == "anything"
+
+
+def test_a_text_that_holds_no_shape_of_the_secret_comes_back_as_the_same_text():
+    text = "volume 3 of 9 failed its checksum"
+    assert ss.scrub_text(text, "it's") is text
+    assert ss.scrubbed(text, "it's", PASS) is text
+
+
+def test_the_error_an_engine_raises_for_a_key_with_a_quote_in_it_is_scrubbed_where_it_quotes_the_statement():
+    """What a parser says of ``PRAGMA key = 'it''s-the-key'`` quotes a window of the statement."""
+    secret = "it's-the-key"
+    message = f"Parser Error: syntax error at or near \"s\"\\nLINE 1: {_sql(secret)}\\n                    ^"
+    assert "it''s-the-key" in message
+    out = ss.scrubbed(message, secret)
+    assert "it''s" not in out and "the-key" not in out and "PRAGMA key = '***redacted***'" in out
+
+
+def test_no_shape_of_the_secret_is_in_the_text_for_any_secret_and_text_made_of_the_pieces_that_rebuild_one():
+    """EXHAUSTIVE over a small alphabet, like the cut-text one above but over EVERY shape (the quote an SQL literal doubles,
+    repr's escape and JSON's among them): each secret of one or two characters, against every text of one to three pieces
+    from its shapes, a quote, a star and a letter."""
+    from itertools import product
+
+    alphabet = ("*", "'", '"', "\\", "#", "x")
+    checked = 0
+    for size in (1, 2):
+        for chars in product(alphabet, repeat=size):
+            needle = "".join(chars)
+            forms = ss._forms(needle)
+            pieces = (*forms, "'", '"', "*", "x")
+            for count in (1, 2, 3):
+                for parts in product(pieces, repeat=count):
+                    text = "".join(parts)
+                    for out in (ss.scrub_text(text, needle), ss.scrubbed(text, needle, "zz")):
+                        assert [f for f in forms if f in out] == [], (needle, text, out)
+                    checked += 1
+    assert checked > 10_000, "the search ran over the whole alphabet"
+
+
+def test_log_failure_hands_the_error_log_the_scrubbed_traceback_as_an_attribute_and_never_as_exc_info(caplog):
+    log = logging.getLogger("tests.secret_scrub.log_failure_attribute")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    ss.log_failure(log, "volume restore failed", _chain(8, PASS), PASS)
+    record = caplog.records[-1]
+    tb = getattr(record, ss.TRACEBACK_ATTRIBUTE)
+    assert tb.startswith("Traceback (most recent call last)") and tb.rstrip().endswith("yyyy")
+    assert PASS not in tb and f"the key {ss.REDACTED} did not open the header" in tb
+    assert record.exc_info is None and record.exc_text is None

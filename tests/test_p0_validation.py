@@ -558,18 +558,32 @@ def _writes_a_traceback(call: ast.Call) -> bool:
     )
 
 
-#: The names the secret goes by where the release run, the volume job and the import queue hold it: the parameter or
-#: local a helper is given it as (``passphrase``; ``secret`` and ``needle`` in ``release_run.py``'s helpers;
-#: ``corpus_passphrase``, the restore job's second one) ...
-_SECRET_NAMES = frozenset({"passphrase", "corpus_passphrase", "secret", "needle"})
+#: The names the secret goes by where the release run, the volume job and the import queue hold it, each with WHICH secret
+#: it is: the parameter or local a helper is given it as (``passphrase``; ``secret`` and ``needle`` in
+#: ``release_run.py``'s helpers, the same passphrase under another name; ``corpus_passphrase``, the restore job's second
+#: one). A function that holds two secrets has to name both in a call that scrubs for it ...
+_SECRET_NAMES = {
+    "passphrase": "passphrase",
+    "secret": "passphrase",
+    "needle": "passphrase",
+    "corpus_passphrase": "corpus_passphrase",
+}
 
 #: ... and, as an attribute, the one the run's parameters carry (``run.params.passphrase``, a request body's
-#: ``body.passphrase``) and the one the import queue keeps for the length of a run (``self._passphrase``).
-_SECRET_ATTRIBUTES = frozenset({"passphrase", "_passphrase"})
+#: ``body.passphrase``), the one the import queue keeps for the length of a run (``self._passphrase``) and the restore's
+#: second one (``body.corpus_passphrase``, ``self._corpus_passphrase``), each with which secret it is: a function that reads
+#: both attributes holds two secrets.
+_SECRET_ATTRIBUTES = {
+    "passphrase": "passphrase",
+    "_passphrase": "passphrase",
+    "corpus_passphrase": "corpus_passphrase",
+    "_corpus_passphrase": "corpus_passphrase",
+}
 
 #: The calls that write a caught exception as a text with the secret taken out of it: name -> (the index of the
 #: argument that carries what is written, the index of the secret). A handler may use the exception only inside the
-#: first, and only when the second IS the secret.
+#: first, and only when the second IS the secret AND the function holds no other: a text scrubbed of one of two secrets
+#: still carries the other, which is what :data:`_SCRUBBING_CALLS_OVER_SECRETS` is for.
 _SCRUBBING_CALLS = {
     "_exception_text": (0, 1),  # p0_validation: "Name: message", scrubbed, from the exception itself
     "_error_text": (0, 1),  # release_run_fresh_restore: the same, for the restore child
@@ -617,18 +631,18 @@ def _is_the_secret(node: ast.AST) -> bool:
 
 
 def _secrets_held(fn: ast.AST) -> set[str]:
-    """The secrets the function holds, by the name each goes by: a parameter (any kind) or a name it reads that is one
-    of :data:`_SECRET_NAMES`, or an attribute in :data:`_SECRET_ATTRIBUTES` (the secret as ``passphrase``). The
-    attribute is how ``release_run.py`` and the import queue hold it (``run.params.passphrase``,
+    """The secrets the function holds, each by which secret it is (:data:`_SECRET_NAMES`, :data:`_SECRET_ATTRIBUTES`): a
+    parameter (any kind) or a name it reads that is one of the names, or an attribute in the table. The attribute is how
+    ``release_run.py``, the route layer and the import queue hold it (``run.params.passphrase``, ``body.corpus_passphrase``,
     ``self._passphrase``), which no parameter list shows."""
     held: set[str] = set()
     for n in ast.walk(fn):
         if isinstance(n, ast.arg) and n.arg in _SECRET_NAMES:
-            held.add(n.arg)
+            held.add(_SECRET_NAMES[n.arg])
         elif isinstance(n, ast.Name) and n.id in _SECRET_NAMES:
-            held.add(n.id)
+            held.add(_SECRET_NAMES[n.id])
         elif isinstance(n, ast.Attribute) and n.attr in _SECRET_ATTRIBUTES:
-            held.add("passphrase")
+            held.add(_SECRET_ATTRIBUTES[n.attr])
     return held
 
 
@@ -639,9 +653,14 @@ def _holds_the_secret(fn: ast.AST) -> bool:
 
 def _names_every_secret(args: list[ast.expr], held: set[str]) -> bool:
     """Whether ``args`` (the secret arguments of a call of :data:`_SCRUBBING_CALLS_OVER_SECRETS`) are all secrets and,
-    between them, name every secret in ``held`` (an attribute counts as ``passphrase``)."""
-    named = {a.id if isinstance(a, ast.Name) else "passphrase" for a in args if _is_the_secret(a)}
+    between them, name every secret in ``held`` (:func:`_secret_of`)."""
+    named = {_secret_of(a) for a in args if _is_the_secret(a)}
     return bool(args) and all(_is_the_secret(a) for a in args) and held <= named
+
+
+def _secret_of(node: ast.AST) -> str:
+    """Which secret ``node`` is, for a node :func:`_is_the_secret` accepted: a name or an attribute, by the tables."""
+    return _SECRET_NAMES[node.id] if isinstance(node, ast.Name) else _SECRET_ATTRIBUTES[node.attr]  # type: ignore[attr-defined]
 
 
 def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[list[str], list[str], int]:
@@ -676,7 +695,12 @@ def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[li
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     spec = _SCRUBBING_CALLS.get(node.func.id)
                     many = _SCRUBBING_CALLS_OVER_SECRETS.get(node.func.id)
-                    if spec and len(node.args) > max(spec) and _is_the_secret(node.args[spec[1]]):
+                    if (
+                        spec
+                        and len(node.args) > max(spec)
+                        and _is_the_secret(node.args[spec[1]])
+                        and held == {_secret_of(node.args[spec[1]])}
+                    ):
                         routed.add(id(node))
                         allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
                     elif many and len(node.args) > many[1] and _names_every_secret(node.args[many[1] :], held):
@@ -726,9 +750,11 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
     into a report is how the next leak is made, and no test of the existing ones would see it. Every handler inside
     a function that holds the passphrase (takes it, reads it into a local, or reads it off the run's parameters or
     the queue's ``self``) may use the caught exception only inside a call that scrubs it with the secret
-    (``_exception_text``, the child's ``_error_text``, ``scrub_value``, ``_log_phase_failure``; ``secret_scrub``'s
-    ``scrubbed``, ``traceback_text`` and ``log_failure``, which must be given EVERY secret the function holds, a
-    restore's two), or ask for its class or a ``_PhaseError``'s ``status`` and ``partial``, and may ask for no
+    (``_exception_text``, the child's ``_error_text``, ``scrub_value``, ``_log_phase_failure``, ``scrub_text``, each of which
+    takes ONE secret and so counts only in a function that holds that one; ``secret_scrub``'s ``scrubbed``,
+    ``traceback_text`` and ``log_failure``, which must be given EVERY secret the function holds, a restore's two, and
+    which secret a name or an attribute is, is read from :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`), or ask
+    for its class or a ``_PhaseError``'s ``status`` and ``partial``, and may ask for no
     traceback (``exc_info=``, ``.exception()``, the ``traceback`` module, ``sys.exc_info()``), because the text such
     a call writes carries the message too. In the route layer (``backup_v2.py``) the exception may also feed the
     RESPONSE the caller gets (``HTTPException``, ``_restore_error``): a response is outside this rule, and the one
@@ -822,6 +848,8 @@ _UNNAMED = "except Exception:"
 _AS_ERR = "except Exception as err:"
 _PHASE = "except _PhaseError as exc:"
 _TWO_SECRETS = "def check(ctx, passphrase, corpus_passphrase):"
+#: A function that reads both of the restore's secrets off the request's body, as the route does.
+_TWO_ATTRIBUTES = "def check(body):\n    keys = (body.passphrase, body.corpus_passphrase)"
 #: A function that keeps the secret on ``self``, as the import queue does, with ``body`` in the handler.
 _ON_SELF = "def check(self):\n    key = self._passphrase\n    try:\n        go()\n    except Exception as exc:\n        {}\n"
 
@@ -858,6 +886,17 @@ _WAYS_THAT_LEAK = {
     ),
     "a scrub given a name that is not the secret": _guarded(_NAMED, "err = _scrub_value(str(exc), other)"),
     "scrub_text given a name that is not the secret": _guarded(_NAMED, "err = scrub_text(str(exc), other)"),
+    # --- a helper that takes ONE secret, in a function that holds two: the other one is in the text
+    "scrub_text, the one secret of two": _guarded(_NAMED, "err = scrub_text(str(exc), passphrase)", head=_TWO_SECRETS),
+    "scrub_text, the other secret of two": _guarded(
+        _NAMED, "err = scrub_text(str(exc), corpus_passphrase)", head=_TWO_SECRETS
+    ),
+    "a scrub of one of two secrets read off the body": _guarded(
+        _NAMED, "err = _scrub_value(str(exc), body.passphrase)", head=_TWO_ATTRIBUTES
+    ),
+    "the helper given one of two secrets": _guarded(
+        _NAMED, "err = _exception_text(exc, passphrase)", head=_TWO_SECRETS
+    ),
     "a scrub given another field of the run": _guarded(_NAMED, "err = _scrub_value(str(exc), run.params.dest_dir)"),
     "the exception again beside a scrub": _guarded(_NAMED, "err = _scrub_value(str(exc), passphrase) + str(exc)"),
     "the message after the class name": _guarded(_NAMED, "err = f'{type(exc).__name__}: {exc}'"),
@@ -888,6 +927,9 @@ _WAYS_THAT_LEAK = {
     ),
     "a text scrubbed of the other of two secrets": _guarded(
         _NAMED, "err = scrubbed(str(exc), corpus_passphrase)", head=_TWO_SECRETS
+    ),
+    "a text scrubbed of one of two secrets read off the body": _guarded(
+        _NAMED, "err = scrubbed(str(exc), body.corpus_passphrase)", head=_TWO_ATTRIBUTES
     ),
     "a text scrubbed of a name that is not a secret beside the secret": _guarded(
         _NAMED, "err = scrubbed(str(exc), passphrase, other)"
@@ -942,6 +984,19 @@ _WAYS_THAT_ARE_FINE = {
     ),
     "a text scrubbed of both of two secrets, in the other order": (
         _guarded(_NAMED, "err = scrubbed(str(exc), corpus_passphrase, passphrase)", head=_TWO_SECRETS),
+        1,
+    ),
+    "a text scrubbed of both of two secrets read off the body": (
+        _guarded(_NAMED, "err = scrubbed(str(exc), body.passphrase, body.corpus_passphrase)", head=_TWO_ATTRIBUTES),
+        1,
+    ),
+    # --- a helper that takes one secret is enough where one secret is held, whatever it goes by
+    "scrub_text, given the one secret a function holds under two names": (
+        _guarded(_NAMED, "err = scrub_text(str(exc), secret)", head="def check(ctx, passphrase, secret):"),
+        1,
+    ),
+    "scrub_text, given the restore's second secret where it is the only one held": (
+        _guarded(_NAMED, "err = scrub_text(str(exc), corpus_passphrase)", head="def check(ctx, corpus_passphrase):"),
         1,
     ),
     "a text built from the exception, scrubbed whole": (

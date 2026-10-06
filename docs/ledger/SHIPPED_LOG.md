@@ -10577,8 +10577,17 @@ exception may feed a response, nothing else; the eighth is the lock screen's `sr
 dispose with `exc_info=True`, inside a function that holds `body.passphrase`, the coverage test found it on this branch's first merge of main, and it writes through `log_failure` now,
 with a behaviour test that makes the dispose fail with the passphrase in its message), reads `corpus_passphrase` and the queue's `self._passphrase` as secrets, accepts `status` and `partial` only on a `_PhaseError` handler
 (the coordinator's D3), and a coverage test holds its table to every module under `src/` that holds the passphrase and writes what it catches, five left out each with its reason.
+The coordinator's next three relays (12:23, 12:32 and 12:33 UTC) widened it to the places every module's exception passes through: the global exception handler (`src/api/main.py`: the 500
+response and its log record), the error journal the debug bundle carries (`_JsonlErrorHandler`, `src/monitoring/errorlog.py`: before its 500-character and 1,500-character cuts) and a failed
+background job's error line (`src/jobs/background.py`: before its 300-character cut) take every passphrase the process holds out of the exception's words (`secret_scrub.held_passphrases()`:
+the session's and `OO_DB_PASSPHRASE`, read when the error happens), and write the exception's class and none of its words when the scrub cannot run; a `log_failure` record carries the scrubbed
+traceback as an attribute so the journal keeps the frames. The scrub itself takes a secret out in every shape the code writes it in (as typed, as an SQL literal holds it, as `repr` and as
+JSON write it), all shapes of all secrets in one read, so a passphrase that contains another (`correct horse` inside `correct horse battery staple`) leaves no tail, and the guard tells which
+secret a name is: a helper that takes one secret counts only in a function that holds one, and a function that reads `body.passphrase` and `body.corpus_passphrase` must name both.
 Tests: 18 behaviour tests for the job, 8 for the route and the queue, the helpers' own, the walk's cases, and 32 mutations of the helpers, the route, the queue, the middleware
-and the guard plus 21 of the job's own scrub sites, each caught. The check's D1 (the field count of the crash read) and D2 (which argument position a guard reads) are fixed in the
-same PR. What stays outside is in `OPEN_QUEUE.md` (the entry that replaced the volume job's): the responses and the global handler, `runlog.run`'s journal, a path that is the
-passphrase, a form that is not the passphrase as typed, what a syntax walk cannot follow, and the columnar store's three records, which ride with the key-derivation change. Lesson:
+and the guard plus 21 of the job's own scrub sites, each caught; 46 more of the scrub core, the global handler, the journal, the job's error line and the guard's lookup of which secret a
+name is, each caught. The check's D1 (the field count of the crash read) and D2 (which argument position a guard reads) are fixed in the same PR. What stays outside is in `OPEN_QUEUE.md`
+(the entry that replaced the volume job's): the responses of the route layer, uvicorn's own log of an exception after the handler has answered, a passphrase typed into the request being
+served, `runlog.run`'s journal, a path that is the passphrase, a form that is none of the shapes (a lone surrogate's `UnicodeEncodeError`, among them the unlock screen's compare at
+`src/api/unlock.py:643`), what a syntax walk cannot follow, and the columnar store's three records, which ride with the key-derivation change. Lesson:
 `LESSONS.md`, the entry "EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE".
