@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, scrubbed
+from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, scrubbed, unicode_error_in
 from src.paths import data_dir
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
@@ -165,7 +165,13 @@ class _JsonlErrorHandler(logging.Handler):
             }
             raw_tb = ""
             if record.exc_info and record.exc_info[0] is not None:
-                raw_tb = "".join(traceback.format_exception(*record.exc_info))
+                bad = unicode_error_in(record.exc_info[1])
+                # A UnicodeError names a character and its offset, a piece of a key that no scrub knows: its class only.
+                raw_tb = (
+                    f"{type(bad).__name__}: its text is withheld"
+                    if bad is not None
+                    else "".join(traceback.format_exception(*record.exc_info))
+                )
             else:
                 # A handler that holds a passphrase logs through ``secret_scrub.log_failure``, which writes the
                 # traceback as TEXT with the secrets out of it (a record's ``exc_info`` carries the message as raised)

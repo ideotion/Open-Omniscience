@@ -2961,7 +2961,7 @@ def test_a_key_the_locale_cannot_hand_to_the_child_is_recorded_by_class_alone(fa
     phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
     assert phase["status"] == "error" and "UnicodeEncodeError" in phase["detail"], phase
     shown = json.dumps(rep)
-    assert "\\xe9" not in shown and "u00e9" not in shown and "\\u0416" not in shown and "\u00e9" not in shown, shown
+    assert "\\xe9" not in shown and "u00e9" not in shown and "\\u0416" not in shown, shown
     assert "can't encode character" not in shown, shown
     assert not list(fast["dest"].glob(".restore-release-run-*")), "the directory made for the child is taken away"
 

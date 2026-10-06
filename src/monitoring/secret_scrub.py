@@ -445,6 +445,44 @@ def _class_only(exc: BaseException) -> str:
     return f"{type(exc).__name__}: its text is withheld"
 
 
+UNICODE_WITHHELD = "a character the text codec cannot handle (its text is withheld: it names the character and its offset)"
+
+
+def unicode_error_in(exc: BaseException | None) -> UnicodeError | None:
+    """The first ``UnicodeError`` among ``exc``, its causes and its contexts, or ``None``. Its text names a character and
+    its offset, which is a piece of a key that no scrub knows (one character matches no held shape), so a record of any
+    exception that has one in its chain carries the class and a fixed note, never the text."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, UnicodeError):
+            return exc
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return None
+
+
+def _unicode_withheld(exc: BaseException) -> str | None:
+    """The fixed record of an exception whose chain holds a ``UnicodeError`` (``None`` when it holds none)."""
+    bad = unicode_error_in(exc)
+    return None if bad is None else f"{type(bad).__name__}: {UNICODE_WITHHELD}"
+
+
+def _defang(exc: BaseException | None) -> None:
+    """Take the character and the offset out of every ``UnicodeError`` in ``exc``'s chain, in place, so that a consumer that
+    reads ``__context__`` (the interpreter sets it when a handler raises another error) finds the fixed words and no piece
+    of a key. Best effort: an error whose fields cannot be set keeps them, and the records never read them."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, UnicodeError):
+            with contextlib.suppress(Exception):
+                exc.args = (UNICODE_WITHHELD,)
+                exc.object = b"" if isinstance(getattr(exc, "object", None), bytes) else ""  # type: ignore[attr-defined]
+                exc.start = exc.end = 0  # type: ignore[attr-defined]
+                exc.reason = "withheld"  # type: ignore[attr-defined]
+        exc = exc.__cause__ or exc.__context__
+
+
 def exception_text(exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = True) -> str:
     """What a handler writes for a caught exception: ``Name: its words`` (``typed=False``: the words alone, where the class is
     named elsewhere in the record) with every secret handed in AND every passphrase the process holds taken out of it
@@ -453,6 +491,9 @@ def exception_text(exc: BaseException, *secrets: str | None, limit: int | None =
     withheld``). It never raises. THE ONE CALL every handler of the release run, the P0 check and the restore child writes a
     caught exception through, so that no handler is a place that makes the text by hand; ``tests/test_p0_validation.py`` reads
     those modules for any handler that does."""
+    fixed = _unicode_withheld(exc)
+    if fixed is not None:
+        return fixed if limit is None else fixed[:limit]
     withheld = _class_only(exc)
     try:
         text = f"{type(exc).__name__}: {exc}" if typed else f"{exc}"
@@ -468,6 +509,9 @@ def traceback_text(exc: BaseException, *secrets: str | None) -> str:
     message that names the secret. Scrubbed as ONE text, so a secret that an exception's message and its cause's message split
     between them is still found (it is in the text as written), and any cut the caller makes (``[-8000:]``) comes after. When
     the scrub cannot run it is the exception's class and none of its words."""
+    fixed = _unicode_withheld(exc)
+    if fixed is not None:
+        return fixed
     try:
         text = "".join(traceback.format_exception(exc))
     except Exception:  # noqa: BLE001 - a traceback that cannot be made is not kept
@@ -489,13 +533,19 @@ def log_failure(
     :data:`TRACEBACK_ATTRIBUTE`, and the log takes its tail from there (the frames that say WHERE the failure
     happened are the part a developer reads the bundle for). ``what`` is the code's own words, never built from
     the exception. When the scrub cannot run the record carries the exception's class and none of its words."""
-    try:
-        head = _checked("".join(traceback.format_exception_only(exc)).strip(), secrets)
-        tb = _checked("".join(traceback.format_exception(exc)), secrets)
-    except Exception:  # noqa: BLE001 - the text could not be made: the class says what failed
-        head = tb = None
-    if head is None or tb is None:
-        head = tb = _class_only(exc)
+    head: str | None
+    tb: str | None
+    fixed = _unicode_withheld(exc)
+    if fixed is not None:
+        head = tb = fixed
+    else:
+        try:
+            head = _checked("".join(traceback.format_exception_only(exc)).strip(), secrets)
+            tb = _checked("".join(traceback.format_exception(exc)), secrets)
+        except Exception:  # noqa: BLE001 - the text could not be made: the class says what failed
+            head = tb = None
+        if head is None or tb is None:
+            head = tb = _class_only(exc)
     log.log(level, "%s: %s\n%s", what, head[:300], tb, extra={TRACEBACK_ATTRIBUTE: tb})
 
 
@@ -543,6 +593,13 @@ class scrub_and_reraise:  # noqa: N801 - read as a statement: ``with scrub_and_r
             return False
         with contextlib.suppress(Exception):  # a log that cannot be written must not replace the conversion
             log_failure(self._log, self._what, exc, *self._secrets)
+        fixed = _unicode_withheld(exc)
+        if fixed is not None:
+            # A UnicodeError's text names a character and its offset, a piece of a key that no held shape matches: the
+            # class and a fixed note are all that is kept, and the error itself (which the interpreter sets as the new
+            # error's ``__context__``) is emptied of them.
+            _defang(exc)
+            raise RuntimeError(fixed) from None
         try:
             text = f"{type(exc).__name__}: {exc}"
         except Exception:  # noqa: BLE001 - an exception whose text cannot be made: its class says what failed

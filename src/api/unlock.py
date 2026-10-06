@@ -695,7 +695,10 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     try:
         conn = connect(p, key=passphrase, check_same_thread=False, read_only=True)
     except WrongPassphraseError as exc:
-        raise HTTPException(status_code=403, detail=scrubbed(str(exc), passphrase)) from exc
+        raise HTTPException(
+            status_code=403,
+            detail=scrubbed(str(exc), passphrase, withheld="the passphrase does not open this file (or the file is damaged)"),
+        ) from exc
     conn.close()
 
 

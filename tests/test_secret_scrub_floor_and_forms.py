@@ -722,3 +722,45 @@ def test_scrubbed_value_checks_a_leaf_that_is_not_a_string_as_the_text_it_is_wri
         "none": None,
         "flag": False,
     }, out
+
+
+def _unicode_error_chain():
+    try:
+        try:
+            "held\udcffkey".encode("utf-8")
+        except UnicodeError as inner:
+            raise ValueError("wrapped") from inner
+    except ValueError as exc:
+        return exc
+
+
+def test_every_record_of_a_unicode_error_is_its_class_and_a_fixed_note(caplog):
+    """A UnicodeError's text names a character and its offset, a piece of a key no held shape matches, so every writer records
+    the class and a fixed note, also when the error is the cause of another. MUTATION TARGET: the rule in any one writer."""
+    import logging
+
+    from src.monitoring import secret_scrub as ss
+
+    exc = _unicode_error_chain()
+    outputs = [ss.exception_text(exc), ss.traceback_text(exc), ss.exception_text(exc.__cause__, limit=500)]
+    with caplog.at_level(logging.DEBUG):
+        ss.log_failure(logging.getLogger("t"), "failed", exc)
+    outputs += [f"{r.getMessage()}{getattr(r, ss.TRACEBACK_ATTRIBUTE, '')}" for r in caplog.records]
+    for shown in outputs:
+        assert "udcff" not in shown and "position" not in shown and "surrogate" not in shown, shown
+        assert "UnicodeEncodeError" in shown, shown
+
+
+def test_the_error_journal_keeps_a_unicode_error_by_class_only(tmp_path, monkeypatch):
+    """The central net of the error journal reads ``exc_info`` as raised; a UnicodeError in it is its class only."""
+    import logging
+
+    from src.monitoring import errorlog
+
+    seen: list[dict] = []
+    monkeypatch.setattr(errorlog, "_append", seen.append)
+    exc = _unicode_error_chain()
+    record = logging.LogRecord("t", logging.ERROR, __file__, 1, "failed", None, (type(exc), exc, exc.__traceback__))
+    errorlog._JsonlErrorHandler().emit(record)
+    tail = seen[-1]["traceback_tail"]
+    assert "udcff" not in tail and "position" not in tail and "UnicodeEncodeError" in tail, tail
