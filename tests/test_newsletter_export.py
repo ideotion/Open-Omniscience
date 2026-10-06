@@ -84,6 +84,20 @@ def _clear_text(path: Path, tmp_path: Path) -> bytes:
     return out.read_bytes()
 
 
+def _search_after_restore(path: Path, tmp_path: Path, word: str) -> list:
+    """The kept articles found through the search index of a RESTORED copy: the decrypted file opened
+    as a restore reads it, with the stdlib driver."""
+    import sqlite3
+
+    plain = tmp_path / "restored.db"
+    connect_mod.snapshot_to_plaintext(path, plain)
+    con = sqlite3.connect(plain)
+    try:
+        return con.execute("SELECT rowid FROM article_fts WHERE article_fts MATCH ?", (word,)).fetchall()
+    finally:
+        con.close()
+
+
 def _rows(path: Path, sql: str):
     con = connect_mod.connect(path, key=_KEY, check_same_thread=False)
     try:
@@ -131,9 +145,11 @@ def test_the_newsletters_go_and_the_rest_is_rewritten_into_a_fresh_file(corpus, 
     assert connect_mod.is_encrypted_file(corpus) is True
 
 
-def test_the_survivors_stay_searchable(corpus):
+def test_the_survivors_stay_searchable(corpus, tmp_path):
     ne.drop_newsletters_encrypted(corpus, [])
     assert _rows(corpus, "SELECT rowid FROM article_fts WHERE article_fts MATCH 'keepword1'") == [(201,)]
+    assert _search_after_restore(corpus, tmp_path, "keepword1") == [(201,)]
+    assert _search_after_restore(corpus, tmp_path, "zzsecretnewsletterterm1") == []
 
 
 def test_the_cipher_settings_of_the_source_carry_over(corpus):
@@ -179,6 +195,8 @@ def test_no_deleted_word_survives_on_the_secure_delete_path_either(corpus, tmp_p
     ne.drop_newsletters_encrypted(corpus, notes)
     assert notes and "secure delete" in notes[0]
     assert _MARK not in _clear_text(corpus, tmp_path)
+    assert _search_after_restore(corpus, tmp_path, "keepword1") == [(201,)]
+    assert _search_after_restore(corpus, tmp_path, "zzsecretnewsletterterm1") == []
 
 
 # ---------------------------------------------------------------------------------------------- #
@@ -267,6 +285,14 @@ def test_a_plaintext_header_is_refused_rather_than_exported_without_its_salt(cor
 # ---------------------------------------------------------------------------------------------- #
 #  condition 3: any failure takes the secure-delete path, leaves no partial file, and says so
 # ---------------------------------------------------------------------------------------------- #
+def test_a_stale_fresh_file_from_a_crashed_run_does_not_stop_the_rewrite(corpus, tmp_path):
+    (tmp_path / "corpus.db.sqlcipher.fresh").write_bytes(b"left by a crash, not a database")
+    notes: list[str] = []
+    assert ne.drop_newsletters_encrypted(corpus, notes) == 3
+    assert notes == [ne.NOTE_EXPORT]
+    assert not list(tmp_path.glob("*.fresh*"))
+
+
 def test_a_failed_export_leaves_the_filtered_copy_and_no_partial_file(corpus, tmp_path, monkeypatch):
     def half_written(_con, out, _key, _settings):
         out.write_bytes(b"half a file")
@@ -288,7 +314,7 @@ def test_a_read_back_that_refuses_leaves_the_copy_as_it_was(corpus, tmp_path, mo
     monkeypatch.setattr(ne, "_read_back", refuse)
     notes: list[str] = []
     ne.drop_newsletters_encrypted(corpus, notes)
-    assert "secure delete" in notes[0] and "_ExportRefused" in notes[0]
+    assert "secure delete" in notes[0] and "differs" in notes[0], "a refusal is named in words"
     assert not list(tmp_path.glob("*.fresh*"))
     assert _rows(corpus, "SELECT COUNT(*) FROM articles") == [(3,)], "the refused file did not replace the copy"
 
@@ -312,6 +338,86 @@ def test_a_search_index_that_cannot_be_merged_stops_the_backup_instead_of_keepin
     monkeypatch.setattr(art, "_merge_fts_index", boom)
     with pytest.raises(RuntimeError, match="index busy"):
         ne.drop_newsletters_encrypted(corpus, [])
+
+
+# ---------------------------------------------------------------------------------------------- #
+#  the room the index merge and the rewrite need, asked on the copy itself
+# ---------------------------------------------------------------------------------------------- #
+def test_an_index_merge_that_will_not_fit_is_refused_before_anything_is_deleted(corpus, monkeypatch):
+    from src.backup.artifact import BackupSpaceError
+
+    con = connect_mod.connect(corpus, key=_KEY)
+    index = ne._index_bytes(con)
+    con.close()
+    assert index > 0
+    before = corpus.read_bytes()
+    monkeypatch.setattr("src.backup.folder_backup.free_bytes", lambda _p: 2 * index - 1)
+    with pytest.raises(BackupSpaceError, match="search-index merge"):
+        ne.drop_newsletters_encrypted(corpus, [])
+    assert corpus.read_bytes() == before, "nothing was written"
+
+
+def test_a_drive_with_room_for_the_merge_but_not_the_rewrite_takes_the_secure_delete_path(
+    corpus, tmp_path, monkeypatch
+):
+    calls: list[int] = []
+
+    def room(_p):
+        calls.append(1)
+        return 10**12 if len(calls) == 1 else 0  # the merge's room, then none for the rewrite
+
+    monkeypatch.setattr("src.backup.folder_backup.free_bytes", room)
+    notes: list[str] = []
+    assert ne.drop_newsletters_encrypted(corpus, notes) == 3
+    assert len(notes) == 1 and "not enough free space for the rewrite" in notes[0], notes
+    assert not list(tmp_path.glob("*.fresh*"))
+    assert _MARK not in _clear_text(corpus, tmp_path)
+
+
+def _plain_twin(path: Path) -> None:
+    import sqlite3
+
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        CREATE TABLE sources (id INTEGER PRIMARY KEY, domain TEXT);
+        CREATE TABLE articles (id INTEGER PRIMARY KEY, source_id INTEGER, title TEXT, content TEXT);
+        CREATE VIRTUAL TABLE article_fts USING fts5(title, content, content='articles', content_rowid='id');
+        CREATE TRIGGER article_fts_ai AFTER INSERT ON articles BEGIN
+          INSERT INTO article_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+        END;
+        CREATE TRIGGER article_fts_ad AFTER DELETE ON articles BEGIN
+          INSERT INTO article_fts(article_fts, rowid, title, content)
+          VALUES ('delete', old.id, old.title, old.content);
+        END;
+        """
+    )
+    con.execute("INSERT INTO sources VALUES (1, ?)", (_NEWSLETTER_DOMAINS[0],))
+    for i in range(20):
+        con.execute(
+            "INSERT INTO articles VALUES (?, 1, ?, ?)", (i, f"nl{i}", f"{_MARK.decode()}{i} " * 400)
+        )
+    con.commit()
+    con.close()
+
+
+@pytest.mark.parametrize("secure", [True, False])
+def test_secure_delete_is_what_leaves_no_text_in_the_pages_the_deletes_free(tmp_path, secure):
+    """The encrypted copy's free pages cannot be read from here (no ``sqlite_dbpage`` in the driver
+    build, and a decrypting export copies live rows only), so the same statements run on a plaintext
+    twin and its RAW bytes are read. The control (``secure`` False) must still hold the words, or
+    the check sees nothing; the module's own use of the pragma is pinned by its statement order."""
+    import sqlite3
+
+    from src.backup.artifact import _drop_newsletter_rows
+
+    path = tmp_path / "twin.db"
+    _plain_twin(path)
+    con = sqlite3.connect(path)
+    con.execute(f"PRAGMA secure_delete = {'ON' if secure else 'OFF'}")
+    assert _drop_newsletter_rows(con, vacuum=False) == 20
+    con.close()
+    assert (_MARK in path.read_bytes()) is (not secure)
 
 
 # ---------------------------------------------------------------------------------------------- #
@@ -346,7 +452,8 @@ def test_stream_backup_sends_an_encrypted_copy_to_the_rewrite_and_a_plain_one_to
 @pytest.mark.parametrize("credit", [0, 10**12])
 def test_the_space_check_asks_for_the_copy_and_its_rewrite_at_the_least(side, credit, monkeypatch):
     """The rewrite sits beside the copy before the volumes exist, so the bound must reach two copies.
-    It does today because the volume set is sized from the copy plus parity; this keeps it so."""
+    It does today because the volume set is sized from the copy plus parity; this keeps it so. The
+    search-index merge is NOT in this bound (it is asked on the copy, above)."""
     from src.backup import artifact as art
     from src.backup import stream_backup as sb
 

@@ -86,6 +86,14 @@ def _settings_equal(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
     return [k for k in a if a[k] != b.get(k)]
 
 
+def _index_bytes(con) -> int:
+    """The search index's size, from the lengths of its segment blobs (a blob's length is in its record
+    header, so this does not read the index). 0 when there is no index."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'article_fts_data' AND type = 'table'").fetchone():
+        return 0
+    return int(con.execute("SELECT COALESCE(SUM(LENGTH(block)), 0) FROM article_fts_data").fetchone()[0])
+
+
 def _remove(path: Path) -> None:
     for suffix in ("", *_SIDE_FILES):
         with contextlib.suppress(OSError):
@@ -159,7 +167,8 @@ def _failure_text(exc: BaseException, key: str) -> str:
 def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) -> int:
     """Remove the imported-newsletter articles from the encrypted copy at ``db_path``, in place.
     Returns how many articles were dropped; ``notes`` receives one line saying which path ran."""
-    from src.backup.artifact import _drop_newsletter_rows
+    from src.backup.artifact import _drop_newsletter_rows, preflight_free_space
+    from src.backup.folder_backup import free_bytes
     from src.database.connect import connect, get_passphrase
 
     key = get_passphrase()
@@ -167,6 +176,15 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
     out = db_path.with_name(db_path.name + ".fresh")
     exported = False
     try:
+        # The index merge writes the merged segment while the old ones still exist, and with secure_delete
+        # on the zeroed old pages are logged too: about twice the index, on the drive the copy is on.
+        # (Measured at 60,000 articles: the whole run peaked at 2.06 x the copy; the preflight's bound is
+        # 2.12 x, so this is asked again here, from the copy's own index, rather than assumed.)
+        merge_room = 2 * _index_bytes(con)
+        if merge_room:
+            preflight_free_space(
+                db_path.parent, merge_room, what="search-index merge that leaves the newsletters' words out"
+            )
         # The deleted pages are zeroed, so the path that does not rewrite the file leaves nothing.
         con.execute("PRAGMA secure_delete = ON")
         dropped = _drop_newsletter_rows(con, vacuum=False)
@@ -178,6 +196,8 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
                 raise _ExportRefused("no passphrase is held")
             settings = _read_settings(con)
             shape = _shape(con)
+            if free_bytes(db_path.parent) < db_path.stat().st_size:  # the rewrite is never larger than the copy
+                raise _ExportRefused("there is not enough free space for the rewrite")
             _remove(out)
             _export_to(con, out, key, settings)
             con.close()
@@ -185,7 +205,7 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
             _read_back(out, key, settings, shape)
             exported = True
         except Exception as exc:  # noqa: BLE001 - any failure takes the secure-delete path
-            why = type(exc).__name__
+            why = str(exc) if isinstance(exc, _ExportRefused) else type(exc).__name__
             log.warning(
                 "newsletter export did not complete, the copy keeps the secure-delete path: %s",
                 _failure_text(exc, key or ""),
