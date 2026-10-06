@@ -16367,3 +16367,22 @@ maintainer as a card.
   **(i) Two release gaps:** the in-place encryption swaps each live data file with `os.replace` (`src/database/encrypt_tool.py`) and nothing
   releases a latch on a file just replaced (a start does); and the lane files' own indexes (`wiki_lane_fts`, `law_version_fts`, `osm_names`,
   `osm_addresses`) are not in the index-table list, so their incidents carry scope `data` (record only: no sentence differs).
+
+## 2026-10-06 — WHAT THE KEYWORD TRIAGE RUN EXPOSED (causes, with counts; the stoplist hides symptoms, these are the fixes; not rulings)
+
+The triage's dry runs (`/mnt/project-files/keyword-session/stopword-dry-run-2026-10-06/README.md`) read the words of four codes that are not vocabulary. Batch 1 (PR #1331) shipped only the
+18 that a stoplist is the right tool for. The rest point at four extraction or tagging causes. The 09-30 shards carry no per-keyword source or feed (the digest holds `language_signature`
+counts and no `top_source_share`), so the feeds behind each cause are NOT named here; naming them needs the corpus, a query on the machine that holds it.
+
+1. **Cyrillic articles tagged `en`.** 50 of the 54 `lng` words read in the English shard are Cyrillic (новости 2,094 articles, 2,087 of them tagged `en`; россии 1,541; краткий 1,532;
+   июл 1,234; пересказ 1,228). That is news text whose feed or page language tag says English. Fix upstream: the language tag of the feed, or the detector, not the stoplist. The reverse also
+   shows: the other 267 `lng` words sit in the shards of 28 other languages and are mostly Latin-script (bn 86, ru 33, ar 28, fr 17, nl 16), and the tool refuses 233 of the 321 as `content_elsewhere` (real keywords of their own language) or `not_in_log`.
+2. **zh text decoded with the wrong charset.** `nw`: 19 zh fragments (1 to 7 articles each) such as `гҗӯ` and `еӣҫе` are UTF-8 Chinese read as a single-byte charset; one ja word is the same
+   (`جچ¹`). Fix at fetch or extraction: the charset decision. No stoplist word was added for any of them.
+3. **ko pages whose script text survives extraction.** `oth`: 12 ko tokens (`addclass`, `attr`, `cssclip`, `pdesc`, `pmurl` ...) at 2 articles each, plus keyboard noise (`dhmkkh`, `dhmkkhh`, 25
+   articles each). Fix in extraction: drop script and style text for these pages. Eight of the words ship in batch 1 as a bridge.
+4. **LaTeX in en articles.** `oth`: `mathcal`, `mathbf`, `mathbb`, `mathrm` (7 to 34 articles). Four words ship in batch 1; a macro that is not yet in the list will not be hidden until extraction removes math markup.
+
+**TOOL GAP (found by the guard, not by the tool):** `scripts/stopword_batch.py --apply` writes a batch to the file of the language it was run for, so a Latin-script word read in a log of a
+non-Latin language lands in a file the script test (`tests/test_stopword_file_scripts.py`) refuses. The batch-1 ko words were moved to `_multilingual.yml` by hand. Teach `--apply` that rule before
+any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will otherwise fail on its first non-Latin language.

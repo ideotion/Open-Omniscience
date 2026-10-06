@@ -204,7 +204,8 @@ shape that just cost a field import 5,937 MB on a 5.5 GB box.
 
 **Amendment to v1 §3-C, and it is a design constraint rather than a tuning note:** Phase C's GC
 must be a **bounded windowed sweep over the address space** from the first line, never one
-statement over all references, and it must set `temp_store=FILE` for its own connection. The
+statement over all references, and it must set `temp_store=FILE` for its own connection (MEMORY on an encrypted one: the sorter's
+spill file is written in the clear, see LESSONS, merge thread 2026-10-06). The
 merge already learned both halves — the pragma is what the measurement supports, the windowing
 is what makes it corpus-independent, and they need separate tests or one gets reported as
 evidence for the other.

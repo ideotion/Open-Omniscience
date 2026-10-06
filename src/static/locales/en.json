@@ -3082,6 +3082,7 @@
   "Not enough coverage to compare framing for this term.": "Not enough coverage to compare framing for this term.",
   "Not enough data to compare yet.": "Not enough data to compare yet.",
   "Not enough data yet for a curve.": "Not enough data yet for a curve.",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "Not enough free space at {path}: needs {needed}, only {free} free.",
   "Not enough free space here for this file.": "Not enough free space here for this file.",
   "Not enough keywords indexed to draw a map yet.": "Not enough keywords indexed to draw a map yet.",

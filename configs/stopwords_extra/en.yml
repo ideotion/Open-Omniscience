@@ -197,3 +197,12 @@ stopwords:
   - "yes"
   - yesterday
   - yet
+  # batch en-2026-10-batch1 (log sha256 4f0ce814e355; verdicts sha256 beb3efd563e5)
+  - crossref
+  - fig
+  - likelyno7
+  - mathbb
+  - mathbf
+  - mathcal
+  - mathrm
+  - supplementary

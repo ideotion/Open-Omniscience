@@ -3082,6 +3082,7 @@
   "Not enough coverage to compare framing for this term.": "इस शब्द के लिए फ़्रेमिंग की तुलना हेतु पर्याप्त कवरेज नहीं।",
   "Not enough data to compare yet.": "तुलना के लिए अभी पर्याप्त डेटा नहीं है।",
   "Not enough data yet for a curve.": "वक्र बनाने के लिए अभी पर्याप्त डेटा नहीं है।",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "एन्क्रिप्टेड कॉर्पस में मर्ज करने के लिए पर्याप्त खाली मेमोरी नहीं है: लगभग {needed} चाहिए, केवल {free} उपलब्ध है। अन्य प्रोग्राम बंद करें और फिर से इम्पोर्ट करें। आपके कॉर्पस में कुछ नहीं लिखा गया।",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "{path} पर पर्याप्त खाली जगह नहीं: {needed} चाहिए, केवल {free} खाली है।",
   "Not enough free space here for this file.": "इस फ़ाइल के लिए यहाँ पर्याप्त खाली जगह नहीं है।",
   "Not enough keywords indexed to draw a map yet.": "मानचित्र बनाने के लिए अभी तक पर्याप्त कीवर्ड अनुक्रमित नहीं हैं।",
