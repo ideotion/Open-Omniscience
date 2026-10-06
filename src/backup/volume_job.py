@@ -24,7 +24,12 @@ from typing import Any
 # runlog imports nothing but stdlib at module scope, so this cannot cycle.
 from src.backup import runlog
 
+# The passphrase never reaches a status, a log record or the run journal through a caught exception: every
+# handler below writes its text through these (stdlib only, so this cannot cycle either).
+from src.monitoring.secret_scrub import log_failure, scrubbed, traceback_text
+
 _LOG = logging.getLogger(__name__)
+
 
 # "Progress everywhere" (field-feedback Session A §4 item 2): run_restore's
 # internal stage names (src/backup/merge.py) mapped onto the phase-string
@@ -270,7 +275,9 @@ class VolumeBackupManager:
             try:
                 destp.mkdir(parents=True, exist_ok=True)
             except OSError as exc:
-                raise ValueError(f"Cannot use destination {destp}: {exc}") from exc
+                # the passphrase is in scope: scrubbed where the text is made, and the cause is not carried on
+                reason = scrubbed(str(exc), passphrase)
+                raise ValueError(f"Cannot use destination {destp}: {reason}") from None
             if not destp.is_dir():
                 raise ValueError(f"{destp} is not a folder.")
             self._stop.clear()
@@ -454,18 +461,18 @@ class VolumeBackupManager:
                     self._state = "cancelled"
                 runlog.end("cancelled")
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            _LOG.exception("volume backup failed")
-            import traceback
-
+            # The passphrase is in scope: what the exception says is scrubbed where it is made, for the log, the
+            # journal and the status an endpoint serves (the cut comes after the scrub, never before it).
+            log_failure(_LOG, "volume backup failed", exc, passphrase)
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=str(exc)[:2000],
-                traceback="".join(traceback.format_exception(exc))[-8000:],
+                msg=scrubbed(str(exc), passphrase)[:2000],
+                traceback=traceback_text(exc, passphrase)[-8000:],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
-                self._state, self._error = "error", str(exc)
+                self._state, self._error = "error", scrubbed(str(exc), passphrase)
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
@@ -655,8 +662,15 @@ class VolumeBackupManager:
             was_paused = False
             try:
                 was_paused = pause_for_exclusive_operation()
-            except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-                _LOG.warning("pausing background collection for the restore failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+                log_failure(
+                    _LOG,
+                    "pausing background collection for the restore failed",
+                    exc,
+                    passphrase,
+                    corpus_passphrase,
+                    level=logging.WARNING,
+                )
 
             # The user-visible phase TOTAL for this restore: our own manager phases
             # plus run_restore's own plan for these exact flags. Computed, never a
@@ -861,10 +875,17 @@ class VolumeBackupManager:
                                 should_stop=self._stop.is_set,
                             )
                         except Exception as exc:  # noqa: BLE001 - never lose a good merge
-                            _LOG.warning("placing the artifact's large files failed", exc_info=True)
+                            log_failure(
+                                _LOG,
+                                "placing the artifact's large files failed",
+                                exc,
+                                passphrase,
+                                corpus_passphrase,
+                                level=logging.WARNING,
+                            )
                             report["file_members"] = {
                                 "placed": 0,
-                                "error": str(exc),
+                                "error": scrubbed(str(exc), passphrase, corpus_passphrase),
                                 "method": (
                                     "The corpus restored; putting the large public files "
                                     "back did not. They are re-downloadable, and the "
@@ -901,9 +922,14 @@ class VolumeBackupManager:
             finally:
                 try:
                     resume_after_exclusive_operation(was_paused)
-                except Exception:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
-                    _LOG.warning(
-                        "resuming background collection after the restore failed", exc_info=True
+                except Exception as exc:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
+                    log_failure(
+                        _LOG,
+                        "resuming background collection after the restore failed",
+                        exc,
+                        passphrase,
+                        corpus_passphrase,
+                        level=logging.WARNING,
                     )
         except RestoreRefused as exc:
             # NOT the operator: a swap barrier refused because another job still held
@@ -919,24 +945,27 @@ class VolumeBackupManager:
             # actionable sentence ("another job is still writing to your corpus (...)",
             # naming the holder) was dropped on the way to the UI and the operator got
             # a bare "cancelled".
-            _LOG.warning("volume restore refused before the swap: %s", exc)
-            runlog.end("refused", detail=str(exc)[:500])
+            said = scrubbed(str(exc), passphrase, corpus_passphrase)
+            _LOG.warning("volume restore refused before the swap: %s", said)
+            runlog.end("refused", detail=said[:500])
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
-                self._progress = {"phase": "refused", "detail": str(exc)}
+                self._error = said
+                self._progress = {"phase": "refused", "detail": said}
         except RestoreAborted as exc:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
-            _LOG.info("volume restore stopped by the operator: %s", exc)
-            runlog.end("stopped-by-operator", detail=str(exc)[:500])
+            said = scrubbed(str(exc), passphrase, corpus_passphrase)
+            _LOG.info("volume restore stopped by the operator: %s", said)
+            runlog.end("stopped-by-operator", detail=said[:500])
             with self._lock:
                 self._state = "cancelled"
                 self._error = None
-                self._progress = {"phase": "cancelled", "detail": str(exc)}
+                self._progress = {"phase": "cancelled", "detail": said}
         except Exception as exc:  # noqa: BLE001
-            _LOG.exception("volume restore failed")
+            # The passphrases are in scope (the corpus's too): every text below is scrubbed where it is made.
+            log_failure(_LOG, "volume restore failed", exc, passphrase, corpus_passphrase)
             from src.backup.merge import MergeError, classify_restore_error
 
             # A MergeError is an intentional, well-formed refusal (the live DB stays
@@ -946,16 +975,18 @@ class VolumeBackupManager:
             # (P0-2, _restore_error) -- this job used to store the bare str(exc)
             # instead, so a data-merge conflict read as an unqualified, unhelpful
             # "UNIQUE constraint failed:" in the UI (field bug 2026-07-15).
-            detail = str(exc) if isinstance(exc, MergeError) else classify_restore_error("restore", exc)
+            detail = scrubbed(
+                str(exc) if isinstance(exc, MergeError) else classify_restore_error("restore", exc),
+                passphrase,
+                corpus_passphrase,
+            )
             # The traceback, bounded and scrubbed. `cls` + `msg` alone lose the
             # single most useful artefact a failed run leaves behind.
-            import traceback
-
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=str(exc)[:2000],
-                traceback="".join(traceback.format_exception(exc))[-8000:],
+                msg=scrubbed(str(exc), passphrase, corpus_passphrase)[:2000],
+                traceback=traceback_text(exc, passphrase, corpus_passphrase)[-8000:],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
@@ -1012,9 +1043,9 @@ class VolumeBackupManager:
                 self._summary = {"report": report}
                 self._progress = {"phase": "done"}
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            _LOG.exception("volume verify failed")
+            log_failure(_LOG, "volume verify failed", exc, passphrase)
             with self._lock:
-                self._state, self._error = "error", str(exc)
+                self._state, self._error = "error", scrubbed(str(exc), passphrase)
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:

@@ -15,6 +15,7 @@ reads. ``scrub_file`` cleans a file in place by what it is (JSON lines, a JSON d
 from __future__ import annotations
 
 import json
+import logging
 import os
 import stat
 import sys
@@ -359,3 +360,139 @@ def test_the_bytes_of_every_line_that_is_not_rewritten_are_kept_line_endings_inc
     p.write_bytes(clean + dirty + clean)
     assert ss.scrub_file(p, NEEDLE) is True
     assert p.read_bytes() == clean + b'{"label":"***redacted***"}\r\n' + clean
+
+
+# --------------------------------------------------------------------------- #
+# What a handler that holds a passphrase writes a caught exception through (2026-10-06): the volume job's runners, the
+# single-file restore's route and the import queue. ``tests/test_p0_validation.py`` reads those modules and fails on any
+# other way their handlers reach a text; these are the three helpers themselves.
+# --------------------------------------------------------------------------- #
+PASS = "kQ7!vLm-the-artifact-key"
+CORPUS = "zR4#nPt-the-corpus-key"
+
+
+def test_scrubbed_takes_every_secret_out_and_leaves_the_words_around_them():
+    assert ss.scrubbed(f"a {PASS} b {CORPUS} c {PASS}", PASS, CORPUS) == (
+        f"a {ss.REDACTED} b {ss.REDACTED} c {ss.REDACTED}"
+    )
+
+
+def test_scrubbed_matches_nothing_for_an_empty_or_a_missing_secret():
+    text = "the signature does not match"
+    assert ss.scrubbed(text) == text
+    assert ss.scrubbed(text, None, "") == text
+    assert ss.scrubbed(f"{text} {PASS}", None, PASS, "") == f"{text} {ss.REDACTED}"
+
+
+def test_scrubbed_withholds_a_text_the_second_scrub_rebuilt_the_first_secret_in():
+    """A's marker is never in the text a scrub leaves, but B's marker beside a neighbour can rebuild A: A is the marker and
+    an ``x``, B is ``bb``, and ``bbx`` becomes the marker and an ``x``. The result is checked, so the text is withheld."""
+    first, second = f"{ss.REDACTED}x", "bb"
+    out = ss.scrubbed("bbx", first, second)
+    assert out == ss.REDACTED
+    assert first not in out and second not in out
+
+
+def test_a_withheld_text_is_a_marker_that_holds_none_of_the_secrets():
+    """``red`` is a piece of the readable marker, so B's scrub brings it back into the text A's scrub had cleaned; the text
+    is withheld, and the marker that stands in for it is not the one that holds ``red``."""
+    out = ss.scrubbed("x bb y", "red", "bb")
+    assert out == "###" and "red" not in out and "bb" not in out
+
+
+def test_scrubbed_gives_back_text_that_holds_no_secret_as_it_was():
+    text = "volume 3 of 9 failed its checksum"
+    assert ss.scrubbed(text, PASS, CORPUS) is text
+
+
+def test_the_traceback_text_scrubs_every_link_of_a_chain_and_keeps_the_chain():
+    try:
+        try:
+            raise ValueError(f"the key {PASS} did not open the header")
+        except ValueError as inner:
+            raise RuntimeError(f"the set could not be read ({CORPUS})") from inner
+    except RuntimeError as outer:
+        text = ss.traceback_text(outer, PASS, CORPUS)
+    assert PASS not in text and CORPUS not in text
+    assert f"ValueError: the key {ss.REDACTED} did not open the header" in text
+    assert f"RuntimeError: the set could not be read ({ss.REDACTED})" in text
+    assert "direct cause" in text, "the chain's own sentence is kept: it is the secrets that are taken out"
+
+
+def test_the_traceback_text_scrubs_the_implicit_context_of_an_exception_raised_while_handling_another():
+    try:
+        try:
+            raise ValueError(f"the key {PASS} did not open the header")
+        except ValueError:
+            raise RuntimeError("while handling it, the set could not be closed")  # noqa: B904 - the context is the case
+    except RuntimeError as outer:
+        text = ss.traceback_text(outer, PASS)
+    assert PASS not in text and f"ValueError: the key {ss.REDACTED}" in text
+    assert "During handling of the above exception" in text
+
+
+def test_log_failure_logs_at_the_level_asked_for_with_the_secrets_out_and_attaches_no_exc_info(caplog):
+    log = logging.getLogger("tests.secret_scrub.log_failure")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    try:
+        raise OSError(f"the drive refused {PASS}")
+    except OSError as exc:
+        ss.log_failure(log, "placing failed", exc, PASS, level=logging.WARNING)
+        ss.log_failure(log, "sealing failed", exc, PASS)
+    placing = [r for r in caplog.records if "placing failed" in r.getMessage()]
+    sealing = [r for r in caplog.records if "sealing failed" in r.getMessage()]
+    assert [r.levelno for r in placing] == [logging.WARNING] and [r.levelno for r in sealing] == [logging.ERROR]
+    for record in placing + sealing:
+        assert PASS not in record.getMessage() and f"OSError: the drive refused {ss.REDACTED}" in record.getMessage()
+        assert record.exc_info is None and record.exc_text is None, "a record carrying exc_info prints the message again"
+
+
+def _chain(layers: int, secret: str) -> BaseException:
+    """An exception ``layers`` causes deep, each a long message, the innermost one naming the secret: a traceback far
+    longer than any cut (Python folds a repeated frame, so the length has to come from the chain)."""
+    exc: BaseException = ValueError(f"the key {secret} did not open the header")
+    for layer in range(layers):
+        try:
+            raise exc
+        except ValueError as inner:
+            exc = RuntimeError(f"layer {layer}: " + "y" * 120)
+            exc.__cause__ = inner
+        except RuntimeError as inner:
+            exc = RuntimeError(f"layer {layer}: " + "y" * 120)
+            exc.__cause__ = inner
+    return exc
+
+
+def test_log_failure_leads_with_the_exceptions_own_line_so_the_error_log_keeps_it_through_its_cut(caplog):
+    """The debug bundle's error log (``errorlog._JsonlErrorHandler``) keeps the first 500 characters of a message and a
+    traceback tail only for a record WITH ``exc_info``. A traceback written as text would push the line that names the
+    failure past the cut, so that line comes first."""
+    log = logging.getLogger("tests.secret_scrub.log_failure_cut")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    ss.log_failure(log, "volume restore failed", _chain(8, PASS), PASS)
+    message = caplog.records[-1].getMessage()
+    assert len(message) > 1500, "the case needs a traceback far longer than the cut"
+    assert message[:500].startswith("volume restore failed: RuntimeError: layer 7: yyyy")
+    assert "Traceback (most recent call last)" in message[500:], "the whole traceback follows the line"
+    assert PASS not in message and f"the key {ss.REDACTED} did not open the header" in message
+
+
+def test_log_failure_cuts_the_exceptions_line_after_the_scrub_and_never_before_it(caplog):
+    """A message cut at 300 characters, before the scrub, would split the secret and leave its half in the record."""
+    log = logging.getLogger("tests.secret_scrub.log_failure_split")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    lead = "x" * (300 - len("ValueError: ") - 5)  # the secret starts five characters before the cut
+    try:
+        raise ValueError(lead + PASS)
+    except ValueError as exc:
+        ss.log_failure(log, "failed", exc, PASS)
+    message = caplog.records[-1].getMessage()
+    assert PASS not in message and PASS[:5] not in message, "a cut before the scrub would leave these five"
+
+
+def test_log_failure_names_the_failure_of_an_exception_that_was_never_raised(caplog):
+    log = logging.getLogger("tests.secret_scrub.log_failure_unraised")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    ss.log_failure(log, "nothing raised", ValueError(f"the key {PASS}"), PASS)
+    message = caplog.records[-1].getMessage()
+    assert PASS not in message and f"ValueError: the key {ss.REDACTED}" in message

@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, run_restore
 from src.jobs.background import BackgroundJob, Framed, register_job
+from src.monitoring.secret_scrub import log_failure
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -247,7 +248,10 @@ def restore_legacy_path(
     except HTTPException:
         raise
     except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
-        _LOG.exception("legacy restore failed")
+        # The passphrase is in scope: the record is written with it taken out of the exception's line and of its
+        # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is the
+        # caller's own; the recorders that keep a response text scrub it where they make the record.
+        log_failure(_LOG, "legacy restore failed", exc, passphrase)
         raise _restore_error("restore", exc) from exc
     finally:
         cleanup_staging(staged)

@@ -10542,3 +10542,21 @@ record (with the allocator, compactly, and whether an operator forced the rollup
 resolve to now beside it, as two facts and no verdict) rides the soak window only, in every state its guard block can end in and once per export, for the process
 that was running; the budget is still resolved once, now under a re-entrant lock. Whether to re-resolve is a proposal in `OPEN_QUEUE.md`, not done. Lesson:
 `LESSONS.md`, the entry "A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION".
+
+- **2026-10-06 · backup/passphrase-scrub (release candidate diagnostics, PR #NNNN, the coordinator's check of #1318, B1, and its relay of 09:59 UTC).** The volume job's runners
+(`src/backup/volume_job.py`) catch `Exception` with the passphrase in scope (a restore holds the corpus's too) and wrote what the exception says to the status an endpoint serves
+(`GET /api/backup/v2/volumes/status`, read by the task manager), the log and the run journal; the single-file restore's route (`restore_legacy_path`, `src/api/backup_v2.py`) logged
+its failure with `_LOG.exception`; and the import queue (`src/backup/import_queue.py`), which runs that route for a legacy item and so keeps the route's own response text in an item's
+`error` (served by the status route, persisted in `import_queue.json`, logged), stored and logged what its handlers caught. Every such text is now scrubbed where it is made, through
+one set of helpers in `src/monitoring/secret_scrub.py` (`scrubbed`, `traceback_text`, `log_failure`) that take every secret the function holds and withhold a text a later secret's
+marker would rebuild an earlier one in; the journal's cuts (2,000, 8,000, 500) are made after the scrub; a log line leads with the exception's own line (the error journal cuts a
+record at 500 characters) and carries the scrubbed traceback as text and no `exc_info`. The route's responses to a caller are left as they are, on the condition that no recorder keeps
+a response's text, which was read: `errorlog.note_http_error` keeps the status, the method and the path (a test pins that no caller passes a `detail`), the frontend reporter keeps
+uncaught UI errors only, and the queue now scrubs where it records. The static walk of the release run (`tests/test_p0_validation.py`) now holds seven modules (the route layer's
+exception may feed a response, nothing else), reads `corpus_passphrase` and the queue's `self._passphrase` as secrets, accepts `status` and `partial` only on a `_PhaseError` handler
+(the coordinator's D3), and a coverage test holds its table to every module under `src/` that holds the passphrase and writes what it catches, five left out each with its reason.
+Tests: 18 behaviour tests for the job, 8 for the route and the queue, the helpers' own, the walk's cases, and 32 mutations of the helpers, the route, the queue, the middleware
+and the guard plus 21 of the job's own scrub sites, each caught. The check's D1 (the field count of the crash read) and D2 (which argument position a guard reads) are fixed in the
+same PR. What stays outside is in `OPEN_QUEUE.md` (the entry that replaced the volume job's): the responses and the global handler, `runlog.run`'s journal, a path that is the
+passphrase, a form that is not the passphrase as typed, what a syntax walk cannot follow, and the columnar store's three records, which ride with the key-derivation change. Lesson:
+`LESSONS.md`, the entry "EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE".

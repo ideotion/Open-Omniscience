@@ -124,6 +124,12 @@ this section were still open.
   decided from; the soak window carries it too, with the tier the machine would resolve to now beside
   it as a fact, for the process that was running at the export. The boot record also names the
   allocator and whether an operator forced the rollup either way.
+- The volume backup, restore and verify jobs, the single-file restore's log line and the import queue keep the passphrase
+  out of what a failure writes down (#NNNN): the job's status (which `GET /api/backup/v2/volumes/status` serves and the task
+  manager reads), its log, its run journal and an import item's `error` carry the exception's words with the passphrase,
+  and a restore's corpus passphrase, taken out. No message on those paths named one when this was written; the rule is that
+  no path that could is left unscrubbed, and a test now holds the next handler in those files, and the next module that
+  holds the passphrase and writes what it catches, to it.
 
 ### Interface and translations
 

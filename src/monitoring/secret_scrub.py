@@ -36,6 +36,12 @@ WHAT IT GUARANTEES, and the two things a naive ``str.replace`` does not:
     and other objects pass through as they are, so a caller round-trips through JSON first when
     it holds anything else (the child's ``_result_text`` does).
 
+WHAT A HANDLER THAT HOLDS A PASSPHRASE CALLS (2026-10-06). The volume job's runners, the single-file restore's route
+and the import queue catch ``Exception`` with the passphrase in scope and write what they caught as a status, a log
+record or a journal line. They do it through :func:`scrubbed` (a text), :func:`traceback_text` (a traceback) and
+:func:`log_failure` (a log record), each handed EVERY secret the function holds; ``tests/test_p0_validation.py``
+reads the modules that hold one and fails on any other way a caught exception reaches a text.
+
 Stdlib only, so the restore child can import it wherever it is -- after a failed boot included.
 """
 
@@ -43,8 +49,10 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import shutil
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +95,52 @@ def scrub_value(value: Any, needle: str) -> Any:
     if isinstance(value, tuple):
         return tuple(scrub_value(v, needle) for v in value)
     return value
+
+
+def scrubbed(text: str, *secrets: str | None) -> str:
+    """``text`` with EVERY secret taken out, for a function that holds more than one (a restore holds the backup's
+    passphrase and the corpus's) or may hold none (a missing or empty secret matches nothing).
+
+    This is the call a handler writes a caught exception's text through where the text is made: the status an
+    endpoint serves, a log line, a journal record. Every cut (``[:2000]``) comes AFTER it, never before: a cut text
+    can split a secret and leave half of it behind. Each secret goes through :func:`scrub_text`, whose output holds
+    none of its needle, but a LATER secret's marker can in principle rebuild an EARLIER secret out of its own
+    characters and its neighbours (no typed passphrase does), so the result is checked and, if any secret is back,
+    the text is WITHHELD: replaced by a marker that holds none of them. A caller that hands over only some of the
+    secrets it holds gets only those taken out, which is why ``tests/test_p0_validation.py`` reads the call and
+    requires every one."""
+    held = [secret for secret in secrets if secret]
+    for secret in held:
+        text = scrub_text(text, secret)
+    if not any(secret in text for secret in held):
+        return text
+    for marker in (REDACTED, *_FALLBACK_MARKERS):
+        if not any(secret in marker for secret in held):
+            return marker
+    return ""
+
+
+def traceback_text(exc: BaseException, *secrets: str | None) -> str:
+    """The traceback of ``exc``, its causes and contexts included, as text with every secret taken out: what
+    ``logging``'s ``exc_info`` and ``Logger.exception`` write, without the message that names the secret. Scrubbed
+    as ONE text, so a secret that an exception's message and its cause's message split between them is still found
+    (it is in the text as written), and any cut the caller makes (``[-8000:]``) comes after."""
+    return scrubbed("".join(traceback.format_exception(exc)), *secrets)
+
+
+def log_failure(
+    log: logging.Logger, what: str, exc: BaseException, *secrets: str | None, level: int = logging.ERROR
+) -> None:
+    """Log ``what`` and the failure ``exc`` with every secret taken out: the exception's own line first, then the
+    traceback.
+
+    ``Logger.exception`` and ``exc_info=`` write the exception as it made its message, which is the one thing a
+    handler that holds a passphrase may not do, and the record then carries no ``exc_info``: the error log the
+    debug bundle keeps (``src/monitoring/errorlog.py``) cuts a message at 500 characters and keeps a traceback tail
+    only for a record WITH ``exc_info``, so the line that names the failure (``ValueError: ...``) leads the message
+    and is what survives the cut. ``what`` is the code's own words, never built from the exception."""
+    head = scrubbed("".join(traceback.format_exception_only(exc)).strip(), *secrets)[:300]
+    log.log(level, "%s: %s\n%s", what, head, traceback_text(exc, *secrets))
 
 
 def _scrub_cut_text(text: str, needle: str) -> str:

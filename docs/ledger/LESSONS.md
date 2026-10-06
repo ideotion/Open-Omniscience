@@ -13289,13 +13289,18 @@ those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
-holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py`, to using the caught exception
+holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #NNNN,
+`stream_backup.py`, `volume_job.py`, `import_queue.py` and the route layer's `backup_v2.py`), to using the caught exception
 only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
-`_log_phase_failure`; a missing, empty or other second argument does not count), as its class, or as a phase error's `status`
-and `partial`, and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`_log_phase_failure`, and `secret_scrub`'s `scrubbed`, `traceback_text` and `log_failure`, which must be given EVERY secret the
+function holds; a missing, empty or other secret argument does not count, read at the second place, and from the fourth for
+`_log_phase_failure` and `log_failure`), as its class, or as a `_PhaseError`'s `status` and `partial` (read by name only in an `except _PhaseError`:
+`status` goes through the closed vocabulary `PHASE_STATUSES`, and `partial` is scrubbed where the restore makes it while the other
+two phases never hold the secret), and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
 `sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
 a parameter, reads a local or reads an attribute named `passphrase` (the release run holds it as `run.params.passphrase`), or
-takes or reads one named `secret` or `needle`. The test reads those three modules' syntax and follows no call, so this stays
+takes or reads one named `secret`, `needle` or `corpus_passphrase` (or, as an attribute, `_passphrase`, which the import queue
+keeps for the length of a run). The test reads those modules' syntax and follows no call, so this stays
 outside it: a secret held under another name or route (a parameter named `pw`, `**kwargs`, a closure or a global; the job
 worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` of a network call into their result and are
 handed no secret); a helper the handler calls that reads the exception for itself, a bare re-raise or a raise without `from`
@@ -13304,8 +13309,9 @@ tb`, `from sys import exc_info as ei`) and `repr(locals())`; the engine's own fa
 (`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed where the engine makes the
 line, so that every consumer of the report gets it clean (the P0 check, the volume-verify job whose status an endpoint serves, the
 dev bench), and again line by line where the P0 check copies the lines, each pinned by its own test), and a phase error's
-`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every other module (the endpoint that
-receives the passphrase, the engines it is handed to; the volume job's own error handlers are one, recorded in `OPEN_QUEUE.md`).
+`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every module the coverage test names as
+not guarded (the engines the passphrase is handed to, the columnar store's three records among them, recorded in `OPEN_QUEUE.md`;
+the entry at the end of this file says what the guard now holds beyond the release run).
 **A scrub of a value code compares changes the value: scrub the text a person reads at the place it is made, and leave the fields
 a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
@@ -13529,3 +13535,35 @@ the previous session's, so a death is read against the tier THAT session ran und
 carry it once and the boot event does not repeat it; only the soak window carries `reading_vs_now()`, the machine's reading of now beside it, once per export and for the process that was running. Thirty-four tests, with fifty mutations each caught, pin the rest as negative space: the budget resolves once however often it is
 looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
 record and never a failed boot.
+
+### EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE (release candidate diagnostics, 2026-10-06, PR #NNNN, `src/monitoring/secret_scrub.py`, `src/backup/volume_job.py`, `src/backup/import_queue.py`, `src/api/backup_v2.py`)
+
+The coordinator's check of #1318 (B1) named the volume job's own error handlers as the family of the engine's failure line, and its next relay asked that the route layer's log
+lines come with them. The job's runners catch `Exception` with the passphrase a parameter of the same call (a restore holds a second, the corpus's) and wrote what the exception
+says to three places: the job's `error` (served by `GET /api/backup/v2/volumes/status`, read by the task manager), the log (`_LOG.exception`, `exc_info=True`) and the run journal (a
+message and a formatted traceback). The single-file restore's route did the same to the log, and the import queue, which runs the route for a legacy item, did it to its own log
+and to an item's `error`. The destination's `mkdir` handler in `start_backup` was in none of the lists that had named the family: the static walk, pointed at the file, found it.
+**(1) One set of helpers, in `secret_scrub.py`, not one private copy per module** (`scrubbed`, `traceback_text`, `log_failure`): each takes EVERY secret the function holds, skips
+an empty one, and withholds the text, with the first marker that holds none of the secrets, when a later secret's marker would rebuild an earlier one
+(`scrubbed("x bb y", "red", "bb")` is `###`). A text scrubbed of one of two secrets still carries the other, and a guard that asks only whether a call is "given the secret" passes
+a function that holds two, so the walk's table of helpers that take several secrets routes a call only when it names every secret the function holds (a parameter, a local, or the
+queue's `self._passphrase`). **(2) A cut keeps half a secret.** The handlers cut the journal's message at 2,000 characters, its traceback to the last 8,000 and a refusal's detail at
+500; cut first, and a secret that straddles the cut leaves its first or last characters, which a scrub looking for the whole passphrase cannot find. Each is cut after the scrub,
+and each test puts the secret across its cut. **(3) A log line leads with the exception's own line and carries the scrubbed traceback as TEXT, with no `exc_info`.** The error
+journal in the debug bundle (`src/monitoring/errorlog.py`, a root-logger handler at WARNING and above) keeps the first 500 characters of a record's message, and a 1,500-character
+tail of the traceback only for a record that holds `exc_info`; a record that opens with a long preamble, or whose traceback comes first, loses the failure's own line to the cut,
+and a record that holds `exc_info` has the exception's message printed again by whichever handler formats it. `log_failure` writes `what: ExceptionClass: scrubbed text` and then the
+scrubbed traceback, and the tests assert `record.exc_info is None and record.exc_text is None`. (A test of the cut needs a chain of distinct layers: Python folds repeated frames, so one
+frame repeated is too short to reach it.) **(4) A recorder of a response is a place its text is made.** The route layer answers with the engine's own words (`decryption failed: {exc}`,
+`could not read {path}: {exc}`) and those responses are the caller's, so the rule does not touch them; the condition is that no recorder keeps a response's text, and it was checked,
+not assumed. `errorlog.note_http_error` stores the status, the method and the path (a test pins that no caller passes it a `detail`), the frontend reporter stores uncaught UI errors
+only, and the import queue DID keep it: a legacy item raises the route's own `HTTPException`, and the queue wrote its text into the item's `error`, which the status route serves, the
+task manager shows and `import_queue.json` keeps on the drive, and into a log line. The queue now scrubs where it records, and a test drives a legacy item whose `HTTPException` and
+cause name the passphrase through the status, the file and every log record. **Before leaving a response outside a rule, list every recorder that stores response text, and test the one
+that does.** **(5) A table of modules is a list nobody sees short.** The guard read a table, so a module that began to hold the passphrase and write `{exc}` was seen by nothing. A test now
+reads `src/` for the modules the walk would flag and holds `_GUARDED_MODULES` and `_NOT_GUARDED` to what it finds, both ways, every module left out with a written reason (five
+today; the columnar store's three `exc_info` records are the one that is NOT BUILT, and ride with the key-derivation change). **(6) `raise ... from None` stops the traceback printing a cause
+that named the passphrase, but the exception object still holds it as its `__context__`:** the scrub is where the reason is made, and the cause is not carried on. What stays outside
+all of this is the entry in `OPEN_QUEUE.md` that replaced the volume job's: the responses and the global handler, `runlog.run`'s journal, a path that is the passphrase, a form that is not
+the passphrase as typed, and what a syntax walk cannot follow. Thirty-two mutations of the helpers, the route, the queue, the request middleware and the guard, and twenty-one of the
+volume job's own scrub sites, are each caught by the tests that name them.
