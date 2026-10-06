@@ -10499,12 +10499,12 @@ deliberate non-member of the three spawners (a short shell, not an engine, which
 started by the service manager), said so in the code, in `launch_env`'s docstring and in the spawner test. Recorded in the R114 row and queue entry
 as a session decision under `16c`. Lesson: `LESSONS.md`, the entry "A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS".
 
-- **2026-10-06 · monitoring/memory-tier (release candidate diagnostics, PR #NNNN, the crash read of the 2026-10-06 batch).** The in-memory rollup runs on every
+- **2026-10-06 · monitoring/memory-tier (release candidate diagnostics, PR #1318, the crash read of the 2026-10-06 batch).** The in-memory rollup runs on every
 tier but `small`, and the bundles could not say why it was off on seven of fifteen machines: the tier reached a report only on a pass-end summary line (three
 of seventeen bundles kept one), and it is resolved once per process from the RAM total read at that instant, which moves on a virtual machine whose memory is
-ballooned. `memory_budget.resolved_reading()` (tier, RAM total, nominal size, cores, whether the tier leaves the rollup on, and when) and `reading_vs_now()`
-(the tier the machine would resolve to now beside it, as two facts and no verdict) now ride every boot record (with the allocator, compactly, and whether an
-operator forced the rollup either way), the chronology's sessions (once), the session's high-water header (so a death is read against the tier that session ran
-under), the crash report (one line beside the peaks) and the soak window (in every state its guard block can end in); the budget is still resolved once, now under
-a lock. Whether to re-resolve is a proposal in `OPEN_QUEUE.md`, not done. Lesson: `LESSONS.md`, the entry "A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A
-FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION".
+ballooned. `memory_budget.resolved_reading()` (tier, RAM total, nominal size, logical CPUs, whether the tier leaves the rollup on, and when) now rides every boot
+record (with the allocator, compactly, and whether an operator forced the rollup either way), the chronology's sessions (once), the session's high-water header
+(so a death is read against the tier that session ran under) and the crash report (one line beside the peaks); `reading_vs_now()` (the tier the machine would
+resolve to now beside it, as two facts and no verdict) rides the soak window only, in every state its guard block can end in and once per export, for the process
+that was running; the budget is still resolved once, now under a re-entrant lock. Whether to re-resolve is a proposal in `OPEN_QUEUE.md`, not done. Lesson:
+`LESSONS.md`, the entry "A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION".

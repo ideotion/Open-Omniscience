@@ -36,7 +36,7 @@ with ``MALLOC_ARENA_MAX=2``, only instances launched since an update carry it, a
 process started with.
 
 Since 2026-10-06 it also carries the reading the memory budget was resolved from
-(``memory_budget``: the tier, the RAM total, the cores, whether the in-memory rollup is on by
+(``memory_budget``: the tier, the RAM total, the logical CPUs, whether the in-memory rollup is on by
 default, and when). The budget is resolved once per process from the RAM total read at that
 instant, and a virtual machine whose memory is ballooned can resolve one tier at one boot and
 another at the next, so a death is read against the tier THAT session ran under.

@@ -405,7 +405,7 @@ def _launcher_exit(prev_state: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def _boot_memory_budget() -> dict[str, Any]:
     """The reading this process's memory budget was resolved from: the tier, the RAM total
-    it was decided on, the cores, whether that tier leaves the in-memory keyword rollup on
+    it was decided on, the logical CPUs, whether that tier leaves the in-memory keyword rollup on
     by default, and when. Written on the boot record so EVERY session of the ledger says
     which tier it ran under: until this, the tier reached a report only on a pass-end
     summary line, which three of seventeen bundles happened to keep, and on a virtual
@@ -436,13 +436,15 @@ def _boot_rollup_mode() -> str | None:
     """``auto``, ``forced-on`` or ``forced-off``: whether an operator's own
     ``OO_COLUMNAR_SERVE`` is in play beside the tier's default. A rollup that is off
     because the variable says so is not one that is off because the tier does. Read from the
-    environment only; ``None`` where it cannot be read."""
+    environment only. A read that cannot be taken is ``unreadable (ErrorName)``, as its two
+    siblings record theirs as an error: ``None`` is the record of a build that did not keep
+    this at all, and a failure must not be mistaken for it."""
     try:
         from src.analytics.rollup_serve import serve_mode
 
         return serve_mode()
-    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
-        return None
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return f"unreadable ({type(exc).__name__})"
 
 
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:

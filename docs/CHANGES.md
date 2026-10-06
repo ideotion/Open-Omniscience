@@ -115,13 +115,14 @@ this section were still open.
   their explanatory text on every line (#1312): a line is the measurement only, a fifth to a tenth of what it was (a
   browse line about 195 bytes, not about 1,940), and the report carries the words each measurement was made under (what each
   phase covers, where the clock starts and stops) once per kind, as `record_method` and `record_caveat`.
-- Every session's record now says which memory tier it was resolved to, and when (#NNNN). The tier
+- Every session's record now says which memory tier it was resolved to, and when (#1318). The tier
   decides the connection pool, the page caches, DuckDB's memory limit and whether the in-memory keyword
   rollup runs; it is decided once per process from the RAM total read at that instant, and a machine
   whose memory moves afterwards (a virtual machine with ballooned memory) keeps the tier of its start.
-  The boot record, the previous session's crash report, the chronology and the soak window now carry
-  the reading it was decided from, with the tier the machine would resolve to now beside it as a fact,
-  and the boot record also names the allocator and whether an operator forced the rollup either way.
+  The boot record, the previous session's crash report and the chronology carry the reading it was
+  decided from; the soak window carries it too, with the tier the machine would resolve to now beside
+  it as a fact, for the process that was running at the export. The boot record also names the
+  allocator and whether an operator forced the rollup either way.
 
 ### Interface and translations
 

@@ -746,7 +746,7 @@ def _previous_peaks() -> dict[str, Any] | None:
         "(pressure: name, CPU time and stack, the newest snapshots kept). allocator is "
         "which C allocator the session ran on and whether its malloc arenas were capped "
         "(R114), read from the environment the process started with; memory_budget is "
-        "the memory tier the session was resolved to (tier, RAM total, cores, whether the "
+        "the memory tier the session was resolved to (tier, RAM total, logical CPUs, whether the "
         "in-memory rollup is on by default, and when: resolved once per process); a record "
         "written before either was kept has none. A field that could not be measured is "
         "ABSENT rather than zero."
@@ -1133,8 +1133,11 @@ def _render_allocator(alloc: Any) -> list[str]:
 
 def _render_memory_budget(reading: Any) -> list[str]:
     """The memory tier the session was resolved to, as one line beside the peaks it bounds:
-    the pool, the page caches, DuckDB's limit and whether the in-memory keyword rollup runs
-    were all decided from it, once, at start. A record written before it was kept has none,
+    the pool and the page caches (unless the operator set them), DuckDB's limit and whether
+    the in-memory keyword rollup runs by default were all decided from it, once, at start. The
+    line states the tier's default and not an operator's own ``OO_COLUMNAR_SERVE`` choice, which
+    only the session ledger records (``rollup_serve_mode``), and says so. A record written
+    before it was kept has none,
     and one whose reading failed says so rather than leaving a hole."""
     if not isinstance(reading, dict):
         return []
@@ -1150,17 +1153,18 @@ def _render_memory_budget(reading: Any) -> list[str]:
         seen += f", a nominal {nominal:,.0f} MiB machine"
     cores = reading.get("cores")
     if isinstance(cores, int):
-        seen += f", {cores} cores"
-    when = f" at {reading['resolved_at']}" if reading.get("resolved_at") else ""
+        seen += f", {cores} logical CPU{'' if cores == 1 else 's'}"
+    when = f"; resolved at {reading['resolved_at']}" if reading.get("resolved_at") else ""
     serve = reading.get("columnar_serve_default")
     rollup = (
-        "the in-memory keyword rollup is on by default" if serve is True
-        else "the in-memory keyword rollup is off by default" if serve is False
-        else "whether the in-memory keyword rollup is on by default is not recorded"
+        "this tier leaves the in-memory keyword rollup on by default" if serve is True
+        else "this tier leaves the in-memory keyword rollup off by default" if serve is False
+        else "whether this tier leaves the in-memory keyword rollup on by default is not recorded"
     )
     return [
-        f"  - memory tier ({tier}; {seen}{when}): {rollup}; resolved once, when the process "
-        "started, so a total that moved afterwards is not in it"
+        f"  - memory tier ({tier}; {seen}{when}): {rollup} (an operator's own OO_COLUMNAR_SERVE "
+        "choice is in chronology.json, not here); resolved once, when the process started, so a "
+        "total that moved afterwards is not in it"
     ]
 
 

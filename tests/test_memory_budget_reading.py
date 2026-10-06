@@ -9,7 +9,7 @@ WHAT THE 17 BUNDLES COULD NOT SAY. The in-memory keyword rollup runs on every ti
 tier reached a report only on a pass-end summary line (three of seventeen bundles kept one),
 and the budget behind it is resolved ONCE per process, from the RAM total read at that
 instant. On a virtual machine whose memory is ballooned that total moves afterwards -- one
-instance's pass summaries said ``small`` while its own records of the RAM total read 4,961,
+instance's one pass summary said ``small`` while its own records of the RAM total read 4,961,
 5,921 and 4,600 MiB, and another machine's killed process read 6,759.9 to 6,907.7 MiB where
 its retry read 4,349 MiB.
 
@@ -152,9 +152,9 @@ def test_looking_never_resolves_the_budget_again(monkeypatch, fresh_budget):
 
 
 def test_two_threads_asking_at_once_resolve_it_once(monkeypatch, fresh_budget):
-    """MUTATION TARGET. The engine is built at import and several threads ask for the budget
-    in the first moments of a boot: two resolves would leave a cache from one reading and a
-    stamp from the other."""
+    """MUTATION TARGET. The lock is defensive (today the budget resolves once, on the importing
+    thread, before another thread exists), but a later caller could ask from another thread, and
+    two resolves would leave a cache from one reading and a stamp from the other."""
     _total(monkeypatch, 5000.0)
     calls: list[int] = []
     real = mb.resolve
@@ -178,6 +178,83 @@ def test_two_threads_asking_at_once_resolve_it_once(monkeypatch, fresh_budget):
     assert all(r == seen[0] for r in seen), "one reading, whichever thread asked"
 
 
+def test_a_thread_that_waited_on_the_lock_does_not_stamp_the_budget_again(monkeypatch, fresh_budget):
+    """MUTATION TARGET. The second thread waits while the first resolves, then finds the cache
+    and must leave the moment alone: a stamp written by every thread that waited would say the
+    budget was decided when the LAST of them got the lock. The clock is a counter here because
+    the real one reads whole seconds, which makes two stamps look alike."""
+    _total(monkeypatch, 5000.0)
+    ticks = iter(range(1, 100))
+    monkeypatch.setattr(mb, "_now_iso", lambda: f"tick-{next(ticks)}")
+    inside = threading.Event()
+    release = threading.Event()
+    real = mb.resolve
+
+    def slow() -> dict:
+        inside.set()
+        release.wait(5)
+        return real()
+
+    monkeypatch.setattr(mb, "resolve", slow)
+    first = threading.Thread(target=mb.budget)
+    first.start()
+    assert inside.wait(5), "the first resolve is under way"
+    second = threading.Thread(target=mb.budget)
+    second.start()
+    time.sleep(0.2)  # the second asks while the first holds the lock
+    release.set()
+    first.join(5)
+    second.join(5)
+    assert not first.is_alive() and not second.is_alive()
+    assert mb.resolved_reading()["resolved_at"] == "tick-1", "the first resolve's moment, once"
+
+
+def test_the_cache_is_not_published_before_its_moment_has_been_made(monkeypatch, fresh_budget):
+    """MUTATION TARGET. A reader on the lock-free path that finds the cache must find the moment
+    it was resolved at, or it reads a real budget as one that was injected (no moment): the
+    moment is made and stored before the cache is. Watched from inside the moment's own clock,
+    which runs after the resolve and before either store."""
+    _total(monkeypatch, 5000.0)
+    seen: list[bool] = []
+
+    def clock() -> str:
+        seen.append(mb._CACHE is None)
+        return "2026-10-06T07:15:55Z"
+
+    monkeypatch.setattr(mb, "_now_iso", clock)
+    mb.budget()
+    assert seen == [True], "the cache was already visible while its moment was being made"
+    assert mb.resolved_reading()["resolved_at"] == "2026-10-06T07:15:55Z"
+
+
+def test_a_budget_that_is_already_resolved_is_read_without_taking_the_lock(monkeypatch, fresh_budget):
+    """MUTATION TARGET. After the first resolve every look takes the lock-free path: only the
+    resolve holds the lock, and a caller must never queue behind it (the pool asks for the budget
+    on every connection). Another thread holds the lock here, and the look still returns."""
+    _total(monkeypatch, 5000.0)
+    mb.budget()
+    held = threading.Event()
+    done = threading.Event()
+
+    def hold() -> None:
+        with mb._LOCK:
+            held.set()
+            done.wait(10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    assert held.wait(5)
+    seen: list[dict] = []
+    looker = threading.Thread(target=lambda: seen.append(mb.resolved_reading()))
+    looker.start()
+    looker.join(2)
+    finished = not looker.is_alive()
+    done.set()
+    holder.join(5)
+    looker.join(5)
+    assert finished and seen and seen[0]["tier"] == "medium", "a look queued behind the lock"
+
+
 def test_a_resolve_that_asks_for_the_budget_again_fails_loudly_and_never_hangs():
     """MUTATION TARGET (``RLock`` -> ``Lock``). The lock is held while the budget resolves, so a
     resolve that reached ``budget()`` again would, behind a plain lock, never return -- the thread
@@ -197,9 +274,10 @@ def test_a_resolve_that_asks_for_the_budget_again_fails_loudly_and_never_hangs()
 
 
 def test_a_budget_that_was_injected_has_no_moment_and_the_facts_follow_it(monkeypatch, fresh_budget):
-    """The facts are read from the cache, so a cache a test (or a future caller) puts there
-    can never be contradicted by a stamp of a different resolve; with no resolve, there is
-    no moment, and none is invented."""
+    """The facts are read from the cache itself, so a cache that was put there (by a test, or a
+    future caller) is read as it is, and with no resolve there is no moment: none is invented.
+    Whoever injects a cache clears the stamp too (``reset_for_tests()`` does both), because a
+    stamp left over from a different resolve would be shown beside facts that are not its own."""
     monkeypatch.setattr(mb, "_CACHE", {"tier": "large", "total_ram_mb": 16000.0, "nominal_ram_mb": 16384.0,
                                        "columnar_serve_default": True})
     monkeypatch.setattr(mb, "_RESOLVED", None)
@@ -222,6 +300,7 @@ def test_a_total_that_moved_after_the_resolve_shows_as_two_readings_and_no_verdi
     assert mb.budget()["tier"] == "small", "the budget the app runs on did not move"
     text = (out["method"] + " " + out["caveat"]).lower()
     assert "not re-resolved" in text and "restart" in text
+    assert "unless the operator set them" in out["method"], "an operator's own pool or cache size wins"
     assert "not a finding" in out["caveat"], "a difference is a fact about the machine, never a verdict"
     assert not any(k in out for k in ("verdict", "score", "ok", "healthy"))
 
@@ -231,6 +310,50 @@ def test_a_total_that_did_not_move_is_not_reported_as_a_difference(monkeypatch, 
     mb.resolved_reading()
     out = mb.reading_vs_now()
     assert out["tier_differs"] is False and out["now"]["tier"] == out["resolved"]["tier"] == "large"
+
+
+def test_a_total_that_moved_inside_one_tier_is_not_reported_as_a_difference(monkeypatch, fresh_budget):
+    """MUTATION TARGET: ``tier_differs`` compares tier NAMES. A ballooned machine whose total moves
+    between 4,961 and 5,921 MiB (the 2026-10-06 batch's own figures for one instance) stays
+    ``medium`` and is not a difference: a field that flagged every moved total would flag every
+    virtual machine."""
+    _total(monkeypatch, 4961.0)
+    assert mb.resolved_reading()["tier"] == "medium"
+    _total(monkeypatch, 5921.0)
+    out = mb.reading_vs_now()
+    assert out["resolved"]["total_ram_mb"] == 4961.0 and out["now"]["total_ram_mb"] == 5921.0
+    assert out["now"]["tier"] == out["resolved"]["tier"] == "medium"
+    assert out["tier_differs"] is False
+
+
+def test_two_totals_that_print_alike_are_told_apart_by_the_nominal_size_beside_them(monkeypatch, fresh_budget):
+    """The tier is decided on the nominal size of the UNROUNDED reading and the totals are shown
+    rounded to a tenth: 3,973.14 MiB is a nominal 4,096 MiB machine (medium) and 3,973.10 is not
+    (small), and both print 3,973.1. The nominal size beside each one says why they differ."""
+    _total(monkeypatch, 3973.14)
+    assert mb.resolved_reading()["tier"] == "medium"
+    _total(monkeypatch, 3973.10)
+    out = mb.reading_vs_now()
+    assert out["resolved"]["total_ram_mb"] == out["now"]["total_ram_mb"] == 3973.1
+    assert out["tier_differs"] is True
+    assert (out["resolved"]["nominal_ram_mb"], out["now"]["nominal_ram_mb"]) == (4096.0, 3973.1)
+
+
+def test_a_difference_that_is_about_the_reading_and_not_the_machine_says_so(monkeypatch, fresh_budget):
+    """A machine whose RAM could not be read at the resolve (``unmeasured``, which is not a small one)
+    and can be read now differs by tier, and that difference is about the reader and not the
+    machine: the caveat says so there, and only there."""
+    _total(monkeypatch, None)
+    assert mb.resolved_reading()["tier"] == "unmeasured"
+    _total(monkeypatch, 4800.0)
+    out = mb.reading_vs_now()
+    assert out["tier_differs"] is True and out["now"]["tier"] == "medium"
+    assert "could not be read" in out["caveat"] and "not about the machine" in out["caveat"]
+    mb.reset_for_tests()
+    _total(monkeypatch, 3900.0)
+    mb.resolved_reading()
+    _total(monkeypatch, 4800.0)
+    assert "could not be read" not in mb.reading_vs_now()["caveat"], "two measured readings need no such note"
 
 
 # --------------------------------------------------------------------------- #
@@ -286,7 +409,9 @@ def test_a_boot_record_says_whether_an_operator_forced_the_rollup_either_way(led
 @pytest.mark.parametrize("failing", ["memory_budget", "allocator", "rollup_serve_mode"])
 def test_a_reading_that_cannot_be_taken_says_so_and_never_breaks_a_boot(ledger, monkeypatch, fresh_budget, failing):
     """MUTATION TARGET: the ledger's own rule. Each of the three has its own handler, so one
-    failing never takes the other two with it, and the boot is written either way."""
+    failing never takes the other two with it, and the boot is written either way. A failed
+    read is recorded as one (the mode as ``unreadable (ErrorName)``, as a string because every
+    other value of the field is one): ``None`` is the record of a build that kept nothing."""
 
     def boom(*_a, **_k):
         raise RuntimeError("no reading")
@@ -302,7 +427,7 @@ def test_a_reading_that_cannot_be_taken_says_so_and_never_breaks_a_boot(ledger, 
     rec = sh.record_boot(None)
     assert rec["kind"] == "boot" and sh.read_records()[0]["session_id"] == rec["session_id"]
     broken = {"memory_budget": {"error": "RuntimeError"}, "allocator": {"error": "RuntimeError"},
-              "rollup_serve_mode": None}
+              "rollup_serve_mode": "unreadable (RuntimeError)"}
     assert rec[failing] == broken[failing]
     healthy = {
         "memory_budget": lambda v: v["tier"] == "medium",
@@ -332,6 +457,18 @@ def test_a_session_from_before_the_reading_was_kept_has_none_and_nothing_is_inve
     sh._append({"kind": "boot", "session_id": "old-1", "at": ch._iso(T0), "pid": 1})
     sess = ch.chronology(anchor="install", now=T0 + 600)["sessions"][0]
     assert sess["memory_budget"] is None and sess["allocator"] is None and sess["rollup_serve_mode"] is None
+
+
+def test_each_session_of_the_ledger_carries_its_own_tier_and_not_the_last_boots(ledger, monkeypatch):
+    """MUTATION TARGET. The tier each boot resolved to is what the recommended option of the
+    proposal reads before anything is decided: a machine whose memory moved resolves one tier at
+    one boot and another at the next, and each session says its own."""
+    for sid, at, tier, total in (("s-1", T0, "small", 3900.0), ("s-2", T0 + 3600, "medium", 4800.0)):
+        sh._append({"kind": "boot", "session_id": sid, "at": ch._iso(at), "pid": 1,
+                    "memory_budget": _reading(tier, total, tier != "small", ch._iso(at))})
+    sessions = ch.chronology(anchor="install", now=T0 + 7200)["sessions"]
+    assert [s["session_id"] for s in sessions] == ["s-1", "s-2"]
+    assert [s["memory_budget"]["tier"] for s in sessions] == ["small", "medium"]
 
 
 # --------------------------------------------------------------------------- #
@@ -384,8 +521,11 @@ def test_the_crash_report_names_the_tier_beside_the_peaks_it_bounds():
         "at_peak": {"rss_mb": 3800.0, "at": "2026-09-30T21:08:38+00:00", "threads": 29},
     }
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
-    assert ("memory tier (small; 3,900.0 MiB read, 2 cores at 2026-10-06T07:15:55Z): "
-            "the in-memory keyword rollup is off by default") in txt
+    assert ("memory tier (small; 3,900.0 MiB read, 2 logical CPUs; resolved at 2026-10-06T07:15:55Z): "
+            "this tier leaves the in-memory keyword rollup off by default") in txt
+    assert "OO_COLUMNAR_SERVE" in txt and "chronology.json" in txt, (
+        "the line states the tier's default and says where an operator's own choice is recorded"
+    )
     assert "resolved once, when the process started" in txt
     assert txt.index("memory tier (small") < txt.index("made of, at 3800.0 MB"), (
         "the tier is read before the memory it bounds"
@@ -393,8 +533,11 @@ def test_the_crash_report_names_the_tier_beside_the_peaks_it_bounds():
     peaks["memory_budget"] = _reading("medium", 4093.8, True, "2026-10-06T21:15:11Z")
     peaks["memory_budget"]["nominal_ram_mb"] = 4096.0
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
-    assert "memory tier (medium; 4,093.8 MiB read, a nominal 4,096 MiB machine, 2 cores" in txt
-    assert "the in-memory keyword rollup is on by default" in txt
+    assert "memory tier (medium; 4,093.8 MiB read, a nominal 4,096 MiB machine, 2 logical CPUs" in txt
+    assert "this tier leaves the in-memory keyword rollup on by default" in txt
+    peaks["memory_budget"]["cores"] = 1
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
+    assert "1 logical CPU; resolved at" in txt, "one CPU is not \"1 logical CPUs\""
 
 
 def test_the_crash_report_is_honest_about_a_machine_it_could_not_read_and_a_reading_that_failed():
@@ -402,10 +545,20 @@ def test_the_crash_report_is_honest_about_a_machine_it_could_not_read_and_a_read
              "memory_budget": {"tier": "unmeasured", "total_ram_mb": None, "nominal_ram_mb": None,
                                "cores": None, "columnar_serve_default": True, "resolved_at": None}}
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
-    assert "memory tier (unmeasured; RAM not readable): the in-memory keyword rollup is on by default" in txt
+    assert ("memory tier (unmeasured; RAM not readable): "
+            "this tier leaves the in-memory keyword rollup on by default") in txt
     peaks["memory_budget"] = {"error": "RuntimeError"}
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
     assert "memory tier: not read (RuntimeError)" in txt
+
+
+def test_a_reading_with_neither_a_tier_nor_an_error_renders_nothing():
+    """MUTATION TARGET. A dict that says nothing is not a line that says "not recorded": absent
+    stays absent (a half-written header, or a later set of fields that dropped the tier)."""
+    peaks = {"available": True, "rss_max_mb": 2800.0, "memory_budget": {"cores": 2},
+             "at_peak": {"rss_mb": 2800.0, "at": "t", "threads": 3}}
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
+    assert "made of, at 2800.0 MB" in txt and "memory tier" not in txt
 
 
 def test_a_record_written_before_the_tier_was_kept_renders_without_it():
@@ -426,7 +579,7 @@ def session() -> Session:
         yield s
 
 
-def _guard(monkeypatch, session, *, seconds, **state):
+def _guard(monkeypatch, session, *, seconds, uptime=None, **state):
     from src.scheduler import memguard
 
     class _Fake(memguard.MemoryGuard):
@@ -436,15 +589,15 @@ def _guard(monkeypatch, session, *, seconds, **state):
     monkeypatch.setattr(memguard, "memory_guard", _Fake())
     monkeypatch.setattr(
         forensics, "session_uptime",
-        lambda: {"measured": True, "started_at": "2026-10-06T00:00:00+00:00", "seconds": seconds},
+        lambda: uptime or {"measured": True, "started_at": "2026-10-06T00:00:00+00:00", "seconds": seconds},
     )
     return sw.soak_window(session)["memory_guard"]
 
 
 def test_the_soak_window_names_the_tier_in_every_state_the_guard_block_can_end_in(monkeypatch, session, fresh_budget):
-    """MUTATION TARGET: the block returns early in four states (guard state unreadable, blind,
-    window unknown or under the rate floor). The tier is a property of the process, so it rides
-    all of them, and it never decides ``measured``."""
+    """MUTATION TARGET: the block returns early in four states (guard state unreadable, guard
+    blind, window unknown, uptime under the rate floor) besides the one where it measures. The
+    tier is a property of the process, so it rides all five, and it never decides ``measured``."""
     _total(monkeypatch, 3900.0)
     mb.resolved_reading()
     _total(monkeypatch, 4800.0)  # the machine moved after the resolve
@@ -454,8 +607,12 @@ def test_the_soak_window_names_the_tier_in_every_state_the_guard_block_can_end_i
                    readings_available=False)
     young = _guard(monkeypatch, session, seconds=10.0, engagements=1, total_engaged_s=2.0,
                    readings_available=True)
-    assert (seeing["measured"], blind["measured"], young["measured"]) == (True, False, False)
-    for block in (seeing, blind, young):
+    unknown = _guard(monkeypatch, session, seconds=0.0, uptime={"measured": False},
+                     enabled=True, engagements=0, total_engaged_s=0.0, readings_available=True)
+    assert (seeing["measured"], blind["measured"], young["measured"], unknown["measured"]) == (
+        True, False, False, False)
+    assert "window is unknown" in unknown["reason"]
+    for block in (seeing, blind, young, unknown):
         got = block["memory_budget"]
         assert got["resolved"]["tier"] == "small" and got["now"]["tier"] == "medium"
         assert got["tier_differs"] is True
