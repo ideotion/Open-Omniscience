@@ -75,9 +75,6 @@ from typing import Any
 from src.monitoring.secret_scrub import scrub_text
 
 SCHEMA_VERSION = 1
-#: The shortest passphrase the runner accepts from ``--passphrase-file``: shorter than any report field name worth
-#: renaming by accident (the scrub also covers keys), and nothing a store's key should be anyway.
-MIN_PASSPHRASE_CHARS = 12
 MARKER = ".oo-osm-reference-run"
 GIB = 1024**3
 MIB = 1024**2
@@ -577,7 +574,8 @@ def run_phase(
             proc = subprocess.Popen(spec.argv, env=env, stdout=fo, stderr=fe, cwd=str(ROOT),  # noqa: S603
                                     start_new_session=True, preexec_fn=_pdeathsig_preexec())  # noqa: PLW1509
         except (OSError, subprocess.SubprocessError) as exc:
-            res.status, res.reason = "failed", f"the phase could not be started ({type(exc).__name__}: {exc})"
+            res.status, res.reason = "failed", scrub(
+                f"the phase could not be started ({type(exc).__name__}: {exc})", secrets_=secrets_, run_dir=run_dir, roots=roots)
             res.wall_seconds = round(time.monotonic() - t0, 3)
             res.disk_free_after_bytes = probe.free_disk(run_dir)
             return res
@@ -650,7 +648,8 @@ def run_phase(
     try:
         raw = out_f.read_text("utf-8").strip()
         if raw.startswith("{"):
-            res.app_report = json.loads(raw)
+            # the engine's own words: scrubbed HERE, where they are read, not by a pass over the finished report
+            res.app_report = _scrub_obj(json.loads(raw), secrets_=secrets_, run_dir=run_dir, roots=roots)
         elif raw:
             res.error_tail = scrub(raw, secrets_=secrets_, run_dir=run_dir, roots=roots)[-600:]  # scrub, THEN cut
     except (OSError, ValueError):
@@ -732,13 +731,15 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
 
 
 def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: tuple[tuple[str, str], ...] = ()):
-    """``scrub`` applied to every string of a JSON-shaped value: the last line of defence for the report."""
+    """``scrub`` applied to every string VALUE of a JSON-shaped value; KEYS lose their paths but are never touched
+    by the secret (a field name is code's, and a passphrase that equalled one would rename it: the rule in
+    docs/ledger/LESSONS.md, "leave the fields a program reads alone")."""
     if isinstance(obj, str):
         return scrub(obj, secrets_=secrets_, run_dir=run_dir, roots=roots)
     if isinstance(obj, list):
         return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for v in obj]
     if isinstance(obj, dict):
-        return {(scrub(k, secrets_=secrets_, run_dir=run_dir, roots=roots) if isinstance(k, str) else k):
+        return {(scrub(k, run_dir=run_dir, roots=roots) if isinstance(k, str) else k):
                 _scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for k, v in obj.items()}
     return obj
 
@@ -884,13 +885,12 @@ def _run(
     if passphrase_file is not None:
         try:
             passphrase = Path(passphrase_file).read_text("utf-8").strip()
+        except UnicodeDecodeError:  # its message would name a byte of the file and its position: say neither
+            raise ValueError("the passphrase file is not valid UTF-8") from None
         except OSError as exc:
             raise ValueError(f"cannot read the passphrase file ({type(exc).__name__})") from None
         if not passphrase:
             raise ValueError("the passphrase file is empty")
-        if len(passphrase) < MIN_PASSPHRASE_CHARS:
-            # A short value could equal a field name of the report, and scrubbing it would rename that field.
-            raise ValueError(f"the passphrase must be at least {MIN_PASSPHRASE_CHARS} characters")
     else:
         passphrase = secrets.token_urlsafe(24)
     if gazetteer not in GAZETTEER_MODES:
@@ -967,7 +967,9 @@ def _run(
         report["not_measured"] = report["not_measured"] or not_measured(
             history=history is not None, gazetteer=gazetteer, kernel_peak=kernel_peak)
         report["finished_at"] = now().isoformat()
-        final = _scrub_obj(report, secrets_=secrets_, run_dir=run_dir, roots=roots)
+        # Paths only: every engine text was scrubbed of the passphrase where it was made (above), and a pass of the
+        # secret over the finished record could rewrite a verdict word the exit code reads (a passphrase "failed").
+        final = _scrub_obj(report, secrets_=(), run_dir=run_dir, roots=roots)
         if report_path is not None:
             try:
                 write_report(final, report_path)
@@ -1051,7 +1053,7 @@ def _run(
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
     except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
-        note = f"the runner itself failed: {type(exc).__name__}: {exc}"
+        note = scrub(f"the runner itself failed: {type(exc).__name__}: {exc}", secrets_=secrets_, run_dir=run_dir, roots=roots)
         if report["status"] == "ok":
             report["status"], report["reason"] = "failed", note
         else:  # what happened first (a signal, a guard's stop) stays the status; this is added to it

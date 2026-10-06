@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         country_codes(args.country)
     except ValueError as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {R.scrub(str(exc))}")
         return 2
     prior = None
     if args.prior_report is not None:
@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             report_path=None if args.plan else target,
         )
     except (OSError, ValueError) as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {R.scrub(str(exc))}")  # paths reduced to file names: the terminal is pasted into tickets
         return 2
 
     if args.plan:

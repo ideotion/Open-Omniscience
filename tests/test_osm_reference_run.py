@@ -570,10 +570,14 @@ def test_a_third_signal_gives_the_default_action_so_there_is_always_a_way_out():
 
 
 def test_the_third_signal_kills_the_childs_group_first_and_a_sigquit_takes_the_sigterm_default_not_a_core():
+    """The leader ignores SIGTERM and has a grandchild that inherits that: only a SIGKILL sent to the whole GROUP
+    ends both, so the test fails if the kill is a SIGTERM, or goes to the leader alone."""
     code = (
         "import os, signal, subprocess, sys\nfrom src.osm import reference_run as R\n"
-        "child = subprocess.Popen(['sleep', '120'], start_new_session=True)\n"
-        "print(child.pid, flush=True)\n"
+        "child = subprocess.Popen(['sh', '-c', \"trap '' TERM; sleep 120 & echo $!; wait\"], start_new_session=True,\n"
+        "                         stdout=subprocess.PIPE, text=True)\n"
+        "grandchild = int(child.stdout.readline())\n"
+        "print(child.pid, grandchild, flush=True)\n"
         "signal.signal(signal.SIGQUIT, signal.SIG_DFL)  # whatever this test run was started with\n"
         "with R._terminating_signals():\n"
         "    h = signal.getsignal(signal.SIGQUIT)\n"
@@ -583,9 +587,15 @@ def test_the_third_signal_kills_the_childs_group_first_and_a_sigquit_takes_the_s
         "print('survived the third')\n"
     )
     done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
-    assert done.returncode == -15, "a SIGQUIT must not take its core-dumping default"
-    assert "survived" not in done.stdout
-    assert _wait_dead(int(done.stdout.split()[0])), "the child's group was left alive"
+    pids = [int(p) for p in done.stdout.split()[:2]]
+    try:
+        assert done.returncode == -15, "a SIGQUIT must not take its core-dumping default"
+        assert "survived" not in done.stdout
+        assert all(_wait_dead(p) for p in pids), "the child's group was left alive"
+    finally:
+        for p in pids:
+            with contextlib.suppress(OSError):
+                os.kill(p, 9)
 
 
 def test_signals_within_a_few_milliseconds_are_one_event_not_the_operator_insisting():
@@ -852,11 +862,26 @@ def test_a_passphrase_that_holds_a_newline_is_scrubbed_before_the_stderr_tail_is
         assert part not in json.dumps(report), part
 
 
-def test_a_passphrase_too_short_to_be_one_is_refused(tmp_path):
-    key = tmp_path / "weak.key"
+def test_a_passphrase_that_is_a_field_name_scrubs_the_engines_words_and_leaves_the_report_alone(tmp_path):
+    """The runner puts no minimum on a passphrase (the app's own rule is guidance, and this store is not the
+    install's): one that equals a key and a verdict word must not rename a field or turn a verdict into a marker."""
+    key = tmp_path / "op.key"
     key.write_text("status", "utf-8")
-    with pytest.raises(ValueError, match="at least"):
+    code = "import json\nprint(json.dumps({'note': 'the passphrase is status', 'status': 'fine'}))"
+    report, _ = _run(tmp_path, phases_override=_scripted(code), passphrase_file=key)
+    assert report["status"] == "ok" and "status" in report["phases"][0]
+    app = report["phases"][0]["app_report"]
+    assert app["status"] == "fine", "the child's own value is its own"
+    assert "status" in app, "a KEY is never rewritten by the secret"
+    assert "***redacted***" in app["note"] and "is status" not in app["note"]
+
+
+def test_a_passphrase_file_that_is_not_utf8_is_refused_without_naming_a_byte(tmp_path):
+    key = tmp_path / "bad.key"
+    key.write_bytes(b"pass\xff\xfeword-0123456789")
+    with pytest.raises(ValueError) as exc:
         _run(tmp_path, passphrase_file=key)
+    assert "not valid UTF-8" in str(exc.value) and "0x" not in str(exc.value) and "position" not in str(exc.value)
 
 
 def test_no_phase_the_runner_builds_carries_a_passphrase_in_its_argv():
@@ -1073,12 +1098,18 @@ def test_the_runner_failing_after_a_phase_keeps_the_phase_it_measured(tmp_path, 
     assert any("phase two" in n for n in report["not_measured"])
 
 
-
-def test_the_command_switches_core_dumps_off_before_the_run_reads_the_passphrase(tmp_path, _core_limit):
+def test_the_command_switches_core_dumps_off_before_the_run_reads_the_passphrase(tmp_path, monkeypatch, _core_limit):
     import resource
 
-    _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--plan", "--workdir", str(tmp_path / "w"))
-    assert (resource.RLIMIT_CORE, (0, 0)) in _core_limit
+    at_run: list[list] = []
+
+    def _run_stub(**kw):
+        at_run.append(list(_core_limit))  # what had been requested by the time R.run (which reads the key) was called
+        return {"status": "ok", "phases": [], "store": {"deleted": True}}, None
+
+    monkeypatch.setattr(R, "run", _run_stub)
+    _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert at_run and (resource.RLIMIT_CORE, (0, 0)) in at_run[0]
 
 
 def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):
