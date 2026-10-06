@@ -361,7 +361,7 @@ the app-wide one-model decision due before 0.8 (0.8 row C). `RC09` = a (the brow
 the ≈ titles are to be carried in backups with their provenance — a build item under the app-wide principle on
 `R61`'s row, not a reopening of this row.
 
-### Row I — The UI shell · ruled (Q1120, Q1121, Q1123, Q1127) · OPEN
+### Row I — The UI shell · ruled (Q1120, Q1121, Q1123, Q1127) · ALL THREE CLOSING CLAUSES MET 2026-10-06 (this PR); H3's removal OPEN behind its test
 
 **What it must demonstrate.** "Rings, not gates" as the information-architecture spine — a Ring controls what
 is pinned, never what is reachable — with the two grafts from "Works while you sleep" (Q1120); Standard (Ring
@@ -375,6 +375,36 @@ the widths of the 2026-09-09 axe sweep (the 0.4 gate's log names 1440×900, 768�
 audit's own viewport table lists five — the session reads the sweep record for the set it drives), and the
 culled themes are named with their nearest survivor.
 Brief `S05-09`.
+
+**The culled themes, named (2026-10-06; the clause above now met in the row itself, not only in the 2026-09-28 amendment-log
+entry).** Three of the 17 named themes were culled (Q1123 = b), by a measured rule: the mean CIE76 colour difference over the six
+surface tokens (bg, bg2, panel, panel2, panel3, border), sRGB to CIELAB under D65, below the just-noticeable 2.3. Each culled
+theme and its nearest survivor, with the measured difference (`tests/test_theme_cull.py` derives each from the live stylesheet):
+
+| Culled | Nearest survivor | Mean ΔE76 | A stored pick of the culled theme becomes |
+|---|---|---|---|
+| slate | Ink | 1.92 | Ink, with slate's accent `#7aa2f7` kept, announced once at load |
+| arctic | Ink | 1.81 | Ink, with arctic's accent `#88c0d0` and the Inter typeface kept, announced once at load |
+| mist | Light | 1.25 | Light, announced once at load |
+
+The next closest pair (paper and dawn, 3.87) is a gap well above the threshold, so 14 named themes remain (the floor is 10).
+The audit's other suspects (midnight, aubergine, garnet, forest) measure 7.5 to 9.7 from their neighbours and stay.
+
+**2026-10-06 — the closing walk (`docs/product/ROW_I_SWEEP_2026-10-06.md`; reading rule R126: Claude's Chromium walk closes it).**
+(1) **The CSP sweep.** 45 runs: 1440×900, 768×1024 and 390×844 in each of the 15 theme settings, every tab and subtab, every foldout opened,
+every drop-down picked and judged, the console kept per width and theme (`docs/audit/row-i-csp-sweep-2026-10-06/`). **0 CSP violations.**
+4,691 picks held. The sweep found two real defects, fixed here with tests that fail without the fix: the AI backend select flipped back for
+about two seconds after a pick (a load in flight when the operator picks wrote the old stored value; measured before and after in Chromium),
+and `python -m src.api.main`, which `--ephemeral` relaunches itself through, served a 500 on the Mindmap graph (a second import of the file
+dies on the Prometheus registry). The 404s in the console are the boundary files row E builds on a machine. (2) **Culled themes named**, with
+nearest survivor and measured ΔE, above. (3) **H3 measured: the absorption test does NOT pass, so the box stays.** The omnibar's analysis
+window carries trend, associations, context, framing and the Map/Cloud mind-map (`tests/test_h3_omnibar_absorption.py` pins that), but not the
+layered mind-map zoom (keywords, families, super-groups) that exists only in the Insights `#mm-kit`, nor `exploreTerm`'s "Resolved to …"
+header (keyword, tier, mentions in articles), and five call sites still send a clicked keyword to the box through `pickTerm`. `#ins-term` and
+`exploreTerm` stay; the test pins the three gaps as a measured state and refuses a removal while any is open, so closing a gap (or rerouting
+the five callers) is the work that reopens H3. (4) **PF10 at 390 px**, on every map that paints here, in three themes (`pf10-390.json`): 23 of 23
+passed: the one in-map button covers 6 % of the map closed, the opened panel stacks below the map and covers none, every panel drop-down was
+picked and held, and the panel closes again; the maps that need row E's boundary files are `not-measurable-here` until that build runs.
 
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC08.5` asked where register ruling **H3**
 (remove `#ins-term` + `exploreTerm`, behind the omnibar-absorption test) lands. Blank, so its stated default

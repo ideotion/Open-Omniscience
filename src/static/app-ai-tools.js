@@ -1891,7 +1891,14 @@
       loadAiUninstall();
     }
 
+    // A load that started BEFORE the operator's last pick holds the OLD stored value: letting it set the
+    // select flipped the pick back for about a second until the load that follows the save corrected it
+    // (measured in Chromium, the 2026-10-06 sweep). Each pick counts; a load only writes the select when
+    // no pick happened since it started.
+    let _aiBackendPicks = 0;
+
     async function loadAiBackendPanel() {
+      const picksAtStart = _aiBackendPicks;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ai-backend-box");
       const sel = $("ai-backend-select");
@@ -1972,7 +1979,7 @@
           // checkbox that reverses it. The caveat colour is invariant #23's
           // var(--caveat) (AA-verified on all 17 themes).
           hwHtml;
-        if (sel) sel.value = b.stored_override || "auto";
+        if (sel && picksAtStart === _aiBackendPicks) sel.value = b.stored_override || "auto";
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
       }
@@ -2023,6 +2030,7 @@
 
     async function setAiBackend(value) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _aiBackendPicks++;
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_backend: value})});
         toast(t("AI backend preference saved."));
