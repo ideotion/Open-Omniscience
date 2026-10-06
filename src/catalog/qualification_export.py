@@ -161,7 +161,7 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             # withdrawn by the boot repair on an imported history's say and its newest judging attempt
             # is still the imported one the repair followed: inherited, whatever its history
             # holds, and shipped as such. ANY newer judging attempt (a local one, or a newer
-            # imported one the export cannot tell apart yet) makes the row `measured` below.
+            # imported one the export does not yet tell apart: ``merged_rows`` records it) makes the row `measured` below.
             basis = BASIS_INHERITED
             repaired_exported_as_inherited += 1
         elif s.id in measured:

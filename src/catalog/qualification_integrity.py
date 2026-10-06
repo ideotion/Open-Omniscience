@@ -157,7 +157,7 @@ def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
     carries a verdict taken from an imported history, not one this install measured, so the
     qualification export labels it ``inherited`` only while its newest judging attempt is still that
     one (any later judging attempt makes it ``measured``: a local judgement in either direction, and
-    equally a newer imported one, which the export cannot yet tell apart -- a KNOWN LIMIT, pinned). A run record
+    equally a newer imported one, which the export does not yet tell apart although the merge records it in ``merged_rows`` -- a KNOWN LIMIT, pinned). A run record
     that cannot be read is skipped (its domains are unknown) and its id is returned, so the caller
     can say that the list is incomplete.
     """

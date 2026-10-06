@@ -399,9 +399,10 @@ def test_the_overlay_file_carries_the_warning_when_the_repair_record_was_unreada
 
 def test_known_limit_a_newer_attempt_of_any_origin_makes_a_repaired_row_measured(db, monkeypatch):
     """KNOWN LIMIT (OPEN_QUEUE, the 0.4 gate): the export cannot tell an attempt this install made
-    from one a later import brought in, so ANY judging attempt newer than the one the repair followed
+    from one a later import brought in (the merge does record imported rows in ``merged_rows``; the export
+    does not consult it yet), so ANY judging attempt newer than the one the repair followed
     reads `measured` -- an imported one included. This pins today's behaviour so that closing the gap
-    (it needs the attempt's origin recorded, a decision under rule 12 = b) is a visible change here,
+    (consulting ``merged_rows``, which carries rule 12 = b out) is a visible change here,
     not a silent one. When it is closed, flip the expected basis and delete this note."""
     import src.catalog.qualification_integrity as qi
 
