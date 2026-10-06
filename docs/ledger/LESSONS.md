@@ -13897,8 +13897,8 @@ quotes the statement it cannot parse, so the key must not be in it.** MEASURED, 
 parse error quoted a window of the statement around the failure, which for a short path held the FIRST 16 TO 24 CHARACTERS of the key written after it (none of it for a long path). A scrub
 matches the whole secret and cannot find half of one, so the answer is not a better scrub: the key is a bound parameter, `ATTACH '<path>' AS oo (ENCRYPTION_KEY ?)`, and the path's quotes are
 doubled. Checked with a real encrypted attach on 1.5.5 (the software backend, test-only): a store made under a bound key opens under the same key as a literal and under no other, and a
-literal `?` is a different key; on 1.4.4 the parameter parses and reaches the same refusal the literal does (it cannot encrypt without the bundled backend). The scrub stays as the net: the two
-failure records of the module (`connect`, `refresh_persisted_read_model`) go through `log_failure` with the passphrase AND the derived key, and the walk of `test_p0_validation.py` holds the module
+literal `?` is a different key; on 1.4.4 the parameter parses and reaches the same refusal the literal does (it cannot encrypt without the bundled backend). The scrub stays as the net: the three
+failure records of the module (`connect`, `encryption_gate`, `refresh_persisted_read_model`) go through `log_failure` with the passphrase AND the derived key, and the walk of `test_p0_validation.py` holds the module
 (`encryption_key` is now a name it reads as a secret). The gate attaches the same way the store does, so that what it proves is the statement the store uses; its key is a random one made for
 the call, and it takes no passphrase. **(4) A guard reads the SINK, with an allow-list that is empty.** `tests/test_passphrase_hashing_guard.py` walks every `.py` file under `src/` and `scripts/` (754)
 and fails on a fast hash (`hashlib` other than `pbkdf2_hmac` and `scrypt`, `hmac.new`, `hmac.digest`, `hmac.HMAC`, the `update` of a hash object the scope made) whose arguments are, or were made

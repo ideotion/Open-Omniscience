@@ -579,6 +579,38 @@ def test_the_gate_refuses_an_engine_that_writes_the_sentinel_in_the_clear(tmp_pa
     assert not probe.exists()
 
 
+def test_a_gate_that_raises_logs_without_the_probes_key_and_without_the_passphrase_the_process_holds(tmp_path, monkeypatch, caplog):
+    """MUTATION TARGET: ``exc_info=True`` back on the gate's record. The probe's key is bound out of the statement, but an
+    engine's error is its own text, and the log is carried by the debug bundle: the record is written through ``log_failure``
+    with the key the gate made, and with every passphrase the process holds, which the gate was never given."""
+    pytest.importorskip("duckdb")
+    monkeypatch.setenv("OO_DB_PASSPHRASE", PASS)
+    monkeypatch.setattr("src.database.connect._passphrase", None)
+    seen: list[str] = []
+
+    class Con:
+        def execute(self, sql, params=None):
+            key = params[0]
+            seen.append(key)
+            raise RuntimeError(f"IO Error: cannot attach with ENCRYPTION_KEY '{key}' (held {PASS})")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(columnar, "_persisted_connection", Con)
+    caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
+    probe = tmp_path / "probe.duckdb"
+    assert columnar.encryption_gate(probe) is False
+    assert not probe.exists()
+    (key,) = seen
+    (record,) = [r for r in caplog.records if "encryption gate raised" in r.getMessage()]
+    assert record.levelno == logging.WARNING and record.exc_info is None
+    written = f"{record.getMessage()}\n{getattr(record, 'scrubbed_traceback', '')}"
+    assert key not in written and PASS not in written
+    assert f"RuntimeError: IO Error: cannot attach with ENCRYPTION_KEY '{REDACTED}' (held {REDACTED})" in written
+    assert "Traceback (most recent call last)" in written, "the frames are kept"
+
+
 # --------------------------------------------------------------------------- #
 # The sidecar is destroyed with the cache
 # --------------------------------------------------------------------------- #

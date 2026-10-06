@@ -535,13 +535,13 @@ def encryption_gate(path: str | Path) -> bool:
         return False
 
     p = Path(path)
-    key = secrets.token_hex(_KDF_KEY_BYTES)
+    encryption_key = secrets.token_hex(_KDF_KEY_BYTES)
     try:
         if p.exists():
             p.unlink()
         con = _persisted_connection()  # verified httpfs LOADed (encrypted ATTACH needs it)
         try:
-            con.execute(f"ATTACH {_sql_text(p.as_posix())} AS g (ENCRYPTION_KEY ?)", [key])
+            con.execute(f"ATTACH {_sql_text(p.as_posix())} AS g (ENCRYPTION_KEY ?)", [encryption_key])
             con.execute("CREATE TABLE g.probe (s VARCHAR)")
             con.execute("INSERT INTO g.probe VALUES (?)", [_SENTINEL])
             con.execute("CHECKPOINT g")
@@ -563,13 +563,17 @@ def encryption_gate(path: str | Path) -> bool:
         # (c) opening with the key must return the sentinel
         c3 = _persisted_connection()
         try:
-            c3.execute(f"ATTACH {_sql_text(p.as_posix())} AS y (ENCRYPTION_KEY ?)", [key])
+            c3.execute(f"ATTACH {_sql_text(p.as_posix())} AS y (ENCRYPTION_KEY ?)", [encryption_key])
             got = c3.execute("SELECT s FROM y.probe").fetchone()
         finally:
             c3.close()
         return bool(got and got[0] == _SENTINEL)
-    except Exception:  # noqa: BLE001
-        _LOG.warning("columnar encryption gate raised; treating as unavailable", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        # The record is written with the probe's key and the passphrases the process holds taken out of it: an engine's error
+        # can quote the statement it was given, and the log is carried by the debug bundle (``exc_info=`` writes it as it was).
+        log_failure(
+            _LOG, "columnar encryption gate raised; treating as unavailable", exc, encryption_key, level=logging.WARNING
+        )
         return False
     finally:
         try:

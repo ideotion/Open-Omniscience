@@ -972,7 +972,7 @@ _GUARDED_MODULES = {
     "api/diagnostics/p0": ({"p0_validation_start"}, 1, True, {}),
     "api/diagnostics/release_run": ({"release_run_start", "release_run_resume"}, 2, True, {}),
     "api/ingestion": ({"ingest_email_endpoint", "_mailbox_pull_worker"}, 2, True, {}),
-    "analytics/columnar": ({"connect", "refresh_persisted_read_model"}, 2, False, {}),
+    "analytics/columnar": ({"connect", "encryption_gate", "refresh_persisted_read_model"}, 3, False, {}),
 }
 
 
