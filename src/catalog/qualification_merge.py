@@ -141,6 +141,11 @@ REFUSE_MEMBER_TOO_BIG = (
 REFUSE_BAD_ZIP = "{file}: not a readable zip archive ({error})."
 # What a nesting deeper than the readers can follow is called, in the refusals above.
 _TOO_DEEP = "nested too deeply to read"
+# Fixed words, never the library's own message: a ValueError's text can carry the upload's content back.
+_BAD_DATE = "a date in it is not on the calendar"
+_BAD_NUMBER = "a number in it is too long to read"
+_BAD_TEXT = "it is not readable text"
+_BAD_ARCHIVE = "the archive is damaged"
 REFUSE_MEMBER_NOT_JSON = "{file}: {member} is not valid JSON ({error})."
 # The three the diagnostics route makes itself, before or around this core: they live
 # here with the rest so every merge refusal is one list, keyed once.
@@ -236,6 +241,8 @@ def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
         return _rows_from_export_yaml(text, origin, json_exc)
     except RecursionError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_TOO_DEEP) from exc
+    except ValueError as exc:  # an integer past the interpreter's digit limit is not a JSONDecodeError
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_BAD_NUMBER) from exc
     return rows_from_payload(raw, origin)
 
 
@@ -254,7 +261,7 @@ def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeErro
     except yaml.YAMLError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(json_exc)) from exc
     except ValueError as exc:  # a date the YAML reader recognised but the calendar does not have
-        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(exc)) from exc
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_BAD_DATE) from exc
     except RecursionError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_TOO_DEEP) from exc
     rows = rows_from_payload(raw, origin)
@@ -305,15 +312,27 @@ def rows_from_bundle_bytes(
         # a damaged compressed stream (zlib.error / EOFError), a compression this reader does not
         # have (NotImplementedError) and an encrypted member (RuntimeError) are all "not readable"
         raise MergeInputError(REFUSE_BAD_ZIP, file=origin, error=str(exc)) from exc
+    except MergeInputError:  # a ValueError itself: the refusals above are already the answer
+        raise
+    except ValueError as exc:  # a damaged directory (negative seek, an unreadable member name)
+        raise MergeInputError(REFUSE_BAD_ZIP, file=origin, error=_BAD_ARCHIVE) from exc
     try:
         raw = json.loads(raw_bytes)
     except RecursionError as exc:
         raise MergeInputError(
             REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=_TOO_DEEP
         ) from exc
+    except UnicodeDecodeError as exc:
+        raise MergeInputError(
+            REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=_BAD_TEXT
+        ) from exc
     except json.JSONDecodeError as exc:
         raise MergeInputError(
             REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=str(exc)
+        ) from exc
+    except ValueError as exc:  # an integer past the interpreter's digit limit
+        raise MergeInputError(
+            REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=_BAD_NUMBER
         ) from exc
     return rows_from_payload(raw, f"{origin}::{BUNDLE_MEMBER}")
 
@@ -340,6 +359,9 @@ def merge(exports: list[list[dict]], existing: dict[str, dict], *, accept_newest
     skipped = 0
     for rows in exports:
         for row in rows:
+            if not isinstance(row, dict):  # a list item that is not a mapping is a row nobody can read
+                skipped += 1
+                continue
             domain = str(row.get("domain") or "").strip().lower()
             if not domain or row.get("status") not in SHIPPABLE:
                 skipped += 1
