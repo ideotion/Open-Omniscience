@@ -204,10 +204,11 @@ What this adds to the clause, none of it a new bar:
    catalogue's `basis: "curated"` even when judging attempts sit beside it, and
    `basis.curated_stamp_with_judging_history` counts those rows apart. A row the boot repair
    withdrew exports `basis: "inherited"` and is counted in `basis.repaired_exported_as_inherited`
-   (PR #1288, merged 06:23 UTC), but only while its newest judging attempt is still the
-   imported one the repair followed: a later judging attempt, an own one or one an import
-   brings in (the export cannot tell them apart), makes it `measured` (PR #1294, merged
-   06:36 UTC). A repair run whose record
+   (PR #1288, merged 06:23 UTC), but only while no judging attempt this install made is newer than
+   the imported one the repair followed: a later local judgement (in either direction) makes it
+   `measured`, a later attempt a backup merge brought in (named in `merged_rows`) does not (PR #1294,
+   merged 06:36 UTC; PR #1316 for the imported attempts). The residue, an imported attempt with no
+   `merged_rows` row (a batch removed by hand in the database), reads as local and is pinned by a test. The same rule decides every judged row: a source whose whole judging history a backup merge brought in exports `inherited`, never `measured` (PR #1316); that includes a restore of THIS install's own backup, whose attempts the merge records as imported, so its verdicts read `inherited` until the install judges the sources again (OPEN_QUEUE proposes how an own backup could keep its history). A repair run whose record
    cannot be read is named in `basis.repair_runs_unreadable`, and the rows it withdrew may then
    read `measured` although an imported history decided them.
 

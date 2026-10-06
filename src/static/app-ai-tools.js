@@ -503,10 +503,12 @@
           + ` · ${esc(tf("{n} can be put back", {n: d.revertible}))}</div>`;
         const dec = d.declined || {};
         // A refusal with its reason, never a silent skip. Drawn only when there IS one.
-        const declined = (dec.judged_here_since || dec.was_curated_before)
+        const declined = (dec.judged_here_since || dec.imported_since || dec.was_curated_before)
           ? `<div>` + ooLabelHtml(esc(t("Left alone by a revert")),
               (dec.judged_here_since
                 ? esc(tf("{n} judged here since", {n: dec.judged_here_since})) + " " : "")
+              + (dec.imported_since
+                ? esc(tf("{n} with a newer imported verdict", {n: dec.imported_since})) + " " : "")
               + (dec.was_curated_before
                 ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : ""))
             + `</div>`
@@ -679,6 +681,15 @@
         `<div class="muted">${(rep.inputs || []).map((i) =>
           `${esc(i.route === "measured here" ? t("this instance") : i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
       ];
+      // An input whose boot-repair record could not be read in full: the sources that repair
+      // withdrew cannot be named, so they count above as measured corroboration (informed consent:
+      // the warning is on the page, beside the numbers, never behind a toggle).
+      const unreadable = (rep.inputs || []).filter((i) => i.repair_record_unreadable);
+      if (unreadable.length) {
+        lines.push(`<div class="card-caveat">${esc(tf(
+          "The record of the boot repair could not be read in full for: {names}. Sources it withdrew may be counted here as measured, although an imported history decided them.",
+          {names: unreadable.map((i) => (i.route === "measured here" ? t("this instance") : i.name)).join(", ")}))}</div>`);
+      }
       if (conflicts) {
         // A disagreement between instances is a FINDING. Named, listed, and left at
         // whatever the existing file said -- never resolved on the operator's behalf.

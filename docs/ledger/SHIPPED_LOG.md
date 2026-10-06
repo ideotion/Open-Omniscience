@@ -10446,15 +10446,28 @@ restore gate compares (`backup_ok` reads `p0_1_verify`'s `pass`), and an exact-m
 one of them into the marker and reads a good backup as one that did not verify, so the restore would not have run. A test runs the
 whole run with that passphrase (a mutation that scrubs the whole result fails it), one drives the four sites with the engine
 raising the passphrase, one runs the real P0 phase through a release run and finds the passphrase in no file under the data
-folder or the destination, and a static test holds every handler of a function that is given the passphrase to using the caught
-exception only through the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
-`sys.exc_info()`; it follows no call, and its own walk is tested on seventeen ways a caught exception can reach a text and four forms
-it must leave alone). The run's parameters no longer print the passphrase in their repr, a failed start removes its
+folder or the destination, and a static test holds every `except` handler of a function that holds the passphrase, in
+`p0_validation.py`, `release_run.py` and the restore child, to using the caught exception only inside a call that scrubs it with the
+secret (a missing, empty or other second argument does not count), as its class or as a phase error's `status` and `partial`, and to
+asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module, `sys.exc_info()`). The first version of
+that test (PR #1312) read `p0_validation.py` alone and a parameter named `passphrase`; PR #1318 widened it. It follows no call, so it
+does not see a secret held as `**kwargs`, a `pw` or a closure (the job worker's two online probes put `{exc}` of a network call into
+their result and are handed no secret), a helper that reads the exception for itself, a bare re-raise, a raise without `from`, a
+`finally`, an alias of the `traceback` module or `repr(locals())`, the engine's failure lines handed back as data, or any other
+module; its own walk is tested on thirty-three ways a caught exception can reach a text or a function can hold the secret, ten forms
+it must leave alone and a function it must not read, and forty mutations of the walk are each caught. One of the routes the walk
+cannot see is the engine's failure lines returned as data (`problems`): the delta check's F2 found it, and its check of #1318 (B1)
+found a second consumer of the same line, the volume-verify job whose status an endpoint serves. A decrypt failure's line carries
+the exception's own words, so they are scrubbed where `verify_stream_backup` makes the line (never the member's name beside them)
+and again, line by line, where the verify check copies the lines, with tests that the verdict and the check's own words are left
+alone for a passphrase of `pass` or `fail`. The run's parameters no longer print the passphrase in their repr, a failed start removes its
 directory with `rmdir` (an empty directory and nothing else), and a failure that wraps another is scrubbed from its whole
 traceback, with a test for `__cause__` and for `__context__`. Recorded, not fixed (small, and the PR carries no logic for them): a
 cancel that lands after the restore committed reads the phase as `cancelled` while its install exists, the scrub's own
 result is not recorded when it runs from `finally`, and the test that ties `UNLOCK_ROUTES` to the unlock router's own routes
-catches a route the router lost but not one it gained (`OPEN_QUEUE.md` holds the three as deliberate omissions). Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
+catches a route the router lost but not one it gained (`OPEN_QUEUE.md` holds the three as deliberate omissions, and the volume
+job's own error handlers, which return the exception's text and log its traceback with the passphrase in scope, in an entry of
+their own). Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
 CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING
 THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS", "CODEQL READS NAMES: A HELPER THAT TAKES A
 SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE" and "THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF".
@@ -10509,3 +10522,23 @@ a copy are swept at boot on a thread of their own. The summary reports `snapshot
 (which now means the deciding window only); the progress label is "Making a temporary copy of your data..." in 12 languages.
 Restore still reads an old archive's `corpus-wal` member. Lesson: `LESSONS.md`, the entry "A BACKUP THAT CANNOT FOLD THE LOG INTO
 THE MAIN FILE COPIES THE CORPUS".
+
+- **2026-10-06 · diagnostics/first-run-hand-over (keyword-export thread; the maintainer's 02:36 UTC report).**
+"Running the full diagnostics did not work, I had to push the 'run again' button": the ten bundles (eight machines) carry no error;
+in five of them (Asus 10-03, Lenovo, NUC, OOS-11, OOS-12) the route counts show a build run to the end, split (`/volumes` 200),
+nothing downloaded, then run again 27 to 116 minutes after the split. Reproduced in
+Chromium: the end of the build blanked the line beside the button and the Save button was 300-500 px lower (off screen at 1024x640).
+The parts bar now sits directly under the buttons that fill it, is scrolled into view when the pressed button is still on screen,
+and a set that fits one click (five files; no split set in the reports was larger than two) is handed to the browser by the page at the end of the
+build. Lesson: `LESSONS.md`, the entry "A LONG BUILD ENDED IN SILENCE". Open beside it: the build runs on one pooled session for
+its whole 9 to 48 minutes, and the checkpoint record names it as the oldest reader in 6 of the 10 bundles (WAL 1.19 GB after one such checkpoint).
+
+- **2026-10-06 · monitoring/memory-tier (release candidate diagnostics, PR #1318, the crash read of the 2026-10-06 batch).** The in-memory rollup runs on every
+tier but `small`, and the bundles could not say why it was off on seven of fifteen machines: the tier reached a report only on a pass-end summary line (three
+of seventeen bundles kept one), and it is resolved once per process from the RAM total read at that instant, which moves on a virtual machine whose memory is
+ballooned. `memory_budget.resolved_reading()` (tier, RAM total, nominal size, logical CPUs, whether the tier leaves the rollup on, and when) now rides every boot
+record (with the allocator, compactly, and whether an operator forced the rollup either way), the chronology's sessions (once), the session's high-water header
+(so a death is read against the tier that session ran under) and the crash report (one line beside the peaks); `reading_vs_now()` (the tier the machine would
+resolve to now beside it, as two facts and no verdict) rides the soak window only, in every state its guard block can end in and once per export, for the process
+that was running; the budget is still resolved once, now under a re-entrant lock. Whether to re-resolve is a proposal in `OPEN_QUEUE.md`, not done. Lesson:
+`LESSONS.md`, the entry "A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION".
