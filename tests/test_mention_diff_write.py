@@ -297,9 +297,12 @@ def test_without_a_known_old_set_the_whole_set_is_replaced():
     a = _article(s, "a")
     index_article(s, a, extractor=_Ex([_t("a"), _t("b")]), country=None, city=None)
     s.commit()
-    rows = [dict(keyword_id=r.keyword_id, article_id=a.id, count=7, first_offset=0, observed_on=None,
-                 country=None, city=None, language=None, source_id=1, extractor="fake",
-                 created_at=datetime.now(UTC)) for r in s.execute(select(_MT))]
+    rows = [
+        {"keyword_id": r.keyword_id, "article_id": a.id, "count": 7, "first_offset": 0,
+         "observed_on": None, "country": None, "city": None, "language": None, "source_id": 1,
+         "extractor": "fake", "created_at": datetime.now(UTC)}
+        for r in s.execute(select(_MT))
+    ]
     out = store._write_mention_diff(s, a.id, None, rows, now=datetime.now(UTC))
     s.commit()
     assert out == {"kept": 0, "updated": 0, "removed": 2, "added": 2}
