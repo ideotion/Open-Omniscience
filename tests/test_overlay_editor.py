@@ -357,6 +357,35 @@ def test_an_imported_newer_attempt_is_not_called_judged_here_but_the_revert_stil
     assert _by_domain(db, "cat.example").status == STATUS_QUALIFIED, "the verdict was not discarded"
 
 
+def test_a_verdict_a_merge_gave_a_row_is_not_an_adoption_here_and_is_never_reverted(
+    db: Session, overlay_file: Path
+) -> None:
+    """A merge copies another instance's status AND its `inherited` and judging attempts. This install
+    adopted nothing, so the row is not 'adopted here', and the revert must not undo the merged verdict
+    (that would leave the live status behind the newest judging attempt)."""
+    from src.database.models import MergeBatch, MergedRow
+
+    cat = _by_domain(db, "cat.example")
+    cat.status = STATUS_QUALIFIED
+    cat.qualified_at = NOW
+    batch = MergeBatch()
+    db.add(batch)
+    for verdict, minutes in ((VERDICT_INHERITED, 1), (STATUS_QUALIFIED, 2)):
+        attempt = SourceQualificationAttempt(
+            source_id=cat.id, attempted_at=NOW + timedelta(minutes=minutes),
+            verdict=verdict, criteria_version="t")
+        db.add(attempt)
+        db.flush()
+        db.add(MergedRow(batch_id=batch.id, table_name="source_qualification_attempts", row_id=attempt.id))
+    db.commit()
+
+    st = overlay_status(db, path=overlay_file)
+    assert st["adopted_here"] == 0 and st["revertible"] == 0
+    out = revert_overlay(db, now=NOW + timedelta(hours=1), path=overlay_file)
+    assert out["reverted"] == 0
+    assert _by_domain(db, "cat.example").status == STATUS_QUALIFIED
+
+
 def test_revert_refuses_a_row_this_install_judged_since_and_counts_it(
     db: Session, overlay_file: Path
 ) -> None:

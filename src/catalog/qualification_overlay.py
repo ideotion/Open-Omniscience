@@ -290,6 +290,8 @@ def _attempt_marks(session: Session, source_ids: list[int]) -> dict[int, dict]:
     (``merged_rows`` names it) is another instance's history, not a measurement here (rule 12 = b,
     as the export reads it), so it is recorded apart as ``judged_any`` and never as ``judged``. The
     revert still declines on it -- it never silently discards a verdict -- but under its own label.
+    Likewise only an ``inherited`` or ``curated`` attempt THIS install wrote counts as an adoption or a
+    catalogue stamp here.
     """
     from src.catalog.qualification_integrity import not_imported
     from src.database.models import SourceQualificationAttempt as A
@@ -310,11 +312,14 @@ def _attempt_marks(session: Session, source_ids: list[int]) -> dict[int, dict]:
         )
         keys: tuple[str, ...]
         if verdict == VERDICT_INHERITED:
-            keys = ("inherited",)
+            # an `inherited` or `curated` attempt a merge brought in is ANOTHER instance's adoption or
+            # stamp: this install did not adopt the row, so it is not "adopted here" and a revert must
+            # not undo the verdict the merge gave it
+            keys = ("inherited",) if is_local else ()
         elif verdict in JUDGING_VERDICTS:
             keys = ("judged", "judged_any") if is_local else ("judged_any",)
         elif verdict == VERDICT_CURATED:
-            keys = ("curated",)
+            keys = ("curated",) if is_local else ()
         else:
             continue
         for key in keys:
