@@ -1198,6 +1198,17 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         # cleanly, even if this run never deferred (a restarted drain that finds the
         # collector running has no marker of its own, and would otherwise leave that one
         # open for good).
+        #
+        # THE EPOCH BUMP COMES FIRST, then again after a reconcile that finished. The sweep
+        # below runs for minutes on a large corpus (86-104 s a pass on 3 million keywords), and
+        # a run killed inside it never reaches a bump placed after it: the next run finds no
+        # batch left, walks none, and never bumps, so a rollup built from the middle of this
+        # run would keep the old numbers of rows changed in place under their old ids. The first
+        # bump covers the mention rows (the sweep touches counters, not rows); the second covers
+        # the counters the rollup's keyword table copies, so a rollup built between the two is
+        # rebuilt once the sweep has ended. An extra bump is only ever an extra, correct rebuild.
+        if batches:
+            _bump("reindex-resume:end")
         window = _yield_to_import()
         leftover = False
         if not deferring and clean_end and not ctx.stopping and not window:
@@ -1226,10 +1237,10 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         # Every run that walked a batch ends with its bump, including a RESUMED one whose
         # articles were all already finished by the run that was killed before it could bump:
         # the start bump above already happened, the rows changed in place since a rollup was
-        # built from the middle of that run are only invalidated by an epoch change, and an
-        # extra bump is only ever an extra (correct) full rebuild.
-        if batches:
-            _bump("reindex-resume:end")
+        # built from the middle of that run are only invalidated by an epoch change. The
+        # counters a finished sweep changed are bumped for here, after it.
+        if batches and out.get("counter_reconcile", {}).get("reconciled"):
+            _bump("reindex-resume:reconciled")
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
     # never sees it -- without this, a partial run would report stopped:false and read as
     # a completed drain. reindex_imported_articles takes should_stop, so it genuinely can

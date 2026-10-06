@@ -25,7 +25,10 @@ WHAT IT REPORTS, every number carrying the method that produced it:
   stays undivided, exactly as it did;
 * ``write_rate`` -- mentions and distinct articles written in the last hour and the last
   six, read off the ``created_at`` index, so a drain is measured whether or not a job
-  happens to be running. A window that cannot be measured says why; it is never ``0``;
+  happens to be running. A row counts when it was WRITTEN: a re-index leaves an unchanged row
+  with its old ``created_at``, so the figure is the work that reached the file, not the
+  articles walked (the drain's own ``mentions_kept`` says how many were left alone). A window
+  that cannot be measured says why; it is never ``0``;
 * ``reindex_job`` -- the live re-index job's own articles/hour, when one is running.
 
 Read-only, no network, bounded by the statement deadline (an abort is reported, never a
@@ -85,8 +88,11 @@ _CAVEAT = (
     "page and the sample's spread by id (which follows insertion order) are not modelled, so read each "
     "figure as a range and the split as an order of magnitude, not an audit. What it cannot "
     "divide -- the articles, the full-text index, the other derived tables -- stays in "
-    "'rest_of_file_bytes'. A re-index deletes and rewrites an article's rows, so the write "
-    "rate counts INDEXING work, not new articles."
+    "'rest_of_file_bytes'. A re-index writes only the rows that CHANGED (changed ones are "
+    "stamped now, new ones are added, unchanged ones keep their time), so the write rate counts "
+    "rows WRITTEN, not articles indexed and not new articles: a re-index of rows that all stayed "
+    "the same writes none, and its articles per hour here is a lower bound, not comparable "
+    "with a figure measured before that change."
 )
 
 
@@ -287,7 +293,10 @@ def _write_rate(session: Session, now: datetime) -> dict[str, Any]:
         if not mentions:
             out[key] = {
                 "available": False,
-                "reason": "no mention row was written in this window, so there is no rate to state",
+                "reason": (
+                    "no mention row was written in this window, so there is no rate to state "
+                    "(a re-index that found every row unchanged writes none)"
+                ),
             }
             continue
         out[key] = {

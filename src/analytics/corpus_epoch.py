@@ -66,8 +66,8 @@ def bump_corpus_epoch(session: Session, *, reason: str = "") -> int:
     """Increment the corpus epoch and return the NEW value (starts at 1).
 
     Called by exactly the non-append mutators (re-index / prune / restore-merge) so the
-    disposable rollup full-rebuilds instead of merging across a delete-then-reinsert (the
-    double-count trap). Takes the single-writer gate (reentrant, so it composes with a
+    disposable rollup full-rebuilds instead of merging across a re-index (rows changed in place under old
+    ids, below the tail's watermark). Takes the single-writer gate (reentrant, so it composes with a
     mutator that already holds it) and commits its own tiny change.
 
     BEST-EFFORT BY DESIGN: a failure to bump must NEVER break the mutator it rides. A

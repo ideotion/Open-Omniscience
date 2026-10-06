@@ -546,7 +546,7 @@ def index_article(
     here via ``extractor.extract``/``score_article``. A caller that has ALREADY
     computed them (see :mod:`src.analytics.reindex_parallel`, which runs those two
     DB-free steps across a process pool) passes them in to skip the redundant
-    recompute; everything else (old-contribution accounting, delete-then-reinsert,
+    recompute; everything else (old-contribution accounting, the mention-row diff write,
     counter deltas, when/where/who, commit) is unchanged and still runs HERE, in this
     session, serially — only the CPU-bound text extraction itself may have happened
     elsewhere."""
@@ -606,7 +606,15 @@ def index_article(
     #
     # The same read serves the diff write below (which rows to keep, update, remove), so
     # the rows are read ONCE for both, whether or not the counters are maintained.
+    #
+    # The write window is taken BEFORE that read: the diff writes by row id, so a row another
+    # writer (a keyword fold, a cleanup re-index, a re-poll, an orphan prune) removed or merged
+    # between a read and the first write would be updated for nothing or inserted twice. A
+    # no-op when the session is not gated (a test's, or the gate switched off).
+    from src.database.writer import hold_write_window
+
     _t_read = time.monotonic() if timings is not None else 0.0
+    hold_write_window(session)
     old_rows = _read_mention_rows(session, article.id)
     old_contrib: dict[int, int] = {}
     if maintain_counters:
@@ -784,7 +792,7 @@ def index_article(
             # above in this same transaction.
             # ``precomputed_www`` (2026-07-30): the EXTRACTION half, already done in a
             # worker process. Only the STORE half runs here -- savepoint, live-session
-            # error handling, delete-then-reinsert -- which is where it belongs and
+            # error handling, the diff write -- which is where it belongs and
             # which is cheap. A missing key means "not precomputed" and the store
             # extracts inline exactly as before; that is deliberately NOT the same as
             # "nothing found", so a partial precompute degrades to correct-and-slower,
@@ -991,7 +999,7 @@ def reindex_articles(
     Used after a backup MERGE (maintainer ruling 2026-06-19 P0-4): an imported
     backup may have been produced by an OLDER extraction engine, so its merged-in
     keyword/date/place/entity rows can be misaligned with the CURRENT engine.
-    ``index_article`` is delete-then-reinsert per article, so it OVERWRITES those
+    ``index_article`` rewrites each article's difference, so it OVERWRITES those
     rows with current-engine output (keywords, mentions, sentiment, when/where/who).
     AI artifacts (``article_analyses`` summaries/translations + the AI-derived keyword
     rows) are NOT touched by ``index_article``, so they stay verbatim. Idempotent; one
@@ -1011,7 +1019,7 @@ def reindex_articles(
     articles via :func:`src.analytics.reindex_parallel.precompute_batch` (a bounded
     process pool when the window is large enough; ``workers=0`` or a tiny remainder
     always falls back to the exact serial computation). Everything else (old-
-    contribution accounting, delete-then-reinsert, counter deltas, when/where/who,
+    contribution accounting, the mention-row diff write, counter deltas, when/where/who,
     the commit itself) is UNCHANGED and still runs here, serially, in this session.
 
     ``progress_cb(done, total)``, if given, is called after every article is
@@ -1022,7 +1030,7 @@ def reindex_articles(
     ``stats`` (optional out-parameter, 2026-07-29 "instrument first"): fills in the
     measured split -- ``load_s`` (fetch + decompress the article bodies), ``precompute_s``
     (the pure, parallelisable extraction + sentiment), ``apply_s`` (the serial DB write:
-    delete-then-reinsert, counter deltas, when/where/who, commits) and the
+    the mention-row diff write, counter deltas, when/where/who, commits) and the
     ``precompute`` sub-dict from :func:`~src.analytics.reindex_parallel.precompute_batch`
     naming WHICH path ran. That split is the whole point: it says whether a slow
     re-index is CPU-bound (precompute), write-bound (apply), or silently degraded to
@@ -1046,7 +1054,7 @@ def reindex_articles(
     ("invoke it ONCE per logical mutation ... never in a per-row loop"). A caller that
     passes False MUST bump at the START of its run AND again at the END: a start-only
     bump would leave a rollup snapshot taken mid-run at a constant epoch, and an
-    incremental merge against a delete-then-reinsert is exactly the double-count the
+    incremental merge across a re-index (rows changed in place below its watermark) is exactly the stale count the
     epoch exists to prevent. Per-batch bumping closed that window by accident; the end
     bump closes it on purpose."""
     total = len(article_ids)
@@ -1060,9 +1068,11 @@ def reindex_articles(
     # that runs correctly. Keep these two beside ``reindexed``/``failed``, which are
     # accumulators of the same kind and already had to live up here for that reason.
     _apply_index_s = _apply_commit_s = 0.0
-    # Mention rows this call actually COMMITTED -- the numerator of the keywords/h
-    # the job reports. A real measurement of the same work, never the article rate
-    # multiplied by an assumed average per article.
+    # Mention rows the committed articles NOW HOLD (rows left alone included: it is the
+    # keywords/h numerator the job reports, so the figure keeps meaning "keywords processed"
+    # across the change to a diff write; ``mention_diff`` below says how many were rewritten).
+    # A real measurement of the same work, never the article rate multiplied by an assumed
+    # average per article.
     mentions_written = 0
     # What the mention rewrite did, in rows, banked only when a commit lands (like
     # ``mentions_written``): rows left alone, updated in place, deleted, inserted. Together
@@ -1498,7 +1508,7 @@ def reindex_all_batch(
     Unlike :func:`backfill_corpus` (which skips already-indexed articles), this
     recomputes EVERY article's CORE-ENGINE metadata — needed to drain stale rows an
     OLD engine produced (e.g. the pre-2026-06-20 .eml bodies that leaked bare CSS
-    keywords before ``strip_markup`` landed). ``index_article`` is delete-then-reinsert
+    keywords before ``strip_markup`` landed). ``index_article`` rewrites the difference
     per article, so the new engine's output overwrites the old; AI artifacts
     (summaries/translations and the AI-derived keyword rows) are untouched. PAGED:
     returns ``last_id`` so the caller loops (after_id=last_id) until ``done``. One bad

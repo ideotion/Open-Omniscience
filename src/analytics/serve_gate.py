@@ -20,8 +20,10 @@ timer lacks, so a rebuild happens on CHANGE, not on a timer:
 
 HONEST LIMIT (why the callers keep a long backstop TTL): a change that neither bumps the
 epoch nor moves a max id — a re-index's in-place update of a mention row (the drain
-bumps the epoch at its start and end, so only the minutes between are blind), a cascade delete of mentions, a sentiment backfill on existing
-articles, a source-country edit — is INVISIBLE to this token. The backstop rebuild bounds
+bumps the epoch at its start and end, but a drain lasts hours to days and an update in place
+moves no id, so the whole run between the two bumps is blind to a counts-only change; a wiki
+or law re-index of an existing article bumps none), a cascade delete of mentions, a sentiment
+backfill on existing articles, a source-country edit — is INVISIBLE to this token. The backstop rebuild bounds
 that staleness, and the serve's ``basis``/``as_of`` disclosure keeps it visible either way.
 
 A coordination read, not an analytic; never a score. Any error -> ``None`` (the caller

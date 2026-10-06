@@ -977,7 +977,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
 
     # -- capture the scan boundary ONCE, before the loop begins (see the docstring's
-    # PR-D / W2 correction) -- a concurrent delete-then-reinsert can never land inside it.
+    # PR-D / W2 correction) -- a concurrent re-index's rewrite can never land inside it.
     scan_bound = session.execute(_sql("SELECT MAX(created_at) FROM keyword_mentions")).scalar()
 
     # -- stream mentions -> DuckDB staging (dates kept as text; cast in the GROUP BY) ---- #

@@ -63,6 +63,8 @@ def drain(monkeypatch):
         "deferrals": [], "finishes": [],
         # What each finish_deferral call was handed, and every corpus lease taken.
         "finish_kw": [], "leases": [],
+        # The epoch bumps already made when each reconcile started.
+        "bumps_at_finish": [],
     }
     state = {
         "batches": [{"batch_id": 7, "articles": 4}, {"batch_id": 9, "articles": 6}],
@@ -155,6 +157,7 @@ def drain(monkeypatch):
 
     def _finish(_s, **kw):
         rec["finishes"].append(True)
+        rec["bumps_at_finish"].append(list(rec["bumps"]))
         rec["finish_kw"].append(kw)
         return {"reconciled": True, "closed": True, "complete": True}
 
@@ -347,9 +350,45 @@ def test_the_precompute_path_is_carried_so_a_silent_fallback_shows(drain):
 
 def test_the_epoch_is_bumped_once_per_run_not_once_per_batch(drain):
     state, rec = drain
+    state["scheduler_running"] = True  # the counters are maintained per article: no sweep
     bv2._reindex_resume_worker(_Ctx())
 
     assert all(c["bump_epoch"] is False for c in rec["calls"]), "the batches must not bump"
+    assert rec["bumps"] == ["reindex-resume:start", "reindex-resume:end"]
+
+
+def test_the_closing_bump_lands_before_the_whole_corpus_sweep_and_again_after_it(drain):
+    """A run killed inside the sweep (minutes on a large corpus) must already have bumped: the
+    next run finds no batch left, walks none and would never bump, so a rollup built from the
+    middle of this run would keep the old numbers of rows changed in place. The second bump
+    covers the counters the sweep changed, which the rollup's keyword table copies."""
+    state, rec = drain
+    state["scheduler_running"] = False  # deferred counters: the run ends with the sweep
+
+    bv2._reindex_resume_worker(_Ctx())
+
+    assert rec["finishes"] == [True]
+    assert rec["bumps_at_finish"] == [["reindex-resume:start", "reindex-resume:end"]]
+    assert rec["bumps"] == [
+        "reindex-resume:start", "reindex-resume:end", "reindex-resume:reconciled",
+    ]
+
+
+def test_a_run_killed_inside_the_sweep_has_already_bumped(drain, monkeypatch):
+    state, rec = drain
+    state["scheduler_running"] = False
+
+    class _Killed(BaseException):
+        pass
+
+    def _dies(_s, **kw):
+        rec["bumps_at_finish"].append(list(rec["bumps"]))
+        raise _Killed
+
+    monkeypatch.setattr("src.analytics.store.finish_deferral", _dies)
+    with pytest.raises(_Killed):
+        bv2._reindex_resume_worker(_Ctx())
+    assert rec["bumps_at_finish"] == [["reindex-resume:start", "reindex-resume:end"]]
     assert rec["bumps"] == ["reindex-resume:start", "reindex-resume:end"]
 
 
@@ -367,9 +406,22 @@ def test_the_closing_bump_lands_even_when_the_run_is_cancelled(drain):
         def stopping(self, _v):
             pass
 
+    state["scheduler_running"] = True
     out = bv2._reindex_resume_worker(_StopsAfterOne())
     assert out["stopped"] is True
     assert len(rec["calls"]) == 1
+    assert rec["bumps"] == ["reindex-resume:start", "reindex-resume:end"]
+
+
+def test_a_resumed_run_whose_articles_were_all_finished_still_ends_with_its_bump(drain):
+    """The run that was killed finished every article but never bumped: this one walks the
+    batches, re-indexes nothing (the stats say so) and must still end with the bump, because
+    rows changed in place since a rollup was built from the middle of that run are only
+    invalidated by an epoch change."""
+    state, rec = drain
+    state["scheduler_running"] = True
+    state["stats"] = None
+    bv2._reindex_resume_worker(_Ctx())
     assert rec["bumps"] == ["reindex-resume:start", "reindex-resume:end"]
 
 

@@ -424,16 +424,6 @@ def test_the_run_metrics_carry_the_new_numbers():
     assert out["apply_split"] == {"mentions_write_s": 0.5, "www_s": 1.0}
 
 
-def test_a_run_that_walked_a_batch_always_ends_with_its_epoch_bump():
-    """A RESUMED drain whose articles were all finished by the run that was killed before it
-    could bump: nothing re-indexed this time, and the end bump must still land (the start bump
-    already did; rows changed in place after a mid-run rollup are invalidated only by it)."""
-    from src.api import backup_v2 as bv2
-
-    src = open(bv2.__file__, encoding="utf-8").read()
-    assert "if batches:\n            _bump(\"reindex-resume:end\")" in src
-
-
 def test_the_diff_write_uses_no_row_scan_beyond_the_articles_own_index():
     """The old-row read is one indexed lookup on article_id, never a scan."""
     from sqlalchemy import text
@@ -442,3 +432,120 @@ def test_the_diff_write_uses_no_row_scan_beyond_the_articles_own_index():
     q = "EXPLAIN QUERY PLAN SELECT id, keyword_id, count, first_offset, observed_on, country, city, language, source_id, extractor FROM keyword_mentions WHERE article_id = 1"
     plan = " ".join(str(r[3]) for r in s.execute(text(q)))
     assert "SCAN keyword_mentions" not in plan and "ix_mention_article" in plan, plan
+
+
+# ---- the read is taken inside the write window ----------------------------------------
+
+
+def _gated_sessionmaker(tmp_path):
+    """A file-backed SQLite sessionmaker with the REAL gate handlers attached, so two sessions
+    in two threads genuinely contend (the idiom tests/test_c8_keyword_cleanup_honesty.py uses)."""
+    from sqlalchemy import event
+
+    from src.database.writer import _on_after_transaction_end, _on_before_flush, _on_orm_execute
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'diff.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+
+    @event.listens_for(engine, "connect")
+    def _pragmas(dbapi_conn, _rec):  # pragma: no cover - trivial
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.close()
+
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, autoflush=False, future=True)
+    event.listen(maker, "before_flush", _on_before_flush)
+    event.listen(maker, "do_orm_execute", _on_orm_execute)
+    event.listen(maker, "after_transaction_end", _on_after_transaction_end)
+    s = maker()
+    s.add(Source(name="S", domain="s.test"))
+    s.commit()
+    s.close()
+    return maker
+
+
+def test_hold_write_window_takes_and_releases_the_window_for_a_gated_session(tmp_path):
+    from src.database.writer import hold_write_window, write_gate
+
+    maker = _gated_sessionmaker(tmp_path)
+    s = maker()
+    assert not write_gate.held_by_current_thread()
+    assert hold_write_window(s) is True
+    assert write_gate.held_by_current_thread()
+    assert hold_write_window(s) is True  # idempotent: one hold, not two
+    s.rollback()  # the transaction's end releases it, exactly as when a write took it
+    assert not write_gate.held_by_current_thread()
+    s.close()
+
+
+def test_hold_write_window_leaves_an_ungated_session_alone():
+    """A session that nothing would release must never be handed the window: a leaked window
+    stops every other writer for good."""
+    from src.database.writer import hold_write_window, write_gate
+
+    s = _session()
+    assert hold_write_window(s) is False
+    assert not write_gate.held_by_current_thread()
+
+
+def test_a_writer_that_lands_between_the_read_and_the_write_cannot_leave_a_stale_diff(tmp_path):
+    """The old rows are read INSIDE the write window. Another writer (a keyword fold, a cleanup
+    re-index, an orphan prune) removes the article's row for keyword ``b`` while this re-index
+    waits for the window; the re-index must then see ``b`` as gone and write it back, not keep
+    a row that no longer exists. Read before the window and ``b`` stays missing."""
+    import threading
+    import time
+
+    from src.database.writer import write_gate
+
+    maker = _gated_sessionmaker(tmp_path)
+    setup = maker()
+    art = _article(setup, "race")
+    ex = _Ex([_t("a"), _t("b")])
+    index_article(setup, art, extractor=ex, country=None, city=None)
+    setup.commit()
+    art_id = art.id
+    setup.close()
+
+    holding = threading.Event()
+    other_done = threading.Event()
+    problems: list[BaseException] = []
+
+    def other_writer():
+        s = maker()
+        try:
+            kid = s.execute(select(Keyword.id).where(Keyword.normalized_term == "b")).scalar_one()
+            s.execute(_MT.delete().where(_MT.c.article_id == art_id, _MT.c.keyword_id == kid))
+            holding.set()  # the window is held from the delete on
+            deadline = time.monotonic() + 10
+            while write_gate.stats().get("queued", 0) < 1 and time.monotonic() < deadline:
+                time.sleep(0.01)  # until the re-index is waiting behind it
+            s.commit()
+        except BaseException as exc:  # noqa: BLE001 - carried to the test thread
+            problems.append(exc)
+            s.rollback()
+        finally:
+            s.close()
+            other_done.set()
+
+    t = threading.Thread(target=other_writer)
+    t.start()
+    assert holding.wait(10)
+    main = maker()
+    try:
+        art_row = main.get(Article, art_id)
+        index_article(main, art_row, extractor=ex, country=None, city=None)  # same terms: b must come back
+        main.commit()
+        t.join(10)
+        assert other_done.is_set() and not problems, problems
+        terms = {
+            n for (n,) in main.execute(
+                select(Keyword.normalized_term).join(_MT, _MT.c.keyword_id == Keyword.id).where(_MT.c.article_id == art_id)
+            )
+        }
+        assert terms == {"a", "b"}, f"the re-index worked from a stale read and lost 'b': {terms}"
+    finally:
+        main.close()

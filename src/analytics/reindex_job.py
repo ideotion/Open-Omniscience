@@ -22,7 +22,7 @@ per-article ``index_article`` takes the SINGLE-WRITER GATE on each flush/commit 
 RELEASES it between articles — so a live scrape interleaves cooperatively (never a
 silent collision, never a multi-hour gate hold). ZERO network (pure DB work).
 
-Re-index is idempotent (``index_article`` is delete-then-reinsert with exact counter
+Re-index is idempotent (``index_article`` rewrites the difference with exact counter
 deltas), so a resumed/restarted run never double-counts or loses keyword rows — the
 correctness net beneath the persisted cursor.
 """
@@ -393,7 +393,7 @@ class ReindexJobManager:
             finally:
                 # THE CLOSING HALF of the once-per-run bump above. In the `finally` so a
                 # pause, a cancel and a crash all land it: every article this run DID
-                # re-index is committed and delete-then-reinserted, so a rollup that
+                # re-index is committed and its changed rows rewritten, so a rollup that
                 # snapshotted mid-run must be invalidated whatever ended the run. Its own
                 # try/except because a `finally` may run on an already-broken session and
                 # a cache-coordination write must never replace the real error.

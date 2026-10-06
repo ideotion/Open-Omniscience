@@ -3605,7 +3605,7 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
     Three things fall out of it, all wanted:
       * the merge stops writing the largest table in the artifact (~10M rows for a
         50k-article backup), which is the single biggest write in a large import;
-      * the re-index stops delete-then-reinserting rows it was about to replace anyway;
+      * the re-index stops rewriting rows it was about to replace anyway;
       * the keyword-counter drift is fixed BY CONSTRUCTION -- counters could never absorb
         a merged corpus (the INSERT omitted the counter columns under a NOT EXISTS that
         never updated), and the re-index then read `old_contrib` from the live rows, which
@@ -5922,7 +5922,7 @@ def _corpus_snapshot(session) -> dict:
 #     backlog", and it is what makes the work impossible to forget.
 #   * a small marker file -- the WATERMARK, for resuming mid-batch without redoing work.
 #     Its loss costs time, never correctness: the re-index is idempotent (it
-#     delete-then-reinserts), so a lost watermark just redoes a batch already known to be
+#     rewrites the difference), so a lost watermark just redoes a batch already known to be
 #     pending from the DB. It is deliberately NOT the source of truth.
 #
 # The asymmetry is the point: the cheap, losable thing is the optimisation, and the
@@ -6305,7 +6305,7 @@ def reindex_imported_articles(
         batch_ids = {int(r[0]) for r in rows}
         # R24: an article whose rows are already stamped by the engine this re-index would
         # run -- carried at import, or finished by an earlier interrupted run -- would be
-        # delete-then-reinserted into exactly the rows it already has. Skipped. Read from
+        # re-indexed into exactly the rows it already has. Skipped. Read from
         # the narrow stamps table, never from the article rows.
         certified = {
             int(r[0])
