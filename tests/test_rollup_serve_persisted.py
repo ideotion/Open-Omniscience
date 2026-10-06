@@ -92,7 +92,7 @@ def _persisted_stub(store_path):
     serve concurrency/incremental/durability logic under test is crypto-independent."""
     import duckdb
 
-    def _connect(passphrase=None):
+    def _connect(passphrase=None, **_kw):
         if passphrase:
             return duckdb.connect(str(store_path))
         return duckdb.connect(":memory:")
@@ -133,6 +133,10 @@ def test_dispatcher_routes_to_persisted_when_active(monkeypatch):
                         lambda: calls.__setitem__("persisted", calls["persisted"] + 1))
     monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap",
                         lambda: calls.__setitem__("memory", calls["memory"] + 1))
+    # the start check and the killed-build check read the host's real free memory: not what this tests
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
     for active, key in [(True, "persisted"), (False, "memory")]:
         monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda a=active: a)
         rollup_serve._BUILD_LOCK.acquire()  # the dispatcher releases it in finally

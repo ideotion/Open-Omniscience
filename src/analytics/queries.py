@@ -47,10 +47,16 @@ def _chunked(ids: list[int], size: int = _IN_CHUNK):
         yield ids[i : i + size]
 
 
-def kind_of(kw: Keyword) -> str:
-    if not kw.is_entity:
+def kind_from(is_entity, entity_type) -> str:
+    """The kind of a keyword from its two stored columns. ``kind_of`` and the rollup's streamed
+    keyword projection (no ORM entity, so no ``Keyword`` to hand ``kind_of``) share this ONE rule."""
+    if not is_entity:
         return "term"
-    return kw.entity_type or "entity"
+    return entity_type or "entity"
+
+
+def kind_of(kw: Keyword) -> str:
+    return kind_from(kw.is_entity, kw.entity_type)
 
 
 def _normalize(term: str) -> str:

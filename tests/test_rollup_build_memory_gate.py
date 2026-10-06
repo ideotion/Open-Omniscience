@@ -19,12 +19,20 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _clean_skip():
+def _clean_skip(monkeypatch):
     from src.analytics import rollup_serve
 
+    # The start check and the killed-build check read the machine's REAL free memory; these tests are about
+    # the guard's verdict alone, so the two are out of the picture (tests/test_rollup_build_streaming.py
+    # covers them against injected readings), and the results do not depend on how loaded the host is.
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
     rollup_serve._STATE["last_skip"] = None
+    rollup_serve._STATE["stopped"] = None
     yield
     rollup_serve._STATE["last_skip"] = None
+    rollup_serve._STATE["stopped"] = None
 
 
 class _Guard:

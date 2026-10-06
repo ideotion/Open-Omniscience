@@ -35,15 +35,36 @@ the mode + build state so the self-optimisation is observable. SAFE BY CONSTRUCT
     — the caller attaches a ``basis`` disclosure stating the source + as-of.
 
 In-memory only (never a plaintext file). The canonical SQLCipher store is always the
-source of truth.
+source of truth. THE ONE EXCEPTION IS DUCKDB'S OWN OFFLOAD, and it is decided by the corpus: with
+an ENCRYPTED corpus the engine is given no temporary directory, so a build that outgrows its memory
+limit is declined instead of writing derived counts to disk; with a plaintext corpus (nothing on
+that disk is secret) it may offload into ``<data dir>/duckdb_tmp/<pid>-<id>``, ONE FOLDER PER CONNECTION
+(a rebuild stages while the previous rollup is still serving, and two live connections must never share
+or empty one folder: DuckDB then fails the serving connection's queries, and in testing crashed the
+process), removed when that connection is retired; the folders of processes that are gone are swept at
+the next build (in either mode, so a corpus encrypted later does not keep what an earlier, plaintext
+build left). The OTHER in-memory stores (the map, the benchmarks) still use DuckDB's own
+default for the offload directory: that is recorded in OPEN_QUEUE.md, not changed here.
+
+THE BUILD NEVER TAKES MORE MEMORY THAN THE MACHINE HAS (diagnostics of 2026-10-06: eight 4.81 GiB
+VMs killed 12 times inside this build). Four layers, each measured and none a fixed cap: a start
+check (the limit DuckDB may use, one batch, and the guard's floor, against what is available now);
+the guard polled after every batch; the last build's in-progress marker (``rollup_marker``), so a
+build that was killed is not started again identically at every boot; and DuckDB's own memory limit
+from the machine's budget. Any of them stops the build as a DECLINE: nothing is swapped in and queries
+fall back to live ones. A build that was stopped PART-WAY is not started again until the condition that
+stopped it has changed (``_stopped_build_verdict``), or every serve request would rescan the corpus up to
+the same point.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
 import time
+import uuid
 
 from sqlalchemy.orm import Session
 
@@ -74,6 +95,12 @@ _STATE: dict = {
     # S3.5: the last time the AUTO-ON background build declined to run, and why.
     # None == it has never declined. A skip is a disclosure, never a silent no-op.
     "last_skip": None,
+    # What stopped the last build PART-WAY (None once a build has finished): the reason and the numbers
+    # the retry rule compares the machine against.
+    "stopped": None,
+    # The offload folder of the connection in "con" (None when it has none): removed when that
+    # connection is replaced.
+    "spill": None,
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
@@ -183,25 +210,67 @@ def status() -> dict:
     }
 
 
-def _build_inmemory_and_swap() -> None:
+def _build_inmemory_and_swap() -> dict | None:
     """Build a FRESH in-memory rollup on its own session/connection, then swap it in (a serve
     never touches a half-built store). The in-memory store is rebuilt per process, so a FULL
     build is used (always correct -- no incremental double-count trap). Raises on error (the
-    dispatcher logs + releases the build lock)."""
-    from src.analytics import columnar, serve_gate
+    dispatcher logs + releases the build lock).
+
+    Returns ``None`` when the rollup was built and swapped in, or a skip record when the build was
+    STOPPED part-way (the memory guard engaged, or DuckDB reached its own limit with no offload
+    allowed): nothing is swapped in and the previous rollup keeps serving."""
+    from src.analytics import columnar, rollup_marker, serve_gate
     from src.database.session import session_scope
 
-    con = columnar.connect(passphrase=None)  # no passphrase -> in-memory (never a file)
+    # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
+    spill = _spill_setting()
+    try:
+        con = columnar.connect(passphrase=None, spill=spill)
+    except BaseException:
+        _remove_spill(spill)
+        raise
     if con is None:
-        return
-    with session_scope() as s:
-        # Token BEFORE the build (conservative: rows landing DURING the build make the
-        # recorded token compare "changed" next check -> one extra rebuild, never a
-        # silently-missed one).
-        token = serve_gate.change_token(s)
-        columnar.build_keyword_daily(con, s)
-        rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
-        built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+        _remove_spill(spill)
+        return None
+    r = _readings()
+    ok = False
+    try:
+        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
+        with session_scope() as s:
+            # Token BEFORE the build (conservative: rows landing DURING the build make the
+            # recorded token compare "changed" next check -> one extra rebuild, never a
+            # silently-missed one).
+            token = serve_gate.change_token(s)
+            # the token's second element IS the newest mention id (read in this same session already)
+            total_hint = int(token[1]) if token and len(token) > 1 and token[1] is not None else None
+            skip: dict | None
+            try:
+                columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
+            except columnar.BuildDeclined as stop:
+                skip = {"reason": stop.reason, "at": time.time(), **stop.detail}
+            except Exception as exc:  # noqa: BLE001
+                if type(exc).__name__ != "OutOfMemoryException":
+                    raise
+                # DuckDB reached its memory limit and may not offload: the bound held, so decline.
+                skip = {"reason": "duckdb-limit", "at": time.time(),
+                        "duckdb_limit_mb": _duckdb_limit_mb(), "error": str(exc)[:200]}
+            else:
+                skip = None
+            if skip is not None:
+                skip.update({
+                    "begin_rss_mb": r["rss_mb"], "mentions_total": total_hint,
+                    "epoch": token[0] if token else None,
+                })
+                return skip
+            rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+            built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+        ok = True
+    finally:
+        rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
+        if not ok:  # a decline or an error: this connection is never served, so it must not leak
+            with contextlib.suppress(Exception):
+                con.close()
+            _remove_spill(spill)  # after the close: DuckDB holds its files open until then
     with _LOCK:
         old = _STATE["con"]
         _STATE["con"] = con
@@ -211,12 +280,22 @@ def _build_inmemory_and_swap() -> None:
         _STATE["bind"] = built_bind
         _STATE["token"] = token
         _STATE["pending"] = False
+        old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
             try:
                 old.close()  # safe: serves hold _LOCK, so none is mid-query here
             except Exception:  # noqa: BLE001
                 pass
+        _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
+    return None
+
+
+def columnar_batch_mb() -> float:
+    """What one batch of the build costs in Python, in MB (the start check's own figure)."""
+    from src.analytics import columnar
+
+    return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
 
 
 def _refresh_persisted_build() -> None:
@@ -271,6 +350,264 @@ def _refresh_persisted_build() -> None:
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
 
 
+#: What one batch of the build costs in Python while it is being bound, in bytes per row. Measured
+#: on the 50,000-row batches of both streams (tuples, the JSON text and the parameters together, short
+#: terms): about 300 to 450; 600 leaves room for longer terms. It sizes the start check only.
+_CHUNK_ROW_BYTES = 600
+
+#: DuckDB's memory limit counts its buffer pool, not everything it allocates (hash tables of the
+#: grouping, the connection's own working memory), so the process grows past it. Measured on a seeded
+#: corpus of 12 million mentions and 1.5 million keywords with the limit at 740 MB (a 4.81 GiB
+#: machine): the process peaked at 1,193 MB resident, about 120 MB of it already there before the
+#: build, so the build added about 1,070 MB, 1.45 times the limit. 1.5 leaves the measured margin.
+_LIMIT_OVERSHOOT = 1.5
+
+
+def _readings() -> dict:
+    """This process's resident size and the machine's available memory, in MB (None where unread)."""
+    out: dict = {"rss_mb": None, "avail_mb": None}
+    try:
+        import psutil
+
+        out["avail_mb"] = round(psutil.virtual_memory().available / (1024 * 1024), 1)
+        out["rss_mb"] = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
+    except Exception:  # noqa: BLE001 - a missing reading is "no information", never a verdict
+        pass
+    return out
+
+
+def _guard_floor_mb() -> float:
+    try:
+        from src.scheduler.memguard import memory_guard
+
+        return float(memory_guard.avail_floor_mb)
+    except Exception:  # noqa: BLE001
+        return 256.0
+
+
+def _duckdb_limit_mb() -> float:
+    from src.config.memory_budget import budget
+
+    return float(budget()["duckdb_memory_limit_mb"])
+
+
+def _affordability_verdict() -> dict | None:
+    """Decline a build the machine cannot afford at ITS START, from what is measured now.
+
+    The most the build can add is what DuckDB may take (its memory limit, from the machine's own
+    budget, times the measured overshoot above; a serving rollup's resident size is already inside the
+    available figure), one batch in Python, and the margin the memory guard itself keeps. If that is more than is available the build
+    does not start; the readings are returned. Unreadable memory is no evidence: the build proceeds,
+    and the guard polled after every batch is the net beneath."""
+    try:
+        if _persisted_serve_active():
+            return None  # the persisted refresh is incremental and does not hold a corpus in memory
+        avail = _readings()["avail_mb"]
+        if avail is None:
+            return None
+        limit = _duckdb_limit_mb()
+        chunk = columnar_batch_mb()
+        floor = _guard_floor_mb()
+        need = limit * _LIMIT_OVERSHOOT + chunk + floor
+        if avail >= need:
+            return None
+        return {
+            "reason": "mem-short",
+            "at": time.time(),
+            "needs_available_mb": round(need, 1),
+            "available_mb": avail,
+            "duckdb_limit_mb": limit,
+            "limit_overshoot": _LIMIT_OVERSHOOT,
+            "batch_mb": round(chunk, 1),
+            "guard_floor_mb": floor,
+        }
+    except Exception:  # noqa: BLE001 - an unreadable budget must not block the build
+        return None
+
+
+def _current_epoch() -> int | None:
+    """The corpus epoch now (the first element of the serve gate's change token), or None if unreadable."""
+    try:
+        from src.analytics import serve_gate
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            tok = serve_gate.change_token(s)
+        return int(tok[0]) if tok else None
+    except Exception:  # noqa: BLE001 - unreadable -> no release (the hold stays as it was)
+        return None
+
+
+def _last_build_verdict() -> dict | None:
+    """Decline while the machine does not have what a KILLED earlier build held (see rollup_marker)."""
+    try:
+        from src.analytics import rollup_marker
+
+        if _persisted_serve_active():
+            return None
+        return rollup_marker.retry_verdict(_readings()["avail_mb"], _guard_floor_mb())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _stopped_build_verdict() -> dict | None:
+    """Decline while the condition that stopped the last build PART-WAY still holds.
+
+    Without it a stopped build is started again by the very next serve request (``windowed_rows`` kicks
+    one whenever no rollup is built) and rescans the corpus up to the same point, again and again. Two
+    stops, two measured rules and no timer: a corpus that outgrew DuckDB's limit with no offload allowed
+    is retried when the budget's limit is LARGER than the one it stopped at; a build the memory guard
+    stopped is retried when the machine has what that build had grown by, plus the guard's floor."""
+    with _LOCK:
+        st = _STATE.get("stopped")
+    if not st or _persisted_serve_active():
+        return None
+    try:
+        # A corpus that has been re-indexed, pruned or restored is a different corpus (the epoch moves for
+        # exactly those); what stopped the last build says nothing about it, so the hold is released.
+        # Not before the rebuild TTL (``rollup_serve_ttl_s``, the churn bound every rebuild already honours):
+        # ``/api/insights/reindex-all`` bumps the epoch on EVERY 300-article call, and a release per call would
+        # bring the rescan loop back for the length of that drain.
+        now_epoch = _current_epoch() if time.time() - float(st.get("at") or 0.0) >= rollup_serve_ttl_s() else None
+        if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
+            with _LOCK:
+                _STATE["stopped"] = None
+            return None
+        if st.get("reason") == "duckdb-limit":
+            limit = _duckdb_limit_mb()
+            if limit > float(st.get("duckdb_limit_mb") or 0):
+                return None
+            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
+                    "stopped_at": st.get("at"), "note": "retried when the memory budget's limit grows"}
+        avail = _readings()["avail_mb"]
+        if avail is None:
+            return None
+        need = float(st.get("grew_mb") or 0.0) + _guard_floor_mb()
+        if avail >= need:
+            return None
+        return {"reason": "mem-low", "at": time.time(), "stopped_at": st.get("at"),
+                "needs_available_mb": round(need, 1), "available_mb": avail,
+                "grew_mb": st.get("grew_mb"), "stage": st.get("stage")}
+    except Exception:  # noqa: BLE001 - an unreadable budget must not block the build
+        return None
+
+
+def _corpus_encrypted() -> bool:
+    """True when the corpus is unlocked under a passphrase (the encrypted-at-rest case)."""
+    try:
+        from src.database.connect import get_passphrase
+
+        return bool(get_passphrase())
+    except Exception:  # noqa: BLE001 - any doubt -> treat as encrypted (the stricter reading)
+        return True
+
+
+#: Set once this process has swept the folders a PREVIOUS process with the same pid left behind (a container
+#: restarts as pid 1 every time). After that, this pid's folders are live connections' and are never swept.
+_OWN_SPILL_SWEPT = False
+
+
+def _sweep_spill_folders(root) -> None:
+    """Remove the offload folders of processes that are gone (and nothing else): the folders are named
+    ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any."""
+    import shutil
+
+    global _OWN_SPILL_SWEPT
+    try:
+        import psutil
+    except ImportError:
+        return  # no way to tell a live process from a dead one: leave them
+    mine = os.getpid()
+    for child in root.iterdir():
+        head = child.name.split("-", 1)[0]
+        if not (child.is_dir() and head.isdigit()):
+            continue
+        pid = int(head)
+        if pid == mine:
+            if not _OWN_SPILL_SWEPT:
+                shutil.rmtree(child, ignore_errors=True)
+        elif not psutil.pid_exists(pid):
+            shutil.rmtree(child, ignore_errors=True)
+    _OWN_SPILL_SWEPT = True
+
+
+def _remove_spill(path: str | None) -> None:
+    """Remove ONE connection's offload folder, after that connection is closed."""
+    if path:
+        import shutil
+
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _spill_setting() -> str:
+    """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else a NEW
+    folder under the data directory for this connection alone. The folders of processes that are gone are
+    swept in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must
+    not stay."""
+    encrypted = _corpus_encrypted()
+    try:
+        from src.paths import data_dir
+
+        global _OWN_SPILL_SWEPT
+        root = data_dir() / "duckdb_tmp"
+        if root.is_dir():
+            _sweep_spill_folders(root)
+        _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
+        if encrypted:
+            return ""
+        root.mkdir(parents=True, exist_ok=True)
+        mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        mine.mkdir()
+        return str(mine)
+    except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
+        return ""
+
+
+#: The memory guard counts ``trip_after`` CONSECUTIVE over-threshold samples, tuned for a monitor that
+#: samples about once a second. The build asks it after every batch, which at ~560 thousand rows/s is
+#: several times a second, so three sub-second spikes would trip the process-wide guard (and pause
+#: collection). The hook asks at most this often.
+_GUARD_POLL_EVERY_S = 1.0
+#: When ``_memory_verdict`` last took its own reading (see there).
+_LAST_VERDICT_POLL = float("-inf")
+
+
+def _make_on_batch():
+    """The per-batch hook of the build: refresh the in-progress marker, then ask the memory guard."""
+
+    last_poll = [float("-inf")]  # never a clock-dependent 0.0: a fresh runner's monotonic clock starts near it
+
+    def _on_batch(stage: str, rows_done: int) -> None:
+        from src.analytics import columnar, rollup_marker
+
+        r = _readings()
+        rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
+        now = time.monotonic()
+        if now - last_poll[0] < _GUARD_POLL_EVERY_S:
+            return
+        last_poll[0] = now
+        try:
+            from src.scheduler.memguard import memory_guard
+
+            poll = getattr(memory_guard, "poll", None)
+            if poll is None or not poll():
+                return
+            st = memory_guard.state()
+        except Exception:  # noqa: BLE001 - an unreadable guard must not stop the build
+            return
+        raise columnar.BuildDeclined("mem-low", {
+            "stage": stage,
+            "rows_done": rows_done,
+            "guard_reason": st.get("reason"),
+            "last_reading": st.get("last_reading"),
+            "readings_available": st.get("readings_available"),
+            "rss_mb": r["rss_mb"],
+            "available_mb": r["avail_mb"],
+        })
+
+    return _on_batch
+
+
 def _memory_verdict() -> dict | None:
     """The memory guard's OWN verdict on whether a whole-corpus build should start now.
 
@@ -283,6 +620,18 @@ def _memory_verdict() -> dict | None:
     """
     try:
         from src.scheduler.memguard import memory_guard
+
+        # The guard is released only by a SAMPLE that finds memory healthy again, and the samples come from
+        # collection passes. While collection is paused the guard can therefore stay engaged for good, the
+        # build's own poll having engaged it, and keep the rollup off with no one left to release it: take one
+        # fresh reading here, at most as often as the build asks (``_GUARD_POLL_EVERY_S``).
+        global _LAST_VERDICT_POLL
+        now = time.monotonic()
+        if memory_guard.engaged and now - _LAST_VERDICT_POLL >= _GUARD_POLL_EVERY_S:
+            _LAST_VERDICT_POLL = now
+            poll = getattr(memory_guard, "poll", None)
+            if poll is not None:
+                poll()
         # `engaged` is a PROPERTY, not a method -- calling it raises TypeError, and a
         # bare except here would have swallowed that into "not engaged" forever.
         if not memory_guard.engaged:
@@ -316,12 +665,20 @@ def build_now_and_wait() -> str:
 
     Returns what happened: ``built``, ``declined`` (memory, an import's exclusive window: the serve
     keeps falling back to live queries and retries on its next check, exactly as for the background
-    kick), ``failed``, or ``waited`` when a build a serve kicked was already running and this
-    waited for that one instead of starting a second."""
+    kick) or ``failed``. When a build a serve kicked was already running, this waits for it
+    instead of starting a second and reports THAT build's outcome, so a boot step never shows
+    ``done`` for a build that declined or failed. That wait is real (the call blocks on the lock until the
+    running build ends), and the one caller, ``boot_sequence._rollup_first_build``, acts on the outcome it
+    returns; nothing relies on a rollup existing merely because this returned."""
     if not _BUILD_LOCK.acquire(blocking=False):
         with _BUILD_LOCK:  # the running build releases it in its own finally
-            return "waited"
-    return _build_and_swap() or "built"  # releases _BUILD_LOCK
+            return _LAST_OUTCOME["value"]
+    return _build_and_swap()  # releases _BUILD_LOCK
+
+
+# The outcome of the build that last released _BUILD_LOCK. It is written while the lock is still
+# held, so a thread that waited on the lock reads the outcome of the build it waited for.
+_LAST_OUTCOME: dict = {"value": "built"}
 
 
 def _build_and_swap() -> str:
@@ -336,6 +693,7 @@ def _build_and_swap() -> str:
     answer.
 
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
+    outcome = "failed"
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
         # `last_skip` always names the condition that actually stopped this build rather
@@ -344,7 +702,10 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip = exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
+        skip = (
+            exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
+            or _stopped_build_verdict() or _last_build_verdict() or _affordability_verdict()
+        )
         if skip is not None:
             with _LOCK:
                 _STATE["last_skip"] = skip
@@ -352,16 +713,54 @@ def _build_and_swap() -> str:
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
             )
-            return "declined"
+            outcome = "declined"
+            return outcome
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:
-            _build_inmemory_and_swap()
-        return "built"
+            stopped = _build_inmemory_and_swap()
+            if stopped is not None:
+                grew = observed = None
+                if isinstance(stopped.get("rss_mb"), (int, float)) and isinstance(
+                    stopped.get("begin_rss_mb"), (int, float)
+                ):
+                    observed = grew = round(max(0.0, stopped["rss_mb"] - stopped["begin_rss_mb"]), 1)
+                    # A guard stop happens when memory is ALREADY nearly gone, so what was held at the stop is
+                    # the lower bound of what the build needs: project it over the mentions still to stream.
+                    done, total = stopped.get("rows_done"), stopped.get("mentions_total")
+                    if stopped.get("stage") == "mentions" and isinstance(done, int) and done > 0 \
+                            and isinstance(total, int) and total > done:
+                        grew = round(observed * total / done, 1)
+                    # The build is bounded by DuckDB's limit (times the measured overshoot) plus one batch, so a
+                    # projection past that is the linear extrapolation outrunning the build's own ceiling (and
+                    # MAX(id) overstates the rows after re-index churn): never ask for more than the start check does.
+                    chunk = columnar_batch_mb()
+                    ceiling = round(_duckdb_limit_mb() * _LIMIT_OVERSHOOT + chunk, 1)
+                    grew = min(grew, max(ceiling, observed))
+                with _LOCK:
+                    _STATE["last_skip"] = stopped
+                    _STATE["stopped"] = {
+                        "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
+                        "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
+                        "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
+                    }
+                _LOG.warning(
+                    "rollup serve: build stopped part-way (%s); nothing was swapped in and it is not "
+                    "retried until that condition changes",
+                    stopped.get("guard_reason") or stopped.get("reason"),
+                )
+                outcome = "declined"
+                return outcome
+        with _LOCK:
+            _STATE["stopped"] = None
+        outcome = "built"
+        return outcome
     except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
         _LOG.warning("rollup serve: background build failed", exc_info=True)
-        return "failed"
+        outcome = "failed"
+        return outcome
     finally:
+        _LAST_OUTCOME["value"] = outcome
         _BUILD_LOCK.release()
 
 
@@ -369,7 +768,15 @@ def _trigger_build_async() -> None:
     """Kick a background build if one is not already running (non-blocking)."""
     if not _BUILD_LOCK.acquire(blocking=False):
         return  # a build is already in flight
-    threading.Thread(target=_build_and_swap, name="rollup-build", daemon=True).start()
+    thread = threading.Thread(target=_build_and_swap, name="rollup-build", daemon=True)
+    try:
+        thread.start()
+    except Exception:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
+        # The thread that would have released the lock never ran: release it here, or every later
+        # build (and the boot sequence's wait for this one) blocks on it forever.
+        _LAST_OUTCOME["value"] = "failed"
+        _BUILD_LOCK.release()
+        _LOG.warning("rollup serve: could not start the build thread", exc_info=True)
 
 
 def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:
