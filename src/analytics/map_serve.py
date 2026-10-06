@@ -183,7 +183,12 @@ def _trigger_build_async() -> None:
     """Kick a background build if one is not already running (non-blocking)."""
     if not _BUILD_LOCK.acquire(blocking=False):
         return  # a build is already in flight
-    threading.Thread(target=_build_and_swap, name="map-rollup-build", daemon=True).start()
+    thread = threading.Thread(target=_build_and_swap, name="map-rollup-build", daemon=True)
+    try:
+        thread.start()
+    except Exception:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
+        _BUILD_LOCK.release()  # the thread that would have released it never ran
+        _LOG.warning("map rollup: could not start the build thread", exc_info=True)
 
 
 def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:

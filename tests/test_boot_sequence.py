@@ -19,6 +19,37 @@ import pytest
 from src.api import boot_sequence as bs
 
 
+@pytest.fixture(autouse=True)
+def _boot_state_restored():
+    """Several tests here set the module's state directly (a step "running", a pending re-index);
+    put it back to a fresh boot afterwards so no later test, in this file or another, inherits it."""
+    yield
+    with bs._LOCK:
+        bs._STATE.update({"warm": "pending", "reindex_pending": None})
+    bs._reset()
+
+
+@pytest.fixture(autouse=True)
+def _host_memory_is_not_under_test(monkeypatch):
+    """The rollup's start check and killed-build check read the host's REAL free memory (they are
+    covered against injected readings in test_rollup_build_streaming.py); here they must not decide
+    whether a boot-step test passes. The module's outcome and hold records are put back as found."""
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setitem(rollup_serve._STATE, "stopped", None)
+    # Drain any in-flight build, as tests/test_rollup_serve.py does (commit 4a40cc64): ANY earlier test
+    # that runs a windowed query starts a REAL background build on a daemon thread, which holds the build
+    # lock until it ends; the next test here then found the lock held and never built (seen in two full runs;
+    # a lock-watch plugin logged 'rollup-build' alive after test_attention_producers, test_observatory,
+    # test_rollup_serve, ...). Waiting out a build this test did not start is not slack: the build ends by
+    # itself, and a lock that is genuinely stuck fails here, loudly, rather than hanging the run.
+    assert rollup_serve._BUILD_LOCK.acquire(timeout=60), "a background rollup build never released its lock"
+    rollup_serve._BUILD_LOCK.release()
+
+
 @pytest.fixture
 def seq(monkeypatch):
     """The sequence with fake steps; ``log`` records ('start'|'end', step) in order."""
@@ -192,16 +223,121 @@ def test_build_now_and_wait_waits_for_a_build_already_running_instead_of_startin
     from src.analytics import rollup_serve
 
     started: list[int] = []
+    got: list[str] = []
     monkeypatch.setattr(rollup_serve, "_build_and_swap", lambda: started.append(1))
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     done = threading.Event()
-    t = threading.Thread(target=lambda: (rollup_serve.build_now_and_wait(), done.set()))
+    t = threading.Thread(target=lambda: (got.append(rollup_serve.build_now_and_wait()), done.set()))
     t.start()
     assert not done.wait(0.2), "it returned while a build still held the lock"
+    rollup_serve._LAST_OUTCOME["value"] = "declined"  # what the running build records before it releases
     rollup_serve._BUILD_LOCK.release()
     assert done.wait(5)
     t.join(5)
     assert started == [], "a second build was started beside the running one"
+    assert got == ["declined"], "the waiter reported its own success instead of the build it waited for"
+
+
+def test_a_waiter_is_told_the_outcome_of_the_real_build_it_waited_for(monkeypatch):
+    """What a waiter reads: a thread blocked in ``build_now_and_wait`` gets the outcome of the real
+    ``_build_and_swap`` it waited for, never an older one, run for real in two threads with the build
+    held inside its verdict. It does NOT pin that the outcome is written before the lock is released
+    (the releasing thread keeps the GIL through its next statement, so a reorder is invisible here);
+    ``test_the_outcome_is_written_before_the_lock_is_released`` below pins that."""
+    from src.analytics import rollup_serve
+
+    inside = threading.Event()
+    go = threading.Event()
+
+    def held_verdict():
+        inside.set()
+        assert go.wait(5)
+        return {"reason": "exclusive"}  # the build declines once released
+
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", held_verdict)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")  # what a stale reader would see
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    builder = threading.Thread(target=rollup_serve._build_and_swap)  # releases the lock in its finally
+    builder.start()
+    assert inside.wait(5)
+    got: list[str] = []
+    waiter = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+    waiter.start()
+    try:
+        waiter.join(0.3)
+        assert waiter.is_alive(), "the waiter returned while the build still held the lock"
+    finally:
+        go.set()  # never leave the builder parked on a failed assertion
+        builder.join(5)
+        waiter.join(5)
+    assert got == ["declined"], "the waiter read a stale outcome instead of the build it waited for"
+
+
+class _SpyLock:
+    """A build lock that records what ``_LAST_OUTCOME`` holds at the instant of each ``release``."""
+
+    def __init__(self, real):
+        self._real = real
+        self.seen: list[str] = []
+
+    def acquire(self, *a, **kw):
+        return self._real.acquire(*a, **kw)
+
+    def release(self):
+        from src.analytics import rollup_serve
+
+        self.seen.append(rollup_serve._LAST_OUTCOME["value"])
+        self._real.release()
+
+    def locked(self):
+        return self._real.locked()
+
+    def __enter__(self):
+        self._real.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+
+
+@pytest.mark.parametrize("how", ["declined", "failed"])
+def test_the_outcome_is_written_before_the_lock_is_released(monkeypatch, how):
+    """The ordering itself, which the two-thread test above cannot pin: the releasing thread keeps
+    the GIL through its next statement, so a write moved AFTER ``release()`` is invisible to a waiter
+    on CPython. Seen from inside ``release()`` it is not: the stale value is what the spy records."""
+    from src.analytics import rollup_serve
+
+    if how == "declined":
+        monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: {"reason": "exclusive"})
+    else:
+        monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+        monkeypatch.setattr(rollup_serve, "_boot_order_verdict", lambda: None)
+        monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
+        monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)
+
+        def boom():
+            raise RuntimeError("the build failed")
+
+        monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", boom)
+    spy = _SpyLock(rollup_serve._BUILD_LOCK)
+    monkeypatch.setattr(rollup_serve, "_BUILD_LOCK", spy)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")  # the stale value a reorder would leave
+    assert spy.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == how
+    assert spy.seen == [how]
+
+
+def test_only_built_reads_as_done_for_the_rollup_step(monkeypatch):
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr(rollup_serve, "serve_enabled", lambda: True)
+    for odd in ("waited", None, "anything else"):
+        monkeypatch.setattr(rollup_serve, "build_now_and_wait", lambda odd=odd: odd)
+        with pytest.raises(RuntimeError):
+            bs._rollup_first_build()
+    monkeypatch.setattr(rollup_serve, "build_now_and_wait", lambda: "built")
+    bs._rollup_first_build()  # returns: the step is done
 
 
 def test_the_sequence_does_not_ask_the_rollup_for_a_build_when_serving_is_off(monkeypatch):
