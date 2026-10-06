@@ -418,8 +418,10 @@ def _refresh_stats(engine: Engine, names: list[str]) -> None:
             for name in names:
                 if name in NAMES:  # a module constant, never input
                     conn.execute(text(f"ANALYZE main.{name}"))  # noqa: S608  # nosec B608
-    except Exception:  # noqa: BLE001 - statistics are an optimisation, never a reason to fail the build
-        _LOG.warning("planner statistics after the article indexes failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - statistics are an optimisation, never a reason to fail the build
+        # The TYPE only, never the text or a traceback: an engine's or a driver's message (and the error it was raised from)
+        # can carry a statement, and a keyed connection's can carry the passphrase; a record's ``exc_info`` rides the bundle.
+        _LOG.warning("planner statistics after the article indexes failed (%s)", type(exc).__name__)
 
 
 class Declined(RuntimeError):
@@ -529,9 +531,10 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
         return report
     except Declined:
         raise
-    except Exception:
+    except Exception as exc:
         report["outcome"] = "failed"
-        _LOG.warning("article-list index build failed", exc_info=True)
+        # The TYPE only (see ``_refresh_stats``): the exception is re-raised to the job runner, which keeps its own record of it.
+        _LOG.warning("article-list index build failed (%s)", type(exc).__name__)
         raise
     finally:
         report["finished_at"] = time.time()

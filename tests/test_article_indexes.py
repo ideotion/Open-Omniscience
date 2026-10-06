@@ -1006,3 +1006,34 @@ def test_the_manual_row_states_what_the_build_asks_and_what_a_killed_build_leads
     assert round(125 * 1_500_000 / 1_000_000, -1) == 190
     assert "190 MB per 1.5 million articles" in row and "130 MB" not in row
     assert "anything the app saves waits" in row and "saving new articles waits" not in row
+
+
+def test_a_failed_build_or_statistics_run_records_the_type_of_the_failure_never_its_text(eng, monkeypatch, caplog):
+    """The passphrase rule: the build runs on the keyed engine, so what the engine, the driver or the error it was raised from
+    says can hold a statement (and a keyed connection's can hold ``PRAGMA key``); a record's traceback rides the diagnostics
+    bundle. Only the type is kept, and the failure still reaches the job runner."""
+    import logging
+    import sqlite3
+
+    secret = "correct horse battery staple 8842"
+    monkeypatch.setitem(HOT_INDEXES, TITLE, f'CREATE INDEX IF NOT EXISTS idx_article_title_nocase ON "{secret}" (title)')
+    with caplog.at_level(logging.DEBUG), pytest.raises(Exception) as caught:  # noqa: B017 - the driver's own error class
+        ai.build_missing(eng)
+    assert secret in str(caught.value), "the failure itself is re-raised unchanged: the runner's record is its own concern"
+    assert secret not in caplog.text, caplog.text
+    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error a driver's was raised from"
+    assert "article-list index build failed (OperationalError)" in caplog.text, caplog.text
+
+    class _Refuses:
+        def begin(self):
+            try:
+                raise sqlite3.OperationalError(f"PRAGMA key = '{secret}' failed")
+            except sqlite3.OperationalError as driver:
+                raise RuntimeError("could not open the library") from driver
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        ai._refresh_stats(_Refuses(), [LANG])
+    assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+    assert all(r.exc_info is None for r in caplog.records)
+    assert "planner statistics after the article indexes failed (RuntimeError)" in caplog.text, caplog.text
