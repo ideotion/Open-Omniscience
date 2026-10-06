@@ -491,6 +491,46 @@ def test_hold_write_window_leaves_an_ungated_session_alone():
     assert not write_gate.held_by_current_thread()
 
 
+def test_the_window_is_released_when_the_article_fails_after_taking_it(tmp_path, monkeypatch):
+    """An article that raises after the window was taken (the diff write) must hand it
+    back with its rollback: a window kept past the session's end stops every other writer."""
+    from src.database.writer import write_gate
+
+    maker = _gated_sessionmaker(tmp_path)
+    setup = maker()
+    art = _article(setup, "boom")
+    art_id = art.id
+    setup.commit()
+    setup.close()
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("the write failed")
+
+    monkeypatch.setattr(store, "_write_mention_diff", _boom)
+
+    s = maker()
+    try:
+        row = s.get(Article, art_id)
+        with pytest.raises(RuntimeError):
+            index_article(s, row, extractor=_Ex([_t("a")]), country=None, city=None)
+        assert write_gate.held_by_current_thread(), "precondition: the window was taken before the failure"
+        s.rollback()
+        assert not write_gate.held_by_current_thread()
+    finally:
+        s.close()
+
+
+def test_hold_write_window_does_nothing_when_the_gate_is_switched_off(tmp_path, monkeypatch):
+    from src.database.writer import hold_write_window, write_gate
+
+    maker = _gated_sessionmaker(tmp_path)
+    monkeypatch.setenv("OO_WRITE_GATE", "0")
+    s = maker()
+    assert hold_write_window(s) is False
+    assert not write_gate.held_by_current_thread()
+    s.close()
+
+
 def test_a_writer_that_lands_between_the_read_and_the_write_cannot_leave_a_stale_diff(tmp_path):
     """The old rows are read INSIDE the write window. Another writer (a keyword fold, a cleanup
     re-index, an orphan prune) removes the article's row for keyword ``b`` while this re-index

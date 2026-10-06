@@ -1024,8 +1024,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     # -- PHASE A: the NULL-created_at rows (see the docstring's PHASE SPLIT note).
     # Ordered by id alone, which is safe HERE and only here: no insert path can add a
     # row to this phase mid-scan, so the set can only shrink, and a shrinking set has
-    # neither the double-count nor the reuse-drop direction. A re-indexed row leaves
-    # the phase entirely (its fresh row carries a real created_at). No upper bound is
+    # neither the double-count nor the reuse-drop direction. A re-indexed row that changed
+    # leaves the phase (it is stamped now); one that did not keeps its NULL and stays in it. No upper bound is
     # needed for the same reason -- and none is available, since MAX(created_at) says
     # nothing about rows that have none.
     _drain(
@@ -1252,7 +1252,8 @@ def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
 # tail captures once. EVERY path that re-runs ``index_article`` over an EXISTING article
 # (reindex_all_batch / reindex_articles / reindex_imported_articles [restore] / clean-up-
 # keywords) AND ``prune_orphan_keywords`` (deletes rows) leaves the OLD contribution in the
-# rollup AND re-inserts higher-id rows into the tail = a fabricated (doubled) number. So those
+# rollup: a row changed in place keeps its id, below the tail, and is never seen (a stale
+# number), and a row deleted and inserted again would be counted twice (a doubled one). So those
 # mutators bump a CORPUS EPOCH; a changed epoch forces a FULL rebuild, never an incremental
 # merge. Normal new-article ingest does NOT bump the epoch (else we full-rebuild every pass).
 #

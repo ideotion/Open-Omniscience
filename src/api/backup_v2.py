@@ -1207,6 +1207,14 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         # bump covers the mention rows (the sweep touches counters, not rows); the second covers
         # the counters the rollup's keyword table copies, so a rollup built between the two is
         # rebuilt once the sweep has ended. An extra bump is only ever an extra, correct rebuild.
+        #
+        # THE REMAINING BOUND: a hard kill between the last batch's completion stamp and this
+        # line leaves the next run with no batch to walk and so no bump of its own. The start
+        # bump already happened, so only a rollup built from the middle of that run is exposed,
+        # and only to a counts-only change on rows updated in place: the serving layer's
+        # backstop rebuild (OO_COLUMNAR_SERVE_BACKSTOP_S, one hour) rebuilds it regardless of the
+        # token. A persisted "bump owed" marker would close the hour; it would add a second place
+        # that says whether the corpus changed, which is the thing the epoch exists to be.
         if batches:
             _bump("reindex-resume:end")
         window = _yield_to_import()
@@ -1234,12 +1242,11 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     out["counter_reconcile"]["left_by_an_earlier_run"] = True
             except Exception:  # noqa: BLE001 - never let it mask what ended the run
                 _LOG.warning("deferred-counter reconcile failed", exc_info=True)
-        # Every run that walked a batch ends with its bump, including a RESUMED one whose
-        # articles were all already finished by the run that was killed before it could bump:
-        # the start bump above already happened, the rows changed in place since a rollup was
-        # built from the middle of that run are only invalidated by an epoch change. The
-        # counters a finished sweep changed are bumped for here, after it.
-        if batches and out.get("counter_reconcile", {}).get("reconciled"):
+        # Every run that reconciled counters bumps again here, with or without a batch of its
+        # own: a resumed run with nothing pending can still close a sweep an earlier run left
+        # open (killed inside it, or stopped for an import), and a rollup built since keeps the
+        # keyword table it copied before that reconcile until an epoch change.
+        if out.get("counter_reconcile", {}).get("reconciled"):
             _bump("reindex-resume:reconciled")
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
     # never sees it -- without this, a partial run would report stopped:false and read as

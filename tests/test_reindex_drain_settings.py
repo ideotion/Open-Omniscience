@@ -113,7 +113,7 @@ def drain(monkeypatch):
             stats.update(state["stats"])
         if progress_cb is not None:
             progress_cb(2, 2)
-        return {"reindexed": 2, "failed": 0}
+        return {"reindexed": state.get("reindexed", 2), "failed": 0}
 
     class _Sched:
         def is_running(self):
@@ -421,8 +421,31 @@ def test_a_resumed_run_whose_articles_were_all_finished_still_ends_with_its_bump
     state, rec = drain
     state["scheduler_running"] = True
     state["stats"] = None
-    bv2._reindex_resume_worker(_Ctx())
+    state["reindexed"] = 0  # the fake re-index finds every article already done
+    out = bv2._reindex_resume_worker(_Ctx())
+    assert out["articles_reindexed"] == 0, "precondition: this run re-indexed nothing"
     assert rec["bumps"] == ["reindex-resume:start", "reindex-resume:end"]
+
+
+def test_a_run_with_no_batch_that_closes_an_earlier_sweep_bumps_for_it(drain):
+    """A resumed drain with nothing pending can still close a sweep an earlier run left open
+    (killed inside it, or stopped for an import). The counters that sweep changed are copied
+    into the rollup's keyword table, so a rollup built since is stale until an epoch change."""
+    state, rec = drain
+    state["batches"] = []
+    state["scheduler_running"] = True
+    state["marker_open"] = True
+    out = bv2._reindex_resume_worker(_Ctx())
+    assert rec["finishes"] == [True] and out["counter_reconcile"]["left_by_an_earlier_run"] is True
+    assert rec["bumps"] == ["reindex-resume:reconciled"]
+
+
+def test_a_run_with_no_batch_and_no_open_sweep_bumps_nothing(drain):
+    state, rec = drain
+    state["batches"] = []
+    state["scheduler_running"] = True
+    bv2._reindex_resume_worker(_Ctx())
+    assert rec["bumps"] == [] and rec["finishes"] == []
 
 
 def test_a_run_that_reindexed_nothing_does_not_bump_at_the_end(drain):

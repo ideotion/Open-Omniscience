@@ -35,6 +35,8 @@ import threading
 import time
 from pathlib import Path
 
+from src.monitoring.engine_text import engine_text
+
 # Articles per reindex_all_batch loop. Each batch commits per-article inside
 # index_article, and the cursor is persisted after each batch, so a crash loses at
 # most this many articles of *progress* (never data — the re-index is idempotent).
@@ -406,7 +408,7 @@ class ReindexJobManager:
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
+                self._error = engine_text(exc)
                 self._save()
 
     def _yield_to_exclusive(self) -> None:

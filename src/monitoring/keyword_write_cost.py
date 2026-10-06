@@ -54,6 +54,7 @@ from src.database.maintenance import (
     deadline_expired,
     statement_deadline,
 )
+from src.monitoring.engine_text import engine_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -285,10 +286,10 @@ def _write_rate(session: Session, now: datetime) -> dict[str, Any]:
                 ).one()
         except StatementTimeout as exc:
             why = "memory guard" if isinstance(exc, MemoryShort) else "statement deadline"
-            out[key] = {"available": False, "reason": f"stopped by the {why} ({exc})"}
+            out[key] = {"available": False, "reason": f"stopped by the {why} ({engine_text(exc)})"}
             continue
         except Exception as exc:  # noqa: BLE001
-            out[key] = {"available": False, "reason": f"unreadable: {str(exc)[:160]}"}
+            out[key] = {"available": False, "reason": f"unreadable: {engine_text(exc, 160)}"}
             continue
         if not mentions:
             out[key] = {
@@ -330,7 +331,7 @@ def _reindex_job() -> dict[str, Any] | None:
 
 def _cut_reason(exc: StatementTimeout) -> str:
     why = "memory guard" if isinstance(exc, MemoryShort) else "statement deadline"
-    return f"stopped before the sample finished, by the {why} ({exc})"
+    return f"stopped before the sample finished, by the {why} ({engine_text(exc)})"
 
 
 def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
@@ -364,9 +365,9 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
         # judged against: a cut-short sample never takes it down with it.
         cut = _cut_reason(exc)
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
-        _LOG.debug("keyword write cost unavailable: %s", exc)
+        _LOG.debug("keyword write cost unavailable: %s", engine_text(exc))
         out["available"] = False
-        out["reason"] = f"unreadable: {str(exc)[:200]}"
+        out["reason"] = f"unreadable: {engine_text(exc, 200)}"
         return out
 
     out["write_rate"] = _write_rate(session, stamp)

@@ -173,8 +173,8 @@ def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str,
 # WRITE ONLY WHAT CHANGED (the re-index drain, 2026-10-06; docs/audit/15, Lenovo's bundle).
 #
 # ``index_article`` used to delete every mention row of the article and insert them all
-# again. A re-index with the current engine writes mostly the SAME rows back, and on a
-# 41 GB encrypted store each row is ten index entries moved through the page codec: the
+# again. A re-index with the current engine can write the SAME rows back (how many is what
+# the drain's kept/updated counts now say), and on a 41 GB encrypted store each row is ten index entries moved through the page codec: the
 # drain measured 2.1 articles/s (7,673 an hour) against 38/s on a plaintext sandbox.
 # Now the article's rows are read once, compared with the rows the pass produces, and
 # only the difference is written. The end state is the SAME set of (keyword, article)
@@ -610,11 +610,14 @@ def index_article(
     # The write window is taken BEFORE that read: the diff writes by row id, so a row another
     # writer (a keyword fold, a cleanup re-index, a re-poll, an orphan prune) removed or merged
     # between a read and the first write would be updated for nothing or inserted twice. A
-    # no-op when the session is not gated (a test's, or the gate switched off).
+    # no-op when the session is not gated (a test's, or the gate switched off). From here to
+    # the commit this article's work (the read, the name forms, the keyword prefetch and the
+    # row building as well as the writes) runs inside the window: it is held a little longer
+    # per article so that no other writer can slip between what was read and what is written.
     from src.database.writer import hold_write_window
 
+    hold_write_window(session)  # its wait for the window is not read time
     _t_read = time.monotonic() if timings is not None else 0.0
-    hold_write_window(session)
     old_rows = _read_mention_rows(session, article.id)
     old_contrib: dict[int, int] = {}
     if maintain_counters:
@@ -1431,7 +1434,7 @@ def reindex_articles(
             # A rate ONLY when both sides of the division are real. A zero-article or
             # zero-elapsed run reports None -- never a fabricated or infinite rate.
             "articles_per_second": round(done / elapsed, 2) if done and elapsed > 0 else None,
-            # Mention rows this call COMMITTED. Rides `stats` rather than the return for
+            # Mention rows the committed articles now HOLD, rows left alone included. Rides `stats` rather than the return for
             # the reason this out-parameter exists: callers assert the return shape
             # exactly, and a measurement is not part of the contract.
             "mentions_written": mentions_written,
