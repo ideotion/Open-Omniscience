@@ -291,6 +291,23 @@ def test_incoming_rows_are_counted_from_the_staged_file(tmp_path) -> None:
     assert merge_mod._incoming_group_rows(tmp_path / "absent.db") == {}
 
 
+def test_a_staged_path_with_uri_characters_is_still_counted(tmp_path) -> None:
+    import sqlite3
+
+    odd = tmp_path / "data?x#frag%41 dir"
+    odd.mkdir()
+    built = tmp_path / "built.db"  # built where a SQLAlchemy URL can name it, then moved
+    _plain_corpus(built, articles=1)
+    con = sqlite3.connect(built)
+    con.execute("INSERT INTO keywords (term, normalized_term, language) VALUES ('a','a','en')")
+    con.commit()
+    con.close()
+    staged = odd / "staged.db"
+    shutil.move(str(built), str(staged))
+    got = merge_mod._incoming_group_rows(staged)
+    assert got.get("keywords") == 1, "a path with ? # or % must not drop the count to nothing"
+
+
 def test_merge_corpus_hands_the_incoming_counts_to_the_gate(
     tmp_path, encrypted_working_copy, monkeypatch
 ) -> None:

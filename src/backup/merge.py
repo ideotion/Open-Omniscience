@@ -758,14 +758,16 @@ _ENCRYPTED_REP_BYTES_PER_ROW = {
 def _incoming_group_rows(staged_corpus: Path) -> dict[str, int]:
     """Rows the staged corpus holds in each table :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names.
 
-    Read through a plain read-only connection to the staged file (plaintext by design). A table the
+    Read through a plain read-only connection to the staged file (plaintext by design). The URI is
+    built with ``as_uri`` so a ``?``, ``#`` or ``%`` in the data directory's path is percent-encoded
+    rather than read as URI syntax (which would open nothing and silently drop the count). A table the
     artifact does not carry, or a file that cannot be read, adds nothing: a count that cannot be
     taken is not a number to invent, and the gate then asks for what it can measure."""
     import sqlite3
 
     out: dict[str, int] = {}
     try:
-        con = sqlite3.connect(f"file:{staged_corpus}?mode=ro", uri=True)
+        con = sqlite3.connect(Path(staged_corpus).resolve().as_uri() + "?mode=ro", uri=True)
     except sqlite3.Error:
         return out
     try:

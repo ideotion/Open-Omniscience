@@ -13642,7 +13642,7 @@ encrypted copy asks first for what it needs plus the memory guard's floor of ava
 start, MEMORY against FILE: +62 MB for 20,000 articles of 8 KB, +64 MB for 6,000 of 32 KB, +41 MB for 300,000 of 100 B, on one encrypted working copy end to end; the 2026-08-06 figure of 5 KB per
 row was taken WITH THE FTS TRIGGER LIVE, which the merge suspends). THREE STEPS ARE NOT WINDOWED: `_materialise_rep` runs one whole-source `GROUP BY` each for `keywords`, `article_links` and
 `article_source_relationships`, the COALESCE terms keep an index from serving them, and each is a temp b-tree that now lives in RAM and grows with the corpus (3,000,000 incoming rows, peak
-rise: 72 B/row, 89 to 147 B/row by URL length, 67 B/row, plus ~10 B/row of id maps kept to the end). The independent read of the first cut found this; the first corpora had small keyword
+rise: 72 B/row, 89 to 147 B/row by URL length, 67 B/row, plus ~10 B/row of id maps kept to the end, which the gate rounds up to 16). The independent read of the first cut found this; the first corpora had small keyword
 and link tables, so a measurement built from the shape the fix was written for could not have. The gate now counts the incoming rows of those tables from the staged file and asks for
 2 x window + the LARGEST of the three (they run one after another) + 16 B per incoming row + the floor. A table or file that cannot be counted adds nothing. **A
 check of the premise belongs in the suite, not in the comment**: `test_merge_encrypted_temp.py` reads this process's own temp files through `/proc/<pid>/fd` while an encrypted
