@@ -131,7 +131,7 @@ def heavy_step_verdict() -> dict | None:
     if busy:
         return {
             "reason": "boot_order",
-            "detail": "the start-up file check, cache warm-up or rollup build is running; this build waits its turn",
+            "detail": "the start-up file check, the article list's index build, the cache warm-up or the rollup build is running; this build waits its turn",
         }
     return None
 
@@ -317,8 +317,8 @@ def _start_reindex() -> None:
 
 
 def run(warm: Callable[[], None]) -> None:
-    """The sequence, in the calling thread: the check after an unexpected stop, warm-up, rollup first build,
-    re-index resume."""
+    """The sequence, in the calling thread: the check after an unexpected stop, the article list's index build,
+    warm-up, rollup first build, re-index resume."""
     with _LOCK:
         # "warm" covers the check too: a serve-kicked rollup declines (``warm_running``) from the sequence's
         # start, so nothing heavy competes with the check's reads.

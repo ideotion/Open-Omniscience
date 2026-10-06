@@ -36,6 +36,7 @@ from src.database.damage import FILE_CORPUS, DamageRegistry
 from src.database.maintenance import DEFERRED_INDEXES, HOT_INDEXES, ensure_hot_indexes
 from src.database.models import Article, Base, Source
 from src.jobs.background import Framed
+from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parents[1]
 LANG = "idx_article_language_published"
@@ -323,11 +324,11 @@ def test_each_statement_runs_under_the_write_gate_so_writers_queue_instead_of_er
 
     @event.listens_for(eng, "before_cursor_execute")
     def _watch(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().upper().startswith("CREATE INDEX"):
+        if statement.lstrip().upper().startswith(("CREATE INDEX", "ANALYZE")):
             held.append(write_gate.held_by_current_thread())
 
     ai.build_missing(eng)
-    assert held == [True, True]
+    assert held == [True, True, True, True], "the two builds and the two ANALYZE of their statistics (sqlite_stat1 is a write)"
     assert not write_gate.held_by_current_thread(), "the gate must be released when the build returns"
 
 
@@ -391,6 +392,23 @@ def test_too_little_free_space_refuses_with_the_numbers_and_the_job_row_says_so(
     assert ai.run_now_and_wait(eng) == "declined"
     st = ai.ARTICLE_INDEX_JOB.status()
     assert st["state"] == "error" and "1,000 bytes free" in (st["error"] or "")
+    assert "1,000 bytes free" in ai.snapshot()["reason"], "the snapshot lost the reason for the refusal"
+
+
+def test_a_refusal_for_space_reaches_the_row_as_a_keyed_detail_in_the_job_list(eng, monkeypatch):
+    """The deep read's S2: the English error is drawn by no renderer for this kind; the detail frame is, and it is a key
+    in every locale (test_the_label_and_the_progress_frame_are_keys_in_every_locale)."""
+    from src.api import jobs as jobs_api
+
+    class Usage:
+        free = 200_000
+
+    monkeypatch.setattr(ai.shutil, "disk_usage", lambda where: Usage)
+    assert ai.run_now_and_wait(eng) == "declined"
+    row = next(j for j in jobs_api.list_jobs()["jobs"] if j["id"] == "article-indexes")
+    assert row["detail_i18n"] == ai.FRAME_NO_ROOM, row
+    assert row["detail_vars"] == {"free": 0, "needed": 1, "rows": 600}, row["detail_vars"]  # whole MB: free rounded down, needed up
+    assert row["detail"] == ai.FRAME_NO_ROOM.format(**row["detail_vars"])
 
 
 def test_an_unreadable_free_space_figure_is_not_a_refusal(eng, monkeypatch):
@@ -404,10 +422,29 @@ def test_an_unreadable_free_space_figure_is_not_a_refusal(eng, monkeypatch):
 
 def test_the_space_asked_scales_with_the_articles_and_names_what_it_protects(eng):
     rep = ai.preflight(eng, 1_500_000)
+    assert ai.BYTES_PER_ARTICLE == 400 and ai.RAM_BYTES_PER_ARTICLE == 125, "a figure changed: update the words that quote it"
     assert rep["needed_bytes"] == 1_500_000 * ai.BYTES_PER_ARTICLE
-    assert "write-ahead log" in rep["method"] and set(rep["free_bytes"]) == {"database", "temp"}
+    assert "write-ahead log" in rep["method"] and f"about {ai.BYTES_PER_ARTICLE} bytes per article" in rep["method"]
+    assert f"about {ai.RAM_BYTES_PER_ARTICLE} bytes per article" in rep["method"], "the RAM the sort holds is not said"
+    assert rep["ram_estimate_bytes"] == 1_500_000 * ai.RAM_BYTES_PER_ARTICLE
     big = ai.preflight(eng, 10**15)
     assert big["sufficient"] is False and big["short_on"] and "bytes free" in big["detail"]
+    assert str(ai.BYTES_PER_ARTICLE) in big["detail"]
+
+
+def test_only_the_database_volume_is_measured_because_the_sort_never_writes_a_temporary_file(eng, monkeypatch):
+    """The deep read's S1: every connection sets ``temp_store=MEMORY``, so the temp volume is not written to and a
+    shortfall there would point the operator at a volume the build never touches."""
+    asked: list[str] = []
+    real = ai.shutil.disk_usage
+
+    def spy(where):
+        asked.append(str(where))
+        return real(where)
+
+    monkeypatch.setattr(ai.shutil, "disk_usage", spy)
+    rep = ai.preflight(eng, 1_000)
+    assert set(rep["free_bytes"]) == {"database"} and len(asked) == 1, (rep["free_bytes"], asked)
 
 
 def test_a_statement_that_fails_is_failed_leaves_no_half_index_and_the_next_try_builds_the_rest(eng, monkeypatch):
@@ -471,6 +508,7 @@ def test_the_build_is_a_listed_job_with_progress_a_writer_and_no_cancel(eng, mon
         row = next(j for j in listing["jobs"] if j["id"] == "article-indexes")
         assert row["state"] == "running" and row["label"] == ai.LABEL and row["actions"] == []
         assert listing["db_writers_busy"] is True, "collection must be told something is writing"
+        assert ai.ARTICLE_INDEX_JOB.is_writer is True, "offline maintenance reads this to hold off"
         assert "article-indexes" in jobs_api._DB_WRITER_KINDS
     finally:
         release.set()
@@ -495,6 +533,50 @@ def test_the_job_row_carries_the_framed_progress_line(eng):
     assert row["progress"]["total"] == 2
 
 
+def test_the_snapshot_is_a_copy_at_every_depth_and_a_second_run_carries_nothing_of_the_first(eng, monkeypatch):
+    class Usage:
+        free = 1_000
+
+    real = ai.shutil.disk_usage
+    monkeypatch.setattr(ai.shutil, "disk_usage", lambda where: Usage)
+    with pytest.raises(ai.Declined):
+        ai.build_missing(eng)
+    snap = ai.snapshot()
+    snap["preflight"]["free_bytes"]["database"] = -1
+    assert ai.snapshot()["preflight"]["free_bytes"]["database"] == 1_000, "the caller shares state with the module"
+    monkeypatch.setattr(ai.shutil, "disk_usage", real)
+    ai.build_missing(eng)
+    after = ai.snapshot()
+    assert after["outcome"] == "built" and "reason" not in after, "the refused run's reason outlived the run that followed"
+
+
+def test_a_worker_thread_that_cannot_start_leaves_no_phantom_running_job(eng, monkeypatch):
+    """The deep read's N1: ``start`` set the state to running before ``Thread.start`` and never gave it back, so the job
+    stayed running for the life of the process (``db_writers_busy`` true, offline maintenance declining) and the step read
+    the failure as "already running"."""
+    import types
+
+    from src.api import jobs as jobs_api
+    from src.jobs import background
+
+    class Boom:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(
+        background, "threading",
+        types.SimpleNamespace(Thread=Boom, RLock=threading.RLock, Lock=threading.Lock, Event=threading.Event),
+    )
+    assert ai.run_now_and_wait(eng) == "failed"
+    st = ai.ARTICLE_INDEX_JOB.status()
+    assert st["state"] == "error" and "could not start" in (st["error"] or ""), st
+    assert ai.ARTICLE_INDEX_JOB.join(0.5) is True
+    assert jobs_api.list_jobs()["db_writers_busy"] is False
+
+
 def test_join_waits_for_the_worker_and_is_true_when_none_ever_ran():
     from src.jobs.background import BackgroundJob
 
@@ -513,7 +595,7 @@ def test_join_waits_for_the_worker_and_is_true_when_none_ever_ran():
 def test_the_step_comes_after_the_check_and_before_the_warm_up_inside_the_warm_window():
     assert boot_sequence.STEPS[:3] == ("verify-database", "article-indexes", "warm-cache")
     src = (ROOT / "src" / "api" / "boot_sequence.py").read_text(encoding="utf-8")
-    run = src[src.index("def run(") :]
+    run = python_function_source(src, "run")
     assert run.index("_verify_database") < run.index("_article_indexes") < run.index("warm,")
     assert run.index("_article_indexes") < run.index('_STATE["warm"] = "done"'), (
         "the build is inside the window in which a serve-kicked rollup declines"
@@ -567,6 +649,16 @@ def test_a_second_start_finds_them_and_the_step_is_skipped(eng, monkeypatch):
     assert {r["step"]: r["state"] for r in boot_sequence.snapshot()["steps"]}["article-indexes"] == "skipped"
 
 
+def test_a_serve_kicked_build_during_the_window_is_told_the_index_build_may_be_what_it_waits_for():
+    with boot_sequence._LOCK:
+        boot_sequence._STATE["warm"] = "running"
+    try:
+        verdict = boot_sequence.heavy_step_verdict()
+    finally:
+        boot_sequence._reset()
+    assert verdict and verdict["reason"] == "boot_order" and "index build" in verdict["detail"], verdict
+
+
 # --------------------------------------------------------------------------- #
 #  the words, in the twelve languages
 # --------------------------------------------------------------------------- #
@@ -575,12 +667,15 @@ def test_the_label_and_the_progress_frame_are_keys_in_every_locale():
 
     for p in sorted((ROOT / "src" / "static" / "locales").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
-        assert ai.LABEL in d and ai.FRAME_BUILDING in d, p.name
-        frame = d[ai.FRAME_BUILDING]
+        assert ai.LABEL in d and ai.FRAME_BUILDING in d and ai.FRAME_NO_ROOM in d, p.name
+        frame, room = d[ai.FRAME_BUILDING], d[ai.FRAME_NO_ROOM]
         assert "{index}" in frame and "{total}" in frame, p.name
+        assert all(f"{{{v}}}" in room for v in ("free", "needed", "rows")), p.name
         if p.stem != "en":
             assert frame != ai.FRAME_BUILDING and d[ai.LABEL] != ai.LABEL, f"{p.name}: left in English"
+            assert room != ai.FRAME_NO_ROOM, f"{p.name}: the refusal is left in English"
     assert ai.FRAME_BUILDING.format(index=1, total=2).startswith("Building the indexes that keep the article list fast: 1 of 2")
+    assert "anything the app saves waits" in ai.FRAME_BUILDING, "every gated write waits, not only a new article's"
 
 
 def test_the_switch_is_documented_in_the_manual():

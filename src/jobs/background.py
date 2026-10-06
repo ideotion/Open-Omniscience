@@ -170,7 +170,16 @@ class BackgroundJob:
                 target=self._run, args=(ctx, kwargs), name=f"bgjob-{self.kind}", daemon=True
             )
             self._thread = t
-            t.start()
+            try:
+                t.start()
+            except BaseException as exc:
+                # The worker never ran: leave no phantom "running" job (it would hold ``db_writers_busy`` for the life
+                # of the process, and a caller that joins it would raise).
+                self._thread = None
+                self._state = "error"
+                self._error = f"{type(exc).__name__}: could not start the worker thread"[:300]
+                self._ended_at = time.time()
+                raise
         return self.status()
 
     def _run(self, ctx: JobContext, kwargs: dict) -> None:

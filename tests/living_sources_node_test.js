@@ -453,6 +453,17 @@ const WIKI = {
     "the walk took a download's cause line: it is not a download");
 }
 
+// --- 11b. the article list's index build draws its detail in the in-app window too ----- //
+// (the caveat while it runs, and the keyed reason a refusal for space carries: its error is English only)
+{
+  const why = R._jobWhy({ kind: "article-indexes", state: "failed", error: "Declined: the database volume has 5 bytes free",
+    detail: "The article list's indexes were not built: 5 MB free.", detail_i18n: "The article list's indexes were not built: 5 MB free.",
+    detail_vars: {} }, t);
+  assert.ok(visible(why).includes("were not built"), "the refusal's reason was not drawn for the index build");
+  assert.ok(!visible(why).includes("Declined"), "the English error string was drawn instead of the keyed detail");
+  assert.strictEqual(R._jobWhy({ kind: "article-indexes", state: "running" }, t), "", "a row with no detail drew a line");
+}
+
 // --- 12. the other changed pages (Q707's WARM tier): counts, and absence as a word --- //
 {
   // No fetcher in this process, or an older server with no warm block: a word, never a zero.

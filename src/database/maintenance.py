@@ -165,7 +165,7 @@ HOT_INDEXES: dict[str, str] = {
     # idx_article_language (language) does not carry: the planner found the rows by language and then
     # read one whole row per candidate to sort them (1,284 ms cold on a 40,000-article, 2 GB store).
     # Language FIRST (the filter is an equality), the date SECOND (the order), so the walk is one
-    # index range read backwards with no sort step: 1,447 -> 3 ms cold, plan `SEARCH articles USING
+    # index range read backwards with no sort step: 1,284 -> 3 ms cold, plan `SEARCH articles USING
     # COVERING INDEX`. DEFERRED (see DEFERRED_INDEXES): built by the start-up step that shows in the
     # task manager, not inside init_db. Mirrored on the model and in migration c3a91f5e7b24.
     "idx_article_language_published": (

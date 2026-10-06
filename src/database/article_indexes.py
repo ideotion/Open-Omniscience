@@ -6,10 +6,12 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 WHAT AND WHY. The article list reads one whole row per candidate on two shapes, because no index
 covers them: a language filter (``idx_article_language`` finds the rows, but the date the list orders
 them by sits after each article's text) and a sort by title (the list orders ``title COLLATE NOCASE``,
-which an index of another collation cannot serve). On a 40,000-article, 2 GB synthetic store, cold:
-1,447 ms and 807 ms; with ``idx_article_language_published (language, published_at)`` and
+which an index of another collation cannot serve). On a 40,000-article, 2 GB synthetic store, cold, the page query took
+1,284 ms and 807 ms; with ``idx_article_language_published (language, published_at)`` and
 ``idx_article_title_nocase (title COLLATE NOCASE)``, 3 ms each, the plans ``SEARCH articles USING
-COVERING INDEX`` and ``SCAN articles USING COVERING INDEX`` with no sort step. The maintainer ruled it
+COVERING INDEX`` and ``SCAN articles USING COVERING INDEX`` with no sort step. The count behind a
+language filter still reads each matching row (the index does not carry ``quarantined``): 773 -> 180 ms on
+a 200,000-article store, so the list is faster, not instant. The maintainer ruled it
 2026-10-06 (question 34, answer a): both indexes, built at the next start while the app is still
 offline, with the progress shown in the task manager.
 
@@ -25,30 +27,35 @@ THE REFUSALS, in the order they are asked:
     already there: nothing to do, and no job is started for it;
   * the corpus file is paused as damaged: nothing is written to a file the database called damaged
     (the notice for it is already on screen), so the step is DECLINED, and the next start asks again;
-  * the free space: the build writes each index to the write-ahead log, then into the file, with the
-    sorter's temporary copy beside them, so it needs about ``BYTES_PER_ARTICLE`` bytes per article free
-    on the database's volume and on the temporary-file volume. A shortfall refuses the build and the
-    job row says so with the numbers (a failed row, not a silence). A figure that cannot be read is
-    NOT a refusal (the ``vacuum_preflight`` rule: an unreadable ``statvfs`` must not manufacture one);
-    the build goes ahead and the report says it was not measured.
+  * the free space: the build writes each index to the write-ahead log, then into the file, so it needs
+    about ``BYTES_PER_ARTICLE`` bytes per article free on the database's volume. A shortfall refuses the
+    build and the job row says so with the numbers (a failed row carrying the keyed ``FRAME_NO_ROOM``
+    detail, not a silence). The temporary-file volume is NOT measured: every connection of the app sets
+    ``temp_store=MEMORY`` (and the bundled SQLCipher keeps temporary files in memory anyway), so the
+    sorter of ``CREATE INDEX`` never writes a temporary file; it holds every key in RAM (see
+    ``RAM_BYTES_PER_ARTICLE``: stated, not gated). A figure that cannot be read is NOT a refusal (the
+    ``vacuum_preflight`` rule: an unreadable ``statvfs`` must not manufacture one); the build goes ahead
+    and the report says it was not measured.
 
 THE BUILD. One statement per index, each in its own transaction, under ``write_lock()``: every writer
 that comes meanwhile queues in Python (waiting, not erroring on SQLite's busy timeout), readers pass
 through WAL. One statement is all or nothing: a process that ends mid-build leaves no half index, and
-the next start builds from the beginning. The progress is ``index N of M`` with the elapsed time the
-task manager already shows, never a percentage or an ETA (a single statement reports neither).
+the next start builds from the beginning. The progress is ``index N of M``; the task manager also prints
+a percentage of those two statements (not of time: the title index is the larger half) and never an ETA
+(a single statement reports no progress of its own).
 
 HONEST LIMITS. The free-space figure is an estimate (title length varies; it is sized on titles twice
-the synthetic store's); the report carries what was measured. The build is not cancellable (an opaque
-statement), so the row offers no Cancel.
+the synthetic store's); the report carries what was measured. The memory the sort holds is measured on a
+synthetic store and is stated, never a refusal: a machine short of RAM is not held back by it. The build is
+not cancellable (an opaque statement), so the row offers no Cancel.
 """
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import shutil
-import tempfile
 import threading
 import time
 from typing import Any
@@ -64,19 +71,32 @@ JOB_KIND = "article-indexes"
 LABEL = "Building the article list's indexes"
 FRAME_BUILDING = (
     "Building the indexes that keep the article list fast: {index} of {total}. "
-    "One time only; saving new articles waits until it is done."
+    "One time only; anything the app saves waits until it is done."
+)
+#: What a refusal for space shows on the job's row (keyed x12; the numbers are whole MB and the article count).
+FRAME_NO_ROOM = (
+    "The article list's indexes were not built: the volume your data file is on has {free} MB free and they "
+    "need about {needed} MB ({rows} articles). Free some space and restart the app; until then the language "
+    "filter and the sort by title stay slow."
 )
 
 #: The names, in the order they are built (the language filter first: it is the slower read today).
 NAMES: tuple[str, ...] = ("idx_article_language_published", "idx_article_title_nocase")
 
-#: Free bytes asked per article, on each volume the build writes to. WHAT IT PROTECTS: a disk that
-#: fills while the write-ahead log grows, which would fail every writer in the app, not only this
-#: build. Measured on a 40,000-article store with titles of 38 characters on average: 38 and 46 bytes
-#: an article (1.5 and 1.9 MB). A real title is twice that or more, so about 125 bytes an article for
-#: the pair; the write-ahead copy, the copy in the file and the sorter's temporary copy are three of
-#: them: about 375, rounded to 400.
+#: Free bytes asked per article on the database's volume. WHAT IT PROTECTS: a disk that fills while the
+#: write-ahead log grows, which would fail every writer in the app, not only this build. Measured on a
+#: 40,000-article store with titles of 38 characters on average: 38 and 46 bytes an article (1.5 and
+#: 1.9 MB). A real title is twice that or more, so about 125 bytes an article for the pair; the
+#: write-ahead copy and the copy in the file are two of them: about 250, asked as 400 for titles longer
+#: than the ones measured.
 BYTES_PER_ARTICLE = 400
+
+#: RAM the sort of the LARGER index holds per article (the title index; the two are built one after the
+#: other, so it is the peak): measured on 600,000 articles with titles of 76 characters, +73 MB resident
+#: (about 122 bytes an article) under ``temp_store=MEMORY``, against +1 MB under FILE. WHAT IT DOES: it is
+#: STATED in the report and the manual and never gated, because it is a measurement on a synthetic store
+#: and a refusal on it would hold the indexes back on machines it may not fit.
+RAM_BYTES_PER_ARTICLE = 125
 
 
 def switch_on() -> bool:
@@ -96,9 +116,10 @@ def _record(**fields: Any) -> None:
 def snapshot() -> dict:
     """What the last start-up step did, for the diagnostics bundle: the outcome, the indexes it built
     with the seconds each took, the rows and free space it measured, the seconds it waited for the
-    writer gate. ``{}`` before the step has run. Counts and times only."""
+    writer gate. ``{}`` before the step has run. Counts and times only. A copy at every depth: the
+    caller never shares a dict with the module's state."""
     with _LOCK:
-        return {k: (dict(v) if isinstance(v, dict) else v) for k, v in _LAST.items()}
+        return copy.deepcopy(_LAST)
 
 
 def _reset_for_tests() -> None:
@@ -133,24 +154,24 @@ def _free(where: str) -> int | None:
 
 def preflight(engine: Engine, rows: int) -> dict:
     """Is there room for the build? ``rows`` is the largest article id (an upper bound on the count,
-    read without touching a row). Both volumes the build writes to are measured. ``sufficient`` is
+    read without touching a row). The volume the build writes to (the database's) is measured; the
+    memory its sort holds is stated, not measured (``RAM_BYTES_PER_ARTICLE``). ``sufficient`` is
     ``None`` when no figure could be read: the caller goes ahead and says it was not measured."""
     needed = int(rows) * BYTES_PER_ARTICLE
     db_path = engine.url.database
-    volumes = {
-        "database": (os.path.dirname(os.path.abspath(db_path)) if db_path else None) or ".",
-        "temp": tempfile.gettempdir(),
-    }
+    volumes = {"database": (os.path.dirname(os.path.abspath(db_path)) if db_path else None) or "."}
     measured = {name: _free(path) for name, path in volumes.items()}
     readable = {k: v for k, v in measured.items() if v is not None}
     report: dict[str, Any] = {
         "needed_bytes": needed,
         "free_bytes": measured,
         "bytes_per_article": BYTES_PER_ARTICLE,
+        "ram_estimate_bytes": int(rows) * RAM_BYTES_PER_ARTICLE,
         "method": (
-            "about 400 bytes per article free on the database's volume and on the temporary-file "
-            "volume: each index goes to the write-ahead log, then into the file, with the sorter's "
-            "temporary copy beside them"
+            f"about {BYTES_PER_ARTICLE} bytes per article free on the database's volume: each index goes to "
+            "the write-ahead log, then into the file; the sort of each is held in memory (about "
+            f"{RAM_BYTES_PER_ARTICLE} bytes per article for the larger index, stated and not gated), "
+            "never in a temporary file"
         ),
     }
     if not readable:
@@ -205,6 +226,8 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
     from src.database.writer import write_lock
 
     report: dict[str, Any] = {"outcome": "skipped", "built": {}, "started_at": time.time()}
+    with _LOCK:
+        _LAST.clear()  # a second run in one process must not carry the first run's reason, preflight or missing
     _record(**report)
     try:
         state, missing = pending(engine)
@@ -226,6 +249,19 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             report["outcome"] = "declined"
             report["reason"] = room["detail"]
             _LOG.warning("article-list indexes not built: %s", room["detail"])
+            if ctx is not None:
+                # The row's error is an English string no renderer draws for this kind; the detail is the keyed
+                # frame both task managers do (it survives into the error state).
+                free_mb = int(min(v for v in room["free_bytes"].values() if v is not None) // 1_000_000)
+                need_mb = -(-int(room["needed_bytes"]) // 1_000_000)  # rounded UP: what is asked is at least this
+                ctx.set_progress(
+                    done=0,
+                    total=len(missing),
+                    detail=Framed(
+                        FRAME_NO_ROOM.format(free=free_mb, needed=need_mb, rows=rows), FRAME_NO_ROOM,
+                        free=free_mb, needed=need_mb, rows=rows,
+                    ),
+                )
             raise Declined(room["detail"])
         total = len(missing)
         built: dict[str, float] = report["built"]
@@ -289,6 +325,10 @@ def run_now_and_wait(engine: Engine | None = None) -> str:
     try:
         ARTICLE_INDEX_JOB.start(engine=engine)
     except RuntimeError:
+        if ARTICLE_INDEX_JOB.status().get("state") != "running":
+            # Not "already running": the worker thread could not be started (``start`` gave the state back).
+            _LOG.warning("article-list index build could not start its worker thread")
+            return "failed"
         _LOG.info("article-list index build is already running; waiting for it")
     ARTICLE_INDEX_JOB.join()
     outcome = snapshot().get("outcome")

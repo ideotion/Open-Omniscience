@@ -13845,3 +13845,10 @@ leaves such entries out of `init_db`'s pass (`ensure_hot_indexes(engine, include
 `write_lock()` (writers queue in Python instead of erroring on the 30 s busy timeout), the free space measured first and a shortfall a FAILED row with the numbers. A step that is a job needs `BackgroundJob.join()` (added), because the
 sequence must have the result before the next step. **Adding a step to the sequence runs it for real in every test that runs the real sequence**: four existing tests (`test_boot_sequence.py`, `test_database_verify.py`,
 `test_import_lifecycle_stages.py`, `test_bulk_build_window.py`'s source-order pin) had to be changed, which is the cost of an unpatched side effect on a path the suite drives.
+
+**A CREATE INDEX IN THIS APP SORTS IN RAM, SO ITS COST IS MEMORY, NOT A TEMP VOLUME (the R128 deep read, 2026-10-06)**: every connection sets `temp_store=MEMORY` and the bundled SQLCipher is compiled
+`SQLITE_TEMP_STORE=2` anyway (L2862), so the sorter of `CREATE INDEX` never writes a temporary file: it holds every key (+73 MB resident for 600,000 articles with 76-character titles, +1 MB under FILE).
+A free-space check that measures `tempfile.gettempdir()` therefore refuses on a volume the build never touches (and would measure `/tmp` where SQLite's own directory is `/var/tmp`), and says nothing of the
+memory it does need. The check now measures the database's volume only and STATES the memory (`RAM_BYTES_PER_ARTICLE`, not gated). The same model sits in `maintenance.vacuum_preflight` (VACUUM +266 MB RSS under
+MEMORY, +4 MB under FILE) and is not yet corrected. **And a refusal that only fills a job's `error` is invisible**: neither task-manager renderer draws `error` for a kind that is not a download, so the keyed
+detail frame (`Framed`, which survives into the error state) is what reaches the screen in twelve languages; a test of the API field never saw the missing line.

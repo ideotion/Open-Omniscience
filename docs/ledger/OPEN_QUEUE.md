@@ -16457,12 +16457,26 @@ maintainer as a card.
 - **`idx_article_language (language)` IS NOT DROPPED.** The new `(language, published_at)` index makes it redundant for the list, but the counts and the
   per-language tally still use it (`tests/test_library_language_growth.py` names it), and dropping it saves ~38 bytes an article against a planner change nobody
   measured. A drop is its own decision, after the plans of the count queries are measured with the new index present.
-- **THE FREE-SPACE FIGURE IS AN ESTIMATE, AND SAYS SO**: 400 bytes an article on the database's volume and on the temporary-file volume (what it protects: a disk
-  that fills while the write-ahead log grows, which would fail every writer in the app). Sized on titles twice the synthetic store's; the row count is `MAX(id)`,
-  an upper bound read without touching a row. A figure that cannot be read is NOT a refusal (the `vacuum_preflight` rule).
+- **THE FREE-SPACE FIGURE IS AN ESTIMATE, AND SAYS SO**: 400 bytes an article on the DATABASE's volume only (what it protects: a disk that fills while the
+  write-ahead log grows, which would fail every writer in the app). The temporary-file volume is NOT measured: every connection sets `temp_store=MEMORY` and the bundled
+  SQLCipher is compiled `SQLITE_TEMP_STORE=2` (LESSONS L2862), so the sorter holds every key in RAM and never writes a temporary file; measured by the deep read at
+  +73 MB resident for 600,000 articles (about 122 bytes an article, 175 MB on the 2026-08-05 field corpus), stated as `RAM_BYTES_PER_ARTICLE = 125` in the report and the
+  manual and **NOT GATED** (a refusal on a synthetic measurement would hold the indexes back on machines it may not fit; the build runs inside the boot step that exists because
+  boot memory pressure killed the process, so a later session that sees it killed there should gate it on the memory tier). Sized on titles twice the synthetic store's; the row
+  count is `MAX(id)`, an upper bound read without touching a row. A figure that cannot be read is NOT a refusal (the `vacuum_preflight` rule). `maintenance.vacuum_preflight` uses
+  the same temp-volume model and has the same flaw (VACUUM measured +266 MB RSS under MEMORY against +4 MB under FILE on a 257 MB file): NOT touched here.
 - **THE BUILD IS NOT CANCELLABLE** (a single statement is opaque, so the row offers no Cancel) and holds the write gate for each statement; the app starts
-  offline, so no collection normally waits behind it, and the gate's watchdog names a hold past its threshold. A refusal for space is a FAILED row whose error is
-  English only (an error string, like every job's); the label and the progress line are in all twelve languages.
+  offline, so no collection normally waits behind it, and the gate's watchdog names a hold past its threshold. Every gated write waits, not only a new article's (settings, tags, notes,
+  a session flush), and the caveat now says so. A refusal for space is a FAILED row whose KEYED detail (`FRAME_NO_ROOM`, whole MB and the article count) both task managers draw in
+  all twelve languages (the English error string stays the API's and the log's); the label and the progress line are in all twelve too.
+- **WHAT THE DEEP READ (2026-10-06) LEFT, NOT DONE:** (N4) the count behind a language filter still reads each matching row for `quarantined`, which the index does not carry
+  (773 -> 180 ms on 200,000 articles, against 3 ms for the page query alone); a third key column would make it index-only and changes the ruled shape. (N5) A whole-table
+  `GROUP BY language` can move to the wider index (5,611 pages against 1,612, 34 -> 41 ms warm; `corpus_language_shares`' plan changed): record it BESIDE the decision about dropping
+  `idx_article_language`. (N6) With `OO_ARTICLE_INDEXES=0`, or a refusal that repeats every start, the stamp stays one step behind head and each start pays the schema compare in
+  `init_db` (0.22 to 0.33 s measured, harmless: `IF NOT EXISTS`); the manual row says it. (N9) Presence is checked by name only, so a same-named title index without NOCASE reads as
+  present and is never repaired (theoretical: it needs a hand-made index). (N12) The restore path builds both indexes through the migration inside `upgrade_database_file` with no
+  preflight and no progress line (not measured). The figure the module and the comments quote for the language filter is now 1,284 ms cold, the one the maintainer was shown; R128's
+  row carried 1,447 ms, and nothing reproduces that number. Not pinned: the downgrade of the migration (M36), `rows` as `MAX(id)` rather than `COUNT(*)` (M49, equivalent on the tests' ids).
 - **THE STAMP ALIGNMENT SAYS `schema-behind` FOR ONE START.** The language index is declared on the model and `init_db` leaves it out, so between `init_db` and the step
   the live schema lacks a model index; the stamp is kept (harmless: the migration is `IF NOT EXISTS`) and the next start finds the schema at head. The step does NOT
   align the stamp itself: that run drops the derived-row view while it executes, and the step runs while the app serves. (`tests/test_article_indexes.py` pins the
