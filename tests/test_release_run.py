@@ -536,7 +536,10 @@ def test_the_parent_runs_the_child_encrypted_and_never_plaintext():
     assert 'env.pop("OO_DB_PLAINTEXT", None)' in body
     assert '"OO_NO_SCHEDULER": "1"' in body
     assert "shutil.rmtree(fresh" in body, "the throwaway install must be removed"
-    assert '.restore-release-run-' in body, "the dir must carry the sweeper's prefix"
+    assert '.restore-release-run-' in body, (
+        "the throwaway install keeps its recognisable name: nothing sweeps the destination, so a directory a "
+        "killed parent left behind is found, by a person and by these tests, through that prefix"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1717,6 +1720,99 @@ def test_a_child_that_cannot_be_started_is_no_restore_that_ended_so_no_row_says_
     assert "absent because its restore did not complete here" in rows["K"]["note"]
     assert rows["K"]["evidence"]["duplicate_key_scan_on_restored_corpus"] is None
     assert NEEDLE not in json.dumps(rep)
+    assert not list(fast["dest"].glob(".restore-release-run-*")), "no empty throwaway directory is left for a child that never ran"
+
+
+@pytest.mark.parametrize("keep", [False, True], ids=["install removed", "install kept"])
+def test_a_child_that_cannot_be_started_leaves_no_directory_behind_kept_install_or_not(fast, monkeypatch, keep):
+    """The directory is made BEFORE the child starts, so a start that fails (no interpreter, no process
+    slot, no memory) left an empty one in a destination nothing sweeps. MUTATION TARGET: the cleanup on
+    that path, and a cleanup that only runs when the run does not keep the install (an empty directory is
+    nothing a kept install's reader wants)."""
+    def cannot_start(*a, **k):
+        raise PermissionError("[Errno 13] Permission denied: 'python'")
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=cannot_start, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], keep_fresh_install=keep)))
+    ctx = FakeCtx()
+    ph = rr._run_phase(run, ctx, "fresh_install_restore",
+                       lambda: _REAL_RESTORE(ctx, run, fast["dest"] / "backup", label="own-backup"))
+    assert ph["status"] == "error" and "Permission denied" in ph["detail"], ph
+    assert not list(fast["dest"].glob(".restore-release-run-*")), "the directory made for a child that never ran is removed"
+
+
+def test_the_passphrase_is_out_of_what_any_phases_exception_says_in_the_report_and_in_the_log(
+        fast, monkeypatch, caplog):
+    """The module docstring says the passphrase is in no log line and no field of the report. The restore's
+    own text was scrubbed where it is built; this is every OTHER phase, whose exception could name it (a
+    command line, a path the operator typed). MUTATION TARGETS: the detail of an error, of a refusal and of
+    a phase that failed part of the way, and the log record of each (the traceback included, which the error
+    log keeps and a debug bundle carries)."""
+    class _Refusal(Exception):
+        pass
+
+    def boom(ctx):
+        raise RuntimeError(f"could not open the backup with {NEEDLE}")
+
+    monkeypatch.setattr(rr, "_bundle", boom)
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        res = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    rep = res["report"]
+    detail = {ph["name"]: ph for ph in rep["phases"]}["bundle"]["detail"]
+    assert {ph["name"]: ph["status"] for ph in rep["phases"]}["bundle"] == "error"
+    assert detail.startswith("RuntimeError: could not open the backup with ") and "***redacted***" in detail
+    for artifact in (Path(res["path"]), rr._state_path()):
+        assert NEEDLE not in artifact.read_text(encoding="utf-8"), artifact
+    assert NEEDLE not in json.dumps(rep)
+    records = [r for r in caplog.records if r.name == "monitoring.release_run" and "bundle" in r.getMessage()]
+    assert records, "the failure is still logged"
+    for r in records:
+        assert NEEDLE not in r.getMessage() and not r.exc_text and NEEDLE not in str(r.exc_info), r.getMessage()
+    assert NEEDLE not in caplog.text
+    assert "RuntimeError" in caplog.text, "the exception line is still there to read, scrubbed"
+
+    # A refusal and a phase that failed part of the way read the same.
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+    ctx = FakeCtx()
+
+    def refuse():
+        raise _Refusal(f"{NEEDLE} is not a valid destination")
+
+    def part_way():
+        raise rr._PhaseError(f"row 5 stopped after reading {NEEDLE}", partial={"seen": 3})
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        refused = rr._run_phase(run, ctx, "refusing", refuse, refusals=(_Refusal,))
+        partial = rr._run_phase(run, ctx, "part_way", part_way)
+    assert refused["status"] == "refused" and "***redacted***" in refused["detail"], refused
+    assert partial["status"] == "error" and "***redacted***" in partial["detail"] and partial["result"] == {"seen": 3}, partial
+    assert NEEDLE not in json.dumps([refused, partial]) and NEEDLE not in caplog.text
+
+    # The cut to 400 characters comes AFTER the scrub: a cut through the passphrase would leave a fragment
+    # of it that no replacement can find (the restore's own text is held to the same rule).
+    def straddles():
+        raise RuntimeError("x" * 381 + NEEDLE)  # "RuntimeError: " is 14 characters: the passphrase starts at 395
+
+    cut = rr._run_phase(run, ctx, "straddling", straddles)
+    assert len(cut["detail"]) == 400 and cut["detail"].endswith("x***re"), cut["detail"][-12:]
+    assert NEEDLE[:3] not in cut["detail"], "no fragment of the passphrase survives the cut"
+
+
+def test_a_failure_that_does_not_name_the_passphrase_is_logged_with_its_traceback_as_before(fast, caplog):
+    """The scrubbing replaces the record only where the passphrase is in it: the error log keeps a
+    traceback's tail, and every failure that never named the passphrase keeps it."""
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+
+    def boom():
+        raise RuntimeError("an ordinary failure")
+
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        rr._run_phase(run, FakeCtx(), "ordinary", boom)
+    (record,) = [r for r in caplog.records if "ordinary" in r.getMessage()]
+    assert record.exc_info and record.exc_info[0] is RuntimeError, "the traceback rides the record, not the text"
+    assert "an ordinary failure" in caplog.text
 
 
 def test_the_real_child_on_a_missing_backup_exits_nonzero_and_reads_as_a_failed_restore(fast, tmp_path):

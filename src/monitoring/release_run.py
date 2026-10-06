@@ -39,10 +39,11 @@ HONESTY (the whole point, same rules as the P0 kit):
   * The run is VERDICT-FREE about the board: it records what each clause measured and
     leaves "does this close the row" to the maintainer, exactly as the soak window does.
   * The passphrase is used and never stored: it is no field of the state file or the
-    report and is in no log line. The routes scrub defensively on the way out, and what the
+    report and is in no log line. The routes scrub defensively on the way out, what the
     restore child says is scrubbed of it where the child writes it and again before the
-    parent records it, and the files a KEPT fresh install leaves on the drive (the child's
-    run journal and reports) are scrubbed once the child has gone
+    parent records it, what ANY phase's exception says is scrubbed of it before the phase's
+    detail and the log record are made, and the files a KEPT fresh install leaves on the drive
+    (the child's run journal and reports) are scrubbed once the child has gone
     (:mod:`src.monitoring.secret_scrub`). A resume asks for it the way a first run does,
     and a retaken restore is held to the same rule. What the OPERATOR typed is kept as
     typed: a destination or a pre-migration backup path that happens to contain the passphrase
@@ -77,6 +78,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1153,14 +1155,21 @@ def _fresh_install_restore(
     t0 = time.monotonic()
     scrubbed: dict[str, list[str]] | None = None
     fresh.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
-        [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
-        cwd=str(_repo_root()),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
+            [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
+            cwd=str(_repo_root()),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except BaseException:
+        # No child ran, so nothing wrote into the directory just made: take it away, kept install or
+        # not (an empty one is nothing to look at later), rather than leave it in a destination nothing
+        # sweeps.
+        shutil.rmtree(fresh, ignore_errors=True)
+        raise
     try:
         while proc.poll() is None:
             if ctx.stopping:
@@ -2087,24 +2096,44 @@ def request_collect_now() -> None:
     _COLLECT_NOW.set()
 
 
+def _log_phase_failure(name: str, exc: BaseException, why: str, secret: str) -> None:
+    """Log the exception being handled, with its traceback, and with the passphrase out of both. The
+    error log keeps the last 1,500 characters of a record's traceback in ``app_errors.jsonl``, which a
+    debug bundle carries, so an exception that named the passphrase would otherwise put it on disk. Where
+    the traceback does not hold it (the usual case) the record is the one it always was; where it does,
+    the record carries the scrubbed text instead, ``why`` (already scrubbed) first because the error log
+    keeps the start of a message and the exception line is at the end."""
+    text = "".join(traceback.format_exception(exc))
+    if secret and secret in text:
+        _LOG.warning("release run phase %s failed: %s\n%s", name, why[:200], _scrub_value(text, secret))
+    else:
+        _LOG.warning("release run phase %s failed", name, exc_info=True)
+
+
 def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[BaseException], ...] = ()) -> dict[str, Any]:
     """Run one phase under the closed status vocabulary. A named refusal (a bad
     precondition) is ``refused``; anything else that raises is ``error`` -- and neither
     stops the run from writing its report, because a run that dies without one leaves
-    the operator with nothing after three days."""
+    the operator with nothing after three days. What the exception says reaches the log,
+    the state file and the report with the passphrase taken out (the module docstring's
+    promise holds for every phase, not only the restore's), BEFORE the cut to 400
+    characters, so a cut through it cannot leave a fragment."""
     run.begin(name)
     ctx.set_progress(detail=name)
+    secret = run.params.passphrase
     try:
         result = fn()
     except _PhaseError as exc:
         # RR-2: what the phase measured before it failed stays in its record.
-        _LOG.warning("release run phase %s failed part of the way: %s", name, exc)
-        ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", str(exc)[:400], result=exc.partial)
+        why = _scrub_value(str(exc), secret)
+        _LOG.warning("release run phase %s failed part of the way: %s", name, why)
+        ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", why[:400], result=exc.partial)
     except refusals as exc:
-        ph = run.end("refused", f"{type(exc).__name__}: {exc}"[:400])
+        ph = run.end("refused", _scrub_value(f"{type(exc).__name__}: {exc}", secret)[:400])
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to the report
-        _LOG.warning("release run phase %s failed", name, exc_info=True)
-        ph = run.end("error", f"{type(exc).__name__}: {exc}"[:400])
+        why = _scrub_value(f"{type(exc).__name__}: {exc}", secret)
+        _log_phase_failure(name, exc, why, secret)
+        ph = run.end("error", why[:400])
     else:
         if ctx.stopping:
             ph = run.end("cancelled", "cancelled during this phase", result=result)

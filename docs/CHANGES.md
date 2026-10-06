@@ -105,6 +105,9 @@ this section were still open.
   measured (#1312): a restore its engine refused, or that died, now reads `error` with its own words,
   a resumed run retakes it and asks for the passphrase again, and the passphrase is kept out of what a
   kept fresh install leaves on the drive.
+- The search-timing logs (`search_timing.jsonl`, `search_timing_browse.jsonl` in the data folder) no longer repeat
+  their explanatory text on every line: a line is the measurement only, a fifth to a tenth of what it was (a browse line
+  196 bytes, not 1,937), and the report still carries the text once.
 
 ### Interface and translations
 

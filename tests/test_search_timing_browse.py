@@ -227,6 +227,16 @@ def test_the_durable_log_method_says_a_failed_cut_leaves_more_than_the_cap_behin
     assert "more for each cut that failed" in method and "tried again at the next one" in method
 
 
+def test_the_durable_log_method_says_what_a_line_holds_and_that_older_lines_carry_more():
+    """The export is all the reader has: a line carries no `method` or `caveat` of its own, so the report
+    says where those are, and that a log written before 2026-10-06 holds both shapes until the cuts drop
+    the older one."""
+    method = search_timing.durable_log_summary()["method"]
+    assert "A line is the measurement only" in method and "started_after_unlock_s" in method
+    assert "the `method` and `caveat` that describe a measurement are the ones in this report" in method
+    assert "before 2026-10-06 still carries them" in method and "both shapes can share a file" in method
+
+
 def _spied_client_browse(client, monkeypatch, params):
     """One request through the handler. Returns ``(at_start, at_phase, body)``: the checkouts the engine
     had handed out when the browse timer was created (one entry per timer made), the checkouts at each
@@ -713,6 +723,76 @@ def test_the_in_process_count_restarts_and_the_durable_one_does_not(tmp_path):
     rep = search_timing.search_timing_report()
     assert rep["searches"] == 0
     assert rep["durable_log"]["text"]["records"] == 2
+
+
+def test_a_durable_line_is_the_measurement_only_and_the_two_static_texts_stay_in_the_report(tmp_path):
+    """The coordinator's check of #1292, N3: `method` and `caveat` were 1,741 of a browse line's 1,937
+    bytes, the same words on every line, and nothing reads them back (the report carries them once, in
+    its own `method` and `caveat`). MUTATION TARGETS: writing the whole record, dropping only one of
+    the two, dropping a key a reader uses, and cutting the CALLER's dict instead of the copy that is
+    written."""
+    for kind, meta in (("text", {}), ("browse", {"limit": 8, "offset": 16})):
+        record = _record(kind, **meta)
+        whole = json.loads(json.dumps(record))
+        search_timing.append_search_timing(record)
+        (line,) = _lines(_log(tmp_path, kind))
+        written = json.loads(line)
+        assert "method" not in written and "caveat" not in written, kind
+        assert written == {k: v for k, v in whole.items() if k not in ("method", "caveat")}, (
+            f"every other key of a {kind} record is kept as it was"
+        )
+        assert record == whole, "the record the caller holds is not the thing that is cut"
+        assert record["method"][:40] not in line and record["caveat"][:40] not in line
+        # What the number protects: a log at its 5,000-line cap stays near a megabyte. A line that
+        # carries anything a person typed or a page of text is a different design, not a bigger limit.
+        assert len(line.encode("utf-8")) < 400, f"a {kind} line is {len(line)} bytes: a measurement, not a description"
+
+
+def test_the_in_process_window_keeps_the_whole_record_so_the_aggregate_and_the_report_are_what_they_were(tmp_path):
+    """The window feeds the aggregate, and the aggregate must not depend on whether a line was slimmed.
+    MUTATION TARGETS: slimming the record BEFORE the window sees it (a copy or the caller's own)."""
+    records = [_record("text"), _record("browse", limit=8), _record("browse", limit=50, offset=50)]
+    expected = search_timing.build_report([dict(r) for r in records])
+    for r in records:
+        search_timing.append_search_timing(r)
+    window = search_timing._snapshot()
+    assert len(window) == 3 and all("method" in r and "caveat" in r for r in window)
+    live = search_timing.search_timing_report()
+    live.pop("durable_log")
+    assert live == expected, "the report reads the window, and the window is unchanged"
+    assert expected["searches"] == 1 and expected["browse"]["pages"] == 2
+
+
+def test_a_log_holding_both_shapes_counts_every_line_and_places_it_in_time(tmp_path):
+    """A log written before the change keeps its longer lines until the cuts drop them, so both shapes
+    sit in one file for a while: the report counts them all, and dates them by their `at`."""
+    older = _record("browse", limit=8)  # whole, as every line was written until 2026-10-06
+    path = _log(tmp_path, "browse")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(older) + "\n", "utf-8")
+    t = _timer("browse", wall=3000.0)
+    t.phase("rows")
+    search_timing.append_search_timing(t.finish())  # the shape written now
+    first, second = _lines(path)
+    assert "method" in json.loads(first) and "method" not in json.loads(second)
+    browse = search_timing.durable_log_summary()["browse"]
+    assert (browse["records"], browse["undated"], browse["malformed"]) == (2, 0, 0)
+    assert browse["dated_from"] == datetime.fromtimestamp(1010.0, tz=UTC).isoformat(timespec="seconds")
+    assert browse["dated_to"] == datetime.fromtimestamp(3000.0, tz=UTC).isoformat(timespec="seconds")
+
+
+def test_a_cut_keeps_the_newest_lines_of_either_shape(tmp_path, monkeypatch):
+    monkeypatch.setattr(search_timing, "_CAP_LINES", 3)
+    path = _log(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("".join(json.dumps({**_record("text"), "seq": i}) + "\n" for i in range(3)), "utf-8")
+    search_timing._appends_since_trim["text"] = 0
+    for i in (3, 4):
+        search_timing.append_search_timing({**_record("text"), "seq": i})
+    search_timing._trim_jsonl("text")
+    kept = [json.loads(ln) for ln in _lines(path)]
+    assert [r["seq"] for r in kept] == [2, 3, 4]
+    assert ["method" in r for r in kept] == [True, False, False], "an older whole line and two slim ones"
 
 
 def test_a_log_is_cut_to_its_cap_on_a_process_first_append_and_then_every_so_many(tmp_path, monkeypatch):

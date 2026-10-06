@@ -393,10 +393,15 @@ sys.exit("execve failed, errno %d" % ctypes.get_errno())
 """
 
 
+# The three variables the reading is about: a child starts with none of them but the ones a test gives it,
+# whatever the machine running the tests had set.
+_ALLOCATOR_VARIABLES = ("MALLOC_ARENA_MAX", "GLIBC_TUNABLES", "LD_PRELOAD")
+
+
 def _count_arenas(env_extra: dict[str, str] | None = None, *, twice: tuple[str, str] | None = None) -> dict:
     """What glibc did in a child started with ``env_extra``, or with ``MALLOC_ARENA_MAX`` named
     twice (``twice`` = first value, last value), and what the app's reading said there."""
-    env = {k: v for k, v in os.environ.items() if k != "MALLOC_ARENA_MAX"}
+    env = {k: v for k, v in os.environ.items() if k not in _ALLOCATOR_VARIABLES}
     env.update(env_extra or {})
     env["PYTHONPATH"] = str(REPO)
     cmd = [sys.executable, "-c", _COUNT_ARENAS]
@@ -482,6 +487,90 @@ def test_a_variable_set_twice_counts_as_its_first_value_because_that_is_the_one_
     last_is_bigger = _count_arenas(twice=("1", "3"))
     assert last_is_bigger["reading"]["arena_cap"] == 1
     assert last_is_bigger["arenas"] == 1, "glibc applied the first value here too"
+
+
+@pytest.fixture(scope="module")
+def arena_baseline() -> int:
+    """The arenas 16 allocating threads leave with none of the three variables, taken once for the
+    module; skips where there is nothing for a cap to bound."""
+    return _arena_baseline()
+
+
+# What the reading is to say for a child started with ``env``, and what glibc must have done there.
+# ``claim``: ``("capped", N)`` is "runs with the cap, N"; ``"unknown"`` is "not known" (effective None, no
+# cap named); ``"not set"`` is "not capped" (effective False). ``arenas``: an int is "glibc kept that many"
+# (no more than the baseline); ``"baseline"`` is "glibc ignored the setting"; None is "glibc did something
+# the reading does not claim to know" (the figure goes in the failure message and is not asserted).
+# Measured on glibc 2.39 with 16 allocating threads; a glibc that reads a value differently fails the row
+# with the figure in its message, which is what these are for.
+_REAL_SHAPES = [
+    ("not set", {}, "not set", "baseline"),
+    ("a plain number", {"MALLOC_ARENA_MAX": "3"}, ("capped", 3), 3),
+    ("a leading blank", {"MALLOC_ARENA_MAX": " 4"}, ("capped", 4), 4),
+    ("a leading tab", {"MALLOC_ARENA_MAX": "\t2"}, ("capped", 2), 2),
+    ("a number far past the arenas there are", {"MALLOC_ARENA_MAX": "9" * 18}, ("capped", int("9" * 18)), "baseline"),
+    # What follows the digits makes glibc ignore the whole value: these are NOT the caps they look like.
+    ("a trailing blank", {"MALLOC_ARENA_MAX": "4 "}, "unknown", "baseline"),
+    ("blanks on both sides", {"MALLOC_ARENA_MAX": " 4 "}, "unknown", "baseline"),
+    ("a trailing letter", {"MALLOC_ARENA_MAX": "2x"}, "unknown", "baseline"),
+    ("a leading zero before an 8", {"MALLOC_ARENA_MAX": "08"}, "unknown", "baseline"),
+    ("a fraction", {"MALLOC_ARENA_MAX": "1.5"}, "unknown", "baseline"),
+    ("a negative number", {"MALLOC_ARENA_MAX": "-2"}, "unknown", "baseline"),
+    ("zero", {"MALLOC_ARENA_MAX": "0"}, "unknown", "baseline"),
+    ("an empty value", {"MALLOC_ARENA_MAX": ""}, "unknown", "baseline"),
+    ("an Arabic-Indic digit", {"MALLOC_ARENA_MAX": "\u0663"}, "unknown", "baseline"),
+    ("an ASCII digit and an Arabic-Indic one", {"MALLOC_ARENA_MAX": "1\u0663"}, "unknown", "baseline"),
+    ("a full-width digit", {"MALLOC_ARENA_MAX": "\uff12"}, "unknown", "baseline"),
+    ("a number past 64 bits", {"MALLOC_ARENA_MAX": "9" * 23}, "unknown", "baseline"),
+    # glibc DOES read these as numbers; the reading does not claim them, so it is only ever too modest.
+    ("octal", {"MALLOC_ARENA_MAX": "010"}, "unknown", None),
+    ("hexadecimal", {"MALLOC_ARENA_MAX": "0x4"}, "unknown", None),
+    ("a plus sign", {"MALLOC_ARENA_MAX": "+4"}, "unknown", None),
+    # A tunable naming the limit outranks the variable, in either direction.
+    ("the tunable alone", {"GLIBC_TUNABLES": "glibc.malloc.arena_max=1"}, "unknown", 1),
+    ("the tunable and a bigger variable",
+     {"GLIBC_TUNABLES": "glibc.malloc.arena_max=1", "MALLOC_ARENA_MAX": "8"}, "unknown", 1),
+    ("the tunable and a smaller variable",
+     {"GLIBC_TUNABLES": "glibc.malloc.arena_max=8", "MALLOC_ARENA_MAX": "2"}, "unknown", 8),
+    # Tunables about something else, and a preload that is no malloc replacement, leave the variable alone.
+    ("another tunable", {"GLIBC_TUNABLES": "glibc.malloc.tcache_count=0", "MALLOC_ARENA_MAX": "2"},
+     ("capped", 2), 2),
+    ("a tunable with a similar name", {"GLIBC_TUNABLES": "glibc.malloc.arena_test=4", "MALLOC_ARENA_MAX": "2"},
+     ("capped", 2), 2),
+    ("a preloaded library that is no allocator", {"LD_PRELOAD": "libm.so.6", "MALLOC_ARENA_MAX": "2"},
+     ("capped", 2), 2),
+]
+
+
+@linux_only
+@pytest.mark.parametrize(("label", "env", "claim", "arenas"), _REAL_SHAPES, ids=[r[0] for r in _REAL_SHAPES])
+def test_the_reading_is_checked_against_what_glibc_does_for_each_shape_its_rules_are_about(
+        arena_baseline, label, env, claim, arenas):
+    """The number, tunables and preload rules of ``allocator_setting`` were pinned by fakes only: a fake
+    says what the rule is, never that glibc agrees. Each row starts a REAL child with that environment,
+    counts the arenas glibc kept (``malloc_info``) and asks the app's own reading in the same process.
+    SOUNDNESS first: the reading never says "runs with the cap" for a cap glibc did not apply, and never
+    says "not capped" for one it did (the figure beside every row is glibc's). MUTATION TARGETS: each
+    rule of ``_plain_count``, ``_tunes_arena_max`` and the not-set branch. What stays pinned by fakes:
+    a REPLACED malloc (``test_a_preloaded_malloc_replacement...``), because a real one needs an allocator
+    library this machine may not have."""
+    got = _count_arenas(env)
+    reading, kept = got["reading"], got["arenas"]
+    where = f"[{label}] glibc kept {kept} arenas (baseline {arena_baseline}); the reading: {reading}"
+    if claim == "not set":
+        assert reading["effective"] is False and reading["arena_cap"] is None, where
+    elif claim == "unknown":
+        assert reading["effective"] is None and reading["arena_cap"] is None, where
+    else:
+        assert reading["effective"] is True and reading["arena_cap"] == claim[1], where
+    if reading["effective"] is True:
+        assert kept <= reading["arena_cap"], "the reading says capped, and glibc kept more than the cap: " + where
+    if reading["effective"] is False:
+        assert kept == arena_baseline, "the reading says not capped, and glibc capped: " + where
+    if arenas == "baseline":
+        assert kept == arena_baseline, "glibc was to ignore this setting: " + where
+    elif isinstance(arenas, int):
+        assert kept == min(arenas, arena_baseline), "glibc was to keep that many: " + where
 
 
 def _starting_block(monkeypatch, block: bytes | Exception) -> None:

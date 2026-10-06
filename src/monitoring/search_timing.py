@@ -57,9 +57,9 @@ _LOCK = threading.Lock()
 # write would be lost; an append that had opened the file just before the cut replaced it would write
 # into the old file; and a read that has the file open while a cut swaps it makes the swap fail on
 # Windows, where a file that is open cannot be replaced. Held only around the write itself, around a
-# cut (tens of milliseconds, every 250th append: see ``_trim_if_due``) and around the read of a log's
-# bytes, never while taking ``_LOCK``. ONE lock per log: the browse log's cut, the longer of the two,
-# never holds up a text search's append, nor the other way round.
+# cut (a few milliseconds, tens while a log still holds lines written whole; every 250th append: see
+# ``_trim_if_due``) and around the read of a log's bytes, never while taking ``_LOCK``. ONE lock per log:
+# one log's cut never holds up the other kind's append.
 _FILE_LOCKS = {KIND_TEXT: threading.Lock(), KIND_BROWSE: threading.Lock()}
 _recent: dict[str, list[dict]] = {KIND_TEXT: [], KIND_BROWSE: []}
 
@@ -71,6 +71,12 @@ _LOG_FILES = {KIND_TEXT: "search_timing.jsonl", KIND_BROWSE: "search_timing_brow
 # this many more for each cut that failed (a full disk; on Windows a file another program holds open).
 _TRIM_EVERY = 250
 _appends_since_trim: dict[str, int] = {KIND_TEXT: _TRIM_EVERY, KIND_BROWSE: _TRIM_EVERY}
+# The two texts every finished record carries (``SearchPhaseTimer.finish``). Both are in every report (the
+# aggregate's own, and the durable summary's), so a log line repeating them said the same words on each of
+# its 5,000 lines: 1,741 of a browse line's 1,937 bytes, 850 of a text line's 1,043. Nothing reads them
+# back (``_read_log`` counts lines and reads ``at``; the aggregate reads ``phases``, ``total_ms`` and
+# ``limit``), so a DURABLE line is the measurement only. The in-process window keeps the record whole.
+_STATIC_TEXT_KEYS = ("method", "caveat")
 
 
 class SearchPhaseTimer:
@@ -118,7 +124,10 @@ class SearchPhaseTimer:
         ``at`` is when it finished (UTC), and ``started_after_unlock_s`` how far from the latest
         unlock to have finished by then it BEGAN: signed, and ``None`` -- never 0 -- when this
         process had finished no unlock (see ``unlock_marker``). Neither existed before 2026-10-01,
-        so no older record can be placed in time."""
+        so no older record can be placed in time.
+
+        ``method`` and ``caveat`` are the same words on every record: the in-process window keeps
+        them, and the durable log does not write them (``append_search_timing``)."""
         total = round((self._mono() - self._t0) * 1000, 3)
         ended = self._wall()
         if self._kind == KIND_BROWSE:
@@ -388,13 +397,18 @@ def _trim_if_due(kind: str) -> None:
     """Cut a log back to the cap once every ``_TRIM_EVERY`` appends, and on a process's first one.
 
     Cutting reads and rewrites the whole file. Measured on the development container, warm page
-    cache, over seven cuts of a log holding 5,250 records of one kind (a record carries its ``method``
-    and ``caveat`` text, so the sizes move with that wording, and they did when the browse and the
-    unlock distance joined it): the browse log is about 9.7 MB at the cap (1.9 KB a record) and a cut
-    took 38-94 ms, 22-31 ms of it the read; the text log about 5.2 MB (1.04 KB a record), 22-51 ms,
-    12-18 ms of it the read. A cold read costs more. Cutting after EVERY append would put that on each
-    article-list call the moment a log reached its cap, so it is done once every ``_TRIM_EVERY``. The
-    first append of a process cuts too, so a log never carries the growth of the process before it."""
+    cache, over seven cuts of a log holding 5,250 records of one kind. A line is the measurement
+    only (``_STATIC_TEXT_KEYS`` are not written): a browse line is 196 bytes (the log 0.98 MB at the
+    cap) and a cut took 2.4-2.6 ms, 1.0-1.1 ms of it the read; a text line is 193 bytes (0.97 MB),
+    2.3-2.8 ms, 0.9-1.1 ms of it the read. The same records written whole, as every line was until
+    2026-10-06 (the sizes moved with that wording, and did when the browse and the unlock distance
+    joined it), were 1,937 and 1,043 bytes (9.7 and 5.2 MB at the cap), and a cut took 38-94 ms (22-31 ms
+    of it the read) and 22-51 ms (12-18 ms): a log still holds lines of that shape until the cuts drop
+    them. A cold read costs more. Cutting after EVERY append would still put a rewrite of the whole file
+    on each article-list call the moment a log reached its cap, so it is done once every
+    ``_TRIM_EVERY`` (the number protects the rewrite, not the log's size, so the smaller line does not
+    move it). The first append of a process cuts too, so a log never carries the growth of the process
+    before it."""
     with _LOCK:
         _appends_since_trim[kind] += 1
         due = _appends_since_trim[kind] >= _TRIM_EVERY
@@ -481,7 +495,11 @@ def durable_log_summary() -> dict:
             f"cut back to its newest {_CAP_LINES} lines once every {_TRIM_EVERY} appends, so it can "
             f"hold up to {_TRIM_EVERY} more than that, and {_TRIM_EVERY} more for each cut that "
             "failed (a full disk; on Windows a file another program holds open), which is tried "
-            "again at the next one. `undated` lines carry no usable `at` (none, "
+            "again at the next one. A line is the measurement only (kind, phases, total_ms, at, "
+            "started_after_unlock_s and, for a browse, its page size and offset): the `method` and "
+            "`caveat` that describe a measurement are the ones in this report, and a line written "
+            "before 2026-10-06 still carries them, so both shapes can share a file until the cuts "
+            "drop the older one. `undated` lines carry no usable `at` (none, "
             "or one with no time zone) and cannot be placed in time; dated_from and dated_to bound "
             "the dated ones."
         ),
@@ -515,16 +533,22 @@ def suppressed() -> Iterator[None]:
 
 def append_search_timing(record: dict) -> None:
     """Durably append one record to the bounded JSONL log of its kind AND feed the in-process
-    aggregate. Best-effort — a logging failure never touches the search that produced it."""
+    aggregate. Best-effort — a logging failure never touches the search that produced it.
+
+    The line is the measurement only: the record without ``_STATIC_TEXT_KEYS``. The in-process window
+    gets the record whole and the caller's own dict is never changed. A log written before 2026-10-06
+    has lines that still carry the two texts; every reader counts a line by its ``at`` whatever else it
+    holds, and the cuts drop the older shape as they drop any old line, so the two can share a file."""
     if _SUPPRESSED.get():
         return
     record_search_phases(record)
     kind = _kind_of(record)
     try:
+        line = {k: v for k, v in record.items() if k not in _STATIC_TEXT_KEYS}
         path = _log_path(kind)
         path.parent.mkdir(parents=True, exist_ok=True)
         with _FILE_LOCKS[kind], open(path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+            fh.write(json.dumps(line, separators=(",", ":")) + "\n")
         _trim_if_due(kind)
     except Exception:  # noqa: BLE001
         _LOG.debug("search_timing append failed", exc_info=True)

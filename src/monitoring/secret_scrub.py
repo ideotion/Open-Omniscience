@@ -20,11 +20,11 @@ text it cannot parse is scrubbed for the secret as typed and as JSON writes it.
 
 WHAT IT GUARANTEES, and the two things a naive ``str.replace`` does not:
 
-  * The output never contains the secret. A replacement can itself recreate the secret, either
-    from the text beside it (a passphrase ending in ``*`` and the marker's own asterisks) or
-    because the secret is a piece of the marker (a passphrase ``red`` and ``***redacted***``), so
-    the result is CHECKED, and a marker that would leave the secret in is replaced by one that
-    does not. The ordinary case keeps the readable ``***redacted***`` word.
+  * No VALUE of the output contains the secret (a KEY can: the next point). A replacement can itself
+    recreate the secret, either from the text beside it (a passphrase ending in ``*`` and the marker's
+    own asterisks) or because the secret is a piece of the marker (a passphrase ``red`` and
+    ``***redacted***``), so the result is CHECKED, and a marker that would leave the secret in is
+    replaced by one that does not. The ordinary case keeps the readable ``***redacted***`` word.
   * KEYS are never touched. A key is a field name the code defines and its readers look up
     (``ok``, ``restore``, ``committed``), and the child builds none from what it is handed; a
     passphrase that is a piece of one (``ok``, ``store``, ``e``) used to rename it, which turned a
