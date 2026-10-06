@@ -3274,6 +3274,23 @@
         <button class="secondary" data-on-click="downloadKeywordParts(this, 'default')" title="The top 5,000 keywords per language, as numbered .zip files of at most 1 MB each (about ten files at most), five to a click, the manifest first. Each file opens on its own.">Keyword log (1 MB files)</button>
         <button class="secondary" data-on-click="downloadKeywordParts(this, 'all')" title="Every keyword in the corpus (not just the top 5000 per language), as numbered .zip files of at most 1 MB each: the first files hold every language's top 5,000, so if you cannot send them all, send them in number order. No total size cap. It is written to disk a batch at a time, so the app's memory stays flat, but a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message if memory or disk runs short.">All keywords (1 MB files)</button>
         <button class="secondary" data-on-click="downloadKeywordParts(this, 'again')" title="Saves the numbered keyword files built last time again, without rebuilding them. They stay on this machine until the next build, or twelve hours after the last save. Type a part number in the box that appears to start from it.">Last keyword files, again</button>
+      </div>
+      <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
+           to a click: see downloadKeywordParts / _partsSave in app-diagnostics.js. It sits DIRECTLY
+           UNDER the buttons that fill it, never after the unrelated buttons below them: the
+           2026-10-06 field report ("the full run did not work, I pressed 'again'") fits a finished
+           build whose Save button was 300-500 px further down (measured in Chromium) than the button
+           that was pressed. -->
+      <div class="row" id="parts-bar" hidden style="margin-top:6px">
+        <span id="parts-status" class="small" role="status" aria-live="polite"></span>
+        <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>
+        <button id="parts-rest" class="secondary" data-on-click="partsSaveRest()" hidden>Save all the rest</button>
+        <label id="parts-from-wrap" class="small" hidden title="Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
+          <input id="parts-from" type="number" min="1" value="1" style="width:5em">
+        </label>
+        <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
+      </div>
+      <div class="row" style="margin-top:6px">
         <button data-on-click="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
         <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
         <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/source-quality?download=1')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
@@ -3292,17 +3309,6 @@
         <button data-on-click="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
         <button data-on-click="discoverWorld(this)" title="The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.">Discover sources worldwide (Wikidata) ↗</button>
         <span id="discover-world-status" class="hint muted"></span>
-      </div>
-      <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
-           to a click: see downloadKeywordParts / _partsSave in app-diagnostics.js. -->
-      <div class="row" id="parts-bar" hidden style="margin-top:6px">
-        <span id="parts-status" class="small" role="status" aria-live="polite"></span>
-        <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>
-        <button id="parts-rest" class="secondary" data-on-click="partsSaveRest()" hidden>Save all the rest</button>
-        <label id="parts-from-wrap" class="small" hidden title="Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
-          <input id="parts-from" type="number" min="1" value="1" style="width:5em">
-        </label>
-        <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
       </div>
       <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
            focused result) and write the exact ir_eval gold-set file the run below consumes.

@@ -165,6 +165,52 @@ def rows_from_payload(raw: object, origin: str) -> list[dict]:
     return rows
 
 
+def repair_record_flags(basis: object) -> dict:
+    """What an export's ``basis`` block says about the boot repair's record, for the merge report.
+
+    ``{}`` when the record was read in full. Otherwise the input is marked
+    ``repair_record_unreadable`` (with the run ids when they are known): the rows an unreadable run
+    withdrew cannot be named, so they count below as ``measured`` corroboration although an imported
+    history decided them. The merge only counts ``basis: measured`` rows, so this has to travel
+    beside them; it changes no verdict and refuses nothing.
+    """
+    if not isinstance(basis, dict) or not basis.get("repair_record_unreadable"):
+        return {}
+    runs = basis.get("repair_runs_unreadable")
+    return {
+        "repair_record_unreadable": True,
+        "repair_runs_unreadable": [str(r) for r in runs] if isinstance(runs, list) else [],
+    }
+
+
+def repair_record_flags_of_export_bytes(data: bytes) -> dict:
+    """:func:`repair_record_flags` of an uploaded export, JSON or the Export button's YAML (which carries
+    the ``basis`` block as a top-level key only when the record was unreadable). Anything that does not
+    parse as a mapping has no ``basis`` to read: ``{}``, never a refusal -- the rows were already
+    accepted by the time this runs."""
+    try:
+        text = data.decode("utf-8")
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            payload = yaml.safe_load(text)
+    except (UnicodeDecodeError, yaml.YAMLError):
+        return {}
+    return repair_record_flags(payload.get("basis")) if isinstance(payload, dict) else {}
+
+
+def repair_record_flags_of_bundle_bytes(data: bytes) -> dict:
+    """The same flags out of an all-diagnostics bundle's qualification export member (``{}`` when it is
+    absent or unreadable: the refusal for that is :func:`rows_from_bundle_bytes`'s, not this one's)."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            if BUNDLE_MEMBER not in z.namelist():
+                return {}
+            return repair_record_flags_of_export_bytes(z.read(BUNDLE_MEMBER))
+    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError):
+        return {}
+
+
 def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
     """One instance's export -> its verdict rows: the JSON the diagnostics carry, or the
     YAML the Quality gates panel's Export button saves (``fmt=yaml``). Both hold the same
