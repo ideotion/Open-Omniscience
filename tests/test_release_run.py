@@ -2961,8 +2961,21 @@ def test_a_key_the_locale_cannot_hand_to_the_child_is_recorded_by_class_alone(fa
     phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
     assert phase["status"] == "error" and "UnicodeEncodeError" in phase["detail"], phase
     shown = json.dumps(rep)
-    assert "xe9" not in shown and "position" not in shown and "u00e9" not in shown and "\\u0416" not in shown, shown
+    assert "\\xe9" not in shown and "u00e9" not in shown and "\\u0416" not in shown and "\u00e9" not in shown, shown
+    assert "can't encode character" not in shown, shown
     assert not list(fast["dest"].glob(".restore-release-run-*")), "the directory made for the child is taken away"
+
+
+@pytest.mark.parametrize("mode", [0, 1])
+def test_the_child_gets_the_parents_utf8_mode_whichever_it_is(fast, monkeypatch, mode):
+    """The runner's own mode is whatever it is (0 on most machines), so a comparison with it cannot tell a mirrored mode from a
+    fixed one: the parent's flag is set to each value here. MUTATION TARGET: a fixed ``PYTHONUTF8``, either value."""
+    _SPAWNED.clear()
+    fake_sys = types.SimpleNamespace(executable=sys.executable, flags=types.SimpleNamespace(utf8_mode=mode), platform=sys.platform)
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1)
+    monkeypatch.setattr(rr, "sys", fake_sys)
+    rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    assert _SPAWNED[-1]["env"]["PYTHONUTF8"] == str(mode), _SPAWNED[-1]["env"]["PYTHONUTF8"]
 
 
 def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):

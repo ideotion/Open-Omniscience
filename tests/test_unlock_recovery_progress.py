@@ -22,6 +22,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -823,3 +824,23 @@ def test_an_upkeep_thread_that_cannot_start_does_not_send_a_usable_app_back_to_t
 def test_a_size_that_is_not_a_real_positive_number_is_no_estimate(dd, bad):
     forensics.record_unlock_timing(_record(2 * _GIB, 80_000.0))
     assert forensics.recovery_estimate(bad) == (None, None)
+
+
+def test_a_key_with_a_lone_surrogate_is_refused_in_fixed_words_where_the_held_key_is_compared(held_key, monkeypatch, caplog):
+    """The typed key is compared with the held one as UTF-8 bytes, and a lone surrogate cannot be encoded: Python's error names
+    the character and its offset, a piece of the key no scrub knows, and it used to leave the route as it was raised. It is a 400 in
+    fixed words that name no character. MUTATION TARGET: the encode outside the helper or outside the scrubbing block."""
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    held_key.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    typed = "ab\ud800cd-typed-key"
+    with caplog.at_level(logging.DEBUG), pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase=typed))
+    assert err.value.status_code == 400 and "UTF-8" in err.value.detail
+    written = err.value.detail + "\n".join(f"{r.getMessage()}\n{r.exc_text or ''}" for r in caplog.records)
+    assert "ud800" not in written and "position" not in written and "surrogate" not in written, written
+    assert err.value.__cause__ is None and err.value.__suppress_context__

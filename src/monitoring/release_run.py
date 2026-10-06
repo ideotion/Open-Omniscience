@@ -1215,12 +1215,13 @@ def _fresh_install_restore(
             stderr=subprocess.PIPE,
         )
     except UnicodeError as exc:
-        # The key has a character this process's locale cannot hand to a child (``os.fsencode`` of the environment): the error's
-        # own text names that character and its offset, a form of the key no scrub knows, so only the class is recorded.
+        # The environment or an argument has a character this process's locale cannot hand to a child (``os.fsencode``; the key
+        # is the one that matters, but the paths go the same way): the error's own text names that character and its offset, a
+        # form of the key no scrub knows, so only the class is recorded.
         with contextlib.suppress(OSError):
             fresh.rmdir()
         raise RuntimeError(
-            f"{type(exc).__name__}: the passphrase has a character this process's locale cannot hand to the restore child"
+            f"{type(exc).__name__}: the passphrase or a path has a character this process's locale cannot hand to the restore child"
         ) from None
     except BaseException:
         # No child ran, so nothing wrote into the directory just made: take it away, kept install or

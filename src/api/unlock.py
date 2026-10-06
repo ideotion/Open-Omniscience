@@ -649,7 +649,13 @@ def unlock(body: PassphraseBody) -> dict:
             from src.database.connect import get_passphrase
 
             held = get_passphrase()
-            if held is not None and hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
+            # The typed key is not held yet: whatever this raises is converted with the key out of it (a key with a lone
+            # surrogate cannot be encoded, and the error names the character and its offset, a form no scrub knows).
+            with scrub_and_reraise(_LOG, "unlock failed", body.passphrase):
+                is_the_held_key = held is not None and hmac.compare_digest(
+                    _passphrase_bytes(body.passphrase), held.encode("utf-8")
+                )
+            if is_the_held_key:
                 # The held key, submitted again (a stale tab, a double click that lands late): there is nothing to
                 # replace and nothing to run again (no engine disposal, no second start-up upkeep thread), so the
                 # file is only READ with it, read-only, so that the read cannot fold a leftover log into the file.
@@ -660,6 +666,17 @@ def unlock(body: PassphraseBody) -> dict:
             # Not the held key: ``_unlock_locked`` verifies it against the file too. A wrong one is refused there
             # (403), and the right one repairs an app that reads as open while it holds a wrong key.
         return _unlock_locked(body, p)
+
+
+def _passphrase_bytes(passphrase: str) -> bytes:
+    """The typed key as UTF-8, or the 400 a key that cannot be written as UTF-8 (a lone surrogate) is answered with, in fixed
+    words: the error Python raises names the character and its offset, which is a piece of the key."""
+    try:
+        return passphrase.encode("utf-8")
+    except UnicodeError:
+        raise HTTPException(
+            status_code=400, detail="the passphrase has a character that cannot be written as UTF-8"
+        ) from None
 
 
 def _file_opens_with(p: Path, passphrase: str) -> None:
@@ -678,7 +695,7 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     try:
         conn = connect(p, key=passphrase, check_same_thread=False, read_only=True)
     except WrongPassphraseError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        raise HTTPException(status_code=403, detail=scrubbed(str(exc), passphrase)) from exc
     conn.close()
 
 
