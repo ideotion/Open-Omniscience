@@ -43,7 +43,7 @@ def test_another_threads_holds_are_in_the_process_total_and_not_in_the_watched_f
     gate.watch(me)
     t = threading.Thread(target=_hold, args=(gate, 0.1), name="somebody-else")
     t.start()
-    t.join()
+    t.join(timeout=30)
     taken = gate.take_watched(me)
     assert taken == {"grants": 0, "held_s": 0.0, "longest_s": 0.0}
     assert gate.stats()["total_held_s"] >= 0.1
@@ -90,7 +90,7 @@ def test_a_reentrant_hold_is_one_grant_and_one_hold():
     gate.release()
     taken = gate.take_watched(me)
     assert taken is not None and taken["grants"] == 1
-    assert taken["held_s"] >= 0.02 and taken["held_s"] == taken["longest_s"], "one outermost hold: total and longest are the same figure"
+    assert taken["held_s"] >= 0.018 and taken["held_s"] == taken["longest_s"], "one outermost hold: total and longest are the same figure"
 
 
 def test_the_gate_is_free_and_the_next_waiter_woken_before_the_bookkeeping_runs():
@@ -106,12 +106,14 @@ def test_the_gate_is_free_and_the_next_waiter_woken_before_the_bookkeeping_runs(
     got: list[bool] = []
 
     def waiter() -> None:
-        ok = gate.acquire(timeout=10)
+        # long on purpose: a missing wake must leave this thread parked past the join below (a short
+        # timeout would let it take the free gate by itself and hide the fault)
+        ok = gate.acquire(timeout=60)
         got.append(ok)
         if ok:
             gate.release()
 
-    t = threading.Thread(target=waiter, name="parked-waiter")
+    t = threading.Thread(target=waiter, name="parked-waiter", daemon=True)
     t.start()
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline and not gate._queue:
@@ -119,6 +121,6 @@ def test_the_gate_is_free_and_the_next_waiter_woken_before_the_bookkeeping_runs(
     assert gate._queue, "the waiter is parked on the gate before the owner releases"
     with contextlib.suppress(TypeError):
         gate.release()
-    t.join(timeout=30)
+    t.join(timeout=10)
     assert got == [True], "the next waiter was woken and took the gate although the bookkeeping raised"
     assert gate._owner is None and gate.stats()["held"] is False

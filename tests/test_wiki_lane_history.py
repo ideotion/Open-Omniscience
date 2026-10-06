@@ -409,7 +409,7 @@ def test_the_diagnostics_route_returns_the_same_history(lane):
 
 
 # --------------------------------------------------------------------------- #
-# The coordinator-side Opus read of #1314 (2026-10-06): four defects, each pinned.
+# A review of #1314 by the coordinator's side (2026-10-06): four defects, each pinned.
 # --------------------------------------------------------------------------- #
 def test_a_flush_that_fails_at_the_commit_keeps_its_rows_and_its_prune(lane):
     """The lane's sessions do not autoflush: the INSERTs only reach the database at flush and
@@ -523,7 +523,7 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
     def fake_drain_once(*a, **k):
         t = threading.Thread(target=other_thread_holds, name="somebody-else")
         t.start()
-        t.join()
+        t.join(timeout=30)
         write_gate.acquire()
         time.sleep(0.03)
         write_gate.release()
