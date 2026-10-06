@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import math
 import os
+import threading
+from datetime import UTC, datetime
 from typing import Any
 
 # The tier boundaries. Named, not inline, because the caveat quotes them.
@@ -302,19 +304,135 @@ def _duckdb_threads(tier: str) -> int:
 
 
 _CACHE: dict[str, Any] | None = None
+#: When, and on how many logical CPUs, the cached budget above was resolved. ``budget()`` resolves
+#: ONCE per process, from the RAM total read at that instant, so the tier is a fact about a
+#: moment -- and on a virtual machine whose memory is ballooned the total moves afterwards,
+#: so "which moment" is part of the fact. Kept beside the cache and set with it.
+_RESOLVED: dict[str, Any] | None = None
+#: Held while the budget resolves, so that two threads asking at once could never leave a cache
+#: from one reading and a stamp from the other. DEFENSIVE TODAY: the first resolve is the engine
+#: build at import (``session.py``), on the importing thread, before any other thread asks, and
+#: every later caller only reads the cache. RE-ENTRANT ON PURPOSE: nothing in ``resolve()`` asks
+#: for the budget again, but a later change that made it do so would, behind a plain lock, HANG the
+#: thread that imports the engine (measured: a child that did it never returned) -- an app
+#: that never starts and says nothing -- where the unlocked code failed loudly with a
+#: ``RecursionError``. This keeps the loud failure.
+_LOCK = threading.RLock()
 
 
 def budget() -> dict[str, Any]:
     """The resolved budget, computed once per process."""
-    global _CACHE
-    if _CACHE is None:
-        _CACHE = resolve()
-    return _CACHE
+    global _CACHE, _RESOLVED
+    got = _CACHE
+    if got is None:
+        with _LOCK:
+            got = _CACHE
+            if got is None:
+                got = resolve()
+                # The moment BEFORE the cache: a reader on the lock-free path above that finds
+                # the cache must find the moment it was resolved at, or it would read a real
+                # budget as one that was injected (no moment).
+                _RESOLVED = {"resolved_at": _now_iso(), "cores": _cores()}
+                _CACHE = got
+    return got
 
 
 def reset_for_tests() -> None:
-    global _CACHE
-    _CACHE = None
+    global _CACHE, _RESOLVED
+    with _LOCK:
+        _CACHE = None
+        _RESOLVED = None
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _cores() -> int | None:
+    """The logical CPUs the operating system reports (``os.cpu_count()``): not the process's CPU
+    affinity and not a container's CPU quota, either of which can be fewer. None where the
+    platform cannot say."""
+    try:
+        return os.cpu_count() or None
+    except Exception:  # noqa: BLE001 - a platform that cannot say is unmeasured, not 1
+        return None
+
+
+def resolved_reading() -> dict[str, Any]:
+    """What this process's budget was resolved from: the tier, the RAM total it was decided
+    on (as read, and as the provisioned size it implies), the logical CPUs the system reported
+    (see :func:`_cores`), whether that tier leaves the in-memory keyword rollup on by default, and
+    when.
+
+    The facts come from the cached budget itself, so they can never disagree with the budget
+    the process runs on; ``resolved_at`` and ``cores`` are the moment's own. A budget that
+    was not resolved by ``budget()`` has no moment: both are None (a test that puts a cache
+    there clears the stamp as well, as ``reset_for_tests()`` does). ``total_ram_mb`` None with tier ``unmeasured`` is a machine whose RAM could not be
+    read, which is not a small one (see the module docstring).
+
+    It is a record of a decision, not a measurement of the machine now: for that, see
+    :func:`reading_vs_now`."""
+    b = budget()
+    moment = _RESOLVED or {}
+    return {
+        "tier": b.get("tier"),
+        "total_ram_mb": b.get("total_ram_mb"),
+        "nominal_ram_mb": b.get("nominal_ram_mb"),
+        "cores": moment.get("cores"),
+        "columnar_serve_default": b.get("columnar_serve_default"),
+        "resolved_at": moment.get("resolved_at"),
+    }
+
+
+def reading_vs_now() -> dict[str, Any]:
+    """The reading this process's budget was resolved from, beside the one the machine
+    gives right now and the tier that reading would resolve to.
+
+    The budget is resolved once per process (the pool size, the cache sizes, DuckDB's
+    memory limit and whether the in-memory rollup runs follow from it), and a virtual machine
+    whose memory is ballooned reports a different total later: the 2026-10-06 field
+    diagnostics hold an instance whose one pass summary says ``small`` while its own records of
+    the RAM total read 4,961, 5,921 and 4,600 MiB, and the 2026-09-30 ones a machine whose
+    killed process read 6,759.9 to 6,907.7 MiB (13 distinct totals in 200 samples) and whose
+    retry read 4,349 MiB. Both readings are facts about their own moment. ``tier_differs``
+    says only that the two tiers are not the same name; it passes no verdict on which
+    reading is the machine's real size."""
+    resolved = resolved_reading()
+    now_total = total_ram_mb()
+    now_tier = _tier(now_total)
+    differs = now_tier != resolved["tier"]
+    caveat = (
+        "the budget is not re-resolved while the process runs, so a machine whose total "
+        "RAM changes (a virtual machine with ballooned memory) keeps the tier of its "
+        "start; a restart resolves it again. Two readings that differ are a measured fact "
+        "about the machine, not a finding about which reading is right"
+    )
+    if differs and "unmeasured" in (resolved["tier"], now_tier):
+        caveat += (
+            "; one of the two could not be read (tier 'unmeasured', which is not a small "
+            "machine), so here the difference is about the reading and not about the machine"
+        )
+    return {
+        "resolved": resolved,
+        "now": {
+            "at": _now_iso(),
+            "total_ram_mb": round(now_total, 1) if now_total is not None else None,
+            # Beside the rounded total, because the tier is decided on the nominal size of the
+            # UNROUNDED reading: two totals that print alike (3,973.1 and 3,973.1) can be two
+            # tiers, and this is what tells them apart.
+            "nominal_ram_mb": _rounded_nominal(now_total),
+            "tier": now_tier,
+        },
+        "tier_differs": differs,
+        "method": (
+            "resolved: the RAM total psutil reported when this process first asked for its "
+            "budget (decided from it, once: the connection pool and the SQLite page cache, "
+            "unless the operator set them, DuckDB's memory limit, and whether the in-memory "
+            "rollup runs by default); now: the same reader, the same tier boundaries, read "
+            "at this moment"
+        ),
+        "caveat": caveat,
+    }
 
 
 def resident_pool_cache_mb() -> int:

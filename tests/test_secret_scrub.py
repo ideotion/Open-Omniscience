@@ -207,6 +207,8 @@ def test_an_empty_secret_rewrites_nothing(tmp_path):
     p = tmp_path / "e.jsonl"
     p.write_text('{"a":"b"}\n', encoding="utf-8")
     assert ss.scrub_file(p, "") is False and p.read_text(encoding="utf-8") == '{"a":"b"}\n'
+    # the helper under it matches nothing too, rather than splitting the text on an empty separator
+    assert ss._scrub_cut_text('{"a":"b"', "") == '{"a":"b"'
 
 
 def test_a_rewrite_that_fails_leaves_the_old_file_whole_and_no_copy_behind(tmp_path, monkeypatch):

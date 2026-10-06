@@ -586,6 +586,82 @@ def test_wrong_backup_passphrase_fails_loudly(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# A failed decrypt's own words never carry the passphrase out of a verify
+# --------------------------------------------------------------------------- #
+def _decrypt_that_names_the_passphrase(monkeypatch) -> None:
+    """Every EncryptionError message on the decrypt path is a literal today; this stands in for a lower
+    layer that one day puts what it was handed in its words. The verify report would carry them to every caller
+    that holds the passphrase (the volume-verify job serves it on an endpoint; the P0 check writes it into the
+    file the debug bundle carries) -- the coordinator's check of #1318, B1."""
+    from src.safety.crypto import EncryptionError
+
+    def refuse(path, sink, passphrase):
+        raise EncryptionError(f"could not open {Path(path).name} with {passphrase}")
+
+    monkeypatch.setattr("src.backup.stream_backup.decrypt_stream", refuse)
+
+
+def test_verify_report_never_carries_the_passphrase_a_failed_decrypt_names(tmp_path, monkeypatch):
+    """MUTATION TARGET: the scrub at the line's source (the exception's words in the problem line)."""
+    secret = "correct horse battery staple"
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus, pw=secret)
+    _decrypt_that_names_the_passphrase(monkeypatch)
+
+    report = verify_stream_backup(dest, passphrase=secret)
+    lines = [p for p in report["problems"] if "failed to decrypt" in p]
+    assert report["ok"] is False and report["decrypted"] is True and lines, report["problems"]
+    assert all(p.startswith("member ") and p.endswith(" with ***redacted***") for p in lines), lines
+    assert secret not in json.dumps(report)
+
+
+def test_verify_scrubs_the_exceptions_words_and_not_the_member_name_beside_them(tmp_path, monkeypatch):
+    """A passphrase that is also a member's name (the run puts no minimum on its length, and no rule on its
+    letters) leaves the name and the sentence around the exception's words as they are. MUTATION TARGET: a
+    scrub of the whole line in place of the exception's words."""
+    secret = "corpus.db"
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus, pw=secret)
+    _decrypt_that_names_the_passphrase(monkeypatch)
+
+    report = verify_stream_backup(dest, passphrase=secret)
+    lines = [p for p in report["problems"] if "failed to decrypt" in p]
+    assert any(
+        p.startswith("member corpus.db failed to decrypt: could not open ") and p.endswith(" with ***redacted***")
+        for p in lines
+    ), lines
+    assert not any(p.endswith(f" with {secret}") for p in lines), lines
+
+
+def test_volume_verify_job_status_never_carries_the_passphrase_a_failed_decrypt_names(tmp_path, monkeypatch):
+    """The route that serves a volume verify returns the job's status as it is (``GET
+    /api/backup/v2/volumes/status``), with the engine's report in it. MUTATION TARGET: the scrub at the line's
+    source, which the P0 check's own scrub does not cover for this consumer."""
+    from src.backup.volume_job import VolumeBackupManager
+
+    secret = "correct horse battery staple"
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus, pw=secret)
+    _decrypt_that_names_the_passphrase(monkeypatch)
+
+    mgr = VolumeBackupManager()
+    mgr.start_verify(str(dest), secret)
+    deadline = time.time() + 30
+    while time.time() < deadline and mgr.status()["state"] == "running":
+        time.sleep(0.01)
+    status = mgr.status()
+    assert status["state"] == "done", status
+    assert status["summary"]["report"]["ok"] is False
+    assert secret not in json.dumps(status)
+
+
+# --------------------------------------------------------------------------- #
 # Encrypted corpus member (SQLCipher) + WAL carry
 # --------------------------------------------------------------------------- #
 def _sqlcipher_available() -> bool:
