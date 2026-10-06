@@ -221,6 +221,7 @@ from .bundle import (
     _data_volume_report,
     _release_run_last,
     _chronology_member,
+    _vitals_history_member,
     _cpu_model_safe,
     _debug_bundle_member_budget_s,
     _diagnostics_coverage_report,
@@ -363,6 +364,9 @@ from .keyword_parts import (
     keyword_parts_latest,
     keyword_part_download,
 )
+# The vitals history (2026-10-06, R119): appended after the keyword parts, and BEFORE the release
+# run, whose eight routes test_release_run pins as the package's last.
+from .vitals_history import vitals_history_report
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -555,6 +559,7 @@ __all__ = [
     "keyword_log",
     "keyword_parts_latest",
     "keyword_part_download",
+    "vitals_history_report",
     "keyword_selftest",
     "keyword_triage_cancel",
     "keyword_triage_download",
@@ -643,6 +648,7 @@ __all__ = [
     "_RELEASE_RUN_JOB",
     "_release_run_last",
     "_chronology_member",
+    "_vitals_history_member",
     "_release_run_worker",
     "_status_payload",
     "release_run_cancel",
