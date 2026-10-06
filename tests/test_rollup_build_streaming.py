@@ -299,6 +299,7 @@ def _no_real_exit_hooks(monkeypatch):
     monkeypatch.setattr(rollup_marker, "_closed", False)
     monkeypatch.setattr(rollup_marker, "_exit_hook_registered", False)
     monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    monkeypatch.setattr(rollup_serve, "_LAST_VERDICT_POLL", float("-inf"))
     monkeypatch.setitem(rollup_serve._STATE, "spill", None)
 
 
@@ -764,20 +765,57 @@ def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pids_leftovers_
     assert os.path.isdir(rollup_serve._spill_setting()) and os.path.isdir(mine), "once made, this pid's are live"
 
 
-def test_a_limit_hold_is_released_when_the_corpus_epoch_changes(serve_env, monkeypatch):
+def test_a_limit_hold_is_released_when_the_corpus_epoch_changes_but_not_inside_the_rebuild_ttl(serve_env, monkeypatch):
     """D2: the limit never grows inside a process, so without this a corpus that shrank (a prune, a
-    restore of a smaller backup, a re-index) would keep the rollup off until the next restart."""
+    restore of a smaller backup, a re-index) would keep the rollup off until the next restart. Not before the
+    TTL: ``/api/insights/reindex-all`` bumps the epoch on every 300-article call."""
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
     monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 740.0, "epoch": 4}
+    ttl = rollup_serve.rollup_serve_ttl_s()
+    old = time.time() - ttl - 60.0
+    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": old, "duckdb_limit_mb": 740.0, "epoch": 4}
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 4)
     assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 5)
     assert rollup_serve._stopped_build_verdict() is None
     assert rollup_serve._STATE["stopped"] is None, "released for good, not just for this check"
-    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: None)  # unreadable: no release
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": 1.0, "duckdb_limit_mb": 740.0, "epoch": 4}
+    # a stop younger than the TTL stays held through an epoch bump (a reindex-all drain bumps one per call)
+    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 740.0, "epoch": 4}
     assert rollup_serve._stopped_build_verdict() is not None
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: None)  # unreadable: no release
+    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": old, "duckdb_limit_mb": 740.0, "epoch": 4}
+    assert rollup_serve._stopped_build_verdict() is not None
+
+
+def test_a_guard_the_builds_own_poll_engaged_is_sampled_again_by_the_start_check(monkeypatch):
+    """S10: only collection passes release the guard; with collection paused it stayed engaged and kept the
+    rollup off for good. The verdict takes its own reading, at most once per interval."""
+    class Latched:
+        def __init__(self):
+            self.engaged = True
+            self.polls = 0
+
+        def poll(self):
+            self.polls += 1
+            self.engaged = False  # memory is healthy again: the sample releases it
+            return self.engaged
+
+        def state(self):
+            return {"reason": "available 90 MB", "last_reading": {}, "readings_available": True}
+
+        def reset(self, *, reason: str = "") -> None:  # the suite's isolation fixture calls it
+            self.engaged = False
+
+    import src.scheduler.memguard as mg
+
+    guard = Latched()
+    monkeypatch.setattr(mg, "memory_guard", guard)
+    monkeypatch.setattr(rollup_serve, "_GUARD_POLL_EVERY_S", 0.0)
+    assert rollup_serve._memory_verdict() is None and guard.polls == 1
+    # throttled: inside the interval a still-engaged guard is reported, not re-sampled
+    guard.engaged = True
+    monkeypatch.setattr(rollup_serve, "_GUARD_POLL_EVERY_S", 3600.0)
+    assert rollup_serve._memory_verdict()["reason"] == "mem-low" and guard.polls == 1
 
 
 def test_a_guard_stop_in_the_mentions_stage_is_held_on_the_projected_total(serve_env, session, monkeypatch):

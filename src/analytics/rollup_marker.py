@@ -50,7 +50,7 @@ _PROCESS_ID = uuid.uuid4().hex
 #: At most one write this often while a build reports progress.
 _WRITE_EVERY_S = 10.0
 
-_last_write = 0.0
+_last_write = float("-inf")
 #: The largest resident size this process reported during the current build, and the one it began with.
 #: The marker keeps the PEAK (a reading taken between two writes is otherwise lost), and the retry rule
 #: asks for what the build GREW by, never for the app's own baseline a second time.

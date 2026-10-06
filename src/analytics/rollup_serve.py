@@ -477,7 +477,10 @@ def _stopped_build_verdict() -> dict | None:
     try:
         # A corpus that has been re-indexed, pruned or restored is a different corpus (the epoch moves for
         # exactly those); what stopped the last build says nothing about it, so the hold is released.
-        now_epoch = _current_epoch()
+        # Not before the rebuild TTL (``rollup_serve_ttl_s``, the churn bound every rebuild already honours):
+        # ``/api/insights/reindex-all`` bumps the epoch on EVERY 300-article call, and a release per call would
+        # bring the rescan loop back for the length of that drain.
+        now_epoch = _current_epoch() if time.time() - float(st.get("at") or 0.0) >= rollup_serve_ttl_s() else None
         if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
             with _LOCK:
                 _STATE["stopped"] = None
@@ -577,12 +580,14 @@ def _spill_setting() -> str:
 #: several times a second, so three sub-second spikes would trip the process-wide guard (and pause
 #: collection). The hook asks at most this often.
 _GUARD_POLL_EVERY_S = 1.0
+#: When ``_memory_verdict`` last took its own reading (see there).
+_LAST_VERDICT_POLL = float("-inf")
 
 
 def _make_on_batch():
     """The per-batch hook of the build: refresh the in-progress marker, then ask the memory guard."""
 
-    last_poll = [0.0]
+    last_poll = [float("-inf")]  # never a clock-dependent 0.0: a fresh runner's monotonic clock starts near it
 
     def _on_batch(stage: str, rows_done: int) -> None:
         from src.analytics import columnar, rollup_marker
@@ -627,6 +632,18 @@ def _memory_verdict() -> dict | None:
     """
     try:
         from src.scheduler.memguard import memory_guard
+
+        # The guard is released only by a SAMPLE that finds memory healthy again, and the samples come from
+        # collection passes. While collection is paused the guard can therefore stay engaged for good, the
+        # build's own poll having engaged it, and keep the rollup off with no one left to release it: take one
+        # fresh reading here, at most as often as the build asks (``_GUARD_POLL_EVERY_S``).
+        global _LAST_VERDICT_POLL
+        now = time.monotonic()
+        if memory_guard.engaged and now - _LAST_VERDICT_POLL >= _GUARD_POLL_EVERY_S:
+            _LAST_VERDICT_POLL = now
+            poll = getattr(memory_guard, "poll", None)
+            if poll is not None:
+                poll()
         # `engaged` is a PROPERTY, not a method -- calling it raises TypeError, and a
         # bare except here would have swallowed that into "not engaged" forever.
         if not memory_guard.engaged:
