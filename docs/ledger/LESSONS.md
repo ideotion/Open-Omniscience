@@ -13696,10 +13696,11 @@ whose check keeps dying (a test closes it five times and the check is still ther
 (9) **A DAMAGED VERDICT MUST SURVIVE A RESTART**: the latch lives in memory and the ledger reads the next start as a clean end, so without a record the finding is forgotten and collection writes on into a file
 the check read as damaged (the deep read of E2 reproduced it). The record already holds `state: done, verdict: damaged`; `plan_boot` reads that from an earlier process as a reason to read the file again
 (`damage-found-before`), at every start, until it reads clean or the file is replaced (`verification_forget`, called by the restore swap beside the latch release, so a verdict about the file that was live is
-not read as one about the new file). **What this does NOT do, and is the open decision of E3 and question 27**: the operator's start of collection (`retry_for_collection_start`, the airplane toggle going
-online included) still releases a latch the check set, as it releases one a corruption error set; for an error "the first failed read puts it back" is the safety, and a latch the check found has no failed read to
-put it back. The sentences shown say "Starting collection again tries once more", which a hold-until-repaired would make false for these latches (five strings x12). Two exits are open: a re-check at the start
-(the check IS the retry), or the latch held until a repair or replacement.
+not read as one about the new file). **A start of collection must not release a latch the check set unread** (`R117`: going online is the routine click): for an error "the first failed read puts it back" is the safety, and a latch the check found has
+no failed read to put it back, so `retry` holds a latch with `check_tables` and `verify.recheck` re-reads exactly those tables on a thread of its own (the latch held, a progress line of its own, one re-read per file at a time, none
+while the start-up check still reads); the file is released only when every table reads `ok`, a table that could not be read keeps it, and the answers are merged into the file's record with the rule that **an answer that could not be
+read never replaces a finding of damage** (otherwise a busy file, or a stop in the last table, makes the next start forget it). A re-read's answer for a file that was REPLACED in the meantime is dropped (the release ends the claim on
+the file), and a restore or salvage swap releases outright (`file_replaced=True`) and forgets the verdict. The sentences "Starting collection again tries once more" stay true.
 (10) **Three small rules the deep read forced**: a quit during the check gives the attempt back (`verification_file_stopped`: the entry stays `running` so the next start reads the file again, but quitting three
 times must not skip a check that nothing ever failed); a stop before a file is begun spends no attempt on it; a result for a file that was REPLACED while it was read is dropped (the entry `verification_forget`
 removed is not `running`), so a verdict about the old file cannot latch the new one; and **an error `connect()` chains must be the FIRST candidate's** (the page size that opened the path last), because the

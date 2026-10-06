@@ -4612,6 +4612,7 @@
   "The app is busy — retrying shortly…": "应用繁忙——即将重试…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "应用正在检查你的数据文件（意外中断之后，采集再次写入之前）：第 {index} 张表，共 {total} 张。检查自身不写入任何内容，结束后暂停会自行解除。",
   "The app is closing. Reconnect the drive, then start the app again.": "应用正在关闭。请重新连接驱动器，然后再次启动应用。",
+  "The app is reading again the part of your data file that the check reported as damaged: table {index} of {total}. If it reads clean, collection carries on by itself; if it does not, collection stays paused.": "应用正在重新读取检查报告为已损坏的那部分数据文件：第 {index} 张表，共 {total} 张。若读取无误，采集会自行继续；否则采集保持暂停。",
   "The app is shutting down — you can close this tab.": "应用正在关闭——您可以关闭此标签页。",
   "The app looks for news sources country by country, a few countries per pass.": "应用逐个国家寻找新闻来源，每轮几个国家。",
   "The app measures structure — coordination, novelty, output capacity, transparency — and you decide. There is deliberately no trust score: a single number over incommensurable dimensions would bake in bias and silence small, foreign, new or dissident sources. Surface, never suppress.": "应用衡量的是结构——协同、新颖性、产出能力、透明度——而由你决定。这里刻意没有信任评分：用单一数字概括不可通约的维度会固化偏见，并让弱小、外国、新兴或异见来源噤声。呈现，绝不压制。",

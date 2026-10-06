@@ -160,6 +160,18 @@ def _arm_database_check() -> bool:
     return verify.arm_at_boot()
 
 
+def _stop_database_check() -> None:
+    """Shutdown: the check after an unexpected stop (database/verify.py) reads on its own connections, so ask it to
+    end at its next look, and a quit mid-check does not leave a table read running past the shutdown. Its file's entry
+    stays ``running``, which is how the next start knows to read it again. Best-effort: never raises."""
+    try:
+        from src.database import verify
+
+        verify.stop()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not stop the start-up database check", exc_info=True)
+
+
 def _ends_the_check_wait(fn):
     """The wait for the start-up check ends however ``fn`` ends unless the boot-sequence thread, which runs the check,
     was started: an exception on the way to that thread must not leave collection waiting for a check no one runs."""
@@ -587,15 +599,7 @@ async def lifespan(app: FastAPI):
         get_scheduler().stop()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
-    try:
-        # The check after an unexpected stop (database/verify.py) reads on its own connections: ask it to end at its
-        # next look, so a quit mid-check does not leave a table read running past the shutdown. Its file's entry
-        # stays "running", which is how the next start knows to read it again.
-        from src.database import verify as _verify
-
-        _verify.stop()
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        logger.debug("could not stop the start-up database check", exc_info=True)
+    _stop_database_check()
     try:
         from src.scheduler.offline_maintenance import stop as _stop_offline_maintenance
 

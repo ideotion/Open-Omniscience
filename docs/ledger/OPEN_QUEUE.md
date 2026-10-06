@@ -16345,8 +16345,7 @@ maintainer as a card.
 
 - **DAMAGED DATABASE, SLICE E2: WHAT THE CHECK AFTER AN UNEXPECTED STOP DOES NOT DO, AND THE DEFAULTS TAKEN (WAL / DISK THREAD, 2026-10-06; the
   plan is `/mnt/project-files/wal-disk-pool/PLAN-damaged-database.md`; QUESTION 26 (check the library before collecting again, a at start-up while
-  offline / b in the background) IS UNANSWERED AND THIS BUILDS ITS RECOMMENDED DEFAULT a; not a ruling, reversible by `OO_BOOT_VERIFY=0` or one
-  branch in `src/database/verify.py`).** (a) The check is `PRAGMA quick_check(<table>)` per table: it reads the structure of each table and
+  offline / b in the background) WAS ANSWERED a (`R120`, 2026-10-06): the check runs at start-up while the app is still offline; `OO_BOOT_VERIFY=0` turns it off).** (a) The check is `PRAGMA quick_check(<table>)` per table: it reads the structure of each table and
   its indexes (that the pages of each b-tree are well formed and its records readable), NOT that an index agrees with its table and not every row's
   content (the search index, a virtual table, is checked by SQLite's own integrity check of its inverted index from 3.44, which does not compare it
   with the articles: measured about three times the cost of the content table's own scan, the index's own pages).
@@ -16359,18 +16358,23 @@ maintainer as a card.
   that itself brings the process down (a boot loop that never reaches collection). (d) Only the three files damage can pause are checked
   (corpus, Wikipedia, law); the OSM lane's and the other lane files' incidents stay recorded only. (e) The trigger is the session ledger's
   `clean is False`: a stop the ledger could not classify (`None`) holds nothing, and a machine that lost power with the ledger line written
-  by an earlier boot is read as the ledger reads it. (f) A clean verdict releases nothing: a latch set by a corruption error stays until the
-  operator starts collection again, because a check says what this read found, not that the earlier error was wrong. (g) Repair and salvage
-  are E3 and wait for question 27. (h) A due check is recorded as `owed` the moment it is armed, and by a boot that stays locked, so a session closed
+  by an earlier boot is read as the ledger reads it. (f) A clean verdict of the START-UP check releases nothing: a latch set by a corruption error stays until the
+  operator starts collection again, because a check says what this read found, not that the earlier error was wrong; a latch the check itself set is released by
+  that start only after a re-read of the tables the check reported comes back clean (j). (g) Repair and salvage are E3; question 27 was answered a (`R121`: the app
+  repairs by itself, with a salvage copy and a switch), so E3 no longer waits. (h) A due check is recorded as `owed` the moment it is armed, and by a boot that stays locked, so a session closed
   before the check began does not cancel it (the ledger reads such a session as a clean end); it costs one small write to the damage record at the
   start after an unexpected stop. (i) NOT DONE: the planner-statistics refresh (`optimize_at_boot`, which can ANALYZE and so write the small
   `sqlite_stat1` table) runs at the start of the upkeep, BEFORE the check (the boot-sequence thread, whose first step is the check, is started at
   the upkeep's end), so the boot's own statistics write reaches a file the check has not yet read; collection and the other lanes wait for the check, this
   write does not. It is a few small pages, the least of the writes the app makes, and holding it until the check ends would leave a large store
   without planner statistics for the length of the check; if a ruling wants it held, it becomes a step of the sequence after "verify-database".
-  (j) NOT DONE, A DECISION FOR E3 AND QUESTION 27 (the deep read's S1): a latch the check set is released, like any latch, by the operator's start of collection
-  (`retry_for_collection_start`, the airplane toggle going online included), and a latch the check found has no failed read to put it back, so collection can write on into a
-  file the check read as damaged, until the next start reads it again (a damaged verdict now survives a restart and is read at every start until the file reads clean or is
-  replaced). Two exits: (1) the start re-checks the file (collection waits with the progress line; clean releases it, damage keeps it), which keeps the sentence "Starting
-  collection again tries once more" true; (2) a check-found latch is held until a repair or a replacement, which makes that sentence false for it (the four damage notes and the
-  override refusal need their own wording, five strings x12) and leaves no exit before E3. Recommended: (1), decided with E3, because the repair's swap is the exit that matters.
+  (j) BUILT, EXIT (1) OF THE DEEP READ'S S1 (the coordinator's order, 2026-10-06, because going online is the routine airplane click (`R117`) and a start that released a
+  check-found latch unread would let collection write into a file the check had just found damaged): a latch the check set (`check_tables`, in memory only, the tables it read as damaged)
+  is NOT released by the operator's start of collection; the start RE-READS those tables on a thread of its own (`verify.recheck`, called by `DamageRegistry.retry`; the Wikipedia lane's own
+  start does the same for its file), the latch holds meanwhile with its own progress line ("table N of M", `FRAME_RECHECKING` x12), and the file is released only when every one of them reads
+  `ok` (a table no longer in the file counts as read; an unreadable one keeps the latch; a table that reads damaged again is recorded as an incident like the check's own finding). The answers are
+  merged into the file's check record (an answer that could not be read never replaces a finding of damage there, so a busy file or a stop cannot make the next start forget it), one re-read at a
+  time per file, none while the start-up check is still reading (it decides), and an answer that arrives after the file was replaced is dropped. A restore or a salvage swap that replaced the file
+  releases its latch outright (`retry(..., file_replaced=True)`) and forgets the verdict. With `OO_BOOT_VERIFY=0` or no file to read the start releases as before. NOT DONE: the re-read covers the
+  tables the check reported, not the whole file (a restart reads the whole file again after an unexpected stop or an earlier damaged verdict); a latch a failed READ set (E1) is still released by
+  the start directly, and the first failed read puts it back.

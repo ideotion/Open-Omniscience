@@ -772,9 +772,40 @@ def test_a_stop_ends_the_run_without_a_verdict_and_the_next_start_reads_the_file
 
 
 def test_the_shutdown_stops_the_check():
-    src = _main_source()
-    shutdown = src[src.index("# Stop the scheduler thread cleanly if it is running"):]
-    assert "_verify.stop()" in shutdown.split("dispose_engine()")[0], "a quit mid-check must ask the check to end"
+    """Behaviour: the helper the lifespan calls asks the running check to end. Wiring (an AST, so a comment cannot
+    satisfy it): the lifespan calls it after its ``yield`` and before the engine is disposed."""
+    import ast
+
+    from src.api import main
+
+    assert not verify._CANCEL.is_set()
+    main._stop_database_check()
+    assert verify._CANCEL.is_set(), "the shutdown helper did not ask the check to stop"
+
+    tree = ast.parse(_main_source())
+    [life] = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "lifespan"]
+    yield_line = next(n.lineno for n in ast.walk(life) if isinstance(n, ast.Yield))
+    calls = [n for n in ast.walk(life) if isinstance(n, ast.Call)]
+    stop = [c.lineno for c in calls if isinstance(c.func, ast.Name) and c.func.id == "_stop_database_check"]
+    dispose = [c.lineno for c in calls if isinstance(c.func, ast.Name) and c.func.id == "dispose_engine" and c.lineno > yield_line]
+    assert stop and stop[0] > yield_line, "the lifespan does not stop the check on shutdown"
+    assert not dispose or stop[0] < dispose[0], "the engine is disposed before the check is asked to stop"
+
+
+def test_the_detail_lines_are_bounded_when_a_check_answers_many_long_lines():
+    long = ["Tree 5 page %d: " % i + "x" * 500 for i in range(40)]
+    out = verify.check_table(Path("ignored"), "articles", opener=lambda p: _FakeConn(long))
+    assert out["verdict"] == VERDICT_DAMAGED
+    assert len(out["detail"]) == verify.DETAIL_LINES and all(len(d) <= verify.DETAIL_CHARS for d in out["detail"])
+
+
+def test_the_pause_off_means_the_guards_state_does_not_say_verifying(healthy, files, monkeypatch):
+    g = sg.StorageGuard(readings_fn=lambda: {})
+    _arm(files, healthy, monkeypatch)
+    assert g.state()["phase"] == sg.PHASE_VERIFY
+    monkeypatch.setenv("OO_DAMAGE_GUARD", "0")
+    assert g.state()["phase"] is None and g.admit() is None, "the pause is off and the guard still reports it"
+    verify.run_armed()
 
 
 def test_a_file_the_list_could_not_be_read_from_is_unchecked_unless_its_schema_is_damaged(tmp_path, files, monkeypatch):
@@ -1022,6 +1053,23 @@ def test_the_boot_step_runs_the_armed_check_and_is_skipped_when_nothing_is_armed
     assert damage.registry.state()["verification"][FILE_CORPUS]["state"] == "done"
 
 
+def test_the_boot_sequence_runs_a_real_armed_check_and_the_wait_is_over_when_it_returns(healthy, files, monkeypatch):
+    from src.api import boot_sequence
+
+    _arm(files, healthy, monkeypatch)
+    assert damage.registry.verifying()
+    monkeypatch.setattr(boot_sequence, "_rollup_first_build", lambda: None)
+    monkeypatch.setattr(boot_sequence, "_start_reindex", lambda: None)
+    warmed: list[bool] = []
+    try:
+        boot_sequence.run(lambda: warmed.append(damage.registry.verifying()))
+    finally:
+        boot_sequence._reset()
+    assert warmed == [False], "the cache warm-up started while the check still held collection"
+    assert not damage.registry.verifying(), "the boot sequence returned with collection still waiting for the check"
+    assert damage.registry.state()["verification"][FILE_CORPUS]["state"] == "done"
+
+
 def _main_source() -> str:
     return (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
 
@@ -1130,12 +1178,6 @@ def test_a_replaced_file_forgets_the_verdict_about_the_old_one(tmp_path, files, 
     _new_process(tmp_path, monkeypatch)
     monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
     assert verify.arm_at_boot() is False
-
-
-def test_the_restore_swap_forgets_the_verdict_beside_releasing_the_latch():
-    src = (ROOT / "src" / "backup" / "merge.py").read_text(encoding="utf-8")
-    release = src.index('damage.registry.retry(reason="the corpus file was replaced"')
-    assert "damage.registry.verification_forget(damage.FILE_CORPUS)" in src[release : release + 400]
 
 
 def test_quitting_during_the_check_many_times_never_skips_it(tmp_path, healthy, files, monkeypatch):
@@ -1291,7 +1333,12 @@ def test_the_module_names_no_write_statement():
 
 
 def test_every_check_string_is_in_the_twelve_locales_translated():
-    keys = [damage.FRAME_VERIFYING, sg.FRAME_OVERRIDE_VERIFYING, "Paused: checking the data files after an unexpected stop"]
+    keys = [
+        damage.FRAME_VERIFYING,
+        damage.FRAME_RECHECKING,
+        sg.FRAME_OVERRIDE_VERIFYING,
+        "Paused: checking the data files after an unexpected stop",
+    ]
     base = json.loads((ROOT / "src/static/locales/en.json").read_text(encoding="utf-8"))
     for lang_file in sorted((ROOT / "src/static/locales").glob("*.json")):
         d = json.loads(lang_file.read_text(encoding="utf-8"))
@@ -1302,3 +1349,292 @@ def test_every_check_string_is_in_the_twelve_locales_translated():
                 for ph in re.findall(r"\{\w+\}", k):
                     assert ph in d[k], f"{lang_file.name} lost {ph} in {k[:40]!r}"
     assert all(k in base for k in keys)
+
+
+# --------------------------------------------------------------------------- #
+#  a start of collection re-reads what the check reported, and releases only on a clean read (E2 exit 1)
+# --------------------------------------------------------------------------- #
+def _latch_by_check(files, path, monkeypatch, key=FILE_CORPUS):
+    """Run the start-up check over ``path`` so the file is latched BY THE CHECK (``check_tables`` set)."""
+    files[key] = path
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed() is True
+    assert damage.registry.latched(key)
+
+
+def _join_rechecks(timeout: float = 30.0) -> None:
+    """Wait for every re-read thread a start of collection began."""
+    for t in [t for t in threading.enumerate() if t.name == "oo-database-recheck"]:
+        t.join(timeout)
+        assert not t.is_alive(), "a re-read did not end"
+
+
+def _file_state(key=FILE_CORPUS) -> dict:
+    return damage.registry.state(detail=True)["files"][key]
+
+
+def _heal(path: Path) -> None:
+    """The damaged file reads clean again (the same path, as a repaired or restored-over file would)."""
+    fresh = path.with_name("fresh.db")
+    _build_store(fresh)
+    fresh.replace(path)
+
+
+def test_a_start_re_reads_the_reported_tables_and_a_file_that_still_reads_damaged_stays_latched(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    assert _file_state()["check_tables"] == ["articles"]
+    before = _file_state()["incidents"]
+
+    assert damage.retry_for_collection_start("the network toggle went online") == [], "a check-found latch was released unread"
+    assert damage.registry.latched(FILE_CORPUS), "the latch was dropped while the tables were being read"
+    _join_rechecks()
+
+    assert damage.registry.latched(FILE_CORPUS), "a table that still reads damaged did not keep the latch"
+    st = _file_state()
+    assert st["check_tables"] == ["articles"] and st["retries"] == 1 and st["incidents"] == before + 1
+    assert "rechecking" not in st, "the claim on the file outlived the read"
+    assert damage.registry.state(detail=True)["verification"][FILE_CORPUS]["verdict"] == VERDICT_DAMAGED
+    assert sg.StorageGuard().admit() == "damage"
+
+
+def test_a_start_releases_a_check_found_latch_only_after_the_reported_tables_read_clean(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    _heal(path)
+
+    assert damage.retry_for_collection_start("the network toggle went online") == []
+    _join_rechecks()
+
+    assert not damage.registry.latched(FILE_CORPUS), "a table that read clean did not release the latch"
+    assert "check_tables" not in _file_state()
+    assert sg.StorageGuard().admit() is None, "collection is still held after the latch was released"
+    entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_OK and entry["rechecked_at"]
+    assert _by_table(entry)["articles"]["verdict"] == VERDICT_OK and _by_table(entry)["notes"]["verdict"] == VERDICT_OK
+    # What the record says is what the next start decides on: a file that read clean is not read again at every start.
+    _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is False, "the clean re-read was not written into the record"
+
+
+def test_only_the_reported_tables_are_re_read(damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    seen: list[str] = []
+    real = verify.check_table
+    monkeypatch.setattr(verify, "check_table", lambda p, t, **kw: (seen.append(t), real(p, t, **kw))[1])
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert seen == ["articles"], seen
+
+
+def test_the_latch_holds_while_the_re_read_runs_and_says_how_far_it_is_and_a_second_start_starts_no_second_read(
+    damaged, files, monkeypatch
+):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    _heal(path)
+    gate, reached = threading.Event(), threading.Event()
+    real = verify.check_table
+
+    def slow(p, t, **kw):
+        reached.set()
+        assert gate.wait(30)
+        return real(p, t, **kw)
+
+    monkeypatch.setattr(verify, "check_table", slow)
+    damage.retry_for_collection_start("first")
+    assert reached.wait(30)
+    try:
+        assert damage.registry.latched(FILE_CORPUS) and sg.StorageGuard().admit() == "damage"
+        [note] = [n for n in damage.registry.notes() if n["kind"] == "verifying"]
+        assert note["frame"] == damage.FRAME_RECHECKING and note["file"] == FILE_CORPUS
+        assert note["vars"] == {"index": 1, "total": 1}
+        damage.retry_for_collection_start("second")  # a second click while it reads
+        assert len([t for t in threading.enumerate() if t.name == "oo-database-recheck"]) == 1
+    finally:
+        gate.set()
+    _join_rechecks()
+    assert not damage.registry.latched(FILE_CORPUS)
+    assert _file_state()["retries"] == 1, "the second click counted as a retry of a read that was already running"
+
+
+def test_a_table_that_could_not_be_read_keeps_the_latch(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    _heal(path)
+    monkeypatch.setattr(
+        verify, "check_table", lambda p, t, **kw: {"table": t, "verdict": VERDICT_UNCHECKED, "seconds": 0.0, "detail": ["the file was busy"]}
+    )
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS), "not reading a table is not a clean verdict"
+    assert _file_state()["check_tables"] == ["articles"]
+    entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert _by_table(entry)["articles"]["verdict"] == VERDICT_DAMAGED and entry["verdict"] == VERDICT_DAMAGED, (
+        "a read that could not happen replaced a finding of damage in the record"
+    )
+    _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is True, "the finding was forgotten at the next start"
+
+
+def test_a_table_that_reads_clean_leaves_the_set_and_the_one_that_does_not_stays(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    damage.registry._note_verified_damage(FILE_CORPUS, ["articles", "notes"], path=path, at="2026-10-06T02:00:00+00:00")
+    assert _file_state()["check_tables"] == ["articles", "notes"]
+
+    def answer(p, t, **kw):
+        return {"table": t, "verdict": VERDICT_OK if t == "notes" else VERDICT_DAMAGED, "seconds": 0.0}
+
+    monkeypatch.setattr(verify, "check_table", answer)
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS)
+    assert _file_state()["check_tables"] == ["articles"], "a table that read clean stayed in the set to be read again"
+    entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert _by_table(entry)["notes"]["verdict"] == VERDICT_OK and entry["verdict"] == VERDICT_DAMAGED
+    assert "check_tables" not in _record(tmp_path)["files"][FILE_CORPUS], "an in-memory set was written to the record"
+    assert "rechecking" not in _record(tmp_path)["files"][FILE_CORPUS]
+
+
+def test_a_latch_a_failed_read_set_is_released_by_the_start_as_before_with_no_re_read(tmp_path, files, healthy, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    reg = damage.registry
+    assert reg.note(FILE_CORPUS, _driver_corrupt()) is True and reg.latched(FILE_CORPUS)
+    assert "check_tables" not in _file_state()
+    assert damage.retry_for_collection_start("t") == [FILE_CORPUS]
+    assert not reg.latched(FILE_CORPUS)
+    assert not [t for t in threading.enumerate() if t.name == "oo-database-recheck"], "a read-error latch started a re-read"
+
+
+def test_a_replaced_file_releases_its_latch_outright_and_a_late_re_read_answer_is_dropped(damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    gate, reached = threading.Event(), threading.Event()
+    real = verify.check_table
+
+    def slow(p, t, **kw):
+        reached.set()
+        assert gate.wait(30)
+        return real(p, t, **kw)
+
+    monkeypatch.setattr(verify, "check_table", slow)
+    damage.retry_for_collection_start("t")
+    assert reached.wait(30)
+    try:
+        assert damage.registry.retry(reason="replaced", files=(FILE_CORPUS,), file_replaced=True) == [FILE_CORPUS]
+        damage.registry.verification_forget(FILE_CORPUS)
+        assert not damage.registry.latched(FILE_CORPUS) and "check_tables" not in _file_state()
+        # A new finding about the NEW file arrives before the old read ends: the old read's answer is not about it.
+        damage.registry._note_verified_damage(FILE_CORPUS, ["notes"], path=path, at="2026-10-06T03:00:00+00:00")
+        incidents = _file_state()["incidents"]
+    finally:
+        gate.set()
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS)
+    assert _file_state()["check_tables"] == ["notes"], "an answer about the old file changed the new file's set"
+    assert _file_state()["incidents"] == incidents, "an answer about the old file was counted against the new one"
+
+
+def test_the_restore_swap_releases_a_check_found_latch_outright_and_forgets_the_verdict(tmp_path, damaged, files, monkeypatch):
+    """The file was REPLACED: the verdict was about a file that no longer is, so nothing is re-read and nothing waits."""
+    from src.backup import merge
+
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    incoming = tmp_path / "incoming.db"
+    _build_store(incoming)
+    merge._replace_live_corpus(incoming, path)
+    assert not damage.registry.latched(FILE_CORPUS), "the swap left the old file's latch on the new file"
+    assert FILE_CORPUS not in damage.registry.state(detail=True)["verification"]
+    assert FILE_CORPUS not in _record(tmp_path).get("verification", {})
+    assert not [t for t in threading.enumerate() if t.name == "oo-database-recheck"], "the swap started a re-read"
+
+
+def test_a_start_while_the_start_up_check_still_reads_keeps_the_latch_and_starts_no_read(damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    damage.registry.verification_arm("unclean-end")  # a check is armed: it decides
+    assert damage.retry_for_collection_start("t") == []
+    assert damage.registry.latched(FILE_CORPUS) and "rechecking" not in _file_state()
+    assert not [t for t in threading.enumerate() if t.name == "oo-database-recheck"]
+
+
+def test_a_check_that_is_switched_off_or_a_file_that_is_gone_releases_the_latch_as_a_plain_retry_does(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    monkeypatch.setenv("OO_BOOT_VERIFY", "0")
+    assert damage.retry_for_collection_start("t") == [FILE_CORPUS]
+    assert not damage.registry.latched(FILE_CORPUS) and "rechecking" not in _file_state()
+    monkeypatch.delenv("OO_BOOT_VERIFY")
+
+    _new_process(tmp_path, monkeypatch)
+    _latch_by_check(files, path, monkeypatch)
+    path.unlink()
+    assert damage.retry_for_collection_start("t") == [FILE_CORPUS], "a file that is not there cannot be read, and holds nothing"
+    assert not path.exists(), "the re-read created the file it was asked to read"
+
+
+def test_a_re_read_that_cannot_start_a_thread_keeps_the_latch_and_the_claim_is_given_up(damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+
+    class NoThread:
+        def __init__(self, *a, **kw):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(verify.threading, "Thread", NoThread)
+    assert damage.retry_for_collection_start("t") == []
+    assert damage.registry.latched(FILE_CORPUS), "no read was made, and the latch was released"
+    assert "rechecking" not in _file_state(), "the claim on the file was never given up, so no later start can read it"
+
+
+def test_a_stop_ends_the_re_read_with_no_answer_and_the_latch_stays(damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    _heal(path)
+    verify._CANCEL.set()
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS), "a stopped read released the latch"
+    assert "rechecking" not in _file_state()
+
+
+def test_a_failure_in_the_re_read_gives_no_answer_and_the_latch_stays(damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+
+    def boom(*a, **kw):
+        raise RuntimeError("read failed")
+
+    monkeypatch.setattr(verify, "check_table", boom)
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS) and "rechecking" not in _file_state()
+
+
+def test_a_table_that_is_gone_and_a_schema_that_now_lists_read_clean(tmp_path, files, healthy, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    damage.registry._note_verified_damage(FILE_CORPUS, [verify.SCHEMA_ENTRY, "dropped_table"], path=healthy, at="2026-10-06T02:00:00+00:00")
+    assert damage.registry.latched(FILE_CORPUS)
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_the_wikipedia_lane_start_re_reads_its_own_file_and_a_collection_start_leaves_it_alone(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch, key=FILE_WIKI)
+    assert damage.retry_for_collection_start("t") == [] and damage.registry.latched(FILE_WIKI)
+    assert "rechecking" not in _file_state(FILE_WIKI), "collection's start re-read the Wikipedia lane's file"
+    _heal(path)
+    assert damage.registry.retry(reason="the Wikipedia lane was started", files=("wiki",)) == []
+    _join_rechecks()
+    assert not damage.registry.latched(FILE_WIKI)

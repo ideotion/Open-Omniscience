@@ -70,6 +70,9 @@ TRIGGER_UNCLEAN_END = "unclean-end"
 TRIGGER_UNFINISHED = "unfinished-check"
 TRIGGER_DAMAGE_FOUND = "damage-found-before"
 
+#: The name a check gives to a schema it could not read (the file's list of tables), in place of a table.
+SCHEMA_ENTRY = "(schema)"
+
 #: How many of a table's report lines, and how many characters of each, the record keeps. A check's
 #: lines name pages and index entries ("Tree 5 page 1234: ...", "row 7 missing from index ix_x"), never a
 #: value, but a table with thousands of problems is one finding, not thousands of lines.
@@ -453,7 +456,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
             verdict, reason = info["error"]
             reg.verification_file_started(key, path=path, trigger=plan["trigger"], tables_total=0, attempts=attempts + 1)
             schema_tables: list[dict[str, Any]] = (
-                [{"table": "(schema)", "verdict": VERDICT_DAMAGED, "seconds": 0.0, "detail": [reason[:DETAIL_CHARS]]}]
+                [{"table": SCHEMA_ENTRY, "verdict": VERDICT_DAMAGED, "seconds": 0.0, "detail": [reason[:DETAIL_CHARS]]}]
                 if verdict == VERDICT_DAMAGED
                 else []
             )
@@ -492,6 +495,114 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
         _LOG.info(
             "database check: the %s file: %s (%d table(s), %.1f s)", key, result["verdict"], len(names), result["seconds"]
         )
+
+
+# --- the re-read a start of collection asks for ------------------------------------------------------------
+
+
+def recheck(files: dict[str, list[str]], *, reason: str) -> dict[str, str]:
+    """Re-read, for each latched file in ``files`` (``{file key: the tables the check reported damaged}``), those
+    tables, on a thread of their own: the operator started collection again, and a latch the check set is released
+    only by a read that comes back clean (``DamageRegistry.retry`` calls this; the claim on each file was made there).
+    Never blocks and never raises. ``{file key: outcome}``:
+
+    * ``started``: a thread is reading it; it ends the claim itself (``recheck_finished`` or ``recheck_abandoned``).
+    * ``nothing-to-read``: the check is switched off (``OO_BOOT_VERIFY=0``) or the file is not there; the caller
+      releases the latch as a plain retry does.
+    * ``kept``: the start-up check is armed or still reading (it decides), or the thread could not be started; the
+      latch stays.
+    """
+    out: dict[str, str] = {}
+    reg = damage.registry
+    try:
+        plan: list[tuple[str, Path, list[str]]] = []
+        for key, names in files.items():
+            path = _path_of(key)
+            try:
+                readable = switch_on() and path is not None and path.is_file() and path.stat().st_size > 0
+            except OSError:
+                readable = False
+            if not readable or path is None:
+                out[key] = "nothing-to-read"
+            else:
+                plan.append((key, path, list(names)))
+        if not plan:
+            return out
+        if reg.verifying():
+            out.update({key: "kept" for key, _p, _n in plan})
+            return out
+        t = threading.Thread(target=_recheck_main, args=(plan, reason), name="oo-database-recheck", daemon=True)
+        try:
+            t.start()
+        except Exception:  # noqa: BLE001 - no thread, no read: the latch stays
+            _LOG.warning("database check: could not start the re-read of the reported tables", exc_info=True)
+            out.update({key: "kept" for key, _p, _n in plan})
+            return out
+        out.update({key: "started" for key, _p, _n in plan})
+        return out
+    except Exception:  # noqa: BLE001
+        _LOG.warning("database check: could not plan the re-read of the reported tables", exc_info=True)
+        return {key: out.get(key, "kept") for key in files}
+
+
+def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str) -> None:
+    """The thread body of :func:`recheck`: each file's reported tables, one on its own read-only connection, then the
+    answer to the registry. A stop (the app is shutting down) or a failure ends the claim without an answer, so the
+    latch stays."""
+    reg = damage.registry
+    for key, path, wanted in plan:
+        try:
+            if _CANCEL.is_set():
+                continue
+            info = inspect_file(path)
+            if "error" in info:
+                verdict, why = info["error"]
+                # A schema that cannot be read as damage is damage; anything else is no answer about the tables.
+                answers = (
+                    [{"table": SCHEMA_ENTRY, "verdict": VERDICT_DAMAGED, "seconds": 0.0, "detail": [why[:DETAIL_CHARS]]}]
+                    if verdict == VERDICT_DAMAGED
+                    else []
+                )
+                if answers:
+                    reg.recheck_finished(key, answers, path=path)
+                _LOG.info("database check: the %s file's reported tables could not be listed (%s)", key, verdict)
+                continue
+            present = [n for n in info["names"] if n in wanted]
+            # A table that is no longer in the file has nothing in it to be damaged, and the list of tables having just
+            # been read is the answer for the "(schema)" the check once could not read.
+            gone = [
+                {
+                    "table": n,
+                    "verdict": VERDICT_OK,
+                    "seconds": 0.0,
+                    "detail": ["the table list read clean" if n == SCHEMA_ENTRY else "the table is no longer in the file"],
+                }
+                for n in wanted
+                if n not in info["names"]
+            ]
+            reg.recheck_total(key, len(present))
+            answers = []
+            stopped = False
+            for i, name in enumerate(present, 1):
+                if _CANCEL.is_set():
+                    stopped = True
+                    break
+                reg.recheck_progress(key, i)
+                answers.append(check_table(path, name, cancel=_CANCEL))
+            if stopped or _CANCEL.is_set():
+                _LOG.info("database check: the re-read of the %s file was stopped", key)
+                continue
+            released = reg.recheck_finished(key, answers + gone, path=path)
+            _LOG.info(
+                "database check: the %s file's reported tables re-read (%s): %s",
+                key,
+                reason,
+                "clean, released" if released else "latch stays",
+            )
+        except Exception:  # noqa: BLE001 - a re-read that failed gives no answer, and the latch stays
+            _LOG.warning("database check: the re-read of the %s file failed", key, exc_info=True)
+        finally:
+            reg.recheck_abandoned(key)  # a no-op after an answer: ends the claim whatever happened
 
 
 def _reset_for_tests() -> None:

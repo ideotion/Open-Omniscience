@@ -305,7 +305,7 @@ def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = 
     # was about a file that no longer is. The first failed read of the new one puts it back.
     from src.database import damage
 
-    damage.registry.retry(reason="the corpus file was replaced", files=(damage.FILE_CORPUS,))
+    damage.registry.retry(reason="the corpus file was replaced", files=(damage.FILE_CORPUS,), file_replaced=True)
     damage.registry.verification_forget(damage.FILE_CORPUS)  # a verdict on the file that was live is not one on this
 
 

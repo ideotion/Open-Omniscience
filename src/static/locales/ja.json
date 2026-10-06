@@ -4612,6 +4612,7 @@
   "The app is busy — retrying shortly…": "アプリがビジー状態です — まもなく再試行します…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "予期しない停止のあと、収集がデータファイルへ再び書き込む前に、アプリはデータファイルを確認しています（{total} 個のテーブルのうち {index} 個目）。確認自体は何も書き込まず、終わると一時停止は自動的に解除されます。",
   "The app is closing. Reconnect the drive, then start the app again.": "アプリを終了しています。ドライブを再接続してから、アプリをもう一度起動してください。",
+  "The app is reading again the part of your data file that the check reported as damaged: table {index} of {total}. If it reads clean, collection carries on by itself; if it does not, collection stays paused.": "確認で破損と報告されたデータファイルの部分を再読み込みしています：テーブル {index}/{total}。問題なく読めれば収集は自動的に再開し、読めなければ一時停止のままです。",
   "The app is shutting down — you can close this tab.": "アプリを終了しています — このタブを閉じてかまいません。",
   "The app looks for news sources country by country, a few countries per pass.": "アプリは国ごとにニュースソースを探します。1 回につき数か国ずつ。",
   "The app measures structure — coordination, novelty, output capacity, transparency — and you decide. There is deliberately no trust score: a single number over incommensurable dimensions would bake in bias and silence small, foreign, new or dissident sources. Surface, never suppress.": "アプリが測るのは構造です——協調、新規性、産出能力、透明性——そして決めるのはあなたです。信頼スコアは意図的にありません。互いに通約できない次元を一つの数値にすると偏りが固定化され、小さな・外国の・新しい・反体制の情報源を黙らせてしまいます。可視化し、決して抑え込みません。",

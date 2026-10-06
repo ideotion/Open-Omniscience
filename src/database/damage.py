@@ -34,9 +34,16 @@ WHAT IT DOES.
 WHAT IT DOES NOT DO (and the PR says so). It does not repair or salvage: that is E3 (a salvage copy). The
 latch releases only when the operator starts collection again (:func:`retry_for_collection_start`: the
 corpus's and the law file's; going online and the unattended start are the operator starting it), or starts
-the Wikipedia lane (its own start releases its own file), never by itself, never by a courtesy resume after a
-backup or a restore, and never because a later check read the tables as sound: a clean verdict says what
-this one read found, not that the earlier error was wrong.
+the Wikipedia lane (its own start releases its own file), never by itself and never by a courtesy resume
+after a backup. A latch the per-table check set is not released by that start on its say-so: the start
+RE-READS the tables the check reported (:func:`database.verify.recheck`, on its own thread, the latch held
+meanwhile) and releases only when every one of them reads clean, which is what a restart already does (the
+boot check reads the file again and the latch, in memory, is gone when it reads clean); a table that still
+reads damaged, or cannot be read, keeps the latch. Going online is the routine click (R117), so a start that
+released a check-found latch unread would let collection write into a file the check had just found damaged.
+A latch a failed read set (E1) is released by the start directly, and the first failed read puts it back. A
+RESTORE that replaced the file releases its latch outright (:meth:`retry`, ``file_replaced``): the verdict was
+about a file that no longer is.
 
 THE SCOPE FIELD. ``search-index`` is claimed when the full-text index is what the failing statement reads:
 the virtual-table corruption code (extended 267, which FTS5 raises for its own structure) or a statement
@@ -128,6 +135,11 @@ _MESSAGE_KEEP = 160
 _SHAPE_KEEP = 240
 
 _DBAPI_MODULES = ("sqlite3", "sqlcipher3")
+
+#: The keys of a file's state that live in memory only and never reach the record: the latch (a restart is the
+#: operator trying again), the tables the per-table check reported (the incident names them), and the progress of a
+#: re-read.
+_MEMORY_ONLY = ("latched", "check_tables", "rechecking")
 
 #: The full-text index (``article_fts``) and its shadow tables. A statement over these is the evidence that
 #: the index is what could not be read (a suspicion, not proof: see the module docstring).
@@ -468,7 +480,7 @@ class DamageRegistry:
             "schema": SCHEMA,
             "write_seq": self._seq,
             "written_at": datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds"),
-            "files": {k: {kk: vv for kk, vv in v.items() if kk != "latched"} for k, v in self._files.items()},
+            "files": {k: {kk: vv for kk, vv in v.items() if kk not in _MEMORY_ONLY} for k, v in self._files.items()},
             "incidents": [dict(i) for i in self._incidents],
             "verification": {k: dict(v) for k, v in self._verification.items()},
         }
@@ -732,22 +744,46 @@ class DamageRegistry:
         return self.latched(FILE_CORPUS)
 
     def retry(
-        self, *, reason: str, files: tuple[str, ...] | None = None, except_files: tuple[str, ...] = ()
+        self,
+        *,
+        reason: str,
+        files: tuple[str, ...] | None = None,
+        except_files: tuple[str, ...] = (),
+        file_replaced: bool = False,
     ) -> list[str]:
         """The operator tries again: release the latch of ``files`` (every file's when ``None``) except
-        ``except_files``. The record stays. Returns the files released. Never raises."""
+        ``except_files``. The record stays. Returns the files released. Never raises.
+
+        A latch the per-table check set (``check_tables``: the tables it read as damaged) is NOT released here:
+        the start RE-READS those tables (:func:`database.verify.recheck`, on its own thread) and the latch holds
+        until every one reads clean (:meth:`recheck_finished`). It is released outright only when the file was
+        REPLACED (``file_replaced``: a restore or a salvage swapped it, so the verdict is about a file that no
+        longer is), when the check is switched off, or when the file is not there to be read. A re-check already
+        running, or the start-up check still reading, keeps the latch and starts nothing."""
         released: list[str] = []
+        recheck: dict[str, list[str]] = {}
         try:
             self._ensure_loaded()
             with self._lock:
                 for key, st in self._files.items():
-                    if st["latched"] and (files is None or key in files) and key not in except_files:
-                        st["latched"] = False
-                        st["retries"] += 1
-                        released.append(key)
+                    if not (st["latched"] and (files is None or key in files) and key not in except_files):
+                        continue
+                    tables = st.get("check_tables")
+                    if tables and not file_replaced:
+                        if not st.get("rechecking"):
+                            st["rechecking"] = {"index": 0, "total": 0}  # claimed here, under the lock: one re-read at a time
+                            st["retries"] += 1
+                            recheck[key] = list(tables)
+                        continue
+                    st["latched"] = False
+                    st["retries"] += 1
+                    st.pop("check_tables", None)
+                    st.pop("rechecking", None)
+                    released.append(key)
+            if recheck:
+                released.extend(self._start_recheck(recheck, reason))
             if released:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
-            if released:
                 _LOG.warning(
                     "database damage: the %s file's writers are released (%s); the first failed read "
                     "pauses them again",
@@ -757,6 +793,110 @@ class DamageRegistry:
         except Exception:  # noqa: BLE001
             _LOG.debug("database damage: retry failed", exc_info=True)
         return released
+
+    def _start_recheck(self, recheck: dict[str, list[str]], reason: str) -> list[str]:
+        """Hand the claimed re-reads to ``verify.recheck`` and settle the ones it did not take: a file with nothing to
+        read (the check is switched off, the file is gone) is released as a plain retry would; any other refusal keeps
+        the latch. Returns the files released."""
+        try:
+            from src.database import verify
+
+            outcome = verify.recheck(recheck, reason=reason)
+        except Exception:  # noqa: BLE001 - a latch that cannot be re-read stays
+            _LOG.warning("database damage: could not start the re-read of the reported tables", exc_info=True)
+            outcome = {}
+        released: list[str] = []
+        with self._lock:
+            for key in recheck:
+                if outcome.get(key) == "started":
+                    continue
+                st = self._files.get(key)
+                if st is None:
+                    continue
+                st.pop("rechecking", None)
+                if outcome.get(key) == "nothing-to-read" and st["latched"]:
+                    st["latched"] = False
+                    st.pop("check_tables", None)
+                    released.append(key)
+        return released
+
+    def recheck_total(self, file_key: str, total: int) -> None:
+        """How many tables the re-read of ``file_key`` will read (the progress line's denominator)."""
+        with self._lock:
+            st = self._files.get(file_key)
+            if st is not None and st.get("rechecking") is not None:
+                st["rechecking"] = {"index": 0, "total": int(total)}
+
+    def recheck_progress(self, file_key: str, index: int) -> None:
+        with self._lock:
+            st = self._files.get(file_key)
+            if st is not None and st.get("rechecking") is not None:
+                st["rechecking"] = {**st["rechecking"], "index": int(index)}
+
+    def recheck_abandoned(self, file_key: str) -> None:
+        """The re-read of ``file_key`` ended without an answer (stopped, or it raised): the latch stays as it was.
+        Idempotent, and always called when a re-read ends."""
+        with self._lock:
+            st = self._files.get(file_key)
+            if st is not None:
+                st.pop("rechecking", None)
+
+    def recheck_finished(self, file_key: str, tables: list[dict[str, Any]], *, path: Path | None) -> bool:
+        """The re-read of the tables the check reported ended with ``tables`` (one answer each). Merges the answers
+        into the file's check record and decides the latch: it is released when no table is left that was reported
+        damaged and has not since read clean (``ok``); a table that reads damaged again, or could not be read,
+        keeps it, and a damaged one is recorded as an incident like the check's own finding. Returns whether the
+        latch was released. Never raises."""
+        try:
+            from src.database.verify import file_verdict
+
+            at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+            ok_names = {t["table"] for t in tables if t.get("verdict") == VERDICT_OK}
+            damaged = [t["table"] for t in tables if t.get("verdict") == VERDICT_DAMAGED]
+            released = False
+            with self._lock:
+                st = self._files.get(file_key)
+                if st is None or not st["latched"] or not st.get("check_tables") or st.get("rechecking") is None:
+                    # Released or replaced while it was read (a release ends the claim): the answer is about a file
+                    # that no longer is.
+                    _LOG.info("database damage: a re-read's result for the %s file is stale and was dropped", file_key)
+                    return False
+                st.pop("rechecking", None)
+                left = sorted((set(st["check_tables"]) - ok_names) | set(damaged))
+                held = self._verification.get(file_key)
+                if held is not None and held.get("process") == self._process and isinstance(held.get("tables"), list):
+                    answered = {t["table"]: t for t in tables}
+                    merged = []
+                    for old_t in held["tables"]:
+                        new_t = answered.pop(old_t.get("table"), None)
+                        # A read that could not happen is no answer: it never replaces a verdict of damage (the record is
+                        # what the next start decides on, and a busy file or a stop must not make it forget the finding).
+                        keep_old = new_t is None or (
+                            new_t.get("verdict") == VERDICT_UNCHECKED and old_t.get("verdict") == VERDICT_DAMAGED
+                        )
+                        merged.append(old_t if keep_old else new_t)
+                    held["tables"] = merged + list(answered.values())
+                    held["verdict"] = file_verdict(held["tables"])
+                    held["rechecked_at"] = at
+                if left:
+                    st["check_tables"] = left
+                else:
+                    st["latched"] = False
+                    st.pop("check_tables", None)
+                    released = True
+            if damaged:
+                self._note_verified_damage(file_key, damaged, path=path, at=at)
+            self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)  # the merged answers are part of the record
+            if released:
+                _LOG.warning(
+                    "database damage: the %s file's reported tables read clean again; its writers are released "
+                    "(the first failed read pauses them again)",
+                    file_key,
+                )
+            return released
+        except Exception:  # noqa: BLE001 - a re-read's bookkeeping must never raise; the latch stays
+            _LOG.debug("database damage: could not store a re-read's result", exc_info=True)
+            return False
 
     # -- the per-table check (database/verify.py) --------------------------------------------------
     def verifying(self) -> bool:
@@ -939,6 +1079,11 @@ class DamageRegistry:
         )
         shape = "PRAGMA quick_check(" + ", ".join(names[:6]) + ")"
         newly, known, due = self._apply_incident(file_key, scope, shape, at)
+        with self._lock:
+            st = self._files.get(file_key)
+            if st is not None:
+                # What a start of collection re-reads before it releases this latch (see :meth:`retry`).
+                st["check_tables"] = sorted(set(st.get("check_tables") or ()) | set(names))
         if newly:
             _log_latched(file_key, "SQLITE_CORRUPT", scope, shape)
         if known is not None:
@@ -979,6 +1124,16 @@ class DamageRegistry:
             for key, st in self._files.items():
                 if not st["latched"]:
                     continue
+                rc = st.get("rechecking")
+                if on and rc and int(rc.get("total") or 0) > 0:
+                    out.append(
+                        {
+                            "kind": "verifying",
+                            "file": key,
+                            "frame": FRAME_RECHECKING,
+                            "vars": {"index": int(rc.get("index") or 0), "total": int(rc.get("total") or 0)},
+                        }
+                    )
                 if not on:
                     frame = FRAME_PAUSE_OFF
                 elif key == FILE_CORPUS:
@@ -1109,6 +1264,10 @@ FRAME_VERIFYING = (
     "The app is checking your data files after an unexpected stop, before collection writes to them again: "
     "table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends."
 )
+FRAME_RECHECKING = (
+    "The app is reading again the part of your data file that the check reported as damaged: table {index} of "
+    "{total}. If it reads clean, collection carries on by itself; if it does not, collection stays paused."
+)
 FRAME_PAUSE_OFF = (
     "The database reported damage in one of your data files, and the pause for it is switched off on "
     "this machine (OO_DAMAGE_GUARD=0), so writing carries on. It is recorded in the file "
@@ -1122,9 +1281,11 @@ METHOD = (
     "shape per process, repeats counted. The record keeps the statement's shape with every value "
     "removed, never a row. The pause is per file and lives in memory: starting collection again "
     "releases it (the Wikipedia lane's own start releases that file's) and the first failed read puts "
-    "it back. A 'search-index' scope is a SUSPICION that rests on a virtual-table corruption code or a "
-    "statement over the full-text index or its tables (a damaged index reports plain code 11 through "
-    "MATCH); anything else is 'data', and 'data' stays while a file is latched. A BLIND SPOT: damage to the first page of a file, encrypted or "
+    "it back; a pause the per-table check set is released only when a re-read of the tables the check "
+    "reported comes back clean. A 'search-index' scope is a SUSPICION that rests on a virtual-table "
+    "corruption code or a statement over the full-text index or its tables that does not also read the "
+    "articles table (a damaged index reports plain code 11 through MATCH); anything else is 'data', "
+    "and 'data' stays while a file is latched. A BLIND SPOT: damage to the first page of a file, encrypted or "
     "not, reads as code 26, the code a wrong passphrase gives, so it is not named. Noticing reads "
     "nothing. After an unexpected stop the per-table check reads each table of the corpus, Wikipedia "
     "and law files once with PRAGMA quick_check on its own read-only connection (smallest first when the "
