@@ -325,6 +325,34 @@ def test_revert_closes_the_admission_it_is_undoing(
     assert db.query(SourceAdmissionEvent).count() == 1, "the record is append-only"
 
 
+def test_a_judging_attempt_a_merge_brought_in_does_not_make_a_revert_decline_as_judged_here(
+    db: Session, overlay_file: Path
+) -> None:
+    """'Judged here since' is about THIS install: an attempt a backup merge inserted
+    (``merged_rows`` names it) is another instance's history (rule 12 = b), so the adoption is
+    still an adoption and may be put back."""
+    from src.database.models import MergeBatch, MergedRow
+
+    apply_overlay(db, now=NOW, path=overlay_file)
+    cat = _by_domain(db, "cat.example")
+    attempt = SourceQualificationAttempt(
+        source_id=cat.id, attempted_at=NOW + timedelta(minutes=10),
+        verdict=STATUS_QUALIFIED, criteria_version="t")
+    db.add(attempt)
+    db.flush()
+    batch = MergeBatch()
+    db.add(batch)
+    db.flush()
+    db.add(MergedRow(batch_id=batch.id, table_name="source_qualification_attempts", row_id=attempt.id))
+    db.commit()
+
+    st = overlay_status(db, path=overlay_file)
+    assert st["declined"][REVERT_DECLINE_JUDGED] == 0
+    out = revert_overlay(db, now=NOW + timedelta(hours=1), path=overlay_file)
+    assert out["declined"][REVERT_DECLINE_JUDGED] == 0
+    assert _by_domain(db, "cat.example").status == STATUS_UNQUALIFIED
+
+
 def test_revert_refuses_a_row_this_install_judged_since_and_counts_it(
     db: Session, overlay_file: Path
 ) -> None:

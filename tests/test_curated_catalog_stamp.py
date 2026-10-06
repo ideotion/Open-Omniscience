@@ -550,6 +550,31 @@ def test_a_source_whose_whole_judging_history_was_imported_is_not_this_installs_
     assert source_provenance(db, own.id)["qualification_basis"] == "measured"
 
 
+def test_a_catalogue_row_that_took_a_merged_verdict_reads_inherited_not_curated(db):
+    """Every catalogue row carries a curated attempt. When a merge then gives it another instance's
+    verdict (status and criteria version of the incoming row, the incoming attempts beside it), the
+    verdict is inherited: neither the catalogue's stamp nor this install's measurement."""
+    s = _src(db, "catalogue-merged.example")
+    stamp_curated_catalog(db, now=NOW)
+    s.status = STATUS_DISQUALIFIED
+    s.qualification_criteria_version = CRITERIA_VERSION
+    s.qualified_at = NOW + timedelta(days=2)
+    db.commit()
+    _attempt(db, s, STATUS_DISQUALIFIED, at=NOW + timedelta(days=2), criteria_version=CRITERIA_VERSION)
+    _mark_imported(db, s, at=NOW + timedelta(days=2))
+    basis, export = _basis_of(db, s, 3)
+    assert basis == "inherited"
+    assert source_provenance(db, s.id)["qualification_basis"] == "inherited"
+    # and without any judging attempt the catalogue's own stamp still reads curated
+    t = _src(db, "catalogue-only.example")
+    stamp_curated_catalog(db, now=NOW)
+    t.qualification_criteria_version = CRITERIA_VERSION  # live stamp no longer the catalogue's
+    db.commit()
+    assert source_provenance(db, t.id)["qualification_basis"] == "curated"
+    export = build_overlay_export(db, now=NOW + timedelta(days=3))
+    assert export["basis"]["curated"] == 1 and export["basis"]["inherited"] == 1, "a curated row is counted, never shipped"
+
+
 def test_a_curated_row_with_imported_history_is_still_counted_as_having_judging_history(db):
     """The mismatch counter is about attempts COPIED IN: it keeps counting them."""
     s = _src(db, "curated-with-history.example")

@@ -134,8 +134,8 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
     curated_ids = _curated_stamp_ids(session)
     # Rows the boot repair withdrew because an IMPORTED history disagreed with the catalogue's
     # stamp: the verdict they now carry came from another instance's attempt, so they are
-    # `inherited`, never this install's own measurement. An unreadable record is said so, not
-    # read as "none repaired".
+    # `inherited` until this install judges them itself, never its own measurement. An unreadable
+    # record is said so, not read as "none repaired".
     repaired: dict[str, str | None] = {}
     repair_record_unreadable = False
     repair_runs_unreadable: list[str] = []
@@ -172,7 +172,9 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             repaired_exported_as_inherited += 1
         elif s.id in measured:
             basis = BASIS_MEASURED
-        elif s.id in curated_ids:
+        elif s.id in curated_ids and s.id not in judged_any:
+            # (a catalogue row that took a verdict from a merge has a curated attempt too, and an
+            # imported judging attempt beside it: that verdict is `inherited`, below, not the stamp)
             basis = BASIS_CURATED
         else:
             basis = BASIS_INHERITED
@@ -296,9 +298,10 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
 def to_overlay_yaml(export: dict) -> str:
     """Render an export as the overlay file the seeder reads.
 
-    ``basis`` is carried through: it is not consumed by ``load_overlay`` (which ignores
+    Each row's ``basis`` is carried through: it is not consumed by ``load_overlay`` (which ignores
     unknown keys), but it is what a human merging several instances' exports needs in order
-    to tell corroboration from an echo.
+    to tell corroboration from an echo. The export's ``basis`` BLOCK is written as a top-level key only
+    when the boot repair's record could not be read (the Merge reads it back to say so).
     """
     import yaml
 

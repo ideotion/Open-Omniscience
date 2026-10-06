@@ -226,9 +226,10 @@ def _qualification_basis(session, source) -> str | None:
         is not None
     ):
         return "measured"
-    if VERDICT_CURATED in verdicts:
+    imported_judging = bool(verdicts & set(JUDGING_VERDICTS))  # none of them this install's (above)
+    if VERDICT_CURATED in verdicts and not imported_judging:
         return "curated"
-    if VERDICT_INHERITED in verdicts or verdicts & set(JUDGING_VERDICTS):
+    if VERDICT_INHERITED in verdicts or imported_judging:
         return "inherited"
     return None
 

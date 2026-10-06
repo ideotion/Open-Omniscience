@@ -285,18 +285,25 @@ def _attempt_marks(session: Session, source_ids: list[int]) -> dict[int, dict]:
     One pass over the attempt log for the whole candidate set, because the editor asks
     this about every domain in the overlay at once and a per-source query would be one
     round trip per shipped verdict.
+
+    "Judged" means judged BY THIS INSTALL: a judging attempt a backup merge brought in
+    (``merged_rows`` names it) is another instance's history, not a measurement here, so it
+    does not make a revert decline with "judged here since" (rule 12 = b, as the export reads it).
     """
+    from src.catalog.qualification_integrity import not_imported
     from src.database.models import SourceQualificationAttempt as A
 
     marks: dict[int, dict] = {}
     if not source_ids:
         return marks
     rows = (
-        session.query(A.source_id, A.verdict, A.attempted_at)
+        session.query(A.source_id, A.verdict, A.attempted_at, not_imported(A))
         .filter(A.source_id.in_(source_ids))
         .all()
     )
-    for sid, verdict, at in rows:
+    for sid, verdict, at, is_local in rows:
+        if verdict in JUDGING_VERDICTS and not is_local:
+            continue
         if at is not None and at.tzinfo is None:
             at = at.replace(tzinfo=UTC)
         mark = marks.setdefault(int(sid), {"inherited": None, "judged": None, "curated": None})
