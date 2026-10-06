@@ -13152,8 +13152,8 @@ the merge on. The coordinator's reading check of the merged PR found three of th
 eleven by running the four files on main itself; the author's own focused run passed because it named the PR's new
 tests and the pool tests, and none of the tests that reach `_data_version` through the article list. The rule for the
 next such change: **before pushing a change to a helper many routes call, grep the tests for what reaches it
-(`rg "_data_version" tests/` finds none of the eleven: three reach it through the endpoint, eight through
-`_query_articles` directly), or run the whole directory of tests the helper's callers live in, not the set named after
+(`rg "_data_version" tests/` finds none of the eleven: two reach it through the endpoint, nine through
+`_query_articles` directly, counted by running the tests with the detach-everything probe back), or run the whole directory of tests the helper's callers live in, not the set named after
 the change.** `insights._detachable` now gates the detach on a queue pool or a null pool (the only engine that reaches the
 probe in production is a `ReservingQueuePool`, and every other engine the app builds is a queue or null pool too, so
 production behaviour is unchanged); `tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its
@@ -13195,10 +13195,10 @@ for 17 M more Python blocks (about 3 GB), and the holder is not in any bundle. *
 the cheapest wrong fix is one for a defect the instrument never showed. The gap the evidence DID show was the recorder's own rule: `session_hwm` snapshots every
 thread at the crossing below the line and at each new low a step further down, and "none while memory sits on a plateau", so the slide had witnesses and the
 plateau, where the holder can still be read, had none. Two triggers were added: the moment the guard engages (with the guard's own reason), and a re-snapshot
-every `_PLATEAU_INTERVAL_S` (300 s) while memory is below the line or the guard is engaged; every snapshot now also says whether the guard was engaged. The
+every `_PLATEAU_INTERVAL_S` (300 s) while memory is below the line or the guard is engaged; a snapshot taken while the guard was engaged now says so. The
 cost is bounded and each bound says what it protects: 300 s (a snapshot is 0.3-0.6 s of the liveness thread under a GIL-holding burst), the existing stack
 caps (`_STACK_APP_FRAMES`, `_STACK_WALK_MAX`), the newest 8 kept on disk, kernel counters and `sys.getallocatedblocks()` only (never `gc.get_objects()`, at 90 M
-blocks the very work that could end the process; pinned by a test that makes `gc.get_objects` raise). **A trigger's baseline must be read on every tick, not only
+blocks the very work that could end the process; pinned by a test that spies on `gc.get_objects`, `gc.get_referrers` and `gc.get_referents`). **A trigger's baseline must be read on every tick, not only
 when no other trigger fires**: the guard's "was engaged" flag read only in the fallback branch went stale whenever the memory-short trigger took the tick, and
 the next tick reported a five-second-old pause as a new engagement (a mutant the suite now catches). What this does NOT do: it names the holder in the NEXT
 bundle, it does not stop the kill. Stopping cleanly when the guard stays engaged and memory does not recover is the user's open question 22, and a clean stop
@@ -13529,6 +13529,106 @@ the previous session's, so a death is read against the tier THAT session ran und
 carry it once and the boot event does not repeat it; only the soak window carries `reading_vs_now()`, the machine's reading of now beside it, once per export and for the process that was running. Thirty-four tests, with fifty mutations each caught, pin the rest as negative space: the budget resolves once however often it is
 looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
 record and never a failed boot.
+### AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT, AND WHAT PINS IT IS A LONG BACKGROUND READ (WAL / disk thread, 2026-10-06)
+
+The 10-06 bundles' `wal_history` carried maxima of 43, 36, 29, 26 and 23 GB (OOS-3, Asus, OOS-7, OOS-8, NUC), and a relay asked whether the log was still
+unbounded. **Read a history against the version that produced it**: every one of those hours is before the 10-01 update (the storage guard, #1306). From 10-01
+12:00 on the largest hour is NUC's 1,094 MiB (10-05 13:00), then OOS-11 1,008 MiB, OOS-12 507, OOS-8 414; hours over 64 MiB fell from 111 to 2 (OOS-3), 103 to 3
+(OOS-8), 85 to 1 (OOS-7), 45 to 6 (NUC). The machines' own `wal_high_bytes` are 1.0-1.1 GB (NUC 1,126,042,828 B, OOS-12 1,078,088,499 B), so about 1 GB is the guard
+working, not a runaway. Its cost is paused collection: NUC engaged 17 times for 16,055 s (4.5 h) and hP 18 times for 9,560 s (2.7 h), the kept tails 161-629 s
+each. What holds the log, from the guard's own last pin reports (a pin report says where a thread was and how long its connection had been out, not how long one statement ran; a checkout is a candidate, because in the driver's legacy mode a plain read starts no transaction and only a running statement, an open cursor or an uncommitted write pins the log): NUC, `oo-briefing-bg` for 1,496 s (`briefing/service.py:349` -> `producers.py:3325 on_the_horizon`
+-> `analytics/queries.py:2597 trending` -> `_counts` -> `database/query.py:76 grouped_counts`, in `fetchmany`); hP, `oo-housekeeping-lane` for 1,428 s in
+`analytics/queries.py:1455 corpus_keywords`. OOS-12 was engaged at export time with 0 drains, so there the reader was the all-diagnostics build, whose reads
+export measured to end between members. **So the next cause to remove is a read that holds one snapshot for minutes, not a writer and not the build**: the
+fix is to read those two in chunks bounded by an id range fixed at the start, so a chunked result equals the single read when writes land between chunks.
+
+### A SAMPLER THAT ONLY FITS EVERY FIVE MINUTES MISSES A KILL THAT COMES IN TWENTY SECONDS: SPLIT IT, AND MAKE THE CHEAP HALF FREQUENT (WAL / disk thread, 2026-10-06)
+
+The pressure recorder's heavy snapshot (every thread, every stack) costs 0.3-0.6 s of the liveness thread under a burst, which is why the plateau cadence is 300 s;
+the October kills came within seconds of the last one, and a fatal slide measured about 20 MB/s, under 20 s from 384 MB available to none. Near the memory guard's line
+(available memory at most 1.5 times its floor, the process at least 1/1.5 of the share of RAM at which it trips, or the guard engaged) a LIGHT snapshot is now
+taken every 15 s: the kernel counters, the Python block count and what it gained, and the three working threads that spent the most CPU since the previous light
+one (among the first 16 found), each with its stack. **Bound the cost by what scales with the work, and say which**: the expensive part is not the stack walk but the per-thread `/proc` reads, each
+of which waits a switch interval for the GIL under a burst. A cap on the NUMBER of reads (16, `_LIGHT_CPU_CANDIDATES`) bounds how many, not how long: measured under busy threads in
+pure Python, the light snapshot took 676-2,346 ms with eight of them and up to 10.5 s with twenty, eight `/proc` reads alone 1.2-1.7 s, where
+`time.clock_gettime(...)` of the thread's own CPU clock for the same eight took 0.01-0.12 ms because it never releases the GIL. So `_thread_cpu` reads each thread's own kernel
+CPU clock BY ITS KERNEL THREAD ID, `clock_gettime(((~tid) << 3) | 6)` (the id `pthread_getcpuclockid` returns on glibc and musl), and keeps `/proc` (then psutil) as the fallback.
+**Never go through the `pthread_t`, and a reference to an object is not a lock on its memory**: `pthread_getcpuclockid` dereferences the thread's own record, which another thread's `join`
+can free between the lookup and the call. The first version asked only live `threading` threads and kept their `Thread` objects referenced (a thread is joinable since 3.13, the floor), and an
+deep read still reproduced a SIGSEGV at that line and a recycled record read as ANOTHER thread's clock (116 of 1.9 M reads, a fabricated figure under a dead thread's id), at a 1 microsecond
+switch interval (none in 29 M calls at the default 5 ms: rare, and fatal to the process being watched at the moment it exists to record). A kernel id that no longer names a thread, or names one
+of another process, is only an `OSError` (EINVAL), so a stale id cannot fault and a `_DummyThread` needs no special case. What is left of the cost is not the clock: `composition(walk_heap=False)`'s
+`/proc` reads wait for the GIL like the rest, measured up to about 0.65 s with eight busy threads, so "light" is a relative word. The first 16 working threads found are asked, not the busiest (the
+busiest is what the read decides), and the snapshot says how many it asked (`cpu_asked_for`) and how many it READ (`cpu_read_for`, of `working_threads`); where the platform cannot read a thread's CPU at all
+(macOS, a host without psutil) it says `thread_cpu: unavailable` and the threads are not ranked, never "no earlier reading to compare". Only the busiest three get a stack, and each snapshot reports its own `took_ms`
+(the readings and the choice of threads, not the write of the file). It has its OWN ring (newest 8) and file
+(`session_pressure_light.json`), so a day of them never displaces a heavy snapshot; a thread the previous reading did not see has no delta (never its lifetime total
+presented as recent) and ranks after those that have one. **Memory is not measured per thread** (CPython has no such counter; `tracemalloc` multiplies the cost of every
+allocation on the machine about to be killed), so the blocks the process gained sit beside each thread's CPU delta and the report labels the pairing an inference.
+One test trap: a worker thread parked in `Event.wait` has `threading.py` as its innermost frame, which the module itself classes as WAITING, so a test of the busiest
+threads must park its workers in a C call such as `time.sleep` from test code.
+
+### SMALL RULES FROM THE THREE REVIEWS OF #1306, #1298 AND #1308 (WAL / disk thread, 2026-10-06)
+
+(1) **A queued attempt re-asks the state INSIDE the lock it queued on**: a second `POST /unlock` that waited behind a successful one re-ran the verify on an open app (disposed
+the live engine, marked it unqueryable, started a second start-up upkeep); the first thing done after taking `_UNLOCK_ONE_AT_A_TIME` is `app_lock_state()`. (2) **Classify an
+error on the head of its text, keep the driver's first line**: SQLAlchemy's wrapper appends `[SQL: ...]` and `[parameters: ...]` after the driver's message, so
+`is_disk_full` matching the whole text latched DISK on an `IntegrityError` whose bound title said "no space left on device", and `last_disk_full.detail` carried the
+statement and its values into the status payload; `is_io_error` had been fixed for exactly this and its sibling was not (`_text_head`, `_first_line_detail`). (3) **A count
+in a lesson is measured, not remembered**: "three through the endpoint, eight directly" was corrected to two and nine by putting the detach-everything probe back and
+running the four files (11 failures: 1 through `GET /api/articles`, 1 through `GET /api/articles/export` and 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
+each logs a traceback every pass: key it per path. (5) A reading taken for a caller that does not wait has an age bound, or an hours-old figure classifies a new incident.
+
+### A RECORDER ON A PERIODIC PATH IS COSTED IN THREAD CPU, NOT WALL TIME, AND ITS LOG COUNTER TAKES A LEAF LOCK (export thread, 2026-10-06)
+
+The vitals history (`src/monitoring/vitals_history.py`, R119) rides the 5-second liveness tick. (1) **The first measurement, 190 ms a tick, was the liveness thread
+queueing for the GIL behind three busy Python threads**; the same tick costs 0.11 ms of CPU on an idle machine and 3.3 ms of CPU under them (`time.thread_time()`
+beside the wall clock: what it takes beside what it waits). An instrument's cost is quoted under load and in CPU, or a fast machine hides it and a busy one
+frightens. **The wall figure was then quoted as CPU in a status message ("0.16 s a tick", read off the wrong column of the benchmark's output), and the coordinator
+reasonably took it for 3% of a core**; a number carried from a benchmark into a sentence is re-read against the column it came from. What the 3.3 ms was made of, measured
+piece by piece in thread CPU: five psutil reads of `/proc` at 0.4-0.9 ms each under load and 0.01-0.04 ms idle (a GIL hand-off per read, not work), so the thread count and
+the swap, 1.4 ms between them and neither moving in seconds, moved to the once-a-minute group: 0.98 ms a tick under load, 0.047 ms idle. (2) **A handler that counts log records takes a LEAF lock of its own, never the lock the recorder holds while it folds rows**: `logging` calls `emit`
+with the handler's lock held, so a main lock held across anything slow (the minute's thread walk, 0.3-0.6 s under a GIL-holding burst) stalls every logging
+thread, and a main lock taken inside `emit` against a thread that logs while holding it is a deadlock. The thread sample is therefore taken after the lock is
+released, and two tests pin both halves (a thread holding the main lock cannot stop an `emit`; the sample runs with the lock free). (3) **A budget written before
+the data existed was wrong, twice**: 160 KB would have cut the 48 hours the member exists to show, and the 200 KB that replaced it was sized before the previous sessions' tails existed
+(140 KB at the full retention with 25 loggers, 189 KB with the three tails, 246 KB with 58-character logger names), so it is 260 KB, 6 per cent above a fixture that is not a maximum (a real row is heavier and a logger name has no length ceiling), and the test builds the heaviest member the
+recorder can make. Measure the heaviest document, not the one the first test happens to build, before a number is fixed. (4) **An open accumulator
+restored from a stored, ROUNDED row needs its weight** (the tick count): without it the mean across a restart quietly becomes a mean of means, and the open bucket is
+kept apart from the closed rows in the file so a tick is counted once (both are mutants the suite now kills).
+(5) **A "leaf" lock inside a logging handler is RE-ENTRANT or it is a deadlock** (the independent read reproduced it): CPython runs the cyclic collector and Python-level signal handlers
+between any two bytecodes, so a finalizer that logs (SQLAlchemy's pool does, asyncio's "Task exception was never retrieved" does) or a SIGHUP handler that logs re-enters
+`emit` on the thread already inside it; a plain `Lock` makes that thread wait for itself while it holds the handler's own lock, and every other thread that logs waits
+behind it. The standard library's handler locks are `RLock`s for this reason, and the test re-enters `emit` from inside `emit` with its own lock of the module's kind, so a
+regression fails instead of hanging every later test. (6) **A minute's CPU is a difference between two readings, so the baseline has an age and the row says its span**: a
+baseline kept across ten minutes of skipped samples charged all ten to one minute (605 s in a row of 60), a thread parked in its queue at the sample instant has no figure
+that minute and needs its last one carried, and "no baseline yet" is `null` with a reason, never `[]` (which says "none was busy"). (7) **State restored from a DISPLAY row
+loses what the display summed**: the open log hour came back with its quiet loggers' sum as a logger named "other" and a real logger of that name overwritten, so a
+crash loop's second restart in an hour lost lines; persist the raw (logger, level, count) triples and build the display row at read time. (8) **A clock step is counted once and
+bounded**: a hold that keeps adding to the open bucket until the clock catches up piled an hour into one row of 721 ticks and counted 719 "steps" for one; a step beyond two
+buckets closes everything open, starts again at the clock's time and records the step, rows staying in the order they were written. (9) **A member's cost keeps CPU and wall
+apart and says which is which**: the same tick reads 1 ms of CPU and 532 ms of wall under three busy threads, and a reader who takes the wall figure for work blames the
+recorder for the machine's load, which is the mistake (1) records.
+(10) **A guard against a failure mode is checked against the SHORT version of that failure as well**: "a session killed within its first minute leaves the tails it found" was true only
+until the session's second write, because the file is written at the first tick and then every five minutes, so a crash loop of six-minute sessions pushed out the tail of the one
+that ran long; the line is now five minute rows and a short tail is the first evicted. **An edge that is measured from a bucket-aligned origin is exact; one measured from the last
+tick is not** (a step back of 600 s is held and of 601 s starts a new history, whichever second of the bucket the last tick fell in, and the tests pin both sides at two phases).
+**A bound on one step is not a bound on a stream of them**: a clock that flaps closed the open buckets on every tick and would have pushed 48 hours out of a 576-row table in under
+two hours, so a new history starts at most once every five minutes by the monotonic clock and the steps between are held and marked `kept_open`. **An instrument's own clock can be
+missing**: `time.thread_time()` raises where the platform has no per-thread clock, and read before the readings it failed every tick, so the recorder recorded nothing; its cost
+reports CPU as `null` (never 0) and keeps recording.
+(11) **The second independent read found the four defects the delta introduced, each by running the failure and not by reading the diff**: (a) a "fix" that walked the counts in Python
+under the re-entrant lock (`sorted(... _HOUR_LOGS.items())`) re-opened what the RLock closed, because a finalizer that logs then adds a key to the dictionary being iterated and
+the flush or the member fails ("dictionary changed size"): take a C-level `dict(...)` copy under the lock and walk the copy; (b) a start that closed a restored hour and set the
+open hour to none made a session that ended before its first tick write `open_logs_t: 0`, so the next start dropped the lines of its boot, which in a crash loop are the lines
+that matter: date what is written when it is written, never leave a zero beside counts that exist; (c) one reason ("the first minute, or the first after memory was short") was
+attached to four different facts (an idle process, a held clock, memory that was short, the first minute), so an idle night read as a memory shortage every minute: a null that
+carries a reason carries the reason that happened; (d) a step measured from the bucket's start understated itself (595 s read as 300) and a gap beside a clock correction read
+as down time: say the size from the clock's own last reading, and mark a gap that has a recorded step at its edge, because the correction forward is not recorded. **A guard in
+the budget code was also wrong in a way only a heavier fixture shows**: the notes a cut adds (`dropped_*`) were added after the size check, so a member said it was held to N
+bytes and weighed up to 118 more; measure with the notes in. **A test that takes the constant as its own parameter cannot fail when the constant moves**: the hold edge is
+pinned with the literals 600 and 601 (and `v.CLOCK_HOLD_S == 600`), at two phases of the bucket.
+(12) **The coordinator's own delta check found four more by running the control flow, not by reading the diff**: (a) the END of a hold is not a second step: a big clock step that was held open (it came too soon after the last rebase) and rebased later was recorded again with a size of 0 or -5 and counted twice, because the rebase measured the step from the clock's last reading, which was already on the stepped clock; the test that covered it passed because it asserted the `kept_open` FLAGS and never the sizes or the count: assert the values a record exists to carry, and put the end of a hold on the record the hold made (`new_history_at`); (b) a reason that says "an idle process" must be true where the platform gives a working thread no CPU figure (macOS), or every minute of a busy session reads as idle: say idle only when every thread was waiting; (c) one bad cell inside a stored row emptied the whole history at start (`int("x")` inside the try that resets everything): check every cell and drop that row alone; (d) a comment that calls a number "the heaviest it can be" describes the test's FIXTURE: say "sized above the fixture" where the input has no ceiling (a logger name has none), and keep ONE rule for what a failure leaves in a zip (its type and the system's reason, never its message, which can name a path).
 
 - **A LOAD THAT STARTED BEFORE THE OPERATOR'S PICK MUST NOT WRITE THE CONTROL (the row I sweep, 2026-10-06, PR #1324):** `loadAiBackendPanel` set the backend `<select>` from the server's stored value, so a load already in flight when the operator picked held the OLD value and put the select back for about two seconds, until the load that follows the save corrected it. It read as `REVERTED` in 12 of the first 45 sweep runs and never reproduced by hand, because it needs the stale answer to land after the pick. The way to reproduce a race like this is to DELAY the stale response (wrap `window.fetch` so the first matching call waits 1.2 s, start the load without awaiting it, then pick), with the stored value different from the pick; the first attempts all passed because the stored value equalled the pick, and `page.evaluate` of an async function awaits it, which removes the race. The first fix counted picks and wrote the control only when none happened since the load started; the independent read reproduced a revert on TWO picks in one tick (the reload after the first save read the server before the second landed), so the page also counts saves in flight and writes only when none is. Prove such a fix by serving each VARIANT of the file to the same browser (`scripts/ai_backend_race_repro.py`), and by a node test that runs the real functions against controllable answers, because a test that greps the source passes with the guard moved to the wrong line. **A sweep that waits a fixed 400 ms and reads back cannot tell a revert from a late write**: it is the pair "picked, then read twice 1 s apart" that does.
 - **A SWEEP THAT LOSES ITS MARKERS PAYS 30 SECONDS PER LOSS (same PR):** the Settings root pass marked 50 id-less selects, the page re-rendered, and each timed out at Playwright's 30 s default: 25 minutes per run, 45 runs. Set a short default timeout (`page.set_default_timeout(4000)`) before a long walk, and count errors by cause before reading them as findings: those 50 were swept and held under the subtab that owns them. **The same sweep's judge counted "not false" as "true":** a pick whose select had been re-rendered away was `held: null` and passed (215 of 4,691 rows, including every map-panel drop-down), and `held` was never a proof that the pick DID anything. Read the value back from where the control is NOW (its id, or its panel's id plus index), call the unreadable one `unread`, make the run fail on it, and refuse to run on an app that is online. Also: a fresh data directory opens the first-run guide over the page (it opens only on an empty corpus), so a walk of an empty install must mark it done (`oo_guide_v1`) or every click times out under the dialog.

@@ -130,7 +130,7 @@ def test_a_probe_read_in_flight_does_not_hang_a_dispose(eng, monkeypatch):
 
 @pytest.mark.parametrize("pool_name", ["StaticPool", "SingletonThreadPool"])
 def test_an_in_memory_engine_keeps_its_database_when_the_probe_reads(pool_name):
-    """#1289 detached the probe from EVERY pool and broke three tests: a ``StaticPool`` (and a
+    """#1289 detached the probe from EVERY pool and broke eleven tests in four files: a ``StaticPool`` (and a
     ``SingletonThreadPool``) owns one connection that IS the in-memory database, so detaching it
     left the pool with no record and the next checkout opened a new, empty ``:memory:`` database
     ("no such table"). Only a pool of interchangeable connections may give the probe up."""
@@ -164,9 +164,21 @@ def test_only_queue_and_null_pools_are_detachable(tmp_path):
         (ReservingQueuePool, True),
         (sa_pool.StaticPool, False),
         (sa_pool.SingletonThreadPool, False),
+        # the allow-list's one real difference from a deny-list: a pool nobody listed is kept pooled
+        (sa_pool.AssertionPool, False),
     ):
         e = create_engine(f"sqlite:///{tmp_path / (cls.__name__ + '.db')}", future=True, poolclass=cls)
         try:
             assert insights._detachable(e) is expected, cls.__name__
         finally:
             e.dispose()
+
+
+def test_a_bind_with_no_pool_is_kept_pooled_not_an_error():
+    """The ``except`` in ``_detachable``: an object with no ``.pool`` (a test double, a future engine
+    type) answers False, the safe pooled behaviour, instead of raising into the status probe."""
+
+    class _NoPool:
+        pass
+
+    assert insights._detachable(_NoPool()) is False

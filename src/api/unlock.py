@@ -21,6 +21,7 @@ machine or a copied file, never a compromised running session.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import threading
@@ -429,7 +430,13 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
             # so the corpus is usable — report ready rather than trap the user.
             set_startup("ready", "", error=str(exc))
 
-    threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
+    try:
+        threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
+    except Exception as exc:  # noqa: BLE001 - e.g. "can't start new thread" on a machine out of memory
+        # The upkeep is best-effort and the store is queryable: a thread that cannot be created must not
+        # return a usable app to the lock screen (the caller clears the key on any failure here).
+        _LOG.warning("post-unlock startup upkeep could not be started", exc_info=True)
+        set_startup("ready", "", error=str(exc))
 
 
 class _forensic_timer:
@@ -620,6 +627,23 @@ def unlock(body: PassphraseBody) -> dict:
     # as an estimate), and ran ``_finish_unlock`` beside it. Serialised, it starts after the
     # first has written the log back, reads an honest (empty) log and measures nothing.
     with _UNLOCK_ONE_AT_A_TIME:
+        # Re-asked INSIDE the lock: an attempt that queued behind one that succeeded finds the app
+        # already open. Run again, it would dispose the live engine, mark the app unqueryable for the
+        # whole verify and start a second start-up upkeep thread beside the first, to prove a
+        # passphrase that is already proven. The answer it gets is the true one: the app is open.
+        if app_lock_state() == "unlocked-encrypted":
+            # The app is open, so the key IN MEMORY is the one that opened it: compare, never assume. "That
+            # one was right" is the one false answer that costs the person something later (THE passphrase has
+            # no recovery), and a wrong key on an open app was refused before this short-circuit existed.
+            from src.database.connect import get_passphrase
+
+            held = get_passphrase()
+            if held is not None and hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
+                return {"unlocked": True, "state": "unlocked-encrypted"}
+            # Not the held key: it is verified against the FILE below, never trusted and never refused on the held
+            # key's say-so. A wrong one is refused there (403), and the right one repairs an app that reads as open
+            # while it holds a wrong key (a mis-set ``OO_DB_PASSPHRASE``: the held key is trusted for the state, but
+            # it never opened the store).
         return _unlock_locked(body, p)
 
 
@@ -647,7 +671,22 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         _end_recovery_notice(_recovery_token)
     _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
     set_passphrase(body.passphrase)
-    _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+    try:
+        _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+    except Exception:
+        # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
+        # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
+        # that state without running anything, and the page waits on "opening the database" for ever. Back to
+        # locked, as ``create_db`` does, so the retry is a real one.
+        set_passphrase(None)
+        try:
+            # the pool keeps the connections init_db opened with the key; drop them with it
+            from src.database.session import dispose_engine
+
+            dispose_engine()
+        except Exception:  # noqa: BLE001 - the retry disposes the engine again before it connects
+            _LOG.debug("engine dispose after a failed unlock finish failed", exc_info=True)
+        raise
     _LOG.info("store unlocked")
     return {"unlocked": True, "state": app_lock_state()}
 

@@ -66,6 +66,7 @@ def snapshot() -> dict:
     (UTC) and the seconds it has run (a running step) or took (a finished one); for a pending step
     the seconds it has waited behind the earlier ones. Counts and times only, no score."""
     now = time.time()
+    progress = _progress_of("rollup")  # read before _LOCK: the build holds its own lock briefly, never this one
     with _LOCK:
         began = _SEQUENCE["started_at"]
         steps = []
@@ -75,6 +76,8 @@ def snapshot() -> dict:
                 row["seconds"] = round(now - float(row["started_at"]), 1)  # type: ignore[arg-type]
             elif row["state"] == "pending" and began is not None:
                 row["waited_s"] = round(now - float(began), 1)  # type: ignore[arg-type]
+            if name == "rollup" and row["state"] == "running" and progress is not None:
+                row["progress"] = progress
             if row["started_at"] is not None:
                 row["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(row["started_at"])))  # type: ignore[arg-type]
             steps.append({"step": name, **row})
@@ -85,7 +88,9 @@ def snapshot() -> dict:
             "method": (
                 "The three heavy start-up jobs run one after the other. A rollup a serve kicks after "
                 "the re-index has started builds beside it, and declines when memory is short. "
-                "No timeout: a step that does not end shows here as running, with its seconds."
+                "No timeout: a step that does not end shows here as running, with its seconds; the rollup step "
+                "also shows its build's stage, rows streamed, rows/s and seconds since it last moved, and the "
+                f"log says so when it has not moved for {SLOW_STEP_S:.0f} s (checked every {SLOW_STEP_S:.0f} s)."
             ),
         }
 
@@ -115,10 +120,94 @@ def heavy_step_verdict() -> dict | None:
     return None
 
 
+#: The steps that carry their own progress channel (see ``_progress_of``).
+_PROGRESS_STEPS = frozenset({"rollup"})
+
+
+def _progress_of(name: str) -> dict | None:
+    """What the step reports about its own progress: today only the rollup build does (rows streamed, the
+    rate and when it last moved). ``None`` for a step with no progress channel, or when none is readable."""
+    if name not in _PROGRESS_STEPS:
+        return None
+    try:
+        from src.analytics import rollup_serve
+
+        return rollup_serve.build_progress()
+    except Exception:  # noqa: BLE001 - a missing reading is no information, never an error
+        return None
+
+
+def _progress_text(p: dict) -> str:
+    rate = f" at {p['rows_per_s']:,} rows/s" if p.get("rows_per_s") else ""
+    return f"{p['stage']}: {p['rows_done']:,} rows{rate}, last moved {p['idle_s']:.0f} s ago"
+
+
 def _warn_still_running(name: str, holds: str) -> None:
+    p = _progress_of(name)
     _LOG.warning(
-        "boot step %s is still running after %.0f s; %s waiting behind it", name, SLOW_STEP_S, holds
+        "boot step %s is still running after %.0f s; %s waiting behind it%s",
+        name, SLOW_STEP_S, holds, f" ({_progress_text(p)})" if p else "",
     )
+
+
+class _SlowWatch:
+    """The warning for a step that runs long, re-armed for as long as the step runs.
+
+    It speaks once when the step passes ``SLOW_STEP_S`` (it is still running, and what it reports), then
+    every ``SLOW_STEP_S`` after that ONLY when the step's own progress has not moved for that long: a build
+    that is streaming rows is slow, a build that has stopped moving is stuck, and the log should say which.
+    A step with no progress channel is warned about once, as before."""
+
+    def __init__(self, name: str, holds: str) -> None:
+        self.name, self.holds = name, holds
+        self._lock = threading.Lock()
+        self._timer: threading.Timer | None = None
+        self._stopped = False
+        self._first = True
+
+    def start(self) -> None:
+        self._arm()
+
+    def _arm(self) -> None:
+        timer = threading.Timer(SLOW_STEP_S, self._fire)
+        timer.daemon = True
+        with self._lock:
+            if self._stopped:
+                return
+            self._timer = timer
+        timer.start()
+
+    def _fire(self) -> None:
+        if self._first:
+            self._first = False
+            _warn_still_running(self.name, self.holds)
+        else:
+            p = _progress_of(self.name)
+            if p is not None and p["idle_s"] >= SLOW_STEP_S:
+                if p["stage"] == "aggregate":
+                    # one statement over the whole staging table: it reports nothing until it ends, so
+                    # the honest wording is "waiting on it", not "stuck"
+                    _LOG.warning(
+                        "boot step %s has been in its single aggregate statement for %.0f s, which reports no "
+                        "progress while it runs; %s waiting behind it (%s)",
+                        self.name, p["idle_s"], self.holds, _progress_text(p),
+                    )
+                else:
+                    _LOG.warning(
+                        "boot step %s has made no progress for %.0f s; %s waiting behind it (%s)",
+                        self.name, p["idle_s"], self.holds, _progress_text(p),
+                    )
+        if self.name not in _PROGRESS_STEPS:
+            return  # nothing more it could ever report: one warning, as before
+        with contextlib.suppress(RuntimeError):  # a machine too starved for a thread ends the watch quietly
+            self._arm()
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._stopped = True
+            timer = self._timer
+        if timer is not None:
+            timer.cancel()
 
 
 def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
@@ -127,8 +216,7 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
         _STEPS[name].update(state="running", started_at=time.time())
     state = "failed"  # until the step returns: a BaseException that ends it must not read as done
     # The warning is logged WHILE a step is still running, so one that never ends is on record too.
-    slow = threading.Timer(SLOW_STEP_S, _warn_still_running, args=(name, holds))
-    slow.daemon = True
+    slow = _SlowWatch(name, holds)
     try:
         # Inside the try: a machine too starved to start a thread must not leave the step "running"
         # for ever (that would hold every later step, and the map serve's heavy-step verdict, up).
