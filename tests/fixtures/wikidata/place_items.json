@@ -1,0 +1,401 @@
+{
+  "entities": {
+    "Q1000001": {
+      "claims": {
+        "P1082": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+11000",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 9,
+                      "time": "+2011-00-00T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "normal",
+            "type": "statement"
+          },
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+12000",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 9,
+                      "time": "+2015-00-00T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "preferred",
+            "type": "statement"
+          },
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+13000",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 11,
+                      "time": "+2021-01-01T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "normal",
+            "type": "statement"
+          }
+        ],
+        "P625": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "globecoordinate",
+                "value": {
+                  "globe": "http://www.wikidata.org/entity/Q2",
+                  "latitude": 0.11,
+                  "longitude": 0.12
+                }
+              },
+              "property": "P625",
+              "snaktype": "value"
+            },
+            "rank": "normal",
+            "type": "statement"
+          }
+        ]
+      },
+      "id": "Q1000001",
+      "labels": {
+        "ar": {
+          "language": "ar",
+          "value": "تستبورغ"
+        },
+        "de": {
+          "language": "de",
+          "value": "Testburg"
+        },
+        "en": {
+          "language": "en",
+          "value": "Testburg"
+        },
+        "fr": {
+          "language": "fr",
+          "value": "Testbourg (Wikidata)"
+        }
+      },
+      "lastrevid": 101,
+      "type": "item"
+    },
+    "Q1000003": {
+      "claims": {
+        "P1082": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+500",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 9,
+                      "time": "+2010-00-00T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "normal",
+            "type": "statement"
+          },
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+900",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 11,
+                      "time": "+2020-06-30T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "normal",
+            "type": "statement"
+          },
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+9999",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 9,
+                      "time": "+2024-00-00T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "deprecated",
+            "type": "statement"
+          }
+        ],
+        "P625": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "globecoordinate",
+                "value": {
+                  "globe": "http://www.wikidata.org/entity/Q2",
+                  "latitude": 0.13,
+                  "longitude": 0.14
+                }
+              },
+              "property": "P625",
+              "snaktype": "value"
+            },
+            "rank": "normal",
+            "type": "statement"
+          }
+        ]
+      },
+      "id": "Q1000003",
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Anonymville"
+        },
+        "fr": {
+          "language": "fr",
+          "value": "Anonymville-fr"
+        }
+      },
+      "lastrevid": 103,
+      "type": "item"
+    },
+    "Q1000004": {
+      "id": "Q1000004",
+      "missing": ""
+    },
+    "Q1000006": {
+      "claims": {
+        "P625": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "globecoordinate",
+                "value": {
+                  "globe": "http://www.wikidata.org/entity/Q2",
+                  "latitude": 0.16,
+                  "longitude": 0.16
+                }
+              },
+              "property": "P625",
+              "snaktype": "value"
+            },
+            "rank": "normal",
+            "type": "statement"
+          }
+        ]
+      },
+      "id": "Q1000006",
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Redirectown"
+        },
+        "fr": {
+          "language": "fr",
+          "value": "Redirectville"
+        }
+      },
+      "lastrevid": 106,
+      "redirects": {
+        "from": "Q1000005",
+        "to": "Q1000006"
+      },
+      "type": "item"
+    },
+    "Q1000007": {
+      "claims": {
+        "P1082": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "quantity",
+                "value": {
+                  "amount": "+4200",
+                  "unit": "1"
+                }
+              },
+              "property": "P1082",
+              "snaktype": "value"
+            },
+            "qualifiers": {
+              "P585": [
+                {
+                  "datavalue": {
+                    "type": "time",
+                    "value": {
+                      "after": 0,
+                      "before": 0,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                      "precision": 11,
+                      "time": "+2019-01-01T00:00:00Z",
+                      "timezone": 0
+                    }
+                  },
+                  "property": "P585",
+                  "snaktype": "value"
+                }
+              ]
+            },
+            "rank": "normal",
+            "type": "statement"
+          }
+        ],
+        "P625": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "type": "globecoordinate",
+                "value": {
+                  "globe": "http://www.wikidata.org/entity/Q2",
+                  "latitude": 0.55,
+                  "longitude": 0.55
+                }
+              },
+              "property": "P625",
+              "snaktype": "value"
+            },
+            "rank": "normal",
+            "type": "statement"
+          }
+        ]
+      },
+      "id": "Q1000007",
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Farpoint"
+        }
+      },
+      "lastrevid": 107,
+      "type": "item"
+    }
+  },
+  "success": 1
+}
