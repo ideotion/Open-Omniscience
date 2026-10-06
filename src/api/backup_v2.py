@@ -892,8 +892,16 @@ def _accumulate(run: dict, st: dict, *, commit_batch: int | None, idle: bool) ->
         v = st.get(k)
         if v is not None:
             run[k] = float(run.get(k, 0.0)) + float(v)
-    for k in ("articles", "mentions_written"):
+    for k in ("articles", "mentions_written", "mentions_kept", "mentions_updated",
+              "mentions_removed", "mentions_added"):
         run[k] = int(run.get(k, 0)) + int(st.get(k, 0) or 0)
+    # The seconds inside index_article by part, summed at full precision like the rest.
+    split = st.get("apply_split")
+    if isinstance(split, dict):
+        acc_split = dict(run.get("apply_split") or {})
+        for name, secs in split.items():
+            acc_split[str(name)] = float(acc_split.get(str(name), 0.0)) + float(secs or 0.0)
+        run["apply_split"] = acc_split
     # WHICH SETTINGS PRODUCED THESE SECONDS. Without this the split is uninterpretable
     # across a run that went online half-way through: the same apply_s means different
     # things at commit batch 1 and at 200, and that comparison is the whole point of
@@ -938,6 +946,10 @@ def _drain_metrics(run: dict) -> dict | None:
     }
     out["articles"] = int(run.get("articles", 0))
     out["mentions_written"] = int(run.get("mentions_written", 0))
+    for k in ("mentions_kept", "mentions_updated", "mentions_removed", "mentions_added"):
+        out[k] = int(run.get(k, 0))
+    if run.get("apply_split"):
+        out["apply_split"] = {k: round(float(v), 3) for k, v in run["apply_split"].items()}
     out["exclusive_articles"] = int(run.get("exclusive_articles", 0))
     out["shared_articles"] = int(run.get("shared_articles", 0))
     out["commit_batch_seen"] = list(run.get("commit_batch_seen") or [])
@@ -1040,7 +1052,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         return not exclusive_window_open()
 
     # ONE corpus-epoch bump per RUN, at the START and again at the END (F3). Every
-    # article this drain touches is delete-then-reinserted, so a rollup built before
+    # article this drain touches has its mention rows rewritten (changed rows updated in
+    # place, gone ones deleted, new ones inserted; unchanged ones left alone), so a rollup built before
     # the run must be invalidated (the start bump) and so must one snapshotted while
     # it ran (the end bump) -- the second is not a nicety: bumping per batch used to
     # close that window by accident, and a start-only bump would silently stop
@@ -1185,6 +1198,37 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         # cleanly, even if this run never deferred (a restarted drain that finds the
         # collector running has no marker of its own, and would otherwise leave that one
         # open for good).
+        #
+        # THE EPOCH BUMP COMES FIRST, then again after a reconcile that finished. The sweep
+        # below runs for minutes on a large corpus (86-104 s a pass on 3 million keywords), and
+        # a run killed inside it never reaches a bump placed after it: the next run finds no
+        # batch left, walks none, and never bumps, so a rollup built from the middle of this
+        # run would keep the old numbers of rows changed in place under their old ids. The first
+        # bump covers the mention rows (the sweep touches counters, not rows); the second covers
+        # the counters the rollup's keyword table copies, so a rollup built between the two is
+        # rebuilt once the sweep has ended. An extra bump is only ever an extra, correct rebuild.
+        #
+        # THE REMAINING BOUND, and the condition it stands on. A lost end bump leaves the next
+        # run with no batch to walk and so no bump of its own. It is lost by a hard kill between
+        # the last batch's completion stamp and this line, and equally by a bump that FAILS
+        # (``_bump`` and ``bump_corpus_epoch`` swallow their errors, by design: a coordination
+        # write may not break the drain). A second window mirrors it: ``finish_deferral``
+        # (store.py) calls ``close_deferral`` (counter_deferral.py), which closes the marker a
+        # moment before the reconciled bump below.
+        # What is exposed is a rollup built from the middle of the run, and not only to counts:
+        # an attribution change (country, language, source, extractor), a deleted row and a row
+        # missing from the snapshot the build read are all invisible to an id-tail refresh.
+        # Today that is bounded by the serving layers' backstop rebuilds
+        # (``rollup_serve._BACKSTOP_S`` and ``map_serve._BACKSTOP_S``, one hour each), which
+        # rebuild regardless of the token. THAT HOLDS ONLY FOR THE IN-MEMORY SERVE: with the
+        # persisted store active, ``_refresh_persisted_build`` merges only the tail while the
+        # epoch is unchanged, so a lost bump would be UNBOUNDED there. The persisted store is off today
+        # only because the httpfs pins in ``configs/external_artifacts.yml`` are blank
+        # (``tests/test_reindex_drain_settings.py`` fails the day they are filled, pointing
+        # here). A persisted "bump owed" marker is the fix that day, not before: it would add a
+        # second place that says whether the corpus changed, which is the thing the epoch is.
+        if batches:
+            _bump("reindex-resume:end")
         window = _yield_to_import()
         leftover = False
         if not deferring and clean_end and not ctx.stopping and not window:
@@ -1210,8 +1254,12 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     out["counter_reconcile"]["left_by_an_earlier_run"] = True
             except Exception:  # noqa: BLE001 - never let it mask what ended the run
                 _LOG.warning("deferred-counter reconcile failed", exc_info=True)
-        if out["articles_reindexed"]:
-            _bump("reindex-resume:end")
+        # Every run that reconciled counters bumps again here, with or without a batch of its
+        # own: a resumed run with nothing pending can still close a sweep an earlier run left
+        # open (killed inside it, or stopped for an import), and a rollup built since keeps the
+        # keyword table it copied before that reconcile until an epoch change.
+        if out.get("counter_reconcile", {}).get("reconciled"):
+            _bump("reindex-resume:reconciled")
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
     # never sees it -- without this, a partial run would report stopped:false and read as
     # a completed drain. reindex_imported_articles takes should_stop, so it genuinely can
