@@ -25,6 +25,13 @@ WHAT IT DOES, AND ALL IT DOES.
   and none stops another; any other file is recorded and NAMED, with nothing to pause. The latch is memory
   only: a restart is the operator trying again, and the first failed read puts it back.
 
+* **Discards a poisoned connection.** On an ENCRYPTED file one read of a damaged page leaves that connection
+  answering ``MemoryError`` to every later read, healthy tables included, until it is closed (measured). The
+  observer therefore marks a SQLCipher ``SQLITE_CORRUPT`` as a disconnect for that ONE connection
+  (:func:`discard_poisoned_connection`), so the pool opens a fresh one instead of handing the poisoned one to
+  the next request. A ``MemoryError`` itself, a wrong key and a plain SQLite file's corruption are never
+  reclassified.
+
 WHAT IT DOES NOT DO (and the PR says so). It does not verify, repair or salvage: that is E2 (a boot check
 after an unclean end) and E3 (a salvage copy). Until they land the latch releases only when the operator
 starts collection again (:func:`retry_for_collection_start`: the corpus's and the law file's; going online
@@ -888,6 +895,45 @@ def retry_for_collection_start(reason: str) -> list[str]:
     )
 
 
+def discard_poisoned_connection(context: Any) -> bool:
+    """Tell SQLAlchemy to throw away the connection whose read just failed on a damaged page, when the driver
+    is SQLCipher and the error is ``SQLITE_CORRUPT`` (primary code 11). Returns whether it did. Never raises.
+
+    WHY. After the first page that fails its check, SQLCipher leaves the connection answering ``MemoryError``
+    (no message) to EVERY later page read, healthy tables included; ``rollback``, ``commit``,
+    ``shrink_memory``, ``cache_size`` and a second ``PRAGMA key`` do not clear it, only a new connection does
+    (measured on a real encrypted store; plain ``sqlite3`` connections are not affected). A pooled connection
+    goes back to the pool in that state, so one request that touches a damaged page leaves a connection that
+    fails every later request with the text of a real out-of-memory, until the process restarts.
+
+    WHAT. ``is_disconnect = True`` makes SQLAlchemy invalidate this one connection: the driver connection is
+    closed and the pool opens a fresh one on the next checkout (one key derivation, 0.2 to 0.4 s). The error
+    that is raised is the same corruption error (``connection_invalidated`` is now true on it).
+    ``invalidate_pool_on_disconnect = False`` keeps the damage to that ONE connection: every connection that
+    reads a damaged page fails first with code 11, and so is discarded by its own error, so the rest of the
+    pool needs no replacing (SQLAlchemy's default would drop every connection older than the moment, and each
+    would then pay a key derivation).
+
+    WHAT IT DOES NOT TOUCH. Only code 11 from the SQLCipher driver. A ``MemoryError`` is never reclassified (a
+    real out-of-memory is not a reason to reconnect, and by itself says nothing about a page), nor is a
+    wrong-key error (code 26) or a plain-SQLite corruption error (it does not poison its connection). A
+    session that was in a transaction on the discarded connection rolls back as it does for any failed
+    statement; the next statement of the same session checks a connection out again."""
+    try:
+        exc = getattr(context, "original_exception", None)
+        driver = driver_error(exc)
+        if driver is None or type(driver).__module__.split(".")[0] != "sqlcipher3":
+            return False
+        code = getattr(driver, "sqlite_errorcode", None)
+        if not isinstance(code, int) or (code & 0xFF) != SQLITE_CORRUPT:
+            return False
+        context.is_disconnect = True
+        context.invalidate_pool_on_disconnect = False
+        return True
+    except Exception:  # noqa: BLE001 - an observer never replaces the real error
+        return False
+
+
 #: engine -> (file key, listener): what :func:`attach` registered, so a test (or a status read) can
 #: ask which file an engine's errors are filed against, and prove the listener is still on it.
 _ATTACHED: weakref.WeakKeyDictionary[Any, tuple[str, Any]] = weakref.WeakKeyDictionary()
@@ -899,6 +945,7 @@ def attach(engine: Any, file_key: str) -> None:
 
     def _damage_on_corruption(context) -> None:  # noqa: ANN001 - SQLAlchemy's ExceptionContext
         registry.on_engine_error(context, file_key)
+        discard_poisoned_connection(context)
 
     event.listen(engine, "handle_error", _damage_on_corruption)
     _ATTACHED[engine] = (file_key, _damage_on_corruption)
