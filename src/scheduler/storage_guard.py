@@ -619,7 +619,11 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
     out["caveat"] = (
         "A read that is not a pooled connection checkout (a cursor another thread left open on "
         "a connection it already returned, a connection opened outside the watched engines) "
-        "is invisible to this list; an empty list does not mean nobody is reading."
+        "is invisible to this list; an empty list does not mean nobody is reading. And the "
+        "other way round: a listed checkout is a candidate, not proof. This engine runs the "
+        "driver's legacy transaction mode, where a plain SELECT starts no transaction, so a "
+        "checkout pins the log only while a statement or an open cursor of it is running; the "
+        "oldest checkout is the likeliest holder, never a measured one."
     )
     return out
 
@@ -1467,7 +1471,7 @@ class StorageGuard:
             if pinned:
                 log(
                     "storage guard: the WAL cannot be reset -- TRUNCATE is busy, a reader holds "
-                    "it; checkouts: %s",
+                    "it; checkouts (candidates, not proof of a snapshot): %s",
                     tops or "none listed (the holder is not a pooled checkout)",
                 )
             else:
