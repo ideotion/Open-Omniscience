@@ -4,15 +4,17 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The rollup is only useful if it stays fresh cheaply AND never lies. D3 refreshes it
-incrementally (merge just the new mention tail) but forces a FULL rebuild whenever the
-corpus epoch changed — because ``index_article`` does delete-then-reinsert, so an
-incremental merge after a re-index would leave the old contribution in the rollup AND add
-the re-inserted rows = a doubled number. These tests prove, in-memory:
+incrementally (merge just the new mention tail, ids above the last merged one) but forces a
+FULL rebuild whenever the corpus epoch changed — because a re-index rewrites an existing
+article's rows: rows whose values changed are UPDATED IN PLACE under their old ids, below the
+tail's watermark, so an incremental merge would never see them and the rollup would keep the
+old number. These tests prove, in-memory:
 
   4.  incremental after a new batch == a full rebuild (MERGE-add correctness).
   5.  a late-arriving historical-dated batch lands on the CORRECT (old) day.
   6.  an epoch change forces a FULL rebuild, not incremental — and an UNGUARDED incremental
-      after a re-index really does double-count (why the guard exists).
+      after a re-index that changed the stored rows really does leave a stale number (why the
+      guard exists).
 """
 
 from __future__ import annotations
@@ -113,20 +115,32 @@ def test_late_arriving_historical_batch_lands_on_the_right_day(ctx):
     assert feb and int(feb) > 0, "the late historical batch landed on 2024-02-01"
 
 
-def test_epoch_change_forces_full_rebuild_and_unguarded_incremental_double_counts(ctx):
-    # VERIFY 6 + the trap: after re-indexing an EXISTING article, an incremental merge (epoch
-    # unchanged) OVER-counts; bumping the epoch forces a full rebuild that is correct again.
+class _DoublingExtractor(BaselineExtractor):
+    """A 'newer engine': every term counts twice, so re-indexing an article CHANGES its stored
+    rows (rows that did not change are no longer rewritten, so the same engine would prove nothing)."""
+
+    def extract(self, text, *a, **kw):
+        import dataclasses
+
+        return [dataclasses.replace(t, count=t.count * 2) for t in super().extract(text, *a, **kw)]
+
+
+def test_epoch_change_forces_full_rebuild_and_unguarded_incremental_goes_stale(ctx):
+    # VERIFY 6 + the trap: after re-indexing an EXISTING article with an engine that changes its
+    # rows, an incremental merge (epoch unchanged) never sees the rows updated in place under their
+    # old ids and UNDER-counts; bumping the epoch forces a full rebuild that is correct again.
     session, ex = ctx
     a0 = _index(session, ex, "2024-03-01", "The federal budget budget gripped the Senate.")
     _index(session, ex, "2024-03-05", "Senate debated the federal budget once more.")
     con = columnar.connect(passphrase=None)
     columnar.refresh_keyword_daily(con, session, corpus_epoch=1)  # full build @ epoch 1
 
-    # re-index an existing article: delete-then-reinsert its mentions with NEW higher ids.
-    index_article(session, a0, extractor=ex)
+    # re-index an existing article with a changed engine: its rows are updated in place, under
+    # their old ids, below the incremental tail's watermark.
+    index_article(session, a0, extractor=_DoublingExtractor())
 
-    # WRONG (the trap): epoch unchanged -> incremental merges the re-inserted tail ON TOP of
-    # a0's contribution already in the rollup.
+    # WRONG (the trap): epoch unchanged -> the incremental tail holds nothing new, so the rollup
+    # keeps a0's old contribution.
     wrong = columnar.refresh_keyword_daily(con, session, corpus_epoch=1)
     assert wrong["mode"] == "incremental"
     wrong_counts = _counts(con)
@@ -138,10 +152,10 @@ def test_epoch_change_forces_full_rebuild_and_unguarded_incremental_double_count
 
     ground_truth = _counts(_fresh_full(session))
     assert right_counts == ground_truth, "the epoch-forced full rebuild is correct"
-    assert wrong_counts != ground_truth, "the unguarded incremental double-counted (the trap)"
-    # concretely: the re-indexed keyword's mentions were inflated above the truth.
+    assert wrong_counts != ground_truth, "the unguarded incremental went stale (the trap)"
+    # concretely: the re-indexed keyword's mentions stayed BELOW the truth.
     bid = session.query(Keyword).filter_by(normalized_term="budget").first().id
-    assert wrong_counts[bid][0] > ground_truth[bid][0]
+    assert wrong_counts[bid][0] < ground_truth[bid][0]
     assert right_counts[bid][0] == ground_truth[bid][0]
 
 

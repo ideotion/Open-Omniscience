@@ -44,7 +44,7 @@ which no amount of extra workers could have moved.
 
 The EXTRACTION half of when/where/who is as pure as the other two -- a function
 of the article's own text -- so it now rides the same pool. Only the STORE half
-(savepoints, live-session error handling, the delete-then-reinsert) stays in
+(savepoints, live-session error handling, the mention-row diff write) stays in
 the main process, where it belongs and where its cost is small.
 
 SAFE BY CONSTRUCTION:
