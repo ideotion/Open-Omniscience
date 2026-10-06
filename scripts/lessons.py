@@ -29,7 +29,7 @@ A NEW LESSON IS A NEW FILE (protocol rule (5a)(b), amended 2026-10-06): ``docs/l
 every parallel PR's text at the SAME tail and moved one shared ceiling number, so each landing
 re-conflicted every other open PR in LESSONS.md and in ``_LESSONS_LINE_CEILING``. A fragment is
 searched, indexed and shown exactly like an archive entry; ``scripts/ledger_fold.py fold`` merges
-the fragments into LESSONS.md at a release. An entry in a fragment is shown by its file name
+the fragments into LESSONS.md at a release. A fragment is shown whole by its file name
 (``--show 2026-10-06-foo.md``), because a line number in a set of files that grows is not stable.
 
 An ENTRY is either a bullet whose text opens with a bold title (``- **TITLE (date):** text``,
@@ -53,6 +53,8 @@ _ENTRY = re.compile(r"^(\s*)- \*\*(.*)$")
 _HEADING = re.compile(r"^#{2,6}\s+(.*\S)\s*$")
 _FENCE = re.compile(r"^\s*(```|~~~)")
 _TITLE_MAX = 150
+SLUG = re.compile(r"[a-z0-9][a-z0-9-]{2,80}")  # the ONE slug rule, shared with ledger_fold.py
+TEMPLATE_BODY = "(One lesson, one file. Say what was found, what it cost, and the rule it gives; name the PR once it exists.)"
 
 
 @dataclass(frozen=True)
@@ -103,7 +105,7 @@ def parse(text: str) -> list[Entry]:
 
 
 def fragment_files() -> list[Path]:
-    return sorted(FRAGMENTS.glob("*.md")) if FRAGMENTS.is_dir() else []
+    return sorted(f for f in FRAGMENTS.glob("*.md") if f.is_file()) if FRAGMENTS.is_dir() else []
 
 
 def load() -> tuple[list[str], list[Entry]]:
@@ -117,7 +119,13 @@ def load() -> tuple[list[str], list[Entry]]:
     lines = text.split("\n")
     entries = parse(text)
     for f in fragment_files():
-        chunk = f.read_text(encoding="utf-8").rstrip("\n").split("\n")
+        try:
+            raw = f.read_bytes().decode("utf-8")
+        except UnicodeDecodeError as exc:
+            print(f"lessons.py: skipping lessons.d/{f.name}: not valid UTF-8 ({exc.reason}); "
+                  "`python scripts/ledger_fold.py check` names it", file=sys.stderr)
+            continue
+        chunk = raw.replace("\r\n", "\n").rstrip("\n").split("\n")
         at = len(lines)  # the fragment's first line is line at + 1; the archive's last entry ends at `at`
         lines = lines + chunk
         entries += [
@@ -127,30 +135,49 @@ def load() -> tuple[list[str], list[Entry]]:
     return lines, entries
 
 
-_TEMPLATE = """## {date} \u2014 {title}
+_TEMPLATE = "## {date} \u2014 {title}\n\n" + TEMPLATE_BODY + "\n"
 
-(One lesson, one file. Say what was found, what it cost, and the rule it gives; name the PR once it exists.)
-"""
+
+def valid_date(day: str) -> bool:
+    """A real calendar date written YYYY-MM-DD (ASCII digits only)."""
+    import datetime as _dt
+
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day):
+        return False
+    try:
+        _dt.datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
+def create_exclusive(path: Path, text: str) -> int:
+    """Create ``path`` with ``text``; 0 on success, 1 if it (or a symlink of that name) already exists.
+
+    ``open(path, "x")`` is one atomic step, so two creators cannot both succeed and a dangling symlink is
+    refused instead of written through; the LF newline keeps the fragment byte-identical on Windows."""
+    path.parent.mkdir(exist_ok=True)
+    try:
+        with open(path, "x", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+    except FileExistsError:
+        print(f"{path} already exists", file=sys.stderr)
+        return 1
+    print(path)
+    return 0
 
 
 def _new(slug: str, day: str | None) -> int:
     import datetime as _dt
 
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,80}", slug):
+    if not SLUG.fullmatch(slug):
         print("the slug must be lowercase letters, digits and hyphens (3-81 characters)", file=sys.stderr)
         return 2
     day = day or _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d")
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
-        print("--date must be YYYY-MM-DD", file=sys.stderr)
+    if not valid_date(day):
+        print("--date must be a real date, YYYY-MM-DD", file=sys.stderr)
         return 2
-    path = FRAGMENTS / f"{day}-{slug}.md"
-    if path.exists():
-        print(f"{path} already exists", file=sys.stderr)
-        return 1
-    FRAGMENTS.mkdir(exist_ok=True)
-    path.write_text(_TEMPLATE.format(date=day, title=slug.replace("-", " ")), encoding="utf-8")
-    print(path)
-    return 0
+    return create_exclusive(FRAGMENTS / f"{day}-{slug}.md", _TEMPLATE.format(date=day, title=slug.replace("-", " ")))
 
 
 def search(lines: list[str], entries: list[Entry], words: list[str]) -> list[tuple[Entry, list[str]]]:
@@ -176,7 +203,7 @@ def main(argv: list[str]) -> int:
     lines, entries = load()
     if argv[0] == "--index":
         for e in entries:
-            print(f"{e.source or 'L' + str(e.line)} {e.title}")
+            print(f"{e.source or 'L' + str(e.line):<7} {e.title}")
         return 0
     if argv[0] == "--stats":
         frags = fragment_files()
@@ -205,12 +232,16 @@ def main(argv: list[str]) -> int:
             return 2
         want = argv[1]
         if want.endswith(".md"):
-            for e in entries:
-                if e.source == want:
-                    print("\n".join(lines[e.line - 1 : e.end]).rstrip())
-                    return 0
-            print(f"no fragment named {want} (see --index)", file=sys.stderr)
-            return 1
+            path = FRAGMENTS / want
+            if "/" in want or "\\" in want or not path.is_file():
+                print(f"no fragment named {want} (see --index)", file=sys.stderr)
+                return 1
+            try:
+                print(path.read_bytes().decode("utf-8").replace("\r\n", "\n").rstrip())
+            except UnicodeDecodeError as exc:
+                print(f"lessons.d/{want} is not valid UTF-8 ({exc.reason})", file=sys.stderr)
+                return 1
+            return 0
         if not want.lstrip("L").isdigit():
             print("usage: lessons.py --show LINE | FRAGMENT-FILE-NAME", file=sys.stderr)
             return 2
@@ -229,7 +260,7 @@ def main(argv: list[str]) -> int:
         return 2
     hits = search(lines, entries, argv)
     for e, shown in hits:
-        print(f"{e.source or 'L' + str(e.line)} {e.title}")
+        print(f"{e.source or 'L' + str(e.line):<7} {e.title}")
         for s in shown:
             print(f"          … {s}")
     print(f"{len(hits)} entr{'y' if len(hits) == 1 else 'ies'} of {len(entries)} contain: {' + '.join(argv)}")

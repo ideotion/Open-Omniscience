@@ -8244,7 +8244,7 @@ def test_docs_index_covers_live_docs():
 #: docs/ledger/. Zero slack by design: a ratchet with room is a ratchet that does nothing.
 #:
 #: This file is expected to be STABLE. Rule (2) sends a new pending ruling to
-#: docs/ledger/OPEN_QUEUE.md and rule (5a)(b) sends a new lesson to docs/ledger/LESSONS.md,
+#: docs/ledger/OPEN_QUEUE.md and rule (5a)(b) sends a new lesson to a file under docs/ledger/lessons.d/,
 #: so the only things that legitimately grow CLAUDE.md are a new non-negotiable, a new UI
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
@@ -8313,8 +8313,8 @@ def test_claude_md_stays_within_its_ratchet():
     reaches for in its best moments is mechanical enforcement, so here it is.
 
     If this fails: compress per rules (5) and (5a) -- a SHIPPED entry becomes a row in
-    docs/ledger/shipped.csv (plus a verbatim entry in SHIPPED_LOG.md and, if it carries a
-    reusable lesson, a copy in LESSONS.md). NEVER compress away a pending ruling, a
+    a file under docs/ledger/shipped.d/ (plus a verbatim entry as a file under shipped_log.d/
+    and, if it carries a reusable lesson, a file under lessons.d/). NEVER compress away a pending ruling, a
     contingency or a deliberate-omission note; those go to docs/ledger/OPEN_QUEUE.md and
     rule (5) protects them. If the growth IS a new non-negotiable or UI invariant, raise
     the ceiling in the same PR and say so."""
@@ -8322,8 +8322,8 @@ def test_claude_md_stays_within_its_ratchet():
     assert n <= _CLAUDE_MD_LINE_CEILING, (
         f"CLAUDE.md is {n} lines, over its ceiling of {_CLAUDE_MD_LINE_CEILING}. "
         "Compress per THE PROTOCOL rules (5)/(5a): shipped work goes to "
-        "docs/ledger/shipped.csv, a pending ruling to docs/ledger/OPEN_QUEUE.md, a lesson "
-        "to docs/ledger/LESSONS.md. Raise the ceiling for content that genuinely belongs "
+        "a file under docs/ledger/shipped.d/, a pending ruling to docs/ledger/OPEN_QUEUE.md, a lesson "
+        "to a file under docs/ledger/lessons.d/. Raise the ceiling for content that genuinely belongs "
         "here -- a non-negotiable, a UI invariant, an amendment to the protocol itself -- "
         "never to make room for content those rules route elsewhere."
     )
@@ -8344,8 +8344,8 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
 #: ratchet is not what keeps it readable -- it is what makes growth a decision that appears in a
 #: diff instead of a side effect: 1,078,082 bytes had accrued a lesson at a time, unseen. Zero
 #: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
-#: appends a lesson raises this number in the same diff (rule (5a)(b)); re-measure at the merge
-#: point if another PR appended first, the recorded 2026-09-08 precedent.
+#: appended a lesson raised this number in the same diff; since 2026-10-06 (rule (5a)(b)) a lesson is a
+#: file under docs/ledger/lessons.d/ and only `scripts/ledger_fold.py fold` moves this number.
 _LESSONS_LINE_CEILING = 13644
 
 
@@ -8354,9 +8354,9 @@ def _lessons_md_lines() -> int:
 
 
 def test_lessons_md_stays_within_its_ratchet():
-    """LESSONS.md may not grow past its recorded ceiling. If this fails because you appended a
-    lesson (rule (5a)(b)), raise _LESSONS_LINE_CEILING to the reported number in the same PR --
-    that IS the intended use. If the growth is not yours, compress per rule (5), never a pending
+    """LESSONS.md may not grow past its recorded ceiling. If this fails, a lesson was
+    appended to the archive (rule (5a)(b) forbids it) -- move it to a lessons.d/ file, never raise
+    _LESSONS_LINE_CEILING by hand. If the growth is not yours, compress per rule (5), never a pending
     ruling.
 
     AMENDED 2026-10-06: a new lesson is no longer appended here at all -- it is a new file under

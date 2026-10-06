@@ -14,14 +14,14 @@
 > Most of what is recorded here was found the expensive way, and several entries are about the
 > exact class of change a session is likely to be asked to make, so before touching one, look
 > for it: `python scripts/lessons.py <words>` lists the entries that contain every word,
-> `python scripts/lessons.py --index` lists every title, `--show LINE` prints one entry. The
+> `python scripts/lessons.py --index` lists every title, `--show LINE` (an archive entry) or `--show FILE-NAME.md` (a fragment) prints one. The
 > index is generated, never committed. A size ratchet (`test_lessons_md_stays_within_its_ratchet`) caps this file.
 >
-> **Appending (amended 2026-10-06):** a new lesson is a NEW FILE, `lessons.d/<date>-<slug>.md`
-> (`python scripts/lessons.py --new SLUG`), never a paragraph appended here: that moved one shared
-> ceiling and put every open PR's text at one tail, so each landing conflicted the others.
-> `lessons.py` searches both; `python scripts/ledger_fold.py fold` merges them in at a release. Its shipped-log
-> entry is a file under `shipped_log.d/` ([`SHIPPED_LOG.md`](SHIPPED_LOG.md)), its row one under `shipped.d/`, per rule (5a)(b).
+> **Appending (amended 2026-10-06):** a new lesson is a NEW FILE, `lessons.d/<date>-<slug>.md` (`python scripts/lessons.py --new SLUG`), never a paragraph appended here (that moved one shared ceiling, so every landing conflicted the others). FORMAT: first line `## <date> — title` (the date is the file's), no second heading outside a code fence, UTF-8, LF, a trailing newline, no `#NNNN`/`PR pending`, a unique title;
+> one entry may run to `LESSON_FRAGMENT_MAX_LINES` = 200 lines (it bounds one entry's size; a longer lesson is two lessons, or a design note the lesson points to). `python scripts/ledger_fold.py check` validates every fragment and the tests run it.
+> `lessons.py` searches both; `python scripts/ledger_fold.py fold` merges them in at a release (it alone moves the ceiling). Its shipped-log entry is a file under `shipped_log.d/` (`ledger_fold.py new-log SLUG`;
+> [`SHIPPED_LOG.md`](SHIPPED_LOG.md)), its row one under `shipped.d/`, per rule (5a)(b).
+> Never append to either archive.
 >
 > **Eight more lessons are NOT here yet.** They were recorded in the Open queue by the
 > sessions that earned them and could not be moved verbatim on 2026-09-07 without editing
