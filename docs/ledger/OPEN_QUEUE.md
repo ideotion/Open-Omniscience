@@ -16393,10 +16393,11 @@ length or built-in switch, which are read-time settings). The Home cache records
 marker repair's throttle (a cache written before the field refreshes once). The stored `top_keyword_*` columns are recomputed by one resumable job in the off-peak window and its offline timer, only for
 articles whose top set held a hidden word (a hidden NON-lowest member of a tie included), written to those three columns only (`updated_at` is written back as itself, no mention row moves, no epoch
 bump: nothing but the Articles list reads these columns, grep-checked). The fingerprint is recorded after the last chunk, never before. **Measured** (synthetic stores, local disk, 12 KB article bodies, 2,555 hidden words, an independent recompute over every article after each run: 0 mismatches in all of them).
-**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten.** With a KNOWN baseline (the shortcut on): plaintext 6.4, 9.3 and 11.2 s over three runs, the same store as an
-ENCRYPTED copy (SQLCipher, the app's own `reencrypt_plain_to`, opened through the app's own connection factory with a passphrase) 7.3 and 10.6 s over two; the page cache's state moves a run more than
-the store does, so no encrypted penalty is claimed. The FIRST run on an existing corpus knows no baseline and reads and compares every article it reaches (41,130 more article reads than the
-shortcut skips): plaintext 14.0 s, encrypted 13.5 s, once. The window is timed the way the pass records it, `max_window_s` = from the write gate HELD to the COMMIT: 0.28 to 0.39 s over these runs
+**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten.** THERE IS NO SHORTCUT: every pass reads every article it reaches and compares it, so a pass costs what the first runs on an existing corpus cost: plaintext 14.0 s, the same store as an
+ENCRYPTED copy (SQLCipher, the app's own `reencrypt_plain_to`, opened through the app's own connection factory with a passphrase) 13.5 s. An earlier build skipped articles whose top a hidden word
+could not change and took 6.4, 9.3 and 11.2 s plaintext, 7.3 and 10.6 s encrypted over a known baseline (41,130 fewer article reads); it was dropped because a skip is only right while every stored
+top was made under a subset of today's list, which a restore, a merge or a lost state file breaks, and 3 to 8 s of off-peak time is not worth a path that can leave a hidden word in a top.
+The page cache's state moves a run more than the store does, so no encrypted penalty is claimed. The window is timed the way the pass records it, `max_window_s` = from the write gate HELD to the COMMIT: 0.28 to 0.39 s over these runs
 (the controller aims at 0.25 s and reacts after the fact, so one chunk can overshoot; the chunk body alone, which the first runs reported, was 0.265 and 0.294 s, then 0.26 to 0.31 s). The log high-water
 the polling saw over a whole pass was 4.2 to 4.9 MiB (a pass's high-water, not what one chunk adds); the largest process size, 202 to 360 MiB, is the MEASURING process (it holds a 200,000-row
 snapshot of its own for the check), not the pass's own memory. **Worst case (50,000 articles, each holding about 22 hidden mentions and a hidden top word, so every article is rewritten),
@@ -16410,20 +16411,25 @@ protects memory only: on the worst-case store a cap one fifth of the corpus took
 correctness, and a corpus under 500,000 articles never meets it. A bitmap sized to the highest article id would remove the cap (about 170 KB at 1.3 M articles) and is the obvious next step if a corpus
 outgrows it. The in-pass memory is not derived from the memory tier (`memory_budget.resolved_reading()`; the tier PR has not landed).
 
-**What keeps a hidden word out of a stored top (the coordinator's check of the read's folds).** The shortcut "a hidden word below the top leaves the top alone" assumes the stored top was made under a
-list that is a subset of today's hidden set. It is kept true three ways, each pinned by a test that fails with it reverted: (1) a word TAKEN OFF the list is walked as a restored keyword and the
-articles it reaches are recomputed with no shortcut, a NULL included; (2) before a pass writes anything it records `words_pending` (every list walked since the last finished run) with a checked
-write, the restored words are (the finished list + pending) minus today's, and the run counts as current only with a matching fingerprint and nothing pending, so a pass that stops or crashes on an
-intermediate list is accounted for when the list changes again or returns (a random-stream test over five words and random stops pins it; the coordinator's model had 108 of 6,000 such streams end
-wrong without it); (3) the finished fingerprint is also written to `derived_meta` in the transaction that deletes the last cursor, "current" needs both records to agree, and when they do not (a
-restore, a merge swap, a moved database, a missing or unusable state file) the baseline is UNKNOWN and every hidden word is walked without the shortcut. **Known and left:** a word taken off the list
-since a LOST baseline can stay missing from tops until its articles are re-indexed (the lost list cannot be known); the pass runs inside the maintenance window and holds the scheduler's run lock for
-up to its 30 s soft budget (a "Collect now" in that window answers busy), and the gate is acquired without a timeout, like the other maintenance writers; the keyword fold (`keyword_fold.py`) now
-computes the stored top without the shipped list's words, once per job. **Merge carry, the one-line version DONE and the fuller fix left:** the backup merge's carry plan (`src/backup/merge.py`, the UPDATEs after the `_refuse` calls in `_plan_derived_carry`, written
-by `_carry_derived_rows`) computes `top_keyword_*` over the incoming mention rows with NO hidden filter, so a carried article can arrive with a hidden word in its top. `_carry_derived_rows` now
-deletes `derived_meta.stoplist_recompute_done` from the working copy whenever it carried articles (the working copy becomes the live corpus at the swap, so it is atomic with the tops), and the next
-maintenance window walks every hidden word without the shortcut, once (a test fails without the line). THE FULLER FIX, left: a `temp.carry_hidden(new)` table of the local ids of the shipped list's
-words and a `NOT IN` on the three statements, so a carried top never holds a hidden word; it is new logic in a module other threads are changing and wants its own read.
+**What keeps a hidden word out of a stored top (the coordinator's checks of the read's folds).** There is NO SKIP: every article a pass reaches is recomputed and compared, so a stored top made
+under any earlier list is corrected whenever it is reached, and what has to be kept true is WHICH articles are reached. Three ways, each pinned by a test that fails with it reverted: (1) a word
+TAKEN OFF the list is walked as a restored keyword, and a NULL top among its articles is filled; (2) before a pass writes anything it records `words_pending` (every list walked since the last
+finished run) with a checked write, the restored words are (the finished list + pending) minus today's, and the run counts as current only with a matching fingerprint and nothing pending, so a pass
+that stops or crashes on an intermediate list is accounted for when the list changes again or returns (a random-stream test over five words, `range(40)` seeded streams of random lists and random
+stops, pins it; the coordinator's model had 108 of 6,000 such streams end wrong without it); a `words_pending` that cannot be read is written back WITHOUT `fingerprint` and `words`, so the
+baseline is unknown rather than half-trusted; (3) the finished fingerprint is also written to `derived_meta` in the transaction that deletes the last cursor, "current" needs the state file and that
+record to agree AND no cursor row left, and when they do not (a restore, a merge swap, a moved database, a missing or unusable state file) the baseline is UNKNOWN and every hidden word is walked.
+THE CURSOR IS KEYED BY THE PLAN, `<fingerprint>.<sha256(known|sorted taken-off words)[:16]>`, so a cursor left by a pass that walked a smaller set of words is never resumed by a pass that has to walk
+more (the same list with a larger plan restarts from the beginning; pinned by a test). **Known and left:** a word taken off the list since a LOST baseline can stay missing from tops until its
+articles are re-indexed (the lost list cannot be known), and THE MERGE FORGETS THE WHOLE BASELINE (below), so a word taken off between the last finished run and the next window is not restored either;
+the pass runs inside the maintenance window and holds the scheduler's run lock for up to its 30 s soft budget (a "Collect now" in that window answers busy), and the gate is acquired without a
+timeout, like the other maintenance writers; the keyword fold (`keyword_fold.py`) now computes the stored top without the shipped list's words, once per job. **Merge carry, the one-line version DONE
+and the fuller fix left:** the backup merge's carry plan (`src/backup/merge.py`, the two UPDATEs, three subqueries between them, after the `_refuse` calls in `_plan_derived_carry`, written by
+`_carry_derived_rows`) computes `top_keyword_*` over the incoming mention rows with NO hidden filter, so a carried article can arrive with a hidden word in its top. `_carry_derived_rows` now deletes
+`derived_meta.stoplist_recompute_done` AND `stoplist_recompute_cursor` from the working copy whenever it carried articles (guarded by `_local_has_table`, never by catching the sqlite3 error: the
+encrypted driver raises its own class; the working copy becomes the live corpus at the swap, so it is atomic with the tops), and the next maintenance window walks every hidden word, once (tests fail
+without the line, on a plaintext and on an encrypted working copy). THE FULLER FIX, left: a `temp.carry_hidden(new)` table of the local ids of the shipped list's words and a `NOT IN` on the two
+UPDATEs, so a carried top never holds a hidden word; it is new logic in a module other threads are changing and wants its own read.
 
 **T2 still open:** bulletin coverage, stories and articles (through the export thread, the sole pusher of the bulletin code), `supergroup_rising`/`supergroup_stats`, `source_topics`, the AI keywords. **Left on
 purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage

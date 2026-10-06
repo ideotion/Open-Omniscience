@@ -20,7 +20,7 @@ predicate, as on every other listing.
 WHEN IT RUNS. When the fingerprint of the shipped list (sha256 of the sorted words) differs from the
 one recorded by the last finished run, in the off-peak maintenance window and its offline timer. A
 fresh install records the fingerprint after a run that finds nothing, so it never pays; the first
-run on an existing corpus has no baseline and walks without the shortcut, once (see below). The
+run on an existing corpus has no baseline and walks every hidden word (see below). The
 fingerprint is written AFTER the last chunk: a kill, a restart or a failure leaves it unwritten and
 the next window resumes from the stored cursor.
 
@@ -34,35 +34,41 @@ not written (its record is wide, so a write rewrites many pages). An article who
 concerned (below). Each affected article is handled once, when its walk reaches its LOWEST walked
 keyword.
 
-THE SHORTCUT AND WHAT IT ASSUMES. "A hidden word below the top leaves the top alone" is true only if
-the stored top was made under a list that is a SUBSET of today's hidden set (every word hidden when
-the top was made is still hidden). Three things can break that, and the pass is built so that none
-of them can leave a hidden word in a top:
+NO SHORTCUT, AND WHAT KEEPS A HIDDEN WORD OUT OF A TOP. Every article a walk reaches is recomputed from
+its mentions and compared with what is stored. (An earlier design skipped an article whose hidden
+word sat below its visible top. That is true only if the stored top was made under a list that is a
+SUBSET of today's hidden set, and a lost baseline, a stopped pass or a word swapped for another each
+break it, so a top made under an older list could keep a word the next change hides. The measured cost
+of reading them all, once per list, is in OPEN_QUEUE.md.) What is left to keep true is WHICH
+articles are reached:
 
-* A word TAKEN OFF the list (a ring exemption, a retired entry) is walked as a RESTORED keyword:
-  its articles' tops were made without it, so each reached article is recomputed from its mentions
-  and compared with what is stored, with no shortcut, a NULL included (an article with only hidden
-  words was written NULL, which looks like "never computed").
+* A word TAKEN OFF the list (a ring exemption, a retired entry) is walked as a RESTORED keyword: its
+  articles' tops were made without it, so they are reached through it, and a NULL there is filled (an
+  article with only hidden words was written NULL, which looks like "never computed").
 * A pass that STOPS or crashes on an intermediate list leaves tops made under lists the finished
   baseline does not know. So before a pass writes anything it records ``words_pending`` = every list
   walked since the last finished run (a checked write: no pass starts if it cannot be written), the
   restored words are (finished list + pending) minus today's, and the run counts as current only
   when the fingerprint matches AND nothing is pending.
+* A walk is resumed only by the same walk: the cursor is keyed by the list fingerprint AND the plan
+  (which words were restored), because the same list can be walked later with a larger plan, and
+  resuming at a cursor past a restored keyword would never reach its articles.
 * A baseline that does not travel with the data. The state file lives beside the database, not in
   it, so a restore, a merge swap or a moved database can read as current while its tops are older.
   The finished fingerprint is therefore ALSO written to ``derived_meta`` in the same transaction as
-  the last cursor delete, and "current" needs both to agree. When they do not (or the file is missing,
-  unreadable or the wrong type), the baseline is UNKNOWN and every hidden word is walked WITHOUT the
-  shortcut, so no hidden word can stay in a top whatever list made it. A word taken off the list
-  since a lost baseline can stay missing from tops until its articles are re-indexed (the lost list
-  cannot be known).
+  the last cursor delete, and "current" needs both to agree and no cursor row to remain (a copy
+  taken mid-pass carries one). When they do not agree (or the file is missing, unreadable or the wrong
+  type) the baseline is UNKNOWN: no word is restored, because the lists it needed are lost, and a
+  word taken off the list since then can stay missing from tops until its articles are re-indexed.
+  A merge that carries articles forgets the whole baseline for the same reason, so a word taken off
+  between the last finished run and the next window is not restored either.
 
 WHAT EACH NUMBER PROTECTS. Nothing here caps the work; every number says how it shares the machine.
 A chunk reads, decides and writes in ONE short transaction under the write window, and no read
 transaction spans two chunks (a long read pins the write-ahead log, which the crash read measured at
 about 1,500 s). The chunk size is not a constant: it moves so the write window is held about
 :data:`TARGET_HOLD_S` seconds, the time another writer waits behind one chunk (aimed at, not guaranteed:
-the controller reacts after the fact, and 0.32 to 0.36 s was the longest measured), between
+the controller reacts after the fact, and 0.28 to 0.39 s was the longest measured), between
 :data:`MIN_CHUNK` (a chunk that still makes progress when each row is slow) and :data:`MAX_CHUNK` (the
 most mention rows one chunk reads and the most article records it can rewrite). The write-ahead log is
 MEASURED, as the polled high-water of the whole pass, not per chunk: 4.2 to 4.9 MiB over a
@@ -321,7 +327,6 @@ def _one_chunk(
     hidden: frozenset[int],
     seen: set[int] | None = None,
     restored: frozenset[int] = frozenset(),
-    full_check: bool = False,
 ) -> dict:
     """Read, decide and write one chunk inside the caller's transaction (the write window is
     already held). The chunk covers up to ``n`` mention rows of the hidden keywords from
@@ -334,9 +339,9 @@ def _one_chunk(
     handling.
 
     ``restored`` holds the keywords a previous run hid and the list no longer holds: an article
-    reached through one is recomputed from its mentions and compared with what is stored, with no
-    shortcut, a NULL included. ``full_check`` drops the shortcut for every article (the baseline is
-    unknown, see the module docstring) but leaves NULLs for the index.
+    reached through one is also filled when its stored columns are NULL. EVERY reached article is
+    recomputed from its mentions and compared with what is stored: there is no shortcut (see the
+    module docstring).
 
     Returns the new position ``(pos, after)`` and the counts."""
     from sqlalchemy import bindparam, select
@@ -345,7 +350,7 @@ def _one_chunk(
     from src.database.derived_views import KeywordMentionRead as KM
     from src.database.models import Article
 
-    out = {"scanned": 0, "handled_later": 0, "top_unaffected": 0, "never_computed": 0,
+    out = {"scanned": 0, "handled_later": 0, "never_computed": 0,
            "already_clean": 0, "updated": 0, "to_none": 0}
     found: list[tuple[int, int]] = []  # (hidden keyword id, article id), in walk order
     start_pos = pos
@@ -398,14 +403,8 @@ def _one_chunk(
             out["handled_later"] += 1  # its lowest walked keyword is another one
             continue
         visible = {k: c for k, c in cont.items() if k not in hidden}
-        if any(k in restored for k in walked):  # a restored word defeats the shortcut and fills NULLs
+        if any(k in restored for k in walked):  # a restored word also fills a NULL
             via_restored.add(aid)
-        elif not full_check:
-            top_hidden = max((cont[k] for k in walked), default=0)
-            top_visible = max((c for c in visible.values() if c > 0), default=0)
-            if top_hidden <= 0 or top_hidden < top_visible:
-                out["top_unaffected"] += 1
-                continue
         new_of[aid] = top_keyword_of(visible)
     if not new_of:
         return out
@@ -468,7 +467,7 @@ def maybe_recompute_top_keywords(
     stop = should_stop or (lambda: False)
     try:
         fp = current_fingerprint()
-        if _is_current(read_state(), fp) and _database_done() == fp:
+        if _is_current(read_state(), fp) and _database_current(fp):
             return {"skipped": "current"}
         reason = _guard_reason()
         if reason:
@@ -482,12 +481,16 @@ def maybe_recompute_top_keywords(
         return {"skipped": text, "complete": False}
 
 
-def _database_done() -> str | None:
-    """The finished fingerprint the DATABASE carries (None when it carries none)."""
+def _database_current(fp: str) -> bool:
+    """The DATABASE says the list is finished: it carries the finished fingerprint and no cursor (a
+    cursor is a pass in flight; a copy taken mid-pass carries one)."""
+    from src.database.models import DerivedMeta
     from src.database.session import session_scope
 
     with session_scope() as session:
-        return _done_get(session)
+        if _done_get(session) != fp:
+            return False
+        return session.query(DerivedMeta.key).filter(DerivedMeta.key == CURSOR_KEY).first() is None
 
 
 def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
@@ -504,7 +507,6 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
         "updated": 0,
         "already_clean": 0,
         "never_computed": 0,
-        "top_unaffected": 0,
         "handled_later": 0,
         "to_none": 0,
         "chunks": 0,
@@ -523,7 +525,8 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
         require_mentions_view(session)
         done_here = _done_get(session)
         # The baseline is KNOWN only when the file and the database agree on the last finished run
-        # and the file's lists are readable; otherwise the shortcut is off for the whole pass.
+        # and the file's lists are readable; otherwise the words taken off the list since cannot be
+        # found (see the module docstring).
         known = (
             finished_words is not None
             and pending is not None
@@ -534,12 +537,23 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
         hidden_ids = hidden_keyword_ids(session)
         restored_ids = hidden_keyword_ids(session, taken_off) if taken_off else []
         ids = sorted(set(hidden_ids) | set(restored_ids))
-        kid0, after0 = _cursor_get(session, fp)
+        # The cursor belongs to the WALK, not only to the list: the same list can be walked with a
+        # larger plan (restored words below the cursor) than the pass that left it, and resuming there
+        # would skip them. The plan is part of its key.
+        plan = hashlib.sha256(f"{known}|{','.join(sorted(taken_off))}".encode()).hexdigest()[:16]
+        walk_key = f"{fp}.{plan}"
+        kid0, after0 = _cursor_get(session, walk_key)
     # Before the first chunk commits, every list this walk is about to leave tops under is recorded
     # (a checked write): a stop, a crash or a later change of list can then still account for them.
     walked = (pending or set()) | shipped
-    if walked != pending and not _write_state({**state, "words_pending": sorted(walked)}):
-        return {"skipped": "state_unwritable", "complete": False}
+    if walked != pending:
+        # A garbled record is replaced WITHOUT the finished fingerprint and words: what it truncated
+        # cannot be rebuilt, so the next attempt must read as unknown, not as known with a short lineage.
+        base = state if pending is not None else {
+            k: v for k, v in state.items() if k not in ("fingerprint", "words")
+        }
+        if not _write_state({**base, "words_pending": sorted(walked)}):
+            return {"skipped": "state_unwritable", "complete": False}
     tally["baseline_known"] = known
     tally["hidden_keywords"] = len(hidden_ids)
     tally["restored_keywords"] = len(set(restored_ids) - set(hidden_ids))
@@ -563,15 +577,15 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
         with session_scope() as session:
             hold_write_window(session)
             held0 = time.monotonic()  # the window others wait behind: gate held to commit
-            got = _one_chunk(session, ids, pos, after, n, hidden, seen, restored, not known)
+            got = _one_chunk(session, ids, pos, after, n, hidden, seen, restored)
             pos, after = got["pos"], got["after"]
-            _cursor_set(session, fp, ids[pos] if pos < len(ids) else ids[-1] + 1, after)
+            _cursor_set(session, walk_key, ids[pos] if pos < len(ids) else ids[-1] + 1, after)
         held = time.monotonic() - held0
         tally["chunks"] += 1
         tally["write_window_s"] = round(tally["write_window_s"] + held, 3)
         tally["max_window_s"] = round(max(tally["max_window_s"], held), 3)
         for key in ("scanned", "updated", "already_clean", "never_computed",
-                    "top_unaffected", "handled_later", "to_none"):
+                    "handled_later", "to_none"):
             tally[key] += got[key]
         n = next_chunk_size(n, held)
     with session_scope() as session:  # the walk is done: a cursor must not outlive its fingerprint

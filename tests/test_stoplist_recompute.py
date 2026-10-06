@@ -191,9 +191,9 @@ def test_the_top_columns_follow_the_shipped_list_and_nothing_else_moves(env):
     _assert_final(_tops(env), before, w)
     assert _mentions(env) == mentions_before, "the raw counts every other reader uses are untouched"
     assert out["updated"] == 5 and out["to_none"] == 1
-    # a fresh state knows no baseline: the shortcut is off, so the hidden-below article is READ and
-    # found clean instead of being skipped, and the NULL is still left for the index
-    assert out["baseline_known"] is False and out["top_unaffected"] == 0
+    # there is no shortcut: the article whose hidden word sits below its top is READ and found clean
+    # like the one a previous run left clean, and the NULL is still left for the index
+    assert out["baseline_known"] is False
     assert out["already_clean"] == 2 and out["never_computed"] == 1
 
 
@@ -562,18 +562,17 @@ def _assert_tops_equal_oracle(env, hidden_terms):
     assert got == want
 
 
-def test_a_known_baseline_keeps_the_shortcut(env):
+def test_a_known_baseline_reaches_the_same_tops_as_an_unknown_one(env):
+    """The baseline decides which words are restored, never whether an article is read."""
     _world(env)
     _known_baseline(env)
     out = sr.maybe_recompute_top_keywords()
-    assert out["baseline_known"] is True and out["top_unaffected"] == 1
-    assert out["already_clean"] == 1 and out["never_computed"] == 1
+    assert out["baseline_known"] is True and out["already_clean"] == 2 and out["never_computed"] == 1
 
 
-def test_a_database_that_lost_its_baseline_is_walked_without_the_shortcut(env):
+def test_a_database_that_lost_its_baseline_is_walked_and_its_stale_top_found(env):
     """A restore, a merge swap or a moved database: the state file says current, the data says
-    nothing. A stored top that holds a hidden word BELOW a visible one is invisible to the shortcut;
-    the full check finds it."""
+    nothing. A stored top that holds a hidden word BELOW a visible one is read like any other."""
     with env.session() as s:
         h1, a = _keyword(s, "hid1"), _keyword(s, "aa")
         _article(s, "stale", {h1: 3, a: 5}, stored=(h1, 3, 1))  # made under a list that did not hide it
@@ -586,13 +585,115 @@ def test_a_database_that_lost_its_baseline_is_walked_without_the_shortcut(env):
     out = sr.maybe_recompute_top_keywords()
     assert out["baseline_known"] is False and out["complete"] is True
     assert _tops(env)["stale"][:3] == (a, 5, 1)
-    # with the baseline present the same article is, by assumption, already right and is skipped
+
+
+def test_a_database_done_record_that_differs_from_the_files_leaves_the_baseline_unknown(env):
+    _world(env)
+    _known_baseline(env)
     with env.session() as s:
-        s.execute(Article.__table__.update().values(top_keyword_id=h1, top_keyword_count=3,
-                                                    top_keyword_tied_n=1, updated_at=_STAMP))
-    env.set_words(["hid1", "hid2", "other"])
+        sr._meta_set(s, sr.DONE_KEY, "some-other-run")
     out = sr.maybe_recompute_top_keywords()
-    assert out["baseline_known"] is True and _tops(env)["stale"][:3] == (h1, 3, 1)
+    assert out["baseline_known"] is False and out["complete"] is True
+
+
+def test_a_lost_baseline_then_a_hide_cannot_leave_a_hidden_word_in_a_top(env):
+    """After a lost baseline the first pass finishes and writes its record, so the next pass reads as
+    known; an article that first pass never reached must still be found when the next change hides the
+    word its top was made with (the old shortcut skipped it: 3 < 4)."""
+    with env.session() as s:
+        z, a, b, c = (_keyword(s, t) for t in ("hidz", "aa", "bb", "cc"))
+        _article(s, "A", {a: 3, b: 3, c: 4}, stored=(a, 3, 2))  # made while cc was hidden
+    env.set_words(["hidz"])  # no state file, no record: the baseline is lost
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True and out["baseline_known"] is False
+    assert _tops(env)["A"][:3] == (a, 3, 2), "nothing reached it: it holds no hidden word"
+    env.set_words(["hidz", "aa"])  # the next change hides the word its top was made with
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True and out["baseline_known"] is True
+    assert _tops(env)["A"][:3] == (c, 4, 1)
+
+
+def test_a_cursor_row_in_the_database_means_a_pass_in_flight_not_a_finished_list(env):
+    """An older copy of the database taken mid-pass carries a cursor; with the file's record and the
+    finished fingerprint both present it must still not read as current."""
+    _world(env)
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    assert sr.maybe_recompute_top_keywords() == {"skipped": "current"}
+    with env.session() as s:
+        sr._cursor_set(s, sr.current_fingerprint() + ".x", 1, 1)
+    out = sr.maybe_recompute_top_keywords()
+    assert out != {"skipped": "current"} and out["complete"] is True
+    with env.session() as s:
+        assert s.get(DerivedMeta, sr.CURSOR_KEY) is None
+
+
+def test_a_garbled_pending_record_leaves_the_baseline_unknown_for_every_later_attempt(env, monkeypatch):
+    _world(env)
+    _known_baseline(env)
+    st = sr.read_state()
+    st["words_pending"] = "garbled"
+    sr._state_path().write_text(__import__("json").dumps(st), encoding="utf-8")
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)
+    first = sr.maybe_recompute_top_keywords(should_stop=_stop_after(1))
+    assert first["complete"] is False and first["baseline_known"] is False
+    after = sr.read_state()
+    assert "fingerprint" not in after and "words" not in after, "what the record truncated is gone"
+    assert isinstance(after["words_pending"], list)
+    second = sr.maybe_recompute_top_keywords()
+    assert second["complete"] is True and second["baseline_known"] is False
+
+
+def test_a_crash_between_the_cursor_delete_and_the_done_write_leaves_the_walk_resumable(env, monkeypatch):
+    """The two writes are one transaction: if the second fails the first rolls back, the cursor is
+    still there, and the next window finishes without walking again."""
+    w = _world(env)
+    before = _tops(env)
+    real = sr._meta_set
+
+    def fail_on_done(session, key, value):
+        if key == sr.DONE_KEY:
+            raise RuntimeError("disk full")
+        return real(session, key, value)
+
+    monkeypatch.setattr(sr, "_meta_set", fail_on_done)
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is False and out["skipped"].startswith("RuntimeError")
+    with env.session() as s:
+        assert s.get(DerivedMeta, sr.CURSOR_KEY) is not None, "the delete rolled back with the failed write"
+        assert sr._done_get(s) is None
+    assert sr.needs_run()
+    monkeypatch.setattr(sr, "_meta_set", real)
+    again = sr.maybe_recompute_top_keywords()
+    assert again["complete"] is True and again["chunks"] == 0, "resumed at the end, nothing walked again"
+    with env.session() as s:
+        assert sr._done_get(s) == sr.current_fingerprint()
+    _assert_final(_tops(env), before, w)
+
+
+def test_the_same_list_walked_with_a_larger_plan_is_not_resumed_past_a_restored_keyword(env, monkeypatch):
+    """Ids x < z < h < f. The finished list is {z}. Window 1 (list {z,h}) stops with its cursor at h after
+    Y. Window 2 (list {z,h,x}) stops before its first chunk. Window 3 (list {z,h} again) restores x: it must
+    not resume at h and skip x, whose article X would keep h in its top."""
+    with env.session() as s:
+        x, z, h, f = (_keyword(s, t) for t in ("hidx", "hidz", "hidh", "ff"))
+        _article(s, "Y", {h: 5, f: 1})
+        _article(s, "X", {x: 3, h: 4, f: 1})
+    env.set_words(["hidz"])
+    _known_baseline(env, ["hidz"])
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)
+    env.set_words(["hidz", "hidh"])
+    assert sr.maybe_recompute_top_keywords(should_stop=_stop_after(1))["complete"] is False
+    with env.session() as s:
+        assert s.get(DerivedMeta, sr.CURSOR_KEY) is not None
+    env.set_words(["hidz", "hidh", "hidx"])
+    assert sr.maybe_recompute_top_keywords(should_stop=_stop_after(0))["complete"] is False
+    env.set_words(["hidz", "hidh"])
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True and out["restored_keywords"] == 1
+    _assert_tops_equal_oracle(env, {"hidz", "hidh"})
+    assert _tops(env)["X"][:3] == (x, 3, 1)
 
 
 @pytest.mark.parametrize("state", ['{"fingerprint": "earlier", "words": "not-a-list"}', "[1, 2]", "{{{"])
@@ -705,11 +806,15 @@ def test_a_swap_of_one_word_for_another_after_a_stopped_pass_leaves_no_hidden_wo
     assert _tops(env)["A"][:3] == (w2, 5, 1)
 
 
-@pytest.mark.parametrize("seed", range(12))
+@pytest.mark.parametrize("seed", range(40))
 def test_no_stream_of_lists_stops_and_returns_leaves_a_hidden_word_in_a_top(env, monkeypatch, seed):
-    """Random lists over five words, random stops: after the last list finishes, every stored top is
-    the top of the article's mentions minus the list that finished (the model the coordinator's check
-    ran, 108 of 6,000 streams wrong before the pending record, none after)."""
+    """Random lists over five words (so a word can leave, return, swap and be stopped on), 14 small
+    articles over seven keywords (so ties, lone tops and hidden-only articles all occur), random stops
+    and chunk sizes of 1 or 2 (so a stop lands between neighbours and across keywords): after the last
+    list finishes, every stored top is the top of the article's mentions minus the list that finished.
+    The coordinator's model had 108 of 6,000 streams wrong before the pending record and 113 of 100,000
+    wrong before the plan was part of the cursor key: 40 seeds are a smoke test for the class, and the
+    deterministic cases above pin the named rare shapes, which a few dozen seeds cannot reliably find."""
     import random
 
     rnd = random.Random(seed)

@@ -744,6 +744,27 @@ def _put_done(path: Path, fingerprint: str) -> None:
         con.close()
 
 
+def _put_cursor(path: Path, value: str) -> None:
+    con = sqlite3.connect(path)
+    try:
+        con.execute("INSERT OR REPLACE INTO derived_meta (key, value, updated_at) VALUES (?, ?, ?)",
+                    ("stoplist_recompute_cursor", value, "2026-10-06 00:00:00"))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _cursor(path: Path):
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute(
+            "SELECT value FROM derived_meta WHERE key = 'stoplist_recompute_cursor'"
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
+
+
 def _done(path: Path):
     con = sqlite3.connect(path)
     try:
@@ -762,10 +783,41 @@ def test_a_carry_forgets_the_finished_stoplist_run_so_the_next_window_walks_with
     target = tmp_path / "t.db"
     _schema(target)
     _put_done(target, "finished-before")
+    _put_cursor(target, "finished-before.abc:1:1")  # a pass in flight when the corpus was copied
     carried = _restore(backup, target, tmp_path / "carry.db", carry=True, monkeypatch=monkeypatch)
     assert carried["counts"]["_derived_carry"]["carried"]["articles"] > 0, "the scenario must carry"
     assert _done(tmp_path / "carry.db") is None
+    assert _cursor(tmp_path / "carry.db") is None, "a cursor would resume past the carried articles"
     # nothing carried, nothing forgotten: the switch off leaves the record where it was
     off = _restore(backup, target, tmp_path / "off.db", carry=False, monkeypatch=monkeypatch)
     assert "carried" not in off["counts"]["_derived_carry"]
     assert _done(tmp_path / "off.db") == "finished-before"
+    assert _cursor(tmp_path / "off.db") == "finished-before.abc:1:1"
+
+
+def test_the_forget_also_runs_on_an_encrypted_working_copy(backup, tmp_path, monkeypatch):
+    """merge.py documents a cross-driver trap (sqlcipher3's own exception class): the carry's DELETE must
+    work, and the no-table guard must not depend on catching a stdlib exception, on an encrypted copy."""
+    pytest.importorskip("sqlcipher3")
+    from src.database import connect as dbc
+
+    key = "carry-forget-test-1"
+    target = tmp_path / "t.db"
+    _schema(target)
+    _put_done(target, "finished-before")
+    _put_cursor(target, "finished-before.abc:1:1")
+    enc = tmp_path / "enc.db"
+    dbc.reencrypt_plain_to(target, enc, key)
+    assert dbc.is_encrypted_file(enc)
+    monkeypatch.setattr(dbc, "_passphrase", key)
+    monkeypatch.setenv("OO_CARRY_DERIVED", "1")
+    counts, _batch = merge_corpus(backup, enc, _BATCH_META)
+    assert counts["_derived_carry"]["carried"]["articles"] > 0
+    con = dbc.connect(enc, key=key)
+    try:
+        left = con.execute(
+            "SELECT key FROM derived_meta WHERE key LIKE 'stoplist_recompute_%'"
+        ).fetchall()
+    finally:
+        con.close()
+    assert left == []
