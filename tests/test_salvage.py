@@ -583,10 +583,13 @@ def test_a_stand_in_row_takes_a_value_of_the_right_kind_for_every_column_that_mu
     try:
         row = con.execute("SELECT id, name, n, flag, x, at, raw, js, owner_id, defaulted, note FROM parent WHERE name LIKE '(lost%'").fetchone()
         assert row is not None and row[1] == f"(lost parent {row[0]})"
-        assert row[2:9] == (0, 0, 0, "1970-01-01 00:00:00.000000", b"", "{}", 3), row  # 3 = the lowest owner there is
+        # the key is a stand-in owner, marked as lost, above every real one (the real ones are 3..5): never a real owner's row
+        assert row[2:9] == (0, 0, 0, "1970-01-01 00:00:00.000000", b"", "{}", 6), row
         assert row[9] == "kept" and row[10] is None, "a column with a default or without NOT NULL was given a value"
+        assert con.execute("SELECT id, name FROM owners ORDER BY id").fetchall() == [(3, "o3"), (4, "o4"), (5, "o5"), (6, "(lost owners 6)")]
     finally:
         con.close()
+    assert report["stand_ins"] == {"owners": 6, "parent": 500}
 
 
 def test_a_stand_in_the_tables_own_constraints_refuse_is_named_and_nothing_is_removed(tmp_path):
@@ -600,6 +603,184 @@ def test_a_stand_in_the_tables_own_constraints_refuse_is_named_and_nothing_is_re
     finally:
         con.close()
     assert report["id_reuse_possible"] == ["parent"] and "stand_ins" not in report
+
+
+# --------------------------------------------------------------------------- #
+#  a stand-in is never attributed to real data (the delta read of E3 fold 2, B)
+# --------------------------------------------------------------------------- #
+def _owned_store(src: Path, *, table: str = "parent", parent_extra: str = "", owner_extra: str = "", with_owner_children: bool = False) -> None:
+    """``owners`` (800 rows) <- ``table`` (800 rows, each with a NOT NULL ``owner_id``) <- ``child``; optionally ``owner_note`` <- ``owners``."""
+    ddl = [
+        f"CREATE TABLE owners (id INTEGER PRIMARY KEY, name TEXT NOT NULL{owner_extra})",
+        f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, name TEXT NOT NULL, owner_id INTEGER NOT NULL REFERENCES owners(id){parent_extra})",
+        f"CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES {table}(id), v TEXT)",
+        "CREATE TABLE owner_note (id INTEGER PRIMARY KEY, oid INTEGER REFERENCES owners(id), v TEXT)",
+    ]
+    _one_store(src, ddl, {}, page=1024)
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO owners VALUES (?, ?)", [(i, "o" * 60 + str(i)) for i in range(1, 801)])
+    con.executemany(f"INSERT INTO {table} VALUES (?, ?, ?)", [(i, "p" * 60 + str(i), (i % 5) + 1) for i in range(1, 801)])
+    con.executemany("INSERT INTO child VALUES (?, ?, ?)", [(i, i, f"c{i}") for i in range(1, 801)])
+    if with_owner_children:
+        con.executemany("INSERT INTO owner_note VALUES (?, ?, ?)", [(i, i, f"n{i}") for i in range(1, 801)])
+    con.commit()
+    con.close()
+
+
+def test_a_stand_in_whose_key_needs_a_parent_gets_a_stand_in_parent_marked_as_lost_never_a_real_one(tmp_path):
+    src = tmp_path / "src.db"
+    _owned_store(src)
+    _lose_leaves(src, "parent", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        stand = con.execute("SELECT id, owner_id FROM parent WHERE name LIKE '(lost%'").fetchall()
+        assert [r[0] for r in stand] == [800]
+        owner = con.execute("SELECT id, name FROM owners WHERE id = ?", (stand[0][1],)).fetchone()
+        assert owner == (801, "(lost owners 801)"), owner  # above the highest owner there is (800), and marked
+        assert con.execute("SELECT count(*) FROM owners WHERE name NOT LIKE '(lost%'").fetchone()[0] == 800, "a real owner was changed"
+        assert con.execute("SELECT count(*) FROM parent p JOIN owners o ON o.id = p.owner_id WHERE p.name LIKE '(lost%' AND o.name NOT LIKE '(lost%'").fetchone()[0] == 0
+        con.execute("INSERT INTO owners (name) VALUES ('new owner')")
+        assert con.execute("SELECT max(id) FROM owners").fetchone()[0] == 802, "the stand-in owner did not hold its place"
+    finally:
+        con.close()
+    assert report["stand_ins"] == {"owners": 801, "parent": 800}
+    assert "id_reuse_possible" not in report
+    assert "deleted" in report["stand_ins_note"] and "handed out again" in report["stand_ins_note"], "the note does not say what deleting a stand-in does"
+
+
+def test_a_stand_in_made_for_a_key_is_above_every_id_an_orphan_refers_to_and_is_the_tables_only_stand_in(tmp_path):
+    """The owners lost their tail too, so their own children (``owner_note``) are orphans and the owners need a stand-in of their own: the one made
+    for the parent's key is above every lost owner id, so it is that stand-in, and the table gets no second one."""
+    src = tmp_path / "src.db"
+    _owned_store(src, with_owner_children=True)
+    _lose_leaves(src, "parent", [-1])
+    _lose_leaves(src, "owners", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        lost_owner_ids = [r[0] for r in con.execute("SELECT oid FROM owner_note WHERE oid NOT IN (SELECT id FROM owners)")]
+        assert lost_owner_ids, "the test needs orphans of the owners"
+        stand = con.execute("SELECT id FROM owners WHERE name LIKE '(lost%'").fetchall()
+        assert len(stand) == 1 and stand[0][0] > max(lost_owner_ids), (stand, max(lost_owner_ids))
+        assert con.execute("SELECT owner_id FROM parent WHERE name LIKE '(lost%'").fetchone()[0] == stand[0][0]
+    finally:
+        con.close()
+    assert report["stand_ins"]["owners"] == stand[0][0]
+    assert "id_reuse_possible" not in report
+
+
+def test_a_stand_in_parent_made_before_its_tables_own_turn_is_above_every_orphan_id_and_is_the_only_one(tmp_path):
+    """The same store with the child table named so that it is handled FIRST (``book`` sorts before ``owners``): the stand-in owner is made for
+    the key, with the orphans of the owners still unseen by anything but the need table, so it must be placed above them itself, and the owners
+    then need no second one."""
+    src = tmp_path / "src.db"
+    _owned_store(src, table="book", with_owner_children=True)
+    _lose_leaves(src, "book", [-1])
+    _lose_leaves(src, "owners", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        lost_owner_ids = [r[0] for r in con.execute("SELECT oid FROM owner_note WHERE oid NOT IN (SELECT id FROM owners)")]
+        assert lost_owner_ids, "the test needs orphans of the owners"
+        stand = con.execute("SELECT id FROM owners WHERE name LIKE '(lost%'").fetchall()
+        assert len(stand) == 1, f"the owners got {len(stand)} stand-ins"
+        assert stand[0][0] > max(lost_owner_ids), (stand, max(lost_owner_ids))
+        assert con.execute("SELECT owner_id FROM book WHERE name LIKE '(lost%'").fetchone()[0] == stand[0][0]
+    finally:
+        con.close()
+    assert report["stand_ins"]["owners"] == stand[0][0] and "id_reuse_possible" not in report
+
+
+def test_a_stand_in_whose_parent_cannot_be_made_is_refused_and_leaves_no_stand_in_behind(tmp_path):
+    src = tmp_path / "src.db"
+    _owned_store(src, owner_extra=", CHECK (name NOT LIKE '(lost%')")
+    _lose_leaves(src, "parent", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == 800, "a readable row was removed"
+        assert con.execute("SELECT count(*) FROM parent WHERE name LIKE '(lost%'").fetchone()[0] == 0
+        assert con.execute("SELECT count(*) FROM owners").fetchone()[0] == 800
+    finally:
+        con.close()
+    assert report["id_reuse_possible"] == ["parent"] and "stand_ins" not in report
+
+
+def test_the_parents_a_refused_stand_in_made_are_taken_back(tmp_path):
+    """The stand-in owner was made for the parent's key; the parent's own constraints then refused the row: the owner goes too."""
+    src = tmp_path / "src.db"
+    _owned_store(src, parent_extra=", CHECK (name NOT LIKE '(lost%')")
+    _lose_leaves(src, "parent", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM owners").fetchone()[0] == 800, "a stand-in owner nobody needed was left in the table"
+    finally:
+        con.close()
+    assert report["id_reuse_possible"] == ["parent"] and "stand_ins" not in report
+
+
+def test_keys_that_lead_back_to_the_table_being_made_do_not_loop_and_refuse_the_stand_in(tmp_path):
+    src = tmp_path / "src.db"
+    _one_store(
+        src,
+        [
+            "CREATE TABLE a (id INTEGER PRIMARY KEY, b_id INTEGER NOT NULL REFERENCES b(id), pad TEXT)",
+            "CREATE TABLE b (id INTEGER PRIMARY KEY, a_id INTEGER NOT NULL REFERENCES a(id), pad TEXT)",
+            "CREATE TABLE child (id INTEGER PRIMARY KEY, aid INTEGER REFERENCES a(id))",
+        ],
+        {},
+        page=1024,
+    )
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO a VALUES (?, ?, ?)", [(i, i, "x" * 60) for i in range(1, 801)])
+    con.executemany("INSERT INTO b VALUES (?, ?, ?)", [(i, i, "y" * 60) for i in range(1, 801)])
+    con.executemany("INSERT INTO child VALUES (?, ?)", [(i, i) for i in range(1, 801)])
+    con.commit()
+    con.close()
+    _lose_leaves(src, "a", [-1])
+    report, out = _salvage(src, tmp_path)
+    assert report["id_reuse_possible"] == ["a"] and "stand_ins" not in report
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM b").fetchone()[0] == 800, "a stand-in was left in b"
+    finally:
+        con.close()
+
+
+def test_a_stand_in_article_belongs_to_a_stand_in_source_and_the_search_finds_none(tmp_path, plain_pristine):
+    src = _fresh(tmp_path, plain_pristine)
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO article_links (article_id, url, normalized_url) VALUES (?, ?, ?)", [(i, f"https://l.example/{i}", f"l.example/{i}") for i in range(1, 1501)])
+    con.commit()
+    con.close()
+    H.overwrite_pages(src, H.leaf_pages(src, "articles")[-2:], H.PLAIN_PAGE)  # the newest articles
+    report, out = _salvage(src, tmp_path)
+    assert report["stand_ins"] == {"articles": 1500, "sources": 13}, report.get("stand_ins")
+    con = H.open_store(out)
+    try:
+        stand = con.execute("SELECT id, source_id, title, content, url FROM articles WHERE url LIKE '(lost%'").fetchall()
+        assert len(stand) == 1 and stand[0][0] == 1500 and stand[0][2] is None and stand[0][3] == "", stand
+        source = con.execute("SELECT id, name FROM sources WHERE id = ?", (stand[0][1],)).fetchone()
+        assert source[0] == 13 and source[1].startswith("(lost sources"), source
+        assert con.execute("SELECT count(*) FROM sources WHERE name NOT LIKE '(lost%'").fetchone()[0] == 12
+        assert con.execute("SELECT count(*) FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.url LIKE '(lost%' AND s.name NOT LIKE '(lost%'").fetchone()[0] == 0
+        for word in ("lost", "articles", "sources", "1500"):
+            assert con.execute("SELECT count(*) FROM article_fts WHERE article_fts MATCH ?", (word,)).fetchone()[0] == 0, f"the search found the stand-in by {word!r}"
+        con.execute("INSERT INTO article_fts(article_fts) VALUES ('integrity-check')")  # raises when the index and the table disagree
+    finally:
+        con.close()
+    assert salvage.check_copy(out)[0]
+
+
+def test_the_columns_the_stand_ins_leave_unindexed_are_the_columns_the_search_index_reads(plain_pristine):
+    con = sqlite3.connect(plain_pristine)
+    try:
+        indexed = tuple(r[1] for r in con.execute("PRAGMA table_info(article_fts)"))
+    finally:
+        con.close()
+    assert {"articles": indexed} == salvage._SEARCH_INDEXED
 
 
 def test_text_that_is_not_utf8_is_kept_with_a_replacement_character_and_counted(tmp_path):

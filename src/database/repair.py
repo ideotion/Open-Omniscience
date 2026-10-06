@@ -104,6 +104,18 @@ STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 #: and says the date wherever it says the file exists. The number itself is ``damage.KEPT_COPY_DAYS`` (the notices need it).
 KEPT_COPY_DAYS = damage.KEPT_COPY_DAYS
 
+#: How far a sidecar's own ``created_at`` may be from the time the sidecar FILE was written (seconds, the file's modification time). WHAT IT
+#: PROTECTS: R129's thirty days run from a time the sidecar states, and a sidecar is untrusted input: a ``created_at`` far in the past would
+#: have the kept copy removed at once, one far in the future would keep it for ever. The write is one atomic replace a moment after the time is
+#: taken, so a slow drive is seconds; an hour is a drive that is not the problem. Outside it the file's own time is used, which is never earlier
+#: than the write.
+SIDECAR_TIME_SLACK_S = 3600.0
+
+#: The longest repair run a sidecar's ``run_seconds`` is believed to report (seconds). WHAT IT PROTECTS: the clean-read time is accepted when
+#: it lies within that run before the sidecar was made, so a run of years would accept a clean read from years ago and date the removal in the
+#: past. A repair copies a library: hours, a week for one on a drive that is failing; a claim above it is not believed.
+MAX_RUN_SECONDS = 7 * 86400
+
 # The job row's own sentences (keyed, x12). The refusals reuse ``damage.FRAME_REPAIR_*`` so the row and the damage block
 # cannot say two things.
 FRAME_COPYING = (
@@ -304,7 +316,8 @@ class _Probe:
 
     def fold(self, wait_ms: int) -> tuple[int, int] | None:
         """One TRUNCATE checkpoint of the live log ON THIS CONNECTION: ``(frames in the log, frames moved into the file)`` as the checkpoint
-        answers (``(-1, -1)`` when there is no log), or ``None`` when the answer could not be read. It runs here and nowhere else because a
+        answers (``(-1, -1)`` when there is no log, and also when another connection holds the checkpoint lock: measured, the answer is then
+        ``(1, -1, -1)``, busy first, and nothing ran), or ``None`` when the answer could not be read. It runs here and nowhere else because a
         TRUNCATE checkpoint made by ANY OTHER connection moves this connection's data version, even with nothing in the log (measured on
         plaintext and on SQLCipher), so the repair's own fold would read as a save made by someone else; the connection's own does not."""
         con = self._con
@@ -855,8 +868,8 @@ def _registry_fields(report: dict[str, Any], state: str) -> dict[str, Any]:
         "copy_bytes", "reconnects", "orphans", "orphans_verdict_tables", "set_null", "stand_ins", "stand_ins_note", "id_reuse_possible",
         "replaced_text_values", "tables", "search_index", "indexes_seconds", "encrypted",
         "preflight", "post_steps", "resumed", "clean_at", "kept_file_ino", "kept_file_dev", "kept_wal_ino", "kept_wal_bytes",
-        "kept_file_removal_after", "kept_file_removal_withheld", "kept_file_disk_unread_pages", "disk_unread_pages", "disk_unread_first",
-        "check_pages_unread",
+        "kept_file_removal_after", "kept_file_removal_withheld", "kept_file_removal_undated", "kept_file_disk_unread_pages", "disk_unread_pages",
+        "disk_unread_first", "check_pages_unread",
     )
     out: dict[str, Any] = {"state": state, "finished_at": datetime.now(UTC).isoformat(timespec="seconds")}
     out.update({k: report[k] for k in keep if k in report})
@@ -996,24 +1009,48 @@ def _int(value: Any) -> int:
         return 0
 
 
-def _clean_read_time(doc: dict[str, Any]) -> str:
+def _written_at(sidecar: Path | None) -> datetime | None:
+    """When the sidecar FILE was written, by the file system's own word (its modification time), or ``None`` when that cannot be read."""
+    if sidecar is None:
+        return None
+    try:
+        return datetime.fromtimestamp(sidecar.stat().st_mtime, UTC)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
+def _made_time(doc: dict[str, Any], written: datetime | None) -> datetime:
+    """When the sidecar was made: its own ``created_at`` when that is within :data:`SIDECAR_TIME_SLACK_S` of the time the file was written,
+    otherwise the file's. A sidecar value is believed only once it is checked."""
+    created = _parse_time(doc.get("created_at"))
+    if written is not None and (created is None or abs((created - written).total_seconds()) > SIDECAR_TIME_SLACK_S):
+        return written
+    return created or datetime.now(UTC)
+
+
+def _clean_read_time(doc: dict[str, Any], written: datetime | None = None) -> str:
     """When the repaired file first read clean, as the sidecar says it, when that is a time the repair can have had: not after the sidecar
     was made and not earlier than the repair had been running when it was made (the clean read happens in between). R129's thirty days
     run from it, so a value outside that (a past one would remove the kept copy at once, a future one would keep it for ever) is not
-    believed and the time the sidecar was made is used instead, which only ever makes the file live longer (the deep read of E3)."""
-    created = _parse_time(doc.get("created_at")) or datetime.now(UTC)
+    believed and the time the sidecar was made is used instead, which only ever makes the file live longer (the deep read of E3). The time
+    the sidecar was made is itself checked against the file's own time (:func:`_made_time`), and a ``run_seconds`` above
+    :data:`MAX_RUN_SECONDS` is not a run the repair can have had (it counts as none)."""
+    created = _made_time(doc, written)
+    run = _int(doc.get("run_seconds"))
+    if run > MAX_RUN_SECONDS:
+        run = 0
     clean = _parse_time(doc.get("clean_at"))
-    if clean is not None and created - timedelta(seconds=_int(doc.get("run_seconds")) + 1) <= clean <= created:
+    if clean is not None and created - timedelta(seconds=run + 1) <= clean <= created:
         return clean.isoformat(timespec="seconds")
     return created.isoformat(timespec="seconds")
 
 
-def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path) -> None:
+def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidecar: Path | None = None) -> None:
     """What the start that made the copy measured, read back from its sidecar for the start that finishes the switch: every number and
     list the record needs (``_CARRIED``: the deep read of E3 found the orphans, the search index and the encryption flag dropped), the
     first clean read (R129's clock runs from it, not from the start that finished the swap), and what the drive could not read. A
     value that is not the kind of value it should be is not believed: a count is a count or zero, and a drive measurement that is not
-    a whole number is no measurement (the resume measures it again)."""
+    a whole number is no measurement (the resume measures it again, and so does :func:`_kept_facts`)."""
     report["resumed"] = True
     for key in _CARRIED:
         if key in doc:
@@ -1026,7 +1063,7 @@ def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path) -> No
     measured = doc.get("disk_unread_pages")
     report["disk_unread_pages"] = measured if type(measured) is int and measured >= 0 else None
     report["page_size"] = doc["page_size"] if type(doc.get("page_size")) is int and doc["page_size"] > 0 else None
-    report["clean_at"] = _clean_read_time(doc)
+    report["clean_at"] = _clean_read_time(doc, _written_at(sidecar))
 
 
 def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None) -> str:
@@ -1035,7 +1072,7 @@ def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None
     target: Path = work["target"]
     if ctx is not None:
         ctx.set_progress(detail=_frame(FRAME_SWITCHING))
-    _carry_from(report, doc, target)
+    _carry_from(report, doc, target, resume["sidecar"])
     # What this start's own check could not read counts beside what the start that made the copy found: a resume after a start whose
     # check found unreadable pages must not decide on that start's figure alone (the deep read of E3, NEW-3).
     report["check_pages_unread"] = max(_int(report.get("check_pages_unread")), _int(work.get("pages_unread")))
@@ -1051,11 +1088,22 @@ def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None
     return "repaired"
 
 
-def _kept_facts(report: dict[str, Any], doc: dict[str, Any], target: Path) -> Path:
+def _kept_facts(report: dict[str, Any], doc: dict[str, Any], target: Path, sidecar: Path | None = None) -> Path:
     """What a switch that ran left, read from its sidecar and the files as they are: the record's numbers, the kept file's identity and
-    removal date. Returns the kept file."""
+    removal date. Returns the kept file. A drive measurement the sidecar does not carry (or carries as something that is not a count) is
+    taken now, on the kept file, as the resume takes it; when it cannot be taken the kept file gets NO removal date
+    (:func:`_note_what_was_set_aside`), because a removal must never rest on a measurement nobody made."""
     damaged = target.parent / str(doc["damaged"])
-    _carry_from(report, doc, target)
+    _carry_from(report, doc, target, sidecar)
+    if report["disk_unread_pages"] is None:
+        try:
+            report["disk_unread_pages"], report["disk_unread_first"] = _disk_unread_pages(
+                damaged, int(report.get("page_size") or 4096), _CANCEL
+            )
+        except salvage.SalvageStopped:
+            raise
+        except Exception:  # noqa: BLE001 - not measured: no date is set below, and the record says so
+            _LOG.warning("database repair: the kept file could not be read to measure what the drive cannot give; it gets no removal date")
     _note_what_was_set_aside(report, damaged)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
@@ -1077,14 +1125,14 @@ def _finish(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None
     spent = []
     for earlier in late[:-1]:
         older: dict[str, Any] = {"kind": "finish"}
-        _kept_facts(older, earlier["doc"], target)
+        _kept_facts(older, earlier["doc"], target, earlier["sidecar"])
         damage.registry.repair_upsert(
             uuid.uuid4().hex[:8], file=damage.FILE_CORPUS, trigger="boot", kind="finish", folder=str(target.parent),
             started_at=datetime.now(UTC).isoformat(timespec="seconds"), **_registry_fields(older, "done"),
         )
         spent.append(earlier["sidecar"].name)
     newest = late[-1]
-    damaged = _kept_facts(report, newest["doc"], target)
+    damaged = _kept_facts(report, newest["doc"], target, newest["sidecar"])
     report["post_steps"] = _after_the_swap()
     report["sidecars_spent"] = [*spent, newest["sidecar"].name]
     _LOG.warning(
@@ -1133,6 +1181,9 @@ def _empty_the_log(target: Path, watch: _Probe) -> None:
         if not left:
             return
         if frames is not None and (frames[0] < 0 or frames[1] >= frames[0]):
+            # ``frames[0] < 0`` is no log, or a checkpoint lock another connection holds (nothing could be counted): accepted either way, because
+            # what the log holds from before the copy is in the copy (it was read through the log) and a save since the copy moves the
+            # data version, which the switch reads inside the window and refuses on.
             return
         if _CANCEL.is_set():
             raise salvage.SalvageStopped
@@ -1298,7 +1349,11 @@ def _note_what_was_set_aside(report: dict[str, Any], damaged: Path) -> None:
     clean = _parse_time(report.get("clean_at")) or datetime.now(UTC)
     report["clean_at"] = clean.isoformat(timespec="seconds")
     unread = max(int(report.get("disk_unread_pages") or 0), int(report.get("check_pages_unread") or 0))
-    if unread:
+    if "disk_unread_pages" in report and report["disk_unread_pages"] is None:
+        # What the drive could not give was never measured (the sidecar did not carry it and the kept file could not be read now): that is not
+        # "none", so no date is set and the sweep, which needs one, never removes this file.
+        report["kept_file_removal_undated"] = "disk-not-measured"
+    elif unread:
         # A file the drive could not read is kept, not removed after the thirty days: no date is recorded, the record says why, and
         # the notice tells the person to check the drive (the coordinator's ruling of 2026-10-06 on the SQLite 3.43 read-error case).
         report["kept_file_removal_withheld"] = "disk-read-failed"

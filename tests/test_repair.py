@@ -437,6 +437,8 @@ def test_a_cut_before_the_replace_is_finished_at_the_next_start_with_the_same_se
     doc["clean_at"] = "2026-09-01T00:00:00+00:00"
     doc["run_seconds"] = 900
     sidecars[0].write_text(json.dumps(doc), encoding="utf-8")
+    long_ago = datetime(2026, 9, 1, 0, 10, tzinfo=UTC).timestamp()
+    os.utime(sidecars[0], (long_ago, long_ago))  # the file was written at that start: its own time agrees with the time it states
     # the next start: no new check has run (confirmed damage is this process's), the swap is resumed from the sidecar
     monkeypatch.setattr(merge, "_replace_live_corpus", real_replace)
     work = repair.plan()
@@ -1596,6 +1598,117 @@ def test_every_sidecar_a_cut_left_is_finished_and_recorded_not_only_the_newest(t
     recorded = {r.get("kept_file") for r in reg.repairs() if r.get("state") == "done"}
     assert {kept.name, older_kept.name} <= recorded, "the older switch's kept file was named nowhere and would never be removed"
     assert not list(tmp_path.glob("live.salvage-*")), "a sidecar outlived the finish"
+
+
+# --- the removal date fails closed (the delta read of E3 fold 2, C) ----------------------------------------------------
+def _a_cut_switch(tmp_path, monkeypatch, reg, tamper) -> tuple[Path, Path, Path]:
+    """A switch that ran and was cut before its record was written: the live file is the repaired one, the damaged file is kept beside it and the
+    sidecar is left, changed by ``tamper(doc)``. Returns (live, the kept file, the sidecar), with the monkeypatches a NEXT start has."""
+    live = _live(tmp_path, monkeypatch, reg)
+
+    def die_after_the_replace() -> dict:
+        raise OSError(5, "the power went out")
+
+    monkeypatch.setattr(repair, "_after_the_swap", die_after_the_replace)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    sidecar = next(tmp_path.glob("live.salvage-*.db.json"))
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    tamper(doc)
+    sidecar.write_text(json.dumps(doc), encoding="utf-8")
+    kept = _the_kept_file(tmp_path)
+    monkeypatch.undo()
+    monkeypatch.setattr(damage, "registry", reg)
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (live, live.name) if key == FILE_CORPUS else (None, None))
+    monkeypatch.setattr(repair, "_marker_path", lambda: tmp_path / repair.ATTEMPT_FILE)
+    monkeypatch.setattr(repair, "_after_the_swap", lambda: {"corpus_epoch": 1})
+    return live, kept, sidecar
+
+
+def _drop_the_measurement(doc: dict) -> None:
+    for key in ("disk_unread_pages", "disk_unread_first", "check_pages_unread"):
+        doc.pop(key, None)
+
+
+def test_a_finish_whose_sidecar_carries_no_drive_measurement_measures_the_kept_file_and_withholds_when_the_drive_failed(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    live, kept, _sidecar = _a_cut_switch(tmp_path, monkeypatch, reg, _drop_the_measurement)
+    _drive_fails_on(monkeypatch, [3])
+    work = repair.plan()
+    assert work["kind"] == "finish"
+    report = repair.run(work)
+    assert report["outcome"] == "repaired" and report["disk_unread_pages"] == 1 and report["disk_unread_first"] == [3]
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_withheld"] == "disk-read-failed" and rec["kept_file_disk_unread_pages"] == 1
+    assert "kept_file_removal_after" not in rec and "kept_file_removal_undated" not in rec
+    assert kept.exists() and repair.sweep_kept_copies(now=datetime.now(UTC) + timedelta(days=36500)) == []
+
+
+def test_a_finish_whose_sidecar_measurement_is_not_a_count_measures_it_too_and_a_clean_drive_sets_the_date(tmp_path, monkeypatch, reg, engine_calls):
+    live, kept, _sidecar = _a_cut_switch(tmp_path, monkeypatch, reg, lambda doc: doc.update(disk_unread_pages="many"))
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["disk_unread_pages"] == 0
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_after"] and "kept_file_removal_withheld" not in rec and "kept_file_removal_undated" not in rec
+
+
+def test_a_finish_that_cannot_measure_the_kept_file_sets_no_removal_date_and_nothing_removes_it(tmp_path, monkeypatch, reg, engine_calls):
+    live, kept, _sidecar = _a_cut_switch(tmp_path, monkeypatch, reg, _drop_the_measurement)
+
+    def cannot_open(*a, **k):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(repair, "_raw_open", cannot_open)
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired"
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_undated"] == "disk-not-measured"
+    assert "kept_file_removal_after" not in rec, "a date was set for a file whose drive was never measured"
+    assert rec.get("disk_unread_pages") is None
+    far = datetime.now(UTC) + timedelta(days=36500)
+    assert repair.sweep_kept_copies(now=far) == [] and kept.exists()
+
+
+def test_a_finish_whose_sidecar_dates_are_a_lie_does_not_date_the_removal_in_the_past(tmp_path, monkeypatch, reg, engine_calls):
+    old = "2000-01-01T00:00:00+00:00"
+    live, kept, _sidecar = _a_cut_switch(tmp_path, monkeypatch, reg, lambda doc: doc.update(created_at=old, clean_at=old, run_seconds=60))
+    repair.run(repair.plan())
+    due = datetime.fromisoformat(reg.repairs()[-1]["kept_file_removal_after"])
+    assert due > datetime.now(UTC) + timedelta(days=repair.KEPT_COPY_DAYS - 1), f"the removal was dated {due}"
+    assert repair.sweep_kept_copies(now=datetime.now(UTC)) == [] and kept.exists()
+
+
+def test_the_time_a_sidecar_says_it_was_made_is_believed_only_near_the_time_the_file_was_written():
+    made = "2026-10-06T03:00:00+00:00"
+    written = datetime(2026, 10, 6, 3, 0, 5, tzinfo=UTC)
+    clean = "2026-10-06T02:59:30+00:00"
+    assert repair._clean_read_time({"created_at": made, "run_seconds": 60, "clean_at": clean}, written) == clean
+    own = written.isoformat(timespec="seconds")
+    for lie in ("2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00+00:00", "yesterday", None, 7, "2026-10-06T01:00:00+00:00", "2026-10-06T05:00:00+00:00"):
+        got = repair._clean_read_time({"created_at": lie, "run_seconds": 60, "clean_at": lie}, written)
+        assert got == own, f"{lie!r} was believed as the time the sidecar was made: {got}"
+    # no file time to check it against: its own word, as before
+    assert repair._clean_read_time({"created_at": made, "run_seconds": 60, "clean_at": clean}, None) == clean
+
+
+def test_a_run_longer_than_a_repair_can_take_is_not_believed():
+    made = "2026-10-06T03:00:00+00:00"
+    written = datetime(2026, 10, 6, 3, 0, 5, tzinfo=UTC)
+    long_ago = "2000-01-01T00:00:00+00:00"
+    for run in (repair.MAX_RUN_SECONDS + 1, 10**12, 10**30, "never"):
+        assert repair._clean_read_time({"created_at": made, "run_seconds": run, "clean_at": long_ago}, written) == made, f"run_seconds {run!r} was believed"
+    # a long but possible run still widens what is believed, as it always did
+    week = repair._clean_read_time({"created_at": made, "run_seconds": repair.MAX_RUN_SECONDS, "clean_at": "2026-10-01T03:00:00+00:00"}, written)
+    assert week == "2026-10-01T03:00:00+00:00"
+
+
+def test_the_sidecars_own_modification_time_is_the_time_it_was_written(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text("{}", encoding="utf-8")
+    os.utime(path, (1_700_000_000, 1_700_000_000))
+    assert repair._written_at(path) == datetime.fromtimestamp(1_700_000_000, UTC)
+    assert repair._written_at(tmp_path / "missing.json") is None and repair._written_at(None) is None
 
 
 # --- the raw pass: a short read is a page the drive did not give (NEW-2) ----------------------------------------------

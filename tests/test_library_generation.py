@@ -12,10 +12,11 @@ import errno
 import os
 import sqlite3
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 from src.database import library_generation as gen
 
@@ -217,6 +218,10 @@ def test_a_connection_opened_while_the_swap_waits_for_the_window_is_stamped_befo
 
     engine = _engine(live, creator=slow_open)
     made: list = []
+    swapped = threading.Event()
+    # the straddling connection is held after it was opened and stamped, until the swap has happened: without this the thread can finish its
+    # checkout and its read in the microseconds between the lock being let go and the bump, and is then (rightly) served by the old file
+    event.listen(engine, "connect", lambda *_: swapped.wait(10))
 
     def connect_in_a_thread() -> None:
         conn = engine.connect()
@@ -241,7 +246,10 @@ def test_a_connection_opened_while_the_swap_waits_for_the_window_is_stamped_befo
         with gen.swap_window(new, timeout=10):  # waits for the open, then bumps
             assert gen.current() == before + 1
             assert let_go.is_set(), "the window was granted before the open finished"
+            for suffix in ("-wal", "-shm"):  # the straddling connection read at creator time, so its log exists: the swap removes the names first
+                Path(str(live) + suffix).unlink(missing_ok=True)
             os.replace(new, live)
+        swapped.set()
         t.join(10)
         assert not t.is_alive()
         assert made == ["before,only in the new file"], f"the thread was served by the old file: {made}"
@@ -250,6 +258,7 @@ def test_a_connection_opened_while_the_swap_waits_for_the_window_is_stamped_befo
             opened[0].execute("SELECT 1")
     finally:
         let_go.set()
+        swapped.set()
         t.join(10)
         engine.dispose()
 
@@ -332,6 +341,99 @@ def test_an_open_that_fails_hands_no_stamp_to_the_next_connection_of_the_thread(
         assert getattr(gen._local, "stamp", None) is None
         with engine.connect() as conn:
             assert conn.exec_driver_sql("SELECT count(*) FROM notes").scalar() == 1
+    finally:
+        engine.dispose()
+
+
+# --------------------------------------------------------------------------- #
+#  the first read of a plaintext library is made under the lock (the delta read of E3 fold 2, A)
+# --------------------------------------------------------------------------- #
+def _app_pragma_engine(live: Path, *, creator=None):
+    """:func:`_engine` with the app's own ``connect`` listener (``session._sqlite_pragmas``), the first statement of every plaintext connection."""
+    from src.database import session
+
+    engine = _engine(live, creator=creator)
+    event.listen(engine, "connect", session._sqlite_pragmas)
+    return engine
+
+
+def _window_is_refused_while(statement_seen: list) -> Callable[[str], None]:
+    """A trace callback that, at the FIRST statement a connection runs, asks (from another thread) for the swap window and records the
+    statement and whether the window was refused."""
+
+    def trace(statement: str) -> None:
+        if statement_seen:
+            return
+        answer: list[str] = []
+
+        def ask() -> None:
+            try:
+                with gen.swap_window(Path("/nonexistent/source"), timeout=0.05):
+                    answer.append("granted")
+            except gen.LibraryBusy:
+                answer.append("busy")
+
+        t = threading.Thread(target=ask)
+        t.start()
+        t.join(10)
+        statement_seen.append((statement, answer[0] if answer else "no answer"))
+
+    return trace
+
+
+def test_the_first_statement_of_a_plaintext_connection_runs_while_the_swap_cannot_have_its_window(tmp_path):
+    """A plaintext connection opens the log's names at its first READ, and that read was the pragma listener's, after the lock was let go:
+    a swap that landed in between bound the new file's log to the old file and the schema read failed as malformed (which the damage
+    hook files as damage). The creator reads once under the lock, so the first statement the listener runs is not the first read."""
+    live = tmp_path / "live.db"
+    _store(live)
+    seen: list = []
+
+    def traced_open():
+        con = sqlite3.connect(str(live), check_same_thread=False)
+        con.set_trace_callback(_window_is_refused_while(seen))
+        return con
+
+    engine = _app_pragma_engine(live, creator=traced_open)
+    try:
+        with engine.connect() as conn:
+            assert conn.exec_driver_sql("SELECT count(*) FROM notes").scalar() == 1
+        assert seen, "the connection ran nothing"
+        statement, answer = seen[0]
+        assert answer == "busy", f"the first statement on the connection ({statement!r}) ran after the lock was let go"
+        assert "sqlite_master" in statement
+    finally:
+        engine.dispose()
+
+
+def test_a_connection_whose_first_read_fails_is_closed_and_the_creator_raises(tmp_path):
+    live = tmp_path / "live.db"
+    _store(live)
+    opened: list[sqlite3.Connection] = []
+
+    class Unreadable(sqlite3.Connection):
+        def cursor(self, *a, **kw):
+            raise sqlite3.DatabaseError("database disk image is malformed")
+
+    def open_it():
+        con = sqlite3.connect(str(live), check_same_thread=False, factory=Unreadable)
+        opened.append(con)
+        return con
+
+    with pytest.raises(sqlite3.DatabaseError):
+        gen.guarded_creator(open_it)()
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].execute("SELECT 1")  # closed, not leaked
+    assert getattr(gen._local, "stamp", None) is None
+    assert gen._LOCK._shared == 0 and gen._LOCK._holder is None, "the lock was kept by a creator that raised"
+
+
+def test_a_library_that_does_not_exist_yet_is_created_and_read_through_the_guarded_creator(tmp_path):
+    live = tmp_path / "fresh.db"
+    engine = _app_pragma_engine(live)
+    try:
+        with engine.connect() as conn:
+            assert conn.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
     finally:
         engine.dispose()
 
@@ -466,25 +568,93 @@ def test_a_check_that_refuses_leaves_the_file_alone_and_the_old_connections_vali
     assert _bodies(live) == ["before", "still the library"]
 
 
-def test_a_replace_that_could_not_be_made_leaves_the_old_connections_valid(world, monkeypatch):
+def test_a_check_that_refuses_leaves_a_connection_that_holds_the_log_valid_and_its_save_is_visible(tmp_path, monkeypatch):
+    """The same refusal with the app's connect listener, which reads at connect: the connection holds the log from the start, and nothing was
+    removed, so what it saves afterwards is read by the next connection."""
     from src.backup import merge
 
-    tmp_path, live, engine = world
+    live = tmp_path / "live.db"
+    _store(live)
     working = tmp_path / "working.db"
     _store(working)
+    engine = _app_pragma_engine(live)
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: None)
+
+    class Refused(Exception):
+        pass
+
+    def check() -> None:
+        raise Refused
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1")).scalar()
+            with pytest.raises(Refused):
+                merge.swap_in_corpus(working, live, check=check)
+            conn.execute(text("INSERT INTO notes (body) VALUES ('saved after the refusal')"))
+            conn.commit()
+        assert _bodies(live) == ["before", "saved after the refusal"]
+    finally:
+        engine.dispose()
+
+
+def test_a_replace_that_could_not_be_made_after_the_log_names_were_removed_refuses_the_old_connections_and_nothing_is_lost(tmp_path, monkeypatch):
+    """The measured hazard: a pooled connection holds the log by an inode (it read at connect), the swap removed the log's names, the replace
+    failed, and the earlier version of this window gave the connection its validity back. Its save committed into a log no name points at,
+    and the next connection read ``disk I/O error``. The connection is refused now, and the library is intact and writable."""
+    from src.backup import merge
+
+    live = tmp_path / "live.db"
+    _store(live)
+    working = tmp_path / "working.db"
+    _store(working)
+    engine = _app_pragma_engine(live)
     monkeypatch.setattr("src.database.session.dispose_engine", lambda: None)
 
     def refuse(src, dst):
         raise OSError(errno.EROFS, "read-only file system")  # not a lock: not retried
 
     monkeypatch.setattr(merge.os, "replace", refuse)
-    with engine.connect() as conn:
+    try:
+        conn = engine.connect()
         conn.execute(text("SELECT 1")).scalar()
         with pytest.raises(OSError):
             merge.swap_in_corpus(working, live)
-        conn.execute(text("INSERT INTO notes (body) VALUES ('a refused restore failed nobody')"))
-        conn.commit()
-    assert "a refused restore failed nobody" in _bodies(live)
+        assert working.exists() and not Path(str(live) + "-wal").exists(), "the test's premise: the names were removed, the replace failed"
+        with pytest.raises(gen.StaleLibraryError):
+            conn.execute(text("INSERT INTO notes (body) VALUES ('into a log nobody reads')"))
+        conn.rollback()
+        conn.close()
+        assert _bodies(live) == ["before"]
+        with engine.connect() as fresh:  # the pool made a connection on the file as it is
+            fresh.execute(text("INSERT INTO notes (body) VALUES ('after the failed swap')"))
+            fresh.commit()
+        assert _bodies(live) == ["before", "after the failed swap"]
+    finally:
+        engine.dispose()
+
+
+def test_a_replace_that_could_not_be_made_leaves_a_connection_of_the_window_s_own_stale_too(world, monkeypatch):
+    """The data-version connection the swap opens inside the window is on the old file: when the names were removed and the replace failed,
+    its stamp does not become valid afterwards either."""
+    from src.backup import merge
+
+    tmp_path, live, engine = world
+    working = tmp_path / "working.db"
+    _store(working)
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: None)
+    stamps: list = []
+
+    def check() -> None:
+        stamps.append(gen._WINDOW_STAMP)
+
+    def refuse(src, dst):
+        raise OSError(errno.EROFS, "read-only file system")
+
+    monkeypatch.setattr(merge.os, "replace", refuse)
+    with pytest.raises(OSError):
+        merge.swap_in_corpus(working, live, check=check)
+    assert stamps and stamps[0] is not None and not gen.valid(stamps[0])
 
 
 def test_init_db_after_a_swap_is_not_refused_by_the_window_that_just_ended():

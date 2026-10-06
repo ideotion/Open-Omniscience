@@ -273,8 +273,10 @@ def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | N
     made before it is refused from its first line (the generation moves FIRST), and a connection made after it opens the new file.
     ``check``, if given, runs inside the window after the generation moved and before anything is changed on disk: the repair compares
     the old file's data version there, so a save that landed in the old file can only have done so BEFORE the move, where the check
-    sees it. A raise from ``check`` (or a replace that fails) leaves the file the library, and the window gives the earlier connections
-    their validity back. ``library_generation.LibraryBusy`` is raised when a connection was still being opened after the wait."""
+    sees it. A raise from ``check`` leaves the file the library, and the window gives the earlier connections their validity back; a
+    replace that fails AFTER the live log names were removed does not (a pooled connection holds that log by an inode no name points at, so a
+    save through it would land where no later connection reads): the earlier connections stay refused and the work is done again.
+    ``library_generation.LibraryBusy`` is raised when a connection was still being opened after the wait."""
     from src.database import library_generation
     from src.database.session import dispose_engine
 
@@ -285,6 +287,7 @@ def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | N
         # ONE budget for the whole swap, not one per file: -wal, -shm and the replace all face the same holder, so a per-step budget would
         # stall a doomed swap for three times as long while telling the operator it had waited once. Each step gets whatever is left.
         swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
+        library_generation.disk_changing()  # from here a failed replace does not give the earlier connections their validity back
         _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
         _replace_live_corpus(working, target, wait_s=max(0.0, swap_deadline - time.monotonic()))  # atomic on the same filesystem
 

@@ -96,12 +96,22 @@ SORT_RAM_BYTES_PER_ROW = RAM_BYTES_PER_ARTICLE
 #: The id the search runs to when a table's last row id cannot be read: the end of the 64-bit space.
 _ID_CEILING = 2**62
 
+#: What :meth:`Salvage._stand_in_value` answers when the key's parent could not be made (no value of the column's own is ever this object).
+_REFUSED = object()
+
 #: What the report says about the stand-in rows (``stand_ins``): what they are and why they exist.
 STAND_IN_NOTE = (
-    "A row whose parent row could not be read was kept, and one stand-in row, marked as lost, holds the place of the lost parents "
+    "A row whose parent row could not be read was kept, and a stand-in row, marked as lost, holds the place of the lost parents "
     "in each parent table, so that a row saved later is not handed the number of a lost one and does not seem to own the rows that "
-    "belong to it."
+    "belong to it. A stand-in that has a parent of its own (a stand-in article has a source) belongs to a stand-in parent that is "
+    "marked as lost too, never to a real row, and no stand-in is in the search results. A stand-in is a row like any other: if it is "
+    "deleted, its number may be handed out again."
 )
+
+#: The columns of a table the search index reads (``fts.rebuild_index``: ``SELECT id, title, content FROM articles``). A stand-in row of such a
+#: table is given NOTHING to index in them (an empty text, no title), so the search finds no stand-in: the index is rebuilt from the table, and
+#: the other way to keep a row out of it (an FTS5 'delete' of a document that was never indexed, or indexed under other text) corrupts the index.
+_SEARCH_INDEXED: dict[str, tuple[str, ...]] = {"articles": ("title", "content")}
 
 #: Report caps, so a file with a thousand damaged pages is a record, not a log: this many unreadable id ranges are listed
 #: per table (the count of all of them is kept).
@@ -267,6 +277,9 @@ class Salvage:
         self._without_rowid: set[str] = set()
         self._autoincrement: set[str] = set()
         self._row_id_alias: dict[str, str] = {}  # table -> the INTEGER PRIMARY KEY column that IS its row id (the next id is the highest + 1)
+        self._stand_in_ids: dict[str, int] = {}  # table -> the id of the stand-in row this copy wrote into it (a parent's own parent is one)
+        self._made: list[tuple[str, int]] = []  # every stand-in row written, in order, so a refused one takes the parents it made with it
+        self._orphan_needs: dict[str, int] = {}  # parent table -> the highest id an orphan refers to above the table's own highest id
         self._started = time.monotonic()
         self.report: dict[str, Any] = {"tables": [], "reconnects": 0}
 
@@ -901,19 +914,49 @@ class Salvage:
         except Exception as exc:  # noqa: BLE001
             self._raise_for_target("the counter of a table", exc)
 
-    def _stand_in_value(self, table: str, row_id: int, name: str, declared: str, key: tuple | None) -> Any:
+    def _id_above(self, table: str) -> int | None:
+        """The first id of ``table`` no row has, no orphan refers to and (for an AUTOINCREMENT table) the counter has not passed: the id of a
+        stand-in that is NOT a place a lost row held. ``None`` when the table's highest id cannot be read as a number."""
+        alias = self._row_id_alias[table]
+        try:
+            top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(table)}").fetchone()[0] or 0
+            seq = 0
+            if table in self._autoincrement:
+                row = self.dst.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (table,)).fetchone()
+                seq = int(row[0]) if row and row[0] is not None else 0
+        except Exception as exc:  # noqa: BLE001
+            self._raise_for_target("the highest id of a table that needs a stand-in row", exc)
+        try:
+            return max(int(top), seq, self._orphan_needs.get(table, 0)) + 1
+        except (TypeError, ValueError):
+            return None
+
+    def _lost_parent(self, ref: str, chain: tuple[str, ...]) -> int | None:
+        """The id of a stand-in row of ``ref`` for a key of another stand-in row: the one this copy already wrote, else a new one at the first
+        id above everything (:meth:`_id_above`), itself marked as lost. ``None`` when ``ref`` has no row id to put one at, the keys lead back
+        to a table already being made, or the table's own constraints refuse the row: the stand-in that needed it is refused too, because a
+        stand-in under a REAL parent would be a lost row that seems to belong to somebody."""
+        if ref in self._stand_in_ids:
+            return self._stand_in_ids[ref]
+        if ref in chain or ref not in self._row_id_alias:
+            return None
+        new_id = self._id_above(ref)
+        if new_id is None or not self._stand_in(ref, new_id, chain):
+            return None
+        return new_id
+
+    def _stand_in_value(self, table: str, row_id: int, name: str, declared: str, key: tuple | None, chain: tuple[str, ...]) -> Any:
         """A value for a NOT NULL column of a stand-in row: a text column says the row is lost, a column that is a key to another table
-        points at a row of it that exists (its lowest id; 0 when it has none), the rest take the neutral value of their type."""
+        points at a stand-in row of THAT table, marked as lost too (:meth:`_lost_parent`), a column the search index reads is empty, and the
+        rest take the neutral value of their type. ``_REFUSED`` when a key's parent could not be made."""
         if key is not None:
             ref = str(key[2])
-            column = key[4] or self._row_id_alias.get(ref)
-            if column:
-                try:
-                    found = self.dst.execute(f"SELECT min({_ident(str(column))}) FROM {_ident(ref)}").fetchone()[0]
-                except Exception as exc:  # noqa: BLE001
-                    self._raise_for_target("a key of a stand-in row", exc)
-                return 0 if found is None else found
-            return 0
+            if (key[4] or self._row_id_alias.get(ref)) != self._row_id_alias.get(ref):
+                return _REFUSED  # a key to a column that is not the parent's row id: no stand-in id can be put there
+            found = self._lost_parent(ref, (*chain, table))
+            return _REFUSED if found is None else found
+        if name in _SEARCH_INDEXED.get(table, ()):
+            return ""
         kind = declared.upper()
         if "BLOB" in kind:
             return b""
@@ -925,9 +968,10 @@ class Salvage:
             return "{}"
         return f"(lost {table} {row_id})"
 
-    def _stand_in(self, table: str, row_id: int) -> bool:
+    def _stand_in(self, table: str, row_id: int, chain: tuple[str, ...] = ()) -> bool:
         """Write ONE row at ``row_id`` into ``table``, marked as lost: every NOT NULL column without a default is given a value
-        (:meth:`_stand_in_value`), every other column stays NULL. ``False`` when the table's own constraints refused it."""
+        (:meth:`_stand_in_value`; a key's parent is a stand-in row too), every other column stays NULL. ``False`` when the table's own
+        constraints refused it, or a parent it needs could not be made."""
         alias = self._row_id_alias[table]
         try:
             info = self.dst.execute(f"PRAGMA table_xinfo({_ident(table)})").fetchall()
@@ -938,8 +982,11 @@ class Salvage:
         for _cid, name, declared, notnull, default, _pk, hidden in info:
             if hidden != 0 or name == alias or not notnull or default is not None:
                 continue
+            value = self._stand_in_value(table, row_id, str(name), str(declared or ""), keys.get(str(name)), chain)
+            if value is _REFUSED:
+                return False
             columns.append(str(name))
-            values.append(self._stand_in_value(table, row_id, str(name), str(declared or ""), keys.get(str(name))))
+            values.append(value)
         try:
             self.dst.execute(
                 f"INSERT INTO {_ident(table)} ({', '.join(_ident(c) for c in columns)}) VALUES ({', '.join('?' for _ in columns)})",
@@ -950,7 +997,22 @@ class Salvage:
             if "constraint" in str(exc).lower() or type(exc).__name__ == "IntegrityError":
                 return False
             self._raise_for_target("a stand-in row", exc)
+        self._made.append((table, int(row_id)))
+        self._stand_in_ids[table] = max(self._stand_in_ids.get(table, row_id), row_id)
         return True
+
+    def _undo_stand_ins(self, mark: int) -> None:
+        """Remove the stand-in rows made since ``mark`` (a stand-in that was refused, and the parents it had already made for its keys): a
+        stand-in nobody needs is a row that does not exist in the user's data."""
+        for table, row_id in reversed(self._made[mark:]):
+            try:
+                self.dst.execute(f"DELETE FROM {_ident(table)} WHERE {_ident(self._row_id_alias[table])} = ?", (row_id,))
+            except Exception as exc:  # noqa: BLE001
+                self._raise_for_target("a stand-in row that was not needed", exc)
+        del self._made[mark:]
+        self._stand_in_ids = {}
+        for table, row_id in self._made:
+            self._stand_in_ids[table] = max(self._stand_in_ids.get(table, row_id), row_id)
 
     def _orphans(self) -> None:
         """NOTHING READABLE IS REMOVED (the deep read of E3, NEW-4: the user's R100, local data never gives way). A row whose parent
@@ -984,17 +1046,20 @@ class Salvage:
                     verdict_tables.append(table)
             if verdict_tables:
                 self.report["orphans_verdict_tables"] = verdict_tables
-        stand_ins: dict[str, int] = {}
         reuse: list[str] = []
-        for parent, high in sorted(self._highest_referenced(groups).items()):
+        self._orphan_needs = self._highest_referenced(groups)
+        for parent, high in sorted(self._orphan_needs.items()):
             if parent in self._autoincrement:
                 self._raise_sequence(parent, high)
-            elif self._stand_in(parent, high):
-                stand_ins[parent] = high
+            elif self._stand_in_ids.get(parent, 0) >= high:
+                continue  # a stand-in made for another table's key is above every id an orphan refers to: that id is taken
             else:
-                reuse.append(parent)
-        if stand_ins:
-            self.report["stand_ins"] = stand_ins
+                mark = len(self._made)
+                if not self._stand_in(parent, high):
+                    self._undo_stand_ins(mark)
+                    reuse.append(parent)
+        if self._stand_in_ids:
+            self.report["stand_ins"] = dict(sorted(self._stand_in_ids.items()))
             self.report["stand_ins_note"] = STAND_IN_NOTE
         if reuse:
             self.report["id_reuse_possible"] = reuse

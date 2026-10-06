@@ -24,11 +24,16 @@ WHAT IT DOES.
 * The window BUMPS FIRST: the moment the swap holds it, every connection made before is refused. The repair's last check (whether any
   other connection committed to the file since the copy began) runs after that and before the replace, so a save that lands in the old
   file can only do so before the bump, where the check sees it, never between the check and the replace. If the swap then does NOT
-  happen (a refusal, a replace that failed), the window gives the old connections their validity back: the file is the one they opened.
+  happen AND nothing on disk was changed (a refusal before :func:`disk_changing`), the window gives the old connections their validity back: the
+  file is the one they opened. After the live log names were removed they stay refused, replace or not (:func:`disk_changing`).
 
 WHAT IT DOES NOT COVER. A raw DBAPI cursor on a pooled connection (``engine.raw_connection()``) runs no SQLAlchemy event; the app's
 users of it (the log checkpoint, ``PRAGMA shrink_memory``, the data-version probe) run no DML. A statement already past its own check
-and not yet at SQLite when the bump lands is the window's width (microseconds) and is what the repair's data-version check exists for.
+and not yet at SQLite when the bump lands is the window's width (microseconds), and the repair's data-version check sees a save that
+landed before the bump. A statement that COMMITS ITSELF is wider: Core DDL and Core writes under pysqlite's legacy transaction mode, which
+no gate holds (``analytics/spell_index.py``, ``database/fts.py``, ``database/maintenance.py``, ``database/migrate.py``), can wait out
+``busy_timeout`` PAST the probe's rollback and land in the set-aside file. Those are boot and derived-store steps, never a user's save,
+and ``write_lock()`` at those sites (the write-gate holds PR) is what closes them.
 """
 
 from __future__ import annotations
@@ -64,6 +69,7 @@ _STATE = threading.Lock()  # guards the names below
 _GENERATION = 0
 _VALID: frozenset[int] = frozenset({0})
 _WINDOW_STAMP: int | None = None  # the stamp of a connection the swap itself opens inside its window, while there is one
+_DISK_CHANGED = False  # set inside the window by :func:`disk_changing`: the live log names are being removed or the file replaced
 
 
 def current() -> int:
@@ -187,12 +193,37 @@ def connecting() -> Iterator[None]:
             _LOCK.release_shared()
 
 
+def _first_read(conn: Any) -> None:
+    """ONE read of the schema on a connection just opened, so the file's log names are bound while the lock is still held."""
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+        cur.fetchall()
+    finally:
+        cur.close()
+
+
 def guarded_creator(creator: Callable[[], Any]) -> Callable[[], Any]:
-    """The engine's ``creator`` wrapped so every connection it makes is opened under :func:`connecting`."""
+    """The engine's ``creator`` wrapped so every connection it makes is opened under :func:`connecting`, and READ once under it.
+
+    A plaintext SQLite connection opens the main file at ``connect`` but opens the ``-wal`` and ``-shm`` BY NAME at its first read, and the
+    first read is the engine's ``connect`` listener (the pragmas), which runs AFTER the creator returns and the lock is released. A swap that
+    landed in between bound the NEW file's log names to the OLD file, and the schema read failed as malformed: the damage hook read that as damage
+    in a healthy file. An encrypted connection reads page 1 to check its key, so the one read here is the plaintext one's; it costs a page already
+    in the cache on the other. A connection whose read fails is closed and the error raised from the creator, as an open that failed is."""
 
     def _guarded() -> Any:
         with connecting():
-            return creator()
+            conn = creator()
+            try:
+                _first_read(conn)
+            except BaseException:
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001 - the read's error is what matters
+                    _LOG.debug("library generation: could not close a connection whose first read failed")
+                raise
+            return conn
 
     return _guarded
 
@@ -201,10 +232,14 @@ def guarded_creator(creator: Callable[[], Any]) -> Callable[[], Any]:
 def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[None]:
     """The window in which the library's name is moved onto ``source``: no connection is being opened or can be, every connection made
     before it is refused from its first line (bump first), and when the window ends WITHOUT ``source`` having been moved (it still
-    exists: a refusal, a replace that failed) the earlier connections are valid again. Raises :class:`LibraryBusy` if it cannot be had."""
+    exists) and without :func:`disk_changing` having been called (a refusal before anything was touched) the earlier connections are valid
+    again. Raises :class:`LibraryBusy` if it cannot be had."""
+    global _DISK_CHANGED
     _LOCK.exclusive(timeout)
     earlier = _VALID
     swapped = True  # until the window ends with the source still there
+    with _STATE:
+        _DISK_CHANGED = False
     try:
         bump()
         _open_window()
@@ -212,13 +247,29 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     finally:
         try:
             swapped = not source.exists()
-            if not swapped:
+            with _STATE:
+                changed = _DISK_CHANGED
+            if not swapped and not changed:
                 _revive(earlier)
+            swapped = swapped or changed  # a file whose log names were removed is not the file the old connections opened, replaced or not
         except OSError:  # cannot tell whether the file moved: stale is the safe answer
             _LOG.debug("library generation: could not tell whether the swap happened; the old connections stay refused")
         finally:
             _close_window(swapped=swapped)
             _LOCK.release_exclusive()
+
+
+def disk_changing() -> None:
+    """Called by the swap, inside its window, just BEFORE it removes the live file's ``-wal``/``-shm`` (or replaces the file).
+
+    From then on the connections made before the window are not the library's again, even if the replace fails. A pooled connection
+    reads at connect (the pragmas), so it holds the log by an inode no name points at once the names are removed: a save through it
+    commits into that log, which no later connection opens (a fresh ``-wal`` is made by name), and the file under it can answer
+    ``disk I/O error``. Measured with the app's own connect listener on the engine. A refusal BEFORE this call (the repair's
+    data-version check) changes nothing on disk, and the window still gives the earlier connections their validity back."""
+    global _DISK_CHANGED
+    with _STATE:
+        _DISK_CHANGED = True
 
 
 # --- the guard -------------------------------------------------------------------------------------------------------------
@@ -233,7 +284,7 @@ def _refuse(conn: Any) -> None:
     except Exception:  # noqa: BLE001 - the refusal below is what matters
         _LOG.debug("library generation: could not invalidate a stale connection (it is refused anyway)")
     raise StaleLibraryError(
-        "the library file was replaced while this was open, so nothing was run or saved; do it again"
+        "the library file was replaced, or was being replaced, while this was open, so nothing was run or saved; do it again"
     )
 
 
@@ -250,7 +301,7 @@ def attach(engine: Any) -> None:
     @event.listens_for(engine, "checkout")
     def _refuse_stale_checkout(_dbapi_connection, connection_record, _proxy) -> None:  # noqa: ANN001
         if not valid(connection_record.info.get(_KEY)):
-            raise exc.DisconnectionError("the library file was replaced; this connection belongs to the old one")
+            raise exc.DisconnectionError("the library file was replaced, or was being replaced; this connection belongs to the old one")
 
     @event.listens_for(engine, "before_cursor_execute")
     def _refuse_stale_statement(conn, _cursor, _statement, _parameters, _context, _executemany) -> None:  # noqa: ANN001
