@@ -982,10 +982,10 @@ class ImportQueueManager:
                 run_id=str(rep.get("batch_id") or item.get("id") or ""),
                 secrets=(self._passphrase,),
             )
-        except Exception:  # noqa: BLE001 - a record must never cost the import it records
+        except Exception as exc:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
-                "could not persist the import report of held item %s", item.get("id"),
-                exc_info=True,
+                "could not persist the import report of held item %s (%s)", item.get("id"),
+                type(exc).__name__,
             )
 
     def _stamp_persisted_report(self, item: dict, report: dict) -> None:
@@ -1000,9 +1000,9 @@ class ImportQueueManager:
             annotate_import_report(
                 Path(str(path)), {"import_run": self._run_stamp(item)}, secrets=(self._passphrase,)
             )
-        except Exception:  # noqa: BLE001 - a record must never cost the import it records
+        except Exception as exc:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
-                "could not name the source on the report of %s", item.get("id"), exc_info=True
+                "could not name the source on the report of %s (%s)", item.get("id"), type(exc).__name__
             )
 
     def _after_item(self, item: dict, summary: dict) -> None:
