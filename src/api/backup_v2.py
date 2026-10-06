@@ -42,13 +42,15 @@ from src.scheduler.runner import exclusive_window_open
 _LOG = logging.getLogger("api.backup_v2")
 
 
-def _restore_error(action: str, exc: Exception) -> HTTPException:
+def _restore_error(action: str, exc: Exception, *secrets: str | None) -> HTTPException:
     """Wrap ``classify_restore_error``'s honest detail (P0-2) in a 500.
 
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
+    from src.backup import runlog
     from src.backup.merge import classify_restore_error
 
-    return HTTPException(status_code=500, detail=classify_restore_error(action, exc))
+    detail = str(runlog.scrub_secrets(classify_restore_error(action, exc), *secrets))
+    return HTTPException(status_code=500, detail=detail[: runlog.FAILURE_MSG_KEEP])
 
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
@@ -221,7 +223,9 @@ def restore_legacy_path(
     from src.backup.volume_job import defer_reindex, hand_off_reindex
 
     try:
-        with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
+        with runlog.run(
+            "import", label=p.name, dest=str(p), secrets=(passphrase,), legacy_single_file=True
+        ):
             report = run_restore(
                 staged,
                 commit=True,
@@ -253,8 +257,11 @@ def restore_legacy_path(
     except HTTPException:
         raise
     except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
-        _LOG.exception("legacy restore failed")
-        raise _restore_error("restore", exc) from exc
+        # Written from the scrubbed fields, never with exc_info: the engine's text can quote the
+        # passphrase in scope here, and the log rides the debug bundle.
+        fields = runlog.failure_fields(exc, passphrase)
+        _LOG.warning("legacy restore failed: %s\n%s", fields["msg"], fields["traceback"])
+        raise _restore_error("restore", exc, passphrase) from exc
     finally:
         cleanup_staging(staged)
 

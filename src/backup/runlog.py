@@ -873,7 +873,9 @@ def scrub_secrets(value: Any, *secrets: str | None) -> Any:
     """``value`` (a string, or the dicts, lists and strings of a report) with the secrets taken out in
     every form, then CHECKED once more (over the string values only) so that fail-closed holds by
     construction: a result that still holds a form, or any error at all, gives ``FAILURE_WITHHELD`` for a string and ``{"withheld": ...}``
-    for a report. Never the unscrubbed value."""
+    for a report. Never a value that still holds a form in its strings. Only str, dict, list and tuple
+    are walked: bytes, sets and other objects pass through unchanged, and a report or journal field
+    holds none of them."""
     try:
         from src.monitoring.secret_scrub import scrub_value
 
@@ -930,7 +932,14 @@ def statement(label: str | None) -> None:
 
 
 @contextmanager
-def run(kind: str, *, label: str = "", dest: str | None = None, **header: Any) -> Iterator[Any]:
+def run(
+    kind: str,
+    *,
+    label: str = "",
+    dest: str | None = None,
+    secrets: tuple[str | None, ...] = (),
+    **header: Any,
+) -> Iterator[Any]:
     """Open a run for the duration of a block, closing it however the block ends.
 
     This is what makes coverage a PROPERTY rather than a checklist. Hand-wiring
@@ -942,12 +951,15 @@ def run(kind: str, *, label: str = "", dest: str | None = None, **header: Any) -
     A block that wants a more specific outcome than "ok" simply calls
     :func:`end` itself; the exits here are no-ops once a run has been closed, so
     an explicit outcome always wins over the generic one.
+
+    ``secrets`` are passphrases the block holds besides the process's own; they are taken out of a
+    failure's text before it is journalled, and are never written to the header.
     """
     rl = begin(kind, label=label, dest=dest, **header)
     try:
         yield rl
     except BaseException as exc:
-        milestone("error", **failure_fields(exc))
+        milestone("error", **failure_fields(exc, *secrets))
         end("error", cls=type(exc).__name__)
         raise
     else:

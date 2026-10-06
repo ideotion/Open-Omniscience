@@ -981,7 +981,10 @@ class ImportQueueManager:
             )
             out["import_run"] = self._run_stamp(item)
             persist_import_report(
-                "restore", out, run_id=str(rep.get("batch_id") or item.get("id") or "")
+                "restore",
+                out,
+                run_id=str(rep.get("batch_id") or item.get("id") or ""),
+                secrets=(self._passphrase,),
             )
         except Exception:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
@@ -998,7 +1001,9 @@ class ImportQueueManager:
                 return
             from src.backup.import_reports import annotate_import_report
 
-            annotate_import_report(Path(str(path)), {"import_run": self._run_stamp(item)})
+            annotate_import_report(
+                Path(str(path)), {"import_run": self._run_stamp(item)}, secrets=(self._passphrase,)
+            )
         except Exception:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
                 "could not name the source on the report of %s", item.get("id"), exc_info=True

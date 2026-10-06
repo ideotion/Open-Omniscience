@@ -161,3 +161,119 @@ def test_a_run_block_that_raises_journals_the_failure_scrubbed(tmp_path, caplog)
     journal = "\n".join(p.read_text(encoding="utf-8") for p in Path(runlog.run_logs_dir()).glob("*.jsonl"))
     assert "driver said" in journal, "the failure is still journalled"
     assert not _leaks(journal, _CORPUS_PW)
+
+
+# ---------------------------------------------------------------------------------------------- #
+#  the persisted import report
+# ---------------------------------------------------------------------------------------------- #
+def _report_quoting(secret: str) -> dict:
+    """A report as the restore builds it: engine check text in ``verification`` and ``problems``."""
+    quoted = " | ".join(_forms(secret))
+    return {
+        "batch_id": 7,
+        "imported": 12,
+        "verification": {"integrity": f"database said: {quoted}"},
+        "problems": [f"row 3: {quoted}", "fine"],
+        "refused": f"driver: {quoted}",
+    }
+
+
+def _report_files() -> str:
+    from src.backup.import_reports import _reports_dir
+
+    return "\n".join(p.read_text(encoding="utf-8") for p in _reports_dir().glob("*.json"))
+
+
+def test_a_persisted_report_carries_no_passphrase_in_any_form():
+    from src.backup.import_reports import persist_import_report
+
+    path = persist_import_report("restore", _report_quoting(_PW), run_id="r1", secrets=(_PW,))
+    text = path.read_text(encoding="utf-8")
+    assert not _leaks(text, _PW, _CORPUS_PW)
+    data = json.loads(text)
+    assert data["batch_id"] == 7 and data["imported"] == 12 and data["problems"][1] == "fine"
+    # the process's own passphrase is taken out too, without being named
+    persist_import_report("restore", _report_quoting(_CORPUS_PW), run_id="r2")
+    assert not _leaks(_report_files(), _CORPUS_PW)
+
+
+def test_an_annotation_carries_no_passphrase_either(tmp_path):
+    from src.backup.import_reports import annotate_import_report, persist_import_report
+
+    path = persist_import_report("restore", {"batch_id": 1}, run_id="r3")
+    annotate_import_report(path, {"import_run": {"label": f"folder {_PW}"}}, secrets=(_PW,))
+    text = path.read_text(encoding="utf-8")
+    assert not _leaks(text, _PW) and "import_run" in text
+
+
+def test_a_report_that_cannot_be_checked_is_withheld_not_written(monkeypatch):
+    import src.monitoring.secret_scrub as ss
+    from src.backup.import_reports import persist_import_report
+
+    monkeypatch.setattr(ss, "scrub_value", lambda value, needle: value)  # "succeeds", scrubs nothing
+    path = persist_import_report("restore", _report_quoting(_PW), run_id="r4", secrets=(_PW,))
+    text = path.read_text(encoding="utf-8")
+    assert not _leaks(text, _PW) and "withheld" in text
+
+
+def test_the_import_queue_hands_its_passphrase_to_the_report_writers(tmp_path):
+    from src.backup.import_queue import ImportQueueManager
+
+    mgr = ImportQueueManager()
+    mgr._passphrase = _PW
+    item = {"id": "i1", "summary": {"report": {**_report_quoting(_PW), "held": True}}}
+    mgr._persist_held_report(item, {"label": "next"})
+    assert _report_files() and not _leaks(_report_files(), _PW)
+
+
+# ---------------------------------------------------------------------------------------------- #
+#  the legacy restore path, the restore's refusal branches, the run's own secrets
+# ---------------------------------------------------------------------------------------------- #
+def test_a_failed_legacy_restore_logs_and_serves_no_passphrase(tmp_path, caplog, monkeypatch):
+    from fastapi import HTTPException
+
+    import src.api.backup_v2 as v2
+
+    f = tmp_path / "b.oo"
+    f.write_bytes(b"x")
+    monkeypatch.setattr(v2, "check_memory_before_staging", lambda: None)
+
+    class _Staged:
+        staging_dir = tmp_path / "stg"
+
+    monkeypatch.setattr(v2, "_stage_upload", lambda data, pw: _Staged())
+    monkeypatch.setattr(v2, "_apply_restore_selection", lambda *a, **k: None)
+    monkeypatch.setattr(v2, "cleanup_staging", lambda s: None)
+
+    def boom(*_a, **_k):
+        raise _quoting(_PW, _CORPUS_PW)
+
+    monkeypatch.setattr(v2, "run_restore", boom)
+    with caplog.at_level(logging.DEBUG), pytest.raises(HTTPException) as hit:
+        v2.restore_legacy_path(str(f), _PW)
+    assert not _leaks(str(hit.value.detail) + _everything_written(caplog), _PW, _CORPUS_PW)
+    assert not any(r.exc_info for r in caplog.records), "a raw traceback was logged"
+
+
+def test_the_restore_refusal_and_stop_branches_scrub_what_they_journal_log_and_serve(tmp_path, caplog):
+    from src.backup.merge import RestoreAborted, RestoreRefused
+
+    for exc_type, state in ((RestoreRefused, "error"), (RestoreAborted, "cancelled")):
+
+        def fail(*_a, _t=exc_type, **_k):
+            raise _t("said: " + " | ".join(_forms(_PW) + _forms(_CORPUS_PW)))
+
+        mgr = VolumeBackupManager()
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            mgr._run_restore(tmp_path / "set", _PW, False, _CORPUS_PW, fail)
+        st = mgr.status()
+        assert st["state"] == state
+        assert not _leaks(json.dumps(st) + _everything_written(caplog), _PW, _CORPUS_PW)
+
+
+def test_a_run_given_secrets_scrubs_them_and_never_writes_them_to_the_header(tmp_path):
+    with pytest.raises(RuntimeError), runlog.run("verify", label="x", dest=str(tmp_path), secrets=(_PW,)):
+        raise _quoting(_PW)
+    journal = "\n".join(p.read_text(encoding="utf-8") for p in Path(runlog.run_logs_dir()).glob("*.jsonl"))
+    assert "driver said" in journal and not _leaks(journal, _PW)

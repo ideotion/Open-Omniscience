@@ -864,10 +864,15 @@ class VolumeBackupManager:
                                 should_stop=self._stop.is_set,
                             )
                         except Exception as exc:  # noqa: BLE001 - never lose a good merge
-                            _LOG.warning("placing the artifact's large files failed", exc_info=True)
+                            placing = runlog.failure_fields(exc, passphrase, corpus_passphrase)
+                            _LOG.warning(
+                                "placing the artifact's large files failed: %s\n%s",
+                                placing["msg"],
+                                placing["traceback"],
+                            )
                             report["file_members"] = {
                                 "placed": 0,
-                                "error": str(exc),
+                                "error": placing["msg"],
                                 "method": (
                                     "The corpus restored; putting the large public files "
                                     "back did not. They are re-downloadable, and the "
@@ -922,22 +927,24 @@ class VolumeBackupManager:
             # actionable sentence ("another job is still writing to your corpus (...)",
             # naming the holder) was dropped on the way to the UI and the operator got
             # a bare "cancelled".
-            _LOG.warning("volume restore refused before the swap: %s", exc)
-            runlog.end("refused", detail=str(exc)[:500])
+            said = runlog.failure_fields(exc, passphrase, corpus_passphrase)["msg"]
+            _LOG.warning("volume restore refused before the swap: %s", said)
+            runlog.end("refused", detail=said[:500])
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
-                self._progress = {"phase": "refused", "detail": str(exc)}
+                self._error = said
+                self._progress = {"phase": "refused", "detail": said}
         except RestoreAborted as exc:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
-            _LOG.info("volume restore stopped by the operator: %s", exc)
-            runlog.end("stopped-by-operator", detail=str(exc)[:500])
+            said = runlog.failure_fields(exc, passphrase, corpus_passphrase)["msg"]
+            _LOG.info("volume restore stopped by the operator: %s", said)
+            runlog.end("stopped-by-operator", detail=said[:500])
             with self._lock:
                 self._state = "cancelled"
                 self._error = None
-                self._progress = {"phase": "cancelled", "detail": str(exc)}
+                self._progress = {"phase": "cancelled", "detail": said}
         except Exception as exc:  # noqa: BLE001
             fields = runlog.failure_fields(exc, passphrase, corpus_passphrase)
             _LOG.warning("volume restore failed: %s\n%s", fields["msg"], fields["traceback"])
