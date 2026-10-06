@@ -634,7 +634,7 @@ def unlock(body: PassphraseBody) -> dict:
             held = get_passphrase()
             if held is not None:
                 if not hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
-                    raise HTTPException(status_code=403, detail="wrong passphrase")
+                    raise HTTPException(status_code=403, detail="Wrong passphrase — try again.")
                 return {"unlocked": True, "state": "unlocked-encrypted"}
         return _unlock_locked(body, p)
 
