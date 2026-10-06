@@ -46,8 +46,9 @@ last night was a 17-minute plateau at 44-60 MB available with the memory guard e
 slide into it was snapshotted (one per new low), the plateau -- where whatever was holding
 the memory could be read -- was not, by design ("none while memory sits on a plateau"). So
 the moment the memory guard engages is its own snapshot, and a machine that is still below
-the line, or still engaged, is snapshotted again every ``_PLATEAU_INTERVAL_S``. Every
-snapshot also says whether the guard was engaged when it was taken.
+the line, or still engaged, is snapshotted again every ``_PLATEAU_INTERVAL_S``. A
+snapshot taken while the guard was engaged says so (a ``guard`` block); one without it was taken
+with the guard not engaged, off or unreadable, which this record does not tell apart.
 
 HONESTY RULES BAKED IN
 - A field that cannot be measured is OMITTED, never written as 0. ``rss_max_mb: 0``
@@ -125,6 +126,46 @@ _BURST_MIN_INTERVAL_S = 300.0
 # the kernel's counters and ``sys.getallocatedblocks()`` (a counter); never a walk of the
 # heap's objects, which at 90 million blocks is the very work that could end the process.
 _PLATEAU_INTERVAL_S = 300.0
+# NEAR the memory guard's line, a LIGHT snapshot is taken far more often, because the heavy cadence
+# above (five minutes) lets a kill come between two of them: the October VMs died within seconds of
+# the last one, and a fatal slide measured ~20 MB/s, which is under 20 s from 384 MB available to
+# none. "Near" is within 1.5 times the guard's own line (available memory at most 1.5 times its
+# floor, or the process at least 1/1.5 of the share of RAM at which it trips), or the guard
+# engaged. A light snapshot is the kernel's counters, the Python block count and what it gained
+# since the previous light one, and the few threads that spent the most CPU since then, each with
+# its stack: no walk of every thread, no heap. It is kept in its OWN ring and file, so a day of them
+# never pushes the heavy snapshots out, and the heavy cadence is unchanged. A per-thread MEMORY
+# figure cannot be had cheaply (CPython has no per-thread heap accounting and ``tracemalloc``
+# multiplies the cost of every allocation on the machine about to be killed), so the blocks the
+# process gained sit beside each thread's CPU delta and the pairing is labelled an INFERENCE.
+_LIGHT_FILE = "session_pressure_light.json"
+_LIGHT_INTERVAL_S = 15.0
+_LIGHT_NEAR_FACTOR = 1.5
+_LIGHT_KEEP = 8
+_LIGHT_THREADS = 3
+# CPU is read for at most this many working threads: every read waits for the GIL under a burst
+# (see ``_thread_cpu``), so the cost is bounded by this, not by the thread count.
+_LIGHT_CPU_CANDIDATES = 16
+# Bytes kept back in :func:`diagnostics_member` for the digits of the counts it fills in after measuring.
+_MEMBER_SLACK = 32
+# What the light snapshots are, stated beside them wherever they are shown.
+_LIGHT_METHOD = (
+    "taken at most every 15 s (a tick that a heavy snapshot takes is skipped, so the gap can be "
+    "longer) while available memory is within 1.5 times the memory guard's floor, the process "
+    "holds at least 1/1.5 of the share of RAM at which the guard trips, or the guard is engaged: "
+    "the kernel's memory counters, the Python block count and the blocks gained since the previous "
+    "light snapshot (over_s says over how long, for the threads' CPU too), and the threads that "
+    "spent the most CPU in that time, with their stacks, chosen among the first 16 working threads "
+    "found (cpu_asked_for says how many the CPU was asked for and cpu_read_for how many it was read "
+    "for, of working_threads; where the platform cannot read a thread's CPU, thread_cpu says so and "
+    "the threads are not ranked). Memory is not measured per thread (CPython has no such counter): "
+    "the pairing of the blocks gained with the busiest threads is an INFERENCE about who allocated. "
+    "took_ms is the time to take the readings and choose the threads; writing the file is not in it. "
+    "The file is replaced whole and atomically (it survives the process being killed) but is not "
+    "fsynced: a hard stop of the machine itself can lose the newest seconds, or, on a filesystem that "
+    "does not flush a replaced file when it is renamed, the whole file; and a replace that another "
+    "program's hold on the file refuses (Windows) leaves that snapshot unwritten, with a log line."
+)
 # A thread whose innermost frame is in one of these is waiting, not working: a lock, a
 # queue, a socket, the event loop's select.
 _WAITING_IN = ("threading.py", "queue.py", "selectors.py", "socket.py", "ssl.py")
@@ -151,6 +192,11 @@ _EPISODE_LOW: float | None = None  # lowest available at a snapshot; None = no e
 _LAST_BLOCKS: tuple[float, int] | None = None  # (monotonic, blocks) at the last liveness read
 _LAST_BURST = _NEVER
 _GUARD_WAS_ENGAGED = False  # the memory guard's state at the previous liveness reading
+_LIGHT: list[dict[str, Any]] = []
+_LIGHT_TAKEN = 0
+_LIGHT_FAILED = 0  # light snapshots that raised, this session (their count is in the marks)
+_LAST_LIGHT = _NEVER
+_LIGHT_BASELINE: dict[str, Any] | None = None  # {"at", "blocks", "cpu": {tid: s}} of the last light one
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
 
@@ -473,48 +519,95 @@ def _frame_line(frame: types.FrameType) -> str:
     return f"{_short_path(frame.f_code.co_filename)}:{frame.f_lineno} {frame.f_code.co_name}"
 
 
+def _linux_thread_clock(tid: int) -> int:
+    """The kernel's CPU-time clock id of the thread with kernel id ``tid`` (the scheduler-time flavour,
+    ``MAKE_THREAD_CPUCLOCK(tid, CPUCLOCK_SCHED)`` of ``linux/posix-timers.h``: the same number
+    ``pthread_getcpuclockid`` returns on glibc and musl, and a stable part of the kernel's interface)."""
+    return ((~tid) << 3) | 6
+
+
 def _thread_cpu(tids: list[int]) -> dict[int, float]:
     """CPU seconds (user + system) of the given kernel thread ids; a thread whose time
     cannot be read is absent.
 
-    Only the threads asked for: every file read releases the GIL, and under a thread
-    that holds it (the very burst being recorded) each one waits a switch interval --
-    psutil's scan of all forty-odd threads measured 0.5-0.7 s that way, against a few
-    ms for the handful that are working. On Linux one ``/proc`` read each; elsewhere
-    psutil, whose thread list there is one native call (on macOS its ids are not the
-    ones ``threading`` reports, so nothing matches and the time is absent)."""
+    Only the threads asked for. On Linux by the thread's own kernel CPU clock
+    (:func:`_linux_thread_clock` and ``clock_gettime``): one system call that never releases the GIL,
+    measured 0.01-0.12 ms for four to twenty busy threads, where every ``/proc`` read waits for the GIL
+    and under a thread that holds it (the very burst being recorded) each one waits a switch
+    interval -- eight reads took 1.2-1.7 s with eight busy threads, psutil's scan of all forty-odd
+    0.5-0.7 s. The id used is the KERNEL's thread id (``native_id``), never a ``pthread_t``:
+    ``pthread_getcpuclockid`` dereferences the thread's own record, which another thread's ``join`` can free
+    between the lookup and the call (a segfault, and a recycled record read as ANOTHER thread's clock,
+    both reproduced at a 1 microsecond switch interval), where a kernel id that no longer names a thread
+    is only an error, ``EINVAL``, and a tid of another process is one too. A thread the clock refuses
+    falls back to one ``/proc`` read; on other platforms psutil, whose thread list there is one native call
+    (on macOS its ids are not the ones ``threading`` reports, so nothing matches and the time is absent)."""
     out: dict[int, float] = {}
     if not tids:
         return out
+    rest = list(tids)
+    if sys.platform.startswith("linux") and hasattr(time, "clock_gettime"):
+        rest = []
+        for tid in tids:
+            try:
+                out[tid] = round(time.clock_gettime(_linux_thread_clock(tid)), 2)
+            except (OSError, OverflowError, ValueError, AttributeError):
+                rest.append(tid)
+        if not rest:
+            return out
     if sys.platform.startswith("linux"):
         try:
             tick = float(os.sysconf("SC_CLK_TCK"))
         except (ValueError, OSError):
             return out
-        for tid in tids:
+        for tid in rest:
             try:
                 raw = Path(f"/proc/self/task/{tid}/stat").read_bytes()
                 # fields after the ")" that closes the name: utime and stime are the
                 # 12th and 13th (fields 14 and 15 of proc(5)), in clock ticks
                 fields = raw.rsplit(b")", 1)[1].split()
-                out[tid] = round((int(fields[11]) + int(fields[12])) / tick, 1)
+                out[tid] = round((int(fields[11]) + int(fields[12])) / tick, 2)
             except (OSError, IndexError, ValueError):
                 continue
         return out
     try:
         import psutil
 
-        want = set(tids)
+        want = set(rest)
         for t in psutil.Process().threads():
             if int(t.id) in want:
-                out[int(t.id)] = round(float(t.user_time) + float(t.system_time), 1)
+                out[int(t.id)] = round(float(t.user_time) + float(t.system_time), 2)
     except Exception:  # noqa: BLE001 - CPU time is an optional reading
-        return {}
+        return out
     return out
 
 
 def _is_waiting(innermost: str) -> bool:
     return innermost.split(":", 1)[0] in _WAITING_IN
+
+
+def _stack_of(frame: types.FrameType) -> list[str]:
+    """The innermost frame, then up to ``_STACK_APP_FRAMES`` of the app's own frames above it
+    (innermost first); with no app frame at all, the thread's own entry point."""
+    stack = [_frame_line(frame)]
+    f: types.FrameType | None = frame.f_back
+    seen = 0
+    app_frames = 1 if stack[0].startswith("src/") else 0
+    # With no app frame at all (a server loop, an idle pool worker), the thread's
+    # own entry point is the next best name for what it is.
+    entry_point: str | None = None
+    while f is not None and seen < _STACK_WALK_MAX and app_frames < _STACK_APP_FRAMES:
+        line = _frame_line(f)
+        if line.startswith("src/"):
+            stack.append(line)
+            app_frames += 1
+        elif not line.startswith("threading.py"):
+            entry_point = line
+        f = f.f_back
+        seen += 1
+    if app_frames == 0 and entry_point and entry_point != stack[0]:
+        stack.append(entry_point)
+    return stack
 
 
 def thread_snapshot() -> list[dict[str, Any]]:
@@ -543,24 +636,7 @@ def thread_snapshot() -> list[dict[str, Any]]:
             entry["tid"] = native
         if ident == me:
             entry["sampler"] = True
-        stack = [_frame_line(frame)]
-        f: types.FrameType | None = frame.f_back
-        seen = 0
-        app_frames = 1 if stack[0].startswith("src/") else 0
-        # With no app frame at all (a server loop, an idle pool worker), the thread's
-        # own entry point is the next best name for what it is.
-        entry_point: str | None = None
-        while f is not None and seen < _STACK_WALK_MAX and app_frames < _STACK_APP_FRAMES:
-            line = _frame_line(f)
-            if line.startswith("src/"):
-                stack.append(line)
-                app_frames += 1
-            elif not line.startswith("threading.py"):
-                entry_point = line
-            f = f.f_back
-            seen += 1
-        if app_frames == 0 and entry_point and entry_point != stack[0]:
-            stack.append(entry_point)
+        stack = _stack_of(frame)
         entry["stack"] = stack
         if _is_waiting(stack[0]):
             entry["waiting"] = True
@@ -586,6 +662,10 @@ def _path() -> Path:
 
 def _pressure_path() -> Path:
     return data_dir() / _PRESSURE_FILE
+
+
+def _light_path() -> Path:
+    return _path().with_name(_LIGHT_FILE)
 
 
 def _now() -> str:
@@ -627,6 +707,15 @@ def _read_record() -> dict[str, Any] | None:
     ):
         got["pressure"] = pressure["snapshots"]
         got["pressure_taken"] = pressure.get("taken")
+    light = _read(_light_path())
+    if (
+        light
+        and light.get("pid") == got.get("pid")
+        and light.get("started_at") == got.get("started_at")
+        and isinstance(light.get("snapshots"), list)
+    ):
+        got["pressure_light"] = light["snapshots"]
+        got["pressure_light_taken"] = light.get("taken")
     return got
 
 
@@ -793,12 +882,139 @@ def _pressure_snapshot(
     return snap
 
 
+def _guard_line() -> tuple[float | None, float | None]:
+    """The memory guard's own line as (available-memory floor in MB, RSS share of RAM in percent),
+    each ``None`` when it cannot be read. Plain attributes, no lock: read even when the guard is
+    switched off, because the line is still where memory becomes dangerous."""
+    try:
+        from src.scheduler import memguard
+
+        g = memguard.memory_guard
+        floor, pct = getattr(g, "avail_floor_mb", None), getattr(g, "rss_pct", None)
+        return (
+            float(floor) if isinstance(floor, int | float) and floor > 0 else None,
+            float(pct) if isinstance(pct, int | float) and pct > 0 else None,
+        )
+    except Exception:  # noqa: BLE001 - the guard is optional context, never a failure
+        return None, None
+
+
+def _light_near(readings: dict[str, float], guard: dict[str, Any] | None) -> str | None:
+    """Why the machine is NEAR the memory guard's line (see ``_LIGHT_NEAR_FACTOR``), or None."""
+    if guard and guard.get("engaged"):
+        return "memory guard engaged"
+    floor, pct = _guard_line()
+    avail, total, rss = readings.get("avail_mb"), readings.get("total_mb"), readings.get("rss_mb")
+    if avail is not None and floor is not None and avail <= floor * _LIGHT_NEAR_FACTOR:
+        return "available memory near the guard's floor"
+    if rss is not None and total and pct is not None and 100.0 * rss / total >= pct / _LIGHT_NEAR_FACTOR:
+        return "process memory near the guard's share"
+    return None
+
+
+def _light_due(readings: dict[str, float], guard: dict[str, Any] | None, now: float) -> str | None:
+    """Why this reading earns a LIGHT snapshot, or None; CLAIMED under the lock."""
+    global _LAST_LIGHT
+    why = _light_near(readings, guard)
+    if why is None:
+        return None
+    with _LOCK:
+        if (now - _LAST_LIGHT) < _LIGHT_INTERVAL_S:
+            return None
+        _LAST_LIGHT = now
+    return why
+
+
+def _busiest_threads(
+    previous_cpu: dict[int, float],
+) -> tuple[list[dict[str, Any]], dict[int, float], int, int]:
+    """The ``_LIGHT_THREADS`` working threads that spent the most CPU since ``previous_cpu``, with
+    their stacks; the CPU reading of every candidate (the next call's baseline); how many threads
+    were working; and for how many of them the CPU was ASKED for (the first ``_LIGHT_CPU_CANDIDATES``
+    found, not the busiest: which are busiest is what the read decides; the readings returned say how many
+    of those it got). Only the threads whose innermost frame is not a wait are read at all, and only the
+    busiest get a stack. A thread the previous reading did not see has no delta (absent, never its
+    lifetime total presented as recent), and ranks after those that have one."""
+    frames = sys._current_frames()
+    by_ident = {t.ident: t for t in threading.enumerate()}
+    me = threading.get_ident()
+    working: list[tuple[Any, types.FrameType, int]] = []
+    for ident, frame in frames.items():
+        if ident == me or _is_waiting(_frame_line(frame)):
+            continue
+        thread = by_ident.get(ident)
+        native = getattr(thread, "native_id", None) if thread else None
+        if native is not None:
+            working.append((thread, frame, native))
+    candidates = working[:_LIGHT_CPU_CANDIDATES]
+    cpu = _thread_cpu([native for _t, _f, native in candidates])
+    ranked: list[tuple[float | None, float, Any, types.FrameType, int]] = []
+    for thread, frame, native in candidates:
+        c = cpu.get(native)
+        delta = round(c - previous_cpu[native], 1) if c is not None and native in previous_cpu else None
+        ranked.append((delta, c if c is not None else 0.0, thread, frame, native))
+    ranked.sort(key=lambda r: (r[0] is None, -(r[0] or 0.0), -r[1]))
+    out: list[dict[str, Any]] = []
+    for delta, _c, thread, frame, native in ranked[:_LIGHT_THREADS]:
+        entry: dict[str, Any] = {"name": thread.name, "tid": native, "stack": _stack_of(frame)}
+        if native in cpu:
+            entry["cpu_s"] = cpu[native]
+        if delta is not None:
+            entry["cpu_delta_s"] = delta
+        out.append(entry)
+    del frames
+    return out, cpu, len(working), len(candidates)
+
+
+def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] | None) -> dict[str, Any]:
+    """One LIGHT snapshot (see ``_LIGHT_NEAR_FACTOR``). Called by the liveness thread alone; the
+    baseline it measures against is the previous light snapshot's. It says how long it took
+    (``took_ms``: the readings and the choice of threads, not the write of the file, which
+    ``observe`` does after it): an instrument that runs on the machine it watches shows its own
+    cost."""
+    global _LIGHT_BASELINE
+    t0 = time.perf_counter()
+    mono = time.monotonic()
+    snap: dict[str, Any] = {"at": _now(), "why": why}
+    if guard and guard.get("engaged"):
+        snap["guard"] = guard
+    for key in ("avail_mb", "total_mb", "rss_mb", "swap_used_mb"):
+        if readings.get(key) is not None:
+            snap[key] = readings[key]
+    snap["memory"] = composition(walk_heap=False)
+    with _LOCK:
+        before = _LIGHT_BASELINE
+    threads, cpu, working, asked_for = _busiest_threads(before["cpu"] if before else {})
+    blocks = snap["memory"].get("py_alloc_blocks")
+    if before is not None:
+        # The time the deltas are over, beside the threads' CPU as well as the blocks: the first
+        # snapshot of a new episode measures against the last one of the previous, hours earlier.
+        snap["over_s"] = round(mono - before["mono"], 1)
+        if isinstance(blocks, int) and isinstance(before.get("blocks"), int):
+            snap["blocks_gained"] = blocks - before["blocks"]
+    snap["working_threads"] = working
+    # The threads the CPU was asked for and the ones it was READ for are not the same number: on a platform
+    # that cannot read a thread's CPU (macOS without a matching id, a host without psutil) nothing is read,
+    # and the threads below are then the first found, not the busiest -- said, never left to be assumed.
+    snap["cpu_asked_for"] = asked_for
+    snap["cpu_read_for"] = len(cpu)
+    if asked_for and not cpu:
+        snap["thread_cpu"] = "unavailable on this platform: the threads below are not ranked by CPU"
+    snap["threads"] = threads
+    with _LOCK:
+        _LIGHT_BASELINE = {"mono": mono, "blocks": blocks, "cpu": cpu}
+    snap["took_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    return snap
+
+
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
-    global _GUARD_WAS_ENGAGED
+    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE, _LIGHT_FAILED
     _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
     _LAST_BLOCKS, _LAST_BURST, _GUARD_WAS_ENGAGED = None, _NEVER, False
+    _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE = [], 0, _NEVER, None
+    _LIGHT_FAILED = 0
 
 
 def capture_previous() -> dict[str, Any] | None:
@@ -815,10 +1031,11 @@ def capture_previous() -> dict[str, Any] | None:
         _LAST_WRITE = _NEVER
         _reset_snapshots()
         _write(dict(_MARKS))
-        try:
-            _pressure_path().unlink(missing_ok=True)
-        except OSError:
-            _LOG.debug("could not reset %s", _PRESSURE_FILE, exc_info=True)
+        for stale in (_pressure_path(), _light_path()):
+            try:
+                stale.unlink(missing_ok=True)
+            except OSError:
+                _LOG.debug("could not reset %s", stale.name, exc_info=True)
         return _PREV
 
 
@@ -840,11 +1057,13 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
     a burst that holds the GIL a snapshot measured 0.3-0.6 s, which that thread can
     spare and the collector's monitor -- which feeds the memory guard every 1.5 s, at
     exactly that moment -- cannot."""
-    global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN
+    global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
     try:
         readings = _readings()
         now = time.monotonic()
         pressure = None
+        light = None
+        light_failure: str | None = None
         if may_snapshot_threads:
             # The burst reading is taken on every call, so its baseline is always the
             # previous 5 s reading, even when this call is a memory-short snapshot.
@@ -859,6 +1078,16 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 pressure = _pressure_snapshot(readings, "allocation burst", guard)
             if pressure is not None and burst is not None:
                 pressure.update(burst)
+            if pressure is None and (near := _light_due(readings, guard, now)) is not None:
+                try:
+                    light = _light_snapshot(readings, near, guard)
+                except Exception as exc:  # noqa: BLE001 - its own failure must not skip the marks below
+                    # (retried at the next 15 s claim, which ``_light_due`` already made). Never silent: the
+                    # first failure of a session is a WARNING and every one is counted in the marks, because
+                    # "no light snapshot" must not read the same as "never near the line".
+                    _LOG.debug("light pressure snapshot failed", exc_info=True)
+                    first = str(exc).splitlines()[0][:160] if str(exc) else ""
+                    light_failure = f"{type(exc).__name__}: {first}"
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
         at_peak = None
@@ -905,6 +1134,26 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                     "kept": _PRESSURE_KEEP,
                     "snapshots": list(_PRESSURE),
                 }
+            first_light_failure = False
+            if light_failure is not None:
+                _LIGHT_FAILED += 1
+                first_light_failure = _LIGHT_FAILED == 1
+                _MARKS["pressure_light_failed"] = _LIGHT_FAILED
+                _MARKS["pressure_light_last_failure"] = light_failure
+            light_doc: dict[str, Any] = {}
+            if light is not None:
+                _LIGHT.append(light)
+                del _LIGHT[:-_LIGHT_KEEP]
+                _LIGHT_TAKEN += 1
+                _MARKS["pressure_light_taken"] = _LIGHT_TAKEN
+                light_doc = {
+                    "pid": _MARKS.get("pid"),
+                    "started_at": _MARKS.get("started_at"),
+                    "taken": _LIGHT_TAKEN,
+                    "kept": _LIGHT_KEEP,
+                    "method": _LIGHT_METHOD,
+                    "snapshots": list(_LIGHT),
+                }
             if rss is not None:
                 prev = _MARKS.get("rss_max_mb")
                 if prev is None or rss > prev:
@@ -932,6 +1181,13 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 snapshot = {}
         if pressure_doc:
             _write(pressure_doc, _pressure_path())
+        if first_light_failure:
+            _LOG.warning(
+                "a light pressure snapshot failed (%s); the count is in the session marks as pressure_light_failed",
+                light_failure,
+            )
+        if light_doc:
+            _write(light_doc, _light_path())
         if snapshot:
             _write(snapshot)
     except Exception:  # noqa: BLE001 - a forensic sidecar never raises into its caller
@@ -958,7 +1214,70 @@ def current() -> dict[str, Any]:
         out = dict(_MARKS)
         if _PRESSURE:
             out["pressure"] = list(_PRESSURE)
+        if _LIGHT:
+            out["pressure_light"] = list(_LIGHT)
         return out
+
+
+def _fit_newest(items: list[Any], budget: int) -> tuple[list[Any], int]:
+    """The newest of ``items`` (oldest first) whose JSON fits ``budget`` bytes, and how many older
+    ones were dropped. The size is measured on what would be written, never estimated."""
+    kept = list(items)
+    while kept and len(json.dumps(kept, separators=(",", ":"), default=str)) > budget:
+        kept.pop(0)
+    return kept, len(items) - len(kept)
+
+
+def diagnostics_member(max_bytes: int) -> dict[str, Any]:
+    """The pressure TAIL as one diagnostics-bundle member (the slot contract planned for the single
+    Diagnostics zip of R119: ``(max_bytes) -> dict``, never raises, keeps the newest, names the cut).
+    It is not called at this head: the slot table is built with the button (PR D of the
+    diagnostics-redesign plan), which says which member carries what.
+
+    It carries the minutes before a kill and nothing else about memory: the LIGHT snapshots of this
+    session and of the previous one (the previous session's tail is the one an unclean end is read
+    from), each ring cut oldest-first to its half of what the member's fixed part leaves, with the
+    count dropped. A budget that cannot hold the fixed part gets a short note saying so (a member
+    larger than the budget only when the budget is smaller than that note itself, about 85 bytes), never
+    a truncated snapshot. The previous session's light ring is also copied into
+    ``session-forensics.json`` (``previous_session_peaks.pressure_light``), so the two files carry the same
+    snapshots until the slot table decides which one keeps them. Counts, times, sizes and stack
+    locations only."""
+    try:
+        budget = int(max_bytes)
+        prev = previous() or {}
+        now = current()
+        out: dict[str, Any] = {
+            "method": _LIGHT_METHOD,
+            "interval_s": _LIGHT_INTERVAL_S,
+            "kept_per_session": _LIGHT_KEEP,
+            "this_session": {
+                "taken": now.get("pressure_light_taken"),
+                "snapshots": [],
+                "dropped_oldest_to_fit": 0,
+            },
+            "previous_session": {
+                "taken": prev.get("pressure_light_taken"),
+                "snapshots": [],
+                "dropped_oldest_to_fit": 0,
+                "started_at": prev.get("started_at"),
+                "found": bool(prev),
+            },
+        }
+        fixed = len(json.dumps(out, separators=(",", ":"), default=str))
+        room = budget - fixed - _MEMBER_SLACK
+        if room < 0:
+            return {
+                "omitted": "max_bytes is below the member's fixed part",
+                "needs_at_least_bytes": fixed + _MEMBER_SLACK,
+            }
+        half = room // 2
+        for key, source in (("this_session", now), ("previous_session", prev)):
+            ring, cut = _fit_newest(list(source.get("pressure_light") or []), half)
+            out[key]["snapshots"], out[key]["dropped_oldest_to_fit"] = ring, cut
+        return out
+    except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
+        return {"error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:160] if str(exc) else ''}"}
 
 
 def reset_for_tests() -> None:

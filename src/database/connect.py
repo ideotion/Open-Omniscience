@@ -565,7 +565,8 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
 
 def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Path:
     """Copy a PLAINTEXT database into a new ENCRYPTED file under ``key``
-    (sqlcipher_export; the encrypt tool and the replace-restore path)."""
+    (sqlcipher_export; the encrypt tool -- the replace-restore path that once shared it was
+    removed 2026-06-13)."""
     if not have_driver():  # pragma: no cover - core dependency
         raise DatabaseLockedError("sqlcipher3 driver unavailable")
     from sqlcipher3 import dbapi2 as sqc
