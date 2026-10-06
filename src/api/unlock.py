@@ -680,7 +680,15 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             conn = connect(p, key=body.passphrase, check_same_thread=False)
             _close_after_checkpoint(conn, passphrase=body.passphrase)
         except WrongPassphraseError as exc:
-            raise HTTPException(status_code=403, detail=scrubbed(str(exc), body.passphrase)) from exc
+            # A wrong key under the floor of what can be taken out of a text (src/monitoring/secret_scrub.py,
+            # MIN_SECRET_CHARS) withholds the message whole, so the withheld text is the message's fixed words, not
+            # the scrub's "text withheld" notice: a mistyped short key is the lock screen's commonest answer.
+            raise HTTPException(
+                status_code=403,
+                detail=scrubbed(
+                    str(exc), body.passphrase, withheld="the passphrase does not open this file (or the file is damaged)"
+                ),
+            ) from exc
         finally:
             _end_recovery_notice(_recovery_token)
         _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)

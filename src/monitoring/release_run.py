@@ -86,7 +86,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, scrubbed_value
 from src.monitoring.secret_scrub import scrub_file as _scrub_file
 
 _LOG = logging.getLogger("monitoring.release_run")
@@ -258,7 +258,7 @@ def _retrying(ctx: Any, what: str, fn: Any, log: list[dict[str, Any]] | None = N
                 raise
             if log is not None:
                 log.append({"what": what, "attempt": attempt, "waited_s": delay, "at": _now_iso(),
-                            "error": f"{type(exc).__name__}: {exc}"[:200]})
+                            "error": exception_text(exc, limit=200)})
             _LOG.warning("release run: %s hit a pool timeout (attempt %d), retrying in %.0f s", what, attempt, delay)
             _sleep_stoppable(ctx, delay)
     raise AssertionError("unreachable")  # pragma: no cover - the loop returns or raises
@@ -280,8 +280,8 @@ def _write_state(state: dict[str, Any]) -> None:
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(state, indent=1, default=str), encoding="utf-8")
         os.replace(tmp, p)
-    except OSError:
-        _LOG.warning("could not persist release-run state", exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, "could not persist release-run state", exc, level=logging.WARNING)
 
 
 class _Run:
@@ -819,7 +819,7 @@ def _pause_collection() -> dict[str, Any]:
             # stop()'s join is bounded; a pass deep in a write can outlive it. Said, not hidden.
             out["scheduler_still_winding_down"] = bool(sched.is_running())
     except Exception as exc:  # noqa: BLE001
-        out["scheduler_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        out["scheduler_error"] = exception_text(exc, limit=300)
     try:
         from src.wiki.service import lane_service_status, stop_wiki_lane
 
@@ -829,7 +829,7 @@ def _pause_collection() -> dict[str, Any]:
         if out["wiki_lane_was_streaming"]:
             stop_wiki_lane(timeout=30.0)
     except Exception as exc:  # noqa: BLE001
-        out["wiki_lane_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        out["wiki_lane_error"] = exception_text(exc, limit=300)
     out["at"] = _now_iso()
     return out
 
@@ -871,7 +871,7 @@ def _resume_collection(paused: dict[str, Any] | None) -> dict[str, Any]:
                 time.sleep(_TICK_S)
             out["scheduler_restarted"] = started
         except Exception as exc:  # noqa: BLE001
-            out["scheduler_error"] = f"{type(exc).__name__}: {exc}"[:300]
+            out["scheduler_error"] = exception_text(exc, limit=300)
     if paused.get("wiki_lane_was_streaming"):
         if kill_switch_active():
             out["wiki_lane"] = "left stopped: airplane mode is on"
@@ -881,7 +881,7 @@ def _resume_collection(paused: dict[str, Any] | None) -> dict[str, Any]:
 
                 out["wiki_lane_restarted"] = bool(start_wiki_lane())
             except Exception as exc:  # noqa: BLE001
-                out["wiki_lane_error"] = f"{type(exc).__name__}: {exc}"[:300]
+                out["wiki_lane_error"] = exception_text(exc, limit=300)
     return out
 
 
@@ -1024,7 +1024,10 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
         except RuntimeError as exc:
             # A re-index already running, or a DIFFERENT one paused: the quarantine is done
             # and its tally is kept; the re-index is the operator's to resolve.
-            raise _PhaseError(f"row 5: the re-index was refused: {exc}"[:400], partial=out, status="refused") from exc
+            raise _PhaseError(
+                f"row 5: the re-index was refused: {exception_text(exc, run.params.passphrase, typed=False)}"[:400],
+                partial=out, status="refused",
+            ) from None
         rs = _wait_job(ctx, run, "reindex", rm, out)
         out["reindex_final"] = rs
         if ctx.stopping or rs.get("stalled") or rs.get("state") == "paused":
@@ -1043,7 +1046,7 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
     except (_PhaseError, RuntimeError):
         raise
     except Exception as exc:  # noqa: BLE001 - keep what row 5 measured (RR-2)
-        raise _PhaseError(f"{type(exc).__name__}: {exc}"[:400], partial=out) from exc
+        raise _PhaseError(exception_text(exc, run.params.passphrase, limit=400), partial=out) from None
     finally:
         out["collection_resumed"] = _resume_collection(out.get("collection_paused"))
 
@@ -1344,10 +1347,10 @@ def _law_live_checks() -> dict[str, Any]:
                           "bytes": len(r.raw_content or b"") if getattr(r, "raw_content", None) else len(r.content or ""),
                           "elapsed_s": round(time.monotonic() - t0, 2)})
         except FetchError as exc:
-            entry.update({"measured": False, "refusal": type(exc).__name__, "detail": str(exc)[:300],
+            entry.update({"measured": False, "refusal": type(exc).__name__, "detail": exception_text(exc, typed=False, limit=300),
                           "elapsed_s": round(time.monotonic() - t0, 2)})
         except Exception as exc:  # noqa: BLE001
-            entry.update({"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+            entry.update({"measured": False, "error": exception_text(exc, limit=300)})
         if host == "legislation.gov.uk" and entry.get("measured") and d.get("official_url"):
             # The per-document CLML the catalogue records as this host's bulk shape,
             # composed from the row's own official_url rather than typed here.
@@ -1365,9 +1368,9 @@ def _law_live_checks() -> dict[str, Any]:
                     "adapter_read_it": True,
                 }
             except FetchError as exc:
-                entry["clml"] = {"url": clml_url, "refusal": type(exc).__name__, "detail": str(exc)[:300]}
+                entry["clml"] = {"url": clml_url, "refusal": type(exc).__name__, "detail": exception_text(exc, typed=False, limit=300)}
             except Exception as exc:  # noqa: BLE001
-                entry["clml"] = {"url": clml_url, "error": f"{type(exc).__name__}: {exc}"[:300]}
+                entry["clml"] = {"url": clml_url, "error": exception_text(exc, limit=300)}
         out[host] = entry
     return out
 
@@ -1435,7 +1438,7 @@ def _weights_digest_proposal() -> dict[str, Any]:
         else:
             out["hf"].update({"measured": False, "status_code": getattr(r, "status_code", None)})
     except Exception as exc:  # noqa: BLE001
-        out["hf"].update({"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+        out["hf"].update({"measured": False, "error": exception_text(exc, limit=300)})
     try:
         from src.llm.ollama import OllamaClient
 
@@ -1447,7 +1450,7 @@ def _weights_digest_proposal() -> dict[str, Any]:
             out["ollama"].update({"measured": bool(hit.get("digest")), "digest": hit.get("digest"),
                                   "basis": "the local Ollama's /api/tags manifest digest"})
     except Exception as exc:  # noqa: BLE001
-        out["ollama"].update({"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+        out["ollama"].update({"measured": False, "error": exception_text(exc, limit=300)})
     out["how_to_pin"] = (
         "set OO_MODEL_REVISION to the 40-character sha and OO_OLLAMA_MODEL_DIGEST to the "
         "digest, or record them in src/llm/weights_pin.py's HF_REVISION_PINS / "
@@ -1482,7 +1485,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
         try:
             out[key] = _retrying(ctx, key, fn, retries)
         except Exception as exc:  # noqa: BLE001 - recorded on the block, the others go on
-            out[key] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            out[key] = {"measured": False, "error": exception_text(exc, limit=300)}
             if core:
                 failed.append(key)
 
@@ -1518,7 +1521,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
         try:
             out["ores_probe"] = _ores_probe()
         except Exception as exc:  # noqa: BLE001
-            out["ores_probe"] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            out["ores_probe"] = {"measured": False, "error": exception_text(exc, limit=300)}
     out["pool_retries"] = retries
     if failed:
         raise _PhaseError(f"{len(failed)} end-of-window reading(s) failed: {', '.join(failed)}", partial=out)
@@ -1620,7 +1623,7 @@ def _bundle(ctx: Any) -> dict[str, Any]:
         out["measured"] = True
     except Exception as exc:  # noqa: BLE001
         out["measured"] = False
-        out["read_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        out["read_error"] = exception_text(exc, limit=300)
     return out
 
 
@@ -2069,7 +2072,7 @@ def last_release_run_report() -> dict:
             report["live_run"] = live
         return report
     except Exception as exc:  # noqa: BLE001
-        out = {"schema": RELEASE_RUN_SCHEMA, "available": False, "error": str(exc)[:300]}
+        out = {"schema": RELEASE_RUN_SCHEMA, "available": False, "error": exception_text(exc, typed=False, limit=300)}
         if live:
             out["live_run"] = live
         return out
@@ -2137,7 +2140,9 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
     promise holds for every phase, not only the restore's), BEFORE the cut to 400
     characters, so a cut through it cannot leave a fragment. Every passphrase the process
     holds is taken out with it, and a text that cannot be checked is the exception's class
-    and none of its words (``secret_scrub.scrubbed``). The log line is written through
+    and none of its words (``secret_scrub.exception_text``, which every handler of this module writes a caught
+    exception through, a function that holds no passphrase included: the guard reads them all). The log line is
+    written through
     ``log_failure``, which carries the scrubbed traceback and never the exception: the error
     log keeps the tail of a record's traceback in ``app_errors.jsonl``, which a debug bundle
     carries."""
@@ -2148,14 +2153,14 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
         result = fn()
     except _PhaseError as exc:
         # RR-2: what the phase measured before it failed stays in its record.
-        why = scrubbed(str(exc), secret, withheld=f"{type(exc).__name__}: its text is withheld")
+        why = exception_text(exc, secret, typed=False)
         _LOG.warning("release run phase %s failed part of the way: %s", name, why)
         ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", why[:400], result=exc.partial)
     except refusals as exc:
-        why = scrubbed(f"{type(exc).__name__}: {exc}", secret, withheld=f"{type(exc).__name__}: its text is withheld")
+        why = exception_text(exc, secret)
         ph = run.end("refused", why[:400])
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to the report
-        why = scrubbed(f"{type(exc).__name__}: {exc}", secret, withheld=f"{type(exc).__name__}: its text is withheld")
+        why = exception_text(exc, secret)
         log_failure(_LOG, f"release run phase {name} failed", exc, secret, level=logging.WARNING)
         ph = run.end("error", why[:400])
     else:
@@ -2369,11 +2374,11 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
                 try:
                     out["law"] = _law_live_checks()
                 except Exception as exc:  # noqa: BLE001
-                    out["law"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+                    out["law"] = {"error": exception_text(exc, limit=300)}
                 try:
                     out["weights"] = _weights_digest_proposal()
                 except Exception as exc:  # noqa: BLE001
-                    out["weights"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+                    out["weights"] = {"error": exception_text(exc, limit=300)}
                 return out
             _run_phase(run, ctx, "online_probes", _probes)
         else:

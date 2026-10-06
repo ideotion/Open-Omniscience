@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import exception_text, scrubbed, scrubbed_value
 
 _LOG = logging.getLogger("monitoring.p0_validation")
 
@@ -291,9 +291,7 @@ def _exception_text(exc: BaseException, passphrase: str) -> str:
     ``fail``) that code and the panel compare, and an exact-match scrub of a short passphrase (``a``,
     ``pass``) would rewrite them. A text that cannot be checked is the exception's class and none of its
     words."""
-    return scrubbed(
-        f"{type(exc).__name__}: {exc}", passphrase, withheld=f"{type(exc).__name__}: its text is withheld"
-    )
+    return exception_text(exc, passphrase)
 
 
 def _check_backup(
@@ -698,7 +696,7 @@ def _check_unlock() -> dict:
     except Exception as exc:  # noqa: BLE001
         return _verdict(
             "not-measurable",
-            f"could not read the unlock instrumentation: {type(exc).__name__}: {exc}. "
+            f"could not read the unlock instrumentation: {exception_text(exc)}. "
             + _COLD_BOOT_HOWTO,
             {"how_to_time_next_cold_boot": _COLD_BOOT_HOWTO},
             _acceptance_bars()["p0_4_unlock"],
@@ -844,7 +842,7 @@ def _check_collector() -> dict:
     except Exception as exc:  # noqa: BLE001
         return _verdict(
             "not-measurable",
-            f"could not read the collector instrumentation: {type(exc).__name__}: {exc}. "
+            f"could not read the collector instrumentation: {exception_text(exc)}. "
             + _SOAK_HOWTO,
             {"how_to_soak": _SOAK_HOWTO},
             _acceptance_bars()["p0_3_collector"],
@@ -1021,7 +1019,7 @@ def last_p0_validation_report() -> dict:
         report["source_file"] = files[-1].name
         return report
     except Exception as exc:  # noqa: BLE001
-        return {"schema": P0_VALIDATION_SCHEMA, "available": False, "error": str(exc)[:300]}
+        return {"schema": P0_VALIDATION_SCHEMA, "available": False, "error": exception_text(exc, typed=False, limit=300)}
 
 
 # --------------------------------------------------------------------------- #

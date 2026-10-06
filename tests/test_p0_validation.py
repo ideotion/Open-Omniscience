@@ -641,6 +641,7 @@ _SCRUBBING_CALLS = {
 #: they name every secret the function holds, because a text scrubbed of one of two still carries the other.
 _SCRUBBING_CALLS_OVER_SECRETS = {
     "scrubbed": (0, 1),  # a text with each secret taken out
+    "exception_text": (0, 1),  # the exception's own text, each secret taken out and THEN cut (the helper the three modules use)
     "scrubbed_value": (0, 1),  # a structure with each secret taken out of every string in it
     "traceback_text": (0, 1),  # the traceback of the exception, scrubbed
     "log_failure": (2, 3),  # logs the whole chain, with each secret out of it (the logger, then the words)
@@ -658,6 +659,12 @@ _RESPONSE_BUILDERS = frozenset({"HTTPException", "_restore_error"})
 #: ``_PhaseError``, because on any other exception ``status`` and ``partial`` are the engine's -- and, in the walk, its
 #: class (``type(exc)``).
 _PLAIN_FIELDS = frozenset({"status", "partial"})
+
+
+#: Helpers a handler may hand the exception to because they read its CLASS and answer a question about it, never its words:
+#: name -> the module under ``src/`` that defines it. A test below reads each one's body, so a helper that starts to read the
+#: message (``"timed out" in str(exc)``) stops being one.
+_CLASSIFIERS = {"_is_pool_timeout": "monitoring/release_run"}
 
 
 def _is_a_phase_error_handler(handler: ast.ExceptHandler) -> bool:
@@ -728,7 +735,9 @@ class _Held:
         """Whether ``args`` (the secret arguments of a call of :data:`_SCRUBBING_CALLS_OVER_SECRETS`) are all secrets and,
         between them, name every secret the function holds."""
         named = {self.key_of(a) for a in args if _is_the_secret(a)}
-        return bool(args) and all(_is_the_secret(a) for a in args) and self.keys <= named
+        # A function that holds no secret is covered by a call that names none (the process's own are taken out of every
+        # text); one that holds a secret is covered only by a call that names every one it holds.
+        return (bool(args) or not self.keys) and all(_is_the_secret(a) for a in args) and self.keys <= named
 
 
 def _covered_by_a_scrubbing_block(fn: ast.AST, held: _Held) -> set[int]:
@@ -757,7 +766,9 @@ def _is_a_builder_call(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _RESPONSE_BUILDERS
 
 
-def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[list[str], list[str], int]:
+def _caught_exception_leaks(
+    source: str, *, responses: bool = False, every: bool = False
+) -> tuple[list[str], list[str], int]:
     """Read ``source`` the way the guard below does: ``(holders, offenders, routed)`` -- the functions that hold the
     secret (:class:`_Held`; ``async`` or not), the places inside their ``except`` handlers where the caught
     exception reaches a text some way other than a call of :data:`_SCRUBBING_CALLS` that is given the secret (or of
@@ -777,7 +788,12 @@ def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[li
     layer) the exception may also be the cause of what a call of :data:`_RESPONSE_BUILDERS` is raised as: the caller's own
     response, whose TEXT is still the writer's to scrub (``detail=scrubbed(str(exc), body.passphrase)``: a typed key is held by no
     net until it is accepted, and the browser can send what a response said back to the error journal through
-    ``note_frontend_error``, which knows only what the process holds; ``note_http_error`` records the status alone)."""
+    ``note_frontend_error``, which knows only what the process holds; ``note_http_error`` records the status alone).
+
+    With ``every`` a function that holds NO secret is read too (:data:`_EVERY_HANDLER`): the release run's own handlers write
+    what they catch into a report, a state file and a log, and a function that holds nothing today is the one that holds the
+    passphrase after the next edit (the run's ``_probes`` and ``_collect`` handlers were read as holding none, and wrote the
+    text by hand). Its handlers may use the exception only inside a scrubbing call that names no secret."""
     tree = ast.parse(source)
     traceback_modules = _bound_as(tree, "traceback")
     traceback_functions = _traceback_function_names(tree)
@@ -789,9 +805,10 @@ def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[li
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         held = _Held(fn)
-        if not held.keys:
+        if held.keys:
+            holders.append(fn.name)
+        elif not every:
             continue
-        holders.append(fn.name)
         covered = _covered_by_a_scrubbing_block(fn, held)
         for handler in (n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)):
             allowed: set[int] = set()
@@ -807,10 +824,10 @@ def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[li
                     ):
                         routed.add(id(node))
                         allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
-                    elif many and len(node.args) > many[1] and held.covered_by(node.args[many[1] :]):
+                    elif many and len(node.args) >= many[1] and held.covered_by(node.args[many[1] :]):
                         routed.add(id(node))
                         allowed |= {id(n) for n in ast.walk(node.args[many[0]])}
-                    elif node.func.id == "type" and len(node.args) == 1:
+                    elif (node.func.id == "type" or node.func.id in _CLASSIFIERS) and len(node.args) == 1:
                         allowed.add(id(node.args[0]))
                 elif isinstance(node, ast.Attribute) and node.attr in _PLAIN_FIELDS and _is_a_phase_error_handler(handler):
                     allowed.add(id(node.value))
@@ -877,17 +894,22 @@ def _reraising_functions(source: str, *, responses: bool = False) -> dict[str, l
 #: again what they caught as it is (a bare ``raise`` outside a ``with scrub_and_reraise``), each with why whoever catches it next
 #: scrubs it. The last is held to zero slack both ways below, so a function that starts to re-raise has to say why that is safe.
 _GUARDED_MODULES = {
-    "monitoring/p0_validation": ({"_check_backup", "_check_restore"}, 4, False, {}),
+    "monitoring/p0_validation": ({"_check_backup", "_check_restore"}, 7, False, {}),
     "monitoring/release_run": (
-        {"_run_phase", "_fresh_install_restore"},
-        4,
+        {"_run_phase", "_fresh_install_restore", "_row5_quarantine"},
+        24,
         False,
         {
             "_fresh_install_restore": (
                 "its `except BaseException` removes the empty directory a failed spawn leaves and raises the spawn's own error "
                 "again, before any child has been handed the passphrase; its caller, _run_phase, is read by this guard and "
-                "writes what it catches through scrubbed and log_failure"
-            )
+                "writes what it catches through exception_text and log_failure"
+            ),
+            "_row5_quarantine": (
+                "its `except (_PhaseError, RuntimeError)` passes on, as they are, the phase error it built from the scrubbed text "
+                "(exception_text with the run's passphrase, raised from None) and the RuntimeError its callees raise; its caller, "
+                "_run_phase, is read by this guard and writes what it catches through exception_text and log_failure"
+            ),
         },
     ),
     "monitoring/release_run_fresh_restore": ({"main"}, 1, False, {}),
@@ -919,6 +941,13 @@ _GUARDED_MODULES = {
 }
 
 
+#: The guarded modules whose every function is read, not only the ones that hold a secret: the release run, the P0 check and
+#: the restore child write what they catch into the run's report, its state file and its log, and the helper they write it through
+#: (``secret_scrub.exception_text``) takes the process's own passphrases out of any text. A handler here that makes the text by
+#: hand is a leak in waiting, whether or not its function holds the passphrase today.
+_EVERY_HANDLER = frozenset({"monitoring/p0_validation", "monitoring/release_run", "monitoring/release_run_fresh_restore"})
+
+
 @pytest.mark.parametrize("module", sorted(_GUARDED_MODULES))
 def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way_but_through_a_scrub(module):
     """The sites there are today are pinned by behaviour tests; the next ``except ... as exc`` that puts ``{exc}``
@@ -941,11 +970,12 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
     ``raise``) outside such a block is listed with why whoever catches it next scrubs it. It reads the syntax of the modules in
     ``_GUARDED_MODULES`` and follows no call; what stays outside it is listed in ``LESSONS.md`` (the entry about a net going
     where the text is made) and in ``OPEN_QUEUE.md``, and the cases below pin what it sees.
-    (``_check_unlock`` and ``_check_collector`` hold no secret, so they are not held to this.)"""
+    (``_check_unlock`` and ``_check_collector`` hold no secret; in the three modules of :data:`_EVERY_HANDLER` they are held to the
+    same call with none named, and elsewhere a function that holds no secret is not read.)"""
     must_hold, least_routed, responses, reraises = _GUARDED_MODULES[module]
     path = Path(p0.__file__).parents[1] / f"{module}.py"
     source = path.read_text(encoding="utf-8")
-    holders, offenders, routed = _caught_exception_leaks(source, responses=responses)
+    holders, offenders, routed = _caught_exception_leaks(source, responses=responses, every=module in _EVERY_HANDLER)
     assert must_hold <= set(holders), f"{module}: the walk found {holders}; a rename must not leave it looking at nothing"
     assert routed >= least_routed, (
         f"{module}: the walk saw {routed} calls of a scrubbing helper in the handlers and the module makes "
@@ -1568,6 +1598,83 @@ def test_the_guard_on_caught_exception_texts_does_not_read_a_function_that_is_no
     assert holders == [] and offenders == []
 
 
+@pytest.mark.parametrize("name", sorted(_CLASSIFIERS))
+def test_a_classifier_a_handler_may_hand_the_exception_to_reads_its_class_and_nothing_else(name):
+    """The guard lets a handler pass the exception to these helpers without a scrub; that holds only while the helper reads the
+    exception as ``isinstance`` does and returns a ``bool``. MUTATION TARGET: a body that reads the message."""
+    tree = ast.parse((Path(p0.__file__).parents[1] / f"{_CLASSIFIERS[name]}.py").read_text(encoding="utf-8"))
+    (fn,) = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name]
+    param = fn.args.args[0].arg
+    allowed: set[int] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "isinstance" and node.args:
+            allowed.add(id(node.args[0]))
+    reads = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == param and isinstance(n.ctx, ast.Load)]
+    assert reads and all(id(n) in allowed for n in reads), f"{name} reads more of the exception than its class"
+    assert isinstance(fn.returns, ast.Name) and fn.returns.id == "bool", f"{name} answers with something that is not a bool"
+
+
+def test_the_classifier_check_sees_a_helper_that_reads_the_message():
+    source = "def _is_pool_timeout(exc: BaseException) -> bool:\n    return 'timed out' in str(exc)\n"
+    fn = ast.parse(source).body[0]
+    allowed = {
+        id(n.args[0])
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "isinstance" and n.args
+    }
+    reads = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "exc" and isinstance(n.ctx, ast.Load)]
+    assert not all(id(n) in allowed for n in reads)
+
+
+#: What the every-handler read (:data:`_EVERY_HANDLER`) flags in a function that holds NO secret, and what it leaves alone.
+_NO_SECRET = "def check(ctx):"
+_EVERY_LEAKS = {
+    "f-string": _guarded(_NAMED, 'err = f"{type(exc).__name__}: {exc}"', head=_NO_SECRET),
+    "str": _guarded(_NAMED, "err = str(exc)[:300]", head=_NO_SECRET),
+    "exc_info": _guarded(_NAMED, 'log.warning("it failed", exc_info=True)', head=_NO_SECRET),
+    "bare logger.exception": _guarded(_UNNAMED, 'log.exception("it failed")', head=_NO_SECRET),
+    "a new exception with the caught one as its context": _guarded(_NAMED, 'raise RuntimeError("it failed")', head=_NO_SECRET),
+    "a helper that is handed it": _guarded(_NAMED, "record(exc)", head=_NO_SECRET),
+    "a scrubbing call that does not carry it": _guarded(_NAMED, 'record(exception_text(exc), exc)', head=_NO_SECRET),
+}
+_EVERY_FINE = {
+    "exception_text": (_guarded(_NAMED, "err = exception_text(exc, limit=300)", head=_NO_SECRET), 1),
+    "exception_text untyped": (_guarded(_NAMED, "err = exception_text(exc, typed=False, limit=300)", head=_NO_SECRET), 1),
+    "scrubbed text": (_guarded(_NAMED, 'err = scrubbed(f"{type(exc).__name__}: {exc}")', head=_NO_SECRET), 1),
+    "log_failure": (_guarded(_NAMED, 'log_failure(log, "it failed", exc)', head=_NO_SECRET), 1),
+    "the class alone": (_guarded(_NAMED, "err = type(exc).__name__", head=_NO_SECRET), 0),
+    "a classifier": (_guarded(_NAMED, "retry = _is_pool_timeout(exc)", head=_NO_SECRET), 0),
+    "a new exception from None": (_guarded(_NAMED, 'raise RuntimeError("it failed") from None', head=_NO_SECRET), 0),
+}
+
+
+@pytest.mark.parametrize("way", sorted(_EVERY_LEAKS))
+def test_the_every_handler_read_flags_a_function_that_holds_no_secret(way):
+    """MUTATION TARGET: the ``every`` switch (a no-secret function skipped again), the covering rule for a call that names no
+    secret, and the dispatch that reads a call with no secret argument."""
+    holders, offenders, _ = _caught_exception_leaks(_EVERY_LEAKS[way], every=True)
+    assert holders == [] and offenders, (way, holders, offenders)
+    assert _caught_exception_leaks(_EVERY_LEAKS[way]) == ([], [], 0), "without the switch such a function is not read"
+
+
+@pytest.mark.parametrize("way", sorted(_EVERY_FINE))
+def test_the_every_handler_read_leaves_a_scrubbed_text_alone(way):
+    source, expected_routed = _EVERY_FINE[way]
+    holders, offenders, routed = _caught_exception_leaks(source, every=True)
+    assert holders == [] and offenders == [] and routed == expected_routed, (holders, offenders, routed)
+
+
+def test_a_call_that_names_no_secret_does_not_cover_a_function_that_holds_one():
+    """The helper takes the process's own passphrases out of any text, and a typed one (a backup's, a restore's) only when it is
+    named: ``exception_text(exc)`` in a function that holds the passphrase leaves the typed key in the text."""
+    for call in ("exception_text(exc)", "exception_text(exc, limit=300)", "scrubbed(str(exc))"):
+        source = _guarded(_NAMED, f"err = {call}")
+        holders, offenders, routed = _caught_exception_leaks(source, every=True)
+        assert holders == ["check"] and offenders and routed == 0, (call, holders, offenders, routed)
+    holders, offenders, routed = _caught_exception_leaks(_guarded(_NAMED, "err = exception_text(exc, passphrase)"), every=True)
+    assert holders == ["check"] and offenders == [] and routed == 1
+
+
 # --------------------------------------------------------------------------- #
 # Endpoint wiring (call the diagnostics endpoint functions directly)
 # --------------------------------------------------------------------------- #
@@ -1704,3 +1811,66 @@ def test_the_unlock_bar_requires_a_COLD_boot():
     bar = p0._acceptance_bars()["p0_4_unlock"]
     assert "COLD" in bar
     assert "WAL" in bar, "the bar must name what a warm unlock fails to exercise"
+
+
+def test_the_passphrase_the_process_holds_is_out_of_the_p0_report_beside_the_typed_one(tmp_path, monkeypatch):
+    """The verify check copies the engine's failure lines and joins them, and every caught text goes through one helper: the
+    session's own passphrase (held by the process, not the one the check was handed) is out of all of them. MUTATION TARGET: the
+    per-needle ``scrub_value`` or ``scrub_text`` in place of the held-aware helpers, at the copy of the lines, at the join, in
+    ``_exception_text``."""
+    import src.backup.stream_backup as stream_backup
+    from src.monitoring import secret_scrub as ss
+
+    _live_corpus(tmp_path, monkeypatch)
+    held = "held-session-key-Wm3#"
+    secret = "p0-typed-backup-key-9d1"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+    lines = [f"member data.db failed to decrypt: could not reach {held} on the drive", f"also {secret}"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    clean = ["member data.db failed to decrypt: could not reach ***redacted*** on the drive", "also ***redacted***"]
+    assert verify["measurements"]["problems"] == clean
+    assert verify["reason"] == "verification failed: " + "; ".join(clean), verify["reason"]
+    text = json.dumps(out) + Path(out["path"]).read_text(encoding="utf-8")
+    assert held not in text and secret not in text
+    assert p0._exception_text(RuntimeError(f"x {held} y {secret}"), secret) == "RuntimeError: x ***redacted*** y ***redacted***"
+
+
+def test_a_held_passphrase_split_across_two_lines_is_out_of_the_joined_reason(tmp_path, monkeypatch):
+    """The reason joins the engine's lines, so a passphrase the PROCESS holds that holds ``"; "`` can end one line and start the
+    next: the join is scrubbed of the held ones too, not only of the typed one. MUTATION TARGET: the scrub of the joined tail
+    that names the typed passphrase alone."""
+    import src.backup.stream_backup as stream_backup
+    from src.monitoring import secret_scrub as ss
+
+    _live_corpus(tmp_path, monkeypatch)
+    held = "left half; right half"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+    lines = ["volume 2 failed its checksum, left half", "right half was not read"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="p0-typed-backup-key-9d1", measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
+    assert held not in json.dumps(out) and held not in Path(out["path"]).read_text(encoding="utf-8")
+
+
+def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception_they_write(monkeypatch):
+    """Three handlers hold no secret and wrote the exception by hand; the session's passphrase can be in an engine's words
+    there too. MUTATION TARGET: the helper at any of the three."""
+    from src.monitoring import forensics
+    from src.monitoring import secret_scrub as ss
+
+    held = "held-session-key-Wm3#"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+
+    def boom(*_a, **_k):
+        raise RuntimeError(f"engine said {held}")
+
+    monkeypatch.setattr(forensics, "session_forensics", boom)
+    unlock = p0._check_unlock()
+    assert held not in json.dumps(unlock) and "RuntimeError: engine said ***redacted***" in json.dumps(unlock)

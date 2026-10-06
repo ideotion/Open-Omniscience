@@ -2802,3 +2802,79 @@ def test_the_child_writes_a_result_with_the_passphrase_taken_out_of_every_string
     assert out["restore"] == {"refused": "bad ***redacted***", "committed": False}
     assert out["rows"] == ["***redacted***!", 1.5, None] and out["n"] == 2
     assert json.loads(child._result_text({"ok": True}, "")) == {"ok": True}, "no passphrase, nothing replaced"
+
+
+def test_a_kept_install_that_holds_a_passphrase_under_the_floor_loses_the_files_that_hold_it(tmp_path):
+    """A passphrase of one to three characters cannot be taken out of a file (it is a piece of nearly every line), and the
+    run's own is typed by the operator with no minimum: a kept install must not carry it, so the file that holds it is REMOVED
+    and the report names the file, and a file that holds none is left as it was. MUTATION TARGET: ``scrub_file`` leaving the
+    file as it is, a refusal that reads the needle and not the file, the caller's removal."""
+    short = "zq7"
+    fresh, out_json, journal, beat, report, other = _kept_install_with(tmp_path, needle=short)
+    before = {p: p.stat().st_mtime_ns for p in (beat, other, out_json)}
+    done = rr._scrub_kept_install(fresh, out_json, short)
+    assert done == {"rewritten": [], "removed": ["imp-1.jsonl", "restore-1.json"], "failed": []}, done
+    assert not journal.exists() and not report.exists()
+    assert beat.exists() and out_json.exists() and other.exists()
+    assert {p: p.stat().st_mtime_ns for p in (beat, other, out_json)} == before
+
+
+HELD = "held-session-key-Wm3#"
+
+
+def test_the_passphrase_the_process_holds_is_taken_out_of_what_the_child_hands_back_beside_the_typed_one(fast, monkeypatch):
+    """The backup's passphrase and the corpus's are two keys, and the child's stderr and its result can quote either.
+    MUTATION TARGET: a scrub that knows only the typed one (``scrub_text`` or a bare ``replace`` in place of ``scrubbed``)."""
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+    _child_process(monkeypatch, payload={"ok": False, "error": f"boom {HELD}"}, returncode=1, stderr=f"trace {HELD} end")
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    assert "trace ***redacted*** end" in rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert HELD not in json.dumps(rep)
+
+
+def test_the_child_takes_the_passphrases_the_process_holds_out_of_its_error_and_its_result(monkeypatch):
+    from src.monitoring import release_run_fresh_restore as child
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+    assert child._error_text(RuntimeError(f"key {HELD} refused"), NEEDLE) == "RuntimeError: key ***redacted*** refused"
+    out = json.loads(child._result_text({"error": f"x {HELD}", "n": 1, "rows": [HELD, {"k": HELD}]}, NEEDLE))
+    assert out == {"error": "x ***redacted***", "n": 1, "rows": ["***redacted***", {"k": "***redacted***"}]}
+
+
+def test_the_pause_and_resume_handlers_take_the_held_passphrase_out_and_cut_after_it(monkeypatch):
+    """Handlers that hold no passphrase of their own wrote the exception by hand (``f"{type(exc).__name__}: {exc}"[:300]``);
+    all go through ``exception_text`` now, which takes out what the process holds BEFORE the cut. The held key here starts at
+    character 294 of the text, so a cut at 300 first would keep its first six characters. MUTATION TARGET: a handler that
+    makes the text by hand again, a cut before the scrub."""
+    import src.scheduler.runner as runner
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+
+    def boom():
+        raise RuntimeError("x" * 280 + HELD + " tail")
+
+    monkeypatch.setattr(runner, "get_scheduler", boom)
+    paused = rr._pause_collection()
+    resumed = rr._resume_collection({"scheduler_was_running": True, "wiki_lane_was_streaming": False})
+    for said in (paused["scheduler_error"], resumed["scheduler_error"]):
+        assert said.startswith("RuntimeError: xxx") and len(said) == 300, said
+        assert HELD not in said and HELD[:6] not in said and said.endswith("***red"), said
+
+
+def test_a_held_passphrase_a_cut_would_split_is_taken_out_before_the_child_s_stderr_is_cut(fast, monkeypatch):
+    """The stderr tail keeps the last 4,000 characters, and the whole result is scrubbed again afterwards, which cannot match half
+    of a passphrase: the scrub of the tail itself comes first, so a held passphrase that starts before the cut and ends after it
+    leaves no fragment. MUTATION TARGET: a scrub of the tail that knows the typed passphrase only (the later scrub hides it from
+    every test that does not put the key across the cut)."""
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=HELD + "y" * 3990)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert len(tail) == 4000 and "y" * 100 in tail
+    assert HELD[-8:] not in tail and HELD[:8] not in tail, tail[:30]

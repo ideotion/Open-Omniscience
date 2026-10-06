@@ -98,11 +98,9 @@ def _error_text(exc: BaseException, passphrase: str) -> str:
     find). Exact match only, and a text that cannot be checked is the exception's class and none of its
     words. No exception on this path is known to carry the passphrase in its message; this is the net
     beneath that, not a replacement for it."""
-    from src.monitoring.secret_scrub import scrubbed
+    from src.monitoring.secret_scrub import exception_text
 
-    return scrubbed(
-        f"{type(exc).__name__}: {exc}", passphrase, withheld=f"{type(exc).__name__}: its text is withheld"
-    )[:600]
+    return exception_text(exc, passphrase, limit=600)
 
 
 def _result_text(result: dict, passphrase: str) -> str:

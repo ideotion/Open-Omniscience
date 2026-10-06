@@ -57,14 +57,15 @@ THE PLACES EVERY MODULE'S EXCEPTION PASSES THROUGH (2026-10-06) are handed no se
 responses' texts it keeps) and a failed background job's error line (``src/jobs/background.py``, which also takes out the
 passphrase and password its own arguments carry). Each cuts AFTER the scrub, and when the scrub cannot run writes the
 exception's class and none of its words where it knows one (a log record, ``traceback_text``, a background job's error line, the
-global handler's log line) and the fixed words of :data:`UNREADABLE_TEXT` where it does not (the error journal's entries, the
-global handler's response, a route's ``detail``).
+global handler's log line) and the fixed words of :data:`UNREADABLE_TEXT` where it does not (the error journal's entries, a
+route's ``detail``); the global handler's response says only that the error is internal and its text is withheld.
 
 A SECRET UNDER THE FLOOR (2026-10-06, :data:`MIN_SECRET_CHARS`) is not taken out of a text, because taking one to three
 characters out of every text would leave no record that says anything, and it is not passed through either: a text that holds
 one of ITS shapes is WITHHELD whole (the helpers above write ``withheld`` where the text was: the exception's class where the
-caller knows it), and a text that holds none is kept as it was. :func:`scrub_text`, :func:`scrub_value` and :func:`scrub_file`
-take ONE needle the caller made itself (the release run's own passphrase) and leave a needle under the floor in the text.
+caller knows it), and a text that holds none is kept as it was. :func:`scrub_text` and :func:`scrub_value` take ONE
+needle the caller hands in (the release run's passphrase, which the operator typed) and leave a needle under the floor in the text;
+:func:`scrub_file` REFUSES a file that holds one (it raises, and the caller removes the file).
 
 A KEY THE PROCESS DOES NOT HOLD (2026-10-06): the one typed into a request being served (the lock screen's, a backup's, a
 mailbox's) is in no place the nets above can read until it is accepted. A route that takes one wraps its work in
@@ -111,13 +112,13 @@ UNREADABLE_TEXT = "(text withheld: the passphrases this process holds could not 
 #: a passphrase under eight characters when it creates or encrypts a store (``src/api/unlock.py``) and COUNTS WHITESPACE, so a
 #: short secret is an older store's passphrase (the unlock accepts any that opens the file, and holds it), eight spaces, a wrong
 #: attempt typed at the lock screen, a backup's (which has no minimum of its own) or a variable set by hand. The per-needle
-#: helpers (:func:`scrub_text`, :func:`scrub_value`, :func:`scrub_file`) are for a needle the run made itself and leave a needle
-#: under the floor in the text.
+#: helpers :func:`scrub_text` and :func:`scrub_value` know one needle the caller hands in and leave a needle under the floor in
+#: the text; :func:`scrub_file` raises for a file that holds one, so that a kept install does not keep it.
 MIN_SECRET_CHARS = 4
 
 #: How many times the carriers (:func:`_carried`) are applied to a secret's two bases. WHAT IT PROTECTS: the text this code
 #: makes passes through at most two carriers (an engine's words held in an exception's arguments, which the exception's ``repr``,
-#: a dict or a JSON body then carries again), and a third is the margin; the cost of the margin is at most 170 forms for one
+#: a dict or a JSON body then carries again), and a third is the margin; the cost of the margin is at most 518 forms for one
 #: secret, each a substring scan of a text of a few hundred characters to a few kilobytes. A fourth level is not covered.
 CARRIER_DEPTH = 3
 
@@ -167,19 +168,36 @@ def _python_inner(text: str) -> str:
     return repr(text + "'\"")[1:-4]  # both kinds present: single-quoted, the apostrophes escaped
 
 
+def _bytes_inner(text: str) -> tuple[str, str]:
+    """``text`` as the ``repr`` of its UTF-8 bytes writes it between single quotes (a letter outside ASCII is its ``\\xNN`` bytes), in
+    the two readings :func:`_python_inner` explains. A library hands a message over as ``bytes`` (``imaplib`` and ``poplib`` keep
+    the server's words and the command's as bytes), and an exception that holds one prints its ``repr``. A lone surrogate is
+    written as the escape ``backslashreplace`` makes of it, never an error."""
+    raw = text.encode("utf-8", "backslashreplace")
+    return repr(raw)[2:-1], repr(raw + b"'\"")[2:-4]
+
+
 def _carried(text: str) -> tuple[str, ...]:
-    """The four ways a writer puts ``text`` inside another text: ``repr`` as it writes it alone, ``repr`` with the apostrophes
-    escaped (:func:`_python_inner`), and the two inner forms JSON writes it in (escaped ASCII or not)."""
-    return (repr(text)[1:-1], _python_inner(text), json.dumps(text)[1:-1], json.dumps(text, ensure_ascii=False)[1:-1])
+    """The six ways a writer puts ``text`` inside another text: ``repr`` as it writes it alone, ``repr`` with the apostrophes
+    escaped (:func:`_python_inner`), the two inner forms JSON writes it in (escaped ASCII or not) and the two the ``repr`` of its
+    UTF-8 bytes writes (:func:`_bytes_inner`)."""
+    return (
+        repr(text)[1:-1],
+        _python_inner(text),
+        json.dumps(text)[1:-1],
+        json.dumps(text, ensure_ascii=False)[1:-1],
+        *_bytes_inner(text),
+    )
 
 
 def _shapes(secret: object) -> tuple[str, ...]:
     """The shapes ``secret`` takes in text the code writes, each once and none empty, WHATEVER ITS LENGTH. TWO BASES: as typed, and as an SQL string
     literal holds it (every ``'`` doubled, which is how ``PRAGMA key = '...'`` and ``ATTACH '...'`` carry it, and an engine's
-    error can quote the statement). FOUR CARRIERS of a base (:func:`_carried`), applied up to :data:`CARRIER_DEPTH` times: a
+    error can quote the statement). SIX CARRIERS of a base (:func:`_carried`), applied up to :data:`CARRIER_DEPTH` times: a
     statement an engine quotes into an error is written again by ``str()`` of an exception that holds it, by the ``repr`` of that
-    exception, by a dict or a list that holds the message and by the JSON body that carries the dict. A secret with no quote, no
-    backslash, no control and no letter outside ASCII has one shape; the most one has is 170. A missing or empty one has none."""
+    exception, by a dict or a list that holds the message, by the JSON body that carries the dict and by the ``repr`` of the bytes
+    a library keeps the message as. A secret with no quote, no backslash, no control and no letter outside ASCII has one shape;
+    the most one has is 518 (2 + 12 + 72 + 432). A missing or empty one has none."""
     if not isinstance(secret, str) or not secret:
         return ()
     layer = list(dict.fromkeys((secret, secret.replace("'", "''"))))
@@ -205,16 +223,17 @@ def _short_shapes(secret: str | None) -> tuple[str, ...]:
 
 #: The shapes of the passphrases the process held at the last read, as ``(the passphrases, the shapes of those long enough to
 #: take out, the shapes of those under the floor)``: ONE entry that the next read replaces when what is held has changed and that
-#: :func:`forget_held` empties when the session's passphrase is cleared (``connect.set_passphrase``: a failed unlock or create, the
-#: crypto-erase), because the entry holds the passphrases themselves and a core dump is in the rule. WHAT IT PROTECTS is the cost
-#: of the nets: they run on every record of every logger, and building the shapes of a passphrase with quotes in it is up to 170
-#: strings. A secret a caller hands in (a typed key, a backup's) is never kept.
+#: :func:`forget_held` empties on EVERY ``connect.set_passphrase`` (a new passphrase, a failed unlock or create, the
+#: crypto-erase) and the next read rebuilds, because the entry holds the passphrases themselves and a core dump is in the rule.
+#: WHAT IT PROTECTS is the cost of the nets: they run on every record of every logger, and building the shapes of a passphrase
+#: with quotes in it is up to 518 strings. A secret a caller hands in (a typed key, a backup's) is never kept.
 _HELD_FORMS: tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] = ((), (), ())
 
 
 def forget_held() -> None:
-    """Empty the one cache entry (:data:`_HELD_FORMS`): no passphrase and no shape of one stays in this module after the session's
-    passphrase was cleared. Cheap, lock-free (one assignment) and never raises; the next scrub rebuilds what is still held."""
+    """Empty the one cache entry (:data:`_HELD_FORMS`): no passphrase and no shape of one stays in this module past a change of
+    the session's passphrase (``connect.set_passphrase`` calls this for every set, a clear included). Cheap, lock-free (one
+    assignment) and never raises; the next scrub rebuilds what is still held."""
     global _HELD_FORMS
     _HELD_FORMS = ((), (), ())
 
@@ -307,7 +326,7 @@ def scrub_text(text: str, needle: str) -> str:
     """``text`` with the secret ``needle`` taken out in every shape :func:`_forms` lists, and none of them in what is
     returned. An empty ``needle`` matches nothing, so the text comes back as it was, and so does a needle under the floor
     (:data:`MIN_SECRET_CHARS`). THE PER-NEEDLE HELPERS (this, :func:`scrub_value`, :func:`scrub_file`) know ONE needle the caller
-    made itself and nothing the process holds: a handler that writes a caught exception uses :func:`scrubbed`, which does."""
+    hands in and nothing the process holds: a handler that writes a caught exception uses :func:`scrubbed`, which does."""
     return _scrub(text, _forms(needle))
 
 
@@ -388,8 +407,9 @@ def scrubbed_value(value: Any, *secrets: str | None, withheld: str = UNREADABLE_
     """``value`` with EVERY string in it passed through :func:`scrubbed` (the secrets handed in, the passphrases the process
     holds, a secret under the floor withholding the string that holds it), through dicts, lists and tuples. KEYS are kept as they
     are (a field name the code defines; a passphrase that is a piece of one must not rename it), numbers, booleans and ``None``
-    pass through, and what JSON does not produce (bytes, sets, other objects) passes through as it is, so a caller round-trips
-    through JSON first when it holds anything else. The shapes are worked out ONCE for the whole walk. A string that cannot be
+    pass through, and any other leaf (bytes, a set, a path, an exception, any object) is written as ``str()`` writes it and that
+    text is checked like a string, which is what ``json.dumps(default=str)`` would have made of it: a text the leaf carried does
+    not pass because it was not a ``str``. The shapes are worked out ONCE for the whole walk. A string that cannot be
     checked is replaced by ``withheld``, and a value that cannot be walked (nested past what the interpreter can read) is
     replaced by ``withheld`` itself: it never raises and never returns a text it did not check. This is the call for the
     structured results a report carries (a child's result, the engine's failure lines); :func:`scrub_value` is the per-needle
@@ -411,11 +431,35 @@ def _walk_checked(value: Any, shapes: tuple[tuple[str, ...], tuple[str, ...]] | 
         return [_walk_checked(v, shapes, withheld) for v in value]
     if isinstance(value, tuple):
         return tuple(_walk_checked(v, shapes, withheld) for v in value)
-    return value
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    try:
+        text = str(value)
+    except Exception:  # noqa: BLE001 - a ``str()`` that raises: nothing of the object is kept
+        return withheld
+    out = None if shapes is None else _clean(text, *shapes)
+    return withheld if out is None else out
 
 
 def _class_only(exc: BaseException) -> str:
     return f"{type(exc).__name__}: its text is withheld"
+
+
+def exception_text(exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = True) -> str:
+    """What a handler writes for a caught exception: ``Name: its words`` (``typed=False``: the words alone, where the class is
+    named elsewhere in the record) with every secret handed in AND every passphrase the process holds taken out of it
+    (:func:`scrubbed`), and THEN cut to ``limit`` characters when one is given (a cut text can split a secret; the cut comes
+    after). A text that cannot be checked, or whose ``str()`` raises, is the class and none of its words (``Name: its text is
+    withheld``). It never raises. THE ONE CALL every handler of the release run, the P0 check and the restore child writes a
+    caught exception through, so that no handler is a place that makes the text by hand; ``tests/test_p0_validation.py`` reads
+    those modules for any handler that does."""
+    withheld = _class_only(exc)
+    try:
+        text = f"{type(exc).__name__}: {exc}" if typed else f"{exc}"
+    except Exception:  # noqa: BLE001 - a ``str()`` that raises: the class is all there is to write
+        return withheld if limit is None else withheld[:limit]
+    out = scrubbed(text, *secrets, withheld=withheld)
+    return out if limit is None else out[:limit]
 
 
 def traceback_text(exc: BaseException, *secrets: str | None) -> str:
@@ -570,13 +614,20 @@ def scrub_file(path: Path, needle: str) -> bool:
     its last value, so the secret in an earlier copy is not seen; no writer here produces one. Nothing
     known puts the passphrase in such a field; this says what the net does not catch.
 
+    A NEEDLE UNDER THE FLOOR (:data:`MIN_SECRET_CHARS`) cannot be taken out of a file (one to three characters are a piece of
+    nearly every line), and a file that holds one of its shapes is not left as it is: this RAISES ``ValueError`` before the file
+    is touched, which a caller that keeps a file the secret may not be in (the release run's kept install) answers by removing
+    it. A file that holds none is left as it was.
+
     The rewrite goes to ``<name>.part`` and is moved over the original, so a failure part of the way
     leaves the old file whole -- and still holding the secret, which is the CALLER's to decide about.
     Raises ``OSError`` (the file is missing, unreadable, or cannot be replaced) or ``ValueError`` (it is
-    not UTF-8 text); an empty ``needle`` rewrites nothing."""
+    not UTF-8 text, or it holds a needle too short to take out of it); an empty ``needle`` rewrites nothing."""
     if not needle:
         return False
     text = path.read_bytes().decode("utf-8")
+    if any(form in text for form in _short_shapes(needle)):
+        raise ValueError("the file holds a passphrase too short to take out of a text")
     if path.suffix == ".jsonl":
         new = "\n".join(_scrub_record(line, needle) for line in text.split("\n"))
     elif path.suffix == ".json":

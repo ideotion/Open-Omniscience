@@ -188,6 +188,7 @@ _WRITERS = {
     "repr": repr,
     "json": json.dumps,
     "json-utf8": lambda t: json.dumps(t, ensure_ascii=False),
+    "bytes-repr": lambda t: repr(t.encode("utf-8", "backslashreplace")),
 }
 
 
@@ -222,7 +223,7 @@ def test_every_shape_real_writers_make_of_a_key_is_among_the_shapes_the_helper_t
     forms = set(ss._forms(key))
     missing = sorted(_spans(key) - forms)
     assert not missing, missing
-    assert len(forms) <= 170, "the most one secret has: a number that stays says what it protects (CARRIER_DEPTH)"
+    assert len(forms) <= 518, "the most one secret has: a number that stays says what it protects (CARRIER_DEPTH)"
     if key == "plain-key-Pq7#":
         assert forms == {key}, "a key no writer changes has one shape"
 
@@ -234,7 +235,12 @@ def test_a_text_written_again_by_each_sequence_of_writers_comes_back_with_the_ke
     the key is gone and what is left reads as the text it was, with the marker where the key was."""
     import ast
 
-    readers = {"repr": ast.literal_eval, "json": json.loads, "json-utf8": json.loads}
+    readers = {
+        "repr": ast.literal_eval,
+        "json": json.loads,
+        "json-utf8": json.loads,
+        "bytes-repr": lambda text: ast.literal_eval(text).decode("utf-8", "backslashreplace"),
+    }
     sentence = f"near {_sql(key)}: syntax error"
     checked = 0
     for size in (1, 2, 3):
@@ -251,7 +257,7 @@ def test_a_text_written_again_by_each_sequence_of_writers_comes_back_with_the_ke
                 layer = readers[name](layer)
             assert layer == f"near PRAGMA key = '{ss.REDACTED}': syntax error", (names, layer)
             checked += 1
-    assert checked == 3 + 9 + 27
+    assert checked == 4 + 16 + 64
 
 
 # --------------------------------------------------------------------------- #
@@ -302,14 +308,14 @@ def _nested_texts() -> list[str]:
 
 def test_every_net_takes_the_key_out_of_the_statement_in_every_way_it_was_written_again(key_held, caplog, journal):
     """MUTATION TARGET: any net handing its text to a scrub that knows fewer shapes than the others. One key held by the process,
-    44 texts that carry it (the statement an engine quotes, written again by every sequence of ``repr`` and JSON up to three deep,
+    89 texts that carry it (the statement an engine quotes, written again by every sequence of ``repr`` and JSON up to three deep,
     and by ``str``/``repr`` of an exception and of a dict), and the five places a text is written: the global handler (the response
     and the log), the error journal, a failed job's error line, the block a route wraps its work in, and ``log_failure``."""
     caplog.set_level(logging.DEBUG)
     spans = _spans(KEY)
     log = logging.getLogger("tests.floor_and_forms.nets")
     texts = _nested_texts()
-    assert len(texts) == 44
+    assert len(texts) == 89
     for text in texts:
         caplog.clear()
         written: list[str] = []
@@ -412,8 +418,8 @@ def test_forget_held_empties_the_entry_and_the_next_scrub_rebuilds_what_is_still
 def test_scrubbed_value_walks_what_json_produces_and_leaves_keys_numbers_and_the_rest_alone(monkeypatch):
     """Every STRING in a structure goes through ``scrubbed``: dict values, list and tuple members, at any depth. The KEYS are
     field names the code defines (a passphrase that is a piece of one must not rename it), numbers, booleans and ``None`` pass
-    through, and what JSON does not produce passes through as it is. MUTATION TARGET: keys scrubbed too, a tuple or a nested
-    list skipped, the held passphrases not read."""
+    through (a leaf that is none of those is checked as text: the next test). MUTATION TARGET: keys scrubbed too, a tuple or
+    a nested list skipped, the held passphrases not read."""
     monkeypatch.setenv("OO_DB_PASSPHRASE", OTHER)
     monkeypatch.setattr(connect, "_passphrase", None)
     ss.forget_held()
@@ -421,14 +427,14 @@ def test_scrubbed_value_walks_what_json_produces_and_leaves_keys_numbers_and_the
         f"key-{KEY}": f"a {KEY} b",
         "list": [f"{OTHER}", {"deep": (f"{_sql(KEY)}", 3, None, True)}],
         "n": 1.5,
-        "raw": b"bytes " + KEY.encode(),
+        "raw": "plain text, not bytes",
     }
     out = ss.scrubbed_value(value, KEY)
     assert out == {
         f"key-{KEY}": f"a {ss.REDACTED} b",
         "list": [ss.REDACTED, {"deep": (f"PRAGMA key = '{ss.REDACTED}'", 3, None, True)}],
         "n": 1.5,
-        "raw": b"bytes " + KEY.encode(),
+        "raw": "plain text, not bytes",
     }
     assert ss.scrubbed_value("a plain text") == "a plain text" and ss.scrubbed_value(7) == 7
 
@@ -589,3 +595,114 @@ def test_the_secrets_a_block_names_may_be_empty_or_missing_and_the_held_ones_are
     with pytest.raises(RuntimeError) as err, ss.scrub_and_reraise(LOG, "x", None, "", OTHER):
         raise ValueError(f"{KEY} and {OTHER}")
     assert str(err.value) == f"ValueError: {ss.REDACTED} and {ss.REDACTED}"
+
+
+# --------------------------------------------------------------------------- #
+#  Fold 3: the bytes carrier, ``exception_text``, a file that holds a short secret, a leaf that is not a string
+# --------------------------------------------------------------------------- #
+def test_a_key_in_the_repr_of_its_bytes_is_taken_out_in_every_place_a_library_puts_one():
+    """``imaplib`` and ``poplib`` keep the words they send and receive as ``bytes``, and an exception that holds one prints its
+    ``repr``: a password with a letter outside ASCII is then its UTF-8 escapes, which no other shape lists. MUTATION TARGET:
+    the carrier left out of ``_carried`` (:func:`_bytes_inner`), either reading of it."""
+    for word in ("pässwörd-Zk9", "it's \"x\" pässwörd-Zk9", "plain-Zk9-\u00e9"):
+        raw = word.encode("utf-8")
+        for carrier in (
+            repr(raw),
+            str(RuntimeError(raw)),
+            repr(RuntimeError(raw)),
+            str(RuntimeError("login", raw)),
+            json.dumps(repr(raw)),
+            json.dumps({"detail": repr(raw)}),
+        ):
+            out = ss.scrubbed(f"login failed: {carrier} for user", word)
+            assert ss.REDACTED in out and "\\xc3" not in out and "Zk9" not in out, (word, carrier, out)
+            assert out.startswith("login failed: ") and out.endswith(" for user")
+
+
+def test_the_bytes_carrier_does_not_raise_for_a_lone_surrogate_and_stays_inside_the_bound():
+    assert ss._bytes_inner("a\ud800b")[0].startswith("a")
+    worst = "a'b\\c\u00e4\n\"\x01'"
+    assert len(ss._shapes(worst)) <= 518
+    assert ss.scrubbed("x " + repr(worst.encode("utf-8")) + " y", worst) != "x " + repr(worst.encode("utf-8")) + " y"
+
+
+def test_exception_text_is_the_class_and_the_scrubbed_words_and_the_cut_comes_after_the_scrub(monkeypatch):
+    """MUTATION TARGET: a cut before the scrub, the held passphrases left out, the class dropped (``typed``), a ``str()`` that
+    raises, a secret under the floor."""
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (OTHER,))
+    exc = RuntimeError(f"key {KEY} refused, held {OTHER}")
+    assert ss.exception_text(exc, KEY) == f"RuntimeError: key {ss.REDACTED} refused, held {ss.REDACTED}"
+    assert ss.exception_text(exc, KEY, typed=False) == f"key {ss.REDACTED} refused, held {ss.REDACTED}"
+    secret = "fragment-secret-Zk4"
+    cut = ss.exception_text(RuntimeError("a" * 20 + secret), secret, typed=False, limit=30)
+    assert cut == ("a" * 20 + ss.REDACTED)[:30] and secret[:6] not in cut, "a cut through the secret leaves no fragment"
+
+    class _Rude(Exception):
+        def __str__(self) -> str:
+            raise ValueError("no")
+
+    assert ss.exception_text(_Rude(), KEY) == "_Rude: its text is withheld"
+    assert ss.exception_text(_Rude(), KEY, limit=5) == "_Rude"
+    assert ss.exception_text(RuntimeError("key zq refused"), "zq") == "RuntimeError: its text is withheld"
+    assert ss.exception_text(RuntimeError("key zq refused"), "zq", typed=False) == "RuntimeError: its text is withheld"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    assert ss.exception_text(RuntimeError("anything"), KEY) == "RuntimeError: its text is withheld"
+
+
+def test_scrub_file_refuses_a_file_that_holds_a_secret_under_the_floor_and_touches_nothing(tmp_path):
+    """The per-needle scrub leaves a short needle in a text, so for a FILE (the release run's kept install) it refuses instead:
+    the caller removes what it raises on. MUTATION TARGET: the refusal, its test of the file's own text, the shapes it reads."""
+    holding = tmp_path / "a.jsonl"
+    holding.write_text(json.dumps({"label": "b-zq7.oobak"}) + "\n", encoding="utf-8")
+    before = holding.read_bytes()
+    with pytest.raises(ValueError, match="too short") as err:
+        ss.scrub_file(holding, "zq7")
+    assert "zq7" not in str(err.value) and holding.read_bytes() == before and not (tmp_path / "a.jsonl.part").exists()
+    clean = tmp_path / "b.json"
+    clean.write_text('{"a": 1}', encoding="utf-8")
+    assert ss.scrub_file(clean, "zq7") is False and clean.read_text(encoding="utf-8") == '{"a": 1}'
+    indented = tmp_path / "c.json"
+    indented.write_text(json.dumps({"a": {"b": 1}}, indent=2), encoding="utf-8")
+    with pytest.raises(ValueError, match="too short"):
+        ss.scrub_file(indented, "    ")  # whitespace is a short secret too, and every indented document holds it
+    long_one = tmp_path / "d.jsonl"
+    long_one.write_text(json.dumps({"label": f"b-{OTHER}.oobak"}) + "\n", encoding="utf-8")
+    assert ss.scrub_file(long_one, OTHER) is True and OTHER not in long_one.read_text(encoding="utf-8")
+    assert ss.scrub_file(long_one, "") is False
+
+
+def test_scrubbed_value_checks_a_leaf_that_is_not_a_string_as_the_text_it_is_written_as(monkeypatch):
+    """A report round-tripped through ``json.dumps(default=str)`` writes bytes, a path or an exception as text; the walk
+    checks that text instead of passing the object. MUTATION TARGET: the leaf branch (back to pass-through), a ``str()`` that
+    raises, the held passphrases."""
+    from pathlib import Path
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (OTHER,))
+
+    class _Rude:
+        def __str__(self) -> str:
+            raise ValueError("no")
+
+    value = {
+        "raw": b"bytes " + KEY.encode(),
+        "path": Path(f"/tmp/{OTHER}/x"),
+        "error": RuntimeError(f"key {KEY}"),
+        "set": {OTHER},
+        "rude": _Rude(),
+        "n": 3,
+        "f": 1.5,
+        "none": None,
+        "flag": False,
+    }
+    out = ss.scrubbed_value(value, KEY, withheld="(withheld)")
+    assert out == {
+        "raw": f"b'bytes {ss.REDACTED}'",
+        "path": f"/tmp/{ss.REDACTED}/x",
+        "error": f"key {ss.REDACTED}",
+        "set": f"{{'{ss.REDACTED}'}}",
+        "rude": "(withheld)",
+        "n": 3,
+        "f": 1.5,
+        "none": None,
+        "flag": False,
+    }, out

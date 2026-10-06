@@ -148,3 +148,27 @@ def test_the_unlock_hands_the_typed_key_to_the_checkpoint_close(failing_unlock, 
     with pytest.raises(RuntimeError, match="the finish failed"):
         unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
     assert seen == [_PASS]
+
+
+def test_a_short_wrong_key_at_the_lock_screen_is_answered_in_the_messages_fixed_words(failing_unlock, monkeypatch):
+    """A wrong key under the floor of what can be taken out of a text (``MIN_SECRET_CHARS``) withholds the message whole, and a
+    mistyped short key is the lock screen's commonest answer: the 403 says the message's own fixed words, not the scrub's notice
+    about the passphrases the process holds. A key that is not in the text leaves the message as it was. MUTATION TARGET: the
+    ``withheld=`` of the 403's ``detail``."""
+    from fastapi import HTTPException
+
+    held, path = failing_unlock
+
+    def wrong(*_a, **_k):
+        raise connect_mod.WrongPassphraseError(f"the passphrase does not open {path.name} (or the file is damaged)")
+
+    monkeypatch.setattr(connect_mod, "connect", wrong)
+    with pytest.raises(HTTPException) as short:
+        unlock_mod._unlock_locked(PassphraseBody(passphrase="oo"), path)  # "oo" is in "oo.db"
+    assert short.value.status_code == 403
+    assert short.value.detail == "the passphrase does not open this file (or the file is damaged)"
+    with pytest.raises(HTTPException) as longer:
+        unlock_mod._unlock_locked(PassphraseBody(passphrase="a-wrong-key-Wm3#"), path)
+    assert longer.value.status_code == 403
+    assert longer.value.detail == f"the passphrase does not open {path.name} (or the file is damaged)"
+    assert held == [], "a refused key is never held"

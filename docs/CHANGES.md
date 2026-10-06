@@ -144,6 +144,12 @@ this section were still open.
   characters, spaces not counted, cannot be taken out of free text (it would be a piece of nearly every message), so a text
   that holds one is withheld whole in the same way and a text that holds none of its shapes is kept: the app does not accept
   such a passphrase for a new store, but an older store opens with its own and the unlock holds it.
+  A kept fresh install of the release run that holds such a passphrase loses the journals and reports that hold it (the run's
+  report names them) instead of keeping them with it in. A password a library keeps as bytes (a mailbox's) is taken out of the
+  `repr` of its bytes too, and a lock screen answer for a short wrong key says the message's own fixed words.
+- The release run, the P0 check and the restore child write every caught exception through one helper, so that a handler
+  that held no passphrase of its own (the pause and resume of collection, the live probes, the bundle read, the report
+  readers) takes out the passphrases the process holds too, and the cut to a few hundred characters is made after the scrub.
 - A key typed into a request, which the process does not hold until it is accepted (the lock screen's unlock, create and
   encrypt, the encrypted backup, the single-file restore, the volume backup, restore and verify starts, the import
   queue's and the mailbox import's password), is taken out of what a failure under that request raises and logs: the error that leaves is a `RuntimeError`
