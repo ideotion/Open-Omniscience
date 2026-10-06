@@ -631,7 +631,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
   }
 
   // ---- the usual archive (a manifest and one part) that "again" already handed over is not handed over a second time by the finished build
-  // (the cases above use nine files, which the five-file gate excludes anyway: a hand-over moved out of the same-archive branch would pass them all)
+  // (the cases above use nine files, which the five-file gate excludes anyway: they would still pass if the same-archive branch stopped recognising the archive, which is what this block catches)
   {
     const page = makePage();
     const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
