@@ -2010,14 +2010,28 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
                 _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
 
 
-#: SQLite's VACUUM writes a COMPLETE second copy of the database and only then
-#: swaps it in, so the peak requirement is the file plus the copy. 2.0x is the
-#: floor of that, not a safety margin on top of it.
+#: SQLite's VACUUM rebuilds a COMPLETE second copy of the database and only then
+#: swaps it in: the copy is held in memory (every pooled connection of the app sets
+#: ``temp_store=MEMORY``, see :data:`VACUUM_RAM_FACTOR`) and its content is written back
+#: through the log, so the database's volume needs the file's size free again. 2.0x is
+#: the floor of that, not a safety margin on top of it.
 VACUUM_HEADROOM = 2.0
+
+#: What a VACUUM holds in RAM per byte of the file, under ``temp_store=MEMORY``. Measured
+#: 2026-10-06 on a 257 MB file: +266 MB resident (1.03x, against +4 MB under ``FILE``);
+#: 1.25 leaves room for the page cache the rebuild fills. WHAT IT PROTECTS: a machine that
+#: has less memory than the copy needs, plus the memory guard's own floor, is not asked to
+#: build it (the kernel's out-of-memory kill would end the whole app, the failure the
+#: rollup's in-memory build brought down the 4.81 GiB machines with). It is NOT moved to a
+#: temporary file to avoid the question: at the app's 16 KiB page size a VACUUM with
+#: ``temp_store=FILE`` wrote a CORRUPT encrypted store (the deep read of the index build,
+#: reproduced through this function), so the cost of this tool is memory, and memory is
+#: what is gated.
+VACUUM_RAM_FACTOR = 1.25
 
 
 class VacuumSpaceError(RuntimeError):
-    """A VACUUM was refused because the volume it would write to is too small.
+    """A VACUUM was refused because the volume it would write to, or the memory it would hold its copy in, is too small.
 
     Carries the measurement, so the caller can tell the operator the actual
     numbers rather than "not enough space".
@@ -2035,10 +2049,13 @@ def vacuum_preflight(engine: Engine) -> dict:
     confirms; nothing checked SPACE. A VACUUM needs room for a full second copy
     of the file, and running out mid-rebuild is the worst moment to discover it.
 
-    BOTH volumes are measured, because SQLite writes its rebuild to a temporary
-    file whose location it chooses (``SQLITE_TMPDIR``/``TMPDIR``/``/var/tmp``/
-    ``/tmp`` on unix) and that need not be the database's own volume. Requiring
-    the headroom on each is conservative in the only direction that is safe.
+    TWO THINGS are measured: the free space on the database's volume (the new
+    content goes through the log into the file) and the MEMORY the rebuilt copy is
+    held in (``VACUUM_RAM_FACTOR`` times the file, plus the memory guard's floor,
+    against what is available, through the guard's own reader). The temporary-file
+    volume is NOT measured: every pooled connection sets ``temp_store=MEMORY``, so
+    nothing is written there, and a refusal for a small ``/tmp`` would point the
+    operator at a volume the rebuild never touches.
 
     AN UNREADABLE FIGURE IS NOT A REFUSAL. ``shutil.disk_usage`` can raise, and
     a fabricated 0 would manufacture a refusal out of an unreadable ``statvfs``
@@ -2048,7 +2065,8 @@ def vacuum_preflight(engine: Engine) -> dict:
     by a measurement nobody took.
     """
     import shutil
-    import tempfile
+
+    from src.database import article_indexes as _memory  # the one reader of the memory guard, shared with the index build
 
     if engine.url.get_backend_name() != "sqlite":
         return {"checked": False, "sufficient": None,
@@ -2067,46 +2085,64 @@ def vacuum_preflight(engine: Engine) -> dict:
         except OSError:
             return None
 
-    volumes = {
-        "database": (os.path.dirname(os.path.abspath(db_path)) or ".", None),
-        "temp": (tempfile.gettempdir(), None),
-    }
-    measured = {name: _free(path) for name, (path, _) in volumes.items()}
+    volumes = {"database": os.path.dirname(os.path.abspath(db_path)) or "."}
+    measured = {name: _free(path) for name, path in volumes.items()}
     readable = {k: v for k, v in measured.items() if v is not None}
+    ram_needed = int(db_bytes * VACUUM_RAM_FACTOR)
+    floor = _memory._floor_bytes()
+    available = _memory._available_ram_bytes()
 
     report: dict = {
-        "checked": bool(readable),
+        "checked": bool(readable) or available is not None,
         "db_bytes": db_bytes,
         "needed_bytes": needed,
         "headroom": VACUUM_HEADROOM,
         "free_bytes": {k: measured[k] for k in measured},
+        "ram_estimate_bytes": ram_needed,
+        "ram_floor_bytes": floor,
+        "ram_available_bytes": available,
+        "ram_factor": VACUUM_RAM_FACTOR,
         "method": (
             "VACUUM rebuilds the file into a full second copy before swapping it "
-            "in, so it needs about twice the current size free. Both the "
-            "database's own volume and the temporary-file volume are measured, "
-            "because SQLite may write the rebuild to either."
+            "in. The copy is held in memory (about "
+            f"{VACUUM_RAM_FACTOR} times the file, measured), so the machine must have that much "
+            "available on top of the floor the memory guard keeps free, and the "
+            "database's own volume needs about twice the current size free for the "
+            "new content. Nothing is written to the temporary-file volume."
         ),
     }
-    if not readable:
+    if not readable and available is None:
         report["sufficient"] = None
         report["detail"] = (
-            "free space could not be read on either volume; this VACUUM was not "
-            "preflighted"
+            "neither the free space nor the available memory could be read; this "
+            "VACUUM was not preflighted"
         )
         return report
 
     short = sorted(k for k, v in readable.items() if v < needed)
+    if available is not None and available < ram_needed + floor:
+        short.append("memory")
     report["sufficient"] = not short
     if short:
-        worst = min(short, key=lambda k: readable[k])
         report["short_on"] = short
-        report["detail"] = (
-            f"the {worst} volume has {readable[worst]:,} bytes free and this "
-            f"VACUUM needs about {needed:,} (twice the {db_bytes:,}-byte file). "
-            "Free space, or move the temporary directory, then retry."
-        )
+        parts = []
+        if "database" in short:
+            parts.append(
+                f"the database volume has {readable['database']:,} bytes free and this "
+                f"VACUUM needs about {needed:,} (twice the {db_bytes:,}-byte file). "
+                "Free space, then retry."
+            )
+        if "memory" in short:
+            parts.append(
+                f"this computer has {available:,} bytes of memory available and the rebuilt "
+                f"copy of the {db_bytes:,}-byte file is held in memory (about {ram_needed:,}) on top "
+                f"of the {floor:,} the memory guard keeps free. Close other programs and retry. "
+                "The copy is held in memory because writing it to a temporary file corrupts an "
+                "encrypted file at this page size (measured)."
+            )
+        report["detail"] = " ".join(parts)
     else:
-        report["detail"] = "enough free space on every volume this VACUUM writes to"
+        report["detail"] = "enough free space and memory for this VACUUM"
     return report
 
 
@@ -2125,6 +2161,7 @@ def vacuum_database(engine: Engine) -> dict:
     # PREFLIGHT BEFORE THE EXCLUSIVE LOCK, so a refusal costs nobody their writer.
     preflight = vacuum_preflight(engine)
     if preflight.get("sufficient") is False:
+        _LOG.warning("compaction not run: %s", preflight.get("detail"))
         raise VacuumSpaceError(preflight)
     size_before = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else None
     t0 = time.perf_counter()
@@ -2155,9 +2192,9 @@ def vacuum_database(engine: Engine) -> dict:
         "preflight": preflight,
         "method": (
             "SQLite VACUUM (full file rebuild; frees unused pages) followed by "
-            "PRAGMA optimize. Real byte sizes from the filesystem. Free space is "
-            "checked first against twice the file size, on both the database's "
-            "volume and the temporary-file volume."
+            "PRAGMA optimize. Real byte sizes from the filesystem. Checked first: free space "
+            "on the database's volume against twice the file size, and the memory the "
+            "rebuilt copy is held in against what is available."
         ),
     }
 

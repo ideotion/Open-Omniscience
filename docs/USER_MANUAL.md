@@ -1651,7 +1651,12 @@ Official **figures** are not here at all — they are data, so they live under
     space”, a real `PRAGMA freelist_count` reading) and defragments the indexes.
     It takes time proportional to the file size and pauses collection writes
     while it runs; the result reports the real bytes freed and duration. It
-    never interprets or removes data.
+    never interprets or removes data. It builds the compacted copy in memory
+    (writing it to a temporary file corrupts an encrypted file at the app's page
+    size, measured), so it first checks that the computer has the memory for it
+    (about 1.25 times the file, on top of the free memory the app always keeps
+    for itself) and room on the drive (about twice the file), and when either is
+    short it says which, with the numbers, and does not start.
   - **Network fetch mode** — *Transparent* (default; polite, names the tool in the
     User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
     e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust

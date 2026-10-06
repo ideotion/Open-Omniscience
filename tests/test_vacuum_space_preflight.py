@@ -14,10 +14,15 @@ to discover it.
 THREE THINGS THIS PINS, each of which is a way the check could be wrong rather
 than absent.
 
-1. BOTH VOLUMES ARE MEASURED. SQLite writes the rebuild to a temporary file in a
-   directory it chooses (``SQLITE_TMPDIR`` / ``TMPDIR`` / ``/var/tmp`` / ``/tmp``
-   on unix), which need not be the database's own volume. Checking only the
-   database's volume would pass a machine whose /tmp is a small tmpfs.
+1. THE DATABASE'S VOLUME AND THE MEMORY ARE MEASURED, AND THE TEMPORARY VOLUME IS
+   NOT. Every pooled connection of the app sets ``temp_store=MEMORY``, so the
+   rebuilt copy is held in RAM and nothing is written to ``/tmp``: a refusal for a
+   small ``/tmp`` pointed the operator at a volume the rebuild never touches, and
+   a machine with too little MEMORY for the copy was waved through (the rollup's
+   in-memory build is what brought the 4.81 GiB machines down). The copy is not
+   moved to a file to avoid the question: at the app's 16 KiB page size a VACUUM
+   with ``temp_store=FILE`` wrote a CORRUPT encrypted store (the deep read of the
+   index build), so the cost is memory and memory is what is gated.
 
 2. AN UNREADABLE FIGURE IS NOT A REFUSAL. ``shutil.disk_usage`` can raise, and a
    fabricated 0 would manufacture a refusal out of an unreadable ``statvfs``.
@@ -40,13 +45,23 @@ from pathlib import Path
 
 import pytest
 
+from src.database import article_indexes
 from src.database.maintenance import (
     VACUUM_HEADROOM,
+    VACUUM_RAM_FACTOR,
     VacuumSpaceError,
     vacuum_database,
     vacuum_preflight,
 )
 from tests.js_source_helper import python_function_source
+
+
+@pytest.fixture(autouse=True)
+def plenty_of_memory(monkeypatch):
+    """A machine with room, so the tests of the DISK half are not at the mercy of the one that runs them; the memory tests
+    below set their own figures through the same two readers the index build uses."""
+    monkeypatch.setattr(article_indexes, "_available_ram_bytes", lambda: 10**12)
+    monkeypatch.setattr(article_indexes, "_floor_bytes", lambda: 0)
 
 
 @pytest.fixture
@@ -61,15 +76,15 @@ def sqlite_engine(tmp_path):
     return engine
 
 
-def test_the_preflight_measures_twice_the_file_on_both_volumes(sqlite_engine) -> None:
+def test_the_preflight_measures_twice_the_file_on_the_database_volume_and_the_memory_the_copy_is_held_in(sqlite_engine) -> None:
     report = vacuum_preflight(sqlite_engine)
     assert report["checked"] is True
     assert report["sufficient"] is True, report
     assert report["db_bytes"] > 0
     assert report["needed_bytes"] == int(report["db_bytes"] * VACUUM_HEADROOM)
-    assert set(report["free_bytes"]) == {"database", "temp"}, (
-        "the rebuild can land on either volume, so both have to be measured"
-    )
+    assert set(report["free_bytes"]) == {"database"}, "the rebuild is held in memory: no temporary volume is written"
+    assert report["ram_estimate_bytes"] == int(report["db_bytes"] * VACUUM_RAM_FACTOR)
+    assert report["ram_factor"] == VACUUM_RAM_FACTOR == 1.25, "a figure changed: update the words that quote it"
 
 
 def test_a_measured_shortfall_refuses_before_taking_the_write_lock(
@@ -108,24 +123,95 @@ def test_a_measured_shortfall_refuses_before_taking_the_write_lock(
     )
 
 
-def test_only_the_short_volume_needs_to_be_short(sqlite_engine, monkeypatch) -> None:
-    """A roomy database volume must not excuse a full /tmp -- that is precisely
-    the machine the one-volume version of this check would have waved through."""
+def test_a_full_temporary_volume_is_not_a_refusal_because_nothing_is_written_there(sqlite_engine, monkeypatch) -> None:
+    """The deep read's S2: the old check measured ``tempfile.gettempdir()`` for a rebuild the pooled ``temp_store=MEMORY``
+    never writes, and told the operator to move the temporary directory, which cures nothing."""
     import tempfile
 
     real = shutil.disk_usage
     tmpdir = os.path.realpath(tempfile.gettempdir())
+    asked: list[str] = []
 
     def _tmp_is_full(path):
+        asked.append(os.path.realpath(str(path)))
         got = real(path)
-        if os.path.realpath(str(path)) == tmpdir:
+        if os.path.realpath(str(path)) == tmpdir and os.path.realpath(str(path)) != os.path.realpath(os.path.dirname(str(sqlite_engine.url.database))):
             return type(got)(got.total, got.used, 1)
         return got
 
     monkeypatch.setattr(shutil, "disk_usage", _tmp_is_full)
     report = vacuum_preflight(sqlite_engine)
-    assert report["sufficient"] is False, report
-    assert report["short_on"] == ["temp"], report
+    assert report["sufficient"] is True, report
+    assert "short_on" not in report
+    assert "temporary directory" not in report["detail"]
+    assert set(asked) == {os.path.realpath(os.path.dirname(str(sqlite_engine.url.database)))}, asked
+
+
+def _memory(monkeypatch, available, floor=0):
+    monkeypatch.setattr(article_indexes, "_available_ram_bytes", lambda: available)
+    monkeypatch.setattr(article_indexes, "_floor_bytes", lambda: floor)
+
+
+def test_the_memory_asked_is_the_files_size_times_the_factor_plus_the_guards_floor_and_the_boundary_is_exact(
+    sqlite_engine, monkeypatch
+) -> None:
+    """The coordinator's gate: the MEMORY VACUUM's copy holds the whole file in RAM, so it is refused when the machine cannot
+    hold it and the memory guard's floor, with the reason and the numbers, and passes at exactly the figure."""
+    db_bytes = vacuum_preflight(sqlite_engine)["db_bytes"]
+    need = int(db_bytes * VACUUM_RAM_FACTOR) + 7_000
+    _memory(monkeypatch, need, floor=7_000)
+    ok = vacuum_preflight(sqlite_engine)
+    assert ok["sufficient"] is True and "short_on" not in ok, ok
+    assert ok["ram_floor_bytes"] == 7_000 and ok["ram_available_bytes"] == need
+    _memory(monkeypatch, need - 1, floor=7_000)
+    short = vacuum_preflight(sqlite_engine)
+    assert short["sufficient"] is False and short["short_on"] == ["memory"], short
+    assert f"{need - 1:,} bytes of memory available" in short["detail"]
+    assert f"{int(db_bytes * VACUUM_RAM_FACTOR):,}" in short["detail"] and "7,000" in short["detail"]
+    assert "temporary file corrupts an encrypted file" in short["detail"], "the reason the copy is not moved to a file is not said"
+    # the floor alone is enough to refuse: it is not an extra the estimate swallows
+    _memory(monkeypatch, int(db_bytes * VACUUM_RAM_FACTOR) + 6_999, floor=7_000)
+    assert vacuum_preflight(sqlite_engine)["short_on"] == ["memory"]
+
+
+def test_a_memory_shortfall_is_refused_before_the_write_lock_and_the_refusal_is_logged(sqlite_engine, monkeypatch, caplog) -> None:
+    import logging
+
+    _memory(monkeypatch, 1)
+    took_the_lock = []
+    import src.database.writer as writer
+
+    real_lock = writer.write_lock
+    monkeypatch.setattr(writer, "write_lock", lambda *a, **k: (took_the_lock.append(True), real_lock(*a, **k))[1])
+    with caplog.at_level(logging.WARNING, logger="src.database.maintenance"), pytest.raises(VacuumSpaceError) as excinfo:
+        vacuum_database(sqlite_engine)
+    assert excinfo.value.report["short_on"] == ["memory"]
+    assert not took_the_lock, "a refusal after the exclusive lock would stall every writer for a vacuum that never ran"
+    assert any("compaction not run" in r.getMessage() and "memory available" in r.getMessage() for r in caplog.records), caplog.text
+
+
+def test_when_the_disk_and_the_memory_both_fall_short_the_detail_says_both(sqlite_engine, monkeypatch) -> None:
+    real = shutil.disk_usage
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: type(real(path))(real(path).total, real(path).used, 1))
+    _memory(monkeypatch, 1)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["short_on"] == ["database", "memory"], report
+    assert "volume has 1 bytes free" in report["detail"] and "bytes of memory available" in report["detail"]
+
+
+def test_an_unreadable_memory_figure_is_not_a_refusal_and_neither_is_an_unreadable_disk_figure(sqlite_engine, monkeypatch) -> None:
+    _memory(monkeypatch, None)
+    assert vacuum_preflight(sqlite_engine)["sufficient"] is True, "no reading of the memory must not manufacture a refusal"
+
+    def _boom(path):
+        raise OSError("statvfs is unavailable here")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    _memory(monkeypatch, 10**12)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["sufficient"] is True and report["checked"] is True, "the memory WAS measured, and it is enough"
+    _memory(monkeypatch, 1)
+    assert vacuum_preflight(sqlite_engine)["short_on"] == ["memory"], "an unreadable disk does not excuse a measured memory shortfall"
 
 
 def test_an_unreadable_volume_is_not_a_refusal(sqlite_engine, monkeypatch) -> None:
@@ -134,6 +220,7 @@ def test_an_unreadable_volume_is_not_a_refusal(sqlite_engine, monkeypatch) -> No
         raise OSError("statvfs is unavailable here")
 
     monkeypatch.setattr(shutil, "disk_usage", _boom)
+    _memory(monkeypatch, None)  # and neither figure could be read
     report = vacuum_preflight(sqlite_engine)
     assert report["sufficient"] is None, report
     assert report["checked"] is False
