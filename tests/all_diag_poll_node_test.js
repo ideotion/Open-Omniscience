@@ -154,7 +154,7 @@ async function readyStillOffersTheFiles() {
     "must not have replaced the normal path",
   );
   assert.ok(!/Could not split|Still building|Build failed/.test(statusText || ""), "got: " + JSON.stringify(statusText));
-  // The answer lands where the press was (2026-10-06: a build of 12-55 minutes ended in silence and the person
+  // The answer lands where the press was (2026-10-06: a build of many minutes ended in silence and the person
   // pressed the button that saves at once): the bar is brought into view, and a set that fits one click is
   // handed over by the page.
   assert.strictEqual(shownFor.length, 1, "the bar is brought into view once, at the end of the build");
