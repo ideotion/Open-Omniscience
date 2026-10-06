@@ -129,7 +129,10 @@ def performance_report(
             int(getattr(_load_sched_settings(), "collect_parallelism", 1) or 1)
         )
     except Exception as exc:  # noqa: BLE001 - a diagnostic never breaks on a side read
-        collection["learned_concurrency"] = {"available": False, "reason": str(exc)[:160]}
+        # lazily: bundle imports this module at its top
+        from .bundle import _all_diag_err_str
+
+        collection["learned_concurrency"] = {"available": False, "reason": _all_diag_err_str(exc)[:160]}
 
     # -- passive latencies: the app's own histograms, real use since boot --- #
     endpoint_latency: list[dict] = []
@@ -181,6 +184,9 @@ def performance_report(
 
     # -- active self-test: hot read handlers, timed in-process -------------- #
     selftest_rows: list[dict] = []
+    # What the R27 gate read when the keyword-export probe asked it (empty when the selftest did
+    # not run): the same reading the bundle's digest member records, so the two can be compared.
+    kw_gate: dict = {}
     if selftest:
         from src.analytics import queries as aq
         from src.api.database import country_coverage, database_stats
@@ -217,8 +223,11 @@ def performance_report(
                         }
                     )
                 except Exception as exc:  # noqa: BLE001 - report failures honestly
+                    # lazily: bundle imports this module at its top
+                    from .bundle import _all_diag_err_str
+
                     selftest_rows.append(
-                        {"probe": name, "run": run, "error": str(exc)[:160]}
+                        {"probe": name, "run": run, "error": _all_diag_err_str(exc)[:160]}
                     )
 
         _timed("database_stats", lambda: database_stats(db=db))
@@ -234,7 +243,7 @@ def performance_report(
         # Imported here: the bundle module imports this one.
         from .bundle import ram_declined_reason
 
-        kw_declined = ram_declined_reason("keyword-log-digest.json", db=db)
+        kw_declined = ram_declined_reason("keyword-log-digest.json", db=db, reading=kw_gate)
         if kw_declined is None:
             _timed(
                 "keyword_export_streamed",
@@ -274,6 +283,7 @@ def performance_report(
             ),
             "ran": bool(selftest),
             "results": selftest_rows,
+            **({"keyword_export_gate": kw_gate} if kw_gate else {}),
         },
     }
     body = envelope(

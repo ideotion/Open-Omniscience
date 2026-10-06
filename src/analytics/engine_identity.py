@@ -142,6 +142,11 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "reader sees exactly the rows a pass wrote; it changes how they are read, never what "
         "extraction writes"
     ),
+    "src/monitoring/__init__.py": "the package engine_text lives in; no extraction code",
+    "src/monitoring/engine_text.py": (
+        "cleans an engine's error TEXT of the passphrase before it is stored or logged; it runs "
+        "only on a failure and never changes the rows a pass writes"
+    ),
     "src/services/duckduckgo.py": "imported by the services package; makes no call in a pass",
     "src/utils/logging_config.py": "log formatting only",
 }

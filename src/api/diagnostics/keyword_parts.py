@@ -25,8 +25,9 @@ from ._base import router
 from .keywords import _PARTS_SET_RE, _SET_LISTING, _parts_root
 
 _KEYWORD_PARTS_GONE = (
-    "no set of keyword-log files is kept on this machine (a newer export replaced it, or the "
-    "twelve-hour sweep removed it): build it again with /api/diagnostics/keywords?format=parts"
+    "no set of keyword-log files is kept on this machine (a newer export replaced it, the "
+    "twelve-hour sweep removed it, or it was removed to make room for a build that did not "
+    "finish): build it again with /api/diagnostics/keywords?format=parts"
 )
 
 
@@ -64,7 +65,8 @@ def keyword_part_download(set_id: str, name: str) -> FileResponse:
     except (OSError, ValueError) as exc:
         raise HTTPException(
             status_code=404,
-            detail="that set is gone (a newer export replaced it): build it again with "
+            detail="that set is gone (a newer export replaced it, or it was removed to make room "
+                   "for a build that did not finish): build it again with "
                    "/api/diagnostics/keywords?format=parts",
         ) from exc
     if name not in {f["name"] for f in listing["files"]}:

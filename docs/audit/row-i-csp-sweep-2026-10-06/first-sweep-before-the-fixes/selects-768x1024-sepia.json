@@ -1,0 +1,1414 @@
+[
+ {
+  "where": "home",
+  "id": "home-recent-tag",
+  "options": 20,
+  "status": "ok",
+  "picked": "news",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore",
+  "id": "adv-nf-field",
+  "options": 5,
+  "status": "ok",
+  "picked": "author",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore",
+  "id": "adv-nf-mode",
+  "options": 3,
+  "status": "ok",
+  "picked": "prefix",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "explore",
+  "id": "an-adv-lang",
+  "options": 12,
+  "status": "ok",
+  "picked": "fr",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore",
+  "id": "adv-lang-basis",
+  "options": 3,
+  "status": "ok",
+  "picked": "asserted",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore",
+  "id": "adv-sources",
+  "options": 6404,
+  "status": "ok",
+  "picked": "782",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore",
+  "id": "adv-countries",
+  "options": 209,
+  "status": "ok",
+  "picked": "ca",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore",
+  "id": "adv-regions",
+  "options": 10,
+  "status": "ok",
+  "picked": "europe",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore",
+  "id": "#8",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "explore",
+  "id": "#9",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "explore > overview",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > keywords",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > trend",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > mindmap",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > articles",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > articles",
+  "id": "an-adv-sort",
+  "options": 8,
+  "status": "ok",
+  "picked": "",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > articles",
+  "id": "an-adv-dir",
+  "options": 2,
+  "status": "ok",
+  "picked": "asc",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore > www",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > links",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > related",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > sentiment",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > sources",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > competitive",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "#8",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "#9",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "insights",
+  "id": "lunar-direction",
+  "options": 3,
+  "status": "ok",
+  "picked": "positive",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights > explore",
+  "id": "mm-window",
+  "options": 5,
+  "status": "ok",
+  "picked": "7",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "insights > trends",
+  "id": "trd-kind",
+  "options": 3,
+  "status": "ok",
+  "picked": "term",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "insights > sources",
+  "id": "cs-by",
+  "options": 2,
+  "status": "ok",
+  "picked": "url",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights > families",
+  "id": "fam-kind",
+  "options": 2,
+  "status": "ok",
+  "picked": "non_term",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights > map",
+  "id": "map-kind",
+  "options": 3,
+  "status": "ok",
+  "picked": "term",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "observatory",
+  "id": "sky-measure",
+  "options": 4,
+  "status": "ok",
+  "picked": "mentions",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "observatory",
+  "id": "sky-lens",
+  "options": 2,
+  "status": "ok",
+  "picked": "trend",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "timemap",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "contested",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "timemap > coverage",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "iso",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "timemap > stories",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "contested",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "timemap > places",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "iso",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "timemap > servers",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "contested",
+  "held": null,
+  "effect": "net"
+ },
+ {
+  "where": "law",
+  "id": "statfig-source",
+  "options": 2,
+  "status": "ok",
+  "picked": "eurostat",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "law > groups",
+  "id": "gov-agg-pick",
+  "options": 16,
+  "status": "ok",
+  "picked": "EAS",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "law > map",
+  "id": "gov-map-ind",
+  "options": 36,
+  "status": "ok",
+  "picked": "NY.GDP.PCAP.CD",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "agenda",
+  "id": "agenda-country",
+  "options": 33,
+  "status": "ok",
+  "picked": "AR",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "agenda",
+  "id": "agenda-tag",
+  "options": 73,
+  "status": "ok",
+  "picked": "argentina-2027",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "agenda",
+  "id": "agenda-group",
+  "options": 3,
+  "status": "ok",
+  "picked": "calendar",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "living > law",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "iso",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "library",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "contested",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "library > coverage",
+  "id": "#0",
+  "options": 34,
+  "status": "ok",
+  "picked": "iso",
+  "held": null,
+  "effect": "dom"
+ },
+ {
+  "where": "integrity",
+  "id": "anno-kind",
+  "options": 6,
+  "status": "ok",
+  "picked": "leaning",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "settings",
+  "id": "ing-source",
+  "options": 5563,
+  "status": "ok",
+  "picked": "6",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "settings",
+  "id": "bi-enabled",
+  "options": 3,
+  "status": "ok",
+  "picked": "",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings",
+  "id": "src-enabled",
+  "options": 3,
+  "status": "ok",
+  "picked": "true",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings",
+  "id": "#3",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"3\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#4",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"4\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#5",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"5\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#6",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"6\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#7",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"7\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#8",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"8\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#9",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"9\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#10",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"10\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#11",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"11\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#12",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"12\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#13",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"13\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#14",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"14\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#15",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"15\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#16",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"16\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#17",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"17\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#18",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"18\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#19",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"19\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#20",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"20\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#21",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"21\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#22",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"22\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#23",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"23\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#24",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"24\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#25",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"25\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#26",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"26\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#27",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"27\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#28",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"28\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#29",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"29\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#30",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"30\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#31",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"31\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#32",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"32\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#33",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"33\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#34",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"34\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#35",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"35\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#36",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"36\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#37",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"37\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#38",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"38\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#39",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"39\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#40",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"40\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#41",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"41\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#42",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"42\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#43",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"43\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#44",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"44\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#45",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"45\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#46",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"46\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#47",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"47\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#48",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"48\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#49",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"49\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#50",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"50\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#51",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"51\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "#52",
+  "options": 3,
+  "status": "ERROR",
+  "why": "TimeoutError: Locator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"select[data-sweep-i=\\\"52\\\"]\")\n"
+ },
+ {
+  "where": "settings",
+  "id": "feeddir-kind",
+  "options": 4,
+  "status": "ok",
+  "picked": "civic",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings",
+  "id": "feeddir-status-filter",
+  "options": 4,
+  "status": "ok",
+  "picked": "ok",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings",
+  "id": "feeddir-sort",
+  "options": 5,
+  "status": "ok",
+  "picked": "country",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings",
+  "id": "chrono-anchor",
+  "options": 2,
+  "status": "ok",
+  "picked": "install",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "settings",
+  "id": "fetch-mode",
+  "options": 2,
+  "status": "ok",
+  "picked": "protected",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings",
+  "id": "uninstall-mode",
+  "options": 4,
+  "status": "ok",
+  "picked": "full",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings",
+  "id": "bul-cadence",
+  "options": 6,
+  "status": "ok",
+  "picked": "daily",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "settings > general",
+  "id": "set-theme",
+  "options": 3,
+  "status": "ok",
+  "picked": "system",
+  "held": true,
+  "effect": "ui"
+ },
+ {
+  "where": "settings > general",
+  "id": "oo-lang-select",
+  "options": 12,
+  "status": "ok",
+  "picked": "fr",
+  "held": true,
+  "effect": "ui"
+ },
+ {
+  "where": "settings > models",
+  "id": "ai-backend-select",
+  "options": 3,
+  "status": "ok",
+  "picked": "ollama",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > wikipedia",
+  "id": "wiki-lang",
+  "options": 147,
+  "status": "ok",
+  "picked": "zh",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > wikipedia",
+  "id": "dump-lang",
+  "options": 17,
+  "status": "ok",
+  "picked": "en",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > offlinemap",
+  "id": "osm-pick-add",
+  "options": 250,
+  "status": "ok",
+  "picked": "af",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > data",
+  "id": "alt-status",
+  "options": 3,
+  "status": "ok",
+  "picked": "kept",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > data",
+  "id": "mbox-proto",
+  "options": 2,
+  "status": "ok",
+  "picked": "pop3",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#3",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#4",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#5",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#6",
+  "options": 3,
+  "status": "ok",
+  "picked": "2",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#7",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#8",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#9",
+  "options": 3,
+  "status": "ok",
+  "picked": "2",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#10",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#11",
+  "options": 3,
+  "status": "ok",
+  "picked": "2",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#12",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#13",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#14",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#15",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#16",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#17",
+  "options": 3,
+  "status": "ok",
+  "picked": "2",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#18",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#19",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#20",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#21",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#22",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#23",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#24",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#25",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#26",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#27",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#28",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#29",
+  "options": 3,
+  "status": "ok",
+  "picked": "2",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#30",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#31",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#32",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#33",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#34",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#35",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#36",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#37",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#38",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#39",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#40",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#41",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#42",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#43",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#44",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#45",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#46",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#47",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#48",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#49",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#50",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#51",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "#52",
+  "options": 3,
+  "status": "ok",
+  "picked": "1",
+  "held": true,
+  "effect": "net"
+ }
+]

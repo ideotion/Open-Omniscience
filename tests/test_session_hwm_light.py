@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gc
 import json
+import os
 import sys
 import threading
 import time as real_time
@@ -357,6 +358,14 @@ def test_a_thread_the_clock_refuses_falls_back_to_proc_and_an_exited_one_is_abse
     finally:
         done.set()
         t.join(5)
+    # ``join`` returns when Python is done with the thread, not when the kernel has reaped its task: for a
+    # moment /proc still lists it (a failure under load), and a long run can hand the same id to a NEW thread.
+    # Wait for the id to leave /proc; if another thread took it over, there is nothing exited to ask about.
+    gone = real_time.monotonic() + 5.0
+    while os.path.exists(f"/proc/self/task/{t.native_id}") and real_time.monotonic() < gone:
+        real_time.sleep(0.01)
+    if os.path.exists(f"/proc/self/task/{t.native_id}"):
+        pytest.skip("the exited thread's id is still listed or was reused by another thread")
     assert session_hwm._thread_cpu([t.native_id]) == {}, "an exited thread has no time, from either"
 
 

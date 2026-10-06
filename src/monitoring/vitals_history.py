@@ -53,7 +53,6 @@ import atexit
 import contextlib
 import json
 import logging
-import math
 import os
 import shutil
 import sys
@@ -908,18 +907,33 @@ def _whole(raw: Any) -> int:
         return 0
 
 
+#: What a stored value may be before the row that carries it is dropped. What they protect: a hand-edited
+#: file or another build is a valid JSON document whose numbers can be absurd (an integer of 309 digits,
+#: a time in the year 10**8), and ``_iso`` or a float conversion raises on those, which would empty the
+#: history at start or turn the member off until 576 newer rows push the row out (48 hours). A time
+#: ends in 2100 (4,102,444,800 s), a row counts at most a billion ticks, a reading stays under 10**15
+#: (a byte count of a petabyte); NaN and infinity fail the comparison without an import.
+_MAX_EPOCH = 4_102_444_800
+_MAX_TICKS = 10**9
+_MAX_CELL = 1e15
+
+
+def _whole_in(raw: Any, limit: int) -> bool:
+    return isinstance(raw, int) and not isinstance(raw, bool) and 0 <= raw < limit
+
+
 def _number(raw: Any) -> bool:
-    return isinstance(raw, int | float) and not isinstance(raw, bool) and math.isfinite(raw)
+    return isinstance(raw, int | float) and not isinstance(raw, bool) and abs(raw) < _MAX_CELL
 
 
 def _row(raw: Any) -> list[Any] | None:
-    """One stored row of this build's layout, or ``None``: the right length, a whole ``t`` and
-    ``n``, every other cell a finite number or null. A cell of another type (a hand-edited file,
-    another build) would end in ``int(...)`` at start or in ``_gaps`` and take the history with
-    it, so the row that carries it is dropped alone."""
+    """One stored row of this build's layout, or ``None``: the right length, a whole ``t`` (a time
+    before 2100) and a whole ``n``, every other cell a number under 10**15 or null. A cell of another
+    type or size (a hand-edited file, another build) would end in ``int(...)`` at start or in
+    ``_gaps`` and take the history with it, so the row that carries it is dropped alone."""
     if not isinstance(raw, list) or len(raw) != len(COLUMNS):
         return None
-    if not all(isinstance(x, int) and not isinstance(x, bool) for x in raw[:2]):
+    if not (_whole_in(raw[0], _MAX_EPOCH) and _whole_in(raw[1], _MAX_TICKS)):
         return None
     return raw if all(x is None or _number(x) for x in raw[2:]) else None
 
@@ -1091,7 +1105,9 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "`clock_steps` says where the clock stepped back and by how much from its own last reading "
                 "(`kept_open`: a step too soon after the last one to start a new history, held in the open "
                 "bucket until the interval passes, when `new_history_at` says where the new history "
-                "began; a held step also lengthens one minute row, whose `n` says by how much); a gap "
+                "began; a hold is one record at the size it began with, so a deeper step inside the "
+                "rate-limit window lands in no record; a held step also lengthens one minute row, "
+                "whose `n` says by how much); a gap "
                 "marked `clock_step` is next to a recorded step and may be the clock's correction forward "
                 "(forward steps are not recorded) and not down time; `previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
@@ -1141,7 +1157,7 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             "session_starts": [
                 {"at": _iso(s["t"]), "pid": s.get("pid")}
                 for s in _dicts(doc.get("session_starts"))
-                if isinstance(s.get("t"), int | float)
+                if _number(s.get("t")) and 0 <= s["t"] < _MAX_EPOCH
             ],
             "gaps": _gaps(view["fine"], _dicts(doc.get("clock_steps"))),
         }

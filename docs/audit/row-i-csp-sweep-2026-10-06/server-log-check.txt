@@ -1,0 +1,28 @@
+# Server-log check of the sweeps. Two boots of the same offline app, run on the logs as they stood at the time of the check.
+# The logs themselves are not committed (access-log lines, tens of thousands of them); the commands and their real outputs are below.
+# (The uniq -c leading padding was trimmed in the pasted output; the grep -v is a substring filter on the extracted URL, so "host lacks 127.0.0.1 or localhost" is what it tests.)
+# What the greps can see: lines of the log. They cannot see a packet; they say no http(s) URL naming a host other than loopback appears,
+# that the boot line says airplane mode, and that no error, exception or traceback was logged.
+
+## server3.log: the 45-run sweep, the 11-run repeat and the first PF10 look
+$ wc -l < server3.log
+52703
+$ grep -i 'airplane\|kill switch\|offline' server3.log | sed 's/^[0-9: -]*//' | sort | uniq -c
+1 api - INFO - Booted in airplane mode (offline); awaiting the online consent to collect.
+$ grep -ioE 'https?://[a-z0-9.-]+' server3.log | grep -v '127.0.0.1\|localhost' | wc -l
+0
+$ grep -ci 'error\|exception\|traceback' server3.log
+0
+
+## server4.log: the first repro, the Settings re-sweep and the PF10 look at 4b2f1203 and the repro
+$ wc -l < server4.log
+6814
+$ grep -i 'airplane\|kill switch\|offline' server4.log | sed 's/^[0-9: -]*//' | sort | uniq -c
+1 api - INFO - Booted in airplane mode (offline); awaiting the online consent to collect.
+$ grep -ioE 'https?://[a-z0-9.-]+' server4.log | grep -v '127.0.0.1\|localhost' | wc -l
+0
+$ grep -ci 'error\|exception\|traceback' server4.log
+0
+
+## by hand, once, after the last run of the second boot (not repeated for the first boot): GET /api/system/network
+{"online":false}

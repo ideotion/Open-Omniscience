@@ -162,18 +162,64 @@ def sweep_stale_scratch(d: Path) -> None:
         pass
 
 
-def retire_old_parts_sets(d: Path) -> None:
-    """Remove the sets of parts left by earlier builds (not one built in the last
-    ``_PARTS_GRACE_S`` seconds: its files may still be on their way to the browser)."""
+def _retirable_parts_sets(d: Path) -> list[Path]:
+    """The sets of parts a build may retire: every one but those touched in the last
+    ``_PARTS_GRACE_S`` seconds (a set built then, or downloaded from then, may still be on its way
+    to the browser)."""
     now = time.time()
+    found: list[Path] = []
     try:
         for p in d.iterdir():
             if p.name.startswith(PARTS_DIR_PREFIX) and p.is_dir():
                 with contextlib.suppress(OSError):
                     if now - p.stat().st_mtime > _PARTS_GRACE_S:
-                        shutil.rmtree(p, ignore_errors=True)
+                        found.append(p)
     except OSError:
         pass
+    return found
+
+
+def retire_old_parts_sets(d: Path) -> None:
+    """Remove the sets of parts left by earlier builds (not one built in the last
+    ``_PARTS_GRACE_S`` seconds: its files may still be on their way to the browser).
+
+    Called AFTER a new set is complete, not before it is begun: a build that is refused, cancelled
+    or fails must leave the person the set they already have (the page's "again" button reads it)."""
+    for p in _retirable_parts_sets(d):
+        shutil.rmtree(p, ignore_errors=True)
+
+
+def _tree_bytes(d: Path) -> int:
+    total = 0
+    for p in d.rglob("*"):
+        with contextlib.suppress(OSError):
+            if p.is_file():
+                total += p.stat().st_size
+    return total
+
+
+def parts_disk_preflight(out_dir: Path | None, entries: int, max_bytes: int | None) -> None:
+    """The preflight for a numbered set, which REPLACES the previous one.
+
+    The previous set stays where it is: it is retired once the new set is complete
+    (:func:`retire_old_parts_sets`), so a refusal here, or a build that stops later, costs the
+    person nothing they had. Its room is counted only when the set would not fit without it, and
+    only then is it retired before the build: a drive that is short and cannot take the new set
+    beside the old one is the one case where keeping the old set would mean never building the
+    new one. When the new set would not fit even then, the refusal names the numbers and the old
+    set stays."""
+    target = out_dir if out_dir is not None else Path(tempfile.gettempdir())
+    need = expected_zip_bytes(entries, max_bytes)
+    try:
+        disk_check_for(target)(need)  # type: ignore[misc]
+        return
+    except ExportRefused:
+        retirable = _retirable_parts_sets(target)
+        if not retirable:
+            raise
+        disk_check_for(target, credit=sum(_tree_bytes(p) for p in retirable))(need)  # type: ignore[misc]
+    for p in retirable:
+        shutil.rmtree(p, ignore_errors=True)
 
 
 def disk_reserve(d: Path) -> int:
@@ -184,19 +230,31 @@ def disk_reserve(d: Path) -> int:
     return max(_DISK_RESERVE_FLOOR, int(total * _DISK_RESERVE_SHARE))
 
 
-def disk_check_for(d: Path | None):
+def room_for(d: Path, need: int, credit: int = 0, reserve: int | None = None) -> tuple[bool, int, int]:
+    """``(fits, free, reserve)``: whether ``need`` bytes, with the headroom, leave the reserve on
+    ``d``'s drive. ``credit`` counts bytes that are about to be freed as free already. ``reserve``
+    replaces the drive-sized one (``disk_reserve``) for a write that is small beside it: the share
+    of the drive is for a write of gigabytes that the database's log competes with, and applied to
+    a few megabytes it refused the diagnostics on exactly the machines that need them (a 2 TB
+    drive with 15 GiB free). An unreadable volume is not refused on a guess (``free`` is then -1)."""
+    try:
+        free = shutil.disk_usage(d).free
+    except OSError:
+        return True, -1, 0
+    reserve = disk_reserve(d) if reserve is None else reserve
+    return free + credit >= need * _DISK_NEED_MARGIN + reserve, free, reserve
+
+
+def disk_check_for(d: Path | None, credit: int = 0):
     """``disk_check(bytes)`` for the ranker: refuse, with the numbers, a spill the volume
-    cannot take plus the reserve. ``None`` when there is no directory to write to."""
+    cannot take plus the reserve. ``None`` when there is no directory to write to. ``credit``
+    is room that is about to be freed (a set of parts that is going to be retired)."""
     if d is None:
         return None
 
     def _check(need: int) -> None:
-        try:
-            free = shutil.disk_usage(d).free
-        except OSError:
-            return  # an unreadable volume is not refused on a guess
-        reserve = disk_reserve(d)
-        if free < need * _DISK_NEED_MARGIN + reserve:
+        fits, free, reserve = room_for(d, need, credit)
+        if not fits:
             raise ExportRefused(
                 f"the export needs about {need / 2**30:.1f} GiB of scratch space on the drive it "
                 f"writes to, and only {free / 2**30:.1f} GiB is free on it "
@@ -542,15 +600,17 @@ class ZipJob:
         ]
         if parts and self.max_bytes is not None:
             lead = (
-                ", as numbered files of at most 1,000,000 bytes each (the first file(s) hold the "
-                "manifest and summary.json), trimmed to aim under max_bytes in TOTAL (the "
+                f", as numbered files of at most {UPLOAD_PART_BYTES:,} bytes each (the first "
+                "file(s) hold the manifest and summary.json), trimmed to aim under max_bytes in "
+                "TOTAL (the "
                 "default, 9 MB, holds that button to about ten files; summary.json is never "
                 "trimmed). "
             )
         elif parts:
             lead = (
-                ", as numbered files of at most 1,000,000 bytes each (the first file(s) hold the "
-                "manifest and summary.json), written with NO byte cap (max_mb=0): every keyword "
+                f", as numbered files of at most {UPLOAD_PART_BYTES:,} bytes each (the first "
+                "file(s) hold the manifest and summary.json), written with NO byte cap (max_mb=0): "
+                "every keyword "
                 "of the requested window, in as many files as that takes. "
             )
         elif self.max_bytes is not None:
@@ -809,11 +869,11 @@ def finish_parts(
     The cap here is on EACH FILE. A cap on the TOTAL (``max_bytes``, the 9 MB default) still
     trims the lowest-mention keywords per language exactly as :func:`finish_zip` does, measured
     on the sum of the parts; ``max_mb=0`` writes every keyword of the window, as many parts as
-    that takes. The folder is removed on every path that does not end in a finished set.
+    that takes. The folder is removed on every path that does not end in a finished set. It retires
+    no earlier set: the caller does that once this one is listed (:func:`retire_old_parts_sets`).
     """
     keep = dict(keep)
     omitted = dict(omitted or {})
-    retire_old_parts_sets(scratch_dir)
     set_dir = Path(tempfile.mkdtemp(prefix=f"{PARTS_DIR_PREFIX}{stem}-", dir=scratch_dir))
     ok = False
     try:

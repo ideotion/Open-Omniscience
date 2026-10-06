@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import shutil
 import subprocess
 import tracemalloc
@@ -299,8 +300,15 @@ def test_a_record_larger_than_a_part_goes_out_as_numbered_byte_pieces_never_over
 
 
 def test_the_cap_cannot_be_smaller_than_a_part_s_own_index(tmp_path):
-    with pytest.raises(ValueError, match="too small"):
+    with pytest.raises(ValueError, match="too small") as err:
         up.PartWriter(tmp_path / "set", stem="oo-test-tiny", cap=900)
+    # the message names the smallest cap that works, and that number is the threshold: one byte
+    # under it is refused, and it itself is not (a figure the person reads must be one they can act on)
+    needed = int(re.search(r"cap needs at least (\d+)", str(err.value)).group(1))
+    assert needed > 900
+    with pytest.raises(ValueError, match="too small"):
+        up.PartWriter(tmp_path / "under", stem="oo-test-tiny", cap=needed - 1)
+    up.PartWriter(tmp_path / "at", stem="oo-test-tiny", cap=needed)
 
 
 def test_parts_are_filled_to_the_cap_at_the_real_cap(tmp_path):
@@ -416,6 +424,95 @@ def test_what_the_writer_holds_does_not_grow_with_the_export(tmp_path):
 
 
 # --------------------------------------------------------------- the manifest
+def _incompressible_records(rnd: random.Random, n: int, *, size: tuple[int, int]) -> list[str]:
+    """Records whose text deflate cannot shrink below about three quarters (base64 of random bytes):
+    the other end from the hex-dense and repeated words the rest of this file feeds the writer."""
+    import base64
+
+    out = []
+    for i in range(n):
+        raw = rnd.randbytes(rnd.randrange(*size))
+        out.append(json.dumps({"i": i, "blob": base64.b64encode(raw).decode()}, separators=(",", ":")))
+    return out
+
+
+@pytest.mark.parametrize("cap", [6_000, 40_000, up.UPLOAD_PART_BYTES])
+def test_no_part_is_over_the_cap_on_incompressible_records(tmp_path, cap):
+    """R115 follow-up S5: the bound was pinned on text that deflates 3x to 20x; a part of data that
+    does not shrink is where a bound that leans on the compression ratio would be over."""
+    rnd = random.Random(cap)
+    groups = {"en": _incompressible_records(rnd, 3_000, size=(30, 600)),
+              "fr": _incompressible_records(rnd, 200, size=(2_000, 9_000))}
+    _w, manifest = _write(tmp_path, groups, cap=cap)
+    sizes = [p.stat().st_size for p in _parts(tmp_path, manifest)]
+    assert max(sizes) <= cap, (cap, max(sizes))
+    assert up.verify_parts(tmp_path / "set", manifest)["ok"]
+    if cap == up.UPLOAD_PART_BYTES:
+        assert sum(sizes) > cap, "the fixture really did not fit one part"
+    absent = {(r["group"], r["record_index"]) for r in manifest.get("oversize_records", [])}
+    for lang, recs in groups.items():
+        back = up.read_group_records(_parts(tmp_path, manifest), f"keywords/{lang}.json", "keywords",
+                                     manifest=manifest)
+        # A record bigger than a part goes out as numbered pieces (the manifest lists it), so it is
+        # not among the records a reader gets back whole.
+        assert back == [
+            json.loads(r) for i, r in enumerate(recs) if (f"keywords/{lang}.json", i) not in absent
+        ]
+
+
+def test_one_incompressible_record_of_three_megabytes_goes_out_in_pieces_under_the_real_cap(tmp_path):
+    rnd = random.Random(31)
+    big = _incompressible_records(rnd, 1, size=(3_000_000, 3_000_001))[0]
+    groups = {"en": [*_incompressible_records(rnd, 5, size=(30, 600)), big]}
+    _w, manifest = _write(tmp_path, groups, cap=up.UPLOAD_PART_BYTES)
+    assert max(p["bytes"] for p in manifest["parts"]) <= up.UPLOAD_PART_BYTES
+    (rec,) = manifest["oversize_records"]
+    assert len(rec["pieces"]) >= 4, "about 4 MB of text that does not shrink needs at least four pieces"
+    # what the 0.8 protects: a piece weighs at most four fifths of a part, so that a piece that does not
+    # shrink still fits a part with its own structure (at the real cap the room share, nine tenths of what
+    # a part has left, would allow more; the four fifths is the margin the set is documented by)
+    sizes = []
+    for p in _parts(tmp_path, manifest):
+        with zipfile.ZipFile(p) as z:
+            sizes += [i.file_size for i in z.infolist() if ".oversize" in i.filename]
+    assert len(sizes) == len(rec["pieces"])
+    assert max(sizes) <= int(up.UPLOAD_PART_BYTES * 0.8) and max(sizes) > 0.75 * up.UPLOAD_PART_BYTES
+
+
+@pytest.mark.parametrize("cap", [1_500, 2_000, 3_000])
+def test_an_oversize_piece_that_does_not_shrink_fits_a_part_that_is_barely_bigger_than_its_own_index(tmp_path, cap):
+    """What ``_PIECE_ROOM_SHARE`` protects: near the smallest cap a part allows, four fifths of the cap is
+    more than the part has left after its own index, and a piece of that weight would be the one that puts
+    a part over the cap (the writer's backstop raises then). The pieces take at most nine tenths of the
+    room that is left, whatever the compressor does with them."""
+    rnd = random.Random(cap)
+    big = _incompressible_records(rnd, 1, size=(60_000, 60_001))[0]
+    groups = {"en": [*_incompressible_records(rnd, 3, size=(20, 60)), big]}
+    _w, manifest = _write(tmp_path, groups, cap=cap)
+    assert max(p["bytes"] for p in manifest["parts"]) <= cap
+    (rec,) = manifest["oversize_records"]
+    assert len(rec["pieces"]) > 20
+    assert up.verify_parts(tmp_path / "set", manifest)["ok"]
+
+
+def test_a_set_of_more_than_ninety_nine_parts_is_numbered_in_a_width_that_sorts(tmp_path):
+    """R115 follow-up S5: numbering past 99 was pinned on the function only, never on a real set."""
+    rnd = random.Random(7)
+    _w, manifest = _write(tmp_path, {"en": _records(rnd, 14_000, dense=True)}, cap=4_000)
+    total = manifest["part_count"]
+    assert total > 99, f"the fixture must make a set past 99 parts (it made {total})"
+    names = [p["name"] for p in manifest["parts"]]
+    assert names == sorted(names), "a file listing sorts the parts into their order"
+    width = len(str(total))
+    assert names[0] == f"oo-test-20261001-000000-part-{1:0{width}d}-of-{total}.zip"
+    assert [parse_position(n) for n in names] == list(range(1, total + 1))
+    for p in manifest["parts"][:: max(1, total // 7)]:
+        with zipfile.ZipFile(tmp_path / "set" / p["name"]) as z:
+            index = json.loads(z.read(up.PART_INDEX_NAME))
+        assert index["position"] == p["position"] and index["total"] == total
+    assert up.verify_parts(tmp_path / "set", manifest)["ok"]
+
+
 def test_the_manifest_confirms_a_complete_set_and_names_a_missing_or_damaged_part(tmp_path):
     rnd = random.Random(13)
     _w, manifest = _write(tmp_path, {"en": _records(rnd, 8_000, dense=False)}, cap=20_000)

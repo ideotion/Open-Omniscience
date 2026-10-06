@@ -577,6 +577,33 @@ def release_if_held(session) -> None:
         write_gate.release()
 
 
+def hold_write_window(session) -> bool:
+    """Take the write window for this session's transaction NOW, before a read the write depends on.
+
+    The session events take the window at the first write, which is right for a write that does not
+    depend on what it read first. A write that DOES (the re-index's diff of an article's mention rows
+    against the rows it read) must not read before the window is held: a plain SELECT opens no
+    transaction on the SQLite driver's default mode, so another writer's commit between the read and
+    the first write leaves the diff working from rows that no longer exist. Taking the window first
+    makes the read and the write one serialised step. The window is released by the session's
+    outermost transaction end, exactly as when a write took it, and the flag keeps it idempotent.
+
+    Returns True when this session's transaction now holds the window. It does nothing (False) when
+    the gate is disabled, or when the session was not made from the gated factory: nothing would
+    release a window taken for such a session, and a leaked window would stop every other writer.
+    """
+    if not gate_enabled() or _on_after_transaction_end not in session.dispatch.after_transaction_end:
+        return False
+    if not session.info.get(_SESSION_FLAG):
+        if session.get_transaction() is None:
+            # Only a transaction's END releases the window, so there must be one to end: begin it
+            # (the read that follows would have).
+            session.connection()
+        write_gate.acquire()
+        session.info[_SESSION_FLAG] = True
+    return True
+
+
 _REGISTERED = False
 
 

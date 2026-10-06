@@ -3281,12 +3281,12 @@
            2026-10-06 field report ("the full run did not work, I pressed 'again'") fits a finished
            build whose Save button was 300-500 px further down (measured in Chromium) than the button
            that was pressed. -->
-      <div class="row" id="parts-bar" hidden style="margin-top:6px">
+      <div class="row" id="parts-bar" hidden>
         <span id="parts-status" class="small" role="status" aria-live="polite"></span>
         <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>
         <button id="parts-rest" class="secondary" data-on-click="partsSaveRest()" hidden>Save all the rest</button>
         <label id="parts-from-wrap" class="small" hidden title="Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
-          <input id="parts-from" type="number" min="1" value="1" style="width:5em">
+          <input id="parts-from" type="number" min="1" value="1">
         </label>
         <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
       </div>

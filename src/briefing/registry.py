@@ -259,8 +259,8 @@ class _WalGuardResult:
     #3, MEDIUM): spelling the limitation out CONCRETELY, not just
     abstractly — because it is a DORMANT trap for any FUTURE producer that
     reuses this generic wrapper over a genuinely mutable table. This
-    project's own documented delete-then-reinsert idiom (``index_article``
-    deletes then reinserts an article's mentions on re-index) is exactly
+    project's own delete-then-reinsert idiom (a gone mention row is deleted and
+    a new one inserted on re-index; unchanged rows are left alone) is exactly
     the shape that breaks it: if a row already delivered is deleted and its
     same logical content is reinserted (a fresh row id, since a reinsert is
     a new INSERT) while a scan is paused between releases, the COUNT-based

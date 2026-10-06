@@ -168,7 +168,7 @@ _CEILING: dict[str, int] = {
     "src/analytics/columnar.py": 7,
     "src/analytics/keyword_fold.py": 17,
     "src/analytics/serve_gate.py": 2,
-    "src/analytics/store.py": 24,
+    "src/analytics/store.py": 20,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,

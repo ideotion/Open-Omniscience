@@ -64,6 +64,17 @@ def _article(db, hash_, text, *, when="2024-03-01"):
     return a
 
 
+class _DoublingExtractor(BaselineExtractor):
+    """A 'newer engine': every term counts twice and one extra term appears, so a re-index
+    CHANGES the article's stored rows (unchanged rows are not rewritten any more)."""
+
+    def extract(self, text, *a, **kw):
+        import dataclasses
+
+        terms = [dataclasses.replace(t, count=t.count * 2) for t in super().extract(text, *a, **kw)]
+        return [*terms, dataclasses.replace(terms[0], term="zzextra", normalized="zzextra")] if terms else terms
+
+
 def _seed(db, n=2):
     db.add(Source(name="S", domain="x.test", country="fr"))
     db.commit()
@@ -156,7 +167,7 @@ def test_epoch_guard_forces_full_rebuild_and_prevents_double_count(db):
     pytest.importorskip("duckdb")
     from src.analytics import columnar
 
-    ex = _seed(db, n=2)
+    _seed(db, n=2)
     con = columnar.connect()  # in-memory (no passphrase) -- disposable
     assert con is not None
     try:
@@ -167,20 +178,23 @@ def test_epoch_guard_forces_full_rebuild_and_prevents_double_count(db):
         parity0 = columnar.keyword_daily_parity(con, db)
         assert parity0["mentions_exact"] and parity0["keywords_compared"] > 0
 
-        # 2) A re-index (delete-then-reinsert of every mention) bumps the epoch. The
-        #    reinserted mentions carry ids ABOVE the recorded watermark.
-        reindex_all_batch(db, extractor=ex, limit=300)
+        # 2) A re-index that CHANGES what the article holds (a newer engine: every count
+        #    doubled, one extra term) bumps the epoch. A re-index writes only the
+        #    difference, so the changed rows are updated in place under their OLD ids
+        #    (below the recorded watermark) and the new term's row carries a higher one.
+        reindex_all_batch(db, extractor=_DoublingExtractor(), limit=300)
         new_epoch = get_corpus_epoch(db)
         assert new_epoch == epoch0 + 1
 
-        # 3) THE TRAP demonstrated: refreshing at the STALE epoch merges the tail
-        #    incrementally, adding the reinserted rows ON TOP of the old ones -> doubled.
+        # 3) THE TRAP demonstrated: refreshing at the STALE epoch merges only the tail
+        #    (the new rows), so the rollup keeps the OLD counts of the rows changed in
+        #    place and is not the live number.
         stale = columnar.refresh_keyword_daily(con, db, corpus_epoch=epoch0)
         assert stale["mode"] == "incremental"
         trap = columnar.keyword_daily_parity(con, db)
         assert not trap["mentions_exact"], (
-            "expected the stale-epoch incremental merge to double-count -- if this passes "
-            "the reinserted ids did not exceed the watermark and the trap wasn't exercised"
+            "expected the stale-epoch incremental merge to disagree with the live counts -- "
+            "if this passes the re-index changed nothing and the trap wasn't exercised"
         )
 
         # 4) THE GUARD: refreshing at the CURRENT epoch FULL-rebuilds -> exact again.

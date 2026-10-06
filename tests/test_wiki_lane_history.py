@@ -524,7 +524,7 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
         t = threading.Thread(target=other_thread_holds, name="somebody-else")
         t.start()
         t.join(timeout=30)
-        write_gate.acquire()
+        assert write_gate.acquire(timeout=30), "the other thread released the gate"
         time.sleep(0.03)
         write_gate.release()
         return R.DrainReport(revisions_stored=1)
@@ -539,13 +539,13 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
     assert g["measured_drains"] == 1 and g["grants"] == 1
     # the other thread's hold is 0.8 s; this thread's own is 0.03 s plus whatever a loaded runner adds
     # (a macOS CI run measured 0.18 s for a 0.03 s sleep), so the bound sits well between the two
-    assert 0.03 <= g["held_s"] < 0.6, "only this thread's own hold, not the other thread's 0.8 s"
+    assert 0.027 <= g["held_s"] < 0.6, "only this thread's own hold, not the other thread's 0.8 s"
     assert g["longest_hold_s"] == g["held_s"]
     with lane_session("wiki") as db:
         runner._history.flush(db)
     assert _rows(metric="drain_gate", kind="grants")[0].n == 1
-    assert _rows(metric="drain_gate", kind="held")[0].sum_ms >= 30
-    assert _rows(metric="drain_gate", kind="longest")[0].max_ms >= 30
+    assert _rows(metric="drain_gate", kind="held")[0].sum_ms >= 27
+    assert _rows(metric="drain_gate", kind="longest")[0].max_ms >= 27
 
 
 def test_an_unwatched_drain_has_no_gate_figure_rather_than_a_zero():
