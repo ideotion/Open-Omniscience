@@ -520,7 +520,8 @@
       // `verifying` is the verify-after-write re-read (Q218), the pass that can double an
       // export's time on a slow drive. Without its own entry it fell through to the
       // "Backing up…" default and was never named on screen (J6).
-      const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
+      const back = { starting: t("Preparing…"), snapshot: t("Making a temporary copy of your data…"),
+        building: t("Building encrypted volumes…"),
         volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"),
         verifying: t("Verifying volumes…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),

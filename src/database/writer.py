@@ -139,6 +139,15 @@ class WriterGate:
         # already holds (the 2026-08-06 rule about instruments on hot paths).
         self._total_held_s = 0.0
         self._timeouts = 0  # bounded acquires that gave up (S2.5)
+        # WATCHED HOLDERS (2026-10-06): the holds of ONE thread, accumulated until it reads them.
+        # ``_total_held_s`` is the whole process's, so no per-drain share can be taken from it:
+        # another thread's holds inside the interval are in it too. A thread asks to be watched
+        # (``watch``, keyed by its ident, never its name: two threads can share a name, as a
+        # restart that overlaps a long drain does), and reads its own figures (``take_watched``),
+        # which also removes the entry, so the table holds only the threads between a watch and a
+        # take. The cost on the acquire and release paths is one dict lookup inside the lock they
+        # already hold.
+        self._watched: dict[int, dict[str, float]] = {}
         # S2.6 (c): FIFO handoff. Without it acquire() grants to whichever thread
         # happens to find the gate free, so a looping re-acquirer can starve a
         # waiter indefinitely -- which means max_wait_s measures STARVATION and
@@ -154,6 +163,9 @@ class WriterGate:
         self._grants += 1
         self._holder = threading.current_thread().name
         self._held_since = time.monotonic()
+        watched = self._watched.get(me)
+        if watched is not None:
+            watched["grants"] += 1
 
     def acquire(self, timeout: float | None = None) -> bool:
         """Take the write window. Returns True when granted.
@@ -239,6 +251,7 @@ class WriterGate:
                 return
             self._depth -= 1
             if self._depth == 0:
+                held = None
                 if self._held_since is not None:
                     held = time.monotonic() - self._held_since
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
@@ -253,6 +266,14 @@ class WriterGate:
                 self._holder = None
                 self._held_since = None
                 self._wake_head()
+                # AFTER the gate is free and the next waiter woken: this bookkeeping can never
+                # leave the gate held, whatever it does.
+                if held is not None:
+                    watched = self._watched.get(me)
+                    if watched is not None:
+                        watched["held_s"] += held
+                        if held > watched["longest_s"]:
+                            watched["longest_s"] = held
 
     def _wake_head(self) -> None:
         """Wake EXACTLY the queue head. Caller holds the lock.
@@ -290,6 +311,20 @@ class WriterGate:
                 cv.notify_all()
             self._queue.clear()
             self._cond.notify_all()
+
+    def watch(self, ident: int) -> None:
+        """Start (or restart, from zero) keeping the holds of the thread with this ident."""
+        with self._cond:
+            self._watched[ident] = {"grants": 0, "held_s": 0.0, "longest_s": 0.0}
+
+    def take_watched(self, ident: int) -> dict[str, float] | None:
+        """Read what the thread held since it was watched, and stop watching it; ``None`` if it
+        was not being watched.
+
+        A hold still in flight is not in it (it is added at release), exactly as ``stats``'s
+        ``total_held_s`` says of itself."""
+        with self._cond:
+            return self._watched.pop(ident, None)
 
     def stats(self) -> dict:
         """A point-in-time copy of the gate's counters (honest, no estimates)."""
@@ -386,6 +421,16 @@ def write_lock(timeout: float | None = None) -> Iterator[None]:
 def write_gate_stats() -> dict:
     """Public accessor for the gate's observability counters."""
     return write_gate.stats()
+
+
+def watch_holder(ident: int) -> None:
+    """Ask the gate to keep the holds of the thread with this ident (see ``take_watched_holder``)."""
+    write_gate.watch(ident)
+
+
+def take_watched_holder(ident: int) -> dict[str, float] | None:
+    """What the watched thread held since ``watch_holder`` (grants, held_s, longest_s), once."""
+    return write_gate.take_watched(ident)
 
 
 # --- S2.6: the watchdog that gives a long hold a name ---------------------- #

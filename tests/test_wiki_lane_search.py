@@ -661,7 +661,7 @@ def test_the_runner_gives_the_index_its_share_of_the_idle_time_first(lane):
     assert [name for name, _ in order] == ["index", "warm"], "texts already held become findable first"
     assert order[0][1] == 30.0 * S.INDEX_SHARE, "and for its share only"
     assert runner.last_index == {"error": "RuntimeError"}, "a broken index never ends the lane"
-    assert slept == [30.0]
+    assert sum(slept) == 30.0
     assert runner.index_status()["last_window"] == {"error": "RuntimeError"}
 
 

@@ -281,6 +281,8 @@ def test_a_failed_drain_leaves_the_stage_idle_and_the_reason_in_the_status(lane)
     state = {"value": "running"}
 
     def boom():
+        if runner.consecutive_failures >= runner_mod.MAX_CONSECUTIVE_FAILURES - 1:
+            state["value"] = "halted"  # the third failure is the last this test needs
         raise RuntimeError("the keyword read timed out")
 
     runner = WikiLaneRunner(
@@ -299,7 +301,7 @@ def test_a_failed_drain_leaves_the_stage_idle_and_the_reason_in_the_status(lane)
     assert status["stage"] == "idle", "a failure must not leave the lane claiming to be mid-drain"
     assert status["consecutive_failures"] == runner_mod.MAX_CONSECUTIVE_FAILURES
     assert "keyword read timed out" in (status["last_error"] or "")
-    assert status["stopped"] is True
+    assert status["degraded"] is True, "past the limit the status says so; the loop no longer ends there"
 
 
 def test_the_service_status_carries_the_drain_block(lane):

@@ -885,7 +885,18 @@ def cleanup_stale_staging(max_age_hours: float = 24.0) -> int:
     data-dir growth, prime suspect = orphaned staging — which for the OLD format
     contained a PLAINTEXT corpus snapshot, an at-rest-encryption violation on top).
     Age-guarded and registry-guarded: a LIVE job's staging is never touched
-    (src.backup.stream_backup.active_staging). Returns count removed."""
-    from src.backup.stream_backup import sweep_stale_backup_temps
+    (src.backup.stream_backup.active_staging). Returns count removed (the data dir's own).
 
-    return sweep_stale_backup_temps(data_dir(), max_age_hours=max_age_hours)
+    A backup that had to copy the corpus first makes that copy in a staging dir on the DESTINATION
+    drive, so a crash leaves it there, where this janitor never looked: the destinations that were
+    ever given a copy are remembered in the data dir and swept too (a dead owner's dir at once, an
+    unmounted drive skipped and kept), on a thread of their own because asking a stale network
+    mount whether it exists can block for minutes."""
+    from src.backup.stream_backup import (
+        sweep_remembered_destinations_in_background,
+        sweep_stale_backup_temps,
+    )
+
+    removed = sweep_stale_backup_temps(data_dir(), max_age_hours=max_age_hours)
+    sweep_remembered_destinations_in_background()
+    return removed

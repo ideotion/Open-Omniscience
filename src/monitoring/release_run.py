@@ -38,8 +38,18 @@ HONESTY (the whole point, same rules as the P0 kit):
     WITH the reason and the operator step; a refused precondition says ``refused``.
   * The run is VERDICT-FREE about the board: it records what each clause measured and
     leaves "does this close the row" to the maintainer, exactly as the soak window does.
-  * The passphrase is used and never stored: not in the state file, not in the report,
-    not in a log line. The routes scrub defensively on the way out.
+  * The passphrase is used and never stored: it is no field of the state file or the
+    report and is in no log line. The routes scrub defensively on the way out, what the
+    restore child says is scrubbed of it where the child writes it and again before the
+    parent records it, what ANY phase's exception says is scrubbed of it before the phase's
+    detail and the log record are made, what the P0 phase CATCHES and writes down as a result
+    is scrubbed where it is made (``p0_validation._exception_text``), and the files a KEPT
+    fresh install leaves on the drive
+    (the child's run journal and reports) are scrubbed once the child has gone
+    (:mod:`src.monitoring.secret_scrub`). A resume asks for it the way a first run does,
+    and a retaken restore is held to the same rule. What the OPERATOR typed is kept as
+    typed: a destination or a pre-migration backup path that happens to contain the passphrase
+    is in the state file (the resume reads it back) and in the notes that name that path.
   * The state file survives a restart and says WHERE the run was when the process died,
     because a run that vanishes leaves the operator with nothing after three days.
 
@@ -65,15 +75,20 @@ import json
 import logging
 import math
 import os
+import secrets
 import shutil
 import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass
+import traceback
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.monitoring.secret_scrub import scrub_file as _scrub_file
+from src.monitoring.secret_scrub import scrub_value as _scrub_value
 
 _LOG = logging.getLogger("monitoring.release_run")
 
@@ -109,6 +124,10 @@ _MIB = 1024 * 1024
 #: seconds, not at the next hourly heartbeat.
 _TICK_S = 5.0
 
+#: The restore child is waited for in turns of this length, and the wait READS its pipes (see
+#: ``_fresh_install_restore``): each turn is also where a cancel lands and the progress line is renewed.
+_RESTORE_POLL_S = 2.0
+
 #: A suspend or a wall-clock change is recorded past this bound between two ticks: the
 #: session ledger's own threshold, so the run and the chronology agree on what one is.
 CLOCK_EVENT_MIN_S = 120.0
@@ -140,7 +159,7 @@ RESUME_COLLECTION_WAIT_S = 3600.0
 @dataclass
 class RunParams:
     dest_dir: str
-    passphrase: str
+    passphrase: str = field(repr=False)  # a repr is what a log line or a traceback prints
     profile: str = "release-scale"
     soak_hours: float = SOAK_BAR_HOURS
     include_newsletters: bool = True
@@ -413,10 +432,13 @@ class _Run:
         redo = () if soak_complete else _REDONE_ON_RESUME
         kept, dropped = [], []
         for ph in phases:
-            if ph.get("status") in _TERMINAL_OK and ph.get("name") not in redo:
+            if _phase_done(ph) and ph.get("name") not in redo:
                 kept.append(ph)
             else:
-                dropped.append(f"{ph.get('name')}:{ph.get('status')}")
+                # A restore recorded as done that is not counted as one (its child failed, did not end
+                # cleanly, or its restore was not committed) is retaken, and says so.
+                not_counted = ph.get("status") in _TERMINAL_OK and not _phase_done(ph)
+                dropped.append(f"{ph.get('name')}:{ph.get('status')}" + (" (not counted as a restore)" if not_counted else ""))
         run.phases = kept
         run.heartbeats = [dict(h) for h in (state.get("heartbeats") or []) if isinstance(h, dict)]
         run.heartbeats_dropped = int(state.get("heartbeats_dropped") or 0)
@@ -467,6 +489,76 @@ _TERMINAL_OK = ("measured", "skipped", "refused", "not-measurable-here")
 #: Phases a restart invalidates whatever their status: the process that armed the soak
 #: is gone, the soak is a new stretch, and collect/bundle read the end of the window.
 _REDONE_ON_RESUME = ("arm_soak", "soak", "collect", "bundle")
+#: The phases whose record is a child process's outcome (``_fresh_install_restore``).
+_RESTORE_PHASES = ("fresh_install_restore", "legacy_restore")
+
+
+def _restore_failure(result: Any) -> str | None:
+    """Why a restore phase's record is NOT counted as a restore, or None when it is one.
+
+    A restore is what the child reports, how its process ended and what the restore itself
+    says: ``child.ok`` is True, the process did not exit non-zero (a record that stored no exit
+    status passes on the other two) and ``child.restore.committed`` is True
+    (``run_restore`` returns a refusal -- "post-merge verification failed" -- without raising,
+    and the child then carries on and reports ok over an import that wrote nothing). The two
+    restores of the 2026-09-30 diagnostics round that failed (both ran on 2026-09-26) -- one
+    refused for want of 38.0 GB of staging room after 128 s, one that died with "Error
+    creating function" after 53 minutes -- were recorded ``measured``, and rows A and I read
+    ``measured`` over an empty ``restore`` block (row K read ``measured`` from the P0 trio,
+    its scan of the restored corpus empty), because the phase was ok whenever the PARENT
+    returned. Neither the child's own ``ok`` nor its exit status was ever read."""
+    if not isinstance(result, dict):
+        return "the phase recorded no result"
+    rc = result.get("returncode")
+    child = result.get("child")
+    exited = rc not in (0, None)
+    if isinstance(child, dict):
+        if child.get("ok") is True:
+            if exited:
+                return (f"the restore child reported ok but its process exited {rc}: it did not end cleanly, "
+                        "so this run does not count it as a restore")
+            restore = child.get("restore")
+            if isinstance(restore, dict) and restore.get("committed") is True:
+                return None
+            refused = restore.get("refused") if isinstance(restore, dict) else None
+            return ("the restore child reported ok but its restore was not committed"
+                    + (f" (refused: {str(refused)[:200]})" if refused else ""))
+        err = str(child.get("error") or "").strip() or "no error text"
+        lead = f"exited {rc} and " if exited else ""
+        return f"the restore child {lead}reported: {err}"
+    return f"the restore child left no result (exit status {rc})"
+
+
+def _phase_done(ph: dict[str, Any]) -> bool:
+    """Is this RECORDED phase done for a resume: a terminal status and, for a restore, a
+    child that really restored. A state file a build wrote before ``_restore_failure``
+    held restores whose child had failed as ``measured``; keeping them would carry a
+    failed restore into the resumed run's report as the evidence it never was."""
+    if ph.get("status") not in _TERMINAL_OK:
+        return False
+    return not (ph.get("name") in _RESTORE_PHASES and ph.get("status") == "measured"
+                and _restore_failure(ph.get("result")))
+
+
+def _restored_child(phase: dict[str, Any]) -> dict[str, Any]:
+    """The child's result block of a restore phase whose record shows a restore, else
+    ``{}``. The board rows read the restore only through this, so a failed child can
+    never stand as evidence for rows A, E, I or K whatever status the phase was given."""
+    result = phase.get("result")
+    if not isinstance(result, dict) or _restore_failure(result):
+        return {}
+    return dict(result["child"])
+
+
+def _restore_why_not(phase: dict[str, Any]) -> str | None:
+    """The reason a restore phase is not counted as a restore; None when it is one, or when
+    it recorded no result and was not ``measured`` (a restore that failed before its child
+    ran says why in its own detail, and the caller reads that)."""
+    result = phase.get("result")
+    if isinstance(result, dict):
+        return _restore_failure(result)
+    # ``measured`` over nothing to read says so; its detail is just "ok"
+    return "the phase recorded no result" if phase.get("status") == "measured" else None
 
 
 def _ledger_event(event: str, **fields: Any) -> None:
@@ -490,12 +582,16 @@ def resume_preflight(passphrase: str = "", *, check_passphrase: bool = True) -> 
     if state.get("pid") == os.getpid():
         raise ValueError("that run belongs to this process and is still in flight")
     done = {ph.get("name") for ph in (state.get("phases") or [])
-            if isinstance(ph, dict) and ph.get("status") in _TERMINAL_OK}
-    needs = not ({"p0_validation", "fresh_install_restore"} <= done)
+            if isinstance(ph, dict) and _phase_done(ph)}
+    # The passphrase is owed for every phase that opens the backup: the P0 trio's backup, the run's own
+    # restore, and the pre-migration restore when the run was given one (each restore is a child that
+    # is handed it, a retaken one included).
+    legacy_owed = bool((state.get("params") or {}).get("legacy_backup_path")) and "legacy_restore" not in done
+    needs = legacy_owed or not ({"p0_validation", "fresh_install_restore"} <= done)
     if check_passphrase and needs and not passphrase:
         raise ValueError(
-            "the run was interrupted before the backup and the fresh-install restore had "
-            "finished; enter the backup passphrase to resume them"
+            "the run still owes work that opens the backup (a backup or a restore that had not "
+            "finished or that failed); enter the backup passphrase to resume it"
         )
     return {
         "run_id": state.get("run_id"), "profile": state.get("profile"),
@@ -728,7 +824,9 @@ def _pause_collection() -> dict[str, Any]:
     try:
         from src.wiki.service import lane_service_status, stop_wiki_lane
 
-        out["wiki_lane_was_streaming"] = bool((lane_service_status() or {}).get("streaming"))
+        lane = lane_service_status() or {}
+        # A live drain loop revives a dead stream, so it counts as the lane running too.
+        out["wiki_lane_was_streaming"] = bool(lane.get("streaming") or lane.get("draining"))
         if out["wiki_lane_was_streaming"]:
             stop_wiki_lane(timeout=30.0)
     except Exception as exc:  # noqa: BLE001
@@ -995,16 +1093,72 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _scrub_kept_install(fresh: Path, out_json: Path, needle: str) -> dict[str, list[str]]:
+    """Take the passphrase out of what a KEPT fresh install leaves on the drive, once the child that
+    wrote it has gone.
+
+    The install's database is encrypted under the passphrase, which is the key to it and no text in
+    it. The child's other files are text: its run journal (``run_logs/``) and its import reports
+    (``import_reports/``) record what it was handed -- the backup's name, the words of a failure --
+    and ``out_json`` is its result. The child scrubs that last one itself, but a journal is written
+    by the app's own code while it runs, so only the parent, after the child has exited, can clean
+    it. A file that cannot be rewritten is REMOVED rather than kept: a journal that still holds the
+    passphrase is the one thing a kept install may not carry. ``failed`` is what could be neither
+    rewritten nor removed. The lists name files, never a path or a line that could carry the secret."""
+    done: dict[str, list[str]] = {"rewritten": [], "removed": [], "failed": []}
+    if not needle:
+        return done
+    targets = [
+        *sorted((fresh / "run_logs").glob("*.jsonl")),
+        # ``*.json*``, not ``*.json``: a report is written to ``<name>.json.tmp`` and renamed, so a child
+        # that was killed in between leaves the half-written one beside the finished ones.
+        *sorted((fresh / "import_reports").glob("*.json*")),
+        out_json,
+    ]
+    for path in targets:
+        try:
+            if _scrub_file(path, needle):
+                done["rewritten"].append(path.name)
+        except Exception:  # noqa: BLE001 - whatever stopped the rewrite, the file must not stay as it is
+            # A missing-file error is NOT "no file": it also comes out of the rewrite itself (a ``.part``
+            # path the platform refuses, a directory that went away between the read and the write) with
+            # the journal there and still holding the passphrase. Only a path that is really not there has
+            # nothing to clean (the child died before it wrote its result).
+            if not os.path.lexists(path):
+                continue
+            try:
+                path.unlink()
+                done["removed"].append(path.name)
+            except OSError:
+                done["failed"].append(path.name)
+    if done["failed"]:
+        _LOG.warning(
+            "release run: the passphrase could not be taken out of %s in the kept fresh install",
+            ", ".join(done["failed"]),
+        )
+    return done
+
+
 def _fresh_install_restore(
     ctx: Any, run: _Run, backup_path: Path, *, label: str
 ) -> dict[str, Any]:
     """Spawn the helper with its OWN data dir. Two processes are what actually gives two
     corpora (the module-level engine singleton makes an in-process attempt a
     self-restore). The child's corpus is ENCRYPTED under the backup passphrase, so no
-    plaintext copy of the operator's corpus ever sits on the drive; the dir carries the
-    ``.restore-`` prefix the backup engine's own sweeper reclaims after a crash."""
+    plaintext copy of the operator's corpus ever sits on the drive. The dir carries the
+    ``.restore-`` prefix, but nothing sweeps this destination: a parent that is killed
+    outright leaves its directory behind, with whatever the child had written (the run
+    journal is plain text) -- this function removes it, or scrubs it when the run keeps it,
+    on every way out it can see.
+
+    EVERY ATTEMPT HAS A DIRECTORY OF ITS OWN (the label, the process id and a random part), made
+    new: a second run in one server process (allowed once the first has finished), or a directory a
+    killed parent left under the same label and process id, is never restored INTO. The name used to be
+    the label and the process id alone, so that second run restored into the install the first had kept
+    (two journals in one directory, and a run with another passphrase could not open its database) and a
+    run that did not keep its install deleted the one an earlier run had kept."""
     dest = Path(run.params.dest_dir).expanduser().resolve()
-    fresh = dest / f".restore-release-run-{label}-{os.getpid()}"
+    fresh = dest / f".restore-release-run-{label}-{os.getpid()}-{secrets.token_hex(4)}"
     out_json = fresh.with_suffix(".json")
     env = {
         **os.environ,
@@ -1017,16 +1171,27 @@ def _fresh_install_restore(
     }
     env.pop("OO_DB_PLAINTEXT", None)
     t0 = time.monotonic()
-    fresh.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
-        [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
-        cwd=str(_repo_root()),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    scrubbed: dict[str, list[str]] | None = None
+    fresh.mkdir(parents=True, exist_ok=False)
     try:
+        proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
+            [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
+            cwd=str(_repo_root()),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except BaseException:
+        # No child ran, so nothing wrote into the directory just made: take it away, kept install or
+        # not (an empty one is nothing to look at later), rather than leave it in a destination nothing
+        # sweeps. ``rmdir`` removes an empty directory and nothing else, so whatever is in it, it is
+        # never an install this call did not make.
+        with contextlib.suppress(OSError):
+            fresh.rmdir()
+        raise
+    try:
+        said: tuple[str, str] | None = None
         while proc.poll() is None:
             if ctx.stopping:
                 proc.terminate()
@@ -1036,15 +1201,25 @@ def _fresh_install_restore(
                     proc.kill()
                 break
             ctx.set_progress(detail=f"fresh install ({label}): restoring, {time.monotonic() - t0:,.0f} s")
-            time.sleep(2.0)
-        stdout, stderr = proc.communicate(timeout=30)
+            try:
+                # ``communicate`` waits AND reads. Waiting alone left the pipes unread, and a child that
+                # writes more than a pipe holds (64 KiB on Linux: a long traceback, a repair list nothing
+                # caps) blocks in its write until the cancel, which looks like a slow restore. A timeout
+                # loses nothing: the next call goes on from where this one stopped.
+                said = proc.communicate(timeout=_RESTORE_POLL_S)
+            except subprocess.TimeoutExpired:
+                continue
+            break
+        stdout, stderr = said if said is not None else proc.communicate(timeout=30)
         result: dict[str, Any] = {
             "label": label,
             "backup": str(backup_path),
             "fresh_dir": str(fresh),
             "elapsed_s": round(time.monotonic() - t0, 1),
             "returncode": proc.returncode,
-            "stderr_tail": (stderr or "")[-4000:],
+            # Scrubbed BEFORE the cut: a cut through the passphrase would leave a fragment that no
+            # later replacement could find.
+            "stderr_tail": _scrub_value(stderr or "", run.params.passphrase)[-4000:],
         }
         payload: dict[str, Any] | None = None
         with contextlib.suppress(OSError, ValueError):
@@ -1053,12 +1228,42 @@ def _fresh_install_restore(
             with contextlib.suppress(ValueError, IndexError):
                 payload = json.loads((stdout or "").strip().splitlines()[-1])
         result["child"] = payload
+        if run.params.keep_fresh_install:
+            # The child has exited, so what it wrote is closed, and its result is read. A kept install
+            # is looked at later, off this run: its journal and reports are plain text beside the
+            # encrypted database.
+            scrubbed = _scrub_kept_install(fresh, out_json, run.params.passphrase)
+            result["kept_install_scrub"] = scrubbed
+        # Before anything reads, stores or logs it (the failure text below included).
+        result = _scrub_value(result, run.params.passphrase)
+        if not ctx.stopping:
+            # The phase is a restore only if the child restored: its own ok and its exit status
+            # decide, not the parent returning. What the child measured stays in the record
+            # (RR-2), and the phase reads ``error`` -- which a resume retakes (R20).
+            failure = _restore_failure(result)
+            if failure:
+                raise _PhaseError(failure, partial=result)
         return result
     finally:
+        if proc.poll() is None:
+            # An exception got here with the child still running (the progress callback failed, a pipe
+            # was held open): it must not go on writing into a directory that is about to be removed or
+            # scrubbed, so it ends first.
+            with contextlib.suppress(OSError):
+                proc.kill()
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                proc.wait(timeout=15)
         if not run.params.keep_fresh_install:
             shutil.rmtree(fresh, ignore_errors=True)
             with contextlib.suppress(OSError):
                 out_json.unlink()
+        elif scrubbed is None:
+            # The scrub did not run on the way through (an exception came first). The error that brought
+            # us here is the one to raise, so a failure of this is logged, never raised over it.
+            try:
+                _scrub_kept_install(fresh, out_json, run.params.passphrase)
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("release run: the kept fresh install could not be scrubbed (%s)", type(exc).__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -1442,7 +1647,39 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
     p = run.params
     rows: list[dict[str, Any]] = []
     fresh = _phase(run, "fresh_install_restore")
-    child = ((fresh.get("result") or {}).get("child") or {})
+    child = _restored_child(fresh)
+    legacy = _phase(run, "legacy_restore")
+    # The status the rows read: a restore recorded ``measured`` over a child that is not
+    # counted as a restore is an error -- a build that never read its child's exit status
+    # wrote those -- never evidence for rows A, E, I or K's scan.
+    fresh_status = "error" if fresh.get("status") == "measured" and not child else fresh.get("status")
+    # A restore that ENDED and is not counted (a child that failed, did not end cleanly or did not
+    # commit) is NOT COUNTED, and the reason is the child's record. A phase that failed before a child
+    # ran left no restore to discount: it has no ``restore_why``, its rows say it did not complete, and
+    # the phase's own detail is the reason.
+    restore_why = (_restore_why_not(fresh) or "") if fresh_status == "error" else ""
+    legacy_child = _restored_child(legacy)
+    legacy_why = (_restore_why_not(legacy) or "") \
+        if legacy.get("status") in ("error", "measured") and not legacy_child else ""
+    restore_gap = (
+        "NOT COUNTED because its restore is not counted as one" if restore_why
+        else "absent because its restore did not complete here" if not child
+        else ""
+    )
+    # Row A names the reason when the restore that ended is not counted (``restore_why``) or the phase says
+    # why it did not run (its detail); a phase that was skipped says nothing, and a pointer to row A would
+    # then send the reader to a row with no more to say than the one they are on.
+    see_row_a = " (row A names why)" if restore_why or fresh.get("detail") else ""
+    if not p.legacy_backup_path:
+        legacy_scan: Any = "no pre-migration backup path was given"
+    elif legacy_why:
+        legacy_scan = f"the pre-migration restore is not counted as a restore: {legacy_why}"
+    elif not legacy_child and legacy.get("status") != "measured":
+        # refused (its path is not there), cancelled, or never reached: say so rather than a bare null
+        legacy_scan = (f"the pre-migration restore gave no scan: it read {legacy.get('status') or 'not run'}"
+                       + (f" ({legacy.get('detail')})" if legacy.get("detail") else ""))
+    else:
+        legacy_scan = legacy_child.get("country_code_scan")
     p0 = _phase(run, "p0_validation").get("result") or {}
     soak = _phase(run, "soak")
     collect_ph = _phase(run, "collect")
@@ -1466,7 +1703,7 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         return "error" if cs == "error" else (cs if cs in PHASE_STATUSES and cs != "measured" else "skipped")
 
     # A -- the committed import + the stamps surviving it
-    if child and fresh.get("status") == "measured":
+    if child and fresh_status == "measured":
         integ = child.get("integrity") or {}
         rows.append(_row(
             "A", "one committed import reports the verdicts it stamped, and a previously-"
@@ -1488,8 +1725,14 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
             + ("" if million else " -- row A's scale clause names ~1M articles; this instance's count is in the preflight"),
         ))
     else:
-        rows.append(_row("A", "a committed import at scale", fresh.get("status") or "skipped",
-                         {"phase": fresh}, "the fresh-install restore did not complete here"))
+        # A restore that ended but is not counted leads with that; "did not complete" is for one that was
+        # never reached, failed before a child ran (its own detail follows) or was stopped.
+        rows.append(_row("A", "a committed import at scale", fresh_status or "skipped",
+                         {"phase": fresh},
+                         (f"this run does NOT COUNT its fresh-install restore, so the clause has no committed "
+                          f"import to read -- {restore_why}") if restore_why
+                         else "the fresh-install restore did not complete here"
+                              + (f" -- {fresh['detail']}" if fresh.get("detail") else "")))
 
     # B -- the >= 72 h soak
     sw = collect.get("soak_window") or {}
@@ -1610,7 +1853,8 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
                                      "not_auto_repaired_measured_here_total":
                                          live.get("not_auto_repaired_measured_here_total"),
                                      "error": live.get("error")}},
-        "two readings on purpose: the restored install answers row A's clause, the live corpus answers the drain's",
+        "two readings on purpose: the restored install answers row A's clause, the live corpus answers the drain's"
+        + (f"; the restored install's reading is {restore_gap}{see_row_a}" if restore_gap else ""),
     ))
 
     # W -- 0.4 row W, 0.3's row 5 carried forward by ruling RC01 = (a): required before
@@ -1651,16 +1895,19 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
          "backup_schema": (_phase(run, "preflight").get("result") or {}).get("backup_schema"),
          "p0": checks, "p0_summary": p0.get("summary"),
          "duplicate_key_scan_on_restored_corpus": child.get("country_code_scan"),
-         "legacy_backup": (_phase(run, "legacy_restore").get("result") or {}).get("child", {}).get("country_code_scan")
-         if p.legacy_backup_path else "no pre-migration backup path was given"},
-        "the P0 verdicts are the kit's own; the scan on the restored corpus is the row's artifact",
+         "legacy_backup": legacy_scan},
+        "the P0 verdicts are the kit's own; the scan on the restored corpus is the row's artifact"
+        + (f"; that scan is {restore_gap}{see_row_a}" if restore_gap else ""),
     ))
     rows.append(_row(
         "I", "a real restore at corpus scale through the volume set",
-        "measured" if child and fresh.get("status") == "measured" else "skipped",
-        {"restore": child.get("restore"), "elapsed_s": (fresh.get("result") or {}).get("elapsed_s"),
+        "measured" if child and fresh_status == "measured" else (fresh_status if fresh_status in PHASE_STATUSES else "skipped"),
+        {"restore": child.get("restore"), "elapsed_s": (fresh.get("result") or {}).get("elapsed_s") if child else None,
          "peak_rss_mb_child": child.get("peak_rss_mb"), "reindex_imported": False},
-        "one backup, so K = 3 checkpointing was not exercised; the kill between stages 3 and 4 is a CI fixture and stays the operator's on this machine",
+        "one backup, so K = 3 checkpointing was not exercised; the kill between stages 3 and 4 is a CI fixture and stays the operator's on this machine"
+        + (f"; this run does NOT COUNT its restore: {restore_why}" if restore_why
+           else "; this run's restore did not complete here"
+                + (f": {fresh['detail']}" if fresh.get("detail") else "") if restore_gap else ""),
     ))
 
     # P -- the lane's run
@@ -1882,24 +2129,44 @@ def request_collect_now() -> None:
     _COLLECT_NOW.set()
 
 
+def _log_phase_failure(name: str, exc: BaseException, why: str, secret: str) -> None:
+    """Log the exception being handled, with its traceback, and with the passphrase out of both. The
+    error log keeps the last 1,500 characters of a record's traceback in ``app_errors.jsonl``, which a
+    debug bundle carries, so an exception that named the passphrase would otherwise put it on disk. Where
+    the traceback does not hold it (the usual case) the record is the one it always was; where it does,
+    the record carries the scrubbed text instead, ``why`` (already scrubbed) first because the error log
+    keeps the start of a message and the exception line is at the end."""
+    text = "".join(traceback.format_exception(exc))
+    if secret and secret in text:
+        _LOG.warning("release run phase %s failed: %s\n%s", name, why[:200], _scrub_value(text, secret))
+    else:
+        _LOG.warning("release run phase %s failed", name, exc_info=True)
+
+
 def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[BaseException], ...] = ()) -> dict[str, Any]:
     """Run one phase under the closed status vocabulary. A named refusal (a bad
     precondition) is ``refused``; anything else that raises is ``error`` -- and neither
     stops the run from writing its report, because a run that dies without one leaves
-    the operator with nothing after three days."""
+    the operator with nothing after three days. What the exception says reaches the log,
+    the state file and the report with the passphrase taken out (the module docstring's
+    promise holds for every phase, not only the restore's), BEFORE the cut to 400
+    characters, so a cut through it cannot leave a fragment."""
     run.begin(name)
     ctx.set_progress(detail=name)
+    secret = run.params.passphrase
     try:
         result = fn()
     except _PhaseError as exc:
         # RR-2: what the phase measured before it failed stays in its record.
-        _LOG.warning("release run phase %s failed part of the way: %s", name, exc)
-        ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", str(exc)[:400], result=exc.partial)
+        why = _scrub_value(str(exc), secret)
+        _LOG.warning("release run phase %s failed part of the way: %s", name, why)
+        ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", why[:400], result=exc.partial)
     except refusals as exc:
-        ph = run.end("refused", f"{type(exc).__name__}: {exc}"[:400])
+        ph = run.end("refused", _scrub_value(f"{type(exc).__name__}: {exc}", secret)[:400])
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to the report
-        _LOG.warning("release run phase %s failed", name, exc_info=True)
-        ph = run.end("error", f"{type(exc).__name__}: {exc}"[:400])
+        why = _scrub_value(f"{type(exc).__name__}: {exc}", secret)
+        _log_phase_failure(name, exc, why, secret)
+        ph = run.end("error", why[:400])
     else:
         if ctx.stopping:
             ph = run.end("cancelled", "cancelled during this phase", result=result)
