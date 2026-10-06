@@ -10435,6 +10435,7 @@ classify an I/O error while another read is in flight; the failure key of the gu
 the three PRs is corrected (a recovery floor, the checkpoint timings, the pool-watch record, the pressure method text, the count of
 eleven tests, split two and nine by measurement). New: a LIGHT pressure snapshot every 15 s while memory is near the memory
 guard's line, with its own ring and file, the busiest threads by CPU since the previous one, the blocks gained and its own cost.
+`session_hwm.diagnostics_member(max_bytes)` hands that tail (this session's and the previous session's, newest kept, the cut named) to the single Diagnostics zip of R119, which then does not write the same minutes twice.
 Also recorded: the post-10-01 reading of the 10-06 bundles (the log is held near 1 GB by the guard; the pins are long background
 reads). Lessons: `LESSONS.md`, the entries "AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT", "A SAMPLER THAT ONLY FITS EVERY
 FIVE MINUTES" and "SMALL RULES FROM THE THREE REVIEWS OF #1306, #1298 AND #1308".

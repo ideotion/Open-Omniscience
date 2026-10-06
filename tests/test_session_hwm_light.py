@@ -320,3 +320,48 @@ def test_the_bundles_method_text_says_what_the_light_snapshots_are(dd, monkeypat
     monkeypatch.setattr(session_hwm, "previous", lambda: {"pid": 1, "pressure_light": []})
     out = forensics._previous_peaks()
     assert "pressure_light" in out["method"] and "inference" in out["method"]
+
+
+# --- the one bundle member (the slot contract of the single Diagnostics zip) ---------------------------
+
+
+def test_the_member_carries_this_sessions_tail_and_the_previous_ones_with_the_method(rig, no_heavy, dd):
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    rig(5.0)
+    rig(15.0)
+    # the next boot (a new process has loaded nothing yet): this session's file becomes the previous tail
+    session_hwm._PREV_LOADED, session_hwm._PREV = False, None
+    session_hwm.capture_previous()
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    rig(5.0)
+    out = session_hwm.diagnostics_member(200_000)
+    assert "error" not in out and "INFERENCE" in out["method"] and out["interval_s"] == 15.0
+    assert out["previous_session"]["found"] is True
+    assert out["previous_session"]["taken"] == 2 and len(out["previous_session"]["snapshots"]) == 2
+    assert out["this_session"]["taken"] == 1 and len(out["this_session"]["snapshots"]) == 1
+    assert out["previous_session"]["dropped_oldest_to_fit"] == 0
+    json.dumps(out)  # a member is JSON
+
+
+def test_a_member_over_its_budget_keeps_the_newest_and_says_how_many_it_cut(rig, no_heavy):
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    for _ in range(6):
+        rig(15.0)
+    ring = session_hwm.current()["pressure_light"]
+    assert len(ring) == 6
+    one = len(json.dumps(ring[-1], separators=(",", ":")))
+    out = session_hwm.diagnostics_member(1024 + 2 * (2 * one + 10))
+    mine = out["this_session"]
+    assert mine["snapshots"] and mine["dropped_oldest_to_fit"] == 6 - len(mine["snapshots"]) > 0
+    assert mine["snapshots"][-1]["at"] == ring[-1]["at"], "the NEWEST is what stays"
+    assert len(json.dumps(mine["snapshots"], separators=(",", ":"))) <= (1024 + 2 * (2 * one + 10) - 1024) // 2
+
+
+def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(monkeypatch):
+    monkeypatch.setattr(session_hwm, "previous", lambda: None)
+    monkeypatch.setattr(session_hwm, "current", lambda: {})
+    out = session_hwm.diagnostics_member(50_000)
+    assert out["previous_session"]["found"] is False and out["previous_session"]["snapshots"] == []
+    assert session_hwm.diagnostics_member(-5)["method"], "a nonsense budget is raised to the smallest, not an error"
+    monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError("boom\nsecond line")))
+    assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError: boom"}

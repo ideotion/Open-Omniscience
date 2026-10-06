@@ -1018,6 +1018,53 @@ def current() -> dict[str, Any]:
         return out
 
 
+def _fit_newest(items: list[Any], budget: int) -> tuple[list[Any], int]:
+    """The newest of ``items`` (oldest first) whose JSON fits ``budget`` bytes, and how many older
+    ones were dropped. The size is measured on what would be written, never estimated."""
+    kept = list(items)
+    while kept and len(json.dumps(kept, separators=(",", ":"), default=str)) > budget:
+        kept.pop(0)
+    return kept, len(items) - len(kept)
+
+
+def diagnostics_member(max_bytes: int) -> dict[str, Any]:
+    """The pressure TAIL as one diagnostics-bundle member (the slot contract of the single
+    Diagnostics zip: ``(max_bytes) -> dict``, never raises, keeps the newest, names the cut).
+
+    It carries the minutes before a kill and nothing else about memory: the LIGHT snapshots of this
+    session and of the previous one (the previous session's tail is the one an unclean end is read
+    from), each ring cut oldest-first to its half of the budget, with the count dropped. The hours
+    and days before the tail are the vitals record's; it names this member in its ``tail_in`` so
+    no number is written twice. Counts, times, sizes and stack locations only."""
+    try:
+        budget = max(1024, int(max_bytes))
+        half = max(512, (budget - 1024) // 2)
+        prev = previous() or {}
+        now = current()
+        this_ring, this_cut = _fit_newest(list(now.get("pressure_light") or []), half)
+        prev_ring, prev_cut = _fit_newest(list(prev.get("pressure_light") or []), half)
+        out: dict[str, Any] = {
+            "method": _LIGHT_METHOD,
+            "interval_s": _LIGHT_INTERVAL_S,
+            "kept_per_session": _LIGHT_KEEP,
+            "this_session": {
+                "taken": now.get("pressure_light_taken"),
+                "snapshots": this_ring,
+                "dropped_oldest_to_fit": this_cut,
+            },
+            "previous_session": {
+                "taken": prev.get("pressure_light_taken"),
+                "snapshots": prev_ring,
+                "dropped_oldest_to_fit": prev_cut,
+                "started_at": prev.get("started_at"),
+                "found": bool(prev),
+            },
+        }
+        return out
+    except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
+        return {"error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:160] if str(exc) else ''}"}
+
+
 def reset_for_tests() -> None:
     """Clear the module state. Test-only; the suite shares one process."""
     global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION
