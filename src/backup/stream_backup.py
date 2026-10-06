@@ -2040,7 +2040,14 @@ def verify_stream_backup(
                     for vname in mm.get("volumes") or []:
                         decrypt_stream(src / vname, _sink, passphrase)
                 except EncryptionError as exc:
-                    _fail(f"member {mm['name']} failed to decrypt: {exc}")
+                    # The report goes back to every caller that holds the passphrase (the volume-verify
+                    # job serves it on an endpoint, the P0 check writes it into a file the debug bundle
+                    # carries), and this line holds the exception's own words, so they are scrubbed where
+                    # the line is made. The member's name and the sentence around them stay as they are.
+                    from src.monitoring.secret_scrub import scrub_text
+
+                    reason = scrub_text(str(exc), passphrase)
+                    _fail(f"member {mm['name']} failed to decrypt: {reason}")
                     continue
                 if h.hexdigest() != mm.get("plaintext_sha256"):
                     _fail(f"member {mm['name']} failed its whole-plaintext checksum")
