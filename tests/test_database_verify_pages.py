@@ -749,34 +749,75 @@ def test_the_kept_lines_are_bounded_and_the_count_is_not():
     assert kept.count == 10_000 and kept.lines == ["row 0", "row 1", "row 2"]
 
 
-def test_a_file_longer_than_4_gib_is_not_given_to_the_page_pass_and_one_of_exactly_4_gib_is(tmp_path):
+class _SizedPath:
+    """A path whose ``stat()`` answers a length, for a file the size of which nothing in a test should have to make (a sparse file is
+    not sparse on NTFS, which would allocate the whole 4 GiB). ``sizes`` are answered in turn, the last one for ever."""
+
+    def __init__(self, *sizes: int) -> None:
+        self.sizes = list(sizes)
+
+    def stat(self):
+        size = self.sizes.pop(0) if len(self.sizes) > 1 else self.sizes[0]
+        return type("Stat", (), {"st_size": size})()
+
+
+def test_the_page_pass_limit_is_exactly_four_gib():
+    assert verify.PAGE_PASS_LIMIT_BYTES == 1 << 32
+
+
+def test_a_file_longer_than_4_gib_is_not_given_to_the_page_pass_and_one_of_exactly_4_gib_is():
     """The coordinator's check of E2b: past 4 GiB the pass's offsets wrap (measured on a healthy 4.52 GB store: a failure for every page from
     the first one that starts at 2^32), so the pass is skipped, ``unchecked`` with the reason, and the file is neither called damaged nor
     clean. The boundary is a page that STARTS at 2^32: a file of exactly 2^32 bytes ends there and is still checked."""
-    big = tmp_path / "big.db"
-    try:
-        with open(big, "wb") as f:
-            f.truncate(verify.PAGE_PASS_LIMIT_BYTES + 1)  # sparse: no disk is used
-    except OSError:
-        pytest.skip("this filesystem cannot make a sparse file of 4 GiB")
-    opened: list[Path] = []
+    opened: list[object] = []
 
     def opener(path):
         opened.append(path)
         return _Rows(rows=[])
 
+    big = _SizedPath(verify.PAGE_PASS_LIMIT_BYTES + 1)
     entry = verify.confirm_encrypted_damage(big, opener=opener)
-    assert entry["verdict"] == VERDICT_UNCHECKED and entry["skipped"] == "file-over-4-gib" and "4 GiB" in entry["detail"][0], entry
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["skipped"] == "file-over-4-gib", entry
+    assert entry["file_bytes"] == verify.PAGE_PASS_LIMIT_BYTES + 1
     assert opened == [], "the pass was run on a file past 4 GiB"
-    with open(big, "r+b") as f:
-        f.truncate(verify.PAGE_PASS_LIMIT_BYTES)
-    entry = verify.confirm_encrypted_damage(big, opener=opener)
-    assert opened == [big] and entry["verdict"] == VERDICT_OK, entry
+    exact = _SizedPath(verify.PAGE_PASS_LIMIT_BYTES)
+    entry = verify.confirm_encrypted_damage(exact, opener=opener)
+    assert opened == [exact] and entry["verdict"] == VERDICT_OK, entry
 
 
-def test_a_file_past_4_gib_whose_table_list_cannot_be_read_stays_unchecked_and_says_why_and_a_pass_that_could_not_read_keeps_its_number(
-    tmp_path, healthy, files, monkeypatch
-):
+def test_the_reason_a_file_past_4_gib_was_not_checked_survives_the_cut_to_a_detail_line():
+    """The coordinator's check of E2 (second): ``entry()`` cuts every detail at ``DETAIL_CHARS``, and the sentence that matters ends the
+    reason: the user read '...a failure for every page fro' and lost 'so the pages were not checked'."""
+    entry = verify.confirm_encrypted_damage(_SizedPath(verify.PAGE_PASS_LIMIT_BYTES + 1), opener=lambda p: _Rows(rows=[]))
+    assert len(verify._OVER_LIMIT_REASON) < verify.DETAIL_CHARS
+    assert entry["detail"] == [verify._OVER_LIMIT_REASON] and "not checked" in entry["detail"][0] and entry["detail"][0].endswith("not checked")
+
+
+def test_a_file_that_crossed_4_gib_while_the_pass_ran_drops_the_rows_the_pass_answered():
+    """The coordinator's check of E2 (second), item 2: an outside writer can take the file past 2^32 bytes between the size read before the pass and
+    the pass's own reads; the rows are then about wrong bytes (here a false failing page and an unknown row), and are dropped."""
+    path = _SizedPath(verify.PAGE_PASS_LIMIT_BYTES, verify.PAGE_PASS_LIMIT_BYTES + 4096)
+    rows = [("HMAC verification failed for page 262145",), ("something this app has never seen",)]
+    entry = verify.confirm_encrypted_damage(path, opener=lambda p: _Rows(rows=rows))
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["skipped"] == "file-over-4-gib", entry
+    assert "pages" not in entry and "pages_total" not in entry and "strange_rows" not in entry, "the rows of a pass past 4 GiB were kept"
+
+
+def test_the_kept_lines_of_the_pass_are_bounded_by_the_detail_lines(monkeypatch):
+    """A ``_Kept(10**9)`` would keep a second copy of every unknown row of a pass in which every row is unknown: the limit each is made with is pinned."""
+    made: list[int] = []
+
+    class Spy(verify._Kept):
+        def __init__(self, limit: int) -> None:
+            made.append(limit)
+            super().__init__(limit)
+
+    monkeypatch.setattr(verify, "_Kept", Spy)
+    verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=[(EIO_ROW,), ("something new",)]))
+    assert made and set(made) == {verify.DETAIL_LINES}, made
+
+
+def test_a_table_list_that_cannot_be_read_beside_a_pass_that_could_not_read_keeps_the_unread_count_as_a_number(tmp_path, healthy, files, monkeypatch):
     """The coordinator's check of E2, item 3, the unchecked error branch: ``pages_unread`` was only words inside ``reason`` there."""
     monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
     monkeypatch.setattr(
@@ -788,6 +829,17 @@ def test_a_file_past_4_gib_whose_table_list_cannot_be_read_stays_unchecked_and_s
     entry = _record(tmp_path)["verification"][FILE_CORPUS]
     assert entry["verdict"] == VERDICT_UNCHECKED and entry["tables"] == []
     assert entry["pages_unread"] == 2, "the count of pages the drive could not give was kept only as text"
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_table_list_that_cannot_be_read_on_a_file_past_4_gib_says_the_pages_were_not_checked(tmp_path, healthy, files, monkeypatch):
+    """The unreadable-table-list branch pastes the pass's reason into its own; with the limit made small the real file is 'past 4 GiB'."""
+    monkeypatch.setattr(verify, "PAGE_PASS_LIMIT_BYTES", 1000)
+    monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    _run(files, healthy, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["tables"] == []
+    assert "OperationalError" in entry["reason"] and "not checked" in entry["reason"], entry["reason"]
     assert not damage.registry.latched(FILE_CORPUS)
 
 

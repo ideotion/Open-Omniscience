@@ -157,6 +157,19 @@ _COULD_NOT_READ = re.compile(
 #: 2^32 or later exists exactly when the file is longer than 2^32 bytes (page sizes are powers of two).
 PAGE_PASS_LIMIT_BYTES = 1 << 32
 
+#: What the record says of a file the page pass was not run on. WHAT THE LENGTH PROTECTS: the sentence is cut at ``DETAIL_CHARS`` like every
+#: detail line, and the half that matters (the pages were NOT checked) is its end, so it stays under that (pinned by a test); the
+#: measurement is in :data:`PAGE_PASS_LIMIT_BYTES`'s comment and the module docstring.
+_OVER_LIMIT_REASON = "the file is longer than 4 GiB, where the page check reads the wrong bytes (measured), so its pages were not checked"
+
+
+def _size_of(path: Path) -> int:
+    """The main file's length, or 0 when it cannot be read (the pass then says what it could not open)."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
 #: How many of a table's report lines, and how many characters of each, the record keeps. A check's
 #: lines name pages and index entries ("Tree 5 page 1234: ...", "row 7 missing from index ix_x"), never a
 #: value, but a table with thousands of problems is one finding, not thousands of lines.
@@ -457,19 +470,12 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
             VERDICT_UNCHECKED,
             ["this build of SQLCipher has no page-authentication check (PRAGMA cipher_integrity_check), so the pages were not checked"],
         )
-    try:
-        size = path.stat().st_size
-    except OSError:
-        size = 0  # a file that cannot be examined: the pass below says what it could not open
+    def skipped(size: int) -> dict[str, Any]:
+        return entry(VERDICT_UNCHECKED, [_OVER_LIMIT_REASON], skipped="file-over-4-gib", file_bytes=size)
+
+    size = _size_of(path)
     if size > PAGE_PASS_LIMIT_BYTES:
-        return entry(
-            VERDICT_UNCHECKED,
-            [
-                f"the file is {size} bytes, past 4 GiB, where the page check of this SQLCipher reads the wrong bytes (measured on a healthy file: "
-                "a failure for every page from the first one past 4 GiB), so the pages were not checked"
-            ],
-            skipped="file-over-4-gib",
-        )
+        return skipped(size)
     con = None
     try:
         con = (opener or _open)(path)
@@ -499,6 +505,11 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
         if con is not None:
             with contextlib.suppress(Exception):
                 con.close()
+    size = _size_of(path)
+    if size > PAGE_PASS_LIMIT_BYTES:
+        # The file crossed 2^32 bytes WHILE the pass ran (an outside writer, a backup landing): what the pass answered is about wrong bytes
+        # past that point, so its rows are dropped, exactly as if the file had been that long when it began.
+        return skipped(size)
     if not answered:
         return entry(VERDICT_OK, ["no page of the file failed its authentication check"])
     unreadable, strange = unread.count, other.count
