@@ -317,12 +317,18 @@ def test_ci_encrypted_persisted_round_trip(tmp_path, monkeypatch):
     # the PERSISTED store (the in-memory fallback also returns a connection, so this is what says the real engine took the
     # statement: the key bound as a parameter, under the key stretched from the passphrase and the sidecar's salt)
     assert con.execute("SELECT current_database()").fetchone() == ("oo",)
+    # a canary the store is made to hold, so that the check of the bytes below is one that can fail: the gate's sentinel is
+    # written into the probe file and never into this one, so a check for it would pass on a plaintext store too
+    con.execute("CREATE TABLE ci_canary (s VARCHAR)")
+    con.execute("INSERT INTO ci_canary VALUES ('canary-7f3a9c1d')")
+    con.execute("CHECKPOINT oo")
     con.close()
-    # a second open reads the same store: the sidecar gives the same salt, so the same key
+    # a second open reads the same store: the sidecar gives the same salt, so the same key, and the canary is there
     again = columnar.connect(passphrase="s3-ci-passphrase")
     assert again.execute("SELECT current_database()").fetchone() == ("oo",)
+    assert again.execute("SELECT s FROM ci_canary").fetchall() == [("canary-7f3a9c1d",)]
     again.close()
-    # the on-disk store is ciphertext (the sentinel from the gate probe is never present raw)
+    # the on-disk store is ciphertext: what it holds is not in its raw bytes
     store = tmp_path / columnar._STORE_FILENAME
     assert store.exists() and (tmp_path / (columnar._STORE_FILENAME + columnar._KDF_SIDECAR_SUFFIX)).exists()
-    assert columnar._SENTINEL.encode() not in store.read_bytes()
+    assert b"canary-7f3a9c1d" not in store.read_bytes()

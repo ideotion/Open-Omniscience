@@ -57,8 +57,10 @@ _ALLOWED_PASSES = (1, 3, 8)
 _MAIN_DB = "open_omniscience.db"
 _CUSTODY_DB = "custody_log.db"
 _ANCHORS_DB = "anchors.db"
-# The cache, the sidecar that holds the salt its key is stretched with (``columnar._KDF_SIDECAR_SUFFIX``) and the gate's probe.
-_DUCK_FILES = ("analytics.duckdb", "analytics.duckdb.kdf", ".oo_columnar_probe.duckdb")
+# The cache, the sidecar that holds the salt its key is stretched with (``columnar._KDF_SIDECAR_SUFFIX``), the log the engine
+# leaves beside the cache after an unclean end (ciphertext under the same key, so with the sidecar gone it is noise, but it is
+# the store's own file) and the gate's probe.
+_DUCK_FILES = ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb")
 _KEY_FILES = ("custody_ed25519.pem", "custody_ml_dsa_65.key")
 _DB_SIDECARS = ("-wal", "-shm", "-journal")
 

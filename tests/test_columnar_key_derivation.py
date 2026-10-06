@@ -47,6 +47,21 @@ _VECTORS = [
 
 
 # --------------------------------------------------------------------------- #
+# Where these tests run
+# --------------------------------------------------------------------------- #
+def test_the_lane_that_has_duckdb_runs_this_file():
+    """Every test below that drives the engine imports DuckDB with ``importorskip``, and the lanes without it (the main one
+    and the portability ones) skip all of them: 20 of this file's tests are skips there. The ``columnar`` lane installs the
+    extra, so it is the one place they run, and its command lists its files by name: a lane that no longer names this file
+    turns the real-engine tests into a pass that tested nothing."""
+    import yaml
+
+    workflow = yaml.safe_load((Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    commands = "\n".join(step.get("run", "") for step in workflow["jobs"]["columnar"]["steps"])
+    assert "tests/test_columnar_key_derivation.py" in commands, "the columnar lane does not run the key-derivation tests"
+
+
+# --------------------------------------------------------------------------- #
 # The derivation
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(("passphrase", "salt_hex", "expected"), _VECTORS)
@@ -293,11 +308,16 @@ def test_a_failed_open_falls_back_to_memory_and_logs_neither_the_passphrase_nor_
     into are taken out of the record's failure line and out of its traceback, which is text and not ``exc_info``."""
     persisted.fail_with = lambda key: RuntimeError(f"Parser Error near ENCRYPTION_KEY '{key}' (the passphrase was {PASS})")
     store = persisted.dir / "analytics.duckdb"
+    # The sidecar is made first: a store with no valid one is removed before the attach is tried, so without it the file
+    # would be gone whether or not the failure's handler drops it, and the assertion below would hold for the wrong reason.
+    salt = columnar._store_salt(store)
     store.write_bytes(b"a cache that will not open")
     caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
     con = columnar.connect(passphrase=PASS)
     assert con is not None, "the engine falls back to an in-memory store"
     con.close()
+    assert columnar._read_kdf_salt(persisted.dir / "analytics.duckdb.kdf") == salt, "the sidecar was valid, so the open was tried"
+    assert persisted.attached, "the attach ran: only the failure's handler can have dropped the file"
     assert not store.exists(), "the disposable file is dropped"
     (_, key), = persisted.attached
     text = "\n".join(f"{r.getMessage()}\n{r.exc_text or ''}\n{r.exc_info!r}" for r in caplog.records)
@@ -563,16 +583,19 @@ def test_the_gate_refuses_an_engine_that_writes_the_sentinel_in_the_clear(tmp_pa
 # The sidecar is destroyed with the cache
 # --------------------------------------------------------------------------- #
 def test_the_erase_and_the_uninstall_watcher_name_every_file_the_store_keeps_at_rest():
-    """The store, the sidecar beside it and the gate's probe are the files the engine leaves on disk. The erase and the
-    watcher (a source text with its own copy of the names, because it imports nothing) each carry a list of them: a file
-    the engine learns to keep that neither names is one the erase leaves behind, and a name that no longer matches a file
-    is a list that has gone stale. The byte-level check that the erase overwrites the sidecar is in
-    ``tests/test_crypto_erase.py``; the watcher's in ``tests/test_uninstall.py``."""
+    """The store, the sidecar beside it, the log the engine leaves beside the store after an unclean end and the gate's probe
+    are the files the engine leaves on disk. The erase and the watcher (a source text with its own copy of the names,
+    because it imports nothing) each carry a list of them: a file the engine learns to keep that neither names is one the
+    erase leaves behind (under ``OO_COLUMNAR_DIR`` outside the data directory it is only the names that are walked), and a
+    name that no longer matches a file is a list that has gone stale. The byte-level check that the erase overwrites the
+    sidecar and the log is in ``tests/test_crypto_erase.py``; the watcher's in ``tests/test_uninstall.py``."""
     from src.safety import crypto_erase, uninstall
 
     sidecar = columnar._STORE_FILENAME + columnar._KDF_SIDECAR_SUFFIX
     assert sidecar == "analytics.duckdb.kdf"
-    kept = {columnar._STORE_FILENAME, sidecar, ".oo_columnar_probe.duckdb"}
+    log = columnar._STORE_FILENAME + ".wal"
+    assert log == "analytics.duckdb.wal"
+    kept = {columnar._STORE_FILENAME, sidecar, log, ".oo_columnar_probe.duckdb"}
     assert set(crypto_erase._DUCK_FILES) == kept
     # The watcher names each in its header-only list and in the external store dir's list, the probe included.
     for name in kept:

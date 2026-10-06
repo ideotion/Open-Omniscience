@@ -180,6 +180,37 @@ def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_l
     assert not sidecar.exists() and report["removed"] is True
 
 
+def test_quick_crypto_erase_takes_every_file_of_a_cache_directory_outside_the_data_dir_and_only_those(tmp_path, monkeypatch):
+    """With ``OO_COLUMNAR_DIR`` outside the data directory the erase walks the cache's directory BY NAME (it is not ours to
+    remove, so nothing else in it is touched). An unclean end leaves ``analytics.duckdb.wal`` beside the cache: ciphertext
+    under the same key, and with the sidecar destroyed the key is not derivable, but it is the store's own file, so the
+    list that is walked names it too. The unrelated file in that directory is left alone."""
+    data = tmp_path / "data"
+    data.mkdir()
+    cache = tmp_path / "columnar-cache"
+    cache.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    for name in ("analytics.duckdb", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
+        (cache / name).write_bytes(b"D" * 8192)
+    (cache / "analytics.duckdb.kdf").write_text('{"v": 2}', encoding="utf-8")
+    (cache / "unrelated.txt").write_text("keep me", encoding="utf-8")
+    monkeypatch.setattr(
+        crypto_erase,
+        "_resolve",
+        lambda dd: {
+            "base": data,
+            "main_db": data / "open_omniscience.db",
+            "keys_dir": data / "keys",
+            "store_dir": cache,
+            "custody_db": data / "custody_log.db",
+            "anchors_db": data / "anchors.db",
+        },
+    )
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["removed"] is True and not data.exists()
+    assert sorted(p.name for p in cache.iterdir()) == ["unrelated.txt"], "every file the cache keeps went, and nothing else"
+
+
 def test_quick_crypto_erase_clears_passphrase_on_default_store(tmp_path, monkeypatch):
     """The default (data_dir=None) path clears the in-memory passphrase; an override dir
     does not (proven above). Resolvers are monkeypatched onto the temp dir so no real

@@ -19,7 +19,11 @@ name the code uses for the passphrase: an identifier (a name, an attribute, a ke
 ``passwd``, ``passcode``, ``pwd``, ``pw`` or ``secret``. "Made from" is followed inside one function (or the module's own
 statements): ``raw = ("x:" + passphrase).encode()`` taints ``raw``, so ``hashlib.sha256(raw)`` is flagged, and so is
 what is read through a ``with open(passphrase_file) as fh``. The stretching functions are NOT flagged (they are what the
-rule asks for), but are counted, so that the tests can see the walk reads the real derivation.
+rule asks for), but are counted, so that the tests can see the walk reads the real derivation. What a stretching call
+MAKES is not the passphrase either, and the walk does not follow it: ``key = hashlib.pbkdf2_hmac(..., passphrase, ...)``
+taints nothing, and a stretching call inside the arguments of a hash is not read, because a guess at the passphrase
+still costs the stretching (the keyed-HMAC blob address of the 0.5 storage plan is a hash of a key stretched from the one
+passphrase, and must not need a second ruling to pass). The passphrase itself, named in the same call, is still flagged.
 
 WHAT STAYS OUTSIDE, stated so that nobody reads a green run as more than it is:
 
@@ -28,6 +32,10 @@ WHAT STAYS OUTSIDE, stated so that nobody reads a green run as more than it is:
   ``getattr``, ``**kwargs`` or a container built elsewhere, or as a hash object passed in as a parameter (``def f(h,
   pw): h.update(pw)``), is not seen. The plural ``secrets`` is not a word (it is the standard module); ``phrase`` is not
   (the text analysis uses it for word groups); ``token`` is not.
+* Inside ONE function the walk follows assignments, loops, ``with`` and the walrus, and nothing else: a container filled
+  by a method (``parts.append(passphrase)``, ``buf.write(passphrase.encode())``), an alias of a constructor (``digest =
+  hashlib.sha256; digest(passphrase)``), a hash object's ``.copy()``, a ``match`` capture and a passphrase read by
+  ``getpass.getpass()`` and hashed on the spot (``scripts/encrypt_db.py`` reads THE passphrase that way) are not seen.
 * It reads Python under ``src/`` and ``scripts/``. The pages (``src/static``) were searched by hand when this was
   written for a digest call (``crypto.subtle.digest`` or a hash routine) and hold none; nothing walks them. Tests are not
   read: they hash passphrases to build expected answers.
@@ -39,6 +47,11 @@ WHAT STAYS OUTSIDE, stated so that nobody reads a green run as more than it is:
 THE LIST OF ALLOWED CALLS IS EMPTY AND STAYS THAT WAY unless a ruling says otherwise: a fast hash of a passphrase has no
 use the stretching functions do not serve, and a "fingerprint of the passphrase to tell whether it changed" is the same
 offline attack with a friendlier name.
+
+A NAME THAT SAYS ``secret``, ``pw`` OR ``pwd`` WITHOUT BEING THE PASSPHRASE IS FLAGGED TOO, because the walk reads names:
+a signing secret handed to ``hmac.new``, the Unix ``pwd`` module's ``pw_dir``, a Playwright handle called ``pw`` (two of
+the repo's own scripts called it that and were renamed ``playwright``) all fail here when a fast hash reaches them. The
+fix is to RENAME the value (``signing_key``, ``home_dir``, ``playwright``), not to add an allowed call.
 """
 
 from __future__ import annotations
@@ -46,7 +59,8 @@ from __future__ import annotations
 import ast
 import functools
 import re
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -81,9 +95,21 @@ def _is_secret_name(name: str) -> bool:
     return any(word in _SECRET_WORDS for word in _CASE_CHANGE.sub("_", name).lower().split("_"))
 
 
-def _first_mention(node: ast.AST, tainted: set[str]) -> str | None:
-    """The first name in ``node`` that is the passphrase or was made from it (``tainted``), or None."""
-    for n in ast.walk(node):
+def _outside_stretching(node: ast.AST, stretching: Callable[[ast.Call], bool]) -> Iterator[ast.AST]:
+    """``ast.walk`` (the same order) that does not enter a stretching call: what ``pbkdf2_hmac`` or ``scrypt`` makes from
+    the passphrase is not the passphrase, and a guess at it still costs the stretching."""
+    todo = deque([node])
+    while todo:
+        n = todo.popleft()
+        yield n
+        if not (isinstance(n, ast.Call) and stretching(n)):
+            todo.extend(ast.iter_child_nodes(n))
+
+
+def _first_mention(node: ast.AST, tainted: set[str], stretching: Callable[[ast.Call], bool] | None = None) -> str | None:
+    """The first name in ``node`` that is the passphrase or was made from it (``tainted``), or None. A call that
+    ``stretching`` says is a stretching function is not entered."""
+    for n in ast.walk(node) if stretching is None else _outside_stretching(node, stretching):
         if isinstance(n, ast.Name):
             if n.id in tainted or _is_secret_name(n.id):
                 return n.id
@@ -129,8 +155,9 @@ def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
             stack.extend(ast.iter_child_nodes(node))
 
 
-def _tainted(nodes: list[ast.AST]) -> set[str]:
-    """The names a scope makes from the passphrase, to a fixed point (a copy of a copy is a copy)."""
+def _tainted(nodes: list[ast.AST], stretching: Callable[[ast.Call], bool] | None = None) -> set[str]:
+    """The names a scope makes from the passphrase, to a fixed point (a copy of a copy is a copy). What a stretching call
+    makes is not one of them."""
     tainted: set[str] = set()
     changed = True
     while changed:
@@ -146,7 +173,7 @@ def _tainted(nodes: list[ast.AST]) -> set[str]:
             elif isinstance(n, ast.withitem) and n.optional_vars is not None:
                 pairs = [(n.optional_vars, n.context_expr)]
             for target, value in pairs:
-                if _first_mention(value, tainted) is None:
+                if _first_mention(value, tainted, stretching) is None:
                     continue
                 for name in _targets(target):
                     if name not in tainted:
@@ -187,12 +214,17 @@ def _callee(func: ast.expr, modules: dict[str, str], names: dict[str, str]) -> t
     return (qualified, False) if attr in _HMAC_SINKS else None
 
 
-def hash_calls(source: str) -> list[Hit]:
+def hash_calls(source: str | bytes) -> list[Hit]:
     """Every call in ``source`` that hashes (a fast hash, an ``update`` of a hash object, a stretching function) with the
-    passphrase-like name its arguments reach. Raises ``SyntaxError`` for a file that does not parse."""
+    passphrase-like name its arguments reach. Raises ``SyntaxError`` for a file that does not parse. Bytes are read the
+    way Python reads a file (a byte order mark, an encoding line), which a decoded ``str`` is not."""
     tree = ast.parse(source)
     modules, names = _imports(tree)
     scopes = [tree, *(n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))]
+
+    def stretching(call: ast.Call) -> bool:
+        callee = _callee(call.func, modules, names)
+        return callee is not None and callee[1]
 
     def hash_objects(nodes: list[ast.AST]) -> set[str]:
         made: set[str] = set()
@@ -210,7 +242,7 @@ def hash_calls(source: str) -> list[Hit]:
     hits: list[Hit] = []
     for scope in scopes:
         nodes = list(_own_nodes(scope))
-        tainted = _tainted(nodes)
+        tainted = _tainted(nodes, stretching)
         objects = hash_objects(nodes) | attribute_hashes
         for n in nodes:
             if not isinstance(n, ast.Call):
@@ -227,7 +259,7 @@ def hash_calls(source: str) -> list[Hit]:
             if callee is None:
                 continue
             mention = next(
-                (m for arg in (*n.args, *(k.value for k in n.keywords)) if (m := _first_mention(arg, tainted)) is not None),
+                (m for arg in (*n.args, *(k.value for k in n.keywords)) if (m := _first_mention(arg, tainted, stretching)) is not None),
                 None,
             )
             if mention is None:
@@ -247,13 +279,14 @@ def fast_hashes_of_the_passphrase(source: str) -> list[Hit]:
 def walk_files(paths: list[Path], root: Path) -> tuple[dict[str, list[Hit]], dict[str, str]]:
     """``(hits, unreadable)`` for ``paths``, by path relative to ``root``: what each file's walk found, and for a file that
     does not parse why. A file that does not parse is REPORTED, never skipped: a file the walk cannot read is a file it
-    does not guard."""
+    does not guard. Each file is read as bytes, because Python runs a file saved with a UTF-8 byte order mark and
+    ``ast.parse`` refuses the mark in a decoded ``str``."""
     hits: dict[str, list[Hit]] = {}
     unreadable: dict[str, str] = {}
     for path in paths:
         rel = path.relative_to(root).as_posix()
         try:
-            hits[rel] = hash_calls(path.read_text(encoding="utf-8"))
+            hits[rel] = hash_calls(path.read_bytes())
         except SyntaxError as exc:
             unreadable[rel] = exc.msg
     return hits, unreadable
@@ -380,6 +413,14 @@ _FLAGGED = {
     "the module's own statements": _HEAD + "passphrase = 'x'\nDIGEST = hashlib.sha256(passphrase.encode()).hexdigest()\n",
     "an async function": _HEAD + "async def f(password):\n    return hashlib.sha256(password.encode()).digest()\n",
     "a lambda": _HEAD + "KEY = lambda passphrase: hashlib.sha256(passphrase.encode()).digest()\n",
+    "a stretched key and the passphrase in one hash": (
+        _HEAD + 'def f(passphrase, salt):\n    key = hashlib.pbkdf2_hmac("sha512", passphrase.encode(), salt, 256_000)\n'
+        "    return hashlib.sha256(key + passphrase.encode()).digest()\n"
+    ),
+    "a stretched key and another made from the passphrase": (
+        _HEAD + "def f(passphrase, salt):\n    key = hashlib.scrypt(passphrase.encode(), salt=salt, n=2**14, r=8, p=1)\n"
+        "    raw = passphrase.encode()\n    return hmac.new(key, raw, 'sha256').digest()\n"
+    ),
 }
 
 
@@ -412,12 +453,37 @@ _LEFT_ALONE = {
     ),
     "a comparison, which hashes nothing": _HEAD + "def f(passphrase, other):\n    return hmac.compare_digest(passphrase.encode(), other)\n",
     "a dict that is keyed by the word, not read by it": _HEAD + 'def f(path):\n    return hashlib.sha256(str({"passphrase": 1}).encode() + path.read_bytes()).digest()\n',
+    "a key made by pbkdf2_hmac, then hashed": (
+        _HEAD + 'def f(passphrase, salt):\n    key = hashlib.pbkdf2_hmac("sha512", passphrase.encode(), salt, 256_000)\n'
+        "    return hashlib.sha256(key).hexdigest()\n"
+    ),
+    "a master key made by scrypt, then the HMAC key of a blob address": (
+        _HEAD + "def f(passphrase, salt, blob):\n    master = hashlib.scrypt(passphrase.encode(), salt=salt, n=2**14, r=8, p=1)\n"
+        '    address_key = master[:16]\n    return hmac.new(address_key, blob, "sha256").digest()\n'
+    ),
+    "a stretching call inside the arguments of a hash": (
+        _HEAD + 'def f(passphrase, salt):\n    return hashlib.sha256(hashlib.pbkdf2_hmac("sha512", passphrase.encode(), salt, 256_000)).digest()\n'
+    ),
+    "a key made by a stretching call under another name": (
+        "from hashlib import pbkdf2_hmac as kdf\nimport hashlib\n"
+        'def f(pw, salt):\n    key = kdf("sha512", pw, salt, 256000)\n    return hashlib.sha256(key).digest()\n'
+    ),
 }
 
 
 @pytest.mark.parametrize("way", sorted(_LEFT_ALONE))
 def test_the_walk_leaves_alone_what_does_not_hash_the_passphrase(way):
     assert fast_hashes_of_the_passphrase(_LEFT_ALONE[way]) == [], f"flagged: {way}"
+
+
+def test_only_a_stretching_function_ends_the_taint_a_hash_of_a_fast_hash_of_the_passphrase_is_flagged_too():
+    """The stretching rule is narrow: ``pbkdf2_hmac`` and ``scrypt`` make a value that is not the passphrase, a fast hash does not.
+    The inner hash is the finding, and the outer one, made from it, is one more."""
+    source = _HEAD + "def f(passphrase):\n    inner = hashlib.md5(passphrase.encode()).digest()\n    return hashlib.sha256(inner).hexdigest()\n"
+    assert sorted((h.label, h.mention) for h in fast_hashes_of_the_passphrase(source)) == [
+        ("hashlib.md5", "passphrase"),
+        ("hashlib.sha256", "inner"),
+    ]
 
 
 def test_the_walk_counts_a_stretching_call_that_takes_the_passphrase_without_flagging_it():
@@ -432,6 +498,17 @@ def test_a_file_that_does_not_parse_is_reported_not_skipped(tmp_path):
         fast_hashes_of_the_passphrase("def f(:\n")
     hits, unreadable = walk_files(sorted(tmp_path.rglob("*.py")), tmp_path)
     assert list(unreadable) == ["bad.py"] and list(hits) == ["good.py"]
+
+
+def test_a_file_saved_with_a_byte_order_mark_is_read_as_python_reads_it_and_one_python_cannot_decode_is_reported(tmp_path):
+    """``ast.parse`` refuses a byte order mark in a ``str`` and accepts it in bytes, and Python runs such a file, so the walk
+    reads bytes: a file an editor saved with a mark is read, not reported as broken (which would fail the test for a file
+    that is fine) and not skipped; a file with a byte that is not UTF-8 in a string is reported, never raised out of the walk."""
+    (tmp_path / "bom.py").write_bytes(b"\xef\xbb\xbfimport hashlib\nDIGEST = hashlib.sha256(b'x').hexdigest()\n")
+    (tmp_path / "latin.py").write_bytes(b'x = "\xe9"\n')
+    hits, unreadable = walk_files(sorted(tmp_path.rglob("*.py")), tmp_path)
+    assert list(hits) == ["bom.py"] and [h.label for h in hits["bom.py"]] == ["hashlib.sha256"], hits
+    assert list(unreadable) == ["latin.py"], unreadable
 
 
 @pytest.mark.parametrize(

@@ -162,8 +162,7 @@ this section were still open.
   store without a valid sidecar is removed and rebuilt, never opened. The key is bound to the `ATTACH` as a parameter instead of
   being written into the statement, whose text the engine quotes when it cannot parse it (measured: a path with an apostrophe
   made it quote the first 16 to 24 characters of the key), and the path's quotes are doubled. No shipped build opens the persisted
-  store yet (its secure backend is not bundled), so nothing a user holds changes; the sidecar goes with the cache on a crypto-erase
-  and an uninstall, and a test now fails on any fast hash of a passphrase-like name under `src/` or `scripts/`.
+  store yet (its secure backend is not bundled), so nothing a user holds changes; the sidecar and the engine's log go with the cache on a crypto-erase and an uninstall, and a test now fails on any fast hash of a passphrase-like name under `src/` or `scripts/`.
 
 ### Interface and translations
 
