@@ -226,6 +226,18 @@ def test_a_set_that_was_replaced_is_a_404_that_says_to_build_it_again(db_path, d
     with pytest.raises(HTTPException) as err:
         keyword_part_download(listing["set"], name)
     assert err.value.status_code == 404 and "build it again" in str(err.value.detail)
+    # a set can also go to make room for a build that then failed (the preflight's trade-off), so
+    # the text names that cause too rather than only the two that apply when nothing failed
+    assert "to make room for a build that did not finish" in str(err.value.detail)
+
+
+def test_the_latest_route_names_the_removal_for_room_among_the_reasons_a_set_is_gone(data_dir):
+    from src.api.diagnostics.keyword_parts import keyword_parts_latest
+
+    with pytest.raises(HTTPException) as err:
+        keyword_parts_latest()
+    assert err.value.status_code == 404
+    assert "to make room for a build that did not finish" in str(err.value.detail)
 
 
 def test_the_next_build_retires_an_old_set_but_not_one_still_being_downloaded(db_path, data_dir):
@@ -239,6 +251,151 @@ def test_the_next_build_retires_an_old_set_but_not_one_still_being_downloaded(db
     third = _listing(db_path)
     assert not d1.exists(), "an old set is replaced, never accumulated"
     assert _set_dir(data_dir, second).exists() and _set_dir(data_dir, third).exists()
+
+
+def _age_past_the_grace(d: Path) -> None:
+    old = time.time() - kle._PARTS_GRACE_S - 5
+    os.utime(d, (old, old))
+
+
+def test_a_build_that_fails_keeps_the_set_the_person_already_has(db_path, data_dir, small_cap, monkeypatch):
+    """R115 follow-up S4. The previous set was retired BEFORE the new one was begun, so a refused,
+    cancelled or failed build left no set and the page's "again" button answered 404."""
+    from src.api.diagnostics.keyword_parts import keyword_parts_latest
+
+    first = _listing(db_path)
+    d1 = _set_dir(data_dir, first)
+    _age_past_the_grace(d1)  # the old rule would have retired it
+
+    def _the_drive_fills(self):
+        raise OSError(errno.ENOSPC, "refused by the drive")
+
+    monkeypatch.setattr(up.PartWriter, "_close_part", _the_drive_fills)
+    with pytest.raises(HTTPException) as err:
+        _call(db_path, fmt="parts")
+    assert err.value.status_code == 507
+    assert d1.is_dir(), "the set the person had is still there"
+    assert json.loads(keyword_parts_latest().body)["set"] == first["set"], '"again" still answers'
+    assert [p.name for p in data_dir.iterdir() if p.name.startswith(kle.PARTS_DIR_PREFIX)] == [d1.name]
+
+
+def test_the_old_set_is_there_while_the_new_one_is_built_and_gone_once_it_is_listed(
+    db_path, data_dir, small_cap, monkeypatch
+):
+    first = _listing(db_path)
+    d1 = _set_dir(data_dir, first)
+    _age_past_the_grace(d1)
+    seen: list[bool] = []
+    real = up.PartWriter._close_part
+
+    def _look_then_close(self):
+        seen.append(d1.is_dir())
+        return real(self)
+
+    monkeypatch.setattr(up.PartWriter, "_close_part", _look_then_close)
+    second = _listing(db_path)
+    assert seen and all(seen), "retiring waits for the new set"
+    assert not d1.exists(), "and happens once it is whole"
+    assert _set_dir(data_dir, second).is_dir()
+
+
+def test_a_drive_that_cannot_take_the_listing_loses_the_new_set_not_the_old_one(
+    db_path, data_dir, monkeypatch
+):
+    """R115 follow-up N3: a finished set without its listing is found by nothing."""
+    first = _listing(db_path)
+    d1 = _set_dir(data_dir, first)
+    _age_past_the_grace(d1)
+    real = Path.write_text
+
+    def _refuses_the_listing(self, *a, **kw):
+        if self.name == "set.json":
+            raise OSError(errno.ENOSPC, "refused by the drive")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", _refuses_the_listing)
+    with pytest.raises(HTTPException) as err:
+        _call(db_path, fmt="parts")
+    assert err.value.status_code == 507
+    assert [p.name for p in data_dir.iterdir() if p.name.startswith(kle.PARTS_DIR_PREFIX)] == [d1.name]
+
+
+def test_a_read_that_fails_between_the_last_part_and_the_listing_leaves_no_unlisted_set(
+    db_path, data_dir, monkeypatch
+):
+    """A finished set is found by its listing and by nothing else, so a failure after the parts
+    are closed and before the listing is written (here the read-back of a file for its checksum)
+    must take the folder with it and keep the set the person had. The drive's own words are not
+    "no room", so the error is the drive's, not a 507."""
+    first = _listing(db_path)
+    d1 = _set_dir(data_dir, first)
+    _age_past_the_grace(d1)
+
+    def _the_read_fails(path):
+        raise OSError(errno.EIO, "read failed")
+
+    monkeypatch.setattr("src.api.diagnostics.keywords.sha256_file", _the_read_fails)
+    with pytest.raises(OSError) as err:
+        _call(db_path, fmt="parts")
+    assert err.value.errno == errno.EIO
+    assert [p.name for p in data_dir.iterdir() if p.name.startswith(kle.PARTS_DIR_PREFIX)] == [d1.name]
+
+
+def _old_set(d: Path, name: str, size: int, *, aged: bool = True) -> Path:
+    s = d / f"{kle.PARTS_DIR_PREFIX}{name}"
+    s.mkdir()
+    (s / "x.zip").write_bytes(b"0" * size)
+    if aged:
+        _age_past_the_grace(s)
+    return s
+
+
+def _free(monkeypatch, free: int) -> None:
+    import collections
+    import shutil
+
+    usage = collections.namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(10 * 2**30, 10 * 2**30 - free, free))
+    monkeypatch.setattr(kle, "disk_reserve", lambda _d: 0)
+
+
+# With no entries and no cap the set is expected to need ZIP_FIXED_BYTES (8 MiB) plus 20% = 9.6 MiB.
+_NEED_FREE = int(kle.ZIP_FIXED_BYTES * 1.2)
+
+
+def test_a_set_that_fits_beside_the_old_one_does_not_retire_it_in_the_preflight(tmp_path, monkeypatch):
+    old = _old_set(tmp_path, "old", 1000)
+    _free(monkeypatch, _NEED_FREE + 1)
+    kle.parts_disk_preflight(tmp_path, 0, None)
+    assert old.is_dir()
+
+
+def test_the_old_set_goes_before_the_build_only_when_its_room_is_what_lets_the_new_one_fit(
+    tmp_path, monkeypatch
+):
+    old = _old_set(tmp_path, "old", 3 * 2**20)
+    _free(monkeypatch, _NEED_FREE - 2**20)  # 1 MiB short; the old set holds 3 MiB
+    kle.parts_disk_preflight(tmp_path, 0, None)
+    assert not old.exists()
+
+
+def test_a_set_that_does_not_fit_even_without_the_old_one_is_refused_and_the_old_one_stays(
+    tmp_path, monkeypatch
+):
+    old = _old_set(tmp_path, "old", 1000)
+    _free(monkeypatch, _NEED_FREE - 2**20)  # 1 MiB short; the old set holds 1 KB
+    with pytest.raises(kle.ExportRefused) as err:
+        kle.parts_disk_preflight(tmp_path, 0, None)
+    assert err.value.status == 507
+    assert old.is_dir()
+
+
+def test_a_set_still_being_downloaded_is_never_counted_as_room(tmp_path, monkeypatch):
+    young = _old_set(tmp_path, "young", 3 * 2**20, aged=False)
+    _free(monkeypatch, _NEED_FREE - 2**20)
+    with pytest.raises(kle.ExportRefused):
+        kle.parts_disk_preflight(tmp_path, 0, None)
+    assert young.is_dir()
 
 
 @pytest.mark.parametrize("code", [errno.ENOSPC, errno.EROFS])

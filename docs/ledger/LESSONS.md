@@ -12967,6 +12967,19 @@ one build per page; the re-render of a bar that is then hidden; and the order of
 clauses, which "has not landed yet" made equivalent). **State that a server action replaces (here the split's files)
 must be compared with what the server now holds, not assumed alive because the page remembers it.**
 
+**AMENDED 2026-10-01 (R115 follow-ups S1 and S4, and a survivor named).** The split no longer sweeps first: the new set is
+built in a folder beside the live one and moved in whole (the sidecar last, because it is what makes a set exist), so a
+split that fails leaves the PREVIOUS set serving on the server, and a refused one (507, no room) changes nothing. The page
+still empties a diagnostics set after a failure other than 404 and 409, and the reason changed with the premise: the files
+are not gone, but the set is of the previous archive and the person asked for the new one, so showing it beside "Could not
+split the archive" would offer last bundle's files as this bundle's, the fabricated answer wearing a fresh timestamp that
+the route's 409 exists to refuse. **When a fix removes the reason a guard was written, find out whether the guard has
+another one before keeping or deleting it.** One mutant of the deferral clause was named only in review and is recorded
+here so nobody rediscovers it: `_partsBusy !== 0` for `_partsBusy === _partsGen` survives, and differs only while
+`_partsBusy` holds an OLDER press's generation with the bar empty, which takes a press in flight, a split that fails and
+drops the bar, and then a second finished build, two builds finishing in one page session, which the button's one-build-per-page
+rule rules out. A test for it would stand on a state the page cannot reach; if a path ever empties the bar without a press, pin it first.
+
 ### A BUTTON THAT "RESUMES ANYWAY" A SAFETY STOP NEEDS ITS OWN BOUND, A REFUSAL AND A WITHDRAWAL, OR IT IS A RETRY WEARING A LABEL (WAL / disk thread, R112, 2026-10-01, `storage_guard.override`)
 
 The first build of the storage guard's button cleared the latch and let the next two samples re-trip it, and was
@@ -13629,3 +13642,37 @@ the budget code was also wrong in a way only a heavier fixture shows**: the note
 bytes and weighed up to 118 more; measure with the notes in. **A test that takes the constant as its own parameter cannot fail when the constant moves**: the hold edge is
 pinned with the literals 600 and 601 (and `v.CLOCK_HOLD_S == 600`), at two phases of the bucket.
 (12) **The coordinator's own delta check found four more by running the control flow, not by reading the diff**: (a) the END of a hold is not a second step: a big clock step that was held open (it came too soon after the last rebase) and rebased later was recorded again with a size of 0 or -5 and counted twice, because the rebase measured the step from the clock's last reading, which was already on the stepped clock; the test that covered it passed because it asserted the `kept_open` FLAGS and never the sizes or the count: assert the values a record exists to carry, and put the end of a hold on the record the hold made (`new_history_at`); (b) a reason that says "an idle process" must be true where the platform gives a working thread no CPU figure (macOS), or every minute of a busy session reads as idle: say idle only when every thread was waiting; (c) one bad cell inside a stored row emptied the whole history at start (`int("x")` inside the try that resets everything): check every cell and drop that row alone; (d) a comment that calls a number "the heaviest it can be" describes the test's FIXTURE: say "sized above the fixture" where the input has no ceiling (a logger name has none), and keep ONE rule for what a failure leaves in a zip (its type and the system's reason, never its message, which can name a path).
+
+### A HIGH-WATER MARK THAT DID NOT MOVE IS NOT "NO RISE", AND A READING THE GATE TOOK MUST BE KEPT WITH THE DECISION IT MADE (export witnesses, 2026-10-01, `bundle.py` and `src/monitoring/`)
+
+Three field findings had one shape: a record that could not say what it was asked. `ru_maxrss` never falls, so a bundle
+member smaller than the peak already set (the collector's, or an earlier member's) leaves no trace in it, and eleven paused
+exports read `rss_peak_rise_kb: 0`, which a reader takes as "allocated nothing". The record now leaves the number ABSENT with
+the reason and gives the two readings that CAN be made (the resident set's net change, and an upper bound on the peak above
+the start), because an honest gap is read as a gap and a zero is read as a measurement. The same applies to the gate: a
+decision ("declined", or silence) cannot be checked afterwards, and the last sample in the run's own log is not the one the
+gate read (6,907.7 MiB against the 6,773.0 it acted on), so the reading is stored beside the decision for a member that ran
+as well as for one that did not. And two witnesses of the SAME journal with the SAME permissions must not disagree: one counted
+journalctl's own "not seeing messages from other users" notice as a kernel line and said "read, rules out an OOM kill" beside
+the other's "this user cannot read the journal" on ten of ten pairs; the constant is now shared, and a witness that could not
+look is a gap in the evidence, never evidence of absence. A lifetime minimum or maximum also carries the time of its reading,
+taken at the moment it was read (the slow walks that follow are slowest exactly when memory is short).
+
+### A READER LIST NAMES CHECKOUTS, NOT SNAPSHOTS: THE BUILD'S "ONE READ TRANSACTION" WAS A POOLED SESSION (keyword-export thread, 2026-10-06, `bundle.py`)
+
+The WAL checkpoint record lists the pool's CHECKOUTS, oldest first (`pool_watch`), and in six of the ten bundles of 2026-10-06 the oldest was `bgjob-all-diagnostics`,
+aged 26 s to 3,172 s beside logs of up to 1.19 GB. It was written up (PR #1315's queue entry, then the coordinator's order) as "the build holds one read transaction
+for its whole run, so the WAL cannot be checkpointed meanwhile". That was read off the list; it is not what the code does. Measured with the real 77 members on an
+empty corpus: the shared engine runs pysqlite in its legacy mode, where a SELECT starts no BEGIN (only `read_snapshot.py` takes the explicit-BEGIN recipe), and
+SQLite's own `connection.in_transaction` was False after EVERY member (which shows that no BEGIN was open, not that nothing was pinned: see the last paragraph), while the SQLAlchemy session was still in a transaction after 75 of them. So between members the
+standing thing was the pooled session and its connection; a snapshot pins the log only while a member's statement or an open cursor is running, which is that
+member's own time. The build now ends the session's transaction at every member boundary (`_release_read_between_members`, over `release_idle_connection`, the one
+release that declines a session which has written, so a member's flushed work is never rolled back) and the manifest says how each boundary went
+(`run.read_release`: `released`, `none_held`, `declined`, with its method and its caveat). What that buys is real and smaller than the story: the pool slot and the D44
+reservation's "standing holder" count come back between members, and the reader list stops naming the build at times it holds nothing; it does NOT shorten a long
+statement inside `keyword-engine` (250 s), `leads-quality` (275 s), `bulletin-weekly` (302 s, its deadline) or `debug-bundle` (92 s), the figures from `OOS-12`'s bundle.
+**Reusable:** before writing "pinned", ask the log with a TRUNCATE checkpoint from a third connection with no busy wait (`dbapi_connection.in_transaction` sees only an open BEGIN, a write or the explicit-BEGIN recipe, and is False while a SELECT is partly read, which pins the log all the same), not a
+list of checkouts; and when a test needs a pin, MODEL it (an explicit BEGIN) and prove the model with a negative control (the same sequence with the release switched off
+leaves the checkpoint busy), because on the shared engine's own mode the pin is absent whether or not the code under test ran. Not explained here and not this thread's:
+the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which a build of 9 to 48 minutes does not obviously
+explain.

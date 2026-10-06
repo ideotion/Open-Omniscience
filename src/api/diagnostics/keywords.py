@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 from datetime import datetime
@@ -44,6 +45,7 @@ from src.analytics.keyword_log_export import (
     finish_parts,
     finish_zip,
     fit_window,
+    parts_disk_preflight,
     resolve_max_bytes,
     retire_old_parts_sets,
     sweep_stale_scratch,
@@ -59,10 +61,11 @@ from src.analytics.keyword_log_scan import (
     StopwordAcc,
     available_bytes_now,
     memory_plan,
+    no_room_refusal,
     order_key,
     scan_keywords,
 )
-from src.analytics.upload_parts import sha256_file
+from src.analytics.upload_parts import UPLOAD_PART_BYTES, sha256_file
 from src.database.maintenance import (
     StatementTimeout,
     raise_if_memory_short,
@@ -388,35 +391,48 @@ def _parts_root() -> Path:
 def _keyword_parts(
     *, job: ZipJob, keep: dict[str, int], omitted: dict[str, int] | None, scratch_dir: Path
 ) -> Response:
-    """Build the export as a numbered set of parts of at most 1,000,000 bytes (see
+    """Build the export as a numbered set of parts of at most ``UPLOAD_PART_BYTES`` bytes (see
     ``finish_parts``) and answer with the listing the page downloads from: every file's name,
     size and SHA-256 and the URL base. The files stay until the next build retires them."""
     stem = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     set_dir, manifest = finish_parts(job, keep, omitted, scratch_dir=scratch_dir, stem=stem)
-    files = [
-        {"name": p["name"], "bytes": p["bytes"], "sha256": p["sha256"], "kind": "part"}
-        for p in manifest["parts"]
-    ]
-    for name in manifest["manifest_files"]:
-        f = set_dir / name
-        files.append({
-            "name": name, "bytes": f.stat().st_size, "sha256": sha256_file(f), "kind": "manifest",
-        })
-    listing = {
-        "set": set_dir.name,
-        "stem": stem,
-        "part_count": manifest["part_count"],
-        "part_max_bytes": manifest["part_max_bytes"],
-        "total_bytes": sum(f["bytes"] for f in files),
-        "files": files,
-        "download_base": f"/api/diagnostics/keywords/parts/{set_dir.name}/",
-        "note": (
-            "Save every file listed, the manifest first: each part opens on its own, and the "
-            "manifest lists every part with its size and SHA-256 so a set can be confirmed "
-            "complete."
-        ),
-    }
-    (set_dir / _SET_LISTING).write_text(json.dumps(listing), encoding="utf-8")
+    try:
+        files = [
+            {"name": p["name"], "bytes": p["bytes"], "sha256": p["sha256"], "kind": "part"}
+            for p in manifest["parts"]
+        ]
+        for name in manifest["manifest_files"]:
+            f = set_dir / name
+            files.append({
+                "name": name, "bytes": f.stat().st_size, "sha256": sha256_file(f), "kind": "manifest",
+            })
+        listing = {
+            "set": set_dir.name,
+            "stem": stem,
+            "part_count": manifest["part_count"],
+            "part_max_bytes": manifest["part_max_bytes"],
+            "total_bytes": sum(f["bytes"] for f in files),
+            "files": files,
+            "download_base": f"/api/diagnostics/keywords/parts/{set_dir.name}/",
+            "note": (
+                "Save every file listed, the manifest first: each part opens on its own, and the "
+                "manifest lists every part with its size and SHA-256 so a set can be confirmed "
+                "complete."
+            ),
+        }
+        (set_dir / _SET_LISTING).write_text(json.dumps(listing), encoding="utf-8")
+    except OSError as exc:
+        # The listing is what makes a set exist: without it the finished files are served by
+        # nothing and found by nothing ("again" cannot see them), so they go now rather than at the
+        # next retire, whether it was reading them back or writing the listing that failed. The
+        # set the person had before stays.
+        shutil.rmtree(set_dir, ignore_errors=True)
+        refusal = no_room_refusal(exc, "listing the parts")
+        if refusal is None:
+            raise
+        raise refusal from exc
+    # The new set is whole and listed: only now does it replace the earlier ones.
+    retire_old_parts_sets(scratch_dir)
     return JSONResponse(listing)
 
 
@@ -482,7 +498,7 @@ def keyword_log(
             "'zip' — a per-language split archive (summary.json + keywords/<lang>.json "
             "+ manifest.json) that by default aims under 9 MB, so it fits a typical "
             "attachment limit (`max_mb=0` lifts the cap), or 'parts' — the same export as a "
-            "NUMBERED SET of zips of at most 1,000,000 bytes each, every one valid on its own, "
+            f"NUMBERED SET of zips of at most {UPLOAD_PART_BYTES:,} bytes each, every one valid on its own, "
             "with a manifest listing each part's size and SHA-256 (the answer is that "
             "listing; each file is served from /keywords/parts/<set>/<name>). `max_mb` still "
             "bounds the TOTAL when given; `0` is every keyword, as many parts as that takes."
@@ -518,7 +534,8 @@ def keyword_log(
         None,
         ge=0,
         description=(
-            "ZIP and parts only: the size cap in MB (with `format=parts`, for the TOTAL of all the numbered files: each file is at most 1,000,000 bytes whatever this says). Left out: OO_KEYWORD_LOG_MAX_MB (9 MB). "
+            "ZIP and parts only: the size cap in MB (with `format=parts`, for the TOTAL of all the numbered files: "
+            f"each file is at most {UPLOAD_PART_BYTES:,} bytes whatever this says). Left out: OO_KEYWORD_LOG_MAX_MB (9 MB). "
             "`0` = NO cap: every keyword of the requested window is written, however large "
             "the file, straight to disk a batch at a time (memory stays bounded; the drive "
             "needs the room, and the export refuses, with the numbers, when it does not)."
@@ -753,11 +770,14 @@ def keyword_log(
                     {lg: ranker.taken(lg) for lg in languages}, plan["family_rows"]
                 )
                 # Refuse an archive the drive cannot take BEFORE writing any of it. A numbered set
-                # replaces the previous one, so the old set is retired first and the room it held
-                # counts as free (a set built in the last few minutes stays, see _PARTS_GRACE_S).
+                # replaces the previous one, but only once it is complete: the old set is kept
+                # through a refusal, a cancel or a failure, and is retired before the build only
+                # when its room is what lets the new set fit (a set built or downloaded in the last
+                # few minutes stays either way, see _PARTS_GRACE_S).
                 if fmt == "parts":
-                    retire_old_parts_sets(scratch_dir)
-                zip_disk_preflight(scratch_dir, exported, max_bytes)
+                    parts_disk_preflight(scratch_dir, exported, max_bytes)
+                else:
+                    zip_disk_preflight(scratch_dir, exported, max_bytes)
                 job = ZipJob(
                     hooks=_ZIP_HOOKS,
                     db=db, maps=maps, ranker=ranker, out_dir=scratch_dir, is_hidden=is_hidden,

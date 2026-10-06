@@ -181,6 +181,9 @@ def performance_report(
 
     # -- active self-test: hot read handlers, timed in-process -------------- #
     selftest_rows: list[dict] = []
+    # What the R27 gate read when the keyword-export probe asked it (empty when the selftest did
+    # not run): the same reading the bundle's digest member records, so the two can be compared.
+    kw_gate: dict = {}
     if selftest:
         from src.analytics import queries as aq
         from src.api.database import country_coverage, database_stats
@@ -234,7 +237,7 @@ def performance_report(
         # Imported here: the bundle module imports this one.
         from .bundle import ram_declined_reason
 
-        kw_declined = ram_declined_reason("keyword-log-digest.json", db=db)
+        kw_declined = ram_declined_reason("keyword-log-digest.json", db=db, reading=kw_gate)
         if kw_declined is None:
             _timed(
                 "keyword_export_streamed",
@@ -274,6 +277,7 @@ def performance_report(
             ),
             "ran": bool(selftest),
             "results": selftest_rows,
+            **({"keyword_export_gate": kw_gate} if kw_gate else {}),
         },
     }
     body = envelope(

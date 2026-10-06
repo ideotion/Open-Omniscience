@@ -17,9 +17,11 @@ import contextlib
 import json
 import os
 import pathlib
+import shutil
+import tempfile
 import threading
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, HTTPException, Query
@@ -635,8 +637,10 @@ def _fixity_bundle_member(db: Session) -> dict:
 #: ONLY MEASURED MEMBERS ARE HERE, and that is the invariant. A member absent from this
 #: map NEVER declines: an unmeasured cost is not a small one and not a large one, and
 #: guessing in either direction is worse than running it. This map grows when a run
-#: measures something, never when someone estimates it -- every bundle already records
-#: `rss_peak_rise_kb` per member, so the evidence arrives on its own.
+#: measures something, never when someone estimates it -- every bundle already records a reading
+#: per member (`rss_peak_above_start_kb`, the member's own peak above where it started, where the
+#: process's high-water mark moves for it; where it does not, `rss_delta_kb` and
+#: `rss_peak_rise_at_most_kb` beside the reason), so the evidence arrives on its own.
 #:
 #: RE-MEASURED 2026-09-30, because a measured constant is a claim about ONE VERSION of the code
 #: and the code changed. The 3,322.8 MiB above was the unbounded builder (a dict per keyword of
@@ -647,8 +651,11 @@ def _fixity_bundle_member(db: Session) -> dict:
 #: that, rounded up, for a corpus of 13 languages (65,000 exported entries). THIS IS A
 #: SYNTHETIC-CORPUS READING and the FALLBACK used only when no session is at hand: with one, the
 #: gate uses the estimate from the instance's own counts (82 languages x 5,000 entries measured
-#: 1,015 MiB). The operator's next FULL bundle records `rss_peak_rise_kb` for this member on the
-#: real corpus, and that number replaces these.
+#: 1,015 MiB). The operator's next FULL bundle records this member on the real corpus --
+#: `rss_peak_above_start_kb` if the high-water mark moves for it (NOT `rss_peak_rise_kb`: that is
+#: the mark's own rise, which understates the member's whenever the mark started above it),
+#: otherwise `rss_delta_kb` and an upper bound (`rss_peak_rise_at_most_kb`), with the gate's own
+#: reading beside them -- and what it records replaces these.
 _MEMBER_RSS_NEED_MB: dict[str, float] = {
     "keyword-log-digest.json": 200.0,
 }
@@ -674,27 +681,35 @@ _MEMBER_RSS_NEED_MB: dict[str, float] = {
 _MEMBER_RAM_SHARE = 0.5
 
 
-def _keyword_digest_need_mb(db) -> float:
-    """What the keyword digest is expected to add to the process on THIS instance.
+def _keyword_digest_need(db) -> dict[str, Any]:
+    """What the keyword digest is expected to add to the process on THIS instance, with the
+    counts it was computed from (``need_mb`` plus ``articles``, ``keyword_id_bound``,
+    ``languages``, ``exportable_keywords``, ``per_language``).
 
     From the instance's own counts (articles, the keyword id range, the languages its articles
     carry) times the per-row costs MEASURED for the bounded export -- see
     :func:`src.analytics.keyword_log_scan.estimate_export_need`. The 200 MiB in
     ``_MEMBER_RSS_NEED_MB`` is one synthetic corpus's reading; this is the instance's own
-    number, and it is what the gate uses whenever a session is at hand.
+    number, and it is what the gate uses whenever a session is at hand. The counts travel with
+    it so the manifest can say WHICH counts a decision was made from.
     """
     from src.analytics.keyword_log_scan import estimate_export_need
 
-    return float(estimate_export_need(db, per_language=_MAX_KEYWORDS_PER_LANG)["need_mb"])
+    return estimate_export_need(db, per_language=_MAX_KEYWORDS_PER_LANG)
+
+
+def _keyword_digest_need_mb(db) -> float:
+    """The need alone, in MiB (the number :func:`_keyword_digest_need` carries)."""
+    return float(_keyword_digest_need(db)["need_mb"])
 
 
 #: Members whose need is ESTIMATED from the instance's counts, not read from one earlier run:
-#: ``name -> fn(db) -> MiB``. The static map above stays as the fallback for a call without a
-#: session (and for a count that cannot be read) and keeps R27's half-of-RAM rule; an estimated
-#: member is ALSO held against the memory that is available right now, because a fixed
-#: reading cannot know that the machine is busy.
-_MEMBER_NEED_ESTIMATORS: dict[str, Callable[[Any], float]] = {
-    "keyword-log-digest.json": _keyword_digest_need_mb,
+#: ``name -> fn(db) -> MiB`` (or a dict with ``need_mb`` and the counts behind it). The static
+#: map above stays as the fallback for a call without a session (and for a count that cannot be
+#: read) and keeps R27's half-of-RAM rule; an estimated member is ALSO held against the memory
+#: that is available right now, because a fixed reading cannot know that the machine is busy.
+_MEMBER_NEED_ESTIMATORS: dict[str, Callable[[Any], float | dict[str, Any]]] = {
+    "keyword-log-digest.json": _keyword_digest_need,
 }
 
 
@@ -704,6 +719,7 @@ def ram_declined_reason(
     total_mb: float | None = None,
     db: Any = None,
     available_mb: float | None = None,
+    reading: dict[str, Any] | None = None,
 ) -> str | None:
     """Why this member must not run on THIS machine, or ``None`` to run it.
 
@@ -719,54 +735,104 @@ def ram_declined_reason(
     now minus the floor the memory stop keeps free -- a need that would leave the stop no room
     is declined here, before the first byte, instead of by the stop in the middle of the run.
     Without one, the measured constant applies, exactly as before.
+
+    ``reading``, when a dict is passed, is FILLED with the gate's own reading of the machine at
+    this call -- the need and whether it was estimated (and from which counts) or the static
+    constant, the total, the ceiling the total allows, the memory available, the floor the stop
+    keeps, the override, and the decision -- so a bundle can say what the gate saw, not only what
+    it decided. It stays empty for a member the gate does not know (no reading, because the gate
+    made no decision), and it never changes the answer.
     """
     measured = _MEMBER_RSS_NEED_MB.get(name)
     estimator = _MEMBER_NEED_ESTIMATORS.get(name)
     need: float | None = None
     estimated = False
+    counts: dict[str, Any] | None = None
+    estimate_error: str | None = None
     if estimator is not None and db is not None:
         try:
-            need = estimator(db)
+            got = estimator(db)
+            if isinstance(got, dict):
+                need = float(got["need_mb"])
+                counts = {k: v for k, v in got.items() if k != "need_mb"}
+            else:
+                need = float(got)
             estimated = True
-        except Exception:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
+        except Exception as exc:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
             _LOG.debug("need estimate for %s failed; using the measured constant", name, exc_info=True)
+            estimate_error = f"{type(exc).__name__}: {str(exc)[:160]}"
     if need is None:
         need = measured
     if need is None:
+        if reading is not None and estimator is not None:
+            # The gate KNOWS this member and could not size it: say so, never leave a blank.
+            reading.update({
+                "need_mb": None, "need_basis": "unavailable", "decision": "run",
+                "estimate_error": estimate_error, "sampled_at": _gate_sampled_at(),
+            })
         return None
     from src.config.machine_floor import _override_requested
     from src.config.memory_budget import total_ram_mb
+    from src.database import maintenance as _mt
 
-    if _override_requested():
-        return None
+    total = total_ram_mb() if total_mb is None else total_mb
+    avail = _mt._available_mb() if available_mb is None else available_mb
+    floor = _mt._read_memory_floor_mb()
+    override = bool(_override_requested())
+    ceiling = total * _MEMBER_RAM_SHARE if total is not None and total > 0 else None
+    decline: str | None = None
+    declined_by: str | None = None
     said = (
         f"it is expected to add {need:,.1f} MiB (estimated from this instance's own counts)"
         if estimated
         else f"it measured a {need:,.1f} MiB peak RSS rise on the operator's instance"
     )
-    total = total_ram_mb() if total_mb is None else total_mb
-    if total is not None and total > 0:
-        ceiling = total * _MEMBER_RAM_SHARE
-        if need > ceiling:
-            return (
+    if not override:
+        if ceiling is not None and need > ceiling:
+            declined_by = "total-ram"
+            decline = (
                 f"{said}, and this machine has {total:,.0f} MiB "
                 f"of RAM -- more than the {ceiling:,.0f} MiB ({_MEMBER_RAM_SHARE:.0%} of "
                 "total) a single bundle member may ask for. Running it would put this "
                 "machine into swap on its own (finding F12)"
             )
-    if estimated:
-        from src.database import maintenance as _mt
-
-        avail = _mt._available_mb() if available_mb is None else available_mb
-        floor = _mt._read_memory_floor_mb()
-        if avail is not None and floor is not None and need + floor > avail:
-            return (
+        elif estimated and avail is not None and floor is not None and need + floor > avail:
+            declined_by = "available-memory"
+            decline = (
                 f"{said}, and this machine has {avail:,.0f} MiB "
                 f"available right now with {floor:,.0f} MiB the memory stop keeps free -- "
                 "it would leave the stop no room and end in swap or a killed app (finding "
                 "F12). Close other programs, or set OO_ALLOW_BIG_SCANS=1 to run it anyway"
             )
-    return None
+    if reading is not None:
+        reading.update({
+            "need_mb": round(need, 1),
+            "need_basis": "estimated" if estimated else "static-constant",
+            **({"need_counts": counts} if counts else {}),
+            **({"estimate_error": estimate_error} if estimate_error else {}),
+            "total_mb": None if total is None else round(total, 1),
+            "total_share": _MEMBER_RAM_SHARE,
+            "total_ceiling_mb": None if ceiling is None else round(ceiling, 1),
+            "available_mb": None if avail is None else round(avail, 1),
+            "memory_stop_floor_mb": None if floor is None else round(floor, 1),
+            # The available-memory line applies to an ESTIMATED need only (a fixed reading
+            # cannot know the machine is busy; an estimate is held against what is free now),
+            # so a static reading records the numbers without having used them.
+            "available_line_applied": estimated,
+            "override": override,
+            "decision": "declined" if decline is not None else "run",
+            **({"declined_by": declined_by} if declined_by else {}),
+            "sampled_at": _gate_sampled_at(),
+        })
+    return decline
+
+
+def _gate_sampled_at() -> str:
+    """When the gate read the machine: UTC, with its offset, to the second -- the form the session's
+    memory marks and pressure snapshots carry (``session_hwm``), because the gate's reading is
+    wanted ON THAT TIMELINE (field diagnostics 2026-09-30, B4). A member's own ``started_at`` is
+    local time without an offset, which is older and left alone."""
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 _LIGHT_DECLINED: dict[str, str] = {
@@ -777,7 +843,8 @@ _LIGHT_DECLINED: dict[str, str] = {
         "export has only been measured on synthetic corpora (about 190 MB at 65,000 "
         "exported keywords, about 1 GB at 410,000), so the light profile keeps skipping it "
         "until a FULL bundle on the operator's own machine records its real "
-        "rss_peak_rise_kb"
+        "resident-size reading (rss_peak_above_start_kb, or rss_delta_kb and an upper bound "
+        "where the process's high-water mark does not move)"
     ),
     "source-audit.json": (
         "measured 297.9 s on the operator's instance, and the ledger already records it as "
@@ -1149,6 +1216,20 @@ def _member_touches_db(fn) -> bool:
     return code is not None and "db" in code.co_freevars
 
 
+#: Why ``rss_peak_rise_kb`` is missing from a member's entry. One sentence per fact, because
+#: this is what a reader sees INSTEAD of a number and must not be able to misread as a zero.
+_PEAK_RISE_ABSENT_REASON = (
+    "the process's high-water mark (ru_maxrss) did not move during this member, so the member's "
+    "own peak cannot be read from it: the mark is the process's lifetime peak (usually set before "
+    "this run began, by the collector or an import, and sometimes by an earlier member), it never "
+    "falls, and it keeps no trace of a member smaller than that earlier peak. A 0 here would read "
+    "as 'no rise'. Use rss_delta_kb for this member (the "
+    "resident size at its end minus at its start: a net figure, it can be negative, and it is "
+    "not a peak) and rss_peak_rise_at_most_kb (the most the member's peak can have risen above "
+    "where it started: an upper bound, not a measurement)"
+)
+
+
 def _rss_peak_kb() -> int | None:
     """Process PEAK resident-set size in KB -- ``ru_maxrss``, one syscall, no dependency.
     Linux reports KB already; macOS reports bytes, normalized here.
@@ -1247,6 +1328,47 @@ def _trim_after_heavy_member(probe: "_RssProbe", rss_after: int | None) -> dict 
     return {"trimmed": True, "freed_kb": freed}
 
 
+#: What the manifest's ``run.read_release`` says about itself, beside its three counts.
+_READ_RELEASE_METHOD = (
+    "between two members the build ends its session's transaction "
+    "(src.database.session.release_idle_connection) and returns its pooled connection, so "
+    "the build no longer holds a connection checked out for the whole run; a statement or a "
+    "cursor a member left open is not ended by it"
+)
+_READ_RELEASE_CAVEAT = (
+    "it does not bound ONE member: a statement or an open cursor inside a member still pins "
+    "the log for as long as that member reads (and a cursor left partly read past the member "
+    "can keep the log pinned after a boundary that counts `released`: SQLite's own "
+    "in_transaction flag is False for it), which the slow members' own wall time "
+    "(run.slowest_members) is the measure of. `none_held` counts boundaries where the session "
+    "had no transaction open, `declined` those where releasing could have discarded work or "
+    "the session could not say"
+)
+
+
+def _release_read_between_members(db) -> str:
+    """End the build session's READ transaction at a member boundary; say what happened.
+
+    The build runs every member on ONE session opened before the first and closed after the
+    last, so its pooled connection was checked out for the whole run (the checkpoint record of
+    the 2026-10-06 bundles names ``bgjob-all-diagnostics`` as the oldest reader, 26 to 3,171 s,
+    beside a log of up to 1.19 GB). ``release_idle_connection`` is the app's one way to give
+    that connection back without losing work: it declines a session that has pending, flushed
+    or bulk-written state and never raises, so a member that wrote is slower, never wrong.
+
+    Returns ``"released"``, ``"none_held"`` (nothing was open: a member that opened its own
+    session, or a stub) or ``"declined"``."""
+    try:
+        in_txn = getattr(db, "in_transaction", None)
+        if in_txn is None or not in_txn():
+            return "none_held"
+        from src.database.session import release_idle_connection
+
+        return "released" if release_idle_connection(db) else "declined"
+    except Exception:  # noqa: BLE001 - the build is the evidence channel; a release never costs it
+        return "declined"
+
+
 _ALL_DIAG_DEADLINE_SENTINEL = object()
 
 
@@ -1278,13 +1400,44 @@ def _run_nondb_member_bounded(fn, budget_s: float):
     return box.get("value")
 
 
+def _without_the_passphrase(text: str) -> str | None:
+    """``text`` with the database passphrase this process holds, and the one in its environment, taken
+    out; ``None`` when that could not be done (the caller then withholds the text rather than keeping
+    it).
+
+    WHERE IT RUNS: a member's error text enters the bundle here (``.error.txt``, the manifest's
+    ``error``, ``.skipped-deadline.txt``, a ``reason``), and the engine's own words can carry the
+    statement it failed on (SQLAlchemy puts ``[SQL: ...]`` in an exception's text, SQLite quotes the
+    token it stopped at). No member builds a statement from the passphrase today, and the key is
+    applied through the driver, not through SQLAlchemy; this is the net beneath that, at the one
+    place the text is made, so a statement added later cannot carry the key into a zip that is handed
+    to someone else. Exact match (``secret_scrub.scrub_text``): a transformed copy is not recognised.
+    An install with no passphrase has nothing to scrub."""
+    try:
+        from src.database.connect import get_passphrase
+        from src.monitoring.secret_scrub import scrub_text
+
+        for needle in dict.fromkeys(filter(None, (get_passphrase(), os.environ.get("OO_DB_PASSPHRASE")))):
+            text = scrub_text(text, needle)
+    except Exception:  # noqa: BLE001 - failing CLOSED: the caller withholds what it could not scrub
+        return None
+    return text
+
+
 def _all_diag_err_str(exc: Exception) -> str:
     """Render a member's exception for the envelope/error-file -- even a broken ``__str__``
-    must still yield a marker (S8 lesson: a failed member must never be silently lost)."""
+    must still yield a marker (S8 lesson: a failed member must never be silently lost).
+
+    The passphrase is taken out of the WHOLE text and the text is cut afterwards: a cut that fell
+    inside the passphrase would leave the part it kept, which a scrub of the cut text cannot see."""
     try:
-        return str(exc)[:300]
+        text = str(exc)
     except Exception:  # noqa: BLE001
         return f"<{type(exc).__name__}: unrenderable>"
+    clean = _without_the_passphrase(text)
+    if clean is None:
+        return f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
+    return clean[:300]
 
 
 # RATCHET (2026-07-17) + RUNTIME COVERAGE (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the
@@ -1751,6 +1904,8 @@ def _all_diagnostics_manifest(
     run_ended_at: float | None = None,
     exclusive: dict | None = None,
     profile: str = "full",
+    previous_runs: dict | None = None,
+    read_release: dict | None = None,
 ) -> dict:
     import platform
     import sys as _sys
@@ -1795,6 +1950,23 @@ def _all_diagnostics_manifest(
             "total_wall_s": total_wall_s,
             "slowest_members": slowest_members,
             "runtime_coverage": _diagnostics_coverage_report(),
+            # THE JOURNALS OF RUNS THAT DIED BEFORE THIS ONE (field diagnostics 2026-09-30, B4):
+            # which member each was running when it stopped. `[]` says the sweep looked and found
+            # none; the key is ABSENT when nothing looked (the in-memory route has no journal).
+            **(
+                {
+                    "previous_runs": previous_runs["runs"],
+                    **(
+                        {"previous_runs_not_carried": previous_runs["not_carried"]}
+                        if previous_runs["not_carried"] else {}
+                    ),
+                    **(
+                        {"previous_runs_error": previous_runs["error"]}
+                        if previous_runs.get("error") else {}
+                    ),
+                }
+                if previous_runs is not None else {}
+            ),
             # EXCLUSIVE HOLD (S6.1, 2026-09-03): what the run actually claimed, not what
             # it wished for. `held` says the hold was taken; `paused_collection` says the
             # continuous loop was RUNNING and got signalled -- the pause is bounded and
@@ -1804,6 +1976,19 @@ def _all_diagnostics_manifest(
             "exclusive": exclusive
             if exclusive is not None
             else {"held": False, "reason": "not requested by this caller"},
+            # THE SESSION'S READ TRANSACTION, member boundary by member boundary. ABSENT when the
+            # build had no session (a caller that passed none); a count of 0 released beside a
+            # high `declined` would say a member wrote and the old standing reader is back.
+            **(
+                {
+                    "read_release": {
+                        **read_release,
+                        "method": _READ_RELEASE_METHOD,
+                        "caveat": _READ_RELEASE_CAVEAT,
+                    }
+                }
+                if read_release is not None else {}
+            ),
         },
         "members": results,
         # THE PROFILE THIS RUN USED, and what it cost (the light/full toggle, 2026-09-22).
@@ -1873,7 +2058,7 @@ def _all_diagnostics_manifest(
 
 def _write_all_diagnostics_zip(
     members, zf, *, progress=None, should_stop=None, journal_path=None, db=None,
-    exclusive=None, profile="full",
+    exclusive=None, profile="full", previous_runs=None,
 ) -> list[dict]:
     """Write every member (+ manifest) into the open ZipFile ``zf``; return the per-member
     results. Shared by the sync endpoint (an in-memory BytesIO) and the job (a file on disk).
@@ -1883,14 +2068,20 @@ def _write_all_diagnostics_zip(
     written and recorded in the manifest).
 
     ENVELOPE (0.3 gate row 3 / DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): every member records
-    ``{file, ok, outcome, started_at, wall_s, bytes, rss_basis[, error][, rss_delta_kb]
-    [, rss_peak_rise_kb][, release]}`` -- ``ok`` is KEPT (True iff ``outcome == "ok"``) for
-    any reader still on the old boolean.
+    ``{file, ok, outcome, started_at, wall_s, bytes, rss_basis[, error][, gate][, rss_delta_kb]
+    [, rss_peak_rise_kb, rss_peak_above_start_kb | rss_peak_rise_absent, rss_peak_rise_at_most_kb]
+    [, release]}`` -- ``ok`` is KEPT (True iff
+    ``outcome == "ok"``) for any reader still on the old boolean. ``gate`` is the R27 gate's own
+    reading for a member it knows (see :func:`ram_declined_reason`), present whether the member
+    ran or was declined.
 
     S6.2 (2026-09-03): ``rss_delta_kb`` was computed from ``ru_maxrss``, a process
     high-water mark that never falls, so every member after the first big one reported 0.
     It is now a CURRENT-RSS delta, the high-water rise keeps its own name
-    (``rss_peak_rise_kb``), and ``rss_basis`` says which instrument answered so a platform
+    (``rss_peak_rise_kb``: the MARK's rise, present only when the mark moved; with it
+    ``rss_peak_above_start_kb``, the mark minus the resident size at the member's start -- the
+    member's own peak above where it started, and the figure a need is measured from), and
+    ``rss_basis`` says which instrument answered so a platform
     with no current reading cannot be mistaken for one. After a member that actually moved
     the resident set, ``hygiene._malloc_trim`` returns the allocator's arenas to the OS and
     ``release.freed_kb`` records what that measured -- so a delta that survives a trim is a
@@ -1917,12 +2108,23 @@ def _write_all_diagnostics_zip(
     in-memory BytesIO build has no durable file to journal against), a begin/end JSON line is
     appended + fsync'd around every member, so a HARD-killed run's last ``begin`` with no
     matching ``end`` NAMES the culprit member — a diagnosis the in-memory manifest (written
-    only once, at the very end) cannot offer a crashed run."""
+    only once, at the very end) cannot offer a crashed run.
+
+    PREVIOUS RUNS (``previous_runs``, from :func:`_read_previous_run_journals`): the journals that
+    runs which did not finish left behind are folded into ``bundle-journal.jsonl`` ahead of this
+    run's own lines (every line marked ``previous_run``) and summarised under the manifest's
+    ``run.previous_runs`` -- the culprit of a dead run is in the next run's bundle instead of being
+    deleted by it. A left-over file is not trusted and cannot cost this bundle: the fold is
+    bounded, ASCII-safe, and a failure of it is recorded as ``previous_runs_error`` while the
+    bundle is still written."""
     import time as _time
 
     results: list[dict] = []
     total = len(members)
     run_started_at = _time.time()
+    # What ending the session's read transaction at each boundary came to (see
+    # _release_read_between_members); reported in the manifest, never assumed.
+    read_release = {"released": 0, "none_held": 0, "declined": 0}
     # Left open across the whole loop (appended + fsync'd per member) and closed in the
     # `finally` below -- a `with` here would have to wrap the entire member loop AND the
     # conditional-None case, which reads worse than the explicit open/close pair below.
@@ -1973,7 +2175,8 @@ def _write_all_diagnostics_zip(
             # A RAM decline would happen on the FULL profile too, so reporting it as a
             # light-profile choice would tell the operator they skipped something they
             # were never going to be allowed to run on this box.
-            ram_reason = ram_declined_reason(name, db=db)
+            gate_reading: dict[str, Any] = {}
+            ram_reason = ram_declined_reason(name, db=db, reading=gate_reading)
             declined_reason = ram_reason or (
                 _LIGHT_DECLINED.get(name) if profile == "light" else None
             )
@@ -2066,6 +2269,13 @@ def _write_all_diagnostics_zip(
             }
             if err is not None:
                 entry["error"] = err
+            if gate_reading:
+                # WHAT THE GATE SAW, for a member that run AND for one it declined: the decision
+                # alone ("declined", or silence) cannot be checked afterwards, and the last
+                # sample in a run's own pressure log is not the one the gate read (field
+                # diagnostics 2026-09-30, B4: "6,907.7" was the last sample, 6,773.0 the nearest
+                # to the digest's start). A member the gate does not know has no reading.
+                entry["gate"] = gate_reading
             if declined_reason is not None:
                 # The reason travels IN the manifest, not only in the marker file: a reader
                 # parsing manifest.json must be able to say why a member is absent without
@@ -2081,13 +2291,37 @@ def _write_all_diagnostics_zip(
             if rss_before is not None and rss_after is not None:
                 entry["rss_delta_kb"] = rss_after - rss_before
             if peak_before is not None and peak_after is not None:
-                entry["rss_peak_rise_kb"] = peak_after - peak_before
+                if peak_after > peak_before:
+                    entry["rss_peak_rise_kb"] = peak_after - peak_before
+                    if rss_before is not None:
+                        # The MARK's rise understates the member's whenever the mark was already
+                        # above where the member started (it nearly always is: the collector or an
+                        # earlier member set it). The member's own peak above ITS start is the
+                        # mark now minus the resident size at its start: the mark moved during the
+                        # member, so it is the member's peak unless another thread of the process
+                        # drove it. THIS is the figure a need is re-measured from, not the rise.
+                        entry["rss_peak_above_start_kb"] = max(0, peak_after - rss_before)
+                else:
+                    # THE HIGH-WATER MARK DID NOT MOVE, which is not "no rise": the mark never
+                    # falls, so a member that is smaller than the peak already set leaves no trace in it (the
+                    # 11 paused exports of the field bundles all read 0, and a 0 reads as "it
+                    # allocated nothing"). Absent, with the reason and the two readings that CAN
+                    # be made: what the resident set did (net), and the most its peak can have
+                    # risen above where it started (an upper bound, never a measurement).
+                    entry["rss_peak_rise_absent"] = _PEAK_RISE_ABSENT_REASON
+                    if rss_before is not None:
+                        entry["rss_peak_rise_at_most_kb"] = max(0, peak_after - rss_before)
             if rss_before is not None and rss_after is not None \
                     and (rss_after - rss_before) >= _ALL_DIAG_TRIM_AFTER_KB:
                 trim = _trim_after_heavy_member(_rss, rss_after)
                 if trim is not None:
                     entry["release"] = trim
             results.append(entry)
+            if db is not None:
+                # THE BOUNDARY: the member is over and its bytes are in the archive, so the
+                # session's read transaction (and the pooled connection under it) is of no use
+                # to anyone until the next member asks for it again.
+                read_release[_release_read_between_members(db)] += 1
 
             if journal_fp is not None:
                 try:
@@ -2112,18 +2346,31 @@ def _write_all_diagnostics_zip(
             journal_fp.close()
 
     run_ended_at = _time.time()
+    previous_text, previous_block = "", None
+    if previous_runs is not None:
+        try:
+            previous_text, previous_block = _fold_previous_run_journals(previous_runs)
+        except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
+            _LOG.warning("could not fold the previous runs' journals", exc_info=True)
+            previous_text = ""
+            previous_block = {
+                "runs": [], "not_carried": list(previous_runs.get("not_carried", [])),
+                "error": _ascii_clip(f"{type(exc).__name__}: {exc}", 160),
+            }
     manifest = _all_diagnostics_manifest(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
-        exclusive=exclusive, profile=profile,
+        exclusive=exclusive, profile=profile, previous_runs=previous_block,
+        read_release=read_release if db is not None else None,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
     # sidecar on disk has done its job (any hard-kill forensics happen from the sidecar
     # ITSELF, before this point is ever reached); the caller removes the sidecar file.
-    if journal_path is not None and pathlib.Path(journal_path).exists():
-        zf.writestr(
-            "bundle-journal.jsonl", pathlib.Path(journal_path).read_text(encoding="utf-8")
-        )
+    # Killed runs' lines come first (chronological), each marked `previous_run`.
+    own_exists = journal_path is not None and pathlib.Path(journal_path).exists()
+    if own_exists or previous_text:
+        own_text = pathlib.Path(journal_path).read_text(encoding="utf-8") if own_exists else ""
+        zf.writestr("bundle-journal.jsonl", previous_text + own_text)
     if progress is not None:
         progress(total, total, "done")
     return results
@@ -2211,14 +2458,20 @@ def _bundle_exclusive_window():
             nested = bool(exclusive_window_open())
         except Exception:  # noqa: BLE001 - an unknown state is never claimed as ownership
             nested = False
+        # ONLY THE CLAIM is guarded. The `yield` used to sit inside this try, so any exception the
+        # bundle's own body raised was caught here, logged as "could not claim the machine" (false)
+        # and turned into `RuntimeError: generator didn't stop after throw()` -- which hid what had
+        # actually gone wrong in every in-body failure. A body failure now propagates as itself.
+        stack = contextlib.ExitStack()
         try:
-            with exclusive_window() as was_paused:
-                yield {
-                    "held": True, "paused_collection": bool(was_paused), "nested": nested,
-                }
+            was_paused = stack.enter_context(exclusive_window())
         except Exception:  # noqa: BLE001 - the bundle is the evidence channel; never lose it
             _LOG.warning("all-diagnostics could not claim the machine", exc_info=True)
-            yield {"held": False, "reason": "could not claim the machine"}
+            claim: dict[str, Any] = {"held": False, "reason": "could not claim the machine"}
+        else:
+            claim = {"held": True, "paused_collection": bool(was_paused), "nested": nested}
+        with stack:
+            yield claim
 
     return _cm()
 
@@ -2229,6 +2482,214 @@ def _all_diagnostics_dir():
     d = data_dir() / "diagnostics"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+#: The most a left-over journal is READ for (bytes). A journal is a begin line and an end line per
+#: member, under 200 bytes each: roughly 25 KB for a 72-member run. A megabyte is about forty times
+#: that, so it is never what limits a real one; it protects the bundle from a sidecar that
+#: something else grew, and if a file ever exceeds it the TAIL is kept (the last `begin` is at the
+#: end, and the last `begin` is the evidence).
+_PREVIOUS_JOURNAL_MAX_BYTES = 1 << 20
+
+#: The most lines KEPT from one journal (the tail), and the longest a kept line may be. The cap on
+#: bytes read bounds what is read, NOT what is produced: every line becomes a record of its own, so
+#: a megabyte of one-character lines is half a million records (measured: 530 MiB of folded text
+#: and a 2 GB rise in resident size from ten such files, at the end of an hour-long bundle). Our
+#: own writer emits 2 lines per member (144 for 72 members) of under 200 characters; 1,000 lines
+#: and 1,024 characters are several times either, so neither ever bounds a real journal.
+_PREVIOUS_JOURNAL_MAX_LINES = 1000
+_PREVIOUS_JOURNAL_MAX_LINE_CHARS = 1024
+
+#: The most folded text ALL the carried journals may add to a bundle (characters). The newest
+#: journals are taken first and the rest are NAMED as not carried, so the budget spends itself on
+#: the most recent deaths. A real journal is about 25 KB, ten of them a quarter of a megabyte.
+_PREVIOUS_JOURNAL_MAX_TOTAL_CHARS = 2 << 20
+
+#: How many left-over journals one bundle carries, newest first. One per run that left a journal
+#: behind; a clean run sweeps them all, so they only accumulate while runs keep failing -- which
+#: is the very situation the evidence is wanted in (the operator retries an export that crashes).
+#: Journals past the ten, or past the text budget, are NAMED in the manifest, never dropped
+#: without a word.
+_PREVIOUS_JOURNAL_MAX_RUNS = 10
+
+
+def _ascii_clip(value: Any, limit: int) -> str:
+    """``value`` as a short string safe to put in a manifest and in an archive member name or body:
+    clipped, with anything outside ASCII (a lone surrogate included, which ``zipfile`` cannot
+    encode) written as an escape. Used for every string that came out of a file this run did not
+    write."""
+    return str(value)[:limit].encode("ascii", "backslashreplace").decode("ascii")
+
+
+def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
+    """The journals a run that did not finish left beside this one, read before the sweep deletes
+    them.
+
+    bundle.py used to unlink every previous run's ``.part`` and ``.journal.jsonl`` when the next
+    run finished (field diagnostics 2026-09-30, B4), so the member that was running at a kill
+    -- the last ``begin`` with no ``end`` -- was deleted by the very run the operator started to
+    get past it, and never reached a maintainer. They are now read here and folded into this
+    bundle's ``bundle-journal.jsonl`` (marked ``previous_run``) and its manifest. A journal is
+    left behind by a run that was killed, one that failed with an exception, one that was
+    cancelled, and one killed between publishing its archive and sweeping (that one rides a
+    second bundle).
+
+    ``own`` is this run's journal (excluded). Names carry the start time, so a sort is
+    chronological. What is kept from each is BOUNDED (the tail, by bytes, lines and line length)
+    and so is the total; a journal that is not carried, or cannot be read, is listed with the
+    reason. Returns ``{"carried": [...], "not_carried": [...]}``.
+    """
+    carried: list[dict] = []
+    not_carried: list[dict] = []
+    spent = 0
+    paths = sorted(
+        p for p in pathlib.Path(out_dir).glob("oo-all-diagnostics-*.journal.jsonl")
+        if p != pathlib.Path(own)
+    )
+    for path in reversed(paths):  # newest first, so the caps keep the most recent deaths
+        name = _ascii_clip(path.name, 160)
+        try:
+            st = path.stat()
+        except OSError as exc:
+            not_carried.append({
+                "journal": name, "reason": f"could not stat it: {_ascii_clip(f'{type(exc).__name__}: {exc}', 160)}",
+            })
+            continue
+        if len(carried) >= _PREVIOUS_JOURNAL_MAX_RUNS:
+            not_carried.append({
+                "journal": name, "bytes": st.st_size,
+                "reason": f"more than {_PREVIOUS_JOURNAL_MAX_RUNS} left-over journals; the newest are carried",
+            })
+            continue
+        entry: dict[str, Any] = {
+            "journal": name, "bytes": st.st_size, "truncated": False, "lines_dropped": 0,
+            "modified": datetime.fromtimestamp(st.st_mtime, UTC).isoformat(timespec="seconds"),
+            "lines": [],
+        }
+        try:
+            with open(path, "rb") as fp:
+                if st.st_size > _PREVIOUS_JOURNAL_MAX_BYTES:
+                    fp.seek(st.st_size - _PREVIOUS_JOURNAL_MAX_BYTES)
+                    entry["truncated"] = True
+                raw = fp.read(_PREVIOUS_JOURNAL_MAX_BYTES)
+        except OSError as exc:
+            entry["read_error"] = _ascii_clip(f"{type(exc).__name__}: {exc}", 160)
+            carried.append(entry)
+            continue
+        if entry["truncated"]:
+            # A tail read starts in the middle of a line: that line is cut, so it is dropped.
+            raw = raw.split(b"\n", 1)[1] if b"\n" in raw else b""
+        # `rsplit` with a count keeps the work proportional to the lines KEPT, not to the lines in
+        # the file: the head comes back as ONE piece instead of half a million.
+        pieces = raw.rsplit(b"\n", _PREVIOUS_JOURNAL_MAX_LINES + 1)
+        head = pieces[0] if len(pieces) > _PREVIOUS_JOURNAL_MAX_LINES + 1 else b""
+        kept = [b for b in pieces[-(_PREVIOUS_JOURNAL_MAX_LINES + 1):] if b.strip()]
+        over = max(0, len(kept) - _PREVIOUS_JOURNAL_MAX_LINES)  # the one piece rsplit adds
+        if over:
+            kept = kept[-_PREVIOUS_JOURNAL_MAX_LINES:]
+        entry["lines_dropped"] = ((head.count(b"\n") + 1) if head.strip() else 0) + over
+        entry["lines"] = [
+            b.decode("utf-8", errors="replace")[:_PREVIOUS_JOURNAL_MAX_LINE_CHARS] for b in kept
+        ]
+        cost = sum(len(ln) + 80 for ln in entry["lines"])  # 80: the `previous_run` marker per line
+        if spent + cost > _PREVIOUS_JOURNAL_MAX_TOTAL_CHARS:
+            not_carried.append({
+                "journal": name, "bytes": st.st_size,
+                "reason": "the folded text would pass its budget; the newest journals are carried",
+            })
+            continue
+        spent += cost
+        carried.append(entry)
+    carried.reverse()  # back to chronological, for the file that will carry them
+    return {"carried": carried, "not_carried": not_carried}
+
+
+def _reject_json_constant(name: str):
+    # Layer one of two against a bare NaN/Infinity: the parser refuses it here, and the writer
+    # below refuses it again (allow_nan=False). Either alone is enough, so a test cannot tell them
+    # apart; both stay on purpose (the second is what holds if this one is ever dropped).
+    raise ValueError(f"{name} is not strict JSON")
+
+
+def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
+    """``(jsonl text, manifest block)`` for the left-over journals.
+
+    Every line keeps what the dead run wrote and gains ``previous_run`` (the journal's file name,
+    which carries the run's start time). A line that does not parse -- a kill can land in the
+    middle of a write -- becomes an ``unparsed`` record holding its first 200 characters rather
+    than vanishing: a torn last line is itself part of the evidence. The block names, per run,
+    the members begun, the members ended and the ones that BEGAN AND NEVER ENDED -- the culprit
+    -- and says which journals were not carried and why.
+
+    NOTHING IN A LEFT-OVER FILE IS TRUSTED: it is whatever some earlier process, or something that
+    is not this program, left on the drive. A line that is not strict JSON (``NaN``, nesting deeper
+    than the parser takes, a lone surrogate) becomes an ``unparsed`` record; every string that goes
+    into the manifest or the archive is clipped and ASCII-escaped; a record with no string ``file``
+    is counted as ``unrecognised`` and never names a culprit the file did not name. The text is
+    ASCII, so no member of it can fail to encode.
+    """
+    out_lines: list[str] = []
+    runs: list[dict] = []
+    for item in previous.get("carried", []):
+        name = item["journal"]
+        began: dict[str, str | None] = {}
+        begun = ended = unparsed = unrecognised = 0
+        outcomes: dict[str, int] = {}
+        started_at: str | None = None
+        for line in item.get("lines", []):
+            try:
+                rec = json.loads(line, parse_constant=_reject_json_constant)
+                if not isinstance(rec, dict):
+                    raise ValueError("not an object")
+                rec["previous_run"] = name
+                text = json.dumps(rec, ensure_ascii=True, allow_nan=False)
+            except (ValueError, RecursionError):
+                unparsed += 1
+                rec = {"event": "unparsed", "chars": len(line), "raw": line[:200], "previous_run": name}
+                text = json.dumps(rec, ensure_ascii=True)
+            else:
+                ev = rec.get("event")
+                member = rec.get("file")
+                if ev in ("begin", "end") and not isinstance(member, str):
+                    unrecognised += 1  # a begin/end that names no member: not our schema
+                elif ev == "begin":
+                    begun += 1
+                    when = rec.get("started_at")
+                    when = _ascii_clip(when, 40) if isinstance(when, str) else None
+                    began[_ascii_clip(member, 120)] = when
+                    started_at = started_at or when
+                elif ev == "end":
+                    ended += 1
+                    began.pop(_ascii_clip(member, 120), None)
+                    oc = _ascii_clip(rec.get("outcome"), 40)
+                    outcomes[oc] = outcomes.get(oc, 0) + 1
+            out_lines.append(text)
+        unfinished = sorted(began)
+        runs.append({
+            "journal": name,
+            "modified": item.get("modified"),
+            # The first `begin` among the lines KEPT: the run's own start unless `truncated`.
+            "started_at": started_at,
+            "bytes": item["bytes"],
+            "truncated": item["truncated"],
+            "lines_dropped": item.get("lines_dropped", 0),
+            "members_begun": begun,
+            "members_ended": ended,
+            # Begun and never ended: what was running when the process died. Empty does not mean
+            # the run finished -- it means the journal shows no member in flight (a kill BETWEEN
+            # two members, or before the first begin, leaves nothing to name).
+            "unfinished": unfinished[:20],
+            **({"unfinished_total": len(unfinished)} if len(unfinished) > 20 else {}),
+            "outcomes": dict(sorted(outcomes.items())[:20]),
+            "unparsed_lines": unparsed,
+            "unrecognised_lines": unrecognised,
+            **({"read_error": item["read_error"]} if item.get("read_error") else {}),
+        })
+    text = "\n".join(out_lines) + ("\n" if out_lines else "")
+    block: dict[str, Any] = {"runs": runs, "not_carried": list(previous.get("not_carried", []))}
+    if previous.get("error"):
+        block["error"] = previous["error"]  # the READ failed: say so, beside an empty list
+    return text, block
 
 
 def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
@@ -2252,6 +2713,16 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     # a clean finish it is folded into the zip as bundle-journal.jsonl and the sidecar is
     # removed (its job is done); on a hard kill it simply survives as forensic evidence.
     journal_path = out_dir / (fname + ".journal.jsonl")
+    # READ BEFORE THE SWEEP BELOW DELETES THEM: a killed run's journal names the member that was
+    # running at the kill, and this bundle carries it (see _read_previous_run_journals).
+    try:
+        previous_runs = _read_previous_run_journals(out_dir, journal_path)
+    except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
+        _LOG.warning("could not read the previous runs' journals", exc_info=True)
+        previous_runs = {
+            "carried": [], "not_carried": [],
+            "error": _ascii_clip(f"{type(exc).__name__}: {exc}", 160),
+        }
     with _bundle_exclusive_window() as excl, session_scope() as db:
         members = _all_diagnostics_members(db)
 
@@ -2262,7 +2733,7 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
             results = _write_all_diagnostics_zip(
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
                 journal_path=journal_path, db=db, exclusive=excl,
-                profile=resolve_bundle_profile(profile),
+                profile=resolve_bundle_profile(profile), previous_runs=previous_runs,
             )
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
@@ -2278,7 +2749,9 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     # Also sweep any stale ``.part``/``.journal.jsonl`` left by a PREVIOUS crashed/killed
     # run — this run's own part/journal were just renamed away/removed, and the job is
     # single-instance, so no live writer is touched (no orphaned staging accumulates
-    # across hard-kills).
+    # across hard-kills). The journals were READ first (`previous_runs` above) and ride the
+    # archive just published, so deleting them here loses nothing; a run that does not reach
+    # this line (cancelled, failed) deletes nothing, and the next one carries them.
     for old in (
         *out_dir.glob("oo-all-diagnostics-*.zip"),
         *out_dir.glob("oo-all-diagnostics-*.zip.part"),
@@ -2432,6 +2905,46 @@ def _all_diagnostics_volumes_dir():
 # then finds the finished set rather than rebuilding it.
 _ALL_DIAG_VOLUMES_LOCK = threading.Lock()
 
+#: The folder a set is built in, a sibling of ``volumes/`` (never inside it, where its half-built
+#: files would sit among the served ones, and never matching the archive sweep's
+#: ``oo-all-diagnostics-*.zip`` glob over the parent).
+_VOLUME_BUILD_PREFIX = "volumes-build-"
+
+
+def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: bool) -> None:
+    """Refuse, with the numbers, a split the drive cannot take beside the archive (HTTP 507).
+
+    The set is built beside the previous one and replaces it only when whole, so for a while the
+    drive holds the archive, the old set and the new one: the new set weighs about what the archive
+    does (1.006 to 1.04 times, measured at caps of 1 MB to 50 KB), so the keyword export's 20 %
+    headroom covers it, and the old set is NOT counted as free (it stays until the new one is in).
+    THE RESERVE IS THE FLOOR (512 MiB), NOT THE DRIVE'S ONE PER CENT: what it protects is the
+    database's own log, which a full disk stops, and a split writes a few megabytes where the
+    keyword export writes gigabytes. The share would refuse the split on a 2 TB drive with 15 GiB
+    free, and the diagnostics are for the machines that are nearly full. Without a check at all the
+    split ran into a full disk after sweeping the old set and reported a raw operating-system error.
+    ``had_set``: a set was on disk before (the text only says its files were not touched when they
+    were there to touch, and says nothing about what the sweep of a killed build's leftovers removed
+    before this ran: they are not a set)."""
+    from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR, room_for
+    from src.api import diagnostics_volumes as dvol
+
+    need = src.stat().st_size
+    fits, free, reserve = room_for(where, need, reserve=_DISK_RESERVE_FLOOR)
+    if not fits:
+        raise dvol.VolumeRoomError(
+            f"the numbered files need about {need / 2**20:.0f} MiB beside the archive on the drive "
+            f"the data folder is on, and only {free / 2**20:.0f} MiB is free there (about "
+            f"{reserve / 2**30:.1f} GiB is kept free on it for whatever else writes to it, the "
+            "database's own log included). "
+            + (
+                "The earlier set of files was not touched. "
+                if had_set
+                else "There was no earlier set of files, and none was written. "
+            )
+            + "Free some space and press the button again."
+        )
+
 
 def _ensure_volume_set(src: pathlib.Path) -> dict:
     """The volume set for ``src``, built only if it is not already the current one.
@@ -2440,13 +2953,30 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
     re-splitting, and an archive newer than the set replaces it. The stale set is
     removed rather than left to accumulate volumes of two different bundles in one
     directory, where an operator collecting files by glob would mix them.
+
+    THE NEW SET IS BUILT BESIDE THE OLD ONE AND MOVED IN WHOLE (``publish_volume_set``): the
+    previous files used to be deleted first and the new ones written into the live folder, so a
+    failure left no set at all and the half-written volumes, and every name answered 404 for the
+    length of the split (seconds to a minute). Now the old set keeps serving until the new one is
+    complete and a failed split leaves it as it was; the build folder is removed on every path.
     """
     from src.api import diagnostics_volumes as dvol
 
     out = _all_diagnostics_volumes_dir()
     with _ALL_DIAG_VOLUMES_LOCK:
+        # A build folder left by a process that died is removed first (the lock means none is in
+        # use by this process), on the path that re-serves a set as well as on the one that builds.
+        for left in out.parent.glob(_VOLUME_BUILD_PREFIX + "*"):
+            shutil.rmtree(left, ignore_errors=True)
+        had_set = False
         with contextlib.suppress(Exception):
             current = dvol.load_manifest(out)
+            had_set = True
+            # Whatever a killed publish or a refused removal left beside this set (files the sidecar
+            # does not name) goes now, whether the set is the current one or about to be replaced: it
+            # is never served, it is a set's worth of disk, and clearing it can be what lets the next
+            # build fit.
+            dvol.retire_unnamed(out, current)
             # The cap is part of what makes it "the current set": one built under another cap
             # (OO_DIAG_VOLUME_MAX_MB changed, or the 9 MiB default this replaced) is rebuilt.
             if (
@@ -2455,10 +2985,13 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
                 and dvol.verify_volume_set(out)["ok"]
             ):
                 return current
-        for stale in out.iterdir():
-            with contextlib.suppress(OSError):
-                stale.unlink()
-        return dvol.write_volume_set(src, out)
+        _check_room_for_volumes(src, out.parent, had_set=had_set)
+        build = pathlib.Path(tempfile.mkdtemp(prefix=_VOLUME_BUILD_PREFIX, dir=out.parent))
+        try:
+            dvol.write_volume_set(src, build)
+            return dvol.publish_volume_set(build, out)
+        finally:
+            shutil.rmtree(build, ignore_errors=True)
 
 
 @router.get("/all-job/volumes")
@@ -2477,9 +3010,11 @@ def all_diagnostics_volumes() -> JSONResponse:
     TWO COSTS, STATED RATHER THAN DISCOVERED. It holds a request thread while it reads
     and re-compresses the archive once (seconds for a typical bundle; the sibling ``/all``
     route already runs for far longer on the same machine, so this is not a new kind of
-    load). And it roughly DOUBLES the archive's footprint on disk while both exist, which
-    on a machine already short of space is a real cost -- the volumes are removed and
-    rebuilt when a newer archive replaces them, never accumulated across builds.
+    load). And it holds up to THREE copies of the archive's weight on disk for a moment (the
+    archive, the previous set and the set being built, which replaces it whole), which on a
+    machine already short of space is a real cost -- refused with the numbers, HTTP 507, when
+    the drive cannot take the new set -- and the volumes are removed and rebuilt when a newer
+    archive replaces them, never accumulated across builds.
     """
     # NEVER serve a stale archive while a build is RUNNING -- the same refusal the
     # single-file download already makes, for the same reason. The operator asked the
@@ -2505,10 +3040,33 @@ def all_diagnostics_volumes() -> JSONResponse:
                 "POST /api/diagnostics/all-job"
             ),
         )
+    from src.api import diagnostics_volumes as dvol
+
     try:
         manifest = _ensure_volume_set(src)
+    except dvol.VolumeRoomError as exc:
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
+    except OSError as exc:
+        from src.analytics.keyword_log_scan import no_room_refusal
+
+        # The same condition as the preflight's, found halfway instead of at the start (the
+        # archive grew, or something else wrote): the same status, with what is still true.
+        if no_room_refusal(exc, "splitting the archive") is None:
+            raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc
+        raise HTTPException(
+            status_code=507,
+            detail=(
+                f"the drive ran out of room, or turned read-only, while the numbered files were being "
+                f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "
+                "was one, was not touched, and the half-written files are removed now or, if the "
+                "drive will not let them go, at the next press at the latest. Free some space and "
+                "press the button again."
+            ),
+        ) from exc
     except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500
-        raise HTTPException(status_code=500, detail=f"could not split the archive: {exc}") from exc
+        # No "could not split the archive" prefix here: the page puts its own, translated, before
+        # whatever this says, and a caller of the endpoint knows what it asked.
+        raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc
     # The same listing shape as a numbered keyword set (``files`` + ``download_base``), so the one
     # page routine that saves five files per click serves both; the manifest's own fields stay.
     files = [

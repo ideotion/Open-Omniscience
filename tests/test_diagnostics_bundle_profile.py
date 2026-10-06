@@ -502,3 +502,202 @@ def test_the_bundle_hands_its_session_to_the_gate(monkeypatch):
         results = _write_all_diagnostics_zip(members, z, profile="full", db=db)
     outcomes = {r["file"]: r["outcome"] for r in results}
     assert outcomes[_EST] == "declined-ram" and outcomes["ordinary.json"] == "ok"
+
+
+# --------------------------------------------------------------------------- #
+# The gate's OWN READING is recorded (field diagnostics 2026-09-30, B4): what  #
+# it saw, for a member that ran and for one it declined                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_a_declined_member_carries_what_the_gate_saw(monkeypatch):
+    """The decision alone cannot be checked afterwards: the last sample in a run's pressure log
+    is not the one the gate read (B4). Every number the decision rests on is in the reading."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=8192.0, available=1700.0)
+    reading: dict = {}
+    reason = ram_declined_reason(_EST, db=db, reading=reading)
+    assert reason is not None
+    assert reading["decision"] == "declined" and reading["declined_by"] == "available-memory"
+    assert reading["need_mb"] == 1500.0 and reading["need_basis"] == "estimated"
+    assert reading["total_mb"] == 8192.0 and reading["total_ceiling_mb"] == 4096.0
+    assert reading["total_share"] == 0.5
+    assert reading["available_mb"] == 1700.0 and reading["memory_stop_floor_mb"] == 256.0
+    assert reading["available_line_applied"] is True and reading["override"] is False
+    # THE STAMP IS THE TIME OF THE READING, in UTC with its offset, the form the session's memory
+    # marks carry (the gate's reading is wanted on that timeline). Parsed and compared with the
+    # clock: a stamp frozen at import, or one in local time with no offset, fails here.
+    from datetime import UTC, datetime, timedelta
+
+    sampled = datetime.fromisoformat(reading["sampled_at"])
+    assert sampled.utcoffset() == timedelta(0), "UTC, with the offset written"
+    assert abs((datetime.now(UTC) - sampled).total_seconds()) < 30
+    assert sampled.microsecond == 0, "to the second"
+
+
+def test_a_member_that_ran_carries_the_same_reading(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=8192.0, available=5000.0)
+    reading: dict = {}
+    assert ram_declined_reason(_EST, db=db, reading=reading) is None
+    assert reading["decision"] == "run" and "declined_by" not in reading
+    assert reading["available_mb"] == 5000.0 and reading["need_mb"] == 1500.0
+
+
+def test_the_total_ram_line_names_itself_when_it_is_the_one_that_declined(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=2500.0, available=9000.0)
+    reading: dict = {}
+    assert ram_declined_reason(_EST, db=db, reading=reading)
+    assert reading["declined_by"] == "total-ram" and reading["total_ceiling_mb"] == 1250.0
+
+
+def test_the_counts_an_estimate_was_made_from_travel_with_it(monkeypatch):
+    """"Estimated" is not a reading a reader can check; the counts are."""
+    from src.api.diagnostics import bundle
+
+    db = _estimated(monkeypatch, 0.0, total=8192.0, available=5000.0)
+    monkeypatch.setitem(
+        bundle._MEMBER_NEED_ESTIMATORS, _EST,
+        lambda _db: {
+            "need_mb": 1170.25, "articles": 1_825_094, "keyword_id_bound": 14_654_527,
+            "languages": 83, "exportable_keywords": 415_000, "per_language": 5000,
+        },
+    )
+    reading: dict = {}
+    bundle.ram_declined_reason(_EST, db=db, reading=reading)
+    assert abs(reading["need_mb"] - 1170.25) < 0.06
+    assert reading["need_counts"] == {
+        "articles": 1_825_094, "keyword_id_bound": 14_654_527, "languages": 83,
+        "exportable_keywords": 415_000, "per_language": 5000,
+    }
+    assert "need_mb" not in reading["need_counts"]
+
+
+def test_the_real_estimator_hands_its_counts_to_the_gate(tmp_path, monkeypatch):
+    """Not a stub: the bundle's own estimator over a real (tiny) database fills the reading."""
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.api.diagnostics import bundle
+
+    p = tmp_path / "gate.db"
+    con = sqlite3.connect(p)
+    con.executescript(
+        "CREATE TABLE articles (id INTEGER PRIMARY KEY, language TEXT);"
+        "CREATE TABLE keywords (id INTEGER PRIMARY KEY);"
+        "INSERT INTO articles (id, language) VALUES (1,'en'),(2,'fr'),(3,'en');"
+        "INSERT INTO keywords (id) VALUES (1),(2),(3),(4),(5);"
+    )
+    con.commit()
+    con.close()
+    db = sessionmaker(bind=create_engine(f"sqlite:///{p}"))()
+    try:
+        monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
+        monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: 8192.0)
+        monkeypatch.setattr("src.database.maintenance._available_mb", lambda: 6000.0)
+        monkeypatch.setattr("src.database.maintenance._read_memory_floor_mb", lambda: 256.0)
+        reading: dict = {}
+        assert bundle.ram_declined_reason(_EST, db=db, reading=reading) is None
+    finally:
+        db.close()
+    assert reading["need_basis"] == "estimated"
+    counts = reading["need_counts"]
+    assert counts["articles"] == 3 and counts["keyword_id_bound"] == 5
+    assert counts["languages"] == 3  # en, fr, and the "?" an article without one falls in
+    assert counts["exportable_keywords"] == 5 and counts["per_language"] == 5000
+
+
+def test_a_static_reading_records_the_machine_without_having_used_the_available_line(monkeypatch):
+    """Without a session the measured constant applies and R27's half-of-RAM rule is the only
+    line. The numbers are still recorded (they are what the next reader wants); the reading says
+    the available-memory line was not applied to them."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _estimated(monkeypatch, 99999.0, total=4029.0, available=10.0)
+    reading: dict = {}
+    assert ram_declined_reason(_EST, reading=reading) is None
+    assert reading["need_basis"] == "static-constant" and "need_counts" not in reading
+    assert reading["need_mb"] == 200.0
+    assert reading["available_mb"] == 10.0 and reading["available_line_applied"] is False
+    assert reading["decision"] == "run"
+
+
+def test_an_estimate_that_failed_says_so_in_the_reading(monkeypatch):
+    from src.api.diagnostics import bundle
+
+    _estimated(monkeypatch, 0.0, total=4029.0, available=2000.0)
+
+    def _boom(_db):
+        raise RuntimeError("no such table: keywords")
+
+    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, _boom)
+    reading: dict = {}
+    bundle.ram_declined_reason(_EST, db=object(), reading=reading)
+    assert reading["need_basis"] == "static-constant"
+    assert reading["estimate_error"].startswith("RuntimeError: no such table")
+
+
+def test_a_gated_member_nothing_could_size_is_recorded_as_unavailable_never_blank(monkeypatch):
+    from src.api.diagnostics import bundle
+
+    _estimated(monkeypatch, 0.0, total=4029.0, available=2000.0)
+    monkeypatch.setitem(bundle._MEMBER_NEED_ESTIMATORS, _EST, lambda _db: 1 / 0)
+    monkeypatch.delitem(bundle._MEMBER_RSS_NEED_MB, _EST)
+    reading: dict = {}
+    assert bundle.ram_declined_reason(_EST, db=object(), reading=reading) is None
+    assert reading["need_mb"] is None and reading["need_basis"] == "unavailable"
+    assert reading["decision"] == "run" and "ZeroDivisionError" in reading["estimate_error"]
+
+
+def test_an_unknown_member_has_no_reading(monkeypatch):
+    """The gate made no decision about it, so there is nothing to record -- an empty dict, not a
+    fabricated 'run'."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _estimated(monkeypatch, 1500.0, total=512.0, available=1.0)
+    reading: dict = {}
+    assert ram_declined_reason("card-audit.json", db=object(), reading=reading) is None
+    assert reading == {}
+
+
+def test_the_override_is_in_the_reading_and_the_reading_does_not_change_the_answer(monkeypatch):
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    db = _estimated(monkeypatch, 1500.0, total=2500.0, available=100.0)
+    with_reading: dict = {}
+    without = ram_declined_reason(_EST, db=db)
+    assert without is not None
+    assert ram_declined_reason(_EST, db=db, reading=with_reading) == without
+    monkeypatch.setenv("OO_ALLOW_BIG_SCANS", "1")
+    lifted: dict = {}
+    assert ram_declined_reason(_EST, db=db, reading=lifted) is None
+    assert lifted["override"] is True and lifted["decision"] == "run"
+    assert lifted["available_mb"] == 100.0, "the override lifts the decline, not the witness"
+
+
+def test_the_manifest_records_the_reading_for_a_declined_and_for_a_run_member(monkeypatch):
+    import io
+    import json
+    import zipfile
+
+    from src.api.diagnostics.bundle import _write_all_diagnostics_zip
+
+    for available, outcome in ((1700.0, "declined-ram"), (5000.0, "ok")):
+        db = _estimated(monkeypatch, 1500.0, total=8192.0, available=available)
+        members = [(_EST, lambda: {"ran": True}), ("ordinary.json", lambda: {"ran": True})]
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            results = _write_all_diagnostics_zip(members, z, profile="full", db=db)
+        by_file = {r["file"]: r for r in results}
+        assert by_file[_EST]["outcome"] == outcome
+        assert by_file[_EST]["gate"]["available_mb"] == available
+        assert by_file[_EST]["gate"]["decision"] == ("declined" if outcome != "ok" else "run")
+        assert "gate" not in by_file["ordinary.json"], "a member the gate does not know has none"
+        shipped = json.loads(zipfile.ZipFile(buf).read("manifest.json"))["members"]
+        assert {m["file"]: m for m in shipped}[_EST]["gate"] == by_file[_EST]["gate"]
