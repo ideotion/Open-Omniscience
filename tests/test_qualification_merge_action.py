@@ -180,6 +180,38 @@ def test_an_unreadable_repair_record_reaches_the_merge_report(client, monkeypatc
     assert r.json()["merged_verdicts"] == 2
 
 
+def test_the_warning_survives_the_bundle_route_and_the_panels_own_yaml_export(client, monkeypatch) -> None:
+    """Export on each instance, then Merge: the Export button saves YAML, and a bundle is the other
+    road. Both used to lose the flag (the YAML carried it as a comment a parser drops)."""
+    import src.catalog.qualification_integrity as qi
+
+    flagged = {
+        "verdicts": [_row("other.example", "qualified")],
+        "basis": {"repair_record_unreadable": True, "repair_runs_unreadable": ["2026-10-01T00:00:00+00:00"]},
+    }
+    r = client.post(ENDPOINT, files=[("files", (
+        "bundle.zip", _bundle({BUNDLE_MEMBER: json.dumps(flagged).encode("utf-8")}), "application/zip"))],
+        data={"include_this_instance": "false"})
+    assert r.status_code == 200, r.text
+    entry = r.json()["report"]["inputs"][0]
+    assert entry["route"] == "all-diagnostics bundle"
+    assert entry["repair_runs_unreadable"] == ["2026-10-01T00:00:00+00:00"]
+
+    # the real thing: this instance's own YAML export with an unreadable record, uploaded back
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    yml = client.get("/api/diagnostics/source-qualification-export?fmt=yaml")
+    assert yml.status_code == 200, yml.text
+    r = client.post(ENDPOINT, files=[("files", ("export.yml", yml.content, "text/yaml"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 200, r.text
+    entry = r.json()["report"]["inputs"][0]
+    assert entry["route"] == "export json" and entry["repair_runs_unreadable"] == ["2026-09-30T00:00:00+00:00"]
+    # and a readable record adds nothing to either
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, []))
+    yml = client.get("/api/diagnostics/source-qualification-export?fmt=yaml")
+    assert b"repair_record_unreadable" not in yml.content
+
+
 def test_the_merge_panel_shows_the_unreadable_repair_record_warning() -> None:
     """The panel must write the warning from the report's inputs, in a translated string."""
     js = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")

@@ -81,6 +81,7 @@ def source_qualification_merge(
         refusal_payload,
         render,
         repair_record_flags,
+        repair_record_flags_of_bundle_bytes,
         repair_record_flags_of_export_bytes,
         rows_from_bundle_bytes,
         rows_from_export_bytes,
@@ -129,8 +130,10 @@ def source_qualification_merge(
             "route": "all-diagnostics bundle" if is_zip else "export json",
             "verdicts": len(rows),
         }
-        if not is_zip:
-            entry.update(repair_record_flags_of_export_bytes(raw))
+        entry.update(
+            repair_record_flags_of_bundle_bytes(raw) if is_zip
+            else repair_record_flags_of_export_bytes(raw)
+        )
         inputs.append(entry)
 
     if include_this_instance:

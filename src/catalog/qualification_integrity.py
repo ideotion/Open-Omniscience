@@ -156,8 +156,9 @@ def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
     ``judged_at`` is the date of the imported attempt the repair followed. A row in this mapping
     carries a verdict taken from an imported history, not one this install measured, so the
     qualification export labels it ``inherited`` only while its newest judging attempt is still that
-    one (any later judging attempt makes it ``measured``: a local judgement in either direction, and
-    equally a newer imported one, which the export does not yet tell apart although the merge records it in ``merged_rows`` -- a KNOWN LIMIT, pinned). A run record
+    one (a later judging attempt this install made makes it ``measured``, in either direction; a later
+    attempt a backup merge brought in does not, ``merged_rows`` naming it -- the residue is an imported
+    attempt with no ``merged_rows`` row, see ``repair_still_followed``). A run record
     that cannot be read is skipped (its domains are unknown) and its id is returned, so the caller
     can say that the list is incomplete.
     """
@@ -187,13 +188,47 @@ def repaired_domains() -> set[str]:
 
 
 def repair_still_followed(session, source, judged_at) -> bool:
-    """True while the source's newest judging attempt is the one a boot repair followed (the check
-    ``revert_repairs`` makes too). A repair record without a ``judged_at`` cannot be compared and is
-    read as still followed."""
+    """True while no judging attempt THIS install made is newer than the imported one a boot repair
+    followed. An attempt a backup merge brought in (``merged_rows`` names it) never counts: that is the
+    imported history the repair already deferred to, so a later import cannot turn the row into this
+    install's own measurement (rule 12 = b). A local judgement does -- the install judged the source
+    itself, in either direction. A repair record without a ``judged_at`` cannot be compared and is read
+    as still followed; a source with no judging attempt at all is not.
+
+    THE RESIDUE: an imported attempt with no ``merged_rows`` row reads as this install's own. Nothing in
+    the app writes one (every merge path records its rows, since the attempts were first merged), and
+    the app never deletes a merge batch, so it takes a batch removed by hand in the database or a full
+    replace-restore (whose rows are the restored library, not a merge). Pinned by a test.
+
+    ``revert_repairs`` makes a stricter check (any newer attempt of any origin stops a revert), which is
+    why it does not call this."""
     if not judged_at:
         return True
-    newest = _newest_judging(session, int(source.id))
-    return newest is not None and _iso(newest.attempted_at) == judged_at
+    from src.database.models import MergedRow
+    from src.database.models import SourceQualificationAttempt as A
+
+    sid = int(source.id)
+    if _newest_judging(session, sid) is None:
+        return False
+    imported = session.query(MergedRow.row_id).filter(
+        MergedRow.table_name == "source_qualification_attempts"
+    )
+    newest_local = (
+        session.query(A)
+        .filter(A.source_id == sid, A.verdict.in_(JUDGING_VERDICTS), A.id.notin_(imported))
+        .order_by(A.attempted_at.desc(), A.id.desc())
+        .first()
+    )
+    if newest_local is None:
+        return True
+    try:
+        followed_at = datetime.fromisoformat(judged_at)
+    except (TypeError, ValueError):
+        return True  # a stamp that cannot be read is read like a missing one: inherited, never measured
+    at = newest_local.attempted_at
+    at = at if at.tzinfo else at.replace(tzinfo=UTC)
+    followed_at = followed_at if followed_at.tzinfo else followed_at.replace(tzinfo=UTC)
+    return at <= followed_at
 
 
 def _newest_judging(session: Session, source_id: int):

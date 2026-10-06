@@ -158,10 +158,10 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             if s.id in measured:
                 curated_stamp_with_judging_history += 1
         elif s.domain in repaired and repair_still_followed(session, s, repaired[s.domain]):
-            # withdrawn by the boot repair on an imported history's say and its newest judging attempt
-            # is still the imported one the repair followed: inherited, whatever its history
-            # holds, and shipped as such. ANY newer judging attempt (a local one, or a newer
-            # imported one the export does not yet tell apart: ``merged_rows`` records it) makes the row `measured` below.
+            # withdrawn by the boot repair on an imported history's say, and no judging attempt this
+            # install made is newer than the imported one the repair followed: inherited, whatever
+            # its history holds, and shipped as such. A later attempt this install made makes the row
+            # `measured` below; one a backup merge brought in (``merged_rows``) never does.
             basis = BASIS_INHERITED
             repaired_exported_as_inherited += 1
         elif s.id in measured:
@@ -258,10 +258,10 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             # Rows whose LIVE stamp is the curated catalogue's although they carry judging
             # attempts (copied from a backup, or from before the stamp): read as `curated`.
             "curated_stamp_with_judging_history": curated_stamp_with_judging_history,
-            # Rows the boot repair withdrew on an imported history's say and whose newest judging
-            # attempt is still the one the repair followed: `inherited`. A newer attempt of any
-            # origin makes the row `measured`. If the repair record could not be read this is 0 and
-            # says why.
+            # Rows the boot repair withdrew on an imported history's say and which no judging attempt this
+            # install made has overtaken: `inherited`. A newer attempt of its own makes the row
+            # `measured`; an imported one (``merged_rows``) does not. If the repair record could not be
+            # read this is 0 and says why.
             "repaired_exported_as_inherited": repaired_exported_as_inherited,
             "repair_record_unreadable": repair_record_unreadable,
             # Runs whose record could not be read: the rows they withdrew cannot be named, so such a
@@ -311,6 +311,12 @@ def to_overlay_yaml(export: dict) -> str:
     )
     basis = export.get("basis") or {}
     if basis.get("repair_record_unreadable"):
+        # Also a KEY, not only the comment below: the Merge reads the file back through a YAML parser,
+        # which drops comments, and ``load_overlay`` ignores keys it does not know.
+        doc["basis"] = {
+            "repair_record_unreadable": True,
+            "repair_runs_unreadable": list(basis.get("repair_runs_unreadable") or []),
+        }
         runs = ", ".join(basis.get("repair_runs_unreadable") or []) or "the repair index"
         header += (
             "# WARNING: the record of the boot repair could not be read in full (" + runs + ").\n"
