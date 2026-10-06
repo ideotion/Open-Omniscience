@@ -743,22 +743,29 @@ def _fake_disk(monkeypatch, *, free: int, total: int = 100 * 2**30):
     monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(total, total - free, free))
 
 
-@pytest.mark.parametrize("with_a_previous_set", [False, True])
+@pytest.mark.parametrize("earlier", ["none", "set", "files"])
 def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
-    _diag_dir, monkeypatch, with_a_previous_set
+    _diag_dir, monkeypatch, earlier
 ):
     """R115 follow-up S2: the keyword path preflighted; this one ran into a full disk after the
-    sweep and answered with a raw operating-system error."""
+    sweep and answered with a raw operating-system error. The text says only what is true of what
+    was on the drive: a set whose sidecar loads, files whose sidecar is refused or corrupt (the
+    case the first wording called "no earlier set"), or nothing."""
     from fastapi import HTTPException
 
     from src.api import diagnostics as d
 
+    with_a_previous_set = earlier == "set"
     if with_a_previous_set:
         old, _newer = _two_archives(_diag_dir)
     else:
         old = None
         _build_bundle(_diag_dir).rename(_diag_dir / "oo-all-diagnostics-20261001-090000.zip")
     vol_dir = d._all_diagnostics_volumes_dir()
+    if earlier == "files":
+        vol_dir.mkdir(parents=True, exist_ok=True)
+        (vol_dir / dv.MANIFEST_NAME).write_text("{this is not json", encoding="utf-8")
+        (vol_dir / "oo-diagnostics-20260930-070500-part-01.zip").write_bytes(b"PK")
     before = sorted(p.name for p in vol_dir.iterdir())
     _fake_disk(monkeypatch, free=1 * 2**20)
 
@@ -773,6 +780,10 @@ def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
     if with_a_previous_set:
         assert "The earlier set of files was not touched" in exc.value.detail
         assert "no earlier set" not in exc.value.detail
+    elif earlier == "files":
+        assert "Files of an earlier set are in the folder, though their list could not be read" in exc.value.detail
+        assert "were not touched" in exc.value.detail
+        assert "no earlier set" not in exc.value.detail and "none was written" not in exc.value.detail
     else:
         # nothing is claimed about files that were never there, and nothing about "the server": the
         # sweep of a killed build's leftovers runs before this check, so "nothing was changed" would
@@ -922,9 +933,12 @@ def test_a_split_that_runs_out_of_room_halfway_is_the_507_the_preflight_gives(_d
     if status == 507:
         assert "Free some space" in exc.value.detail
         # true on a first split too (no earlier set to touch), and true when the removal of the
-        # half-written files was itself refused: they go now or at the next press at the latest
+        # half-written files was itself refused: they go now or at the first press the drive allows
+        # it (the removal ignores its own errors, so a drive that keeps refusing keeps them, and
+        # "at the next press at the latest" would promise what only a drive that obeys can keep)
         assert "The earlier set of files, if there was one, was not touched" in exc.value.detail
-        assert "at the next press at the latest" in exc.value.detail
+        assert "at the first press the drive allows it" in exc.value.detail
+        assert "at the latest" not in exc.value.detail
         assert "files were removed" not in exc.value.detail
     for f in old["files"]:
         assert Path(d.all_diagnostics_volume_download(f["name"]).path).is_file()

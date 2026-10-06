@@ -175,10 +175,10 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
     budget = _debug_bundle_member_budget_s()
 
     def _err_str(exc) -> str:
-        try:
-            return str(exc)[:300]
-        except Exception:  # noqa: BLE001 - even a broken __str__ must still yield a marker
-            return f"<{type(exc).__name__}: unrenderable>"
+        # The same place the all-diagnostics members make their error text, so this report's
+        # texts leave the machine under the same rule (the passphrase taken out of the whole
+        # text before the cut, a broken ``__str__`` still yielding a marker).
+        return _all_diag_err_str(exc)
 
     def _bounded(fn):
         """Run a DB thunk under a statement deadline (SQL opcode interrupt) so a runaway
@@ -260,7 +260,7 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
             if client.is_available():
                 llm = {"available": True, "models": client.list_installed()}
         except Exception as exc:  # noqa: BLE001 - loopback-only, best-effort
-            llm = {"available": False, "error": str(exc)[:200]}
+            llm = {"available": False, "error": _err_str(exc)}
         db_file = _data_dir() / "open_omniscience.db"
         return {
             "python": _sys.version.split()[0],
@@ -759,8 +759,10 @@ def ram_declined_reason(
                 need = float(got)
             estimated = True
         except Exception as exc:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
-            _LOG.debug("need estimate for %s failed; using the measured constant", name, exc_info=True)
-            estimate_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+            estimate_error = f"{type(exc).__name__}: {_all_diag_err_str(exc)[:160]}"
+            # The scrubbed text, not the traceback: an engine's words can carry the statement it
+            # failed on, and the log's tail rides the same zip.
+            _LOG.debug("need estimate for %s failed; using the measured constant (%s)", name, estimate_error)
     if need is None:
         need = measured
     if need is None:
@@ -1400,25 +1402,54 @@ def _run_nondb_member_bounded(fn, budget_s: float):
     return box.get("value")
 
 
+def _passphrase_forms(secret: str) -> list[str]:
+    """Every form ``secret`` is written in where this code or its drivers put it into text.
+
+    The raw string; the string with its single quotes doubled, which is how ``PRAGMA key`` and
+    ``ATTACH ... KEY`` carry it (``src/database/connect.py``: ``_sql_literal_escape``) and so how an
+    engine's "near ..." text and SQLAlchemy's ``[SQL: ...]`` show it; Python's ``repr`` form (the
+    ``[parameters: ...]`` line); and the two inner forms JSON writes it in (escaped ASCII or not).
+    Each of the last three is taken of both of the first two. A passphrase with no quote, no
+    backslash and no character outside ASCII has one form."""
+    forms: list[str] = []
+    for base in (secret, secret.replace("'", "''")):
+        forms.append(base)
+        forms.append(repr(base)[1:-1])
+        forms.append(json.dumps(base)[1:-1])
+        forms.append(json.dumps(base, ensure_ascii=False)[1:-1])
+    return list(dict.fromkeys(f for f in forms if f))
+
+
 def _without_the_passphrase(text: str) -> str | None:
     """``text`` with the database passphrase this process holds, and the one in its environment, taken
-    out; ``None`` when that could not be done (the caller then withholds the text rather than keeping
-    it).
+    out in every form :func:`_passphrase_forms` lists; ``None`` when that could not be done (the caller
+    then withholds the text rather than keeping it).
 
     WHERE IT RUNS: a member's error text enters the bundle here (``.error.txt``, the manifest's
-    ``error``, ``.skipped-deadline.txt``, a ``reason``), and the engine's own words can carry the
-    statement it failed on (SQLAlchemy puts ``[SQL: ...]`` in an exception's text, SQLite quotes the
-    token it stopped at). No member builds a statement from the passphrase today, and the key is
-    applied through the driver, not through SQLAlchemy; this is the net beneath that, at the one
-    place the text is made, so a statement added later cannot carry the key into a zip that is handed
-    to someone else. Exact match (``secret_scrub.scrub_text``): a transformed copy is not recognised.
-    An install with no passphrase has nothing to scrub."""
+    ``error``, ``.skipped-deadline.txt``, a ``reason``, the debug bundle's section errors, the gate's
+    ``estimate_error``, the chronology's ``error``), and the engine's own words can carry the
+    statement it failed on (SQLAlchemy puts ``[SQL: ...]`` and ``[parameters: ...]`` in an exception's
+    text, SQLite quotes the token it stopped at). No member builds a statement from the passphrase
+    today, and the key is applied through the driver, not through SQLAlchemy; this is the net beneath
+    that, at the place the text is made. THE LONGEST FORM GOES FIRST: a held passphrase that is a
+    piece of the environment's (``pass`` and ``pass2``) would otherwise leave the tail of the longer
+    one behind, and the result is checked once more for every form, so a marker that rebuilt one out
+    of the text beside it withholds the text instead of keeping it.
+
+    WHAT IT DOES NOT CATCH: an exact match of the forms above only. A key that was re-encoded, split
+    over two lines, or written in some other form by a statement added later is not recognised, so
+    this is a net and not a guarantee; the guarantee is that nothing builds such a statement. An
+    install with no passphrase has nothing to scrub."""
     try:
         from src.database.connect import get_passphrase
         from src.monitoring.secret_scrub import scrub_text
 
-        for needle in dict.fromkeys(filter(None, (get_passphrase(), os.environ.get("OO_DB_PASSPHRASE")))):
+        secrets = dict.fromkeys(filter(None, (get_passphrase(), os.environ.get("OO_DB_PASSPHRASE"))))
+        needles = sorted({form for secret in secrets for form in _passphrase_forms(secret)}, key=lambda f: (-len(f), f))
+        for needle in needles:
             text = scrub_text(text, needle)
+        if any(needle in text for needle in needles):
+            return None
     except Exception:  # noqa: BLE001 - failing CLOSED: the caller withholds what it could not scrub
         return None
     return text
@@ -1658,7 +1689,7 @@ def _chronology_member() -> dict:
 
         return chronology(anchor="run")
     except Exception as exc:  # noqa: BLE001 - a member that fails says so, never blanks
-        return {"available": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        return {"available": False, "error": f"{type(exc).__name__}: {_all_diag_err_str(exc)}"[:300]}
 
 
 def _release_run_last() -> dict:
@@ -2355,7 +2386,7 @@ def _write_all_diagnostics_zip(
             previous_text = ""
             previous_block = {
                 "runs": [], "not_carried": list(previous_runs.get("not_carried", [])),
-                "error": _ascii_clip(f"{type(exc).__name__}: {exc}", 160),
+                "error": _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160),
             }
     manifest = _all_diagnostics_manifest(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
@@ -2551,9 +2582,8 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
         try:
             st = path.stat()
         except OSError as exc:
-            not_carried.append({
-                "journal": name, "reason": f"could not stat it: {_ascii_clip(f'{type(exc).__name__}: {exc}', 160)}",
-            })
+            why = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            not_carried.append({"journal": name, "reason": f"could not stat it: {why}"})
             continue
         if len(carried) >= _PREVIOUS_JOURNAL_MAX_RUNS:
             not_carried.append({
@@ -2573,7 +2603,7 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
                     entry["truncated"] = True
                 raw = fp.read(_PREVIOUS_JOURNAL_MAX_BYTES)
         except OSError as exc:
-            entry["read_error"] = _ascii_clip(f"{type(exc).__name__}: {exc}", 160)
+            entry["read_error"] = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
             carried.append(entry)
             continue
         if entry["truncated"]:
@@ -2721,7 +2751,7 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
         _LOG.warning("could not read the previous runs' journals", exc_info=True)
         previous_runs = {
             "carried": [], "not_carried": [],
-            "error": _ascii_clip(f"{type(exc).__name__}: {exc}", 160),
+            "error": _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160),
         }
     with _bundle_exclusive_window() as excl, session_scope() as db:
         members = _all_diagnostics_members(db)
@@ -2911,7 +2941,19 @@ _ALL_DIAG_VOLUMES_LOCK = threading.Lock()
 _VOLUME_BUILD_PREFIX = "volumes-build-"
 
 
-def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: bool) -> None:
+#: What the room refusal says about what was on the drive, by what the caller found (see
+#: ``_check_room_for_volumes``).
+_EARLIER_SET_TEXT = {
+    "set": "The earlier set of files was not touched. ",
+    "files": (
+        "Files of an earlier set are in the folder, though their list could not be read, and they "
+        "were not touched. "
+    ),
+    "none": "There was no earlier set of files, and none was written. ",
+}
+
+
+def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, earlier: str) -> None:
     """Refuse, with the numbers, a split the drive cannot take beside the archive (HTTP 507).
 
     The set is built beside the previous one and replaces it only when whole, so for a while the
@@ -2923,9 +2965,12 @@ def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: 
     keyword export writes gigabytes. The share would refuse the split on a 2 TB drive with 15 GiB
     free, and the diagnostics are for the machines that are nearly full. Without a check at all the
     split ran into a full disk after sweeping the old set and reported a raw operating-system error.
-    ``had_set``: a set was on disk before (the text only says its files were not touched when they
-    were there to touch, and says nothing about what the sweep of a killed build's leftovers removed
-    before this ran: they are not a set)."""
+    ``earlier`` says what was on the drive before: ``"set"`` (a set whose sidecar loaded), ``"files"``
+    (files in the folder with no sidecar that can be read: left by a killed publish, or a sidecar
+    that was refused or corrupt) or ``"none"``. The text says only what is true of each: that a set's
+    files were not touched, that files whose list could not be read were not touched either, or that
+    there was nothing and nothing was written. It says nothing about what the sweep of a killed
+    build's leftovers removed before this ran: they are not a set."""
     from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR, room_for
     from src.api import diagnostics_volumes as dvol
 
@@ -2937,11 +2982,7 @@ def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: 
             f"the data folder is on, and only {free / 2**20:.0f} MiB is free there (about "
             f"{reserve / 2**30:.1f} GiB is kept free on it for whatever else writes to it, the "
             "database's own log included). "
-            + (
-                "The earlier set of files was not touched. "
-                if had_set
-                else "There was no earlier set of files, and none was written. "
-            )
+            + _EARLIER_SET_TEXT[earlier]
             + "Free some space and press the button again."
         )
 
@@ -2958,7 +2999,9 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
     previous files used to be deleted first and the new ones written into the live folder, so a
     failure left no set at all and the half-written volumes, and every name answered 404 for the
     length of the split (seconds to a minute). Now the old set keeps serving until the new one is
-    complete and a failed split leaves it as it was; the build folder is removed on every path.
+    complete and a failed split leaves it as it was; the build folder is removed on every path the
+    drive allows, and a folder it refused to let go is swept by the next press (the removal ignores
+    its own errors, so a drive that keeps refusing keeps the folder).
     """
     from src.api import diagnostics_volumes as dvol
 
@@ -2968,10 +3011,13 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
         # use by this process), on the path that re-serves a set as well as on the one that builds.
         for left in out.parent.glob(_VOLUME_BUILD_PREFIX + "*"):
             shutil.rmtree(left, ignore_errors=True)
-        had_set = False
+        earlier = "none"
+        with contextlib.suppress(OSError):
+            if out.is_dir() and any(out.iterdir()):
+                earlier = "files"
         with contextlib.suppress(Exception):
             current = dvol.load_manifest(out)
-            had_set = True
+            earlier = "set"
             # Whatever a killed publish or a refused removal left beside this set (files the sidecar
             # does not name) goes now, whether the set is the current one or about to be replaced: it
             # is never served, it is a set's worth of disk, and clearing it can be what lets the next
@@ -2985,7 +3031,7 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
                 and dvol.verify_volume_set(out)["ok"]
             ):
                 return current
-        _check_room_for_volumes(src, out.parent, had_set=had_set)
+        _check_room_for_volumes(src, out.parent, earlier=earlier)
         build = pathlib.Path(tempfile.mkdtemp(prefix=_VOLUME_BUILD_PREFIX, dir=out.parent))
         try:
             dvol.write_volume_set(src, build)
@@ -3059,7 +3105,7 @@ def all_diagnostics_volumes() -> JSONResponse:
                 f"the drive ran out of room, or turned read-only, while the numbered files were being "
                 f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "
                 "was one, was not touched, and the half-written files are removed now or, if the "
-                "drive will not let them go, at the next press at the latest. Free some space and "
+                "drive will not let them go, at the first press the drive allows it. Free some space and "
                 "press the button again."
             ),
         ) from exc

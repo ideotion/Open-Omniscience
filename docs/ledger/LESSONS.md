@@ -13671,8 +13671,25 @@ release that declines a session which has written, so a member's flushed work is
 (`run.read_release`: `released`, `none_held`, `declined`, with its method and its caveat). What that buys is real and smaller than the story: the pool slot and the D44
 reservation's "standing holder" count come back between members, and the reader list stops naming the build at times it holds nothing; it does NOT shorten a long
 statement inside `keyword-engine` (250 s), `leads-quality` (275 s), `bulletin-weekly` (302 s, its deadline) or `debug-bundle` (92 s), the figures from `OOS-12`'s bundle.
+
 **Reusable:** before writing "pinned", ask the log with a TRUNCATE checkpoint from a third connection with no busy wait (`dbapi_connection.in_transaction` sees only an open BEGIN, a write or the explicit-BEGIN recipe, and is False while a SELECT is partly read, which pins the log all the same), not a
 list of checkouts; and when a test needs a pin, MODEL it (an explicit BEGIN) and prove the model with a negative control (the same sequence with the release switched off
 leaves the checkpoint busy), because on the shared engine's own mode the pin is absent whether or not the code under test ran. Not explained here and not this thread's:
 the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which a build of 9 to 48 minutes does not obviously
 explain.
+
+### A SCRUB BY EXACT MATCH MUST BE GIVEN EVERY FORM THE SECRET IS WRITTEN IN, AND A TEST THAT SEARCHES AN ENCODED FILE CAN PASS FOR A TEXT THAT STILL CARRIES IT (error-text scrub, 2026-10-06, `#1326`; the coordinator's check of its second fold)
+
+The first fold took the database passphrase out of a member's error text with `secret_scrub.scrub_text`, which removes the raw string and nothing else. The code
+itself never writes the passphrase raw into a statement: `PRAGMA key` and `ATTACH ... KEY` carry it with its single quotes doubled (`connect._sql_literal_escape`),
+so an engine's "near ..." text and SQLAlchemy's `[SQL: ...]` show that form; `[parameters: ...]` shows `repr`; and JSON escapes it again (ASCII-escaped or not). A
+passphrase with an apostrophe, a backslash or a character outside ASCII therefore passed straight through the net, and the five tests of the fold used one passphrase
+of plain words, for which every form is the same string. The fold now builds the forms (raw and quote-doubled, each as `repr` and as both JSON inner forms),
+scrubs the longest first (a held `pass` inside the environment's `pass2` otherwise leaves the `2`), checks the result once more for every form and withholds the
+text if one is left. **Reusable:** (1) give a net every form the code and its drivers write the secret in, built from the code's own escaper in the test, not from
+the function under test; (2) test with a secret that has an apostrophe, a backslash, a character outside ASCII, a newline, a lone apostrophe and one character,
+because a plain-words secret has one form and proves nothing about the others; (3) a test that searches the ENCODED file (the JSON manifest) for the secret can pass for a
+text that still carries it, since JSON writes a backslash and a letter outside ASCII differently, and so can a clip to ASCII (`_ascii_clip` rewrites an accented letter): parse the
+file and search the value, and keep the test secret within what the sink's clip leaves alone; (4) after routing one sink through a scrub, list every other place the same
+kind of text enters the same file (`str(exc)` and `{exc}` over the module) and route them in the same change, and make the log line beside it log the scrubbed
+string and not the traceback, because the log's tail rides the same zip. What it still does not catch, said where it is made: a key re-encoded or split over lines.
