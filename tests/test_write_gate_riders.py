@@ -46,6 +46,10 @@ reproducer/analysis as evidence —
     ``pool_timeout`` and best-effort: a checkpoint failure is caught and the WAL
     rides as a backup member. Never a true deadlock. Backup-path (ZETA), so left
     untouched. Evidence: the code trace + the ``gate_held_s`` telemetry.
+    (Since 2026-10, a backup never carries the WAL: when the checkpoint cannot
+    fold the log into the main file, the corpus is copied through one read
+    transaction instead and no ``corpus-wal`` member is written; the gate still
+    wraps only the drain. See tests/test_backup_snapshot.py.)
   * **F11 — REAL, DECLINED (immaterial + correctness-constrained).**
     ``_corpus_facts`` (table COUNT(*) + the article-hash commitment) runs inside
     the backup's freeze() gate window, but (a) it MUST — the commitment must match

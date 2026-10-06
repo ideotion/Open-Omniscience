@@ -13412,6 +13412,70 @@ an operator's own value, which carries no marker. The tests that count run the r
 that record what they were started with, on both launcher paths, plus a source tie between the two spellings of the marker, because bash and
 Python share nothing else.
 
+### A BACKUP THAT CANNOT FOLD THE LOG INTO THE MAIN FILE COPIES THE CORPUS; IT NEVER SHIPS THE LOG, AND IT DECIDES FROM THE CHECKPOINT'S ROW, NOT THE LOG'S SIZE (WAL / disk thread, 2026-10-06)
+
+The volume backup drained the write-ahead log into the main file and, when a reader older than a later commit kept
+frames only in the log, streamed the `-wal` file as a second archive member for the restore to fold back in; the space check
+and the volume sizing meanwhile read the MAIN file's `stat()`. Measured on real files, three facts the old code had wrong.
+(1) **The size of the `-wal` file does not say whether the main file is a complete image.** A reader that started AFTER the
+last commit leaves a 428 KB `-wal` and `PRAGMA wal_checkpoint(PASSIVE)` returns `(0, 102, 102)` (a TRUNCATE, which waits,
+returns `(1, 102, 102)`): every frame is already in the main file and a main-file-only copy had every row. A reader OLDER
+than a later commit leaves `log > checkpointed` (`(.., 206, 104)`): frames 105-206 exist only in the log. The decision is
+`log == checkpointed`, read from the row; a file-size rule copies the first case for nothing (the tests pin both, and a
+mutant that decides from the size fails the first). **`(1, -1, -1)` is NOT "not in WAL mode"**: SQLite answers it, to a
+PASSIVE or a TRUNCATE alike, while ANOTHER connection holds the checkpoint lock (measured: a main-file-only copy then
+lacked its tables), so it reads as unknown, and unknown copies; only `(0, -1, -1)` is a store with no log. (2) **The main file can be
+a few kilobytes while the store is megabytes**: a log that holds growth leaves the file at 8,192 bytes against a logical
+size (`page_count` x `page_size`) of 8,220,672, so sizing or refusing for lack of room from `stat()` promised space the
+copy then did not have; the logical size now feeds the volume sizing and the free-space check (the facts read the file). (3) **A
+plaintext copy cannot be interrupted and an encrypted one can**: `Connection.interrupt()` aborts `sqlcipher_export` within
+a second (the watcher polls every 0.25 s) but not `sqlite3.Connection.backup`, and the backup API must stay ONE step
+(stepping it in chunks restarts it whenever another connection commits), so a stop takes effect when a plaintext copy
+ends. The shape that follows: a free PASSIVE probe with no pause and no gate; a complete image keeps today's sequence call
+for call; an incomplete one (or an unreadable row) opens ONE early pause window that drains under the gate and, if the log
+still holds frames, copies under the pause alone, because the copy is one read transaction and a gate held for it stalls
+every writer for minutes (the incident `tests/test_export_pauses_collection.py` records); a reader that appears AFTER the
+sizing is copied late inside the freeze, under the same pause. The copy goes in the export's staging directory on the
+DESTINATION drive, is refused for lack of room BEFORE a byte is written in `preflight_free_space`'s own words (how much
+is needed, how much is free and where, free space or choose another location; no "run it again", no plumbing; the other
+members' reusable volumes are credited, up to their own size, and a LATE copy does not ask again for the side members and
+blobs already written, and does not take the credit off as well: it counts those same bytes, and taking both off once asked
+for the copy alone while the corpus volumes and the parity were still to be written), and is
+swept after a crash by its OWNER (a marker with the pid, the start time, the machine's name and a hash of its machine id: a
+dead owner's directory goes at once, another live process's never, a recycled pid is a dead owner, including THIS process's own
+pid with another start time (a container or a service that is given the same pid at every start), and one from another
+machine on a shared drive, an unmarked one, or a live job of the running process itself keeps the 24 h rule) because a crash left 8 to 40 GB on
+the user's drive and the age rule refused the retry for the very space it held. The destinations that were ever given a
+copy are remembered in the data dir (newest 16) and swept at boot on a thread of their own, since asking a stale network
+mount whether it exists can block for minutes. Restore still reads a `corpus-wal` member, so an old archive restores. The newsletter-excluded path is refused for room
+before its copy too, and says only what is true of it: an encrypted copy is re-encrypted, so its corpus volumes are rewritten
+and earn no credit; a plaintext one reuses them. A stop in the middle of a run still replaces the previous run's resume log with
+this run's entries (the guard covers only the run that emitted nothing; older than this PR, and reuse re-hashes every slice, so
+nothing wrong is reused). **A
+test of a WAL decision needs a real WAL**: the two reader cases look identical to any fake (both have a log and `busy=1`);
+only the real PRAGMA rows told them apart, which is why these tests run on real SQLite files behind the patched engine.
+
+- **A SUPERVISOR THAT GIVES UP IS A SECOND WAY TO DIE (Wikipedia lane, 2026-10-06, PR #1314).** Two hard stops hid in the lane: the stream thread ended for good when the
+  kill switch refused a reconnect, and the drain loop ended for good after three failed drains with the setting still reading "running". Neither was visible: the
+  bundles carried the run clock but not the service state, so two machines (hP from 10-04 08:07, NUC from 09-30) read as "quiet" for days with no reason in the file. A
+  long-running loop either recovers or says why it cannot: it now restarts a dead stream before each drain, waits 30 s growing to a 300 s ceiling after the third failure
+  (the ceiling protects how long a recovered lane sits idle and how long the corpus's single writer is left alone) and reports `degraded` and `retry_in_s`. Collection
+  Start and Run-now call `start_wiki_lane` too, so every path that brings the network back brings the lane back. A zero-byte lane file reads as "never stored anything",
+  not as an error. Mutation-checked: removing the revive call, or restoring end-at-three, fails the new tests.
+- **A DOUBLING WAIT NEEDS A CAPPED EXPONENT, NOT ONLY A CAPPED RESULT (the coordinator's check of #1314, 2026-10-06):** `min(interval * 2 ** n, ceiling)` caps the wait but still computes
+  `2 ** n`, and with a float interval `2 ** 1024` raises OverflowError, inside the except handler of the loop it was written to keep alive: 85 hours of drains failing at the ceiling,
+  then the thread ends with a traceback on stderr only. The exponent is capped (`min(over + 1, 16)`) and a test drives the failure count past 1,026. Likewise a loop that is "kept alive"
+  must be checked for every statement in its handler, not only the happy path.
+- **A PER-ITEM LOOP AROUND A WHOLE-TABLE READ IS A QUADRATIC YOU DO NOT SEE UNTIL THE TABLE IS BIG (the Wikipedia lane's hot sets, 2026-10-06):** `build_hot_sets` ran every drain and,
+  for each of the 12 followed editions, read the lane's whole entity table and parsed every id to keep the 1/12 that was its own: twelve full selects for one table's worth of answer.
+  Benchmarked on a 200,000-entity lane (in-memory SQLite, one thread, ids of the real `{wiki}:p{pageid}` form): 2.3 s of CPU per drain against 0.34 s in one pass, about 6,600 s a day
+  of GIL-holding work competing with the walk and the stream. The first bench used ids of the wrong form and reported 3.6 s: a benchmark is only as true as its fixture's keys. The
+  fix is one pass with a cheap prefix pre-check, and the test is EQUIVALENCE against the verbatim old per-edition read on a lane with unparseable ids, pins and unfollowed editions,
+  plus a count of the SELECTs.
+- **A diagnostic that keeps no history cannot answer "when" (same PR):** the lane's counters were process-cumulative, so a bundle could say a lane was
+  slow but never WHICH hour; the lane now keeps its own hourly rows (`wiki_lane_hourly`, 7 days, in the lane's file so a restart and an update do not erase it), written in the
+  transaction that already existed for the walk's rows (the walk's own) and in one lane transaction per tick for the rest, so recording adds no commit per event and a failure writing it is kept for the next tick, not raised into the work it measures (guarded by a savepoint for the walk's rows).
+
 ### A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION (release candidate diagnostics, 2026-10-06, PR #1318, `src/config/memory_budget.py`)
 
 The in-memory keyword rollup runs on every memory tier but `small`, and the crash read of the 2026-10-06 batch could not say why it was off on seven of
