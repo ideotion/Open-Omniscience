@@ -214,7 +214,7 @@ def test_a_reader_older_than_a_later_commit_gets_a_copy_and_no_log_member(
     assert staged.manifest["corpus"]["tables"]["articles"] == 400
     assert s["snapshot_bytes"] and s["snapshot_s"] is not None
     [note] = [n for n in s["notes"] if "temporary copy" in n]
-    assert "incremental volume reuse does not apply" in note
+    assert "reuse does not apply" not in note, "reuse still applies to the other members"
     for word in ("reader", "holder", "process", "thread", "WAL", "checkpoint"):
         assert word not in note, f"the note names plumbing: {word!r}"
     assert _temps(tmp_path / "dest") == [], "the copy is gone after the run"
@@ -226,6 +226,10 @@ def test_the_decision_reads_the_row_not_the_size_of_the_log(live, monkeypatch):
     assert sb._wal_complete(live.db, (1, 104, 104)) is True
     assert sb._wal_complete(live.db, (1, 206, 104)) is False
     assert sb._wal_complete(live.db, (0, -1, -1)) is True, "not in WAL mode"
+    assert sb._wal_complete(live.db, (1, -1, -1)) is None, (
+        "busy with no counts is ANOTHER connection holding the checkpoint lock: unknown, and "
+        "unknown copies (measured: a main-file-only copy of that store lacked its tables)"
+    )
     live.pin()  # a non-empty -wal exists
     assert sb._wal_complete(live.db, None) is None, "no row and a non-empty log: unknown"
     assert sb._wal_complete(Path(str(live.db) + ".gone"), None) is True
@@ -248,7 +252,9 @@ def test_a_log_that_holds_growth_is_counted_and_refused_before_any_copy(
     seen: list[int] = []
     real = sb._preflight_snapshot
     monkeypatch.setattr(
-        sb, "_preflight_snapshot", lambda d, c, s, p: (seen.append(c), real(d, c, s, p))[1]
+        sb,
+        "_preflight_snapshot",
+        lambda d, c, s, p, **kw: (seen.append(c), real(d, c, s, p, **kw))[1],
     )
     # exactly the room a stat()-based size would have asked for, plus 1 MiB of slack
     free = main + sb._volumes_need(main, 0, 0.1) + main + (1 << 20)
@@ -264,6 +270,73 @@ def test_a_log_that_holds_growth_is_counted_and_refused_before_any_copy(
     assert seen == [logical], "the check was sized from the store through the log"
     assert snap_calls == [], "refused before a byte of the copy was written"
     assert _temps(dest) == []
+
+
+def test_the_snapshot_check_asks_for_the_copy_and_for_what_is_still_to_be_written(monkeypatch):
+    """MUTATION TARGET (each term). The copy itself, plus the finished set; minus the reusable
+    volumes of the other members (credit, never below the copy); minus the side members and blobs
+    when a LATE copy finds them already on the drive."""
+    asked: list[int] = []
+    monkeypatch.setattr(
+        "src.backup.artifact.preflight_free_space", lambda _d, n, what: asked.append(n)
+    )
+    mib = 1 << 20
+    copy, side, par = 100 * mib, 40 * mib, 0.1
+    full = sb._volumes_need(copy, side, par)
+    here = Path(".")
+    sb._preflight_snapshot(here, copy, side, par)
+    sb._preflight_snapshot(here, copy, side, par, credit=30 * mib)
+    sb._preflight_snapshot(here, copy, side, par, side_written=True)
+    sb._preflight_snapshot(here, copy, side, par, credit=10**12)
+    assert asked == [
+        copy + full,
+        copy + full - 30 * mib,
+        copy + full - int(side * 1.02),
+        copy,
+    ]
+
+
+def test_after_a_copy_the_other_members_volumes_are_still_reused_and_credited(
+    live, tmp_path, monkeypatch
+):
+    """MUTATION TARGET. Reuse is by slice hash and never depended on the corpus file: after a copy
+    the side members are still reused, so they earn their credit in BOTH checks (a destination
+    already holding hundreds of GB of blobs must not be asked for them again), the corpus volumes
+    earn none, and no sentence in the manifest says reuse is off while ``volumes_reused`` says
+    otherwise."""
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest)
+    man = load_manifest(dest)
+    side_volumes = [
+        v for v in man["volumes"] if v["member"] != "corpus.db"
+    ]
+    assert side_volumes, "the first run wrote no side member volume"
+    expected = sum((dest / v["name"]).stat().st_size for v in side_volumes)
+    assert expected > 0
+
+    seen_snap: list[dict] = []
+    seen_dest: list[dict] = []
+    real_snap, real_dest = sb._preflight_snapshot, sb._preflight_dest
+    monkeypatch.setattr(
+        sb,
+        "_preflight_snapshot",
+        lambda *a, **kw: (seen_snap.append(kw), real_snap(*a, **kw))[1],
+    )
+    monkeypatch.setattr(
+        sb,
+        "_preflight_dest",
+        lambda *a, **kw: (seen_dest.append(kw), real_dest(*a, **kw))[1],
+    )
+    live.pin()
+    live.commit(200, 400)  # a reader older than a later commit: the corpus is copied
+    s = _backup(tmp_path, dest)
+    assert s["snapshot_bytes"], "no copy was made: the test proved nothing"
+    assert seen_snap == [{"side_written": False, "credit": expected}]
+    assert seen_dest == [{"reuse_possible": True, "credit_except_corpus": expected}]
+    assert s["volumes_reused"] >= len(side_volumes)
+    assert not [n for n in s["notes"] if "reuse does not apply" in n]
+    n, _ = _restore(tmp_path, dest)
+    assert n == 400
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +361,25 @@ def test_a_reader_after_the_probe_is_copied_late_inside_the_freeze(live, tmp_pat
         assert _rows(frozen.path) == 400
         assert frozen.gate_held_s >= 0.0 and frozen.seconds >= 0.0
     assert [n for n in notes if "temporary copy" in n]
+
+
+def test_a_late_copy_does_not_ask_again_for_what_is_already_on_the_drive(
+    live, tmp_path, monkeypatch
+):
+    """MUTATION TARGET. By the time the freeze runs, the side members and blobs are written (or
+    reused): measured, the late check asked for the same 71,134,664 bytes as an up-front one."""
+    monkeypatch.setattr("src.backup.folder_backup.free_bytes", lambda _p: 1 << 40)
+    seen: list[dict] = []
+    real = sb._preflight_snapshot
+    monkeypatch.setattr(
+        sb,
+        "_preflight_snapshot",
+        lambda *a, **kw: (seen.append(kw), real(*a, **kw))[1],
+    )
+    src = _late_source(live, tmp_path, [], side_bytes=5 << 20)
+    with src.freeze():
+        pass
+    assert [kw["side_written"] for kw in seen] == [True]
 
 
 def test_a_late_copy_with_no_room_refuses_in_the_standard_words(live, tmp_path, monkeypatch):
@@ -404,6 +496,48 @@ def test_a_snapshot_stop_maps_to_a_volume_stop_and_tells_the_journal(
     assert hooks_called == ["stopped"]
 
 
+def _building_volumes(dest: Path) -> list[dict]:
+    return json.loads((dest / sb.BUILDING_NAME).read_text("utf-8"))["volumes"]
+
+
+def test_a_stop_that_emitted_nothing_keeps_the_previous_runs_resume_log(
+    live, tmp_path, monkeypatch
+):
+    """MUTATION TARGET. A run stopped after some volumes leaves a resume log; the next run's stop
+    during its COPY (or before its first slice) has emitted nothing, and must not overwrite that
+    log with an empty one: with blobs, re-emitting what the first run wrote can be hours."""
+    dest = tmp_path / "dest"
+    calls = [0]
+
+    def stop_after_a_few() -> bool:
+        calls[0] += 1
+        return calls[0] > 3
+
+    with pytest.raises(VolumeStopped):
+        _backup(tmp_path, dest, should_stop=stop_after_a_few)
+    before = _building_volumes(dest)
+    assert before, "the first run left no resume log: the test proved nothing"
+
+    # run 2: a reader older than a later commit, and the copy is stopped
+    live.pin()
+    live.commit(200, 400)
+
+    def stopped(_src, _dest, **_kw):
+        raise connect_mod.SnapshotStopped("stop")
+
+    with monkeypatch.context() as m:
+        m.setattr(connect_mod, "snapshot_preserving", stopped)
+        with pytest.raises(VolumeStopped):
+            _backup(tmp_path, dest)
+    assert _building_volumes(dest) == before, "the stop during the copy erased the resume log"
+
+    # run 3: the log is complete again (no reader), and the stop comes before the first slice
+    live.release()
+    with pytest.raises(VolumeStopped):
+        _backup(tmp_path, dest, should_stop=lambda: True)
+    assert _building_volumes(dest) == before, "a stop before the first slice erased the resume log"
+
+
 @pytest.mark.skipif(not connect_mod.have_driver(), reason="sqlcipher3 not installed")
 def test_an_encrypted_copy_is_interrupted_within_seconds_and_leaves_no_file(tmp_path, monkeypatch):
     """The encrypted copy is ONE long statement; the watcher interrupts it, the partial file is
@@ -425,7 +559,9 @@ def test_an_encrypted_copy_is_interrupted_within_seconds_and_leaves_no_file(tmp_
 
         def endless(conn, _alias):
             conn.execute(
-                "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) "
+                # long enough that only the interrupt ends it inside the assert's 10 s, finite so a
+                # broken watcher fails the assert instead of hanging the suite
+                "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 400000000) "
                 "SELECT count(*) FROM c"
             ).fetchone()
 
@@ -463,32 +599,82 @@ def _leftover(root: Path, name: str, owner: dict | None, age_hours: float = 0.0)
     return d
 
 
+@contextmanager
+def _other_live_process():
+    """A real second process that stays alive, and its (pid, create_time) as a marker records it."""
+    import psutil
+
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    try:
+        yield p.pid, round(psutil.Process(p.pid).create_time(), 3)
+    finally:
+        p.kill()
+        p.wait()
+
+
 def test_a_dead_owners_copy_goes_at_once_a_live_owners_never(tmp_path):
     """MUTATION TARGET. A crashed backup left 8 to 40 GB on the user's drive and the 24 h age rule
     refused the retry for lack of the space it held. The owner decides: a dead process's dir goes
-    now whatever its age; a live one's stays whatever its age; a recycled pid is a dead owner; a
-    dir with no marker keeps the age rule."""
+    now whatever its age; another live process's stays whatever its age; a recycled pid is a dead
+    owner; a dir with no marker keeps the age rule."""
     root = tmp_path / "drive"
     root.mkdir()
-    import psutil
+    with _other_live_process() as (pid, started):
+        dead = _leftover(root, ".bak-build-dead", {"pid": _dead_pid(), "started": 1.0})
+        recycled = _leftover(root, ".bak-build-recycled", {"pid": pid, "started": 1.0})
+        alive = _leftover(
+            root, ".bak-build-alive", {"pid": pid, "started": started}, age_hours=72
+        )
+        old_unmarked = _leftover(root, ".bak-build-old", None, age_hours=48)
+        young_unmarked = _leftover(root, ".bak-build-young", None)
+        volumes = root / "volumes.json"
+        volumes.write_text("{}", encoding="utf-8")
 
-    me = psutil.Process()
-    dead = _leftover(root, ".bak-build-dead", {"pid": _dead_pid(), "started": 1.0})
-    recycled = _leftover(root, ".bak-build-recycled", {"pid": me.pid, "started": 1.0})
-    alive = _leftover(
-        root,
-        ".bak-build-alive",
-        {"pid": me.pid, "started": round(me.create_time(), 3)},
-        age_hours=72,
-    )
-    old_unmarked = _leftover(root, ".bak-build-old", None, age_hours=48)
-    young_unmarked = _leftover(root, ".bak-build-young", None)
-    volumes = root / "volumes.json"
-    volumes.write_text("{}", encoding="utf-8")
-
-    assert sb.sweep_stale_backup_temps(root) == 3
+        assert sb.sweep_stale_backup_temps(root) == 3
     assert not dead.exists() and not recycled.exists() and not old_unmarked.exists()
     assert alive.exists() and young_unmarked.exists() and volumes.exists()
+
+
+def test_another_machines_marker_is_not_judged_by_a_pid_that_means_nothing_here(tmp_path):
+    """Two machines back up to one shared folder: the other machine's live job has a pid that does
+    not exist on this one, and calling it dead removed it in the middle of its export. A foreign
+    marker is unknown, so only the age rule applies to it."""
+    root = tmp_path / "drive"
+    root.mkdir()
+    foreign = {"pid": _dead_pid(), "started": 1.0, "host": "another-machine-" + sb.platform.node()}
+    young = _leftover(root, ".bak-build-young-foreign", foreign)
+    old = _leftover(root, ".bak-build-old-foreign", foreign, age_hours=48)
+    assert sb._owner_state(young) == "unknown"
+    assert sb.sweep_stale_backup_temps(root) == 1
+    assert young.exists() and not old.exists()
+
+
+def test_a_leftover_of_this_very_process_goes_by_age_not_never(tmp_path):
+    """A copy whose cleanup failed in THIS process (a handle held on Windows) is no live job: the
+    registry protects a running job, so the marker alone must not keep it for as long as the app
+    runs. A registered running job is still never swept."""
+    import psutil
+
+    me = {"pid": os.getpid(), "started": round(psutil.Process().create_time(), 3)}
+    root = tmp_path / "drive"
+    root.mkdir()
+    young = _leftover(root, ".bak-build-mine-young", me)
+    old = _leftover(root, ".bak-build-mine-old", me, age_hours=48)
+    running = _leftover(root, ".bak-build-mine-running", me, age_hours=48)
+    with sb.active_staging(running):
+        assert sb.sweep_stale_backup_temps(root) == 1
+    assert young.exists() and running.exists() and not old.exists()
+
+
+def test_a_removal_is_counted_only_when_the_directory_is_gone(tmp_path, monkeypatch):
+    """A read-only drive removes nothing; the log line must not claim it did, every boot."""
+    root = tmp_path / "drive"
+    root.mkdir()
+    dead = _leftover(root, ".bak-build-dead", {"pid": _dead_pid(), "started": 1.0})
+    old = _leftover(root, ".bak-build-old", None, age_hours=48)
+    monkeypatch.setattr(sb.shutil, "rmtree", lambda *_a, **_k: None)
+    assert sb.sweep_stale_backup_temps(root) == 0
+    assert dead.exists() and old.exists()
 
 
 def test_a_running_backup_marks_its_staging_with_its_owner(live, tmp_path, monkeypatch):
@@ -508,6 +694,7 @@ def test_a_running_backup_marks_its_staging_with_its_owner(live, tmp_path, monke
 
     assert seen and seen[0]["pid"] == os.getpid()
     assert abs(seen[0]["started"] - psutil.Process().create_time()) < 1.0
+    assert seen[0]["host"] == sb.platform.node()
 
 
 def _sweep_remembered_now() -> None:
@@ -566,6 +753,55 @@ def test_the_remembered_destinations_are_bounded(live):
     kept = json.loads((Path(os.environ["OO_DATA_DIR"]) / sb._DESTS_FILE).read_text("utf-8"))
     assert len(kept) == sb._DESTS_KEEP
     assert kept[0].endswith(str(sb._DESTS_KEEP + 4)), "newest first"
+
+
+def test_a_sweep_never_drops_a_destination_remembered_while_it_ran(live, tmp_path, monkeypatch):
+    """The sweep can run for minutes on a slow mount and an export remembers a new drive meanwhile:
+    the sweep writes back only what IT emptied, re-read under the lock, so the new entry stays."""
+    emptied = tmp_path / "emptied"
+    emptied.mkdir()
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    sb.remember_snapshot_destination(emptied)
+    real = sb.sweep_stale_backup_temps
+
+    def slow(root, **kw):
+        sb.remember_snapshot_destination(fresh)  # the export, while the sweep is in its loop
+        return real(root, **kw)
+
+    monkeypatch.setattr(sb, "sweep_stale_backup_temps", slow)
+    sb.sweep_remembered_destinations()
+    kept = json.loads((Path(os.environ["OO_DATA_DIR"]) / sb._DESTS_FILE).read_text("utf-8"))
+    assert kept == [str(fresh.resolve())], kept
+
+
+def test_remembering_from_many_threads_loses_no_entry(live, tmp_path):
+    drives = [tmp_path / f"d{i}" for i in range(12)]
+    threads = [threading.Thread(target=sb.remember_snapshot_destination, args=(d,)) for d in drives]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    kept = json.loads((Path(os.environ["OO_DATA_DIR"]) / sb._DESTS_FILE).read_text("utf-8"))
+    assert sorted(kept) == sorted(str(d.resolve()) for d in drives)
+
+
+def test_the_newsletter_excluded_copy_is_remembered_and_its_note_is_true(
+    live, tmp_path, monkeypatch
+):
+    """That path also copies the whole corpus onto the destination, so a crash there leaves the same
+    leftover: the destination is remembered for the boot sweep, and the note says what is true (the
+    corpus volumes are rewritten; the other members are still reused)."""
+    stage = tmp_path / "drive" / ".bak-build-x"
+    stage.mkdir(parents=True)
+    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p: 0)
+    notes: list[str] = []
+    src = sb._live_corpus_source(stage, False, notes)
+    assert src.path == stage / "corpus.db" and src.path.exists()
+    kept = json.loads((Path(os.environ["OO_DATA_DIR"]) / sb._DESTS_FILE).read_text("utf-8"))
+    assert str(stage.parent.resolve()) in kept
+    assert [n for n in notes if "rewritten in full" in n]
+    assert not [n for n in notes if "reuse does not apply" in n]
 
 
 # --------------------------------------------------------------------------- #
@@ -681,6 +917,19 @@ def test_a_late_copy_runs_under_the_same_pause_with_the_gate_released(seq):
     assert log == ["pause", "gate", "drain", "ungate", "snapshot", "resume"]
 
 
+def test_busy_with_no_counts_is_unknown_and_copies(seq):
+    """MUTATION TARGET. ``(1, -1, -1)`` is what another connection's checkpoint lock looks like; read
+    as "complete" it streamed the live main file with no copy and no log: an archive that was
+    silently missing the rows still in the log."""
+    log, rig, tmp = seq
+    (tmp / "stage").mkdir()
+    rig["row"] = (1, -1, -1)
+    rig["drains"] = [tmp / "corpus.db-wal"]  # the early drain finds frames still in the log
+    src = sb._live_corpus_source(tmp / "stage", True, [])
+    assert log == ["pause", "gate", "drain", "ungate", "snapshot", "resume"]
+    assert src.snapshot is not None
+
+
 def test_the_write_gate_disabled_warning_is_unchanged_on_the_clean_path(seq, monkeypatch):
     log, rig, tmp = seq
     rig["drains"] = [None]
@@ -737,3 +986,60 @@ def test_an_old_archive_with_a_corpus_wal_member_still_restores(tmp_path):
     assert man["wal_member"] == "corpus.db-wal"
     n, _ = _restore(tmp_path, dest)
     assert n == 300
+
+
+@pytest.mark.skipif(not connect_mod.have_driver(), reason="sqlcipher3 not installed")
+def test_an_old_encrypted_archive_with_a_corpus_wal_member_still_restores(tmp_path):
+    """The SQLCipher branch of the restore fold: opening the staged member with its key replays the
+    carried log before the export. This is the path the plaintext test above does not reach."""
+    key = "corpus-secret"
+    work = tmp_path / "work"
+    img = tmp_path / "img"
+    work.mkdir()
+    img.mkdir()
+    con = connect_mod.connect(work / "crash.db", key=key, check_same_thread=False)
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute(
+            "CREATE TABLE articles(id INTEGER PRIMARY KEY, hash TEXT UNIQUE, content TEXT)"
+        )
+        con.commit()
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # the schema is in the main file
+        con.executemany(
+            "INSERT INTO articles(hash, content) VALUES (?, ?)",
+            [(f"h{i:05d}", ROW) for i in range(300)],
+        )
+        con.commit()
+        # a crash image: the main file and its log, copied while the log still holds the rows
+        shutil.copyfile(work / "crash.db", img / "corpus.db")
+        shutil.copyfile(work / "crash.db-wal", img / "corpus.db-wal")
+    finally:
+        con.close()
+    wal = img / "corpus.db-wal"
+    assert wal.stat().st_size > 0
+    assert (img / "corpus.db").read_bytes()[:16] != b"SQLite format 3\x00", "not encrypted"
+
+    @contextmanager
+    def freeze():
+        yield wal
+
+    src = CorpusSource(
+        path=img / "corpus.db",
+        member_name="corpus.db.sqlcipher",
+        encrypted=True,
+        freeze=freeze,
+        facts_key=key,
+    )
+    dest = tmp_path / "dest"
+    write_stream_backup(
+        dest, "pw", corpus_source=src, side_members=_members(tmp_path), volume_size=VOL
+    )
+    man = load_manifest(dest)
+    assert man["wal_member"] == "corpus.db.sqlcipher-wal"
+    staged = read_stream_backup(
+        dest, "pw", staging_root=tmp_path / "st", corpus_passphrase=key
+    )
+    assert staged.hash_failures == []
+    assert _rows(staged.corpus_path) == 300
+

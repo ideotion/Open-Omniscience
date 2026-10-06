@@ -13210,13 +13210,16 @@ The volume backup drained the write-ahead log into the main file and, when a rea
 frames only in the log, streamed the `-wal` file as a second archive member for the restore to fold back in; the space check
 and the volume sizing meanwhile read the MAIN file's `stat()`. Measured on real files, three facts the old code had wrong.
 (1) **The size of the `-wal` file does not say whether the main file is a complete image.** A reader that started AFTER the
-last commit leaves a 428 KB `-wal` and `PRAGMA wal_checkpoint(PASSIVE)` returns `(1, 104, 104)`: every frame is already in
-the main file and a main-file-only copy had every row. A reader OLDER than a later commit leaves `(1, 206, 104)`: frames
-105-206 exist only in the log. The decision is `log == checkpointed`, read from the row; a file-size rule copies the first
-case for nothing (the tests pin both, and a mutant that decides from the size fails the first). (2) **The main file can be
+last commit leaves a 428 KB `-wal` and `PRAGMA wal_checkpoint(PASSIVE)` returns `(0, 102, 102)` (a TRUNCATE, which waits,
+returns `(1, 102, 102)`): every frame is already in the main file and a main-file-only copy had every row. A reader OLDER
+than a later commit leaves `log > checkpointed` (`(.., 206, 104)`): frames 105-206 exist only in the log. The decision is
+`log == checkpointed`, read from the row; a file-size rule copies the first case for nothing (the tests pin both, and a
+mutant that decides from the size fails the first). **`(1, -1, -1)` is NOT "not in WAL mode"**: SQLite answers it, to a
+PASSIVE or a TRUNCATE alike, while ANOTHER connection holds the checkpoint lock (measured: a main-file-only copy then
+lacked its tables), so it reads as unknown, and unknown copies; only `(0, -1, -1)` is a store with no log. (2) **The main file can be
 a few kilobytes while the store is megabytes**: a log that holds growth leaves the file at 8,192 bytes against a logical
 size (`page_count` x `page_size`) of 8,220,672, so sizing or refusing for lack of room from `stat()` promised space the
-copy then did not have; the logical size now feeds the volume sizing, the facts and the free-space check. (3) **A
+copy then did not have; the logical size now feeds the volume sizing and the free-space check (the facts read the file). (3) **A
 plaintext copy cannot be interrupted and an encrypted one can**: `Connection.interrupt()` aborts `sqlcipher_export` within
 a second (the watcher polls every 0.25 s) but not `sqlite3.Connection.backup`, and the backup API must stay ONE step
 (stepping it in chunks restarts it whenever another connection commits), so a stop takes effect when a plaintext copy
@@ -13226,9 +13229,12 @@ still holds frames, copies under the pause alone, because the copy is one read t
 every writer for minutes (the incident `tests/test_export_pauses_collection.py` records); a reader that appears AFTER the
 sizing is copied late inside the freeze, under the same pause. The copy goes in the export's staging directory on the
 DESTINATION drive, is refused for lack of room BEFORE a byte is written in `preflight_free_space`'s own words (how much
-is needed, how much is free and where, free space or choose another location; no "run it again", no plumbing), and is
-swept after a crash by its OWNER (a marker with the process's pid and start time: a dead owner's directory goes at once, a
-live owner's never, a recycled pid is a dead owner, an unmarked one keeps the 24 h rule) because a crash left 8 to 40 GB on
+is needed, how much is free and where, free space or choose another location; no "run it again", no plumbing; the other
+members' reusable volumes are credited and a LATE copy does not ask again for the side members and blobs already written),
+and is
+swept after a crash by its OWNER (a marker with the pid, the start time and the machine's name: a dead owner's directory
+goes at once, another live process's never, a recycled pid is a dead owner, and one from another machine on a shared drive,
+an unmarked one, or a leftover of the running process itself keeps the 24 h rule) because a crash left 8 to 40 GB on
 the user's drive and the age rule refused the retry for the very space it held. The destinations that were ever given a
 copy are remembered in the data dir (newest 16) and swept at boot on a thread of their own, since asking a stale network
 mount whether it exists can block for minutes. Restore still reads a `corpus-wal` member, so an old archive restores. **A

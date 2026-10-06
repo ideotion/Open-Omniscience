@@ -74,6 +74,7 @@ import json
 import logging
 import math
 import os
+import platform
 import re
 import secrets
 import shutil
@@ -161,6 +162,7 @@ _TEMP_FILE_SUFFIXES = (".oopart", ".reassembling")
 _OWNER_MARKER = ".owner.json"
 _DESTS_FILE = "backup-temp-dests.json"
 _DESTS_KEEP = 16
+_DESTS_LOCK = threading.Lock()  # the export thread and the boot sweep both rewrite the file
 
 
 def _write_owner_marker(staging: Path) -> None:
@@ -174,7 +176,13 @@ def _write_owner_marker(staging: Path) -> None:
 
         proc = psutil.Process()
         (staging / _OWNER_MARKER).write_text(
-            json.dumps({"pid": proc.pid, "started": round(proc.create_time(), 3)}),
+            json.dumps(
+                {
+                    "pid": proc.pid,
+                    "started": round(proc.create_time(), 3),
+                    "host": platform.node(),
+                }
+            ),
             encoding="utf-8",
         )
     except Exception:  # noqa: BLE001 - the age rule still covers a dir with no marker
@@ -182,14 +190,21 @@ def _write_owner_marker(staging: Path) -> None:
 
 
 def _owner_state(staging: Path) -> str:
-    """``"alive"`` / ``"dead"`` for a dir whose marker names a process, ``"unknown"`` for a dir with
-    no readable marker (then only the age rule applies). A recycled pid is told apart by the
-    process start time recorded beside it."""
+    """``"alive"`` / ``"dead"`` for a dir whose marker names a process on THIS machine,
+    ``"unknown"`` for a dir with no readable marker, a marker from another machine (a shared
+    drive: its pid means nothing here) or one of this very process that no live job owns
+    (then only the age rule applies). A recycled pid is told apart by the process start time
+    recorded beside it."""
     try:
         data = json.loads((staging / _OWNER_MARKER).read_text(encoding="utf-8"))
         pid, started = int(data["pid"]), float(data["started"])
-    except (OSError, ValueError, KeyError, TypeError):
+        host = data.get("host")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return "unknown"
+    if host is not None and str(host) != platform.node():
+        return "unknown"  # another machine's job on a shared drive
+    if pid == os.getpid():
+        return "unknown"  # a live job of this process is protected by the registry, not here
     try:
         import psutil
 
@@ -206,13 +221,14 @@ def remember_snapshot_destination(dest: Path | str) -> None:
     drive again (:func:`sweep_remembered_destinations`). Best-effort, bounded."""
     try:
         path = data_dir() / _DESTS_FILE
-        try:
-            known = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
-        except (OSError, ValueError, TypeError):
-            known = []
         d = str(Path(dest).resolve())
-        known = [d] + [x for x in known if x != d]
-        _write_json_atomic(path, known[:_DESTS_KEEP])
+        with _DESTS_LOCK:
+            try:
+                known = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
+            except (OSError, ValueError, TypeError):
+                known = []
+            known = [d] + [x for x in known if x != d]
+            _write_json_atomic(path, known[:_DESTS_KEEP])
     except Exception:  # noqa: BLE001 - a missed entry costs only the next-export sweep
         _LOG.debug("backup: could not remember the snapshot destination", exc_info=True)
 
@@ -227,12 +243,11 @@ def sweep_remembered_destinations() -> int:
         known = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
     except (OSError, ValueError, TypeError):
         return 0
-    removed, keep = 0, []
+    removed, done = 0, set()
     for d in known:
         root = Path(d)
         if not root.is_dir():
-            keep.append(d)  # an unmounted drive: look again at the next boot
-            continue
+            continue  # an unmounted drive: kept, look again at the next boot
         removed += sweep_stale_backup_temps(root)
         try:
             left = any(
@@ -240,11 +255,20 @@ def sweep_remembered_destinations() -> int:
             )
         except OSError:
             left = True
-        if left:
-            keep.append(d)
-    if keep != known:
+        if not left:
+            done.add(d)
+    if done:
+        # Re-read under the lock and drop only what THIS sweep emptied: an export that remembered
+        # a new drive while the sweep ran (it can take minutes on a slow mount) keeps its entry.
         try:
-            _write_json_atomic(path, keep)
+            with _DESTS_LOCK:
+                try:
+                    now = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
+                except (OSError, ValueError, TypeError):
+                    now = []
+                keep = [x for x in now if x not in done]
+                if keep != now:
+                    _write_json_atomic(path, keep)
         except Exception:  # noqa: BLE001
             _LOG.debug("backup: could not update the remembered destinations", exc_info=True)
     return removed
@@ -260,8 +284,9 @@ def sweep_remembered_destinations_in_background() -> threading.Thread | None:
     On its own thread because the first thing it does to a destination is ask whether it is there,
     and a backup drive that is a stale network mount can hold that one call for minutes: the boot
     path and the maintenance pass that call the janitor must never wait on somebody else's drive.
-    Returns the thread (``None`` when a sweep is already running or there is nothing remembered),
-    so a test can join it."""
+    Returns the thread (``None`` when a sweep is already running), so a test can join it. A mount
+    that never answers holds that one thread, and with it every later sweep, until the process
+    ends; being a daemon it never delays the exit."""
     global _REMEMBERED_SWEEP
     with _REMEMBERED_SWEEP_LOCK:
         if _REMEMBERED_SWEEP is not None and _REMEMBERED_SWEEP.is_alive():
@@ -309,7 +334,7 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
                     continue
                 if owner == "dead":
                     shutil.rmtree(p, ignore_errors=True)
-                    removed += 1
+                    removed += 0 if p.exists() else 1  # a read-only drive removes nothing
                     continue
                 # A dir's own mtime can stay old while files are written INSIDE it —
                 # age-guard on the newest entry within, so a live tree is never swept.
@@ -321,7 +346,7 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
                         continue
                 if newest < cutoff:
                     shutil.rmtree(p, ignore_errors=True)
-                    removed += 1
+                    removed += 0 if p.exists() else 1
             elif p.is_file() and p.name.endswith(_TEMP_FILE_SUFFIXES):
                 if p.stat().st_mtime < cutoff:
                     p.unlink(missing_ok=True)
@@ -510,6 +535,10 @@ def _noop(*_a: Any, **_k: Any) -> None:
     return None
 
 
+def _no_credit(_member: str) -> int:
+    return 0
+
+
 @dataclass
 class _LiveHooks:
     """What the live source needs from the export that built it, so a copy can be sized,
@@ -522,6 +551,9 @@ class _LiveHooks:
     set_phase: Callable[[str], None] = _noop
     milestone: Callable[..., None] = _noop
     on_stopped: Callable[[], None] = _noop
+    #: bytes of the destination's existing volumes that this run can still reuse, for every member
+    #: EXCEPT the named corpus member (its volumes are rewritten after a copy, so they earn no credit)
+    reuse_credit: Callable[[str], int] = _no_credit
 
 
 @contextmanager
@@ -561,11 +593,16 @@ def _wal_complete(db_path: Path, row: tuple[int, int, int] | None) -> bool | Non
     started after the last commit leaves ``(1, 104, 104)`` and a 428 KB ``-wal`` whose frames are
     ALL in the main file (a main-file-only copy had every row), while a reader older than a later
     commit leaves ``(1, 206, 104)`` and an unusable main file. A negative log count is a store
-    that is not in WAL mode. With no row (the call raised) only an EMPTY or missing ``-wal`` is
-    proof of completeness."""
+    that is not in WAL mode ONLY WHEN ``busy`` is 0: ``(1, -1, -1)`` is what SQLite answers when
+    ANOTHER connection holds the checkpoint lock (measured: a TRUNCATE busy-waiting on an old
+    reader makes a PASSIVE probe and a second TRUNCATE both read it, while a main-file-only copy
+    lacked its tables), so it is UNKNOWN, and unknown copies. With no row (the call raised) only an
+    EMPTY or missing ``-wal`` is proof of completeness."""
     if row is not None:
-        _busy, log, checkpointed = row
-        return log < 0 or checkpointed >= log
+        busy, log, checkpointed = row
+        if log < 0:
+            return None if busy else True
+        return checkpointed >= log
     wal = db_path.with_name(db_path.name + "-wal")
     try:
         return True if (not wal.exists() or wal.stat().st_size == 0) else None
@@ -662,10 +699,7 @@ def _collection_paused(notes: list[str]) -> Iterator[None]:
         yield
 
 
-_SNAPSHOT_NOTE = (
-    "a temporary copy of your data was made so this backup is complete; "
-    "incremental volume reuse does not apply to this run"
-)
+_SNAPSHOT_NOTE = "a temporary copy of your data was made so this backup is complete"
 _GATE_OFF_NOTE = (
     "WARNING: OO_WRITE_GATE=0 — the write gate was disabled, so the "
     "corpus was NOT streamed under a write pause. If collection was "
@@ -688,7 +722,13 @@ def _snapshot_file(live: Path, dest: Path, should_stop: Callable[[], bool] | Non
 
 
 def _take_snapshot(
-    live: Path, tmp_dir: Path, member: str, hooks: _LiveHooks, *, gate_held_s: float
+    live: Path,
+    tmp_dir: Path,
+    member: str,
+    hooks: _LiveHooks,
+    *,
+    gate_held_s: float,
+    side_written: bool = False,
 ) -> SnapshotCopy:
     """Copy the live corpus into ``tmp_dir`` (on the DESTINATION drive), after refusing for lack
     of room BEFORE a byte is written. Runs under the collection pause the caller already holds
@@ -696,9 +736,18 @@ def _take_snapshot(
     whatever commits meanwhile, and holding the gate for it would stall every writer for minutes
     (the incident tests/test_export_pauses_collection.py records). A stop interrupts an encrypted
     copy within about a second; a plaintext copy (the backup API) cannot be interrupted and the
-    stop takes effect when it ends."""
+    stop takes effect when it ends. ``side_written`` is True for a LATE copy, taken after the side
+    members and blobs were written (or reused) at the destination: their bytes are already on disk,
+    so the check must not ask for them a second time."""
     copy_bytes = _logical_db_bytes(live)
-    _preflight_snapshot(tmp_dir.parent, copy_bytes, hooks.side_bytes, hooks.parity_fraction)
+    _preflight_snapshot(
+        tmp_dir.parent,
+        copy_bytes,
+        hooks.side_bytes,
+        hooks.parity_fraction,
+        side_written=side_written,
+        credit=hooks.reuse_credit(member),
+    )
     remember_snapshot_destination(tmp_dir.parent)
     hooks.set_phase("snapshot")
     hooks.milestone("stage_begin", "export:snapshot", copy_bytes=copy_bytes)
@@ -752,7 +801,9 @@ def _clean_source(
                 return
             gate_s = time.monotonic() - gate_t0
             gate.close()  # collection stays paused; the copy is a read transaction
-            copy = _take_snapshot(live, tmp_dir, member, hooks, gate_held_s=gate_s)
+            copy = _take_snapshot(
+                live, tmp_dir, member, hooks, gate_held_s=gate_s, side_written=True
+            )
             notes.append(_SNAPSHOT_NOTE)
             yield copy
 
@@ -814,12 +865,13 @@ def _live_corpus_source(
     # The copy is one read transaction (``snapshot_preserving`` without ``allow_file_copy``
     # takes NO write gate), so it gets the collection pause only. The filtering below works
     # on the private copy.
+    remember_snapshot_destination(tmp_dir.parent)  # a crash's leftover is swept at the next boot
     with _collection_paused(notes):
         snapshot_preserving(live, snap)
     _drop_newsletters_in_file(snap)
     notes.append(
-        "newsletters excluded: the corpus was snapshotted and filtered, so "
-        "incremental volume reuse does not apply to this run"
+        "newsletters excluded: the corpus was copied and filtered, so the corpus "
+        "volumes are rewritten in full this run"
     )
     return CorpusSource(path=snap, member_name=member, encrypted=enc, freeze=_no_freeze)
 
@@ -1087,7 +1139,8 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
     with open(mf.path, "rb") as fh:
         for i in range(n_slices):
             if st.should_stop is not None and st.should_stop():
-                st.save_building()
+                if st.volumes:  # never replace the previous run's resume log with an empty one
+                    st.save_building()
                 raise VolumeStopped("volume backup stopped")
             offset = i * st.volume_size
             slice_len = max(0, min(st.volume_size, size - offset))
@@ -1417,7 +1470,24 @@ def write_stream_backup(
                 st.progress()
 
             def _on_stopped() -> None:
-                st.save_building()
+                # A run that emitted nothing yet must not overwrite the previous run's resume log
+                # with an empty one: a stop during the copy would cost the next run every volume
+                # the stopped run before it had written.
+                if st.volumes:
+                    st.save_building()
+
+            def _reuse_credit(corpus_member: str) -> int:
+                """Bytes of existing volumes this run can reuse as they are: every pool entry that is
+                not a volume of the corpus member and whose file is still on the drive."""
+                total = 0
+                for (member, _slice), v in pool.items():
+                    if member == corpus_member:
+                        continue
+                    try:
+                        total += (dest / str(v.get("name", ""))).stat().st_size
+                    except OSError:
+                        continue
+                return total
 
             src = (
                 corpus_source
@@ -1433,6 +1503,7 @@ def write_stream_backup(
                         set_phase=_set_phase,
                         milestone=_ms,
                         on_stopped=_on_stopped,
+                        reuse_credit=_reuse_credit,
                     ),
                 )
             )
@@ -1473,9 +1544,13 @@ def write_stream_backup(
                 corpus_bytes,
                 side_bytes,
                 parity_fraction,
-                # After a copy no old volume is credited: the copy re-encrypts with fresh IVs
-                # and the previous set stays on disk until the final swap.
-                reuse_possible=bool(pool) and src.snapshot is None,
+                # After a copy the corpus volumes earn no credit (an encrypted copy re-encrypts
+                # with fresh IVs, and the previous set stays on disk until the final swap), but
+                # the volumes of every other member are reused as they are and still do.
+                reuse_possible=bool(pool),
+                credit_except_corpus=(
+                    _reuse_credit(src.member_name) if src.snapshot is not None else None
+                ),
             )
 
             _ms("stage_end", "export:collecting")
@@ -1670,18 +1745,31 @@ def _volumes_need(corpus_bytes: int, side_bytes: int, parity_fraction: float) ->
 
 
 def _preflight_snapshot(
-    dest: Path, copy_bytes: int, side_bytes: int, parity_fraction: float
+    dest: Path,
+    copy_bytes: int,
+    side_bytes: int,
+    parity_fraction: float,
+    *,
+    side_written: bool = False,
+    credit: int = 0,
 ) -> None:
     """Refuse loudly BEFORE the temporary copy of the corpus is made, so a drive that cannot hold
     it is told so now and not after twelve minutes of copying. The copy and the volume set exist
     at the same time (the copy goes in the ``finally`` at the end of the run, not before the
-    parity step, so this is a safe upper bound), and no old volume is credited: the copy
-    re-encrypts with fresh IVs, so incremental reuse is lost and the previous set stays on disk
-    until the final swap. The message is ``preflight_free_space``'s own shape: how much is
-    needed, how much is free and where, and what to do (free space or choose another location)."""
+    parity step, so this is a safe upper bound). The corpus volumes earn no reuse credit (the copy
+    re-encrypts an encrypted store with fresh IVs, and the previous set stays on disk until the
+    final swap), but the volumes of every OTHER member, which an incremental run reuses as they
+    are, do: ``credit`` is their size, so a destination already holding hundreds of GB of reusable
+    blobs is not asked for them again. A LATE copy (``side_written``) is taken after the side
+    members and blobs are on the drive, so their bytes are not asked for again either. The message
+    is ``preflight_free_space``'s own shape: how much is needed, how much is free and where, and
+    what to do (free space or choose another location)."""
     from src.backup.artifact import preflight_free_space
 
-    needed = copy_bytes + _volumes_need(copy_bytes, side_bytes, parity_fraction)
+    need = _volumes_need(copy_bytes, side_bytes, parity_fraction)
+    if side_written:
+        need -= int(side_bytes * 1.02)
+    needed = max(copy_bytes + need - max(0, credit), copy_bytes)
     preflight_free_space(
         dest, needed, what="volume backup (it first makes a temporary copy of your data)"
     )
@@ -1694,22 +1782,27 @@ def _preflight_dest(
     parity_fraction: float,
     *,
     reuse_possible: bool,
+    credit_except_corpus: int | None = None,
 ) -> None:
     """Refuse loudly up front when the destination clearly lacks room. Existing
     volumes count toward the budget ONLY when they can actually be reused — a
     passphrase change (or an unreadable manifest) re-emits everything while the
     previous set stays on disk until the finalize garbage-collects it, so the
-    budget must then cover both generations at once."""
+    budget must then cover both generations at once. After a temporary copy of the corpus
+    (``credit_except_corpus`` given) only the volumes of the OTHER members are credited."""
     from src.backup.artifact import preflight_free_space
 
     needed = _volumes_need(corpus_bytes, side_bytes, parity_fraction)
     if reuse_possible:
         existing = 0
-        for p in dest.glob("*.ooenc"):
-            try:
-                existing += p.stat().st_size
-            except OSError:  # pragma: no cover
-                continue
+        if credit_except_corpus is not None:
+            existing = credit_except_corpus
+        else:
+            for p in dest.glob("*.ooenc"):
+                try:
+                    existing += p.stat().st_size
+                except OSError:  # pragma: no cover
+                    continue
         needed = max(needed - existing, int(corpus_bytes * max(0.0, parity_fraction)))
     preflight_free_space(dest, needed, what="volume backup")
 
