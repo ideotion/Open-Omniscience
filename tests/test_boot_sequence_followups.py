@@ -94,3 +94,26 @@ def test_a_build_thread_that_cannot_start_does_not_leak_the_map_lock(monkeypatch
     monkeypatch.setattr(threading.Thread, "start", _refuse_to_start)
     map_serve._trigger_build_async()
     assert not map_serve._BUILD_LOCK.locked()
+
+
+def test_a_machine_that_cannot_start_the_slow_step_timer_does_not_leave_the_step_running(monkeypatch):
+    """A starved machine raises RuntimeError("can't start new thread"): the step must still run and end."""
+    from src.api import boot_sequence as bs
+
+    class Starved:
+        def __init__(self, *a, **kw):
+            self.daemon = False
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(bs.threading, "Timer", Starved)
+    bs._reset()
+    ran = []
+    bs._timed("rollup", lambda: ran.append(1), holds="nothing")
+    assert ran == [1]
+    assert bs._STEPS["rollup"]["state"] == "done", "not stuck in 'running'"
+    bs._reset()

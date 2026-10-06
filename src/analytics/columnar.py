@@ -794,11 +794,18 @@ def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> 
             f"INSERT INTO {table} SELECT {selects}",  # nosec B608 - table and types are constants chosen by the callers in this module; every value is a bound parameter
             [json.dumps(c) for c in columns],
         )
-    except Exception:  # noqa: BLE001 - any JSON-path refusal -> the slow path for this batch only
+    except Exception as exc:  # noqa: BLE001 - a JSON-path refusal -> the slow path for this batch only
+        if type(exc).__name__ in _NEVER_RETRIED:
+            raise  # the engine's own limit or an interrupt: the slow path would only reach it hours later
         marks = ", ".join("?" for _ in types)
         con.executemany(f"INSERT INTO {table} VALUES ({marks})", rows)  # nosec B608 - constants, as above
     return len(rows)
 
+
+#: DuckDB errors that are about the ENGINE, not the batch: its memory limit (offload not allowed) and an
+#: interrupt. Retrying such a batch row by row repeats the failure at 1.1 thousand rows/s with the build
+#: lock held, so they propagate (the caller turns the first into a decline).
+_NEVER_RETRIED = frozenset({"OutOfMemoryException", "InterruptException"})
 
 # Column types of the two tables the build fills in bulk.
 _STAGE_TYPES = ("BIGINT", "VARCHAR", "BIGINT", "BIGINT")
@@ -1017,6 +1024,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             lambda last: {"cursor_ts": last[5], "cursor_id": int(last[0])},
         )
 
+    if on_batch is not None:
+        on_batch("aggregate", streamed)  # the GROUP BY is the build's peak: record it before it runs
     con.execute(_KEYWORD_DAILY_DDL)
     con.execute(
         "INSERT INTO keyword_daily "

@@ -18,6 +18,11 @@ machine has at least what the dead process held, plus the memory guard's own flo
 frees memory (or a build that now fits) retries by itself; one that does not is not sent into the
 same kill again, and the reason and the numbers are visible in the diagnostics.
 
+A NORMAL QUIT IS NOT A KILL: both build threads are daemon threads, so an orderly shutdown during a
+build never reaches the build's ``finally``. ``begin`` therefore registers an ``atexit`` clear, which runs
+on every exit Python gets to handle and never after a SIGKILL or the kernel's OOM killer, which is exactly
+the difference this file exists to see.
+
 Honesty: counts and sizes only, written to ONE small JSON file in the data directory, replaced
 atomically. No path, no term, no article. A marker that cannot be written or read never blocks a
 build (a missing record is not evidence of a kill): the failure is logged and the build proceeds.
@@ -25,6 +30,7 @@ build (a missing record is not evidence of a kill): the failure is logged and th
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
@@ -44,6 +50,13 @@ _PROCESS_ID = uuid.uuid4().hex
 _WRITE_EVERY_S = 10.0
 
 _last_write = 0.0
+#: The largest resident size this process reported during the current build, and the one it began with.
+#: The marker keeps the PEAK (a reading taken between two writes is otherwise lost), and the retry rule
+#: asks for what the build GREW by, never for the app's own baseline a second time.
+_peak_rss: float | None = None
+_begin_rss: float | None = None
+_exit_hook_registered = False
+_last_stage: str | None = None
 
 
 def _path() -> Path:
@@ -61,7 +74,12 @@ def _write(record: dict) -> None:
 
 def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | None) -> None:
     """Record that a build is starting, with what this process holds and what the machine has."""
-    global _last_write
+    global _last_write, _peak_rss, _begin_rss, _exit_hook_registered, _last_stage
+    _peak_rss = _begin_rss = rss_mb
+    _last_stage = "start"
+    if not _exit_hook_registered:
+        _exit_hook_registered = True
+        atexit.register(clear)
     try:
         _write({
             "format": FORMAT,
@@ -70,6 +88,8 @@ def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | Non
             "stage": "start",
             "rows_done": 0,
             "rss_mb": rss_mb,
+            "rss_begin_mb": rss_mb,
+            "rss_peak_mb": rss_mb,
             "avail_mb": avail_mb,
             "duckdb_limit_mb": limit_mb,
             "written_at": time.time(),
@@ -80,9 +100,17 @@ def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | Non
 
 
 def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: float | None) -> None:
-    """Refresh the record (throttled): the last readings before a kill are the ones that matter."""
-    global _last_write
-    if time.monotonic() - _last_write < _WRITE_EVERY_S:
+    """Refresh the record (throttled): the last readings before a kill are the ones that matter.
+
+    The throttle is bypassed when the STAGE changes (the final aggregation is the build's peak and has no
+    batches of its own), and the peak resident size seen since ``begin`` is kept even from the reads the
+    throttle skipped."""
+    global _last_write, _peak_rss, _last_stage
+    if isinstance(rss_mb, (int, float)) and (_peak_rss is None or rss_mb > _peak_rss):
+        _peak_rss = float(rss_mb)
+    changed = stage != _last_stage
+    _last_stage = stage
+    if not changed and time.monotonic() - _last_write < _WRITE_EVERY_S:
         return
     try:
         rec = read()
@@ -90,7 +118,7 @@ def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: floa
             return  # not ours to refresh
         rec.update({
             "stage": stage, "rows_done": int(rows_done), "rss_mb": rss_mb,
-            "avail_mb": avail_mb, "written_at": time.time(),
+            "rss_peak_mb": _peak_rss, "avail_mb": avail_mb, "written_at": time.time(),
         })
         _write(rec)
         _last_write = time.monotonic()
@@ -127,17 +155,21 @@ def killed_build() -> dict | None:
 
 
 def retry_verdict(avail_mb: float | None, floor_mb: float) -> dict | None:
-    """A skip record while a killed build's footprint does not fit the machine now, else ``None``.
+    """A skip record while a killed build's growth does not fit the machine now, else ``None``.
 
-    The dead process held ``rss_mb`` at its last report; a retry needs that much available plus the
-    guard's floor. An unreadable reading is no evidence either way, so it never blocks."""
+    What the dead build ADDED to its process is its peak resident size minus the size it began with
+    (the app's own baseline is already taken out of the available figure by the new process, so counting
+    it again would make an ordinary restart look unaffordable); a retry needs that much available plus
+    the guard's floor. An unreadable reading is no evidence either way, so it never blocks."""
     rec = killed_build()
     if rec is None or avail_mb is None:
         return None
-    held = rec.get("rss_mb")
-    if not isinstance(held, (int, float)):
-        held = 0.0
-    need = float(held) + float(floor_mb)
+    peak = rec.get("rss_peak_mb", rec.get("rss_mb"))
+    begin = rec.get("rss_begin_mb")
+    if not isinstance(peak, (int, float)):
+        peak = 0.0
+    grew = max(0.0, float(peak) - float(begin if isinstance(begin, (int, float)) else 0.0))
+    need = grew + float(floor_mb)
     if avail_mb >= need:
         return None
     return {
@@ -146,7 +178,8 @@ def retry_verdict(avail_mb: float | None, floor_mb: float) -> dict | None:
         "killed_stage": rec.get("stage"),
         "killed_rows_done": rec.get("rows_done"),
         "killed_started_at": rec.get("started_at"),
-        "killed_rss_mb": rec.get("rss_mb"),
+        "killed_rss_mb": peak,
+        "killed_grew_mb": round(grew, 1),
         "needs_available_mb": round(need, 1),
         "available_mb": avail_mb,
     }

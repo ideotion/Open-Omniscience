@@ -29,6 +29,7 @@ ends in a ``finally``.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -128,8 +129,11 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
     # The warning is logged WHILE a step is still running, so one that never ends is on record too.
     slow = threading.Timer(SLOW_STEP_S, _warn_still_running, args=(name, holds))
     slow.daemon = True
-    slow.start()
     try:
+        # Inside the try: a machine too starved to start a thread must not leave the step "running"
+        # for ever (that would hold every later step, and the map serve's heavy-step verdict, up).
+        with contextlib.suppress(RuntimeError):
+            slow.start()
         step()
         state = "done"
     except _Skipped as skipped:

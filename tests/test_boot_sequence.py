@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 import pytest
 
@@ -27,6 +28,25 @@ def _boot_state_restored():
     with bs._LOCK:
         bs._STATE.update({"warm": "pending", "reindex_pending": None})
     bs._reset()
+
+
+@pytest.fixture(autouse=True)
+def _host_memory_is_not_under_test(monkeypatch):
+    """The rollup's start check and killed-build check read the host's REAL free memory (they are
+    covered against injected readings in test_rollup_build_streaming.py); here they must not decide
+    whether a boot-step test passes. The module's outcome and hold records are put back as found."""
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setitem(rollup_serve._STATE, "stopped", None)
+    # An earlier test that went through a serve may have kicked a real background build, which holds the
+    # build lock until it ends (seen once in a full run: the next test found it held and never built).
+    # Wait for it, bounded so a lock that is genuinely stuck fails here instead of hanging the run.
+    deadline = time.monotonic() + 60.0
+    while rollup_serve._BUILD_LOCK.locked() and time.monotonic() < deadline:
+        time.sleep(0.05)
 
 
 @pytest.fixture

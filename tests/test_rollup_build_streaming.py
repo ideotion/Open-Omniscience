@@ -253,7 +253,11 @@ def test_on_batch_is_called_after_every_batch_of_both_streams_and_can_stop_the_b
         calls.append((stage, done))
 
     columnar.build_keyword_daily(_con(), session, batch_size=50, on_batch=hook)
-    assert {s for s, _ in calls} == {"mentions", "keywords"}
+    assert {s for s, _ in calls} == {"mentions", "aggregate", "keywords"}
+    stages = [s for s, _ in calls]
+    assert stages.count("aggregate") == 1, "the final GROUP BY is announced once, before it runs"
+    assert stages.index("aggregate") > max(i for i, s in enumerate(stages) if s == "mentions")
+    assert stages.index("aggregate") < min(i for i, s in enumerate(stages) if s == "keywords")
     assert [d for s, d in calls if s == "mentions"] == sorted(d for s, d in calls if s == "mentions")
 
     def stop(stage, done):
@@ -303,19 +307,21 @@ def serve_env(session, monkeypatch, tmp_path):
     monkeypatch.setattr("src.analytics.serve_gate.change_token", lambda s: ("t", 1))
     guard = _Guard(engage_on=10**9)
     monkeypatch.setattr(mg, "memory_guard", guard)
-    rollup_serve._STATE.update({"con": None, "built_at": None, "rows": None, "pending": True, "last_skip": None})
+    monkeypatch.setattr(rollup_serve, "_GUARD_POLL_EVERY_S", 0.0)  # ask on every batch, so a few batches suffice
+    fresh = {"con": None, "built_at": None, "rows": None, "pending": True, "last_skip": None, "stopped": None}
+    rollup_serve._STATE.update(fresh)
     yield guard
-    rollup_serve._STATE.update({"con": None, "built_at": None, "rows": None, "pending": True, "last_skip": None})
+    rollup_serve._STATE.update(fresh)
 
 
 def test_a_guard_that_engages_mid_build_stops_it_swaps_nothing_and_leaves_no_marker(serve_env, session):
     _seed(session, keywords=60, mentions_per=10)
-    serve_env.engage_on = 2  # the second batch (the first of the keyword stream)
+    serve_env.engage_on = 2  # the second ask: the seeded mentions fit one batch, so it is the aggregation's
     previous = object()
     rollup_serve._STATE["con"] = previous  # what is serving now
     stopped = rollup_serve._build_inmemory_and_swap()
     assert stopped is not None and stopped["reason"] == "mem-low"
-    assert stopped["guard_reason"] == "available 90 MB" and stopped["stage"] in ("mentions", "keywords")
+    assert stopped["guard_reason"] == "available 90 MB" and stopped["stage"] == "aggregate"
     assert rollup_serve._STATE["con"] is previous, "a stopped build must not replace the serving rollup"
     assert rollup_marker.read() is None, "a build that ended by a path Python saw leaves no marker"
 
@@ -359,6 +365,7 @@ def test_the_dispatcher_records_a_stopped_build_as_declined_with_its_readings(se
     monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
     monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")  # restored after the test
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     assert rollup_serve._build_and_swap() == "declined"
     skip = rollup_serve.status()["last_skip"]
@@ -404,7 +411,8 @@ def marker_dir(monkeypatch, tmp_path):
 def _foreign_marker(marker_dir, **over):
     rec = {
         "format": rollup_marker.FORMAT, "process": "a-process-that-is-gone", "started_at": time.time() - 900,
-        "stage": "keywords", "rows_done": 1_234_567, "rss_mb": 3900.0, "avail_mb": 300.0,
+        "stage": "keywords", "rows_done": 1_234_567, "rss_mb": 3900.0, "rss_begin_mb": 500.0,
+        "rss_peak_mb": 3900.0, "avail_mb": 300.0,
         "duckdb_limit_mb": 740.0, "written_at": time.time() - 60,
     }
     rec.update(over)
@@ -426,13 +434,28 @@ def test_a_marker_from_another_process_is_a_killed_build_and_this_process_cannot
     assert rollup_marker.read() is not None
 
 
-def test_the_retry_waits_for_what_the_dead_process_held_plus_the_guard_floor(marker_dir):
-    _foreign_marker(marker_dir, rss_mb=3900.0)
+def test_the_retry_waits_for_what_the_dead_build_grew_by_plus_the_guard_floor(marker_dir):
+    _foreign_marker(marker_dir)
     verdict = rollup_marker.retry_verdict(avail_mb=2000.0, floor_mb=256.0)
     assert verdict["reason"] == "last_build_killed"
-    assert verdict["killed_rss_mb"] == 3900.0 and verdict["needs_available_mb"] == 4156.0
+    # grew = peak - the size it began with: the app's own baseline is not counted a second time
+    assert verdict["killed_rss_mb"] == 3900.0 and verdict["killed_grew_mb"] == 3400.0
+    assert verdict["needs_available_mb"] == 3656.0
     assert verdict["available_mb"] == 2000.0 and verdict["killed_stage"] == "keywords"
-    assert rollup_marker.retry_verdict(avail_mb=4200.0, floor_mb=256.0) is None  # the machine now has it
+    assert rollup_marker.retry_verdict(avail_mb=3700.0, floor_mb=256.0) is None  # the machine now has it
+
+
+def test_the_peak_not_the_last_reading_is_what_the_retry_rule_uses(marker_dir):
+    _foreign_marker(marker_dir, rss_mb=900.0, rss_peak_mb=2500.0, rss_begin_mb=500.0)
+    verdict = rollup_marker.retry_verdict(avail_mb=1000.0, floor_mb=256.0)
+    assert verdict["killed_grew_mb"] == 2000.0 and verdict["needs_available_mb"] == 2256.0
+
+
+def test_a_record_without_the_new_fields_still_reads_by_its_last_rss(marker_dir):
+    rec = {"format": rollup_marker.FORMAT, "process": "gone", "stage": "keywords", "rows_done": 1,
+           "rss_mb": 3000.0, "avail_mb": 1.0}
+    (marker_dir / "rollup_build.json").write_text(json.dumps(rec), encoding="utf-8")
+    assert rollup_marker.retry_verdict(avail_mb=1000.0, floor_mb=256.0)["needs_available_mb"] == 3256.0
 
 
 def test_no_marker_means_no_block_which_is_what_an_upgrade_from_the_old_build_sees(marker_dir):
@@ -453,12 +476,15 @@ def test_an_unreadable_memory_reading_is_no_evidence_of_a_kill_either(marker_dir
 
 def test_progress_refreshes_the_readings_but_only_for_its_own_record_and_only_so_often(marker_dir, monkeypatch):
     rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
-    rollup_marker.progress("mentions", 5, rss_mb=900.0, avail_mb=1500.0)  # inside the throttle window
-    assert rollup_marker.read()["rss_mb"] == 500.0
+    rollup_marker.progress("mentions", 5, rss_mb=1400.0, avail_mb=1500.0)  # a new stage: written at once
+    assert rollup_marker.read()["rss_mb"] == 1400.0
+    rollup_marker.progress("mentions", 6, rss_mb=2200.0, avail_mb=1500.0)  # same stage, inside the window
+    assert rollup_marker.read()["rss_mb"] == 1400.0
     monkeypatch.setattr(rollup_marker, "_last_write", time.monotonic() - 60.0)
-    rollup_marker.progress("mentions", 5, rss_mb=900.0, avail_mb=1500.0)
+    rollup_marker.progress("mentions", 7, rss_mb=900.0, avail_mb=1500.0)
     rec = rollup_marker.read()
-    assert rec["rss_mb"] == 900.0 and rec["rows_done"] == 5 and rec["stage"] == "mentions"
+    assert rec["rss_mb"] == 900.0 and rec["rows_done"] == 7 and rec["stage"] == "mentions"
+    assert rec["rss_peak_mb"] == 2200.0, "the peak seen between two writes is kept, not lost"
     rollup_marker.clear()
     _foreign_marker(marker_dir)
     monkeypatch.setattr(rollup_marker, "_last_write", time.monotonic() - 60.0)
@@ -467,8 +493,9 @@ def test_progress_refreshes_the_readings_but_only_for_its_own_record_and_only_so
 
 
 def test_the_dispatcher_declines_on_a_killed_build_until_memory_returns(marker_dir, monkeypatch):
-    _foreign_marker(marker_dir, rss_mb=3900.0)
+    _foreign_marker(marker_dir)
     monkeypatch.setattr(rollup_serve, "_guard_floor_mb", lambda: 256.0)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
     monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 800.0, "avail_mb": 1500.0})
     verdict = rollup_serve._last_build_verdict()
     assert verdict["reason"] == "last_build_killed"
@@ -514,3 +541,158 @@ def test_a_connection_without_a_spill_choice_keeps_duckdbs_own_default():
     """Other callers of ``connect`` are unchanged by this work."""
     assert "temp_directory" not in columnar._offline_config()
     assert columnar._offline_config(spill="")["temp_directory"] == ""
+
+
+# --------------------------------------------------------------------------- #
+# the review's findings (Opus read of 669b3168)
+# --------------------------------------------------------------------------- #
+
+def test_the_engines_own_memory_limit_is_never_retried_row_by_row():
+    """B1: with no offload allowed, DuckDB's limit is the DECLINE signal. The JSON path raising it must
+    not fall back to ``executemany`` (1.1 thousand rows/s, with the build lock held)."""
+    con = columnar.connect(passphrase=None, spill="")
+    con.execute("SET memory_limit='1MB'")
+    con.execute("CREATE TABLE s (k BIGINT, d VARCHAR, c BIGINT, a BIGINT)")
+    rows = [(i, "2026-03-01", 1, i) for i in range(20_000)]
+    with pytest.raises(Exception) as caught:
+        columnar._bulk_insert(con, "s", columnar._STAGE_TYPES, rows)
+    assert type(caught.value).__name__ == "OutOfMemoryException"
+    assert con.execute("SELECT COUNT(*) FROM s").fetchone()[0] == 0, "nothing was half-inserted"
+
+
+def test_the_fallback_is_never_taken_for_an_interrupt():
+    class InterruptException(Exception):
+        pass
+
+    class Proxy:
+        many = 0
+
+        def execute(self, sql, params=None):
+            raise InterruptException("INTERRUPT Error")
+
+        def executemany(self, sql, rows):
+            Proxy.many += 1
+
+    with pytest.raises(InterruptException):
+        columnar._bulk_insert(Proxy(), "s", columnar._STAGE_TYPES, [(1, "2026-03-01", 1, 1)])
+    assert Proxy.many == 0
+
+
+def test_a_build_the_limit_stopped_is_not_started_again_until_the_limit_grows(serve_env, monkeypatch):
+    """S1: a part-way stop is held by a measured condition, not retried by the next serve request."""
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_boot_order_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
+    runs = []
+
+    def stopped_build():
+        runs.append(1)
+        return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 740.0}
+
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", stopped_build)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined" and len(runs) == 1
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined" and len(runs) == 1, "the corpus was not rescanned"
+    held = rollup_serve.status()["last_skip"]
+    assert held["reason"] == "duckdb-limit" and held["duckdb_limit_mb"] == 740.0
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 1480.0)  # the budget grew
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", lambda: runs.append(1) or None)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "built" and len(runs) == 2
+    assert rollup_serve._STATE["stopped"] is None, "a finished build clears the hold"
+
+
+def test_a_build_the_guard_stopped_waits_for_what_it_had_grown_by_plus_the_floor(serve_env, monkeypatch):
+    rollup_serve._STATE["stopped"] = {"reason": "mem-low", "at": time.time(), "grew_mb": 1200.0, "stage": "keywords"}
+    monkeypatch.setattr(rollup_serve, "_guard_floor_mb", lambda: 256.0)
+    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 800.0, "avail_mb": 1000.0})
+    verdict = rollup_serve._stopped_build_verdict()
+    assert verdict["reason"] == "mem-low" and verdict["needs_available_mb"] == 1456.0
+    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 800.0, "avail_mb": 1500.0})
+    assert rollup_serve._stopped_build_verdict() is None
+    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": None, "avail_mb": None})
+    assert rollup_serve._stopped_build_verdict() is None, "no reading is no evidence"
+
+
+def test_the_start_and_kill_checks_do_not_block_the_persisted_refresh(monkeypatch, marker_dir):
+    _foreign_marker(marker_dir)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)
+    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 1.0, "avail_mb": 1.0})
+    assert rollup_serve._affordability_verdict() is None
+    assert rollup_serve._last_build_verdict() is None
+
+
+def test_a_declined_or_failed_build_closes_the_connection_it_opened(serve_env, session, monkeypatch):
+    _seed(session, keywords=20, mentions_per=3)
+    opened = []
+    real_connect = columnar.connect
+
+    def spy(*a, **kw):
+        con = real_connect(*a, **kw)
+        opened.append(con)
+        return con
+
+    monkeypatch.setattr(columnar, "connect", spy)
+    serve_env.engage_on = 1
+    assert rollup_serve._build_inmemory_and_swap()["reason"] == "mem-low"
+
+    def boom(con, s, **kw):
+        raise ValueError("a real defect")
+
+    monkeypatch.setattr(columnar, "build_keyword_daily", boom)
+    with pytest.raises(ValueError):
+        rollup_serve._build_inmemory_and_swap()
+    assert len(opened) == 2
+    import duckdb
+
+    for con in opened:
+        with pytest.raises(duckdb.Error):
+            con.execute("SELECT 1")  # closed
+
+
+def test_the_guard_is_asked_at_most_once_per_interval_not_once_per_batch(serve_env, session, monkeypatch):
+    _seed(session, keywords=60, mentions_per=10)
+    monkeypatch.setattr(rollup_serve, "_GUARD_POLL_EVERY_S", 3600.0)
+    serve_env.engage_on = 2
+    assert rollup_serve._build_inmemory_and_swap() is None, "one ask is the first; the rest are skipped"
+    assert serve_env.n == 1
+
+
+def test_a_normal_quit_during_a_build_clears_the_marker_through_atexit(marker_dir, monkeypatch):
+    import atexit
+
+    registered = []
+    monkeypatch.setattr(atexit, "register", lambda fn, *a, **k: registered.append(fn))
+    monkeypatch.setattr(rollup_marker, "_exit_hook_registered", False)
+    rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
+    assert registered == [rollup_marker.clear], "the hook is the marker's own clear"
+    rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
+    assert len(registered) == 1, "registered once"
+    registered[0]()
+    assert rollup_marker.read() is None
+
+
+def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pid_starts_empty(monkeypatch, tmp_path):
+    psutil = pytest.importorskip("psutil")
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    root = tmp_path / "duckdb_tmp"
+    dead = 4_000_000
+    while psutil.pid_exists(dead):
+        dead += 1
+    (root / str(dead)).mkdir(parents=True)
+    (root / str(dead) / "duckdb_temp_storage-1.tmp").write_bytes(b"left by a plaintext-era build")
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: True)
+    assert rollup_serve._spill_setting() == ""
+    assert not (root / str(dead)).exists(), "what a plaintext build left must not outlive the encryption"
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: False)
+    mine = root / str(os.getpid())
+    mine.mkdir()
+    (mine / "stale.tmp").write_bytes(b"from an earlier process with this pid")
+    assert rollup_serve._spill_setting() == str(mine)
+    assert list(mine.iterdir()) == [], "a folder this process did not create is a dead process's"

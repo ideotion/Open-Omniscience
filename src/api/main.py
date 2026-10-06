@@ -121,7 +121,7 @@ def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
     what pays for it). This function therefore only RECORDS the request with
     ``boot_sequence``, whose own thread runs the drain as the last of the three heavy
     start-up steps (the cache warm-up, the rollup's first build, then this), so that
-    the three never begin within the same minute.
+    each begins only after the one before it has ended.
 
     ``OO_REINDEX_AUTORESUME=0`` declines it for one process. The caller has already
     gated on ``OO_NO_SCHEDULER`` for the surrounding block? No -- it has not, and

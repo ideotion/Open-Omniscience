@@ -38,16 +38,20 @@ In-memory only (never a plaintext file). The canonical SQLCipher store is always
 source of truth. THE ONE EXCEPTION IS DUCKDB'S OWN OFFLOAD, and it is decided by the corpus: with
 an ENCRYPTED corpus the engine is given no temporary directory, so a build that outgrows its memory
 limit is declined instead of writing derived counts to disk; with a plaintext corpus (nothing on
-that disk is secret) it may offload into ``<data dir>/duckdb_tmp/<pid>``, which the next start sweeps
-when that process is gone.
+that disk is secret) it may offload into ``<data dir>/duckdb_tmp/<pid>``; the folders of processes that
+are gone are swept at the next build (in either mode, so a corpus encrypted later does not keep what an
+earlier, plaintext build left). The OTHER in-memory stores (the map, the benchmarks) still use DuckDB's own
+default for the offload directory: that is recorded in OPEN_QUEUE.md, not changed here.
 
 THE BUILD NEVER TAKES MORE MEMORY THAN THE MACHINE HAS (diagnostics of 2026-10-06: eight 4.81 GiB
 VMs killed 12 times inside this build). Four layers, each measured and none a fixed cap: a start
 check (the limit DuckDB may use, one batch, and the guard's floor, against what is available now);
 the guard polled after every batch; the last build's in-progress marker (``rollup_marker``), so a
 build that was killed is not started again identically at every boot; and DuckDB's own memory limit
-from the machine's budget. Any of them stops the build as a DECLINE: nothing is swapped in, the serve
-keeps what it had, queries fall back to live ones.
+from the machine's budget. Any of them stops the build as a DECLINE: nothing is swapped in and queries
+fall back to live ones. A build that was stopped PART-WAY is not started again until the condition that
+stopped it has changed (``_stopped_build_verdict``), or every serve request would rescan the corpus up to
+the same point.
 """
 
 from __future__ import annotations
@@ -87,6 +91,9 @@ _STATE: dict = {
     # S3.5: the last time the AUTO-ON background build declined to run, and why.
     # None == it has never declined. A skip is a disclosure, never a silent no-op.
     "last_skip": None,
+    # What stopped the last build PART-WAY (None once a build has finished): the reason and the numbers
+    # the retry rule compares the machine against.
+    "stopped": None,
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
@@ -213,8 +220,9 @@ def _build_inmemory_and_swap() -> dict | None:
     if con is None:
         return None
     r = _readings()
-    rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
+    ok = False
     try:
+        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
         with session_scope() as s:
             # Token BEFORE the build (conservative: rows landing DURING the build make the
             # recorded token compare "changed" next check -> one extra rebuild, never a
@@ -234,13 +242,16 @@ def _build_inmemory_and_swap() -> dict | None:
             else:
                 skip = None
             if skip is not None:
-                with contextlib.suppress(Exception):
-                    con.close()
+                skip["begin_rss_mb"] = r["rss_mb"]
                 return skip
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+        ok = True
     finally:
         rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
+        if not ok:  # a decline or an error: this connection is never served, so it must not leak
+            with contextlib.suppress(Exception):
+                con.close()
     with _LOCK:
         old = _STATE["con"]
         _STATE["con"] = con
@@ -363,6 +374,8 @@ def _affordability_verdict() -> dict | None:
     try:
         from src.analytics import columnar
 
+        if _persisted_serve_active():
+            return None  # the persisted refresh is incremental and does not hold a corpus in memory
         avail = _readings()["avail_mb"]
         if avail is None:
             return None
@@ -391,8 +404,42 @@ def _last_build_verdict() -> dict | None:
     try:
         from src.analytics import rollup_marker
 
+        if _persisted_serve_active():
+            return None
         return rollup_marker.retry_verdict(_readings()["avail_mb"], _guard_floor_mb())
     except Exception:  # noqa: BLE001
+        return None
+
+
+def _stopped_build_verdict() -> dict | None:
+    """Decline while the condition that stopped the last build PART-WAY still holds.
+
+    Without it a stopped build is started again by the very next serve request (``windowed_rows`` kicks
+    one whenever no rollup is built) and rescans the corpus up to the same point, again and again. Two
+    stops, two measured rules and no timer: a corpus that outgrew DuckDB's limit with no offload allowed
+    is retried when the budget's limit is LARGER than the one it stopped at; a build the memory guard
+    stopped is retried when the machine has what that build had grown by, plus the guard's floor."""
+    with _LOCK:
+        st = _STATE.get("stopped")
+    if not st:
+        return None
+    try:
+        if st.get("reason") == "duckdb-limit":
+            limit = _duckdb_limit_mb()
+            if limit > float(st.get("duckdb_limit_mb") or 0):
+                return None
+            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
+                    "stopped_at": st.get("at"), "note": "retried when the memory budget's limit grows"}
+        avail = _readings()["avail_mb"]
+        if avail is None:
+            return None
+        need = float(st.get("grew_mb") or 0.0) + _guard_floor_mb()
+        if avail >= need:
+            return None
+        return {"reason": "mem-low", "at": time.time(), "stopped_at": st.get("at"),
+                "needs_available_mb": round(need, 1), "available_mb": avail,
+                "grew_mb": st.get("grew_mb"), "stage": st.get("stage")}
+    except Exception:  # noqa: BLE001 - an unreadable budget must not block the build
         return None
 
 
@@ -406,44 +453,67 @@ def _corpus_encrypted() -> bool:
         return True
 
 
+def _sweep_spill_folders(root, keep: int) -> None:
+    """Remove the offload folders of processes that are gone (and nothing else)."""
+    import shutil
+
+    try:
+        import psutil
+    except ImportError:
+        return  # no way to tell a live process from a dead one: leave them
+    for child in root.iterdir():
+        if child.is_dir() and child.name.isdigit() and int(child.name) != keep \
+                and not psutil.pid_exists(int(child.name)):
+            shutil.rmtree(child, ignore_errors=True)
+
+
 def _spill_setting() -> str:
     """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else
-    a per-process folder under the data directory, after sweeping the folders of processes that are gone."""
-    if _corpus_encrypted():
-        return ""
+    a fresh per-process folder under the data directory. The folders of processes that are gone are swept
+    in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must not stay."""
+    encrypted = _corpus_encrypted()
     try:
         import shutil
 
         from src.paths import data_dir
 
         root = data_dir() / "duckdb_tmp"
+        if root.is_dir():
+            _sweep_spill_folders(root, os.getpid())
+        if encrypted:
+            return ""
         root.mkdir(parents=True, exist_ok=True)
-        try:
-            import psutil
-
-            for child in root.iterdir():
-                if (
-                    child.is_dir() and child.name.isdigit() and int(child.name) != os.getpid()
-                    and not psutil.pid_exists(int(child.name))
-                ):
-                    shutil.rmtree(child, ignore_errors=True)
-        except ImportError:
-            pass  # no way to tell a live process from a dead one: leave them
         mine = root / str(os.getpid())
-        mine.mkdir(exist_ok=True)
+        # A pid is reused (every container restarts as pid 1): what is in a folder this process did not
+        # create is a dead process's, so it starts empty.
+        shutil.rmtree(mine, ignore_errors=True)
+        mine.mkdir()
         return str(mine)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
         return ""
 
 
+#: The memory guard counts ``trip_after`` CONSECUTIVE over-threshold samples, tuned for a monitor that
+#: samples about once a second. The build asks it after every batch, which at ~560 thousand rows/s is
+#: several times a second, so three sub-second spikes would trip the process-wide guard (and pause
+#: collection). The hook asks at most this often.
+_GUARD_POLL_EVERY_S = 1.0
+
+
 def _make_on_batch():
     """The per-batch hook of the build: refresh the in-progress marker, then ask the memory guard."""
+
+    last_poll = [0.0]
 
     def _on_batch(stage: str, rows_done: int) -> None:
         from src.analytics import columnar, rollup_marker
 
         r = _readings()
         rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
+        now = time.monotonic()
+        if now - last_poll[0] < _GUARD_POLL_EVERY_S:
+            return
+        last_poll[0] = now
         try:
             from src.scheduler.memguard import memory_guard
 
@@ -548,7 +618,7 @@ def _build_and_swap() -> str:
 
         skip = (
             exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
-            or _last_build_verdict() or _affordability_verdict()
+            or _stopped_build_verdict() or _last_build_verdict() or _affordability_verdict()
         )
         if skip is not None:
             with _LOCK:
@@ -564,14 +634,26 @@ def _build_and_swap() -> str:
         else:
             stopped = _build_inmemory_and_swap()
             if stopped is not None:
+                grew = None
+                if isinstance(stopped.get("rss_mb"), (int, float)) and isinstance(
+                    stopped.get("begin_rss_mb"), (int, float)
+                ):
+                    grew = round(max(0.0, stopped["rss_mb"] - stopped["begin_rss_mb"]), 1)
                 with _LOCK:
                     _STATE["last_skip"] = stopped
+                    _STATE["stopped"] = {
+                        "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
+                        "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
+                    }
                 _LOG.warning(
-                    "rollup serve: build stopped part-way (%s); the previous rollup keeps serving",
+                    "rollup serve: build stopped part-way (%s); nothing was swapped in and it is not "
+                    "retried until that condition changes",
                     stopped.get("guard_reason") or stopped.get("reason"),
                 )
                 outcome = "declined"
                 return outcome
+        with _LOCK:
+            _STATE["stopped"] = None
         outcome = "built"
         return outcome
     except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
