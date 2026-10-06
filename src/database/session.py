@@ -124,7 +124,8 @@ def _build_engine() -> Engine:
         return create_engine(
             DATABASE_URL,
             future=True,
-            creator=_creator,
+            # Opened under the library lock, stamped with the generation read under it (``database/library_generation.py``).
+            creator=_library_generation.guarded_creator(_creator),
             pool_size=int(_b["db_pool_size"]),
             max_overflow=int(_b["db_max_overflow"]),
             pool_timeout=_pool_timeout_s(),
@@ -274,8 +275,8 @@ def _storage_guard_on_disk_full(context) -> None:
 # its writers (``database/damage.py``). Observes only: the error still propagates unchanged.
 _damage.attach(engine, _damage.FILE_CORPUS)
 
-# A connection made before a repair switched the library to a new file must not be used after it: its statements would land in
-# the file that is now kept under a second name (``database/library_generation.py``).
+# A connection made before a repair (or a restore) switched the library to a new file must not be used after it: its statements and
+# its COMMIT would land in the file that is now kept under a second name (``database/library_generation.py``).
 _library_generation.attach(engine)
 
 

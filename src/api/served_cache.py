@@ -36,8 +36,10 @@ anywhere (1 -> 2); and it is comparable across connections by construction.
 
 ITS HONEST LIMITS, stated rather than papered over. ``grants`` is bumped by the
 ORM flush / ORM-DML listeners and by explicit ``write_lock()``, so it does NOT
-see (a) a bare textual ``session.execute(text("INSERT ..."))`` taken outside the
-gate -- measured, unchanged at 2 -- nor (b) a write from another PROCESS. (b) is
+see (a) a write made on a Core connection outside the gate (a bare textual
+``session.execute(text("INSERT ..."))`` was this too, measured unchanged at 2,
+until 2026-10-06, when the gate learned to read a textual write's first word),
+nor (b) a write from another PROCESS. (b) is
 bounded by the same assumption the whole single-writer design already rests on;
 (a) is what ``write_lock()`` exists to prevent. Neither is left to luck: the
 corpus-swap path calls :func:`invalidate` explicitly, and every served payload

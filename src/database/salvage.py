@@ -96,17 +96,12 @@ SORT_RAM_BYTES_PER_ROW = RAM_BYTES_PER_ARTICLE
 #: The id the search runs to when a table's last row id cannot be read: the end of the 64-bit space.
 _ID_CEILING = 2**62
 
-#: What the report says about the children it removed (``orphans_removed``): why, and where the rows still are.
-ORPHANS_REMOVED_NOTE = (
-    "Rows whose parent row could not be read, and whose parent's id is above the highest id left in the new file, were not copied: "
-    "a row saved later would be handed that id and would have claimed them. They are still in the damaged file the repair keeps, "
-    "until that file is removed (R129)."
+#: What the report says about the stand-in rows (``stand_ins``): what they are and why they exist.
+STAND_IN_NOTE = (
+    "A row whose parent row could not be read was kept, and one stand-in row, marked as lost, holds the place of the lost parents "
+    "in each parent table, so that a row saved later is not handed the number of a lost one and does not seem to own the rows that "
+    "belong to it."
 )
-
-#: How many times the removal of children that a new row would inherit is repeated: one round per level of foreign keys it can
-#: cascade through (a child's own id, freed by its removal, can be what a grandchild points at). WHAT IT PROTECTS: the end of the
-#: copy against a chain it cannot make progress on; the longest chain of foreign keys in the app's schema is four tables deep (measured).
-_ORPHAN_ROUNDS = 8
 
 #: Report caps, so a file with a thousand damaged pages is a record, not a log: this many unreadable id ranges are listed
 #: per table (the count of all of them is kept).
@@ -302,6 +297,7 @@ class Salvage:
             self._open_target()
             self._create_tables(tables)
             self._copy_all(tables)
+            self._orphans()  # before the triggers and the search index exist: a stand-in row is a row, written plainly
             self._create_rest(tables, others)
             self._finish(tables)
         except (SalvageRefused, SalvageStopped, SalvageFailed):
@@ -789,7 +785,6 @@ class Salvage:
     def _finish(self, tables: list[_Table]) -> None:
         self._rebuild_search_index(tables)
         self._restore_counters()
-        self._orphans()
         with contextlib.suppress(Exception):
             version = int(self.src.con.execute("PRAGMA user_version").fetchone()[0])
             self.dst.execute(f"PRAGMA user_version = {version}")
@@ -838,71 +833,175 @@ class Salvage:
             self._raise_for_target("the foreign key check", exc)
         return groups
 
-    def _drop_orphans_that_a_new_row_would_inherit(self, groups: dict[tuple[str, str, int], int]) -> dict[str, int]:
-        """Delete the children whose parent id is ABOVE the highest id of the parent table in the copy. A table whose row id is its
-        INTEGER PRIMARY KEY (and that is not AUTOINCREMENT, which none of the app's tables is) hands out the highest id plus one, so
-        when the newest pages of a parent table are lost the next row saved gets an id that belonged to a lost row, and would
-        INHERIT the children kept for it (dates, entities, keyword rows, index stamps: the deep read of E3, S6). A child whose parent
-        id lies BELOW the highest id points into a gap, which is never handed out again, and is kept."""
-        removed: dict[str, int] = {}
+    def _single_key(self, child: str, number: int) -> tuple | None:
+        """The one-column foreign key ``number`` of ``child`` as ``PRAGMA foreign_key_list`` gives it
+        (``id, seq, table, from, to, on_update, on_delete, match``), or ``None`` for a key over several columns."""
+        try:
+            keys = [r for r in self.dst.execute(f"PRAGMA foreign_key_list({_ident(child)})") if int(r[0]) == number]
+        except Exception as exc:  # noqa: BLE001
+            self._raise_for_target("the foreign keys of a table", exc)
+        return keys[0] if len(keys) == 1 else None
+
+    def _null_the_set_null_keys(self, groups: dict[tuple[str, str, int], int]) -> dict[str, int]:
+        """A key declared ``ON DELETE SET NULL`` (``places.article_id``) is what the app would have written had the parent been
+        deleted: NULL. The copy writes that instead of keeping a value that points at nothing (and instead of removing the row, which
+        the app never does for such a key). A column that does not take NULL, or a key that is not one column, is left as it was: the
+        row is kept and counted."""
+        nulled: dict[str, int] = {}
         for (child, parent, number), _n in groups.items():
-            alias = self._row_id_alias.get(parent)
-            if alias is None or parent in self._autoincrement:
+            key = self._single_key(child, number)
+            if key is None or str(key[6]).upper() != "SET NULL":
+                continue
+            target_column = key[4] or self._row_id_alias.get(parent)
+            if not target_column:
                 continue
             try:
-                keys = [r for r in self.dst.execute(f"PRAGMA foreign_key_list({_ident(child)})") if int(r[0]) == number]
-                if len(keys) != 1 or keys[0][4] not in (None, alias):
-                    continue  # a key over several columns, or over a column that is not the parent's row id: not handled, kept
-                top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(parent)}").fetchone()[0] or 0
-                cur = self.dst.execute(f"DELETE FROM {_ident(child)} WHERE {_ident(str(keys[0][3]))} > ?", (int(top),))
-                if cur.rowcount and cur.rowcount > 0:
-                    removed[child] = removed.get(child, 0) + int(cur.rowcount)
-            except SalvageStopped:
-                raise
+                cur = self.dst.execute(
+                    f"UPDATE {_ident(child)} SET {_ident(str(key[3]))} = NULL WHERE {_ident(str(key[3]))} IS NOT NULL AND "
+                    f"{_ident(str(key[3]))} NOT IN (SELECT {_ident(str(target_column))} FROM {_ident(parent)})"
+                )
             except Exception as exc:  # noqa: BLE001
-                self._raise_for_target("the removal of orphans", exc)
-            if self.cancel.is_set():
-                raise SalvageStopped
-        return removed
+                self._check_stop()
+                if "constraint" in str(exc).lower() or type(exc).__name__ == "IntegrityError":
+                    continue  # the column does not take NULL: kept, counted
+                self._raise_for_target("the keys that set NULL", exc)
+            if cur.rowcount and cur.rowcount > 0:
+                nulled[child] = nulled.get(child, 0) + int(cur.rowcount)
+            self._check_stop()
+        return nulled
+
+    def _highest_referenced(self, groups: dict[tuple[str, str, int], int]) -> dict[str, int]:
+        """For each parent table whose row id is the key of the orphans: the highest id an orphan refers to ABOVE the parent's own
+        highest id. Ids below it are gaps, which a table that hands out ``max(id) + 1`` never gives again; ids above are the ones a
+        new row would be given (the deep read of E3, S6), and are the only ones that need protecting."""
+        needs: dict[str, int] = {}
+        for (child, parent, number), _n in groups.items():
+            alias = self._row_id_alias.get(parent)
+            key = self._single_key(child, number)
+            if alias is None or key is None or key[4] not in (None, alias):
+                continue  # a key over several columns, or over a column that is not the parent's row id: kept and counted only
+            try:
+                top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(parent)}").fetchone()[0] or 0
+                high = self.dst.execute(
+                    f"SELECT max({_ident(str(key[3]))}) FROM {_ident(child)} WHERE {_ident(str(key[3]))} > ?", (int(top),)
+                ).fetchone()[0]
+            except Exception as exc:  # noqa: BLE001
+                self._raise_for_target("the highest id the orphans refer to", exc)
+            if high is not None:
+                needs[parent] = max(needs.get(parent, 0), int(high))
+            self._check_stop()
+        return needs
+
+    def _raise_sequence(self, table: str, floor: int) -> None:
+        """An AUTOINCREMENT table never hands out an id up to ``floor`` again: its counter is raised to it."""
+        try:
+            cur = self.dst.execute("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?", (int(floor), table))
+            if cur.rowcount == 0:
+                self.dst.execute("INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)", (table, int(floor)))
+        except Exception as exc:  # noqa: BLE001
+            self._raise_for_target("the counter of a table", exc)
+
+    def _stand_in_value(self, table: str, row_id: int, name: str, declared: str, key: tuple | None) -> Any:
+        """A value for a NOT NULL column of a stand-in row: a text column says the row is lost, a column that is a key to another table
+        points at a row of it that exists (its lowest id; 0 when it has none), the rest take the neutral value of their type."""
+        if key is not None:
+            ref = str(key[2])
+            column = key[4] or self._row_id_alias.get(ref)
+            if column:
+                try:
+                    found = self.dst.execute(f"SELECT min({_ident(str(column))}) FROM {_ident(ref)}").fetchone()[0]
+                except Exception as exc:  # noqa: BLE001
+                    self._raise_for_target("a key of a stand-in row", exc)
+                return 0 if found is None else found
+            return 0
+        kind = declared.upper()
+        if "BLOB" in kind:
+            return b""
+        if "INT" in kind or "BOOL" in kind or any(x in kind for x in ("REAL", "FLOA", "DOUB", "NUMERIC", "DECIMAL")):
+            return 0
+        if "DATE" in kind or "TIME" in kind:
+            return "1970-01-01 00:00:00.000000"
+        if "JSON" in kind:
+            return "{}"
+        return f"(lost {table} {row_id})"
+
+    def _stand_in(self, table: str, row_id: int) -> bool:
+        """Write ONE row at ``row_id`` into ``table``, marked as lost: every NOT NULL column without a default is given a value
+        (:meth:`_stand_in_value`), every other column stays NULL. ``False`` when the table's own constraints refused it."""
+        alias = self._row_id_alias[table]
+        try:
+            info = self.dst.execute(f"PRAGMA table_xinfo({_ident(table)})").fetchall()
+            keys = {str(r[3]): r for r in self.dst.execute(f"PRAGMA foreign_key_list({_ident(table)})").fetchall()}
+        except Exception as exc:  # noqa: BLE001
+            self._raise_for_target("the columns of a table that needs a stand-in row", exc)
+        columns, values = [alias], [int(row_id)]
+        for _cid, name, declared, notnull, default, _pk, hidden in info:
+            if hidden != 0 or name == alias or not notnull or default is not None:
+                continue
+            columns.append(str(name))
+            values.append(self._stand_in_value(table, row_id, str(name), str(declared or ""), keys.get(str(name))))
+        try:
+            self.dst.execute(
+                f"INSERT INTO {_ident(table)} ({', '.join(_ident(c) for c in columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                tuple(values),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._check_stop()
+            if "constraint" in str(exc).lower() or type(exc).__name__ == "IntegrityError":
+                return False
+            self._raise_for_target("a stand-in row", exc)
+        return True
 
     def _orphans(self) -> None:
-        """Children whose parent row was unreadable are KEPT and counted per table: deleting them would turn one lost page
-        of a parent into the loss of every row that refers to it. The exception is a child whose parent's id is above the
-        highest id left in the parent table (see :meth:`_drop_orphans_that_a_new_row_would_inherit`): those are removed, because a
-        row saved later would be handed that id and claim them. Removing a child can free ITS id for a grandchild's reference, so
-        it is repeated until nothing more goes (bounded by the number of tables, which is the longest chain of keys)."""
+        """NOTHING READABLE IS REMOVED (the deep read of E3, NEW-4: the user's R100, local data never gives way). A row whose parent
+        row could not be read is kept and counted per table (``orphans``), and the tables among them that hold a verdict this install
+        MEASURED (a column named ``verdict``) are named (``orphans_verdict_tables``). What the earlier fold removed them for was real:
+        a table without AUTOINCREMENT hands out ``max(id) + 1``, so when the newest pages of a parent table are lost the next row saved
+        takes a lost id and seems to own the rows kept for it (S6). That is stopped without removing anything: a key declared ``ON
+        DELETE SET NULL`` is set to NULL, as the app would have written it; where the parent table is AUTOINCREMENT its counter is
+        raised to the highest id any row refers to; otherwise ONE stand-in row marked as lost is written into the parent table at that
+        id (``stand_ins``), so the highest id is taken and every lost id below it is a gap, which is never handed out again. A stand-in
+        the table's own constraints refuse is named (``id_reuse_possible``) and nothing is removed for it either."""
         groups = self._orphan_groups()
-        removed: dict[str, int] = {}
-        for _round in range(_ORPHAN_ROUNDS):
-            if not groups:
-                break
-            gone = self._drop_orphans_that_a_new_row_would_inherit(groups)
-            if not gone:
-                break
-            for table, n in gone.items():
-                removed[table] = removed.get(table, 0) + n
+        if not groups:
+            return
+        nulled = self._null_the_set_null_keys(groups)
+        if nulled:
+            self.report["set_null"] = nulled
             groups = self._orphan_groups()
         counts: dict[str, int] = {}
         for (child, _parent, _number), n in groups.items():
             counts[child] = counts.get(child, 0) + n
         if counts:
             self.report["orphans"] = counts
-        if removed:
-            self.report["orphans_removed"] = removed
-            self.report["orphans_removed_note"] = ORPHANS_REMOVED_NOTE
-            # A table that holds verdicts this install MEASURED (a column named ``verdict``: the source qualification attempts and
-            # admission events) is named, because a measured verdict never gives way silently to a repair: the removed rows are
-            # still in the damaged file the repair keeps.
             verdict_tables = []
-            for table in sorted(removed):
+            for table in sorted(counts):
                 try:
                     columns = {str(r[1]) for r in self.dst.execute(f"PRAGMA table_info({_ident(table)})")}
                 except Exception as exc:  # noqa: BLE001
-                    self._raise_for_target("the list of columns of a table with removed orphans", exc)
+                    self._raise_for_target("the list of columns of a table with orphans", exc)
                 if "verdict" in columns:
                     verdict_tables.append(table)
             if verdict_tables:
-                self.report["orphans_removed_verdicts"] = verdict_tables
+                self.report["orphans_verdict_tables"] = verdict_tables
+        stand_ins: dict[str, int] = {}
+        reuse: list[str] = []
+        for parent, high in sorted(self._highest_referenced(groups).items()):
+            if parent in self._autoincrement:
+                self._raise_sequence(parent, high)
+            elif self._stand_in(parent, high):
+                stand_ins[parent] = high
+            else:
+                reuse.append(parent)
+        if stand_ins:
+            self.report["stand_ins"] = stand_ins
+            self.report["stand_ins_note"] = STAND_IN_NOTE
+        if reuse:
+            self.report["id_reuse_possible"] = reuse
+        try:
+            self.dst.commit()
+        except Exception as exc:  # noqa: BLE001
+            self._raise_for_target("the orphans", exc)
 
 
 def check_copy(path: Path, *, cancel: threading.Event | None = None) -> tuple[bool, list[dict[str, Any]]]:

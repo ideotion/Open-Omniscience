@@ -387,60 +387,149 @@ def test_children_of_a_lost_parent_are_kept_and_counted_as_orphans(tmp_path):
         con.close()
 
 
-def test_children_of_a_lost_tail_are_removed_so_a_new_row_cannot_inherit_them_and_those_of_a_gap_are_kept(tmp_path):
-    """The deep read of E3 (S6): no app table is AUTOINCREMENT, so when the NEWEST pages of a parent table are lost the next row
-    saved takes a lost row's id, and would claim the children kept for it (dates, entities, keyword rows). Children whose parent id is
-    above the highest id left are removed (and so, a level down, the grandchildren whose child went); children of a lost row in a
-    GAP point at an id that is never handed out again and are kept."""
-    src = tmp_path / "src.db"
+def _lose_leaves(src: Path, table: str, which: list[int], page: int = 1024) -> None:
+    con = sqlite3.connect(src)
+    try:
+        leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name=?", (table,)) if kind == "leaf"]
+    finally:
+        con.close()
+    H.overwrite_pages(src, [leaves[i] for i in which], page)
+
+
+def _tree_store(src: Path, *, parent_ddl: str, count: int = 800) -> None:
     _one_store(
         src,
         [
-            "CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT)",
+            parent_ddl,
             "CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent(id), v TEXT)",
             "CREATE TABLE grandchild (id INTEGER PRIMARY KEY, cid INTEGER REFERENCES child(id), v TEXT)",
+            "CREATE TABLE merged_rows (table_name TEXT, row_id INTEGER, PRIMARY KEY (table_name, row_id))",
         ],
         {},
         page=1024,
     )
     con = sqlite3.connect(src)
-    con.executemany("INSERT INTO parent VALUES (?, ?)", [(i, "p" * 60 + str(i)) for i in range(1, 801)])
-    con.executemany("INSERT INTO child VALUES (?, ?, ?)", [(i, i, f"c{i}") for i in range(1, 801)])
-    con.executemany("INSERT INTO grandchild VALUES (?, ?, ?)", [(i, i, f"g{i}") for i in range(1, 801)])
+    con.executemany("INSERT INTO parent (id, name) VALUES (?, ?)", [(i, "p" * 60 + str(i)) for i in range(1, count + 1)])
+    con.executemany("INSERT INTO child VALUES (?, ?, ?)", [(i, i, f"c{i}") for i in range(1, count + 1)])
+    con.executemany("INSERT INTO grandchild VALUES (?, ?, ?)", [(i, i, f"g{i}") for i in range(1, count + 1)])
+    con.executemany("INSERT INTO merged_rows VALUES (?, ?)", [("parent", i) for i in range(1, count + 1)])
     con.commit()
-    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='parent'") if kind == "leaf"]
     con.close()
-    H.overwrite_pages(src, [leaves[len(leaves) // 2], leaves[-1]], 1024)  # a gap in the middle and the tail
+
+
+def test_nothing_readable_is_removed_and_a_new_row_cannot_inherit_the_children_of_a_lost_tail(tmp_path):
+    """The deep read of E3 (S6) found that a lost tail lets the next row saved take a lost id and claim the rows kept for it; the first fold
+    removed those rows, which the user's R100 forbids (local data never gives way). Nothing readable is removed now: ONE stand-in row,
+    marked as lost, takes the highest id any child refers to, so the next row saved gets a higher one, and every lost id below it is a
+    gap (never handed out again). Rows keyed by (table, row id) are copied whole."""
+    src = tmp_path / "src.db"
+    _tree_store(src, parent_ddl="CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+    _lose_leaves(src, "parent", [-1])  # the tail
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == 800, "a readable child was removed"
+        assert con.execute("SELECT count(*) FROM grandchild").fetchone()[0] == 800, "a readable grandchild was removed"
+        assert con.execute("SELECT count(*) FROM merged_rows").fetchone()[0] == 800, "a merge record was removed"
+        real = con.execute("SELECT max(id) FROM parent WHERE name NOT LIKE '(lost%'").fetchone()[0]
+        assert real < 800, "the test needs a lost tail"
+        stand = con.execute("SELECT id, name FROM parent WHERE name LIKE '(lost%'").fetchall()
+        assert stand == [(800, "(lost parent 800)")], stand
+        assert report["stand_ins"] == {"parent": 800} and "stand-in row" in report["stand_ins_note"]
+        lost = 800 - con.execute("SELECT count(*) FROM parent WHERE name NOT LIKE '(lost%'").fetchone()[0]
+        assert report["orphans"] == {"child": lost}, (report.get("orphans"), lost)
+        con.execute("INSERT INTO parent (name) VALUES ('new')")
+        new_id = con.execute("SELECT max(id) FROM parent").fetchone()[0]
+        assert new_id == 801
+        assert con.execute("SELECT count(*) FROM child WHERE pid = ?", (new_id,)).fetchone()[0] == 0, "a new row inherited a lost row's child"
+    finally:
+        con.close()
+    for key in ("orphans_removed", "orphans_removed_note", "orphans_removed_verdicts"):
+        assert key not in report, f"{key} is the vocabulary of a removal, which no longer happens"
+    assert "id_reuse_possible" not in report
+
+
+def test_the_children_of_a_lost_gap_are_kept_and_counted_and_no_stand_in_is_needed_below_the_top(tmp_path):
+    src = tmp_path / "src.db"
+    _tree_store(src, parent_ddl="CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+    _lose_leaves(src, "parent", [3])  # a leaf in the middle: ids above it are all there
     report, out = _salvage(src, tmp_path)
     con = sqlite3.connect(out)
     try:
         top = con.execute("SELECT max(id) FROM parent").fetchone()[0]
-        gap = 800 - con.execute("SELECT count(*) FROM parent").fetchone()[0] - (800 - top)
-        assert top < 800 and gap > 0, "the test needs a lost tail and a lost gap"
-        assert con.execute("SELECT count(*) FROM child WHERE pid > ?", (top,)).fetchone()[0] == 0
-        assert con.execute("SELECT count(*) FROM grandchild WHERE cid > ?", (top,)).fetchone()[0] == 0
-        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == top, "a child of a row lost in a gap was dropped"
-        assert con.execute("SELECT count(*) FROM grandchild").fetchone()[0] == top
-        con.execute("INSERT INTO parent (name) VALUES ('new')")
-        new_id = con.execute("SELECT max(id) FROM parent").fetchone()[0]
-        assert new_id == top + 1
-        assert con.execute("SELECT count(*) FROM child WHERE pid = ?", (new_id,)).fetchone()[0] == 0, "a new row inherited a lost row's child"
+        assert top == 800, "the test needs the tail to survive"
+        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == 800
+        missing = 800 - con.execute("SELECT count(*) FROM parent").fetchone()[0]
+        assert missing > 0 and report["orphans"] == {"child": missing}
     finally:
         con.close()
-    assert report["orphans_removed"] == {"child": 800 - top, "grandchild": 800 - top}, report.get("orphans_removed")
-    assert report["orphans"] == {"child": gap}, "the orphans of a gap are kept and counted"
-    assert "damaged file the repair keeps" in report["orphans_removed_note"] and "R129" in report["orphans_removed_note"]
-    assert "orphans_removed_verdicts" not in report, "no removed table holds a verdict, and none was named"
+    assert "stand_ins" not in report, "a stand-in was written where nothing could be handed a lost id"
 
 
-def test_a_table_of_measured_verdicts_whose_orphans_were_removed_is_named_in_the_report(tmp_path):
-    """The verdict rule (R100: a verdict this install measured never gives way silently to a repair): the source qualification attempts
-    and admission events carry a ``verdict`` column; when their children-of-a-lost-source are among the removed rows the report says so."""
+def test_an_autoincrement_parent_gets_its_counter_raised_and_no_stand_in_row(tmp_path):
+    src = tmp_path / "src.db"
+    _tree_store(src, parent_ddl="CREATE TABLE parent (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+    # The counter the damaged file kept is below the highest id its children refer to (its own page was lost too, or never reached the
+    # drive): the copy's own rule raises it to the highest row it READ, which is below the lost tail, so only the orphans can raise it.
+    con = sqlite3.connect(src)
+    con.execute("UPDATE sqlite_sequence SET seq = 0 WHERE name = 'parent'")
+    con.commit()
+    con.close()
+    _lose_leaves(src, "parent", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM parent WHERE name LIKE '(lost%'").fetchone()[0] == 0, "a stand-in was written beside a counter"
+        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == 800
+        con.execute("INSERT INTO parent (name) VALUES ('new')")
+        assert con.execute("SELECT max(id) FROM parent").fetchone()[0] >= 801, "the next row took a lost id"
+    finally:
+        con.close()
+    assert "stand_ins" not in report and report["orphans"]["child"] > 0
+
+
+def test_a_key_that_sets_null_on_delete_is_nulled_as_the_app_would_have_and_the_row_is_kept(tmp_path):
     src = tmp_path / "src.db"
     _one_store(
         src,
         [
-            "CREATE TABLE sources (id INTEGER PRIMARY KEY, name TEXT)",
+            "CREATE TABLE articles (id INTEGER PRIMARY KEY, title TEXT NOT NULL)",
+            "CREATE TABLE places (id INTEGER PRIMARY KEY, article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL, name TEXT)",
+        ],
+        {},
+        page=1024,
+    )
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO articles VALUES (?, ?)", [(i, "t" * 60 + str(i)) for i in range(1, 801)])
+    con.executemany("INSERT INTO places VALUES (?, ?, ?)", [(i, i, f"place {i}") for i in range(1, 801)])
+    con.commit()
+    con.close()
+    _lose_leaves(src, "articles", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM places").fetchone()[0] == 800, "a place was removed"
+        lost = 800 - con.execute("SELECT count(*) FROM articles").fetchone()[0]
+        assert lost > 0
+        nulled = con.execute("SELECT count(*) FROM places WHERE article_id IS NULL").fetchone()[0]
+        assert nulled == lost and report["set_null"] == {"places": lost}
+        assert con.execute("PRAGMA foreign_key_check").fetchall() == [], "a key still points at nothing"
+        con.execute("INSERT INTO articles (title) VALUES ('new')")
+        new_id = con.execute("SELECT max(id) FROM articles").fetchone()[0]
+        assert con.execute("SELECT count(*) FROM places WHERE article_id = ?", (new_id,)).fetchone()[0] == 0
+    finally:
+        con.close()
+    assert "orphans" not in report and "stand_ins" not in report
+
+
+def test_a_table_of_measured_verdicts_whose_parent_was_lost_is_kept_and_named_in_the_report(tmp_path):
+    """The verdict rule (R100: a verdict this install measured never gives way silently to a repair): the source qualification attempts
+    and admission events carry a ``verdict`` column; they are KEPT and the report names the tables among the orphans that hold one."""
+    src = tmp_path / "src.db"
+    _one_store(
+        src,
+        [
+            "CREATE TABLE sources (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
             "CREATE TABLE source_qualification_attempts (id INTEGER PRIMARY KEY, source_id INTEGER REFERENCES sources(id), verdict TEXT)",
             "CREATE TABLE notes (id INTEGER PRIMARY KEY, source_id INTEGER REFERENCES sources(id), body TEXT)",
         ],
@@ -452,12 +541,65 @@ def test_a_table_of_measured_verdicts_whose_orphans_were_removed_is_named_in_the
     con.executemany("INSERT INTO source_qualification_attempts VALUES (?, ?, ?)", [(i, i, "qualified") for i in range(1, 601)])
     con.executemany("INSERT INTO notes VALUES (?, ?, ?)", [(i, i, "n") for i in range(1, 601)])
     con.commit()
-    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='sources'") if kind == "leaf"]
     con.close()
-    H.overwrite_pages(src, [leaves[-1]], 1024)
-    report, _out = _salvage(src, tmp_path)
-    assert set(report["orphans_removed"]) == {"source_qualification_attempts", "notes"}, report.get("orphans_removed")
-    assert report["orphans_removed_verdicts"] == ["source_qualification_attempts"], report.get("orphans_removed_verdicts")
+    _lose_leaves(src, "sources", [-1])
+    report, out = _salvage(src, tmp_path)
+    assert set(report["orphans"]) == {"source_qualification_attempts", "notes"}, report.get("orphans")
+    assert report["orphans_verdict_tables"] == ["source_qualification_attempts"], report.get("orphans_verdict_tables")
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM source_qualification_attempts WHERE verdict = 'qualified'").fetchone()[0] == 600
+    finally:
+        con.close()
+
+
+def test_a_stand_in_row_takes_a_value_of_the_right_kind_for_every_column_that_must_have_one(tmp_path):
+    src = tmp_path / "src.db"
+    _one_store(
+        src,
+        [
+            "CREATE TABLE owners (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL, n INTEGER NOT NULL, flag BOOLEAN NOT NULL, x REAL NOT NULL, "
+            "at DATETIME NOT NULL, raw BLOB NOT NULL, js JSON NOT NULL, owner_id INTEGER NOT NULL REFERENCES owners(id), "
+            "defaulted TEXT NOT NULL DEFAULT 'kept', note TEXT)",
+            "CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent(id))",
+        ],
+        {},
+        page=1024,
+    )
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO owners VALUES (?, ?)", [(i, f"o{i}") for i in range(3, 6)])
+    con.executemany(
+        "INSERT INTO parent (id, name, n, flag, x, at, raw, js, owner_id, note) VALUES (?, ?, 1, 1, 1.5, '2026-01-01 00:00:00.000000', x'01', '{}', 3, ?)",
+        [(i, "p" * 60 + str(i), "z" * 40) for i in range(1, 501)],
+    )
+    con.executemany("INSERT INTO child VALUES (?, ?)", [(i, i) for i in range(1, 501)])
+    con.commit()
+    con.close()
+    _lose_leaves(src, "parent", [-1])
+    report, out = _salvage(src, tmp_path)
+    assert "id_reuse_possible" not in report, report.get("id_reuse_possible")
+    con = sqlite3.connect(out)
+    try:
+        row = con.execute("SELECT id, name, n, flag, x, at, raw, js, owner_id, defaulted, note FROM parent WHERE name LIKE '(lost%'").fetchone()
+        assert row is not None and row[1] == f"(lost parent {row[0]})"
+        assert row[2:9] == (0, 0, 0, "1970-01-01 00:00:00.000000", b"", "{}", 3), row  # 3 = the lowest owner there is
+        assert row[9] == "kept" and row[10] is None, "a column with a default or without NOT NULL was given a value"
+    finally:
+        con.close()
+
+
+def test_a_stand_in_the_tables_own_constraints_refuse_is_named_and_nothing_is_removed(tmp_path):
+    src = tmp_path / "src.db"
+    _tree_store(src, parent_ddl="CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL CHECK (name NOT LIKE '(lost%'))")
+    _lose_leaves(src, "parent", [-1])
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == 800 and con.execute("SELECT count(*) FROM grandchild").fetchone()[0] == 800
+    finally:
+        con.close()
+    assert report["id_reuse_possible"] == ["parent"] and "stand_ins" not in report
 
 
 def test_text_that_is_not_utf8_is_kept_with_a_replacement_character_and_counted(tmp_path):

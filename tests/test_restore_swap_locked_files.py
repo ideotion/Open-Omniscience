@@ -335,29 +335,33 @@ def test_the_swap_checkpoints_before_it_unlinks_anything():
         if isinstance(node, ast.FunctionDef) and node.name == "run_restore"
     )
 
-    wanted = {
-        "_checkpoint_before_swap",
-        "dispose_engine",
-        "_clear_stale_side_files",
-        "_replace_live_corpus",
-    }
-    seen: list[tuple[int, str]] = []
-    for node in ast.walk(body):
-        if not isinstance(node, ast.Call):
-            continue
-        fn = node.func
-        name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
-        if name in wanted:
-            seen.append((node.lineno, name))
-    order = [name for _, name in sorted(seen)]
-
-    for name in wanted:
-        assert name in order, f"{name} is not called in run_restore at all"
-
-    where = {name: order.index(name) for name in wanted}
-    assert where["_checkpoint_before_swap"] < where["dispose_engine"], (
-        "the checkpoint needs a live engine, so it must run before dispose"
+    # The swap's steps moved into ONE helper shared with the repair (``swap_in_corpus``, E3): run_restore checkpoints, then calls it, and
+    # the helper disposes the engine, clears the side files and replaces the file, in that order.
+    helper = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "swap_in_corpus"
     )
+
+    def _order(fn_node, wanted):
+        seen: list[tuple[int, str]] = []
+        for node in ast.walk(fn_node):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+            if name in wanted:
+                seen.append((node.lineno, name))
+        found = [name for _, name in sorted(seen)]
+        for name in wanted:
+            assert name in found, f"{name} is not called in {fn_node.name} at all"
+        return {name: found.index(name) for name in wanted}
+
+    before = _order(body, {"_checkpoint_before_swap", "swap_in_corpus"})
+    assert before["_checkpoint_before_swap"] < before["swap_in_corpus"], (
+        "the checkpoint needs a live engine, so it must run before the swap helper disposes it"
+    )
+    where = _order(helper, {"dispose_engine", "_clear_stale_side_files", "_replace_live_corpus"})
     assert where["dispose_engine"] < where["_clear_stale_side_files"], (
         "dispose first, or the pool's own idle handles are what blocks the unlink"
     )
@@ -567,10 +571,11 @@ def test_the_swap_shares_one_wait_budget_across_all_three_steps():
     from src.backup import merge as merge_mod
 
     tree = ast.parse(inspect.getsource(merge_mod))
+    # The three steps are in the ONE swap helper (``swap_in_corpus``, shared with the repair since E3), where the deadline is computed.
     run_restore = next(
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "run_restore"
+        if isinstance(node, ast.FunctionDef) and node.name == "swap_in_corpus"
     )
 
     budgeted = {}
@@ -583,7 +588,7 @@ def test_the_swap_shares_one_wait_budget_across_all_three_steps():
             budgeted[name] = {kw.arg for kw in node.keywords}
 
     assert set(budgeted) == {"_clear_stale_side_files", "_replace_live_corpus"}, (
-        f"both swap steps must be called in run_restore, found {sorted(budgeted)}"
+        f"both swap steps must be called in swap_in_corpus, found {sorted(budgeted)}"
     )
     for name, kwargs in budgeted.items():
         assert "wait_s" in kwargs, (

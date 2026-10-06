@@ -262,6 +262,33 @@ def _clear_stale_side_files(target: Path, *, wait_s: float | None = None) -> Non
         )
 
 
+def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | None = None) -> None:
+    """THE swap, for the restore and for the repair (``database/repair.py``): the library's name is moved onto ``working`` inside the
+    one window of ``database/library_generation.py``, and nowhere else.
+
+    WHY ONE HELPER. Both swaps had the same hazard, and the repair's read found it first (the deep read of E3, B1 and NEW-1): the pool's
+    ``dispose_engine`` closes idle connections only, so a connection a request has checked out stays on the OLD inode and, in WAL mode,
+    SQLite never notices that the name now points elsewhere; a connection OPENED between the removal of the live ``-wal``/``-shm`` and
+    the replace binds the new file's log names to the old file. Inside the window nothing is being opened or can be, every connection
+    made before it is refused from its first line (the generation moves FIRST), and a connection made after it opens the new file.
+    ``check``, if given, runs inside the window after the generation moved and before anything is changed on disk: the repair compares
+    the old file's data version there, so a save that landed in the old file can only have done so BEFORE the move, where the check
+    sees it. A raise from ``check`` (or a replace that fails) leaves the file the library, and the window gives the earlier connections
+    their validity back. ``library_generation.LibraryBusy`` is raised when a connection was still being opened after the wait."""
+    from src.database import library_generation
+    from src.database.session import dispose_engine
+
+    with library_generation.swap_window(working):
+        dispose_engine()
+        if check is not None:
+            check()
+        # ONE budget for the whole swap, not one per file: -wal, -shm and the replace all face the same holder, so a per-step budget would
+        # stall a doomed swap for three times as long while telling the operator it had waited once. Each step gets whatever is left.
+        swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
+        _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
+        _replace_live_corpus(working, target, wait_s=max(0.0, swap_deadline - time.monotonic()))  # atomic on the same filesystem
+
+
 def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = None) -> None:
     """Put the merged corpus in place, waiting out a lock on the DESTINATION.
 
@@ -6766,7 +6793,8 @@ def run_restore(
     and states the range."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
-    from src.database.session import dispose_engine, init_db
+    from src.database.library_generation import LibraryBusy
+    from src.database.session import init_db
     from src.scheduler.runner import owns_the_machine
 
     # The journal sink is separate from on_start on purpose: on_start drives the
@@ -7186,16 +7214,16 @@ def run_restore(
                     "was written to your corpus. Let the running job finish, and "
                     "import again."
                 )
-            dispose_engine()
-            # ONE budget for the whole swap, not one per file: -wal, -shm and the
-            # replace all face the same holder, so a per-step budget would stall a
-            # doomed swap for three times as long while telling the operator it had
-            # waited once. Each step gets whatever is left.
-            swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
-            _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
-            _replace_live_corpus(
-                working, target, wait_s=max(0.0, swap_deadline - time.monotonic())
-            )  # atomic on the same filesystem
+            try:
+                # The engine is disposed, the live log names cleared and the file replaced inside ONE window (swap_in_corpus), in
+                # which no connection is being opened and every connection made before it is refused: a save that waited out the
+                # restore fails loudly instead of committing into a file nobody reads (the deep read of E3, B1 and NEW-1).
+                swap_in_corpus(working, target)
+            except LibraryBusy as busy:
+                raise RestoreRefused(
+                    "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
+                    "switched — nothing was written to your corpus. Import again."
+                ) from busy
             init_db()
 
         report["committed"] = True

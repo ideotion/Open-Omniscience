@@ -506,19 +506,33 @@ class DamageRegistry:
             "repairs": [dict(r) for r in self._repairs],
         }
 
-    def _flush(self, doc: dict[str, Any]) -> None:
+    def _flush(self, doc: dict[str, Any], *, durable: bool = False) -> bool:
         """Atomic: write a sibling and rename. A drive that cannot take it is said in ``write_error``;
-        the in-memory latch holds regardless. Never called with the registry lock held."""
+        the in-memory latch holds regardless. Never called with the registry lock held. ``durable`` makes the
+        file's data and then the folder's entry ``fsync``ed before it returns (:meth:`flush_durable`); the
+        daemon thread's write is not, because a latch is re-read from the file system's own state at the next
+        start. Returns whether this snapshot is now the file."""
+        landed = False
         with self._io_lock:
             if doc.get("write_seq", 0) <= self._flushed_seq:
-                return  # a newer snapshot already landed (two threads raced): never write an older one over it
+                return False  # a newer snapshot already landed (two threads raced): never write an older one over it
             path = Path(self._path_fn())
             tmp = path.with_name(path.name + ".tmp")
             error: str | None = None
             try:
-                tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
+                text = json.dumps(doc, indent=1, sort_keys=True)
+                if durable:
+                    with open(tmp, "w", encoding="utf-8") as handle:
+                        handle.write(text)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                else:
+                    tmp.write_text(text, encoding="utf-8")
                 os.replace(tmp, path)
+                if durable:
+                    fsync_folder(path.parent)
                 self._flushed_seq = doc.get("write_seq", 0)
+                landed = True
             except OSError as exc:
                 first = (str(exc).splitlines() or [""])[0][:120]
                 error = f"{type(exc).__name__}: {first}"
@@ -527,6 +541,24 @@ class DamageRegistry:
         with self._lock:
             self._write_error = error
             self._last_flush_mono = self._mono()  # every attempt: a failing drive is tried once per window
+        return landed
+
+    def flush_durable(self) -> bool:
+        """Write the record as it stands NOW, on the calling thread, ``fsync``ed (file and folder): ``True`` only when it is on the
+        drive. The repair spends the sidecar that names its kept file (the size of the whole library) only after this: the record is
+        what names that file and removes it, and the daemon thread that ordinarily writes it never ``fsync``s and swallows its errors
+        (the deep read of E3, NEW-6). Tried twice: a newer snapshot of the daemon thread that lands between the two is not durable and
+        must be written over. Never raises."""
+        try:
+            self._ensure_loaded()
+            for _attempt in range(2):
+                with self._lock:
+                    doc = self._doc_locked()
+                if self._flush(doc, durable=True):
+                    return True
+        except Exception:  # noqa: BLE001 - a record that cannot be written is said by the caller
+            _LOG.debug("database damage: the record could not be made durable", exc_info=True)
+        return False
 
     # -- noticing ----------------------------------------------------------------------------------
     def on_engine_error(self, context: Any, file_key: str) -> None:
@@ -1411,13 +1443,18 @@ class DamageRegistry:
                     "no-hard-links": FRAME_REPAIR_NO_LINKS,
                     "writer-busy": FRAME_REPAIR_BUSY,
                     "unfinished-starts": FRAME_REPAIR_UNFINISHED,
+                    "write-gate-off": FRAME_REPAIR_NO_GATE,
+                    "copy-stale": FRAME_REPAIR_WRITTEN,
+                    "saved-during-the-copy": FRAME_REPAIR_WRITTEN,
                 }.get(str(reason), FRAME_REPAIR_FAILED)
                 values: dict[str, Any] = {}
                 if frame == FRAME_REPAIR_NO_ROOM:
                     values = {"free": int(newest.get("free_mb") or 0), "needed": int(newest.get("needed_mb") or 0)}
                 if corpus_latched:
                     out.append({"kind": "repair", "file": FILE_CORPUS, "frame": frame, "vars": values})
-        elif corpus_latched and repair_switch_on():
+        elif corpus_latched and repair_switch_on() and _check_switch_on():
+            # Said only while the start-up check can run: with ``OO_BOOT_VERIFY=0`` no check confirms anything at the next start and
+            # nothing is repaired, so a promise of a repair there would be one the app does not keep (the deep read of E3).
             out.append({"kind": "repair", "file": FILE_CORPUS, "frame": FRAME_REPAIR_NEXT_START, "vars": {}})
         done = [r for r in self._repairs if r.get("state") == "done" and r.get("kept_file")]
         if done:
@@ -1437,6 +1474,7 @@ class DamageRegistry:
                         "vars": what,
                     }
                 )
+                out.extend(_orphan_notes(last))
             name = str(last["kept_file"])
             if removed_at:
                 out.append(
@@ -1583,10 +1621,60 @@ def carried_damage(entry: dict[str, Any] | None) -> list[str] | None:
     return sorted(names) or None
 
 
+def fsync_folder(folder: Path) -> None:
+    """Make a folder's entries (a rename, a link, an unlink) durable. A platform that cannot open a folder (Windows) has nothing to call."""
+    flags = getattr(os, "O_RDONLY", 0) | getattr(os, "O_DIRECTORY", 0)
+    try:
+        fd = os.open(folder, flags)
+    except OSError:
+        return
+    try:
+        with contextlib.suppress(OSError):
+            os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def repair_switch_on() -> bool:
     """``OO_BOOT_REPAIR=0`` turns the repair of a damaged data file off (the file stays paused and named, and nothing is
     copied). Its own switch, never the damage pause's or the check's."""
     return os.getenv("OO_BOOT_REPAIR", "1") != "0"
+
+
+def _table_words(value: Any) -> str:
+    """Table names for a sentence: the keys of a record's dict, or its list, sorted and joined (they are the app's own table names)."""
+    names = sorted(str(k) for k in (value.keys() if isinstance(value, dict) else value or ()))
+    return ", ".join(names)
+
+
+def _orphan_notes(rec: dict[str, Any]) -> list[dict[str, Any]]:
+    """The sentences about rows whose parent row could not be read (the salvage keeps every one; the deep read of E3, NEW-4): how many were
+    kept and in which tables, the tables among them that hold a verdict this install measured, the stand-in rows that stop a new row
+    from taking a lost row's number, and the tables where that stand-in could not be written."""
+    out: list[dict[str, Any]] = []
+    orphans = rec.get("orphans")
+    if isinstance(orphans, dict) and orphans:
+        count = sum(int(n) for n in orphans.values() if isinstance(n, int))
+        out.append({"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_REPAIRED_ORPHANS, "vars": {"count": count, "tables": _table_words(orphans)}})
+        if rec.get("orphans_verdict_tables"):
+            out.append(
+                {"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_REPAIRED_ORPHAN_VERDICTS,
+                 "vars": {"tables": _table_words(rec["orphans_verdict_tables"])}}
+            )
+    if rec.get("stand_ins"):
+        out.append({"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_REPAIRED_STAND_INS, "vars": {"tables": _table_words(rec["stand_ins"])}})
+    if rec.get("id_reuse_possible"):
+        out.append(
+            {"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_REPAIRED_ID_REUSE, "vars": {"tables": _table_words(rec["id_reuse_possible"])}}
+        )
+    return out
+
+
+def _check_switch_on() -> bool:
+    """Whether the start-up check runs (``OO_BOOT_VERIFY``, read by ``verify.switch_on``)."""
+    from src.database import verify
+
+    return verify.switch_on()
 
 
 def _kept_file_of(rec: dict[str, Any]) -> Path | None:
@@ -1744,14 +1832,14 @@ FRAME_PAUSE_OFF = (
 #: after the new file first reads clean and then removed by the app (R129, the user's answer 35 = b), which the notices say.
 FRAME_REPAIR_NEXT_START = (
     "The app repairs a damaged library file by itself at its next start: it copies every row it can still read into a "
-    "new file, checks it, and switches to it. The damaged file is kept beside it for 30 days after the new file first "
-    "reads clean, and then removed; you can remove it sooner. Until the repair, collection will not write to the damaged "
-    "file."
+    "new file, checks it, and switches to it. The damaged file is kept beside it, and the app removes it 30 days after "
+    "the new file first reads clean, unless the drive itself could not read it (it then stays until you remove it); you "
+    "can remove it sooner. Until the repair, collection will not write to the damaged file."
 )
 FRAME_REPAIRING = (
     "The app is repairing your damaged library file: it is copying every row it can still read into a new file, and it "
     "switches to the new file only when that reads clean. Anything the app saves waits until it is done. The damaged "
-    "file is kept for 30 days after that, and then removed."
+    "file is kept, and removed 30 days after the new file first reads clean unless the drive itself could not read it."
 )
 FRAME_REPAIRED = (
     "Your library file was damaged, and the app repaired it: {kept} rows were copied and up to {lost} entries could not "
@@ -1783,6 +1871,30 @@ FRAME_KEPT_DISK = (
 FRAME_KEPT_SWITCH = (
     "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. Removing it by itself is switched off on "
     "this machine (OO_BOOT_REPAIR=0), so it stays until you remove it yourself."
+)
+FRAME_REPAIRED_ORPHANS = (
+    "{count} saved rows ({tables}) belong to rows that could not be read. They were kept, and none was removed."
+)
+FRAME_REPAIRED_ORPHAN_VERDICTS = (
+    "Among them are rows that record a verdict this install measured ({tables}); they stay as they were measured."
+)
+FRAME_REPAIRED_STAND_INS = (
+    "A stand-in row, marked as lost, was added to each of these tables: {tables}. It stops a row saved later from being "
+    "given the number of a lost one and seeming to own the rows that belong to it."
+)
+FRAME_REPAIRED_ID_REUSE = (
+    "A row saved later in {tables} could be given the number of a row that was lost, and would then seem to own the saved "
+    "rows that belong to it: the stand-in row that stops this could not be written."
+)
+FRAME_REPAIR_NO_GATE = (
+    "The app did not repair your damaged library file: the single-writer gate is switched off on this machine "
+    "(OO_WRITE_GATE=0), so a save made while the new file is built could not be held back and would be lost. Switch it "
+    "back on and restart the app; the repair then starts by itself. Your data files were not changed."
+)
+FRAME_REPAIR_WRITTEN = (
+    "The app did not repair your damaged library file: something was saved to it while the new file was being made, so "
+    "the new file would have missed that and nothing was switched. Your data files were not changed. The repair is tried "
+    "again at the next start."
 )
 FRAME_REPAIR_NO_ROOM = (
     "The app did not repair your damaged library file: the drive has {free} MB free and the repair needs about {needed} "
