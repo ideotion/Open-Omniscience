@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -50,6 +51,12 @@ from typing import Any
 from src.versioned.adapters.base import ReadBudget
 from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
+from src.wiki.history import (
+    HistoryBuffer,
+    per_edition_deltas,
+    percentile,
+    stream_deltas,
+)
 from src.wiki.identity import parse_external_id
 from src.wiki.lane import WikiStreamAdapter, edition_of
 from src.wiki.tiers import BudgetState, HotSet
@@ -108,6 +115,15 @@ WALK_RESERVE: float = 0.3
 #: buffering in between, so this is a latency-versus-transaction-size choice and not
 #: a rate: nothing about the network depends on it.
 DRAIN_INTERVAL_S: float = 30.0
+
+#: How many drain durations the runner keeps for its p50 and p95. Not a tuning number: it is
+#: the ticks of a 72-hour run (3 days at one drain every 30 s plus the drain itself is under
+#: 8,640), the run the operator asked these figures for, and 10,000 floats are 80 KB.
+DRAIN_RING: int = 10_000
+
+#: How many recent ticks the status lists with their parts. Enough to see one stuck tick and the
+#: ones around it; the hourly history carries the rest.
+TICK_RING: int = 20
 
 
 @dataclass(slots=True)
@@ -428,6 +444,56 @@ class WikiLaneRunner:
         #: When the last drain COMPLETED. A failed drain leaves it alone (it shows in
         #: ``consecutive_failures``), so "since last drain" never counts a failure as one.
         self._last_drain_ended: float | None = None
+        #: THE LANE'S OWN HISTORY (src/wiki/history.py): hourly aggregates of what this loop did,
+        #: noted in memory and written once per tick. The ring holds each drain's duration for the
+        #: p50 and p95 the status reports; the tick parts say where each tick's seconds went.
+        self._history = HistoryBuffer()
+        self._drain_ms: deque[float] = deque(maxlen=DRAIN_RING)
+        self._stage_totals_ms: dict[str, int] = {}
+        self._tick_parts: dict[str, int] = {}
+        self._tick_totals_ms: dict[str, int] = {}
+        self._tick_last: deque[dict[str, int]] = deque(maxlen=TICK_RING)
+        self.ticks = 0
+        self._stream_base: dict[str, int] | None = None
+        self._edition_base: dict[str, int] | None = None
+
+    def _ms_since(self, t0: float) -> int:
+        return max(0, int((self._monotonic() - t0) * 1000))
+
+    def _tick_part(self, name: str, ms: int) -> None:
+        """Add ``ms`` to the part ``name`` of the tick in progress."""
+        self._tick_parts[name] = self._tick_parts.get(name, 0) + int(ms)
+
+    def _close_tick(self) -> None:
+        """End a tick: record its parts, the stream's per-tick differences, and flush the history.
+
+        Never raises: the history is a record of the lane, not part of its work.
+        """
+        parts, self._tick_parts = self._tick_parts, {}
+        if parts:
+            self.ticks += 1
+            self._tick_last.append(dict(parts))
+            for name, ms in parts.items():
+                self._tick_totals_ms[name] = self._tick_totals_ms.get(name, 0) + ms
+                self._history.note("tick", kind=name, ms=ms)
+        try:
+            counters = self.stream_counters()
+            deltas, self._stream_base = stream_deltas(self._stream_base, counters)
+            for key, n in deltas.items():
+                self._history.note("stream", kind=key, n=n)
+            kept, self._edition_base = per_edition_deltas(
+                self._edition_base, (counters or {}).get("per_edition")
+            )
+            for edition, n in kept.items():
+                self._history.note("stream", edition=edition, kind="kept", n=n)
+        except Exception:  # noqa: BLE001 - a stream that keeps no counters has no differences
+            _LOG.debug("could not read the stream's counters for the history", exc_info=True)
+        if self._history.pending():
+            try:
+                with self._lane_session() as lane:
+                    self._history.flush(lane)
+            except Exception as exc:  # noqa: BLE001 - kept in the buffer for the next tick
+                _LOG.debug("the lane history could not be written this tick: %s", exc)
 
     def drain_status(self) -> dict:
         """Where the drain loop is right now, measured on this runner. Never raises."""
@@ -460,6 +526,41 @@ class WikiLaneRunner:
             ),
             "stream_restarts": self.stream_restarts,
             "last_stream_restart_at": self.last_stream_restart_at,
+            # WHERE THE TIME GOES, since this runner started (src/wiki/history.py keeps the hourly
+            # record across restarts). ``tick`` parts are seconds spent in the drain, the
+            # pageview top-up, the search index, WARM, the walk and the sleep; a tick is all of
+            # them, and the walk's pace is whatever the others leave of its 30 s window.
+            "tick": {
+                "ticks": self.ticks,
+                "totals_s": {k: round(v / 1000, 1) for k, v in sorted(self._tick_totals_ms.items())},
+                "last": list(self._tick_last),
+                "last_unit": "milliseconds, one entry per tick, newest last",
+            },
+            "drain_duration": self._drain_duration(),
+            "history": {
+                "pending_rows": self._history.pending(),
+                "flush_failures": self._history.flush_failures,
+                "last_flush_error": self._history.last_flush_error,
+            },
+        }
+
+    def _drain_duration(self) -> dict:
+        """The measured durations of this runner's drains: count, p50, p95 and the longest.
+
+        The corpus connection is held for the ``feeds`` stage (texts are fetched while it is open),
+        so ``stage_totals_s`` is the time that connection was held, summed. Absent figures are
+        ``None`` with the count beside them, never a zero.
+        """
+        data = list(self._drain_ms)
+        p50 = percentile(data, 0.5)
+        p95 = percentile(data, 0.95)
+        return {
+            "measured": len(data),
+            "p50_s": None if p50 is None else round(p50 / 1000, 2),
+            "p95_s": None if p95 is None else round(p95 / 1000, 2),
+            "max_s": None if not data else round(max(data) / 1000, 2),
+            "window": f"the last {DRAIN_RING} drains this process ran",
+            "stage_totals_s": {k: round(v / 1000, 1) for k, v in sorted(self._stage_totals_ms.items())},
         }
 
     # -- the stream half ---------------------------------------------------- #
@@ -596,10 +697,14 @@ class WikiLaneRunner:
     def drain(self) -> DrainReport:
         """One drain, on the CALLER's thread. Opens the lane, stores, closes."""
         self._drain_since = self._monotonic()
+        started = self._drain_since
+        hot_ms = 0
+        ok = False
         self.drain_stage, self.drain_feed = "hot-sets", None
         try:
             budget = self._budget()
             hot = self._hot_sets()
+            hot_ms = self._ms_since(started)
             lane_cm = self._lane_session()
             corpus_cm = self._corpus_session() if self._corpus_session is not None else None
             self.drain_stage = "feeds"
@@ -621,13 +726,35 @@ class WikiLaneRunner:
                             monotonic=self._monotonic, on_feed=_note_feed, rotate=self.drains,
                             attempts=self._attempts,
                         )
+            ok = True
         finally:
             self.drain_stage, self.drain_feed = "idle", None
             self._drain_since = None
+            total_ms = self._ms_since(started)
+            self._note_drain(ok, total_ms, hot_ms, report if ok else None)
         self._last_drain_ended = self._monotonic()
         self.last_drain = report.as_dict()
         self.drains += 1
         return report
+
+    def _note_drain(self, ok: bool, total_ms: int, hot_ms: int, report: DrainReport | None) -> None:
+        """Record one drain's duration, its two stages and what it stored. Never raises."""
+        try:
+            feeds_ms = max(0, total_ms - hot_ms)
+            self._drain_ms.append(float(total_ms))
+            self._stage_totals_ms["hot-sets"] = self._stage_totals_ms.get("hot-sets", 0) + hot_ms
+            self._stage_totals_ms["feeds"] = self._stage_totals_ms.get("feeds", 0) + feeds_ms
+            self._tick_part("drain", total_ms)
+            self._history.note(
+                "drain", kind="ok" if ok else "failed", ms=total_ms,
+                pages=report.revisions_stored if report is not None else 0,
+            )
+            self._history.note("drain_stage", kind="hot-sets", ms=hot_ms)
+            self._history.note("drain_stage", kind="feeds", ms=feeds_ms)
+            if report is not None and report.gaps_recorded:
+                self._history.note("drain", kind="gaps", n=report.gaps_recorded)
+        except Exception:  # noqa: BLE001 - the record is not the work
+            _LOG.debug("could not record a drain's timing", exc_info=True)
 
     def refresh_one_pageview_top(self) -> str | None:
         """Fetch ONE edition's daily top-1,000 if any is due. Returns the edition, or None.
@@ -681,6 +808,7 @@ class WikiLaneRunner:
         if self._indexer is not None and not self._should_stop():
             from src.wiki.lane_search import INDEX_SHARE
 
+            index_t0 = self._monotonic()
             try:
                 index_report = self._indexer.index_for(
                     max(0.0, min(left(), seconds * INDEX_SHARE)), should_stop=self._should_stop
@@ -689,28 +817,36 @@ class WikiLaneRunner:
             except Exception as exc:  # noqa: BLE001 - the index must not end the lane
                 _LOG.warning("the Wikipedia lane search index window failed: %s", exc, exc_info=True)
                 self.last_index = {"error": f"{type(exc).__name__}"}
+            self._tick_part("index", self._ms_since(index_t0))
         if self._warm is not None and not self._should_stop():
             # WARM'S WINDOW LEAVES THE WALK ITS RESERVE while the walk is on: WARM is lazy and
             # takes whatever it is given, so without a reserve the last tier never ran.
             warm_window = max(0.0, left())
             if self._walk_is_on():
                 warm_window *= 1.0 - WALK_RESERVE
+            warm_t0 = self._monotonic()
             try:
                 warm_report = self._warm.warm_for(warm_window, should_stop=self._should_stop)
                 self.last_warm = warm_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
                 _LOG.warning("the Wikipedia window for fetching other changed pages failed: %s", exc, exc_info=True)
                 self.last_warm = {"error": f"{type(exc).__name__}"}
+            self._tick_part("warm", self._ms_since(warm_t0))
         if self._walker is not None and not self._should_stop() and left() > 0:
+            walk_t0 = self._monotonic()
             try:
                 report = self._walker.walk_for(left(), should_stop=self._should_stop)
                 self.last_walk = report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
                 _LOG.warning("the Wikipedia walk window failed: %s", exc, exc_info=True)
                 self.last_walk = {"error": f"{type(exc).__name__}"}
+            self._tick_part("walk", self._ms_since(walk_t0))
         remaining = left()
         if remaining > 0 and not self._should_stop():
+            sleep_t0 = self._monotonic()
             self._wait(remaining)
+            self._tick_part("sleep", self._ms_since(sleep_t0))
+        self._close_tick()
 
     def _walk_is_on(self) -> bool:
         """Whether a walker is wired and its switch reads ON (asked of the switch itself)."""
@@ -829,7 +965,9 @@ class WikiLaneRunner:
             # signal is a top-up for the NEXT one, and running it first would delay
             # storing what the stream already handed us in order to fetch something
             # nothing is waiting for.
+            pageviews_t0 = self._monotonic()
             self.refresh_one_pageview_top()
+            self._tick_part("pageviews", self._ms_since(pageviews_t0))
             done += 1
             if self._should_stop():
                 break

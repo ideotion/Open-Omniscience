@@ -35,7 +35,8 @@ history in its exact sense -- state whose only purpose is to decide what to ask 
 next -- so it is what the trust toggle gates. ``wiki_walk_pages`` is CONTENT (the COLD
 tier's metadata), and untrusting a history must never delete content. ``wiki_walk_samples``
 measures THIS machine's transport, so it stays behind, for the reason ``last_checked_at``
-does: a foreign instance's rate would claim a measurement this machine never made.
+does: a foreign instance's rate would claim a measurement this machine never made. So does
+``wiki_lane_hourly`` (the lane's own hourly history of what it did), for the same reason.
 
 WARM's three follow the same rule. ``wiki_warm_pages`` is CONTENT (Q707's WARM texts,
 latest + previous per Q710). ``wiki_warm_editions`` counts what THIS machine fetched, and
@@ -183,6 +184,48 @@ class WikiWalkSample(LaneBase):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<WikiWalkSample({self.hour_start} {self.transport}: {self.pages} pages)>"
+
+
+class WikiLaneHour(LaneBase):
+    """What THIS lane did, one row per hour per kind of event: its own history, kept by itself.
+
+    The 17 operator bundles of 2026-10-06 could not say where the walk's time went, which
+    replies Wikipedia gave, how long a drain held the writer or why a lane went quiet: the
+    counters lived in memory and the walk kept only its LAST error. This table is the small,
+    bounded record that answers those from a bundle, and it is the lane's own, so it survives a
+    restart and an update (the run clock does too).
+
+    ``metric`` names the kind of event (``walk``, ``drain``, ``tick``, ``stream``), ``kind``
+    its outcome (``ok``, a refusal token, a stage name), ``edition`` the edition when the
+    event has one. A row aggregates one hour: ``n`` events, ``sum_ms``/``max_ms`` of time spent
+    inside them, bytes and pages where those mean something, the longest ``Retry-After`` the
+    wiki asked for, and the LATEST detail (the walk's bookmark, a refusal's type and status;
+    never a URL or a message). Rows older than the retention window are pruned, so the table
+    cannot grow without bound.
+    """
+
+    __tablename__ = "wiki_lane_hourly"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hour_start: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False)
+    metric: Mapped[str] = mapped_column(String(24), nullable=False)
+    edition: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    n: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sum_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    max_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sum_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    sum_pages: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    max_retry_after_s: Mapped[int | None] = mapped_column(Integer)
+    last_detail: Mapped[str | None] = mapped_column(String(160))
+    last_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+
+    __table_args__ = (
+        UniqueConstraint("hour_start", "metric", "edition", "kind", name="uq_wiki_lane_hourly"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<WikiLaneHour({self.hour_start} {self.metric}/{self.kind} {self.edition}: {self.n})>"
 
 
 class WikiWarmPage(LaneBase):
@@ -449,6 +492,7 @@ WIKI_LANE_MODELS: tuple[type[LaneBase], ...] = (
     WikiWalkPage,
     WikiWalkCursor,
     WikiWalkSample,
+    WikiLaneHour,
     WikiWarmPage,
     WikiWarmEdition,
     WikiWarmScan,

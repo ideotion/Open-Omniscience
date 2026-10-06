@@ -406,6 +406,27 @@ def lane_runner() -> Any:
         return _RUNNER
 
 
+def lane_history() -> dict:
+    """The lane's own hourly history, whole, for a diagnostics bundle. Never raises.
+
+    A lane that has no file, or an empty one, says so with a reason, which is not a reading of
+    zero: the same refusal the soak window's lane block makes (``src/wiki/history.py``).
+    """
+    from src.versioned.store import lane_file_bytes, lane_path, lane_session
+    from src.wiki import history
+
+    base = {"retention_days": history.RETENTION_DAYS, "rows": []}
+    try:
+        if not lane_path("wiki").is_file() or not lane_file_bytes("wiki"):
+            return {**base, "measured": False,
+                    "reason": "the Wikipedia lane has never stored anything, so it has no history"}
+        with lane_session("wiki") as lane:
+            return {"measured": True, **history.snapshot(lane)}
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never fails the caller
+        _LOG.warning("could not read the Wikipedia lane history", exc_info=True)
+        return {**base, "measured": False, "reason": f"unreadable: {type(exc).__name__}"}
+
+
 def lane_service_status() -> dict:
     """What THIS PROCESS is doing about the lane, measured rather than stored."""
     with _LOCK:
