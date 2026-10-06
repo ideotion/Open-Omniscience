@@ -1,0 +1,479 @@
+[
+ {
+  "where": "explore",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > overview",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > keywords",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > trend",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > mindmap",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > articles",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > articles",
+  "id": "an-adv-sort",
+  "options": 8,
+  "status": "ok",
+  "picked": "",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > articles",
+  "id": "an-adv-dir",
+  "options": 2,
+  "status": "ok",
+  "picked": "asc",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > www",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > links",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > related",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > sentiment",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > sources",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > competitive",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "#0",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "adv-nf-field",
+  "options": 5,
+  "status": "ok",
+  "picked": "author",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "adv-nf-mode",
+  "options": 3,
+  "status": "ok",
+  "picked": "prefix",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "an-adv-lang",
+  "options": 12,
+  "status": "ok",
+  "picked": "en",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "adv-lang-basis",
+  "options": 3,
+  "status": "ok",
+  "picked": "asserted",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "adv-sources",
+  "options": 6404,
+  "status": "ok",
+  "picked": "1421",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "adv-countries",
+  "options": 209,
+  "status": "ok",
+  "picked": "us",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "adv-regions",
+  "options": 10,
+  "status": "ok",
+  "picked": "global",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "#8",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "explore > advanced",
+  "id": "#9",
+  "options": 4,
+  "status": "ok",
+  "picked": "week",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights",
+  "id": "mm-window",
+  "options": 5,
+  "status": "ok",
+  "picked": "7",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "insights > trends",
+  "id": "trd-kind",
+  "options": 3,
+  "status": "ok",
+  "picked": "term",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "insights > sources",
+  "id": "cs-by",
+  "options": 2,
+  "status": "ok",
+  "picked": "url",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights > families",
+  "id": "fam-kind",
+  "options": 2,
+  "status": "ok",
+  "picked": "non_term",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights > map",
+  "id": "map-kind",
+  "options": 3,
+  "status": "ok",
+  "picked": "term",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "insights > lunar",
+  "id": "lunar-direction",
+  "options": 3,
+  "status": "ok",
+  "picked": "positive",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "observatory",
+  "id": "sky-measure",
+  "options": 4,
+  "status": "ok",
+  "picked": "mentions",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "observatory",
+  "id": "sky-lens",
+  "options": 2,
+  "status": "ok",
+  "picked": "trend",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "law > groups",
+  "id": "gov-agg-pick",
+  "options": 16,
+  "status": "ok",
+  "picked": "EAS",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "law > map",
+  "id": "gov-map-ind",
+  "options": 36,
+  "status": "ok",
+  "picked": "NY.GDP.PCAP.CD",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "law > statistics",
+  "id": "statfig-source",
+  "options": 2,
+  "status": "ok",
+  "picked": "eurostat",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "agenda",
+  "id": "agenda-country",
+  "options": 33,
+  "status": "ok",
+  "picked": "AR",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "agenda",
+  "id": "agenda-tag",
+  "options": 73,
+  "status": "ok",
+  "picked": "argentina-2027",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "agenda > list",
+  "id": "agenda-group",
+  "options": 3,
+  "status": "ok",
+  "picked": "calendar",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "integrity",
+  "id": "anno-kind",
+  "options": 6,
+  "status": "ok",
+  "picked": "leaning",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "settings > general",
+  "id": "set-theme",
+  "options": 3,
+  "status": "ok",
+  "picked": "system",
+  "held": true,
+  "effect": "ui"
+ },
+ {
+  "where": "settings > general",
+  "id": "oo-lang-select",
+  "options": 12,
+  "status": "ok",
+  "picked": "fr",
+  "held": true,
+  "effect": "ui"
+ },
+ {
+  "where": "settings > models",
+  "id": "ai-backend-select",
+  "options": 3,
+  "status": "REVERTED",
+  "picked": "ollama",
+  "held": false,
+  "effect": "net"
+ },
+ {
+  "where": "settings > wikipedia",
+  "id": "dump-lang",
+  "options": 17,
+  "status": "ok",
+  "picked": "zh",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > offlinemap",
+  "id": "osm-pick-add",
+  "options": 250,
+  "status": "ok",
+  "picked": "af",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings > data",
+  "id": "alt-status",
+  "options": 3,
+  "status": "ok",
+  "picked": "kept",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > data",
+  "id": "mbox-proto",
+  "options": 2,
+  "status": "ok",
+  "picked": "pop3",
+  "held": true,
+  "effect": "none"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "bi-enabled",
+  "options": 3,
+  "status": "ok",
+  "picked": "",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "src-enabled",
+  "options": 3,
+  "status": "ok",
+  "picked": "true",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "feeddir-status-filter",
+  "options": 4,
+  "status": "ok",
+  "picked": "ok",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "feeddir-sort",
+  "options": 5,
+  "status": "ok",
+  "picked": "country",
+  "held": true,
+  "effect": "net"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "chrono-anchor",
+  "options": 2,
+  "status": "ok",
+  "picked": "install",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "fetch-mode",
+  "options": 2,
+  "status": "ok",
+  "picked": "protected",
+  "held": true,
+  "effect": "dom"
+ },
+ {
+  "where": "settings > advanced",
+  "id": "uninstall-mode",
+  "options": 4,
+  "status": "ok",
+  "picked": "full",
+  "held": true,
+  "effect": "net"
+ }
+]

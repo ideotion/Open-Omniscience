@@ -3409,4 +3409,6 @@ if __name__ == "__main__":
     import sys as _sys
 
     _sys.modules.setdefault("src.api.main", _sys.modules["__main__"])
+    if "src.api" in _sys.modules:  # ``import src.api; src.api.main`` finds it too
+        _sys.modules["src.api"].main = _sys.modules["__main__"]  # type: ignore[attr-defined]
     main()

@@ -1,0 +1,170 @@
+[
+ {
+  "variant": "main",
+  "options": [
+   "auto",
+   "ollama",
+   "vllm"
+  ],
+  "stored_at_start": "auto",
+  "one_pick": {
+   "picked": "ollama",
+   "readings": [
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "held": false
+  },
+  "two_picks": {
+   "picked": [
+    "auto",
+    "vllm"
+   ],
+   "readings": [
+    "vllm",
+    "vllm",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm"
+   ],
+   "stored_after": "vllm",
+   "held_second_pick_throughout": false,
+   "stored_is_second_pick": true
+  }
+ },
+ {
+  "variant": "picks-only",
+  "options": [
+   "auto",
+   "ollama",
+   "vllm"
+  ],
+  "stored_at_start": "auto",
+  "one_pick": {
+   "picked": "ollama",
+   "readings": [
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama"
+   ],
+   "held": true
+  },
+  "two_picks": {
+   "picked": [
+    "auto",
+    "vllm"
+   ],
+   "readings": [
+    "vllm",
+    "vllm",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "auto",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm"
+   ],
+   "stored_after": "vllm",
+   "held_second_pick_throughout": false,
+   "stored_is_second_pick": true
+  }
+ },
+ {
+  "variant": "fixed",
+  "options": [
+   "auto",
+   "ollama",
+   "vllm"
+  ],
+  "stored_at_start": "auto",
+  "one_pick": {
+   "picked": "ollama",
+   "readings": [
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama",
+    "ollama"
+   ],
+   "held": true
+  },
+  "two_picks": {
+   "picked": [
+    "auto",
+    "vllm"
+   ],
+   "readings": [
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm",
+    "vllm"
+   ],
+   "stored_after": "vllm",
+   "held_second_pick_throughout": true,
+   "stored_is_second_pick": true
+  }
+ }
+]

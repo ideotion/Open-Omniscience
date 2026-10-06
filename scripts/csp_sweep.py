@@ -11,12 +11,21 @@ violations, keeping the console text per width and theme with the record.
 WHAT "TAKES EFFECT" MEANS HERE, STATED SO THE RECORD CANNOT OVERSTATE IT. For each visible
 ``<select>`` the sweep picks an option other than the current one and then checks, 400 ms later:
 
-  * ``held``    -- the select still shows the picked value (a handler that reverted it would be a
-                   broken binding), and
-  * ``effect``  -- what the pick visibly did: ``dom`` (the page's DOM mutated), ``net`` (a request
-                   to this app went out), ``ui`` (the stored UI state or the theme/lang attribute
-                   changed), or ``none`` (nothing observable: some selects are only READ by a later
-                   button, which is a different fact from a dead binding and is reported as such).
+  * ``held``    -- the select, READ BACK from where it is now (by its id, or its panel's id plus its
+                   index), still shows the picked value. A handler that reverted it is a broken
+                   binding (``REVERTED``); a select that is gone or was rebuilt with other options
+                   cannot be read back, and is ``unread`` -- never counted as held. ``held`` shows
+                   that the pick STUCK; it does not show the pick did anything.
+  * ``effect``  -- what the pick visibly did beyond what the page does on its own in the same
+                   400 ms (measured first as ``idle_net`` / ``idle_mut``): ``dom`` (more DOM
+                   mutations than idle), ``net`` (more requests to this app than idle), ``ui`` (the
+                   stored UI state or the theme/lang attribute changed), or ``none`` (nothing
+                   observable: some selects are only READ by a later button, which is a different
+                   fact from a dead binding and is reported as such).
+
+The sweep refuses a non-loopback ``--url`` and a server that is online (``GET /api/system/network``
+must say ``online:false``: boot the app WITHOUT ``OO_NO_SCHEDULER``, which skips the offline engage),
+so a run can neither reach the internet nor claim it did not.
 
 It then restores the original value, so the next select starts from the state it found.
 
@@ -36,6 +45,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -45,11 +55,16 @@ WIDTHS = {"1440x900": (1440, 900), "768x1024": (768, 1024), "390x844": (390, 844
 # Installed into every page before its own scripts run: records CSP violations the browser
 # reports (the console line is the second witness), and counts what a pick set in motion.
 _INIT = r"""
-window.__csp = [];
-document.addEventListener('securitypolicyviolation', e => window.__csp.push({
-  directive: e.violatedDirective, blocked: String(e.blockedURI || '').slice(0, 120),
-  sample: String(e.sample || '').slice(0, 120), source: String(e.sourceFile || '').slice(-80),
-  line: e.lineNumber || 0}));
+// sessionStorage outlives a reload of the tab, so a pick that reloads the page (or the recovery
+// ``goto`` after a tab error) cannot discard the violations seen before it.
+try { window.__csp = JSON.parse(sessionStorage.getItem('__oo_csp') || '[]'); } catch (e) { window.__csp = []; }
+document.addEventListener('securitypolicyviolation', e => {
+  window.__csp.push({
+    directive: e.violatedDirective, blocked: String(e.blockedURI || '').slice(0, 120),
+    sample: String(e.sample || '').slice(0, 120), source: String(e.sourceFile || '').slice(-80),
+    line: e.lineNumber || 0});
+  try { sessionStorage.setItem('__oo_csp', JSON.stringify(window.__csp)); } catch (x) {}
+});
 window.__net = 0; window.__mut = 0;
 (function () {
   const f = window.fetch;
@@ -70,7 +85,7 @@ def themes_from_source() -> list[str]:
 
 
 _COLLECT = r"""
-() => {
+scope => {
   document.querySelectorAll('[data-sweep-i]').forEach(e => e.removeAttribute('data-sweep-i'));
   // A drop-down inside a collapsed <details> cannot be operated (the browser treats it as not
   // visible), so the foldouts of the view being swept are opened first, as a person would.
@@ -78,11 +93,38 @@ _COLLECT = r"""
     if (d.offsetWidth || d.offsetHeight || d.getClientRects().length) d.open = true; });
   const vis = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
                     && getComputedStyle(el).visibility !== 'hidden';
-  return [...document.querySelectorAll('select')].filter(s => vis(s) && !s.disabled
+  // A select is named by a PATH that survives a re-render of its panel: its own id, else the nearest
+  // ancestor's id plus its index among that ancestor's selects. (A marker attribute was lost whenever the
+  // panel redrew, and each lost marker cost a timeout.)
+  return [...document.querySelectorAll(scope ? scope + ' select' : 'select')].filter(s => vis(s) && !s.disabled
         && s.options.length > 1 && !s.closest('#oo-tip,[hidden]')).map((s, i) => {
-    s.setAttribute('data-sweep-i', String(i));
-    return {i, id: s.id || '', name: s.name || '', n: s.options.length, value: s.value};
+    let host = '', idx = 0;
+    if (!s.id) {
+      const h = s.parentElement && s.parentElement.closest('[id]');
+      if (h) { host = h.id; idx = [...h.querySelectorAll('select')].indexOf(s); }
+    }
+    return {i, id: s.id || '', name: s.name || '', n: s.options.length, value: s.value, host, idx};
   });
+}
+"""
+
+# Read a select back by its path: its value and option count, or null when it is not there.
+_READ = r"""
+([id, host, idx]) => {
+  const s = id ? document.getElementById(id)
+    : (document.getElementById(host) || document.createElement('i')).querySelectorAll('select')[idx];
+  return s ? {value: s.value, n: s.options.length} : null;
+}
+"""
+
+_SET = r"""
+([id, host, idx, v]) => {
+  const s = id ? document.getElementById(id)
+    : (document.getElementById(host) || document.createElement('i')).querySelectorAll('select')[idx];
+  if (!s) return false;
+  s.value = v;
+  s.dispatchEvent(new Event('change', {bubbles: true}));
+  return true;
 }
 """
 
@@ -93,11 +135,11 @@ _STATE = r"""
 """
 
 
-def sweep_selects(page, where: str, results: list, log, seen: set) -> None:
-    """Pick another option in every visible select on the current view and judge it."""
+def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = "") -> None:
+    """Pick another option in every visible select on the current view (inside ``scope``, a CSS selector, when given) and judge it."""
     t_start = time.time()
     try:
-        sels = page.evaluate(_COLLECT)
+        sels = page.evaluate(_COLLECT, scope)
     except Exception as exc:  # noqa: BLE001
         log(f"[sweep] collect failed at {where}: {exc}")
         return
@@ -108,8 +150,10 @@ def sweep_selects(page, where: str, results: list, log, seen: set) -> None:
             continue
         if key:
             seen.add(key)
-        sel = page.locator(f'select[data-sweep-i="{s["i"]}"]')
-        row = {"where": where, "id": s["id"] or s["name"] or f"#{s['i']}", "options": s["n"]}
+        path = [s["id"], s["host"], s["idx"]]
+        sel = (page.locator(f'[id="{s["id"]}"]') if s["id"]
+               else page.locator(f'[id="{s["host"]}"] select').nth(s["idx"]))
+        row = {"where": where, "id": s["id"] or s["name"] or f"{s['host']}[{s['idx']}]", "options": s["n"]}
         try:
             opts = sel.evaluate("e => [...e.options].filter(o => !o.disabled).map(o => o.value)")
             current = s["value"]
@@ -118,28 +162,60 @@ def sweep_selects(page, where: str, results: list, log, seen: set) -> None:
                 row.update(status="skipped", why="no other enabled option")
                 results.append(row)
                 continue
+            # What the page does by itself in 400 ms (polls, timers) is measured first, so a pick is
+            # credited only with what exceeds it.
+            s0 = page.evaluate(_STATE)
+            page.wait_for_timeout(400)
             before = page.evaluate(_STATE)
             sel.select_option(value=pick, timeout=3000)
             page.wait_for_timeout(400)
             after = page.evaluate(_STATE)
-            try:
-                held = sel.evaluate("(e, v) => e.value === v", pick)
-            except Exception:  # noqa: BLE001 - the pick reloaded the page: the select is gone
+            # Read the pick back from wherever the select is NOW (a pick may redraw its panel).
+            back = page.evaluate(_READ, path)
+            if back is None:
                 held = None
+            elif back["value"] == pick:
+                held = True
+            elif back["n"] == s["n"]:
+                held = False
+            else:
+                held = None  # the panel was rebuilt with other options: nothing to compare
+            idle = {"net": before["net"] - s0["net"], "mut": before["mut"] - s0["mut"]}
             effect = ("ui" if (before["theme"], before["lang"], before["ui"]) != (after["theme"], after["lang"], after["ui"])
-                      else "net" if after["net"] != before["net"]
-                      else "dom" if after["mut"] != before["mut"] else "none")
-            row.update(status="ok" if held is not False else "REVERTED", picked=pick, held=held, effect=effect)
+                      else "net" if after["net"] - before["net"] > idle["net"]
+                      else "dom" if after["mut"] - before["mut"] > idle["mut"] else "none")
+            status = "unread" if held is None else "REVERTED" if held is False else "ok"
+            row.update(status=status, picked=pick, held=held, effect=effect, idle_net=idle["net"], idle_mut=idle["mut"])
+            if held is None:
+                row["why"] = "the select was gone or rebuilt after the pick: its value could not be read back"
             try:  # restore, so the next select starts from the state it found
-                sel.select_option(value=current, timeout=3000)
+                if not page.evaluate(_SET, path + [current]):
+                    row["restored"] = False
                 page.wait_for_timeout(150)
             except Exception:  # noqa: BLE001
                 pass
             page.keyboard.press("Escape")  # a consent popup or dialog a pick may have opened
         except Exception as exc:  # noqa: BLE001
-            row.update(status="ERROR", why=f"{type(exc).__name__}: {str(exc)[:160]}")
+            row.update(status="ERROR", why=f"{type(exc).__name__}: {str(exc)[:400]}")
         results.append(row)
     print(f"    {where}: {len(sels)} selects, {time.time() - t_start:.1f}s", file=sys.stderr, flush=True)
+
+
+def require_loopback_offline(url: str, request) -> None:
+    """Refuse a non-loopback ``url`` and an app that is ONLINE; ``request`` is a Playwright APIRequestContext.
+
+    ``OO_NO_SCHEDULER=1`` skips the boot's kill-switch engage, so an app booted with it answers
+    ``online:true`` and the record cannot say "airplane mode" about it. A sweep that picks every
+    drop-down is only allowed to run where nothing it does can reach the internet.
+    """
+    host = urlparse(url).hostname or ""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit(f"refusing --url {url}: the sweep only runs against a loopback app")
+    mode = request.get(url.rstrip("/") + "/api/system/network").json()
+    if mode.get("online") is not False:
+        raise SystemExit(
+            f"refusing to sweep: GET /api/system/network says {mode!r}, not online:false "
+            "(boot the app without OO_NO_SCHEDULER, which skips the offline engage)")
 
 
 def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_tabs: list[str] | None) -> dict:
@@ -150,6 +226,7 @@ def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_
         # An EMPTY install opens the first-run guide over the page (it only ever opens on an empty corpus);
         # marking it done is what a person does by closing it, and lets the sweep reach what is under it.
         ctx.add_init_script("try { localStorage.setItem('oo_guide_v1', JSON.stringify({done: true})); } catch (e) {}")
+    require_loopback_offline(url, ctx.request)
     page = ctx.new_page()
     # A select the page re-rendered away between the collect and the pick would otherwise cost
     # Playwright's 30 s default per ERROR row (50 of them in Settings measured 25 minutes a run).
@@ -213,7 +290,7 @@ def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_
         except Exception:  # noqa: BLE001
             csp = []
         csp_console = [c for c in console if re.search(r"content security policy|refused to (execute|load|apply)", c, re.I)]
-        stat = {k: sum(1 for r in results if r["status"] == k) for k in ("ok", "REVERTED", "ERROR", "skipped")}
+        stat = {k: sum(1 for r in results if r["status"] == k) for k in ("ok", "REVERTED", "unread", "ERROR", "skipped")}
         stat.update(
             effect_none=sum(1 for r in results if r.get("effect") == "none"),
             csp_events=len(csp), csp_console=len(csp_console), console_lines=len(console),
@@ -250,8 +327,12 @@ def main() -> int:
         browser.close()
     (out / f"summary-{'-'.join(a.width or WIDTHS)}.json").write_text(
         json.dumps({"at": datetime.now(UTC).isoformat(), "themes": themes, "runs": summaries}, indent=1), encoding="utf-8")
-    bad = sum(t["REVERTED"] + t["csp_events"] + t["csp_console"] for s in summaries for t in s["themes"].values())
-    return 1 if bad else 0
+    # A walk fails on a revert, a CSP event, an ERROR, an UNREAD pick, and on a walk that picked nothing:
+    # a judge that cannot fail for whole classes of outcome (every pick timing out exits 0) is a rubber stamp.
+    stats = [t for s in summaries for t in s["themes"].values()]
+    bad = sum(t["REVERTED"] + t["ERROR"] + t["unread"] + t["csp_events"] + t["csp_console"] for t in stats)
+    empty = sum(1 for t in stats if t["ok"] == 0)
+    return 1 if bad or empty else 0
 
 
 if __name__ == "__main__":

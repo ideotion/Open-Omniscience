@@ -65,14 +65,18 @@ EXPECTED_GAPS = [
 
 
 def test_the_four_capabilities_the_older_guard_pins_are_still_absorbed():
-    """The part that DOES hold: trend, associations, context, framing and the Map/Cloud mind-map."""
-    # the analysis window's code is split across app-analysis.js and app-corpus.js (the context
-    # concordance loader lives in the latter), exactly as the older guard reads it
-    a = "".join(_read(f.name) for f in sorted(STATIC.glob("app-*.js")))
-    assert "/api/insights/trend" in a and "/api/insights/associations" in a
-    assert "/api/insights/context" in a
-    assert "/api/framing?query=" in a, "outlet framing is the Competitive tab's, keyed on the query"
-    assert "anMMset({cloud:true" in a, "the cloud is the mind-map's second view in the analysis window too"
+    """The part that DOES hold, read from the analysis window's own functions, not the union of all modules."""
+    from tests.js_source_helper import function_source
+
+    analysis = _read("app-analysis.js")
+    corpus = _read("app-corpus.js")
+    trend = function_source(analysis, "renderAnTrend")
+    assert "/api/insights/trend" in trend and "/api/insights/associations" in trend
+    # the context concordance loader lives in app-corpus.js, as the older guard reads it
+    ctx = function_source(corpus, "loadAnContext")
+    assert "/api/insights/context" in ctx and "anQuery()" in ctx
+    assert "/api/framing?query=" in analysis, "outlet framing is the Competitive tab's, keyed on the query"
+    assert "anMMset({cloud:true" in analysis, "the cloud is the mind-map's second view in the analysis window too"
 
 
 def test_the_gaps_between_exploreterm_and_the_analysis_window_are_exactly_the_recorded_ones():

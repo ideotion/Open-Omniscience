@@ -1,57 +1,80 @@
 [
  {
+  "where": "home",
+  "id": "home-recent-tag",
+  "options": 20,
+  "status": "ok",
+  "picked": "news",
+  "held": true,
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
+ },
+ {
   "where": "explore",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 1,
+  "idle_mut": 12
  },
  {
   "where": "explore > overview",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > keywords",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > trend",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > mindmap",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > articles",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > articles",
@@ -60,7 +83,9 @@
   "status": "ok",
   "picked": "",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 2,
+  "idle_mut": 152
  },
  {
   "where": "explore > articles",
@@ -69,70 +94,86 @@
   "status": "ok",
   "picked": "asc",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > www",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > links",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > related",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > sentiment",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 1,
+  "idle_mut": 8
  },
  {
   "where": "explore > sources",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > competitive",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
-  "id": "#0",
+  "id": "search-timescope[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
@@ -141,7 +182,9 @@
   "status": "ok",
   "picked": "author",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 3,
+  "idle_mut": 155
  },
  {
   "where": "explore > advanced",
@@ -150,7 +193,9 @@
   "status": "ok",
   "picked": "prefix",
   "held": true,
-  "effect": "dom"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
@@ -159,7 +204,9 @@
   "status": "ok",
   "picked": "en",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
@@ -168,16 +215,20 @@
   "status": "ok",
   "picked": "asserted",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
   "id": "adv-sources",
   "options": 6404,
   "status": "ok",
-  "picked": "1421",
+  "picked": "3",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 1,
+  "idle_mut": 8
  },
  {
   "where": "explore > advanced",
@@ -186,7 +237,9 @@
   "status": "ok",
   "picked": "us",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
@@ -195,25 +248,31 @@
   "status": "ok",
   "picked": "global",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
-  "id": "#8",
+  "id": "adv-published[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "dom"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "explore > advanced",
-  "id": "#9",
+  "id": "adv-collected[0]",
   "options": 4,
   "status": "ok",
   "picked": "week",
   "held": true,
-  "effect": "net"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "insights",
@@ -222,7 +281,9 @@
   "status": "ok",
   "picked": "7",
   "held": true,
-  "effect": "dom"
+  "effect": "none",
+  "idle_net": 1,
+  "idle_mut": 27
  },
  {
   "where": "insights > trends",
@@ -231,7 +292,9 @@
   "status": "ok",
   "picked": "term",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "insights > sources",
@@ -240,7 +303,9 @@
   "status": "ok",
   "picked": "url",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "insights > families",
@@ -249,7 +314,9 @@
   "status": "ok",
   "picked": "non_term",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "insights > map",
@@ -258,7 +325,9 @@
   "status": "ok",
   "picked": "term",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "insights > lunar",
@@ -267,7 +336,9 @@
   "status": "ok",
   "picked": "positive",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "observatory",
@@ -276,7 +347,9 @@
   "status": "ok",
   "picked": "mentions",
   "held": true,
-  "effect": "dom"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "observatory",
@@ -285,7 +358,9 @@
   "status": "ok",
   "picked": "trend",
   "held": true,
-  "effect": "net"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "law > groups",
@@ -294,7 +369,9 @@
   "status": "ok",
   "picked": "EAS",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "law > map",
@@ -303,7 +380,9 @@
   "status": "ok",
   "picked": "NY.GDP.PCAP.CD",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "law > statistics",
@@ -312,7 +391,9 @@
   "status": "ok",
   "picked": "eurostat",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "agenda",
@@ -321,7 +402,9 @@
   "status": "ok",
   "picked": "AR",
   "held": true,
-  "effect": "dom"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "agenda",
@@ -330,7 +413,9 @@
   "status": "ok",
   "picked": "argentina-2027",
   "held": true,
-  "effect": "dom"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "agenda > list",
@@ -339,7 +424,9 @@
   "status": "ok",
   "picked": "calendar",
   "held": true,
-  "effect": "dom"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "integrity",
@@ -348,7 +435,9 @@
   "status": "ok",
   "picked": "leaning",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "settings > general",
@@ -357,7 +446,9 @@
   "status": "ok",
   "picked": "system",
   "held": true,
-  "effect": "ui"
+  "effect": "ui",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "settings > general",
@@ -366,16 +457,20 @@
   "status": "ok",
   "picked": "fr",
   "held": true,
-  "effect": "ui"
+  "effect": "ui",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "settings > models",
   "id": "ai-backend-select",
   "options": 3,
-  "status": "REVERTED",
+  "status": "ok",
   "picked": "ollama",
-  "held": false,
-  "effect": "net"
+  "held": true,
+  "effect": "net",
+  "idle_net": 2,
+  "idle_mut": 25
  },
  {
   "where": "settings > wikipedia",
@@ -384,7 +479,9 @@
   "status": "ok",
   "picked": "zh",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 9,
+  "idle_mut": 181
  },
  {
   "where": "settings > offlinemap",
@@ -393,7 +490,9 @@
   "status": "ok",
   "picked": "af",
   "held": true,
-  "effect": "dom"
+  "effect": "none",
+  "idle_net": 2,
+  "idle_mut": 9
  },
  {
   "where": "settings > data",
@@ -402,7 +501,9 @@
   "status": "ok",
   "picked": "kept",
   "held": true,
-  "effect": "net"
+  "effect": "none",
+  "idle_net": 1,
+  "idle_mut": 4
  },
  {
   "where": "settings > data",
@@ -411,7 +512,9 @@
   "status": "ok",
   "picked": "pop3",
   "held": true,
-  "effect": "none"
+  "effect": "none",
+  "idle_net": 1,
+  "idle_mut": 3
  },
  {
   "where": "settings > advanced",
@@ -420,7 +523,9 @@
   "status": "ok",
   "picked": "",
   "held": true,
-  "effect": "net"
+  "effect": "dom",
+  "idle_net": 9,
+  "idle_mut": 666
  },
  {
   "where": "settings > advanced",
@@ -429,7 +534,9 @@
   "status": "ok",
   "picked": "true",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 3
  },
  {
   "where": "settings > advanced",
@@ -438,7 +545,9 @@
   "status": "ok",
   "picked": "ok",
   "held": true,
-  "effect": "dom"
+  "effect": "none",
+  "idle_net": 1,
+  "idle_mut": 10
  },
  {
   "where": "settings > advanced",
@@ -447,7 +556,9 @@
   "status": "ok",
   "picked": "country",
   "held": true,
-  "effect": "net"
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 3
  },
  {
   "where": "settings > advanced",
@@ -456,7 +567,9 @@
   "status": "ok",
   "picked": "install",
   "held": true,
-  "effect": "dom"
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 1006
  },
  {
   "where": "settings > advanced",
@@ -465,7 +578,9 @@
   "status": "ok",
   "picked": "protected",
   "held": true,
-  "effect": "dom"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  },
  {
   "where": "settings > advanced",
@@ -474,6 +589,8 @@
   "status": "ok",
   "picked": "full",
   "held": true,
-  "effect": "net"
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
  }
 ]

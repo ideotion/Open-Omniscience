@@ -12,8 +12,10 @@ surface and per theme given:
     picker);
   * opened: ``aria-expanded`` flips to true, the panel is visible, and where it sits (over the map,
     or stacked below it);
-  * every drop-down in the opened panel: another option is picked and the sweep's own judgement
-    (held / effect) is recorded, exactly as ``csp_sweep.py`` does it;
+  * every drop-down inside the opened ``.oomap-panel``: another option is picked and the sweep's own
+    judgement (read-back held / effect) is recorded, exactly as ``csp_sweep.py`` does it; the verdict
+    needs every one READ BACK holding the pick, the panel below the map and covering none of it, and
+    the closed toggle covering at most 6 % of the map;
   * closed again: the panel is hidden once more;
   * the console text, CSP violations included.
 
@@ -34,7 +36,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from csp_sweep import _INIT, sweep_selects  # noqa: E402
+from csp_sweep import _INIT, require_loopback_offline, sweep_selects  # noqa: E402
 
 _HOSTS = r"""
 () => {
@@ -79,13 +81,19 @@ def look(page, where: str, theme: str, out: list, console: list) -> None:
             page.wait_for_timeout(500)
             row["opened"] = page.evaluate(_MEASURE, h["i"])
             picks: list = []
-            sweep_selects(page, f"{where} (map panel)", picks, console.append, set())
+            sweep_selects(page, f"{where} (map panel)", picks, console.append, set(), scope=".oomap-panel")
             row["panel_selects"] = [p for p in picks if "map panel" in p["where"]]
             tog.click(timeout=3000)
             page.wait_for_timeout(400)
             row["closed_again"] = page.evaluate(_MEASURE, h["i"])
             c, o, a = row["closed"], row["opened"], row["closed_again"]
+            sel_ok = all(p["status"] == "ok" for p in row["panel_selects"])
             row["verdict"] = {
+                # a panel drop-down is judged only when it was READ BACK holding the pick (unread is not ok)
+                "panel_selects_read_back_held": sel_ok,
+                "panel_below_map": bool(o["panel_below_map"]),
+                "panel_covers_none_of_map": o["panel_covers_map_pct"] == 0,
+                "toggle_covers_at_most_6_pct": (c["toggle_covers_map_pct"] or 0) <= 6,
                 "closed_hides_panel": bool(c["toggle_visible"] and not c["panel_visible"]),
                 "open_flips_aria": o["expanded"] == "true",
                 "open_shows_panel": bool(o["panel_visible"]),
@@ -110,7 +118,9 @@ def main() -> int:
         b = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
         ctx = b.new_context(viewport={"width": 390, "height": 844})
         ctx.add_init_script(_INIT)
+        require_loopback_offline(a.url, ctx.request)
         page = ctx.new_page()
+        page.set_default_timeout(4000)  # the sweep's own lesson: 30 s per lost marker is how a walk takes hours
         console: list[str] = []
         page.on("console", lambda m: console.append(f"[{m.type}] {m.text}") if m.type in ("error", "warning") else None)
         page.on("pageerror", lambda e: console.append(f"[pageerror] {e}"))
@@ -149,7 +159,8 @@ def main() -> int:
     for r in rows:
         v = r.get("verdict")
         print(" ", r["surface"], "OK" if v and all(v.values()) else (r.get("error") or v))
-    return 0 if len(ok) == len(rows) and not csp and not csp_console else 1
+    # zero rows means no map painted: that is a failed look, never a pass
+    return 0 if rows and len(ok) == len(rows) and not csp and not csp_console else 1
 
 
 if __name__ == "__main__":
