@@ -302,6 +302,11 @@ def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = 
         # serving the pre-restore counts. It is dropped by name for that reason,
         # never left to a probe that cannot see the write.
         invalidate_served_counts()
+    # The swap happened: whatever the corpus latch said about the file that was live (database/damage.py)
+    # was about a file that no longer is. The first failed read of the new one puts it back.
+    from src.database import damage
+
+    damage.registry.retry(reason="the corpus file was replaced", files=(damage.FILE_CORPUS,))
 
 
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
@@ -718,6 +723,141 @@ _MERGE_WINDOW_MAX_IDS = 200_000
 #: tiny: at the field corpus's ~22 KB/article this reads ~4 MB through the codec
 #: once per windowed step, against the tens of GB the step itself moves.
 _MERGE_SAMPLE_ROWS = 200
+
+#: WHERE THE MERGE'S TEMP STRUCTURES LIVE, and why it depends on the store.
+#:
+#: A PLAIN working copy keeps ``temp_store=FILE``: measured on the shipped engine, one
+#: INSERT..SELECT costs ~5 KB of RAM per row inserted under MEMORY and none under FILE, with no
+#: time penalty (the table above). An ENCRYPTED working copy cannot: SQLCipher encrypts what the
+#: pager writes, and the SORTER does not write through the pager -- CREATE INDEX, ORDER BY,
+#: GROUP BY, DISTINCT, UNION and IN-subqueries that cannot use an index spill to a temp file
+#: through the VFS, below the codec, as plain text in the temp directory (a tmpfs on some
+#: machines, the disk on others). Measured 2026-10-06 (WAL's reading, reproduced here): 300,000
+#: rows, a 1 MiB cache, the spill file read through ``/proc/<pid>/fd`` during CREATE INDEX held
+#: every row; under MEMORY no temp file was ever opened. So an encrypted copy holds its temp
+#: structures in RAM, and what RAM that takes is bounded here instead of by the corpus.
+#:
+#: WHAT THAT COSTS, measured the same day on the production engine (an encrypted working copy,
+#: ``merge_corpus`` end to end, peak RSS of the busiest step over its start, MEMORY against FILE):
+#: 20,000 articles of 8 KB +62 MB, 6,000 of 32 KB +64 MB, 300,000 of 100 B (a 200,000-id window)
+#: +41 MB. The WINDOWED steps are denominated in bytes, so their cost follows ``_MERGE_WINDOW_BYTES``
+#: and not the corpus, and the gate asks for twice that.
+_ENCRYPTED_TEMP_NEED_BYTES = 2 * _MERGE_WINDOW_BYTES
+#: THREE STEPS ARE NOT WINDOWED AND DO GROW WITH THE CORPUS (the independent read of the first cut
+#: found them; the first measurement used corpora with small keyword and link tables and missed
+#: them): :func:`_materialise_rep` runs one whole-source ``GROUP BY`` per table, and the COALESCE
+#: terms keep any index from serving it, so each is a temp b-tree that now lives in RAM. Measured
+#: the same way on 3,000,000 incoming rows each, the whole step's peak rise under MEMORY:
+#: keywords 72 B/row, article_source_relationships 67 B/row, article_links 89 B/row on 35-character
+#: URLs and 147 B/row on 90-character ones (the sort key is the row's own text, so the cost follows
+#: its length). The figures below round UP (links for a long URL), they include the id maps the
+#: merge keeps to its end (~10 B/row, measured +72 MB over 6,900,000 keywords), and the steps run
+#: one after another, so the gate takes the LARGEST of the three, not their sum. The incoming rows
+#: are counted from the staged file, so the figure follows the backup being merged.
+_ENCRYPTED_REP_BYTES_PER_ROW = {
+    "keywords": 90,
+    "article_links": 150,
+    "article_source_relationships": 80,
+}
+
+
+def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> dict[str, int]:
+    """Rows the staged corpus holds in each table :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names.
+
+    Counted through the merge's OWN connection and its own ``attach`` (the one the merge uses a
+    moment later), under a throwaway alias that is detached again, so the count opens the file by
+    exactly the path the merge will -- no second spelling of it, and no URI to build (a ``?``,
+    ``#`` or ``%`` in the path, a Windows share or an extended-length Windows path each breaks a URI
+    differently).
+    A table the artifact does not carry counts as nothing: that is a measured zero. ANY other
+    failure is a refusal, never a smaller need: a count that cannot be taken is not a reason to
+    ask for less memory, and a file that cannot be read would fail the merge a moment later anyway."""
+    from src.database.connect import attach
+
+    out: dict[str, int] = {}
+    failure: str | None = None
+    try:
+        if not Path(staged_corpus).is_file():
+            # ATTACH would CREATE an empty database here and every COUNT would then say "no such
+            # table": a missing file must not read as a staged corpus with nothing in it.
+            raise FileNotFoundError("the staged file is missing")
+        attach(con, staged_corpus, "cnt")
+        try:
+            for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+                try:
+                    out[table] = int(
+                        con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 - fixed table names from this module's own map
+                    )
+                except Exception as exc:  # noqa: BLE001 - only the one message that names THIS table is a zero
+                    if str(exc).lower() != f"no such table: cnt.{table}":
+                        raise
+        finally:
+            # A failed attach never reaches here (it is raised before the try); this covers a
+            # DETACH that fails after a good attach, which must not mask the real outcome.
+            with suppress(Exception):
+                con.execute('DETACH DATABASE "cnt"')
+    except Exception as exc:  # noqa: BLE001 - one plain refusal for every unreadable-file shape
+        failure = type(exc).__name__
+    if failure is not None:
+        # Raised OUTSIDE the except block, from nothing: the engine's own text can quote the path
+        # and, on a damaged encrypted page, more than that, so neither the message, the cause nor
+        # the context may carry it. Only the exception class is named.
+        raise MergeError(
+            "Could not read the incoming file's row counts to size the memory this merge needs "
+            f"({failure}). Nothing was written to your corpus."
+        )
+    return out
+
+
+def _temp_store_for(con: sqlite3.Connection) -> str:
+    """``MEMORY`` for an encrypted working copy, ``FILE`` for a plain one (see above)."""
+    from src.database.connect import _is_sqlcipher_conn
+
+    return "MEMORY" if _is_sqlcipher_conn(con) else "FILE"
+
+
+def check_memory_for_encrypted_merge(
+    available_mb: float | None = None,
+    floor_mb: float | None = None,
+    incoming_rows: dict[str, int] | None = None,
+) -> None:
+    """Refuse, before any row moves, when this machine cannot hold an encrypted merge's temp memory.
+
+    The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` (the windowed steps), plus the largest of the
+    three whole-source grouping steps for the rows ``incoming_rows`` names, plus the id maps
+    the merge keeps (~16 B per incoming row of those tables), plus the memory guard's own floor
+    (``memory_guard.avail_floor_mb``), against the memory available now. A machine that cannot
+    report its available memory is never refused: an unreadable figure is not a shortage
+    (the memory guard's own rule). The sentence is fixed in shape, so the page reads it back
+    into a keyed frame (``ooServerText``), the same way as the free-space refusals; the server's
+    English stays the log line and the API's answer."""
+    from src.backup.folder_backup import human_bytes
+    from src.database.maintenance import _available_mb_now
+
+    avail = available_mb if available_mb is not None else _available_mb_now()
+    if avail is None:
+        return
+    if floor_mb is None:
+        try:
+            from src.scheduler import memguard
+
+            floor_mb = float(memguard.memory_guard.avail_floor_mb)
+        except Exception:  # noqa: BLE001 - no guard, no floor: never a fabricated one
+            floor_mb = 0.0
+    rows = incoming_rows or {}
+    grouping = max(
+        (int(rows.get(t, 0)) * per_row for t, per_row in _ENCRYPTED_REP_BYTES_PER_ROW.items()),
+        default=0,
+    )
+    maps = 16 * sum(int(rows.get(t, 0)) for t in _ENCRYPTED_REP_BYTES_PER_ROW)
+    need = _ENCRYPTED_TEMP_NEED_BYTES + grouping + maps + int(max(0.0, floor_mb) * 1024 * 1024)
+    if avail * 1024 * 1024 < need:
+        raise MergeError(
+            "Not enough free memory to merge into an encrypted corpus: needs about "
+            f"{human_bytes(need)}, only {human_bytes(int(avail * 1024 * 1024))} available. "
+            "Close other programs and import again. Nothing was written to your corpus."
+        )
+
 
 #: Where a windowed insert's bound is spliced in. A caller that opts into
 #: windowing and forgets the marker would run the WHOLE-corpus statement once
@@ -1607,16 +1747,22 @@ def merge_corpus(
 
     con = db_connect(working_copy, check_same_thread=False)
     con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
-    # Temp storage on DISK, not in RAM. The bundled sqlcipher3 is compiled
-    # SQLITE_TEMP_STORE=2 (verified: `PRAGMA compile_options` says TEMP_STORE=2,
-    # against the stdlib's TEMP_STORE=1), so every statement journal, temp table
-    # and transient index defaults to memory -- and none of it is bounded by
-    # cache_size. Measured on that engine, one INSERT..SELECT costs ~5 KB of RAM
-    # per row inserted under the default and ZERO under FILE, with no time
-    # penalty (see _MERGE_WINDOW_BYTES). Windowing bounds this too; setting it
-    # explicitly means a later window-size increase cannot quietly bring it back.
+    # Where the temp structures live depends on whether the working copy is ENCRYPTED. See
+    # _temp_store_for: a PLAIN copy keeps its temp storage on disk (RAM per inserted row is the
+    # measured reason), an ENCRYPTED one holds it in memory because the sorter's spill file is
+    # written in the clear. The memory an encrypted merge may then need is checked first, so a
+    # machine without it is told so before any row moves rather than killed part-way.
     try:
-        con.execute("PRAGMA temp_store=FILE")
+        temp_store = _temp_store_for(con)
+        if temp_store == "MEMORY":
+            check_memory_for_encrypted_merge(
+                incoming_rows=_incoming_group_rows(con, staged_corpus)
+            )
+    except BaseException:
+        con.close()
+        raise
+    try:
+        con.execute(f"PRAGMA temp_store={temp_store}")
     except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
         pass
     if cache_mb:

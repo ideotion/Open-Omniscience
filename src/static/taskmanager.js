@@ -403,21 +403,32 @@
   // away; the button is the operator's OVERRIDE (R112, see app-core.js _storageGuardHtml): none
   // is offered while one holds.
   function storagePausedText(phase, g) {
+    if (phase === "paused-damaged") return "Paused: the database reported damage"; // see app-core.js
     if (g && g.overridden) return null; // see app-core.js _storagePausedText
     return { "paused-wal-pinned": "Paused: the database log has grown too large",
              "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
   }
+  // The database-damage notice (see app-core.js _damageHtml): shown whether or not the scheduler is on.
+  function damageHtml(a) {
+    var d = a && a.storage_guard && a.storage_guard.database_damage;
+    if (!d || !d.notes || !d.notes.length) return "";
+    var lines = d.notes.map(function (n) {
+      return '<div class="vwarn">' + esc(tf(n.frame, {})) + "</div>";
+    }).join("");
+    return '<div title="' + esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so releases the pause; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder.")) + '">' + lines + "</div>";
+  }
   function storageGuardHtml(a) {
     // Only while collection is meant to be running (see app-core.js _storageGuardHtml).
+    var dmg = damageHtml(a);
     var g = a && a.storage_guard;
-    if (!g || !g.engaged || !g.notes || !g.notes.length) return "";
-    if (!a.running || a.online === false) return "";
+    if (!g || !g.engaged || !g.notes || !g.notes.length) return dmg;
+    if (!a.running || a.online === false) return dmg;
     var lines = g.notes.map(function (n) {
       var vars = {};
       Object.keys(n.vars || {}).forEach(function (k) { vars[k] = fmtBytes(n.vars[k]); });
       return '<div class="vwarn">' + esc(tf(n.frame, vars)) + "</div>";
     }).join("");
-    return '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer).")) + '">' +
+    return dmg + '<div title="' + esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer).")) + '">' +
       lines + storageGuardTail(g) + "</div>";
   }
   // What stands under the notice (see app-core.js _storageGuardTail): the button when the last

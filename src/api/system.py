@@ -239,6 +239,12 @@ def set_network_mode(payload: dict) -> dict:
 
             scheduler = get_scheduler()
             if online:
+                # Going online IS the operator starting collection (R117): it tries a database-damage
+                # latch again exactly as POST /api/scheduler/start does (database/damage.py); the first
+                # failed read puts the pause back. The Wikipedia lane's own start releases that file's.
+                from src.database import damage
+
+                damage.retry_for_collection_start("the network toggle went online")
                 scheduler.start()  # idempotent: no-op if already running
             else:
                 scheduler.stop()  # idempotent: no-op if not running
@@ -374,8 +380,10 @@ def unattended_start(payload: dict | None = None) -> dict:
     collecting = None
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
+            from src.database import damage
             from src.scheduler.runner import get_scheduler
 
+            damage.retry_for_collection_start("the unattended start")  # the operator trying again
             get_scheduler().start()
             collecting = get_scheduler().is_running()
         except Exception:  # noqa: BLE001 - a scheduler hiccup must not lose the arming

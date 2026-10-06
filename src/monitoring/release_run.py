@@ -859,6 +859,7 @@ def _resume_collection(paused: dict[str, Any] | None) -> dict[str, Any]:
             from src.scheduler.runner import get_scheduler
 
             sched = get_scheduler()
+            # A courtesy resume: it never releases a database-damage latch (only the operator's own start does).
             deadline = time.monotonic() + RESUME_COLLECTION_WAIT_S
             started = False
             while True:
