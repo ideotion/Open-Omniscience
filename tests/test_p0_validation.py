@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -391,6 +392,114 @@ def test_worker_refuses_a_dest_that_overlaps_the_data_dir(tmp_path, monkeypatch)
 def test_worker_requires_a_passphrase(tmp_path):
     with pytest.raises(ValueError, match="passphrase is required"):
         p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "d"), passphrase="")
+
+
+# --------------------------------------------------------------------------- #
+# The passphrase and the exceptions a check catches (the coordinator's delta check of #1312, B1)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("site", ["backup", "incremental", "verify", "restore"])
+def test_the_passphrase_is_out_of_every_exception_text_a_p0_report_writes_down(tmp_path, monkeypatch, site):
+    """The four checks that hold the passphrase catch whatever the engine raises and write its words into
+    the report: a file the debug bundle carries and, in a release run, the run's own state and report.
+    Nothing in the engine names the passphrase today; this is the net where the text is made, so a message
+    that did cannot reach any of them. Each site is driven with a failure whose message holds the passphrase,
+    over a real backup where the site comes after one. MUTATION TARGETS: each of the four uses of
+    ``_exception_text`` (replaced by the bare ``Name: message``)."""
+    import src.backup.artifact as artifact
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    secret = "p0-exception-passphrase-7q3"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError(f"could not reach {secret} on the drive")
+
+    if site == "backup":
+        monkeypatch.setattr(artifact, "write_volume_backup", boom)
+    elif site == "incremental":
+        real_backup = artifact.write_volume_backup
+        taken: list[int] = []
+
+        def once_then_boom(*args, **kwargs):
+            taken.append(1)
+            return real_backup(*args, **kwargs) if len(taken) == 1 else boom()
+
+        monkeypatch.setattr(artifact, "write_volume_backup", once_then_boom)
+    elif site == "verify":
+        monkeypatch.setattr(stream_backup, "verify_stream_backup", boom)
+    else:
+        monkeypatch.setattr(artifact, "read_volume_backup", boom)
+
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret,
+        measure_incremental=(site == "incremental"),
+    )
+    checks = out["report"]["checks"]
+    said = {
+        "backup": checks["p0_1_backup"]["reason"],
+        "incremental": (checks["p0_1_backup"]["measurements"]["incremental_refresh"] or {}).get("error"),
+        "verify": checks["p0_1_verify"]["reason"],
+        "restore": checks["p0_2_restore"]["reason"],
+    }[site]
+    assert "RuntimeError: could not reach ***redacted*** on the drive" in said, said
+    assert secret not in json.dumps(out)
+    assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
+
+
+def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verdicts_and_the_success_texts_alone(
+        tmp_path, monkeypatch):
+    """Why the scrub is on the caught texts and not on the finished report: a report holds verdicts
+    (``pass``, ``fail``) that code and the panel compare, and the run puts no minimum on a passphrase's
+    length. An exact-match scrub of the whole report by the passphrase ``pass`` would turn every verdict and
+    the word in ``passphrase`` into the marker, and read a good backup as one that did not verify. MUTATION
+    TARGET: a scrub of the report (or of a check) as a whole."""
+    _live_corpus(tmp_path, monkeypatch)
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="pass", measure_incremental=False
+    )
+    checks = out["report"]["checks"]
+    assert checks["p0_1_verify"]["verdict"] == "pass" and checks["p0_2_restore"]["verdict"] == "pass", checks
+    assert "the passphrase decrypted every volume" in checks["p0_1_verify"]["reason"]
+    assert out["report"]["summary"]["pass"] >= 2
+    assert "***redacted***" not in json.dumps(out), "nothing the run said was a message that named it"
+
+
+def test_no_check_that_holds_the_passphrase_writes_a_caught_exception_any_way_but_through_exception_text():
+    """The four sites above are the ones there are; the next ``except ... as exc`` that puts ``{exc}`` into a
+    report is how the next leak is made, and no test of the four would see it. Every handler inside a
+    function that is given the passphrase may use the caught exception only as the argument of
+    ``_exception_text``. (The two instrumentation reads, ``_check_unlock`` and ``_check_collector``, are not
+    given it, so they are not held to this.)"""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(p0))
+    offenders: list[str] = []
+    holders: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        if "passphrase" not in {a.arg for a in (*fn.args.args, *fn.args.kwonlyargs)}:
+            continue
+        holders.append(fn.name)
+        for handler in (n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler) and n.name):
+            through = {
+                id(call.args[0])
+                for call in ast.walk(handler)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "_exception_text"
+                and call.args
+            }
+            offenders += [
+                f"{fn.name}, line {node.lineno}"
+                for node in ast.walk(handler)
+                if isinstance(node, ast.Name) and node.id == handler.name and id(node) not in through
+            ]
+    assert {"_check_backup", "_check_restore"} <= set(holders), (
+        f"the walk found {holders}: a rename must not leave it looking at nothing"
+    )
+    assert not offenders, f"a caught exception reaches a report without going through _exception_text: {offenders}"
 
 
 # --------------------------------------------------------------------------- #

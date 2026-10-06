@@ -229,12 +229,40 @@ def test_the_durable_log_method_says_a_failed_cut_leaves_more_than_the_cap_behin
 
 def test_the_durable_log_method_says_what_a_line_holds_and_that_older_lines_carry_more():
     """The export is all the reader has: a line carries no `method` or `caveat` of its own, so the report
-    says where those are, and that a log written before 2026-10-06 holds both shapes until the cuts drop
-    the older one."""
+    says where those are (`record_method` and `record_caveat`, one pair per kind: the next test pins that
+    they are there), and that a log written before 2026-10-06 holds both shapes until the cuts drop the
+    older one."""
     method = search_timing.durable_log_summary()["method"]
     assert "A line is the measurement only" in method and "started_after_unlock_s" in method
-    assert "the `method` and `caveat` that describe a measurement are the ones in this report" in method
+    assert "in this report, once per kind, as `record_method` and `record_caveat` of the text aggregate and of `browse`" in method
     assert "before 2026-10-06 still carries them" in method and "both shapes can share a file" in method
+
+
+def test_the_report_carries_the_words_each_kind_of_record_was_made_under_once_per_kind():
+    """The coordinator's delta check of #1312, S1: the durable logs write the measurement only and the export
+    is all the reader has, so the words a record carries (what each phase covers, where the clock starts and
+    stops) have to be in the REPORT, once per kind, where the durable log's own method says they are. Before
+    this the sentence was untrue: the aggregates' `method` and `caveat` describe the aggregate, not the
+    record. MUTATION TARGETS: leaving either pair out, giving one kind the other's words, and a record's
+    own text drifting from the report's (the two are one constant, so a copy that is edited alone shows)."""
+    text, browse = _record("text"), _record("browse", limit=8)
+    rep = search_timing.build_report([text, browse])
+    assert rep["record_method"] == text["method"], "the text aggregate carries what a text record says"
+    assert rep["browse"]["record_method"] == browse["method"], "the browse aggregate carries a browse record's"
+    assert rep["record_caveat"] == text["caveat"] == browse["caveat"] == rep["browse"]["record_caveat"]
+    assert rep["record_method"] != rep["browse"]["record_method"], "two kinds, two methods"
+    for name in ("fts", "resolve", "load"):
+        assert f"{name}:" in rep["record_method"], f"the text words name the phase {name!r}"
+    for name in ("count_cached", "count_recomputed", "count_live", "rows"):
+        assert name in rep["browse"]["record_method"], f"the browse words name the phase {name!r}"
+    for words in (rep["record_method"], rep["browse"]["record_method"]):
+        assert "begins after the request has waited for a worker" in words, "where the clock starts"
+        assert "ends before the response is built" in words, "where it stops"
+    # They are the instrument's words, not the data's: an empty window still says how a record is read.
+    empty = search_timing.build_report([])
+    assert empty["record_method"] == rep["record_method"] and empty["record_caveat"] == rep["record_caveat"]
+    assert empty["browse"]["record_method"] == rep["browse"]["record_method"]
+    assert empty["browse"]["record_caveat"] == rep["browse"]["record_caveat"]
 
 
 def _spied_client_browse(client, monkeypatch, params):
@@ -397,12 +425,37 @@ def test_the_browse_aggregate_says_which_page_sizes_it_mixes():
     method = rep["browse"]["method"]
     assert "every call to GET /api/articles that has no text query and no explicit `ids` set" in method
     assert "a call for a fixed set of ids is not timed" in method
-    # A browse is recorded after its rows are in hand (src/api/main.py, with no try/finally), so a
-    # call that raised is in neither the window nor the durable log: the report says so, and says
-    # where those calls are counted instead (the coordinator's check of #1292, S1).
-    assert "once it has returned a page: a call that failed is not in it" in method
+    # A browse is recorded right after its rows are in hand (src/api/main.py, with no try/finally), so a
+    # call that raised BEFORE that is in neither the window nor the durable log, and one that raises
+    # after it (while the response is built) is in both: the report says so, and says where the first
+    # kind is counted instead (the coordinator's check of #1292, S1; the Opus read of #1312, D2).
+    assert "once its query has returned the page: a call that failed before then is not in it" in method
     assert "route latency log counts those" in method
+    assert "one that fails after it, while its response is built, is; a call for a fixed set" in method
     assert "page_sizes" in method
+
+
+def test_a_call_that_fails_after_its_rows_are_in_hand_is_in_the_browse_window_and_one_that_fails_before_is_not(
+        client, monkeypatch):
+    """The report's method text says which, and it is checked by running the handler: the browse is recorded
+    inside ``_query_articles`` right after its rows are read, with no try/finally, so a call that raises while the
+    response is built (after) is in the window and the durable log, and one that raises before the query is not
+    (the route latency log counts those). The coordinator's check of #1292 said the first kind was absent; the
+    Opus read of #1312 found it is not (D2)."""
+    def boom(*args, **kwargs):
+        raise RuntimeError("the call failed")
+
+    with monkeypatch.context() as before:
+        before.setattr(main, "_resolve_count_keyword", boom)
+        with pytest.raises(RuntimeError):
+            client.get("/api/articles", params={"limit": 2})
+    assert search_timing.search_timing_report()["browse"]["pages"] == 0, "failed before its query: not timed"
+    with monkeypatch.context() as after:
+        after.setattr(main, "_top_keyword_terms", boom)
+        with pytest.raises(RuntimeError):
+            client.get("/api/articles", params={"limit": 2})
+    rep = search_timing.search_timing_report()
+    assert rep["browse"]["pages"] == 1 and rep["browse"]["page_sizes"] == {"2": 1}, "failed after its rows: timed"
 
 
 def test_a_call_for_a_fixed_set_of_ids_is_not_timed_and_a_plain_call_is(client):
@@ -727,10 +780,10 @@ def test_the_in_process_count_restarts_and_the_durable_one_does_not(tmp_path):
 
 def test_a_durable_line_is_the_measurement_only_and_the_two_static_texts_stay_in_the_report(tmp_path):
     """The coordinator's check of #1292, N3: `method` and `caveat` were 1,741 of a browse line's 1,937
-    bytes, the same words on every line, and nothing reads them back (the report carries them once, in
-    its own `method` and `caveat`). MUTATION TARGETS: writing the whole record, dropping only one of
-    the two, dropping a key a reader uses, and cutting the CALLER's dict instead of the copy that is
-    written."""
+    bytes, the same words on every line, and nothing reads them back (the report carries them once per
+    kind, as `record_method` and `record_caveat`: the test that names the words each kind of record was
+    made under pins it). MUTATION TARGETS: writing the whole record, dropping only one of the two,
+    dropping a key a reader uses, and cutting the CALLER's dict instead of the copy that is written."""
     for kind, meta in (("text", {}), ("browse", {"limit": 8, "offset": 16})):
         record = _record(kind, **meta)
         whole = json.loads(json.dumps(record))

@@ -13,11 +13,15 @@ Two things are pinned, each with its negative space. The LAUNCHER sets the defau
 overrides a value somebody chose. The READING says what the process STARTED with, and says it
 the way the allocator reads it: glibc reads the variable once, so a later change to
 ``os.environ`` can never have applied; a variable set twice counts as its FIRST value, which
-is the one glibc applies (checked against the real allocator below); a value glibc would ignore
+is the one glibc applies when it accepts it (checked against the real allocator below; a first
+value glibc ignores lets the second apply, and the reading does not claim either);
+``GLIBC_TUNABLES`` is read in every copy, as glibc reads it; a value glibc would ignore
 or read differently ("4 ", "08", "010") is not claimed as applied; a process that is not on
-glibc, or that preloads another malloc, is not "running with the cap" however the variable
-reads; and ``GLIBC_TUNABLES`` naming the arena limit, which outranks the variable, is not
-guessed at.
+glibc, or that has LOADED another malloc, is not "running with the cap" however the variable
+reads (what counts is the file the loader mapped, read from the process's own map: an
+``LD_PRELOAD`` entry that did not load is no replacement, and one that loaded under another name
+is); and ``GLIBC_TUNABLES`` naming the arena limit, which outranks the variable, is not guessed
+at.
 """
 
 from __future__ import annotations
@@ -281,7 +285,10 @@ def test_every_spawner_of_an_engine_or_a_download_builds_its_environment_without
     """The three spawners the app has -- the Ollama daemon, the vLLM server, and the installs and
     weights download -- all take the environment from ``launch_env``, so none of them inherits
     the launcher's default. A fourth that built its own from ``os.environ`` would, and this is
-    the list to extend."""
+    the list to extend. The Ollama install SCRIPT (``installer.run_installer``) is a deliberate
+    non-member, not a forgotten one: a short shell that downloads and unpacks the binary, not an
+    engine, which inherits the server's environment as it is (the daemon it installs is started by
+    the service manager, with its own)."""
     from src.llm import model_store, ollama_lifecycle, vllm_lifecycle
 
     marker = model_store.ARENA_DEFAULT_MARKER
@@ -325,7 +332,7 @@ def test_every_spawner_of_an_engine_or_a_download_builds_its_environment_without
 
 
 def _child_reading(env_extra: dict[str, str], code: str) -> dict:
-    env = {k: v for k, v in os.environ.items() if k != "MALLOC_ARENA_MAX"}
+    env = {k: v for k, v in os.environ.items() if k not in _ALLOCATOR_VARIABLES}
     env.update(env_extra)
     env["PYTHONPATH"] = str(REPO)
     got = subprocess.run(
@@ -377,14 +384,14 @@ from src.monitoring import session_hwm
 print(json.dumps({"arenas": arenas, "reading": session_hwm.allocator_setting()}))
 """
 
-# Starts ``_COUNT_ARENAS`` through ``execve`` with an environment block that names
-# MALLOC_ARENA_MAX twice, first then last: no ``dict``-based API (subprocess, os.execve) can
-# build such a block, and it is exactly what the allocator's lookup rule is about.
+# Starts ``_COUNT_ARENAS`` through ``execve`` with an environment block that names one variable
+# twice, first then last: no ``dict``-based API (subprocess, os.execve) can build such a block,
+# and it is exactly what the allocator's lookup rule is about.
 _EXEC_WITH_TWO_VALUES = """
 import ctypes, os, sys
-first, last, code = sys.argv[1:4]
-rest = [f"{k}={v}".encode() for k, v in os.environ.items() if k != "MALLOC_ARENA_MAX"]
-entries = [f"MALLOC_ARENA_MAX={first}".encode(), f"MALLOC_ARENA_MAX={last}".encode(), *rest]
+name, first, last, code = sys.argv[1:5]
+rest = [f"{k}={v}".encode() for k, v in os.environ.items() if k != name]
+entries = [f"{name}={first}".encode(), f"{name}={last}".encode(), *rest]
 envp = (ctypes.c_char_p * (len(entries) + 1))(*entries, None)
 argv = (ctypes.c_char_p * 4)(sys.executable.encode(), b"-c", code.encode(), None)
 libc = ctypes.CDLL(None, use_errno=True)
@@ -398,15 +405,15 @@ sys.exit("execve failed, errno %d" % ctypes.get_errno())
 _ALLOCATOR_VARIABLES = ("MALLOC_ARENA_MAX", "GLIBC_TUNABLES", "LD_PRELOAD")
 
 
-def _count_arenas(env_extra: dict[str, str] | None = None, *, twice: tuple[str, str] | None = None) -> dict:
-    """What glibc did in a child started with ``env_extra``, or with ``MALLOC_ARENA_MAX`` named
-    twice (``twice`` = first value, last value), and what the app's reading said there."""
+def _count_arenas(env_extra: dict[str, str] | None = None, *, twice: tuple[str, str, str] | None = None) -> dict:
+    """What glibc did in a child started with ``env_extra``, or with one variable named twice
+    (``twice`` = its name, first value, last value), and what the app's reading said there."""
     env = {k: v for k, v in os.environ.items() if k not in _ALLOCATOR_VARIABLES}
     env.update(env_extra or {})
     env["PYTHONPATH"] = str(REPO)
     cmd = [sys.executable, "-c", _COUNT_ARENAS]
     if twice is not None:
-        cmd = [sys.executable, "-c", _EXEC_WITH_TWO_VALUES, twice[0], twice[1], _COUNT_ARENAS]
+        cmd = [sys.executable, "-c", _EXEC_WITH_TWO_VALUES, *twice, _COUNT_ARENAS]
     got = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
     assert got.returncode == 0, got.stderr
     return json.loads(got.stdout.strip().splitlines()[-1])
@@ -481,12 +488,61 @@ def test_a_variable_set_twice_counts_as_its_first_value_because_that_is_the_one_
     and the reverse order would say "capped at 8" for one that kept one. Both ends are checked
     against the real allocator, which is what stops a later glibc from making this a guess."""
     _arena_baseline()
-    first_wins = _count_arenas(twice=("3", "1"))
+    first_wins = _count_arenas(twice=("MALLOC_ARENA_MAX", "3", "1"))
     assert first_wins["reading"]["arena_cap"] == 3
     assert first_wins["arenas"] == 3, "glibc applied the first value, as the reading says"
-    last_is_bigger = _count_arenas(twice=("1", "3"))
+    last_is_bigger = _count_arenas(twice=("MALLOC_ARENA_MAX", "1", "3"))
     assert last_is_bigger["reading"]["arena_cap"] == 1
     assert last_is_bigger["arenas"] == 1, "glibc applied the first value here too"
+
+
+# The values glibc IGNORES (it reads the whole value and gives up on one that is not a number it takes): a trailing
+# blank or letter, a fraction, zero, an empty value, a digit that is not an ASCII one, a number past 64 bits. The
+# next entry of the variable applies in their place. Measured on glibc 2.39 by naming each first and ``2`` second.
+_IGNORED_VALUES = ("4 ", " 4 ", "abc", "2x", "08", "1.5", "0", "", "٣", "1٣", "２", "9" * 23)
+
+
+@linux_only
+def test_a_first_value_glibc_ignores_lets_the_second_apply_and_the_reading_claims_neither(arena_baseline):
+    """glibc applies the first value it ACCEPTS, not the first it sees: measured, ``("4 ", "2")`` gave 2 arenas and
+    so did ``("abc", "2")``. The reading takes the first entry, which glibc ignored, so it says not known: it
+    never claims the second (which applied) and never the first (which did not). This is also where "glibc
+    ignores this value" is PROVEN for the rows of the table below that expect the baseline: those rows alone
+    cannot tell a value glibc ignored from one it took as a cap past every arena there is, on a machine where the
+    two give the same count (three CPUs or more)."""
+    for first in _IGNORED_VALUES:
+        got = _count_arenas(twice=("MALLOC_ARENA_MAX", first, "2"))
+        assert got["arenas"] == min(2, arena_baseline), (first, got["arenas"])
+        assert got["reading"]["effective"] is None and got["reading"]["arena_cap"] is None, (first, got["reading"])
+
+
+@linux_only
+def test_a_first_value_glibc_reads_as_a_huge_number_applies_so_a_negative_one_bounds_nothing(arena_ceiling):
+    """The coordinator's delta check of #1312, N2: the table's ``-2`` row said glibc IGNORES a negative number, and a
+    machine with three or more CPUs could not tell (a value ignored and a cap past every arena both keep 17 there).
+    glibc reads the value with ``strtoul``, which takes a sign: ``-2`` is the largest number there is, and named
+    first it keeps every arena even with ``2`` behind it (measured, glibc 2.39: 17 against 2). The reading does not
+    claim it (``unknown``), which is modest and not wrong. The row now says what glibc did."""
+    for first in ("-2", "9" * 18):
+        got = _count_arenas(twice=("MALLOC_ARENA_MAX", first, "2"))
+        assert got["arenas"] == arena_ceiling, (first, got["arenas"], arena_ceiling)
+
+
+@linux_only
+def test_glibc_tunables_named_twice_is_read_in_every_copy_because_glibc_parses_each(arena_baseline):
+    """MUTATION TARGET: taking the first copy only. Measured, glibc 2.39: ``GLIBC_TUNABLES`` named twice, the limit
+    in the SECOND copy only, with the variable at 2, gave 1 arena where a reading of the first copy said capped at 2."""
+    both = {"MALLOC_ARENA_MAX": "2"}
+    for first, last, kept in (
+        ("glibc.malloc.tcache_count=0", "glibc.malloc.arena_max=1", 1),
+        ("glibc.malloc.arena_max=1", "glibc.malloc.tcache_count=0", 1),
+        ("glibc.malloc.arena_max=3", "glibc.malloc.arena_max=1", 1),
+    ):
+        got = _count_arenas(both, twice=("GLIBC_TUNABLES", first, last))
+        assert got["arenas"] == kept, (first, last, got["arenas"])
+        assert got["reading"]["effective"] is None and got["reading"]["arena_cap"] is None, (first, last, got["reading"])
+    got = _count_arenas(both, twice=("GLIBC_TUNABLES", "glibc.malloc.tcache_count=0", "glibc.malloc.tcache_count=1"))
+    assert got["arenas"] == min(2, arena_baseline) and got["reading"]["effective"] is True, got
 
 
 @pytest.fixture(scope="module")
@@ -496,33 +552,52 @@ def arena_baseline() -> int:
     return _arena_baseline()
 
 
+@pytest.fixture(scope="module")
+def arena_ceiling(arena_baseline) -> int:
+    """The arenas the same threads leave under a cap that is valid and far past any limit: what a cap glibc
+    APPLIES but that bounds nothing keeps. It is the baseline wherever glibc's own default limit (8 arenas per
+    online CPU) is above what 16 threads ask for (three CPUs or more); below that the default bites (16 on two,
+    8 on one) and a cap that bounds nothing keeps MORE than the baseline, so a row that expects glibc to have
+    applied such a cap compares with this and a row that expects glibc to have ignored the setting with the
+    baseline (the coordinator's delta check of #1312, N2: both were the baseline, which only holds on four)."""
+    ceiling = _count_arenas({"MALLOC_ARENA_MAX": "1000"})["arenas"]
+    assert ceiling >= arena_baseline, "a cap past every arena cannot keep fewer than the default does"
+    return ceiling
+
+
 # What the reading is to say for a child started with ``env``, and what glibc must have done there.
 # ``claim``: ``("capped", N)`` is "runs with the cap, N"; ``"unknown"`` is "not known" (effective None, no
 # cap named); ``"not set"`` is "not capped" (effective False). ``arenas``: an int is "glibc kept that many"
-# (no more than the baseline); ``"baseline"`` is "glibc ignored the setting"; None is "glibc did something
-# the reading does not claim to know" (the figure goes in the failure message and is not asserted).
-# Measured on glibc 2.39 with 16 allocating threads; a glibc that reads a value differently fails the row
-# with the figure in its message, which is what these are for.
+# (no more than the ceiling); ``"baseline"`` is "glibc ignored the setting" (it kept what its own default
+# limit allows); ``"ceiling"`` is "glibc applied a cap that bounds nothing" (it kept what 16 threads ask for);
+# None is "glibc did something the reading does not claim to know" (the figure goes in the failure message
+# and is not asserted). Measured on glibc 2.39 with 16 allocating threads; a glibc that reads a value
+# differently fails the row with the figure in its message, which is what these are for. The two tokens are
+# told apart only where the default limit bites (fewer than three CPUs), so
+# ``test_a_first_value_glibc_ignores_lets_the_second_apply_and_the_reading_claims_neither`` and its twin
+# prove each value's class by naming it first and a bounding value second, which tells them apart anywhere.
 _REAL_SHAPES = [
     ("not set", {}, "not set", "baseline"),
     ("a plain number", {"MALLOC_ARENA_MAX": "3"}, ("capped", 3), 3),
     ("a leading blank", {"MALLOC_ARENA_MAX": " 4"}, ("capped", 4), 4),
     ("a leading tab", {"MALLOC_ARENA_MAX": "\t2"}, ("capped", 2), 2),
-    ("a number far past the arenas there are", {"MALLOC_ARENA_MAX": "9" * 18}, ("capped", int("9" * 18)), "baseline"),
+    ("a number far past the arenas there are", {"MALLOC_ARENA_MAX": "9" * 18}, ("capped", int("9" * 18)), "ceiling"),
     # What follows the digits makes glibc ignore the whole value: these are NOT the caps they look like.
     ("a trailing blank", {"MALLOC_ARENA_MAX": "4 "}, "unknown", "baseline"),
     ("blanks on both sides", {"MALLOC_ARENA_MAX": " 4 "}, "unknown", "baseline"),
     ("a trailing letter", {"MALLOC_ARENA_MAX": "2x"}, "unknown", "baseline"),
     ("a leading zero before an 8", {"MALLOC_ARENA_MAX": "08"}, "unknown", "baseline"),
     ("a fraction", {"MALLOC_ARENA_MAX": "1.5"}, "unknown", "baseline"),
-    ("a negative number", {"MALLOC_ARENA_MAX": "-2"}, "unknown", "baseline"),
     ("zero", {"MALLOC_ARENA_MAX": "0"}, "unknown", "baseline"),
     ("an empty value", {"MALLOC_ARENA_MAX": ""}, "unknown", "baseline"),
     ("an Arabic-Indic digit", {"MALLOC_ARENA_MAX": "\u0663"}, "unknown", "baseline"),
     ("an ASCII digit and an Arabic-Indic one", {"MALLOC_ARENA_MAX": "1\u0663"}, "unknown", "baseline"),
     ("a full-width digit", {"MALLOC_ARENA_MAX": "\uff12"}, "unknown", "baseline"),
     ("a number past 64 bits", {"MALLOC_ARENA_MAX": "9" * 23}, "unknown", "baseline"),
-    # glibc DOES read these as numbers; the reading does not claim them, so it is only ever too modest.
+    # glibc DOES read these as numbers; the reading does not claim them, so it is only ever too modest. A
+    # negative one is among them: ``strtoul`` takes the sign, so ``-2`` is the largest number there is, a cap that
+    # bounds nothing (the row said glibc IGNORES it until the coordinator's delta check of #1312, N2).
+    ("a negative number", {"MALLOC_ARENA_MAX": "-2"}, "unknown", "ceiling"),
     ("octal", {"MALLOC_ARENA_MAX": "010"}, "unknown", None),
     ("hexadecimal", {"MALLOC_ARENA_MAX": "0x4"}, "unknown", None),
     ("a plus sign", {"MALLOC_ARENA_MAX": "+4"}, "unknown", None),
@@ -537,7 +612,19 @@ _REAL_SHAPES = [
      ("capped", 2), 2),
     ("a tunable with a similar name", {"GLIBC_TUNABLES": "glibc.malloc.arena_test=4", "MALLOC_ARENA_MAX": "2"},
      ("capped", 2), 2),
+    # ``:`` is what separates tunables. A ``;`` makes the value of the tunable before it invalid, so glibc ignores
+    # that one and the variable applies: an arena limit AFTER a semicolon is never read; one BEFORE it is named,
+    # and the reading, which does not interpret the string, says it is not known (modest, never wrong).
+    ("tunables joined by a semicolon, the limit second",
+     {"GLIBC_TUNABLES": "glibc.malloc.tcache_count=0;glibc.malloc.arena_max=8", "MALLOC_ARENA_MAX": "2"},
+     ("capped", 2), 2),
+    ("tunables joined by a semicolon, the limit first",
+     {"GLIBC_TUNABLES": "glibc.malloc.arena_max=8;glibc.malloc.tcache_count=0", "MALLOC_ARENA_MAX": "2"},
+     "unknown", 2),
     ("a preloaded library that is no allocator", {"LD_PRELOAD": "libm.so.6", "MALLOC_ARENA_MAX": "2"},
+     ("capped", 2), 2),
+    # A preload the loader skipped (it says so on stderr and goes on) is no malloc replacement, whatever its name.
+    ("a preload that does not load", {"LD_PRELOAD": "/nonexistent/libjemalloc.so.2", "MALLOC_ARENA_MAX": "2"},
      ("capped", 2), 2),
 ]
 
@@ -545,18 +632,22 @@ _REAL_SHAPES = [
 @linux_only
 @pytest.mark.parametrize(("label", "env", "claim", "arenas"), _REAL_SHAPES, ids=[r[0] for r in _REAL_SHAPES])
 def test_the_reading_is_checked_against_what_glibc_does_for_each_shape_its_rules_are_about(
-        arena_baseline, label, env, claim, arenas):
+        arena_baseline, arena_ceiling, label, env, claim, arenas):
     """The number, tunables and preload rules of ``allocator_setting`` were pinned by fakes only: a fake
     says what the rule is, never that glibc agrees. Each row starts a REAL child with that environment,
     counts the arenas glibc kept (``malloc_info``) and asks the app's own reading in the same process.
     SOUNDNESS first: the reading never says "runs with the cap" for a cap glibc did not apply, and never
     says "not capped" for one it did (the figure beside every row is glibc's). MUTATION TARGETS: each
-    rule of ``_plain_count``, ``_tunes_arena_max`` and the not-set branch. What stays pinned by fakes:
-    a REPLACED malloc (``test_a_preloaded_malloc_replacement...``), because a real one needs an allocator
-    library this machine may not have."""
+    rule of ``_plain_count``, ``_tunes_arena_max``, the not-set branch and the reading of what LOADED. A
+    REPLACED malloc is pinned below by a stand-in library the loader really loads (it is named like an
+    allocator and defines no malloc, so it tests which file the reading follows, not what jemalloc does)
+    and, where the machine has one, by a real jemalloc."""
     got = _count_arenas(env)
     reading, kept = got["reading"], got["arenas"]
-    where = f"[{label}] glibc kept {kept} arenas (baseline {arena_baseline}); the reading: {reading}"
+    where = (
+        f"[{label}] glibc kept {kept} arenas (baseline {arena_baseline}, ceiling {arena_ceiling}); "
+        f"the reading: {reading}"
+    )
     if claim == "not set":
         assert reading["effective"] is False and reading["arena_cap"] is None, where
     elif claim == "unknown":
@@ -569,8 +660,10 @@ def test_the_reading_is_checked_against_what_glibc_does_for_each_shape_its_rules
         assert kept == arena_baseline, "the reading says not capped, and glibc capped: " + where
     if arenas == "baseline":
         assert kept == arena_baseline, "glibc was to ignore this setting: " + where
+    elif arenas == "ceiling":
+        assert kept == arena_ceiling, "glibc was to apply a cap that bounds nothing: " + where
     elif isinstance(arenas, int):
-        assert kept == min(arenas, arena_baseline), "glibc was to keep that many: " + where
+        assert kept == min(arenas, arena_ceiling), "glibc was to keep that many: " + where
 
 
 def _starting_block(monkeypatch, block: bytes | Exception) -> None:
@@ -597,10 +690,30 @@ def _started_with(monkeypatch, **variables: str | None) -> None:
     )
 
 
+def _proc_maps(monkeypatch, maps: str | Exception) -> None:
+    """Make ``/proc/self/maps`` read as ``maps`` (or fail), and nothing else."""
+    real = Path.read_bytes
+
+    def fake(self: Path) -> bytes:
+        if self.as_posix() != "/proc/self/maps":
+            return real(self)
+        if isinstance(maps, Exception):
+            raise maps
+        return maps.encode("utf-8")
+
+    monkeypatch.setattr(Path, "read_bytes", fake)
+
+
+def _loaded(monkeypatch, *files: str) -> None:
+    """Make the process read as having loaded exactly these files (base names)."""
+    monkeypatch.setattr(session_hwm, "_loaded_files", lambda: list(files))
+
+
 def test_a_variable_set_twice_reads_as_its_first_value_as_glibc_and_os_environ_do(monkeypatch):
     """The unit half of the real-allocator test above: the first entry wins, an empty first
     entry is still the first, and a name that is only a prefix of another variable's, or an
-    entry that is not an assignment, is not matched."""
+    entry that is not an assignment, is not matched. ``GLIBC_TUNABLES`` is the exception, because
+    glibc parses every copy of it: the copies are joined with ``:``."""
     _starting_block(monkeypatch, b"A=1\0MALLOC_ARENA_MAX=8\0B=2\0MALLOC_ARENA_MAX=2\0")
     assert session_hwm._starting_values("MALLOC_ARENA_MAX", "LD_PRELOAD") == (
         {"MALLOC_ARENA_MAX": "8", "LD_PRELOAD": None}, "the environment the process started with",
@@ -615,6 +728,16 @@ def test_a_variable_set_twice_reads_as_its_first_value_as_glibc_and_os_environ_d
         "MALLOC_ARENA_MAX": None, "GLIBC_TUNABLES": "glibc.malloc.arena_max=8",
         "LD_PRELOAD": "libjemalloc.so.2",
     }, "one read of the block answers for every name"
+    _starting_block(monkeypatch, b"GLIBC_TUNABLES=glibc.malloc.tcache_count=0\0X=1\0GLIBC_TUNABLES=glibc.malloc.arena_max=1\0")
+    tunables = session_hwm._starting_values("GLIBC_TUNABLES")[0]["GLIBC_TUNABLES"]
+    assert tunables == "glibc.malloc.tcache_count=0:glibc.malloc.arena_max=1", "every copy, in order"
+    assert session_hwm._tunes_arena_max(tunables) is True, "a limit named only in the second copy is seen"
+    _starting_block(monkeypatch, b"GLIBC_TUNABLES=\0GLIBC_TUNABLES=glibc.malloc.arena_max=1\0")
+    tunables = session_hwm._starting_values("GLIBC_TUNABLES")[0]["GLIBC_TUNABLES"]
+    assert tunables == ":glibc.malloc.arena_max=1" and session_hwm._tunes_arena_max(tunables) is True, "an empty first copy too"
+    _starting_block(monkeypatch, b"MALLOC_ARENA_MAX=3\0MALLOC_ARENA_MAX=1\0GLIBC_TUNABLES=glibc.malloc.tcache_count=0\0")
+    got, _source = session_hwm._starting_values("MALLOC_ARENA_MAX", "GLIBC_TUNABLES")
+    assert got == {"MALLOC_ARENA_MAX": "3", "GLIBC_TUNABLES": "glibc.malloc.tcache_count=0"}, "only the tunables are joined"
 
 
 def test_where_the_starting_environment_cannot_be_read_os_environ_stands_in_and_says_so(monkeypatch):
@@ -642,7 +765,7 @@ def test_an_empty_starting_environment_is_an_env_i_start_and_not_an_unreadable_o
 
 
 def test_a_process_that_is_not_on_glibc_is_not_running_with_the_cap(monkeypatch):
-    """MUTATION TARGET. ``launch.sh`` exports the variable on macOS too, where the allocator
+    """MUTATION TARGET. ``launch.sh`` gives the server the variable on macOS too, where the allocator
     ignores it: reading that as "runs with the cap" would put every Mac in the group the
     performance comparison is about. ``arena_cap`` names the cap the process RUNS with, so it
     is None there; what the environment says is in the note."""
@@ -688,42 +811,215 @@ def test_glibc_tunables_that_name_the_arena_limit_outrank_the_variable_and_are_n
     for tunables in (
         "glibc.malloc.arena_max=8",
         "glibc.malloc.tcache_count=0:glibc.malloc.arena_max=8",
-        "glibc.malloc.arena_max=8;glibc.malloc.tcache_count=0",
+        "glibc.malloc.arena_max=8:glibc.malloc.tcache_count=0",
+        "glibc.malloc.arena_max=8;glibc.malloc.tcache_count=0",  # glibc ignores the semicolon form: modest
     ):
         for variable in ("2", None):
             _started_with(monkeypatch, MALLOC_ARENA_MAX=variable, GLIBC_TUNABLES=tunables)
             got = session_hwm.allocator_setting()
             assert got["effective"] is None and got["arena_cap"] is None, (tunables, variable)
             assert "GLIBC_TUNABLES" in got["note"] and "not known" in got["note"]
-    for tunables in ("glibc.malloc.tcache_count=0", "glibc.malloc.arena_test=4", "glibc.malloc.arena_max_x=3", ""):
+    for tunables in (
+        "glibc.malloc.tcache_count=0", "glibc.malloc.arena_test=4", "glibc.malloc.arena_max_x=3", "",
+        "glibc.malloc.tcache_count=0;glibc.malloc.arena_max=8",  # not a separator glibc reads: the limit is never seen
+    ):
         _started_with(monkeypatch, MALLOC_ARENA_MAX="2", GLIBC_TUNABLES=tunables)
         got = session_hwm.allocator_setting()
         assert got["effective"] is True and got["arena_cap"] == 2, tunables
 
 
-def test_a_preloaded_malloc_replacement_has_no_glibc_arenas_for_the_cap_to_bound(monkeypatch):
-    """MUTATION TARGET. Measured, glibc 2.39: with libjemalloc preloaded, ``MALLOC_ARENA_MAX=2``
-    leaves glibc's malloc unused, so the process does not run with the cap however the variable
-    reads. Preloaded libraries that are not allocators (a ``libgtk3-nocsd`` is common) change
-    nothing."""
+def test_a_malloc_replacement_the_process_loaded_has_no_glibc_arenas_for_the_cap_to_bound(monkeypatch):
+    """MUTATION TARGET. Measured, glibc 2.39: with libjemalloc loaded, ``MALLOC_ARENA_MAX=2`` leaves glibc's
+    malloc unused, so the process does not run with the cap however the variable reads. What counts is what
+    LOADED (the process's own map), not what ``LD_PRELOAD`` says: an entry the loader skipped is no
+    replacement, and one it loaded under another name is (the real-loader tests below). Libraries that are not
+    allocators (a ``libgtk3-nocsd`` is common) change nothing, and neither does Intel's ``libtbbmalloc``,
+    which takes malloc over only through its proxy."""
     monkeypatch.setattr(session_hwm, "_glibc_version", lambda: "glibc 2.39")
-    for preload in (
-        "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2",
-        "libfoo.so:libtcmalloc_minimal.so.4",
-        "libfoo.so libmimalloc.so",
-        "LIBJEMALLOC.so",
+    for files in (
+        ["python3.13", "libjemalloc.so.2", "libc.so.6"],
+        ["libfoo.so", "libtcmalloc_minimal.so.4"],
+        ["libmimalloc.so"],
+        ["LIBJEMALLOC.so"],
+        ["libtbbmalloc_proxy.so.2"],
     ):
-        _started_with(monkeypatch, MALLOC_ARENA_MAX="2", LD_PRELOAD=preload)
+        _started_with(monkeypatch, MALLOC_ARENA_MAX="2")
+        _loaded(monkeypatch, *files)
         got = session_hwm.allocator_setting()
-        assert got["effective"] is False and got["arena_cap"] is None, preload
-        assert "replaced by" in got["note"] and "no effect" in got["note"] and "'2'" in got["note"], preload
-    _started_with(monkeypatch, LD_PRELOAD="libjemalloc.so.2")
+        assert got["effective"] is False and got["arena_cap"] is None, files
+        assert "replaced by" in got["note"] and "no effect" in got["note"] and "'2'" in got["note"], files
+    _started_with(monkeypatch)
+    _loaded(monkeypatch, "libjemalloc.so.2")
     got = session_hwm.allocator_setting()
     assert got["effective"] is False and "(it was set to" not in got["note"]
-    for preload in ("libgtk3-nocsd.so.0", "", "/opt/jemalloc-notes/libfoo.so"):
+    for files in (["libgtk3-nocsd.so.0"], [], ["libfoo.so", "libc.so.6"], ["libtbbmalloc.so.2"]):
+        _started_with(monkeypatch, MALLOC_ARENA_MAX="2")
+        _loaded(monkeypatch, *files)
+        got = session_hwm.allocator_setting()
+        assert got["effective"] is True and got["arena_cap"] == 2, files
+
+
+def test_the_reading_follows_what_loaded_and_not_the_name_ld_preload_gives(monkeypatch):
+    """MUTATION TARGET: judging the preload by its NAME again. Both ends of it, each measured with a real
+    jemalloc on glibc 2.39: an entry the loader could not load (``LD_PRELOAD=/nonexistent/libjemalloc.so.2``,
+    skipped with a message) left the process on two capped glibc arenas, while the reading said malloc was
+    replaced; the same library through a symlink named ``libfastalloc.so`` left it on one arena, while the
+    reading said it was capped at 2. ``/etc/ld.so.preload`` is the third way in, and names nothing here."""
+    monkeypatch.setattr(session_hwm, "_glibc_version", lambda: "glibc 2.39")
+    _started_with(monkeypatch, MALLOC_ARENA_MAX="2", LD_PRELOAD="/nonexistent/libjemalloc.so.2")
+    _loaded(monkeypatch, "python3.13", "libc.so.6")
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is True and got["arena_cap"] == 2, got
+    _started_with(monkeypatch, MALLOC_ARENA_MAX="2", LD_PRELOAD="/opt/fast/libfastalloc.so")
+    _loaded(monkeypatch, "python3.13", "libjemalloc.so.2", "libc.so.6")
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is False and got["arena_cap"] is None and "libjemalloc.so.2" in got["note"], got
+    _started_with(monkeypatch, MALLOC_ARENA_MAX="2")  # nothing in the environment at all
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is False and "libjemalloc.so.2" in got["note"], "a replacement /etc/ld.so.preload asked for"
+
+
+def test_a_loaded_replacement_outranks_the_tunables_that_would_otherwise_make_the_reading_unknown(monkeypatch):
+    """MUTATION TARGET (the order of the two checks). ``glibc.malloc.arena_max`` tunes glibc's malloc, which a
+    process that runs another one does not use: the reading is "replaced", a known answer, and not "not known"."""
+    monkeypatch.setattr(session_hwm, "_glibc_version", lambda: "glibc 2.39")
+    _started_with(monkeypatch, MALLOC_ARENA_MAX="2", GLIBC_TUNABLES="glibc.malloc.arena_max=8")
+    _loaded(monkeypatch, "libjemalloc.so.2")
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is False and "replaced by" in got["note"], got
+    _loaded(monkeypatch, "libc.so.6")
+    assert session_hwm.allocator_setting()["effective"] is None, "without the replacement the tunables decide, as before"
+
+
+def test_where_the_loaded_files_cannot_be_read_a_preload_that_names_a_replacement_is_a_doubt_and_no_claim(monkeypatch):
+    """MUTATION TARGET. With no map to read the environment is all there is, and what it NAMES is a reason to
+    doubt the cap, not proof of a replacement: the reading says it is not known, with the name in it. Nothing
+    named, nothing doubted: the variable is read as it always was."""
+    monkeypatch.setattr(session_hwm, "_glibc_version", lambda: "glibc 2.39")
+    monkeypatch.setattr(session_hwm, "_loaded_files", lambda: None)
+    _started_with(monkeypatch, MALLOC_ARENA_MAX="2", LD_PRELOAD="/usr/lib/libjemalloc.so.2:libfoo.so")
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is None and got["arena_cap"] is None, got
+    assert "libjemalloc.so.2" in got["note"] and "could not be read" in got["note"], got["note"]
+    assert "not known" in got["note"] and "'2'" in got["note"], got["note"]
+    for preload in ("libgtk3-nocsd.so.0", "", None):
         _started_with(monkeypatch, MALLOC_ARENA_MAX="2", LD_PRELOAD=preload)
         got = session_hwm.allocator_setting()
         assert got["effective"] is True and got["arena_cap"] == 2, preload
+
+
+_MAPS = """\
+55d0c0a00000-55d0c0a01000 r--p 00000000 fd:01 1310722                    /usr/bin/python3.13
+55d0c0a01000-55d0c0a50000 r-xp 00001000 fd:01 1310722                    /usr/bin/python3.13
+55d0c1b4a000-55d0c1c4e000 rw-p 00000000 00:00 0                          [heap]
+7f3c1c000000-7f3c1c021000 rw-p 00000000 00:00 0 
+7f3c1d3a4000-7f3c1d3a6000 r--p 00000000 fd:01 1048594                    /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+7f3c1d3a6000-7f3c1d3b9000 r-xp 00002000 fd:01 1048594                    /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+7f3c1d800000-7f3c1d828000 r--p 00000000 fd:01 1048576                    /usr/lib/x86_64-linux-gnu/libc.so.6
+7f3c1d900000-7f3c1d902000 r--p 00000000 fd:01 1048601                    /opt/my libs/libfoo bar.so
+7f3c1d902000-7f3c1d904000 r--p 00000000 fd:01 1048602                    /opt/jemalloc-notes/libgone.so (deleted)
+7ffd4b3f6000-7ffd4b417000 rw-p 00000000 00:00 0                          [stack]
+7ffd4b5c8000-7ffd4b5cc000 r--p 00000000 00:00 0                          [vvar]
+"""
+
+
+def test_the_loaded_files_are_the_base_names_the_map_lists_each_once_in_order(monkeypatch):
+    """Anonymous mappings and the ``[heap]``, ``[stack]`` and ``[vvar]`` pseudo-files are no files; a library is
+    listed once per mapping and read once; a path with a blank in it stays whole; ``(deleted)`` is no part
+    of a name; and a directory called jemalloc does not make the library in it one."""
+    _proc_maps(monkeypatch, _MAPS)
+    got = session_hwm._loaded_files()
+    assert got == ["python3.13", "libjemalloc.so.2", "libc.so.6", "libfoo bar.so", "libgone.so"], got
+    assert session_hwm._malloc_replacement(got) == "libjemalloc.so.2"
+    assert session_hwm._malloc_replacement(["libc.so.6", "libgone.so"]) is None
+    assert session_hwm._malloc_replacement([]) is None
+    _proc_maps(monkeypatch, OSError("no procfs"))
+    assert session_hwm._loaded_files() is None, "unreadable is None, never an empty list"
+    _proc_maps(monkeypatch, "")
+    assert session_hwm._loaded_files() == [], "readable and empty is an empty list"
+
+
+@linux_only
+def test_the_real_kernels_map_lists_the_file_a_symlink_points_to_and_forgets_it_when_it_is_unmapped(tmp_path):
+    """The assumption the reading rests on, against the real kernel rather than a fake: a file mapped through a
+    symlink is listed under the name of the file it points to, and a mapping that is gone is gone."""
+    import mmap
+
+    target = tmp_path / "libjemalloc.so.2"
+    target.write_bytes(b"\0" * mmap.PAGESIZE)
+    link = tmp_path / "libfastalloc.so"
+    link.symlink_to(target)
+    with open(link, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ):
+        files = session_hwm._loaded_files()
+    assert files is not None and "libjemalloc.so.2" in files and "libfastalloc.so" not in files, files
+    assert session_hwm._malloc_replacement(files) == "libjemalloc.so.2"
+    assert "libjemalloc.so.2" not in (session_hwm._loaded_files() or [])
+
+
+def _standin_library(tmp_path: Path) -> Path | None:
+    """A shared library named like jemalloc that defines no malloc, built with the machine's C compiler; None
+    where there is none. The loader maps it as it would the real one."""
+    cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if cc is None:
+        return None
+    source = tmp_path / "standin.c"
+    source.write_text("int oo_standin(void) { return 0; }\n", encoding="utf-8")
+    out = tmp_path / "libjemalloc.so.2"
+    built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(out), str(source)],
+                           capture_output=True, text=True, timeout=120)
+    return out if built.returncode == 0 else None
+
+
+_LOADED_AND_READ = (
+    "import json; from src.monitoring import session_hwm as h; "
+    "print(json.dumps({'loaded': h._loaded_files(), 'reading': h.allocator_setting()}))"
+)
+
+
+@linux_only
+def test_the_loader_is_what_decides_a_library_through_a_symlink_loads_and_a_path_it_cannot_open_does_not(tmp_path):
+    """The two Opus-read cases through a REAL loader. The library is a stand-in: named like the allocator and
+    loaded like one, with no malloc of its own, so this pins which file the reading follows and nothing about
+    jemalloc's arenas (a real one is the next test, where the machine has it)."""
+    if session_hwm._glibc_version() is None:
+        pytest.skip("not glibc")
+    library = _standin_library(tmp_path)
+    if library is None:
+        pytest.skip("no C compiler here to build the stand-in library")
+    link = tmp_path / "libfastalloc.so"
+    link.symlink_to(library)
+    got = _child_reading({"LD_PRELOAD": str(link), "MALLOC_ARENA_MAX": "2"}, _LOADED_AND_READ)
+    assert "libjemalloc.so.2" in got["loaded"] and "libfastalloc.so" not in got["loaded"], got["loaded"]
+    assert got["reading"]["effective"] is False and "libjemalloc.so.2" in got["reading"]["note"], got["reading"]
+    skipped = _child_reading(
+        {"LD_PRELOAD": str(tmp_path / "nowhere" / "libjemalloc.so.2"), "MALLOC_ARENA_MAX": "2"}, _LOADED_AND_READ)
+    assert not [f for f in skipped["loaded"] if "jemalloc" in f], skipped["loaded"]
+    assert skipped["reading"]["effective"] is True and skipped["reading"]["arena_cap"] == 2, skipped["reading"]
+
+
+def _real_jemalloc() -> Path | None:
+    for pattern in ("/usr/lib/*/libjemalloc.so.2", "/usr/lib64/libjemalloc.so.2", "/usr/lib/libjemalloc.so.2",
+                    "/usr/local/lib/libjemalloc.so.2", "/opt/homebrew/lib/libjemalloc.so.2"):
+        for found in sorted(Path("/").glob(pattern.lstrip("/"))):
+            return found
+    return None
+
+
+@linux_only
+def test_a_real_jemalloc_the_machine_has_is_read_as_replacing_malloc_and_leaves_glibc_one_arena(
+        arena_baseline, tmp_path):
+    """Where the machine has jemalloc (the review machine does; CI may not): 16 allocating threads with it
+    preloaded leave glibc one arena where they leave ``arena_baseline`` without, even with the cap set, and the
+    reading says malloc is replaced -- also when the library is reached through a symlink with another name."""
+    library = _real_jemalloc()
+    if library is None:
+        pytest.skip("no libjemalloc on this machine")
+    link = tmp_path / "libfastalloc.so"
+    link.symlink_to(library)
+    for preload in (str(library), str(link)):
+        got = _count_arenas({"LD_PRELOAD": preload, "MALLOC_ARENA_MAX": "2"})
+        assert got["arenas"] <= 1, (preload, got["arenas"], arena_baseline)
+        assert got["reading"]["effective"] is False and "replaced by libjemalloc" in got["reading"]["note"], got["reading"]
 
 
 def test_the_glibc_version_is_asked_of_the_c_library_and_anything_else_is_not_glibc(monkeypatch):

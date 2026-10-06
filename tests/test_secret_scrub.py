@@ -256,6 +256,80 @@ def test_a_cut_line_is_scrubbed_for_the_secret_as_json_wrote_it_too(tmp_path, ne
     assert _lines(p)[0] == '{"a":1}', "the line before it is untouched"
 
 
+def _forms_of(needle: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((needle, json.dumps(needle)[1:-1], json.dumps(needle, ensure_ascii=False)[1:-1])))
+
+
+def test_a_form_the_marker_of_a_later_one_rebuilds_is_not_left_in_a_cut_file(tmp_path):
+    """MUTATION TARGET: the check after the forms were replaced in turn. A secret of a star and a quote has
+    two forms (as typed, and as JSON escapes it: star, backslash, quote). The escaped one is replaced
+    second, and the marker's last star beside the quote that closed the string is the secret as typed
+    again. ``scrub_file`` then said it had rewritten the file, with the secret still in it."""
+    needle = '*"'
+    cut = '{"ev":"run_begin","label":"b-*\\"","dest":"/tmp/somewhere/b.oo'
+    assert needle not in cut and json.dumps(needle)[1:-1] in cut, "the control: only the escaped form is there"
+    p = tmp_path / "cut.jsonl"
+    p.write_text('{"a":1}\n' + cut, encoding="utf-8")
+    assert ss.scrub_file(p, needle) is True
+    text = p.read_text(encoding="utf-8")
+    assert [form for form in _forms_of(needle) if form in text] == [], text
+    assert _lines(p)[0] == '{"a":1}', "the line before it is untouched"
+    # the ordinary secret keeps the readable marker, and the first marker that gives nothing back is the one used
+    assert ss._scrub_cut_text("label b-hunter2 end", "hunter2") == "label b-***redacted*** end"
+    assert ss._scrub_cut_text(cut, needle).count("###") == 1
+    # both forms in one text: when a form is left, EVERY form is redone with the one marker, none is left to the next pass
+    assert ss._scrub_cut_text('*"x*\\""', needle) == '###x###"'
+
+
+def test_every_form_is_checked_for_what_a_later_marker_rebuilt_and_not_only_the_first(monkeypatch):
+    """MUTATION TARGET: the check after the forms. The form a later marker rebuilds is not always the first: a
+    secret with a quote and a letter outside ASCII has three forms (as typed, as ASCII JSON, as JSON that keeps
+    its letters), and here the marker is the tail of the second, so replacing the third in ``a\\"`` + the third
+    gives the second back. The first form is nowhere in the text."""
+    monkeypatch.setattr(ss, "REDACTED", "\\u00e9")
+    needle = 'a"\u00e9'
+    forms = _forms_of(needle)
+    assert len(forms) == 3, forms
+    text = 'a\\"' + forms[2]
+    assert forms[0] not in text and forms[1] not in text and forms[2] in text, "the control: only the third form is there"
+    out = ss._scrub_cut_text(text, needle)
+    assert [f for f in forms if f in out] == [], out
+    assert out == 'a\\"###', "the readable marker gave the second form back, so the next one is used"
+
+
+def test_no_form_of_the_secret_is_in_the_cut_text_for_any_secret_and_text_made_of_the_pieces_that_rebuild_one():
+    """EXHAUSTIVE over a small alphabet, not a sample: every secret of one to three characters from the marker's
+    own and JSON's punctuation (155), against every text of one to three pieces from its forms, the quote that
+    closes a string, a star and a letter (21,256 pairs). 28 of them left a form in the text when each form was
+    replaced once, in turn (seven secrets, all made of stars and quotes); none does now."""
+    from itertools import product
+
+    alphabet = ("*", '"', "\\", "#", "x")
+    checked = 0
+    for size in (1, 2, 3):
+        for chars in product(alphabet, repeat=size):
+            needle = "".join(chars)
+            forms = _forms_of(needle)
+            pieces = (*forms, '"', "*", "x")
+            for count in (1, 2, 3):
+                for parts in product(pieces, repeat=count):
+                    text = "".join(parts)
+                    out = ss._scrub_cut_text(text, needle)
+                    assert [f for f in forms if f in out] == [], (needle, text, out)
+                    checked += 1
+    assert checked > 10_000, "the search ran over the whole alphabet"
+
+
+def test_the_cut_text_scrub_ends_even_when_no_marker_can_be_used(monkeypatch):
+    """MUTATION TARGET: the last resort. Not reachable by a passphrase a person types; here so the guarantee holds
+    for any input. Every marker is a star, so each one rebuilds the secret (star, quote) out of the escaped form's
+    replacement, and the forms are taken out whole."""
+    monkeypatch.setattr(ss, "REDACTED", "*")
+    monkeypatch.setattr(ss, "_FALLBACK_MARKERS", ("*",))
+    out = ss._scrub_cut_text('{"label":"b-*\\""', '*"')
+    assert out == '{"label":"b-"', out
+
+
 @pytest.mark.parametrize("depth", [5000, 100000])
 @pytest.mark.parametrize("name", ["deep.jsonl", "deep.json"])
 def test_a_file_nested_past_what_the_interpreter_can_walk_is_scrubbed_as_text_and_raises_nothing(

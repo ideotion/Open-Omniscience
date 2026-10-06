@@ -131,7 +131,9 @@ def launch_env(base: dict | None = None) -> dict:
     :data:`ARENA_DEFAULT_MARKER`, so that default is dropped here and an operator's own
     ``MALLOC_ARENA_MAX`` (unmarked) still reaches the engine like any other environment variable.
     The marker itself means nothing to a child and is never passed on. Every spawner of an engine
-    or of a download (Ollama, the vLLM server, the weights and installs) builds its environment here.
+    or of a download (Ollama, the vLLM server, the weights and installs) builds its environment here;
+    the Ollama install SCRIPT (``installer.run_installer``) is deliberately not one: a short shell, not
+    an engine, which inherits the server's environment as it is.
     """
     env = dict(base if base is not None else os.environ)
     if env.pop(ARENA_DEFAULT_MARKER, None) == "1":

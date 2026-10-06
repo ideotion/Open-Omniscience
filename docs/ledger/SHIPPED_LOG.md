@@ -10428,8 +10428,33 @@ reports a kept fresh install leaves on the drive (`src/monitoring/secret_scrub.p
 clear-text alerts that were the scrubber's own name (`without_secret`) and a test fixture's (`SECRET`), not a passphrase
 reaching a file; they became `scrub_value` and `NEEDLE`, and the next head read "No new alerts". Main's own red (the
 blocking ruff lane, the style ratchet at 439 against a ceiling of 436, three French strings) is ported from PR #1311
-byte for byte so this PR's tests run in CI. Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
-CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "CODEQL READS NAMES: A HELPER THAT TAKES A
+byte for byte so this PR's tests run in CI. The Opus read of the PR's head 87e5284e then found one blocking fault and three
+should-fixes in this part, fixed with tests: every restore attempt's directory had a name from the backup's label and the process
+id and was made with `exist_ok=True`, so a second release run in one server restored into the first one's kept install (and a
+later run that did not keep its install deleted it), where it now has a random part and is made with `exist_ok=False`; the wait
+on the restore child never read its pipes, so a child that wrote more than a pipe holds (70,000 bytes hung, 60,000 went
+through) stayed blocked until the run was cancelled, and the wait now reads them; the scrub of text that does not parse could
+leave the passphrase in one JSON form when the marker for a later form rebuilt an earlier one (a passphrase of a star and a
+quote), and `scrub_file` said "rewritten" over it, so the result is checked against every form and redone with one marker
+(proved over all 21,256 pairs of a small complete space, 28 of which had left a form); and a half-written `.json.tmp` import
+report in a kept install is scrubbed with the others. The coordinator's check of the next head found one more path: what the
+P0 phase CATCHES (the backup, the verify, the restore probe and the incremental refresh each write `Name: message` of whatever
+the engine raised) went into the P0 report, which the debug bundle carries, and into the run's own record unscrubbed, because the
+scrub covered what a phase RAISES. The four texts are now scrubbed where they are made (`p0_validation._exception_text`), not by a
+scrub of the finished report or of the phase's result, which was the proposed fix and is wrong here: both hold the verdicts the
+restore gate compares (`backup_ok` reads `p0_1_verify`'s `pass`), and an exact-match scrub by a passphrase of `pass` turns every
+one of them into the marker and reads a good backup as one that did not verify, so the restore would not have run. A test runs the
+whole run with that passphrase (a mutation that scrubs the whole result fails it), one drives the four sites with the engine
+raising the passphrase, one runs the real P0 phase through a release run and finds the passphrase in no file under the data
+folder or the destination, and a static test holds every handler of a function that is given the passphrase to using the caught
+exception only through the helper. The run's parameters no longer print the passphrase in their repr, a failed start removes its
+directory with `rmdir` (an empty directory and nothing else), and a failure that wraps another is scrubbed from its whole
+traceback, with a test for `__cause__` and for `__context__`. Recorded, not fixed (small, and the PR carries no logic for them): a
+cancel that lands after the restore committed reads the phase as `cancelled` while its install exists, the scrub's own
+result is not recorded when it runs from `finally`, and the test that ties `UNLOCK_ROUTES` to the unlock router's own routes
+catches a route the router lost but not one it gained. Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
+CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING
+THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS", "CODEQL READS NAMES: A HELPER THAT TAKES A
 SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE" and "THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF".
 
 - **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the Opus read of R114 / #1304).** #1304
@@ -10445,13 +10470,27 @@ empty `/proc/self/environ` as an `env -i` start rather than falling back to `os.
 the process runs with. The soak window's memory-guard block carries the setting when the guard's own state cannot be read, the
 launcher's comment and the changelog no longer say freed memory stays in its own thread's arena, and the launcher tests pin
 that an install file that unsets or empties the variable, or a caller that passes it empty, still gets the default. A test
-starts a child with the variable named twice and counts the arenas glibc kept. Lesson: `LESSONS.md`, the entry "A READING OF
-ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE".
+starts a child with the variable named twice and counts the arenas glibc kept. The read of that fix, at 87e5284e, ran the same
+child again and found the reading still judging by names: a preload counted as a replacement because `LD_PRELOAD` named one,
+though a path that is not there loads nothing and the cap holds (and one that loaded under another name through a symlink is a
+replacement), so the reading asks what the process LOADED, from `/proc/self/maps`, and says not known where the map cannot be read
+(`dladdr(malloc)` was tried and answers "python3" for every allocator); a variable named twice applies its first ACCEPTED value,
+so a first value glibc ignores (`"4 "`) lets the second apply and reads as not known; `GLIBC_TUNABLES` is parsed in every copy
+and `;` is no separator there (the tunable's value is invalid, so it is ignored and the variable applies). Measured against a
+real glibc child (29 environments) and a real jemalloc. The coordinator's check of that fix then found a row of the table wrong:
+`-2` was said to be IGNORED by glibc, and it is read with `strtoul`, which takes a sign, as the largest number there is, a cap that
+bounds nothing (named first it keeps all 17 arenas, with `2` after it); three CPUs or more cannot tell it from an ignored value
+(both keep 17), so the rows that expect a cap that bounds nothing now compare with what a huge valid cap keeps (below three CPUs
+glibc's own limit of 8 arenas per CPU bites and the two differ), and each ignored value is proved ignored by naming it first with a
+bounding value second. Lessons: `LESSONS.md`, the entry "A READING OF
+ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE" (the second read is its last paragraph).
 
 - **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the coordinator's check of #1304, should-fix 1).** R114 ruled the
 cap for the instance and the launcher exported it, so the browser it opened and, through the server's environment, the Ollama daemon, the vLLM server
 and the installs and weights download inherited it, none of them ruled or measured for it and none read by the diagnostics. The launcher now gives it
 to the server's command alone (through `env`, so a `readonly` declaration in `oo.env` cannot stop the app starting) and marks its own default with
 `OO_ARENA_MAX_DEFAULTED=1` (cleared first); `launch_env` drops the variable when the marker says it was the launcher's default and always drops the
-marker, and an operator's own value, which carries none, still reaches the engines. Recorded in the R114 row and queue entry as a session decision
-under `16c`. Lesson: `LESSONS.md`, the entry "A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS".
+marker, and an operator's own value, which carries none, still reaches the engines. The Ollama install script (`installer.run_installer`) is a
+deliberate non-member of the three spawners (a short shell, not an engine, which inherits the server's environment; the daemon it installs is
+started by the service manager), said so in the code, in `launch_env`'s docstring and in the spawner test. Recorded in the R114 row and queue entry
+as a session decision under `16c`. Lesson: `LESSONS.md`, the entry "A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS".

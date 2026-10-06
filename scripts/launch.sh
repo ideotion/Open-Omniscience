@@ -133,8 +133,9 @@ record_exit() {
 #
 # Cap glibc's malloc arenas at 2 for the SERVER (R114, the maintainer's ruling of 2026-10-01).
 # glibc gives every busy thread an arena of its own, up to 8 per core, and memory freed in an
-# arena stays held by it until glibc can trim it (a freed chunk goes back to the arena that
-# allocated it, whichever thread frees it): the app runs dozens of threads, and the one reading
+# arena stays held by it until glibc can trim it (a freed chunk of more than about a kilobyte
+# goes back to the arena that allocated it, whichever thread frees it; a smaller one waits in
+# the freeing thread's own cache first): the app runs dozens of threads, and the one reading
 # taken inside a death (2026-09-30) found 988.7 MB of 3,437 MB of anonymous memory freed but
 # held by glibc's heap. A value the operator already chose (oo.env above, or the caller's
 # environment) is kept, so this is only a default; unset or empty is no choice. glibc reads the

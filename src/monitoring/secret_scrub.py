@@ -16,7 +16,9 @@ of every value. It is DEFENCE IN DEPTH, never the primary guarantee: no path on 
 is known to print the passphrase, and this is the net beneath that. Exact match only: a
 transformed copy (an escaped quote, a re-encoding) is not recognised in free text; the JSON files
 :func:`scrub_file` reads are parsed first, so the secret is found in the form their READER sees, and
-text it cannot parse is scrubbed for the secret as typed and as JSON writes it.
+text it cannot parse is scrubbed for the secret as typed and as JSON writes it. The P0 check, which is
+handed the same passphrase, uses :func:`scrub_text` on the exception texts it writes into its report
+(``p0_validation._exception_text``), where each is made.
 
 WHAT IT GUARANTEES, and the two things a naive ``str.replace`` does not:
 
@@ -90,10 +92,33 @@ def _scrub_cut_text(text: str, needle: str) -> str:
     """Text that does not parse as JSON (a line a killed process left unfinished, a document too deep to
     read) with the secret taken out in every form a journal writes it: as typed, and as JSON escapes it
     (a quote, a backslash or a letter outside ASCII becomes an escape sequence), with the non-ASCII
-    letters escaped or not. A secret that needs no escaping has one form."""
-    for form in dict.fromkeys((needle, json.dumps(needle)[1:-1], json.dumps(needle, ensure_ascii=False)[1:-1])):
-        text = scrub_text(text, form)
-    return text
+    letters escaped or not. A secret that needs no escaping has one form.
+
+    No form is in what is returned. Each form is replaced in turn, and the marker that stands in for a
+    LATER one can rebuild an EARLIER one out of its own characters and the text beside it (a secret of
+    star and quote, in its escaped form followed by the closing quote of its string: ``*\\"`` + ``"``
+    becomes ``***redacted***"``, which ends in the secret as typed). So the result is checked, and when
+    a form is left the whole text is redone with ONE marker for every form, each of the markers in turn,
+    and with the forms taken out whole if none of them stays out."""
+    forms = tuple(dict.fromkeys((needle, json.dumps(needle)[1:-1], json.dumps(needle, ensure_ascii=False)[1:-1])))
+    out = text
+    for form in forms:
+        out = scrub_text(out, form)
+    if not any(form in out for form in forms):
+        return out
+    for marker in (REDACTED, *_FALLBACK_MARKERS):
+        out = text
+        for form in forms:
+            out = marker.join(out.split(form))
+        if not any(form in out for form in forms):
+            return out
+    # Not reachable for a passphrase a person types; here so the guarantee holds for any input. Each pass
+    # shortens the text, so the loop ends.
+    out = text
+    while any(form in out for form in forms):
+        for form in forms:
+            out = "".join(out.split(form))
+    return out
 
 
 def _scrub_record(line: str, needle: str) -> str:

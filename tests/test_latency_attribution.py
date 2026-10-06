@@ -351,6 +351,7 @@ def test_a_request_recorded_while_the_rows_are_built_does_not_change_a_row_alrea
     rows = {r["route"]: r for r in latency.summary()["routes"]}
     assert injected == [1], "no request could be recorded while the rows were built"
     assert rows["GET /api/b"]["count"] == 1 and rows["GET /api/b"]["max_ms"] == 20.0
+    assert rows["GET /api/b"]["statuses"] == {"200": 1}, "the status map is a copy too, not the live one"
     assert latency._ROUTES["GET /api/b"]["count"] == 2, "the request itself was recorded"
     assert _row("GET /api/b")["count"] == 2, "and the next summary shows it"
 

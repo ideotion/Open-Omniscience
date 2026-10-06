@@ -42,7 +42,9 @@ HONESTY (the whole point, same rules as the P0 kit):
     report and is in no log line. The routes scrub defensively on the way out, what the
     restore child says is scrubbed of it where the child writes it and again before the
     parent records it, what ANY phase's exception says is scrubbed of it before the phase's
-    detail and the log record are made, and the files a KEPT fresh install leaves on the drive
+    detail and the log record are made, what the P0 phase CATCHES and writes down as a result
+    is scrubbed where it is made (``p0_validation._exception_text``), and the files a KEPT
+    fresh install leaves on the drive
     (the child's run journal and reports) are scrubbed once the child has gone
     (:mod:`src.monitoring.secret_scrub`). A resume asks for it the way a first run does,
     and a retaken restore is held to the same rule. What the OPERATOR typed is kept as
@@ -73,13 +75,14 @@ import json
 import logging
 import math
 import os
+import secrets
 import shutil
 import subprocess
 import sys
 import threading
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -121,6 +124,10 @@ _MIB = 1024 * 1024
 #: seconds, not at the next hourly heartbeat.
 _TICK_S = 5.0
 
+#: The restore child is waited for in turns of this length, and the wait READS its pipes (see
+#: ``_fresh_install_restore``): each turn is also where a cancel lands and the progress line is renewed.
+_RESTORE_POLL_S = 2.0
+
 #: A suspend or a wall-clock change is recorded past this bound between two ticks: the
 #: session ledger's own threshold, so the run and the chronology agree on what one is.
 CLOCK_EVENT_MIN_S = 120.0
@@ -152,7 +159,7 @@ RESUME_COLLECTION_WAIT_S = 3600.0
 @dataclass
 class RunParams:
     dest_dir: str
-    passphrase: str
+    passphrase: str = field(repr=False)  # a repr is what a log line or a traceback prints
     profile: str = "release-scale"
     soak_hours: float = SOAK_BAR_HOURS
     include_newsletters: bool = True
@@ -1101,7 +1108,9 @@ def _scrub_kept_install(fresh: Path, out_json: Path, needle: str) -> dict[str, l
         return done
     targets = [
         *sorted((fresh / "run_logs").glob("*.jsonl")),
-        *sorted((fresh / "import_reports").glob("*.json")),
+        # ``*.json*``, not ``*.json``: a report is written to ``<name>.json.tmp`` and renamed, so a child
+        # that was killed in between leaves the half-written one beside the finished ones.
+        *sorted((fresh / "import_reports").glob("*.json*")),
         out_json,
     ]
     for path in targets:
@@ -1138,9 +1147,16 @@ def _fresh_install_restore(
     ``.restore-`` prefix, but nothing sweeps this destination: a parent that is killed
     outright leaves its directory behind, with whatever the child had written (the run
     journal is plain text) -- this function removes it, or scrubs it when the run keeps it,
-    on every way out it can see."""
+    on every way out it can see.
+
+    EVERY ATTEMPT HAS A DIRECTORY OF ITS OWN (the label, the process id and a random part), made
+    new: a second run in one server process (allowed once the first has finished), or a directory a
+    killed parent left under the same label and process id, is never restored INTO. The name used to be
+    the label and the process id alone, so that second run restored into the install the first had kept
+    (two journals in one directory, and a run with another passphrase could not open its database) and a
+    run that did not keep its install deleted the one an earlier run had kept."""
     dest = Path(run.params.dest_dir).expanduser().resolve()
-    fresh = dest / f".restore-release-run-{label}-{os.getpid()}"
+    fresh = dest / f".restore-release-run-{label}-{os.getpid()}-{secrets.token_hex(4)}"
     out_json = fresh.with_suffix(".json")
     env = {
         **os.environ,
@@ -1154,7 +1170,7 @@ def _fresh_install_restore(
     env.pop("OO_DB_PLAINTEXT", None)
     t0 = time.monotonic()
     scrubbed: dict[str, list[str]] | None = None
-    fresh.mkdir(parents=True, exist_ok=True)
+    fresh.mkdir(parents=True, exist_ok=False)
     try:
         proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
             [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
@@ -1167,10 +1183,13 @@ def _fresh_install_restore(
     except BaseException:
         # No child ran, so nothing wrote into the directory just made: take it away, kept install or
         # not (an empty one is nothing to look at later), rather than leave it in a destination nothing
-        # sweeps.
-        shutil.rmtree(fresh, ignore_errors=True)
+        # sweeps. ``rmdir`` removes an empty directory and nothing else, so whatever is in it, it is
+        # never an install this call did not make.
+        with contextlib.suppress(OSError):
+            fresh.rmdir()
         raise
     try:
+        said: tuple[str, str] | None = None
         while proc.poll() is None:
             if ctx.stopping:
                 proc.terminate()
@@ -1180,8 +1199,16 @@ def _fresh_install_restore(
                     proc.kill()
                 break
             ctx.set_progress(detail=f"fresh install ({label}): restoring, {time.monotonic() - t0:,.0f} s")
-            time.sleep(2.0)
-        stdout, stderr = proc.communicate(timeout=30)
+            try:
+                # ``communicate`` waits AND reads. Waiting alone left the pipes unread, and a child that
+                # writes more than a pipe holds (64 KiB on Linux: a long traceback, a repair list nothing
+                # caps) blocks in its write until the cancel, which looks like a slow restore. A timeout
+                # loses nothing: the next call goes on from where this one stopped.
+                said = proc.communicate(timeout=_RESTORE_POLL_S)
+            except subprocess.TimeoutExpired:
+                continue
+            break
+        stdout, stderr = said if said is not None else proc.communicate(timeout=30)
         result: dict[str, Any] = {
             "label": label,
             "backup": str(backup_path),
@@ -1637,6 +1664,10 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         else "absent because its restore did not complete here" if not child
         else ""
     )
+    # Row A names the reason when the restore that ended is not counted (``restore_why``) or the phase says
+    # why it did not run (its detail); a phase that was skipped says nothing, and a pointer to row A would
+    # then send the reader to a row with no more to say than the one they are on.
+    see_row_a = " (row A names why)" if restore_why or fresh.get("detail") else ""
     if not p.legacy_backup_path:
         legacy_scan: Any = "no pre-migration backup path was given"
     elif legacy_why:
@@ -1821,7 +1852,7 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
                                          live.get("not_auto_repaired_measured_here_total"),
                                      "error": live.get("error")}},
         "two readings on purpose: the restored install answers row A's clause, the live corpus answers the drain's"
-        + (f"; the restored install's reading is {restore_gap} (row A names why)" if restore_gap else ""),
+        + (f"; the restored install's reading is {restore_gap}{see_row_a}" if restore_gap else ""),
     ))
 
     # W -- 0.4 row W, 0.3's row 5 carried forward by ruling RC01 = (a): required before
@@ -1864,7 +1895,7 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
          "duplicate_key_scan_on_restored_corpus": child.get("country_code_scan"),
          "legacy_backup": legacy_scan},
         "the P0 verdicts are the kit's own; the scan on the restored corpus is the row's artifact"
-        + (f"; that scan is {restore_gap} (row A names why)" if restore_gap else ""),
+        + (f"; that scan is {restore_gap}{see_row_a}" if restore_gap else ""),
     ))
     rows.append(_row(
         "I", "a real restore at corpus scale through the volume set",

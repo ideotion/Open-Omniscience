@@ -13266,6 +13266,45 @@ scrubbed in both forms. What stays outside the net is stated where it is made: a
 `.restore-release-run-*` directory (nothing sweeps that destination, the claim that something does was wrong), and a path
 the operator typed that holds the passphrase is kept as typed. Each was found by simulating the case through the real
 function, none by reading the code for the cases it handles.
+**(6) One secret has several forms, and the marker for a LATER form can rebuild an EARLIER one** (the Opus read of 87e5284e).
+The scrub of text that does not parse took out the typed form and then the two forms JSON writes (escaped, and with its
+non-ASCII letters kept), each through a replacement that checked its OWN form and no other. A passphrase of a star and a
+quote has the escaped form star, backslash, quote; where that form is followed by the quote that closed its JSON string, the
+marker's last star plus that quote IS the passphrase as typed, so `scrub_file` answered "rewritten" for a file that still
+held it. The result is now checked against every form, a form left is redone with ONE marker for all of them (each marker in
+turn), and the forms are taken out whole when no marker stays out. Two mutations kept the first tests green (the check
+looking at the first form only, the redo replacing the last form only), and an exhaustive test now stands beside the written
+cases: every passphrase of one to three characters from the marker's and JSON's punctuation (155) against every text of one to
+three pieces of its forms (21,256 pairs), of which 28 left a form behind before and none does. **A property of a
+transformation that has a small, complete input space is proven over all of it; a sample is what lets a form that is not the
+first one through.**
+**(7) A net goes where the text is MADE, not over the record that holds it** (the coordinator's check of e7f729d8, B1). The run
+scrubbed what a phase RAISES (`_run_phase`) and what the child says, but the P0 phase CATCHES the engine's exceptions itself,
+writes `Name: message` into its report (a file the debug bundle carries) and returns it as the phase's result, so a message that
+named the passphrase would have reached the P0 file, the state file and the report, and no test could see it because the fixture
+stubs the phase whole. The fix proposed was one scrub of the finished report or of every phase result. That is the wrong place:
+those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an exact-match scrub by a passphrase of `pass` (the
+run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
+restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
+passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function that is given
+the passphrase to the helper, so a fifth cannot be added unseen. **A scrub of a value code compares changes the value: scrub the
+text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
+the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
+traceback, and a test names the passphrase only in the cause (`from`, and an implicit context).
+
+### A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/release_run.py`, the Opus read of 87e5284e)
+
+The fresh-install restore of the release run made its directory as `.restore-release-run-<label>-<pid>` with `mkdir(exist_ok=True)`.
+The server runs more than one release run in its lifetime (a resumed run, a second run for another backup), so the second attempt
+found the first's directory, which a run that keeps its install had left holding it, restored INTO it, and a later run that did not
+keep its install deleted it. Every test restored once. **A directory that is the private place of ONE attempt takes a name that cannot
+repeat (a random part beside the pid) and is made with `exist_ok=False`, so a second claimant fails loudly instead of sharing; and
+its test runs the operation twice in one process, which no single run can.** The same read ran a child that wrote 70,000 bytes to
+stderr: the wait loop polled `proc.poll()` and slept, nothing read the two pipes, and a child that fills one (64 KB on Linux)
+blocks in `write()` until the run is cancelled (60,000 bytes went through, 70,000 hung). **A parent that waits on a child with
+piped output reads the pipes while it waits**: `proc.communicate(timeout=...)` in the loop loses nothing when it times out and
+can be called again, and the output comes back whole from the call that sees the exit; the test makes the child write more than
+a pipe holds and has a watchdog, so a regression fails instead of hanging the suite.
 
 ### CODEQL READS NAMES: A HELPER THAT TAKES A SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/secret_scrub.py`)
 
@@ -13277,7 +13316,9 @@ produces it, and the two names on the path were `without_secret(...)` (the scrub
 reader that does not read verbs) and a constant `SECRET`. It is the same family as the `token` finding of e07989c9 (a feed cursor named
 `from_token`). **Name a helper that REMOVES a sensitive value for the verb (`scrub_value`, `redact`), never for the noun, and name a test's
 stand-in for what it is to the test (`NEEDLE`), not for what it stands for.** The fix was a rename in CODE only (a docstring or a comment is
-not read as a source, so the prose still says "secret"), done by token so no string was touched, with `scrub_text` written as `split`/`join`
+not read as a source, so the prose still says "secret"), done by token, so no string a program reads was touched (the commit message said
+"no string or comment was touched", which overclaimed: the docstrings that named the old identifiers were edited to name the new ones,
+and `scrub_text`'s was rewritten), with `scrub_text` written as `split`/`join`
 (the text `str.replace` gives for a needle that is not empty) so the needle is not an argument a taint rule may follow into the result. The
 three changes went in together, so which of them the analyser was reading is not known; the `(secret)` label and the precedent point at the
 names. CodeQL's verdict on the next head was "No new alerts in code changed by this pull request", which is the only test there is. **How to
@@ -13319,6 +13360,22 @@ skips where there is nothing for the cap to bound (not glibc, or a runtime that 
 decimal number only (up to 18 digits), says "not known" (`effective: None`) for anything else glibc may read differently, for an arena-limit
 tunable and nowhere else, says `effective: False` under a preloaded malloc replacement, and names `arena_cap` only when the process runs
 with that cap. Fifteen mutations of the reading, the launcher's order and the soak window are each caught.
+**The read of the fix ran the same program again and found the reading still judging by NAMES.** A preload "was a replacement"
+because `LD_PRELOAD` NAMED one, but a preload the loader cannot load (a path that is not there) leaves glibc's malloc in place and
+the cap in force; the reading now asks what the process LOADED, from `/proc/self/maps` (mapped libraries by their real file
+names, so a symlinked jemalloc shows as its target and a preload the loader skipped not at all; `dladdr(malloc)` was tried and
+rejected, it answers "python3" for every allocator), and says "not known" when the map cannot be read. The first-entry rule above
+is the first ACCEPTED entry: a value glibc cannot parse is skipped, so `("4 ", "2")` and `("abc", "2")` both run with 2 arenas.
+`GLIBC_TUNABLES` is read in EVERY copy of the variable (the reading joined none and looked at the first), and a `;` is no
+separator there: it makes the tunable's value invalid, the tunable is ignored, and `MALLOC_ARENA_MAX` applies. Each is pinned
+against a real glibc child, against a real jemalloc where the runner has one, and against fake maps for the shapes it has not.
+The check of that fix found a row of the table wrong the same way: `-2` was said to be IGNORED by glibc, and glibc reads it with
+`strtoul`, which takes a sign, as the largest number there is, a cap that bounds nothing (named first, it keeps all 17 arenas with
+`2` after it). A machine with three CPUs or more cannot tell it from an ignored value, because glibc's own limit (8 arenas per
+CPU) lies above what 16 threads ask for and both keep 17; below that the default bites and they differ. **A table of what a
+program does needs a test that tells two behaviours apart on EVERY machine it runs on, not only on the one where they differ**:
+each ignored value is now named first with a bounding value second (an ignored one lets the second apply, an accepted one does
+not), and the rows that expect a cap that bounds nothing compare with what a huge valid cap keeps, not with the default.
 
 ### A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS (release candidate diagnostics, 2026-10-06, PR #1312, `scripts/launch.sh`, the coordinator's check of #1304, should-fix 1)
 
