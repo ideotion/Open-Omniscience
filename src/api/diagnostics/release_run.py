@@ -31,8 +31,10 @@ from .p0 import _p0_scrub
 
 
 class ResumeBody(BaseModel):
-    """The resume needs the passphrase ONLY when the backup or the fresh-install restore
-    is still owed; ``resume_preflight`` says which, and the panel asks for it then."""
+    """The resume needs the passphrase ONLY when work that opens the backup is still owed: the
+    backup, the fresh-install restore (a failed one is retaken) or the pre-migration restore.
+    ``resume_preflight`` says whether it is owed (``unlock_needed``), and the panel asks for it
+    then. It is held in memory for the run and written to no state file, report or log."""
 
     passphrase: str = ""
 
@@ -161,9 +163,10 @@ def release_run_collect_now() -> JSONResponse:
 @router.post("/release-run/resume")
 def release_run_resume(body: ResumeBody | None = None) -> JSONResponse:
     """Resume an INTERRUPTED run (the app restarted mid-run): the same run id, every
-    measured phase kept, the backup and the restore never redone, the soak started as
-    a NEW stretch because the bar is continuous. 400 when there is nothing to resume or
-    the passphrase is still needed (the detail says which); 409-free like start."""
+    measured phase kept, the backup and the restore never redone once they finished (a
+    restore that failed or was not committed is retaken, and needs the passphrase), the
+    soak started as a NEW stretch because the bar is continuous. 400 when there is nothing
+    to resume or the passphrase is still needed (the detail says which); 409-free like start."""
     from src.monitoring.release_run import resume_preflight
 
     st = _RELEASE_RUN_JOB.status()

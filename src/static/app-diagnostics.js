@@ -1594,8 +1594,9 @@
 
     // The resume (2026-09-18): the run the app restarted out of continues under the
     // same run id -- every measured phase kept, the backup and the restore never
-    // redone, the soak a NEW stretch (the bar is continuous). The passphrase is asked
-    // for only when the status said the backup or the restore is still owed.
+    // redone once they finished (a restore that failed is retaken), the soak a NEW
+    // stretch (the bar is continuous). The passphrase is asked for only when the
+    // status said the backup or the restore is still owed.
     let _rrResumePlan = null;
     async function releaseRunResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

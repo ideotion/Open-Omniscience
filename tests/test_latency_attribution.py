@@ -307,6 +307,56 @@ def test_the_one_bound_that_stays_is_published_with_what_it_dropped():
 
 
 # --------------------------------------------------------------------------- #
+# The summary does not hold the lock ``record`` takes                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_the_rows_are_built_after_the_lock_record_takes_is_released(monkeypatch):
+    """``record`` runs on the event-loop thread for every response and takes ``_LOCK``, so a
+    ``summary`` that builds its rows (three sorts of each window) while holding it stalls the loop for
+    as long as the building takes: tens of milliseconds at 300 routes with full windows."""
+    for n in range(3):
+        latency.record(n, f"GET /api/r{n}", 200, 10.0 + n)
+    held: list[bool] = []
+    real = latency._route_row
+
+    def spy(key, r, bar_ms):
+        held.append(latency._LOCK.locked())
+        return real(key, r, bar_ms)
+
+    monkeypatch.setattr(latency, "_route_row", spy)
+    assert len(latency.summary()["routes"]) == 3
+    assert held == [False, False, False]
+
+
+def test_a_request_recorded_while_the_rows_are_built_does_not_change_a_row_already_copied(monkeypatch):
+    """The copies are all taken under one hold of the lock, so every row describes one moment, and a
+    row is built from its COPY: a live deque cannot be iterated while ``record`` appends to it, and
+    reading the live record after the lock was released would publish a count the other rows
+    were not measured at."""
+    latency.record(1, "GET /api/a", 200, 10.0)
+    latency.record(2, "GET /api/b", 200, 20.0)
+    real = latency._route_row
+    injected: list[int] = []
+
+    def spy(key, r, bar_ms):
+        # Lands while the first row is being built, i.e. after the copies. Only when the lock is
+        # free: ``record`` would wait on it for ever from inside a summary that still held it.
+        if not injected and not latency._LOCK.locked():
+            injected.append(1)
+            latency.record(3, "GET /api/b", 200, 9_000.0)
+        return real(key, r, bar_ms)
+
+    monkeypatch.setattr(latency, "_route_row", spy)
+    rows = {r["route"]: r for r in latency.summary()["routes"]}
+    assert injected == [1], "no request could be recorded while the rows were built"
+    assert rows["GET /api/b"]["count"] == 1 and rows["GET /api/b"]["max_ms"] == 20.0
+    assert rows["GET /api/b"]["statuses"] == {"200": 1}, "the status map is a copy too, not the live one"
+    assert latency._ROUTES["GET /api/b"]["count"] == 2, "the request itself was recorded"
+    assert _row("GET /api/b")["count"] == 2, "and the next summary shows it"
+
+
+# --------------------------------------------------------------------------- #
 # Honesty guards                                                               #
 # --------------------------------------------------------------------------- #
 
