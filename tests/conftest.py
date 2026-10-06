@@ -268,6 +268,22 @@ def _isolated_robots_cache_path(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _vitals_history_isolated():
+    """The vitals history (``src.monitoring.vitals_history``, R119) is a process-global recorder
+    the session ledger's liveness thread starts at boot: it keeps its rows in memory, writes a
+    file in whatever ``data_dir()`` is current and puts a counting handler on the ROOT logger --
+    the same order-dependent-pollution class as the guards above. Reset it on the way out so a
+    test that boots the app does not leave a handler counting every later test's log lines.
+    Looked up in ``sys.modules`` so a test that never imported it pays nothing."""
+    yield
+    import sys
+
+    mod = sys.modules.get("src.monitoring.vitals_history")
+    if mod is not None:
+        mod.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _dedup_front_isolated():
     """C12 (2026-07-24 throughput brief, A2): the in-memory dedup front
     (``src.ingest.dedup_front``) is a process-global cache by design (dedup

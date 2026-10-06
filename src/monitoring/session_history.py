@@ -663,6 +663,13 @@ def _loop() -> None:
             observe(may_snapshot_threads=True)
         except Exception:  # noqa: BLE001 - best-effort and throttled on its own
             _LOG.debug("session ledger: memory observe failed", exc_info=True)
+        try:
+            # The vitals history rides this same tick (R119): no thread of its own.
+            from src.monitoring.vitals_history import tick
+
+            tick()
+        except Exception:  # noqa: BLE001 - best-effort; the history never raises into the tick
+            _LOG.debug("session ledger: vitals tick failed", exc_info=True)
 
 
 def start_liveness() -> bool:
@@ -673,6 +680,12 @@ def start_liveness() -> bool:
         if _THREAD is not None and _THREAD.is_alive():
             return False
         _STOP.clear()
+        try:
+            from src.monitoring.vitals_history import start as _vitals_start
+
+            _vitals_start()
+        except Exception:  # noqa: BLE001 - the history is optional context, never a boot failure
+            _LOG.debug("session ledger: vitals history did not start", exc_info=True)
         _THREAD = threading.Thread(target=_loop, name="oo-session-liveness", daemon=True)
         _THREAD.start()
         return True
@@ -685,6 +698,12 @@ def stop_liveness() -> None:
     if t is not None and t.is_alive() and t is not threading.current_thread():
         t.join(timeout=2.0)
     _THREAD = None
+    try:
+        from src.monitoring.vitals_history import flush as _vitals_flush
+
+        _vitals_flush()  # a clean end writes the history it holds (a kill loses at most five minutes)
+    except Exception:  # noqa: BLE001
+        _LOG.debug("session ledger: vitals flush failed", exc_info=True)
 
 
 def _reset_for_tests() -> None:
