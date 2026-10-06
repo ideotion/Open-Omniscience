@@ -129,7 +129,10 @@ def performance_report(
             int(getattr(_load_sched_settings(), "collect_parallelism", 1) or 1)
         )
     except Exception as exc:  # noqa: BLE001 - a diagnostic never breaks on a side read
-        collection["learned_concurrency"] = {"available": False, "reason": str(exc)[:160]}
+        # lazily: bundle imports this module at its top
+        from .bundle import _all_diag_err_str
+
+        collection["learned_concurrency"] = {"available": False, "reason": _all_diag_err_str(exc)[:160]}
 
     # -- passive latencies: the app's own histograms, real use since boot --- #
     endpoint_latency: list[dict] = []
@@ -220,8 +223,11 @@ def performance_report(
                         }
                     )
                 except Exception as exc:  # noqa: BLE001 - report failures honestly
+                    # lazily: bundle imports this module at its top
+                    from .bundle import _all_diag_err_str
+
                     selftest_rows.append(
-                        {"probe": name, "run": run, "error": str(exc)[:160]}
+                        {"probe": name, "run": run, "error": _all_diag_err_str(exc)[:160]}
                     )
 
         _timed("database_stats", lambda: database_stats(db=db))

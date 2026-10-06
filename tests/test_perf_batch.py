@@ -546,6 +546,32 @@ def test_performance_report_carries_the_gate_reading_for_the_keyword_export_prob
     assert len(row) == 1 and "skipped" in row[0] and "gate" not in row[0]
 
 
+def test_the_performance_report_carries_no_passphrase_in_the_error_texts_it_writes(client, seeded, monkeypatch):
+    """``performance.json`` is a bundle member, and two of its handlers write an exception's text into
+    it (a side read that failed, a probe that failed): an engine's words can carry the statement the
+    failure came from, so the text goes through the member error scrub, as every other member's does."""
+    import src.scheduler.capacity as capacity
+    from src.database import connect as _connect
+
+    secret = "it's a p4ss \u00e9 key"
+    doubled = _connect._sql_literal_escape(secret)
+    monkeypatch.setattr(_connect, "_passphrase", secret)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError(f"[SQL: PRAGMA key = '{doubled}'] [parameters: {(secret,)!r}]")
+
+    monkeypatch.setattr(capacity, "state_report", _boom)
+    monkeypatch.setattr("src.api.database.database_stats", _boom)
+    data = client.get("/api/diagnostics/performance").json()["data"]
+    reason = data["collection"]["learned_concurrency"]
+    rows = [x for x in data["selftest"]["results"] if x["probe"] == "database_stats"]
+    assert reason["available"] is False and rows and all("error" in x for x in rows)
+    written = json.dumps([reason, rows], ensure_ascii=False)
+    for form in (secret, doubled, repr((secret,))[2:-3], json.dumps(secret)[1:-1]):
+        assert form not in written, form
+    assert "***redacted***" in written
+
+
 def test_performance_report_selftest_can_be_skipped(client):
     body = client.get("/api/diagnostics/performance?selftest=false").json()
     assert body["data"]["selftest"]["ran"] is False

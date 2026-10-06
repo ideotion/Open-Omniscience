@@ -18,9 +18,12 @@ pin the net beneath that, at the one place the text is made (``_all_diag_err_str
   * the passphrase is taken out in every FORM the code and its drivers write it in, not only as typed:
     ``PRAGMA key`` and ``ATTACH ... KEY`` carry it with its single quotes doubled, SQLAlchemy's
     ``[parameters: ...]`` shows its ``repr``, and JSON escapes it again; the longest form goes first;
-  * every place a text of that kind enters the zip is covered, not only the three of the first fold:
+  * every place a text of that kind enters the zip is covered, not only the three first routed:
     the debug bundle's section errors, the gate's ``estimate_error``, the chronology's ``error``, the
-    reasons, a deadline abort chained under a 503, and the two journal-read failures.
+    reasons, a deadline abort chained under a 503, the two journal-read failures, and the error texts
+    ``performance.json`` writes (``tests/test_perf_batch.py``); the two warnings for a left-over journal
+    log the scrubbed text and no traceback (``tests/test_all_diagnostics_job.py``);
+  * a net that lost one carrier fails a test: one passphrase writes each form unlike every other.
 """
 
 from __future__ import annotations
@@ -129,12 +132,19 @@ def test_an_exception_that_cannot_render_still_yields_a_marker(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-#  The forms (coordinator's check of the second fold: the raw string alone is not enough)
+#  The forms (the coordinator's check: the raw string alone is not enough)
 # --------------------------------------------------------------------------- #
 #: An apostrophe, a backslash and a letter outside ASCII; a lone apostrophe; one character; a
 #: newline; a double quote with an apostrophe (repr picks the other quote style for those); control
-#: characters ``repr`` writes as ``\x07`` and JSON as ``\u0007``.
-TRICKY = ["it's a back\\slash \u00e9", "'", "a", "line one\nline two", "say \"hi\" it's me", "bell\x07 esc\x1b it's"]
+#: characters ``repr`` writes as ``\x07`` and JSON as ``\u0007``; and one with BOTH kinds of quote, a
+#: letter outside ASCII and a control character, the only kind whose JSON-not-as-ASCII form is unlike
+#: every other form (for the others it equals ``repr``'s or JSON-as-ASCII's, so deleting that carrier
+#: from the net changed nothing the tests could see).
+DIFFERENT = "say \"hi\" \u00e9 bell\x07 it's"
+TRICKY = [
+    "it's a back\\slash \u00e9", "'", "a", "line one\nline two", "say \"hi\" it's me", "bell\x07 esc\x1b it's",
+    DIFFERENT,
+]
 
 
 def _forms_of(secret: str) -> list[str]:
@@ -242,49 +252,112 @@ def _decode_exception_repr(carried: str):
     return ast.literal_eval(inner)
 
 
+def _lit(text: str):
+    import ast
+
+    return ast.literal_eval(text)
+
+
+#: ``(wrap, unwrap, levels)``: ``levels`` is how many encodings the carrier puts over the text.
 CARRIERS = {
-    "text": (lambda t: t, lambda c: c),
-    "repr-of-exception": (lambda t: repr(RuntimeError(t)), _decode_exception_repr),
-    "str-of-two-args": (lambda t: str(RuntimeError("engine said", t)), lambda c: __import__("ast").literal_eval(c)[1]),
-    "dict": (lambda t: str({"detail": t}), lambda c: __import__("ast").literal_eval(c)["detail"]),
-    "list": (lambda t: str([t, 1]), lambda c: __import__("ast").literal_eval(c)[0]),
-    "repr-of-repr": (lambda t: repr(repr(t)), lambda c: __import__("ast").literal_eval(__import__("ast").literal_eval(c))),
-    "json": (lambda t: json.dumps({"detail": t}), lambda c: json.loads(c)["detail"]),
-    "json-ascii-off": (lambda t: json.dumps({"detail": t}, ensure_ascii=False), lambda c: json.loads(c)["detail"]),
+    "text": (lambda t: t, lambda c: c, 0),
+    "repr-of-exception": (lambda t: repr(RuntimeError(t)), _decode_exception_repr, 1),
+    "str-of-two-args": (lambda t: str(RuntimeError("engine said", t)), lambda c: _lit(c)[1], 1),
+    "dict": (lambda t: str({"detail": t}), lambda c: _lit(c)["detail"], 1),
+    "list": (lambda t: str([t, 1]), lambda c: _lit(c)[0], 1),
+    "json": (lambda t: json.dumps({"detail": t}), lambda c: json.loads(c)["detail"], 1),
+    "json-ascii-off": (lambda t: json.dumps({"detail": t}, ensure_ascii=False), lambda c: json.loads(c)["detail"], 1),
+    "repr-of-repr": (lambda t: repr(repr(t)), lambda c: _lit(_lit(c)), 2),
     "json-in-json": (
         lambda t: json.dumps({"body": json.dumps({"detail": t})}),
-        lambda c: json.loads(json.loads(c)["body"])["detail"],
+        lambda c: json.loads(json.loads(c)["body"])["detail"], 2,
     ),
-    "json-in-repr": (lambda t: repr(json.dumps({"detail": t})), lambda c: json.loads(__import__("ast").literal_eval(c))["detail"]),
-    "repr-in-json": (lambda t: json.dumps({"detail": repr(t)}), lambda c: __import__("ast").literal_eval(json.loads(c)["detail"])),
+    # the stacked JSON written NOT as ASCII on the inner level, the outer one, or both: the form a
+    # carrier that keeps a letter outside ASCII writes differs from the escaped one only for a key with one
+    "json-in-json-inner-ascii-off": (
+        lambda t: json.dumps({"body": json.dumps({"detail": t}, ensure_ascii=False)}),
+        lambda c: json.loads(json.loads(c)["body"])["detail"], 2,
+    ),
+    "json-in-json-outer-ascii-off": (
+        lambda t: json.dumps({"body": json.dumps({"detail": t})}, ensure_ascii=False),
+        lambda c: json.loads(json.loads(c)["body"])["detail"], 2,
+    ),
+    "json-in-json-both-ascii-off": (
+        lambda t: json.dumps({"body": json.dumps({"detail": t}, ensure_ascii=False)}, ensure_ascii=False),
+        lambda c: json.loads(json.loads(c)["body"])["detail"], 2,
+    ),
+    "json-in-repr": (lambda t: repr(json.dumps({"detail": t})), lambda c: json.loads(_lit(c))["detail"], 2),
+    "repr-in-json": (lambda t: json.dumps({"detail": repr(t)}), lambda c: _lit(json.loads(c)["detail"]), 2),
+    # three levels, the deepest the net covers
+    "repr-in-json-in-repr": (
+        lambda t: repr(json.dumps({"detail": repr(t)})),
+        lambda c: _lit(json.loads(_lit(c))["detail"]), 3,
+    ),
+    "json-in-repr-in-json": (
+        lambda t: json.dumps({"body": repr(json.dumps({"detail": t}))}, ensure_ascii=False),
+        lambda c: json.loads(_lit(json.loads(c)["body"]))["detail"], 3,
+    ),
+    "json-in-json-in-json-ascii-off": (
+        lambda t: json.dumps({"a": json.dumps({"b": json.dumps({"c": t}, ensure_ascii=False)}, ensure_ascii=False)}, ensure_ascii=False),
+        lambda c: json.loads(json.loads(json.loads(c)["a"])["b"])["c"], 3,
+    ),
 }
 
 #: Long enough that the quote marks around a literal are not part of the key.
-CARRIED = ["it's a back\\slash \u00e9", "say \"hi\" it's me", "line one\nline two", "p4ss'phrase", "bell\x07 esc\x1b it's"]
+CARRIED = ["it's a back\\slash \u00e9", "say \"hi\" it's me", "line one\nline two", "p4ss'phrase", "bell\x07 esc\x1b it's", DIFFERENT]
 
 
 @pytest.mark.parametrize("secret", CARRIED)
 @pytest.mark.parametrize("carrier", sorted(CARRIERS))
 def test_the_key_is_taken_out_through_every_carrier_that_holds_both_kinds_of_quote(monkeypatch, secret, carrier):
-    """Coordinator's check of the third fold: a quote-doubled key inside a text that is itself repr'd or
-    JSON-encoded, where the text holds both quote kinds (so ``repr`` writes each apostrophe as a
-    backslash and an apostrophe), and a JSON body inside another."""
+    """The key, quote-doubled as ``PRAGMA key`` carries it and raw, inside a text that is itself ``repr``'d
+    or JSON-encoded (where the text holds both quote kinds ``repr`` writes each apostrophe as a backslash
+    and an apostrophe), and a JSON body inside another, written as ASCII or not.
+
+    THE ORACLE DECODES the carried text and looks for all eight forms of the key a failure line writes
+    (``_forms_of``), parameter lists included, not only for the key and its doubled twin: a text that
+    carries the ``[parameters: ...]`` of a failed statement is the common shape, and a net that removed
+    the two plain forms and left a ``repr``'d one would otherwise pass. (A parameter list is itself one
+    level, so it is added for every carrier but the deepest.)"""
     monkeypatch.setattr(_connect, "_passphrase", secret)
     doubled = _connect._sql_literal_escape(secret)
+    wrap, unwrap, levels = CARRIERS[carrier]
     text = (
         f"near '{doubled}': syntax error [SQL: PRAGMA key = '{doubled}'] raw {secret} "
         "and a \"quoted\" word and it's here"
     )
-    wrap, unwrap = CARRIERS[carrier]
+    if levels <= _bundle._PASSPHRASE_CARRIER_DEPTH - 1:
+        # a parameter list is itself a ``repr`` over the key: it counts as one level, so the deepest
+        # carrier cannot also carry it without being a fourth (which is not claimed)
+        text += f" [parameters: {(secret,)!r}] [parameters: {(doubled,)!r}]"
     out = _bundle._without_the_passphrase(wrap(text))
     assert out is not None, "the scrub ran: the text is changed, not withheld"
     decoded = unwrap(out)
-    assert secret not in decoded and doubled not in decoded, f"{carrier}: {decoded!r}"
     assert "syntax error" in decoded, "the text itself is kept"
+    for form in _forms_of(secret):
+        assert form not in decoded, f"{carrier}: the form {form!r} is still in {decoded!r}"
+
+
+def test_the_carriers_the_net_covers_include_the_deepest_one_the_tests_build():
+    """The deepest carrier above has as many levels as the net applies carriers, so a third level is
+    tested and a fourth is not claimed."""
+    assert max(levels for _w, _u, levels in CARRIERS.values()) == _bundle._PASSPHRASE_CARRIER_DEPTH
+
+
+def test_one_secret_writes_the_json_not_as_ascii_form_unlike_every_other_so_deleting_that_carrier_shows():
+    """A net with the JSON-not-as-ASCII carrier deleted leaves this form of ``DIFFERENT`` in the text,
+    and the oracle above finds it: the tests can tell the carriers apart, which they could not while every
+    secret wrote that form the way another carrier does (the mutation the coordinator's check ran)."""
+    forms = set(_bundle._passphrase_forms(DIFFERENT))
+    for text in (DIFFERENT, _connect._sql_literal_escape(DIFFERENT)):
+        assert json.dumps(text, ensure_ascii=False)[1:-1] in forms
+        assert json.dumps(text, ensure_ascii=False)[1:-1] not in {
+            repr(text)[1:-1], json.dumps(text)[1:-1], _bundle._python_inner(text), text,
+        }, "this form differs from every other, so no other carrier writes it for the net"
 
 
 # --------------------------------------------------------------------------- #
-#  Every sink, not only the three of the first fold
+#  Every sink, not only the three first routed
 # --------------------------------------------------------------------------- #
 def test_a_deadline_abort_chained_under_a_503_is_scrubbed_like_an_error(monkeypatch):
     from src.database.maintenance import StatementTimeout

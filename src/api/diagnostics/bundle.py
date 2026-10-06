@@ -1415,6 +1415,14 @@ def _python_inner(text: str) -> str:
     return repr(text + "'\"")[1:-4]  # both kinds present: single-quoted, the apostrophes escaped
 
 
+#: How many times the carriers are applied to the passphrase's two bases. What it protects: the text this
+#: code makes passes through at most two carriers (an engine's words held in an exception's arguments, which
+#: the exception's ``repr``, a dict or a JSON body then carries again), and a third is one more than anything
+#: found; the cost of the margin is at most 170 forms for one passphrase, each a substring scan of a text of a
+#: few hundred characters to a few KB. A fourth level is not covered.
+_PASSPHRASE_CARRIER_DEPTH = 3
+
+
 def _passphrase_forms(secret: str) -> list[str]:
     """Every form ``secret`` is written in where this code or its drivers put it into text.
 
@@ -1424,12 +1432,12 @@ def _passphrase_forms(secret: str) -> list[str]:
     show it. FOUR CARRIERS of a base: Python's ``repr`` as it writes the key alone (apostrophes
     plain, controls as ``\\x07``), ``repr`` with the apostrophes escaped (what ``[parameters: ...]`` and
     an exception's ``repr`` show when the text around the key holds both kinds of quote), and the
-    two inner forms JSON writes it in (escaped ASCII or not). The carriers are applied TWICE, because
-    the text this code makes passes through at most two of them: an engine's words held in an
-    exception's arguments (one carrier), which the exception's ``repr``, a dict or a JSON body then
-    carries again (the second). A passphrase with no quote, no backslash, no control and no character
-    outside ASCII has one form. Three deep (JSON inside a ``repr`` inside JSON) is not covered, and
-    no producer in this code makes one."""
+    two inner forms JSON writes it in (escaped ASCII or not). The carriers are applied up to THREE
+    times (``_PASSPHRASE_CARRIER_DEPTH``): the text this code makes passes through two at most, an
+    engine's words held in an exception's arguments (one carrier) which the exception's ``repr``, a
+    dict or a JSON body then carries again (the second), and the third is the margin. A passphrase
+    with no quote, no backslash, no control and no character outside ASCII has one form. Four deep
+    is not covered, and none was found that makes one."""
 
     def carried(text: str) -> list[str]:
         return [
@@ -1437,10 +1445,12 @@ def _passphrase_forms(secret: str) -> list[str]:
             json.dumps(text)[1:-1], json.dumps(text, ensure_ascii=False)[1:-1],
         ]
 
-    bases = [secret, secret.replace("'", "''")]
-    once = [form for base in bases for form in carried(base)]
-    twice = [form for form in once for form in carried(form)]
-    return list(dict.fromkeys(f for f in (*bases, *once, *twice) if f))
+    layer = [secret, secret.replace("'", "''")]
+    forms = list(layer)
+    for _ in range(_PASSPHRASE_CARRIER_DEPTH):
+        layer = [form for text in layer for form in carried(text)]
+        forms += layer
+    return list(dict.fromkeys(f for f in forms if f))
 
 
 def _without_the_passphrase(text: str) -> str | None:
@@ -2405,11 +2415,14 @@ def _write_all_diagnostics_zip(
         try:
             previous_text, previous_block = _fold_previous_run_journals(previous_runs)
         except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
-            _LOG.warning("could not fold the previous runs' journals", exc_info=True)
+            fold_error = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            # The scrubbed text, not the traceback: the log's tail rides the same zip, and an
+            # engine's words can carry the statement it failed on.
+            _LOG.warning("could not fold the previous runs' journals (%s)", fold_error)
             previous_text = ""
             previous_block = {
                 "runs": [], "not_carried": list(previous_runs.get("not_carried", [])),
-                "error": _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160),
+                "error": fold_error,
             }
     manifest = _all_diagnostics_manifest(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
@@ -2771,11 +2784,10 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     try:
         previous_runs = _read_previous_run_journals(out_dir, journal_path)
     except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
-        _LOG.warning("could not read the previous runs' journals", exc_info=True)
-        previous_runs = {
-            "carried": [], "not_carried": [],
-            "error": _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160),
-        }
+        read_error = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+        # The scrubbed text, not the traceback (see the fold below).
+        _LOG.warning("could not read the previous runs' journals (%s)", read_error)
+        previous_runs = {"carried": [], "not_carried": [], "error": read_error}
     with _bundle_exclusive_window() as excl, session_scope() as db:
         members = _all_diagnostics_members(db)
 
@@ -2991,8 +3003,8 @@ def _earlier_set(out: pathlib.Path) -> tuple[str, dict | None]:
     of a kind this version does not read), ``"files"`` (files of ours with no sidecar that can be read:
     left by a killed publish, or a sidecar that is corrupt or refused by the drive), ``"unknown"`` (the
     folder could not be listed, so nothing is known of it) or ``"none"``. Only what is OURS counts as
-    files: a numbered volume, the sidecar or the readme. A stray ``.DS_Store``, ``Thumbs.db`` or folder
-    is not an earlier set and must not make the refusal claim one."""
+    files: a ``.zip`` (the numbered volumes), the sidecar or the readme. A stray ``.DS_Store``, ``Thumbs.db``
+    or folder is not an earlier set and must not make the refusal claim one."""
     from src.api import diagnostics_volumes as dvol
 
     try:

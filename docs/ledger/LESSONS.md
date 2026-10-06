@@ -13678,24 +13678,30 @@ leaves the checkpoint busy), because on the shared engine's own mode the pin is 
 the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which a build of 9 to 48 minutes does not obviously
 explain.
 
-### A SCRUB BY EXACT MATCH MUST BE GIVEN EVERY FORM THE SECRET IS WRITTEN IN, AND A TEST THAT SEARCHES AN ENCODED FILE CAN PASS FOR A TEXT THAT STILL CARRIES IT (error-text scrub, 2026-10-06, `#1326`; the coordinator's checks of its second and fourth folds)
+### A SCRUB BY EXACT MATCH MUST BE GIVEN EVERY FORM THE SECRET IS WRITTEN IN, AND A TEST THAT SEARCHES AN ENCODED FILE CAN PASS FOR A TEXT THAT STILL CARRIES IT (error-text scrub, 2026-10-06, `#1326`; the coordinator's checks of its later versions)
 
-The first fold took the database passphrase out of a member's error text with `secret_scrub.scrub_text`, which removes the raw string and nothing else. The code
+The first version took the database passphrase out of a member's error text with `secret_scrub.scrub_text`, which removes the raw string and nothing else. The code
 itself never writes the passphrase raw into a statement: `PRAGMA key` and `ATTACH ... KEY` carry it with its single quotes doubled (`connect._sql_literal_escape`),
 so an engine's "near ..." text and SQLAlchemy's `[SQL: ...]` show that form; `[parameters: ...]` shows `repr`; and JSON escapes it again (ASCII-escaped or not). A
-passphrase with an apostrophe, a backslash or a character outside ASCII therefore passed straight through the net, and the five tests of the fold used one passphrase
-of plain words, for which every form is the same string. The fold now builds the forms (raw and quote-doubled, each as `repr` and as both JSON inner forms),
+passphrase with an apostrophe, a backslash or a character outside ASCII therefore passed straight through the net, and the five tests of the first version used one passphrase
+of plain words, for which every form is the same string. The net now builds the forms (raw and quote-doubled, each as `repr` and as both JSON inner forms),
 scrubs the longest first (a held `pass` inside the environment's `pass2` otherwise leaves the `2`), checks the result once more for every form and withholds the
-text if one is left. The fourth fold added the CARRIERS: a text that is itself `repr`'d or JSON-encoded (`repr(exc)`, `str()` of an exception with two arguments, a dict or
+text if one is left. A later version added the CARRIERS: a text that is itself `repr`'d or JSON-encoded (`repr(exc)`, `str()` of an exception with two arguments, a dict or
 a list holding the message, a JSON body inside a JSON body) writes the already-doubled key again, and where it holds both kinds of quote `repr` writes each apostrophe as a
-backslash and an apostrophe, a form `repr` of the key alone never shows. The forms are two bases by three carriers (that `repr`, JSON as ASCII, JSON not as ASCII), applied
-twice; a third nesting is not covered, and the docstring says so. **Reusable:** (1) give a net every form the code and its drivers write the secret in, built from the code's own escaper in the test, not from
+backslash and an apostrophe, a form `repr` of the key alone never shows. The forms are two bases by FOUR carriers (`repr` as it writes the key alone, `repr` with the
+apostrophes escaped, JSON as ASCII, JSON not as ASCII), applied up to three times (at most 170 forms for one passphrase); a fourth nesting is not covered, the docstring says
+so, and none was found. **Reusable:** (1) give a net every form the code and its drivers write the secret in, built from the code's own escaper in the test, not from
 the function under test; (2) test with a secret that has an apostrophe, a backslash, a character outside ASCII, a newline, a control character (`repr` writes `\x07`, JSON `\u0007`), a lone apostrophe and one character,
-because a plain-words secret has one form and proves nothing about the others; (3) a test that searches the ENCODED file (the JSON manifest) for the secret can pass for a
-text that still carries it, since JSON writes a backslash and a letter outside ASCII differently, and so can a clip to ASCII (`_ascii_clip` rewrites an accented letter): parse the
-file and search the value, and keep the test secret within what the sink's clip leaves alone; (4) after routing one sink through a scrub, list every other place the same
-kind of text enters the same file (`str(exc)` and `{exc}` over the module) and route them in the same change, and make the log line beside it log the scrubbed
-string and not the traceback, because the log's tail rides the same zip; (5) a test of a nested encoding must DECODE the carried text (`ast.literal_eval`, `json.loads`)
-and search the value, one case for each carrier, because a search of the encoded text passes for a key the encoding has rewritten. What it still does not catch, said where
-it is made: a key re-encoded or split over lines, and a log record: the warnings with `exc_info=True` that reach `app_errors.jsonl` and the debug bundle's errors section
-pass through the error log, which is where they are scrubbed (a separate change), not here, so this one claims the member error texts and not "every error text of the zip".
+because a plain-words secret has one form and proves nothing about the others, AND with one for which every form differs from every other (both kinds of quote, a letter outside ASCII,
+a control character): for the others the JSON-not-as-ASCII form equalled `repr`'s or the ASCII one, so deleting that carrier from the net passed every test, and only a mutation of the net showed it;
+(3) a test that searches the ENCODED file (the JSON manifest) for the secret can pass for a text that still carries it, since JSON writes a backslash and a letter outside ASCII
+differently, and so can a clip to ASCII (`_ascii_clip` rewrites an accented letter): parse the file and search the value, and look for each form's clipped rewrite too; and a sink that CLIPS
+the text (the manifest keeps 160 characters) holds only the forms that sit inside the window, so ONE long failure line holding every form puts two of eight inside it and the assertions over
+the other six read a clipped text and pass whatever the net did: give each form a failure line short enough to land inside the clip and assert that it does; (4) after routing one sink through a scrub, list every other place the same
+kind of text enters the same file or its neighbours (`str(exc)` and `{exc}` over the module, `performance.json`'s two handlers among them) and route them in the same change, and make the log line beside it log the scrubbed
+string and not the traceback (`exc_info=True` writes the exception's text raw), because the log's tail rides the same zip; (5) a test of a nested encoding must DECODE the carried text (`ast.literal_eval`, `json.loads`)
+and search the value for every form the failure line writes, parameter lists included, one case for each carrier, because a search of the encoded text passes for a key the encoding has rewritten, and a
+parameter list is itself one level, so the deepest carrier cannot also carry it. What it still does not catch, said where it is made: a key re-encoded or split over lines, and a log record
+other than the two this change routes: the warnings with `exc_info=True` that reach `app_errors.jsonl` and the debug bundle's errors section pass through the error log, whose scrub is the
+runners PR's (RC's, not merged when this was written), so this one claims the member error texts, the manifest's and the debug bundle's error fields, `performance.json`'s two texts and the two
+journal warnings, and not "every error text of the zip".

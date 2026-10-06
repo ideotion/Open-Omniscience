@@ -759,33 +759,50 @@ def _written_forms(secret):
     ]
 
 
-def _engine_failure(secret):
-    """An engine's failure line with the key in every place it can be."""
+def _engine_failures(secret):
+    """EIGHT short failure lines, one for each form the key is written in, each with the key in that form
+    only. SHORT ON PURPOSE: the manifest keeps the first 160 characters of the text it did not write, so
+    one long line holding every form puts only the first two inside the window and the assertions
+    over the rest read a clipped text (they pass whatever the net did); one line for each form puts every
+    form inside it."""
     from src.database import connect as _connect
 
     doubled = _connect._sql_literal_escape(secret)
-    return (
-        f"near '{doubled}': syntax error [SQL: PRAGMA key = '{doubled}'] "
-        f"[parameters: {(secret,)!r}] [parameters: {(doubled,)!r}] "
-        f"{json.dumps({'k': secret})} {json.dumps({'k': secret}, ensure_ascii=False)} "
-        f"{json.dumps({'k': doubled})} {json.dumps({'k': doubled}, ensure_ascii=False)}"
-    )
+    return [
+        f"syntax error near '{secret}'",
+        f"syntax error [SQL: PRAGMA key = '{doubled}']",
+        f"syntax error [parameters: {(secret,)!r}]",
+        f"syntax error [parameters: {(doubled,)!r}]",
+        f"syntax error {json.dumps({'k': secret})}",
+        f"syntax error {json.dumps({'k': secret}, ensure_ascii=False)}",
+        f"syntax error {json.dumps({'k': doubled})}",
+        f"syntax error {json.dumps({'k': doubled}, ensure_ascii=False)}",
+    ]
 
 
-def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_passphrase(tiny_members, monkeypatch):
-    """Coordinator's check of the second and fourth error-text folds: the manifest's
-    ``previous_runs_error`` and the block a failed fold leaves are made from an exception's words, like
-    every member's, and an engine's words can carry the statement it failed on, in every form the key is
-    written in (a statement, a parameter list, a JSON body; raw and quote-doubled)."""
+@pytest.mark.parametrize("which", range(8))
+def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_passphrase(
+    tiny_members, monkeypatch, which
+):
+    """The coordinator's checks of the error-text scrub: the manifest's ``previous_runs_error`` and the
+    block a failed fold leaves are made from an exception's words, like every member's, and an engine's
+    words can carry the statement it failed on, in each form the key is written in (a statement, a
+    parameter list, a JSON body; raw and quote-doubled). One run for each of the eight forms, each with a
+    failure line short enough that its form is INSIDE the 160 characters the manifest keeps: the form
+    under test is in the clipped text before the scrub and absent after it, which the test checks."""
     from src.database import connect as _connect
 
     monkeypatch.setattr(_connect, "_passphrase", _KEY)
-    # the manifest clips what it did not write to ASCII, which writes a letter outside it as an escape: the
-    # clipped form of each is looked for too, so a key left in the text cannot hide behind that rewrite
     forms = _written_forms(_KEY)
     assert len(set(forms)) == len(forms), "every form differs, so each is a different place the key could remain"
+    # the manifest clips what it did not write to ASCII, which writes a letter outside it as an escape: the
+    # clipped form of each is looked for too, so a key left in the text cannot hide behind that rewrite
     forms = forms + [_diag_bundle._ascii_clip(f, 10**6) for f in forms]
-    failure = _engine_failure(_KEY)
+    failure = _engine_failures(_KEY)[which]
+    unscrubbed = _diag_bundle._ascii_clip(f"PermissionError: denied: {failure}", 160)
+    assert forms[which] in unscrubbed or _diag_bundle._ascii_clip(forms[which], 10**6) in unscrubbed, (
+        "the form under test sits inside the window the manifest keeps, or this test says nothing"
+    )
     _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
     real_read = _diag_bundle._read_previous_run_journals
 
@@ -812,6 +829,43 @@ def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_pa
         fold_text = json.loads(z.read("manifest.json"))["run"]["previous_runs_error"]
     assert fold_text.startswith("RuntimeError: fold broke") and "syntax error" in fold_text
     assert all(f not in fold_text for f in forms), fold_text
+
+
+def test_the_two_warnings_for_a_left_over_journal_log_the_scrubbed_text_and_no_traceback(
+    tiny_members, monkeypatch, caplog
+):
+    """The log's tail rides the same zip (``recent_errors``) and the console gets it too: a warning with
+    ``exc_info=True`` writes the exception's text raw, so these two log the scrubbed text and carry no
+    traceback."""
+    import logging
+
+    from src.database import connect as _connect
+
+    monkeypatch.setattr(_connect, "_passphrase", _KEY)
+    failure = f"[SQL: PRAGMA key = '{_connect._sql_literal_escape(_KEY)}'] [parameters: {(_KEY,)!r}]"
+    _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
+    real_read = _diag_bundle._read_previous_run_journals
+
+    def _read_boom(out_dir, own):
+        raise PermissionError(f"denied: {failure}")
+
+    def _fold_boom(previous):
+        raise RuntimeError(f"fold broke {failure}")
+
+    caplog.set_level(logging.DEBUG)
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", _read_boom)
+    d._all_diagnostics_worker(_Ctx())
+    monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", real_read)
+    _dead_run_journal(tiny_members, "20260930-080500", unfinished="x.json")
+    monkeypatch.setattr(_diag_bundle, "_fold_previous_run_journals", _fold_boom)
+    d._all_diagnostics_worker(_Ctx())
+    mine = [r for r in caplog.records if "previous runs' journals" in r.getMessage()]
+    assert len(mine) == 2, [r.getMessage() for r in caplog.records]
+    assert "PermissionError" in mine[0].getMessage() and "RuntimeError" in mine[1].getMessage()
+    for rec in mine:
+        assert rec.exc_info is None and rec.exc_text is None
+        for form in _written_forms(_KEY):
+            assert form not in rec.getMessage(), (form, rec.getMessage())
 
 
 # --------------------------------------------------------------------------- #
