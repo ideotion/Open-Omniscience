@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event
-from sqlalchemy.exc import OperationalError, PendingRollbackError
+from sqlalchemy.exc import IntegrityError, OperationalError, PendingRollbackError
 
 from src.database import pool_watch
 from src.scheduler import runner, storage_guard
@@ -263,6 +263,73 @@ def test_an_unrelated_error_is_not_a_full_drive():
     g = _guard()
     assert g.note_error(ValueError("nope"), "collect pass") is False
     assert not g.engaged
+
+
+def test_what_the_guard_keeps_of_a_full_drive_never_carries_the_statement_or_its_values():
+    """The PR 1306 check, S1. SQLAlchemy's wrapper puts the SQL and the values bound to it after the
+    driver's message, and ``last_disk_full.detail`` is served by ``state()`` into the page's poll and
+    the bundle: a title, a URL or a note an article carried must not ride with it. The detail is the
+    driver's class and first line, whichever way the failure arrives."""
+    secret = "secret-title-from-an-article"
+    wrapped = OperationalError(
+        "INSERT INTO articles (title) VALUES (?)", (secret,), sqlite3.OperationalError("database or disk is full")
+    )
+    assert secret in str(wrapped), "the premise: the wrapper's own text DOES carry the value"
+    g = _guard()
+    assert g.note_error(wrapped, "collect pass") is True
+    d = g.state()["last_disk_full"]["detail"]
+    assert d == "collect pass: OperationalError: database or disk is full", d
+    assert secret not in d and "INSERT" not in d
+
+    # the Session's PendingRollbackError quotes the original, statement and values included
+    pend = PendingRollbackError(
+        "This Session's transaction has been rolled back due to a previous exception during flush. "
+        "Original exception was: (sqlite3.OperationalError) database or disk is full\n"
+        f"[SQL: INSERT INTO articles (title) VALUES (?)]\n[parameters: ('{secret}',)]"
+    )
+    g2 = _guard()
+    assert g2.note_error(pend, "collect pass") is True
+    d2 = g2.state()["last_disk_full"]["detail"]
+    assert d2 == "collect pass: PendingRollbackError: (sqlite3.OperationalError) database or disk is full", d2
+    assert secret not in d2 and "INSERT" not in d2
+
+    # a plain OSError has no statement; its own words are the cause an operator needs
+    g3 = _guard()
+    assert g3.note_error(OSError(errno.ENOSPC, "No space left on device"), "export") is True
+    assert "No space left on device" in g3.state()["last_disk_full"]["detail"]
+
+    # the engine's own error hook keeps the same detail, from the driver's exception
+    g4 = _guard()
+    monkey_guard = storage_guard.storage_guard
+    try:
+        storage_guard.storage_guard = g4
+        storage_guard.on_engine_error(
+            type("Ctx", (), {"original_exception": sqlite3.OperationalError("database or disk is full")})()
+        )
+    finally:
+        storage_guard.storage_guard = monkey_guard
+    assert g4.state()["last_disk_full"]["detail"] == "OperationalError: database or disk is full"
+
+
+def test_a_bound_value_that_says_disk_full_is_not_a_full_drive():
+    """The PR 1306 check, S3. ``is_disk_full`` matched on the whole text of the wrapper, statement
+    and values included: an ``IntegrityError`` on a title that read "no space left on device" latched
+    DISK, paused collection and raised a notice about a drive that had room."""
+    wrapped = IntegrityError(
+        "INSERT INTO articles (title) VALUES (?)",
+        ("no space left on device",),
+        sqlite3.IntegrityError("UNIQUE constraint failed: articles.url_hash"),
+    )
+    assert "no space left on device" in str(wrapped), "the premise: the value is in the wrapper's text"
+    assert not is_disk_full(wrapped)
+    g = _guard()
+    assert g.note_error(wrapped, "collect pass") is False
+    assert not g.engaged and g.state()["disk_full_events"] == 0
+    # and the two ways a real full drive reads are still read: the head of the text, and an errno
+    assert is_disk_full(
+        OperationalError("INSERT ...", ("x",), sqlite3.OperationalError("database or disk is full"))
+    )
+    assert is_disk_full(OSError(errno.ENOSPC, "No space left on device"))
 
 
 def test_the_engine_error_hook_latches_the_guard_on_a_real_sqlite_full(tmp_path):
@@ -2669,3 +2736,26 @@ def test_a_failure_of_the_unsupervised_path_is_a_warning_and_a_repeat_is_not(mon
     with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
         g.poll_and_drain_unsupervised()
     assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_two_failing_paths_in_turn_are_each_news_once_not_every_time(caplog):
+    """The PR 1306 check, N5. ``log_failure_once`` kept ONE key for every path, so the drain and the
+    unsupervised poll failing in turn flipped it and each logged a traceback again on every pass; the
+    key is now per path."""
+    import logging
+
+    g = _guard()
+    drain, poll = RuntimeError("the drain broke"), ValueError("the poll broke")
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(4):
+            g.log_failure_once("the drain", drain)
+            g.log_failure_once("the unsupervised poll", poll)
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and "failed" in r.getMessage()]
+    assert [r.getMessage() for r in warned] == [
+        "storage guard: the drain failed",
+        "storage guard: the unsupervised poll failed",
+    ], "each path is news once; the repeats are DEBUG"
+    # a path that changes its failure is news again
+    g.log_failure_once("the drain", OSError("a different failure"))
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and "failed" in r.getMessage()]
+    assert len(warned) == 3

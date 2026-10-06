@@ -10426,3 +10426,15 @@ a copy are swept at boot on a thread of their own. The summary reports `snapshot
 (which now means the deciding window only); the progress label is "Making a temporary copy of your data..." in 12 languages.
 Restore still reads an old archive's `corpus-wal` member. Lesson: `LESSONS.md`, the entry "A BACKUP THAT CANNOT FOLD THE LOG INTO
 THE MAIN FILE COPIES THE CORPUS".
+
+- **2026-10-06 · wal-disk-pool/findings (WAL / disk thread, the findings of the reviews of #1306, #1298 and #1308).**
+A second unlock attempt that queued behind a successful one now finds the app open and answers from the state instead of
+re-running the verify; a full drive's recorded detail is the driver's first line and never the statement or its bound values,
+and a bound value that reads "no space left on device" no longer latches DISK; a reading older than a minute is not used to
+classify an I/O error while another read is in flight; the failure key of the guard's own loop is per path; the stale wording of
+the three PRs is corrected (a recovery floor, the checkpoint timings, the pool-watch record, the pressure method text, the count of
+eleven tests, split two and nine by measurement). New: a LIGHT pressure snapshot every 15 s while memory is near the memory
+guard's line, with its own ring and file, the busiest threads by CPU since the previous one, the blocks gained and its own cost.
+Also recorded: the post-10-01 reading of the 10-06 bundles (the log is held near 1 GB by the guard; the pins are long background
+reads). Lessons: `LESSONS.md`, the entries "AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT", "A SAMPLER THAT ONLY FITS EVERY
+FIVE MINUTES" and "SMALL RULES FROM THE THREE REVIEWS OF #1306, #1298 AND #1308".

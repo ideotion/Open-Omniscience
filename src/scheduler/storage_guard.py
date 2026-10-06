@@ -212,6 +212,12 @@ ERROR_HOLD_S = 300.0
 #: already lives with, so a figure this old is never staler than the sample the guard acts on;
 #: chosen, not measured.
 IO_READING_REUSE_S = 1.0
+#: How old a reading may be and still be used by a caller that finds another reading IN FLIGHT. That
+#: caller does not wait (the drive may be hung), so it takes the last reading: but a figure from
+#: hours before a hung read began says nothing about the drive now, and an incident is classified
+#: on the drive's free space at THAT moment. Older than this it is "not classified" (the error is
+#: still counted and recorded). Twelve of the guard's own 5 s samples; chosen, not measured.
+IO_READING_STALE_S = 60.0
 #: The in-memory history: one sample a minute for six hours. Process-scoped, never persisted
 #: (the hourly ``disk_free_mib`` and ``wal_bytes`` gauges carry the long series).
 HISTORY_EVERY_S = 60.0
@@ -365,13 +371,24 @@ def override_floor_bytes(wal_bytes: int | None) -> int:
     return max(OVERRIDE_FLOOR_MIN_BYTES, int(wal_bytes or 0))
 
 
+def _text_head(exc: BaseException) -> str:
+    """An exception's text up to the statement SQLAlchemy appends to it. Its wrapper's ``str`` is
+    ``(sqlite3.OperationalError) <driver message>`` and then ``[SQL: ...]`` and ``[parameters: ...]``:
+    the driver's message is in the head, and everything after it is the statement and the values
+    bound to it (a title, a URL), which a classifier must not read and a status payload must not
+    keep. The Session's ``PendingRollbackError`` quotes the original the same way."""
+    return str(exc).split("\n[SQL:", 1)[0]
+
+
 def is_disk_full(exc: BaseException | None) -> bool:
     """Whether an exception (or anything in its chain) is the drive running out of space.
 
     Walks ``__cause__``/``__context__`` and SQLAlchemy's ``.orig``: the failure surfaces as
     ``OperationalError: database or disk is full`` (SQLITE_FULL), ``OSError`` errno 28 from a
     plain file write, or a quota. A message match is deliberate for the SQLite driver, which
-    raises its own ``OperationalError`` without an errno.
+    raises its own ``OperationalError`` without an errno; it reads only the head of the text
+    (:func:`_text_head`), so a statement whose BOUND VALUE says "no space left on device" (an
+    ``IntegrityError`` on a title that does) is not a full drive (the PR 1306 check, S3).
     """
     seen: set[int] = set()
     cur = exc
@@ -379,7 +396,7 @@ def is_disk_full(exc: BaseException | None) -> bool:
         seen.add(id(cur))
         if isinstance(cur, OSError) and cur.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
             return True
-        msg = str(cur).lower()
+        msg = _text_head(cur).lower()
         if (
             "database or disk is full" in msg
             or "no space left on device" in msg
@@ -440,15 +457,35 @@ def is_io_error(exc: BaseException | None) -> bool:
     return False
 
 
-def _io_error_detail(exc: BaseException | None) -> str:
-    """What the guard keeps of the error: the DRIVER's exception class and FIRST line of its
-    message (``OperationalError: disk I/O error``), never SQLAlchemy's wrapper text, which carries
-    the SQL and its bound parameters into a status payload the page polls and the bundle ships."""
+def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -> str:
+    """What the guard keeps of an error: the DRIVER's exception class and FIRST line of its message
+    (``OperationalError: disk I/O error``), never SQLAlchemy's wrapper text, which carries the SQL and
+    its bound parameters into a status payload the page polls and the bundle ships. With no driver
+    exception behind it, the class alone, or (``quote_head``) the first line of the text before the
+    statement: an ``OSError`` says "No space left on device" and the Session's
+    ``PendingRollbackError`` quotes the original, and both are the cause the operator needs."""
+    if exc is None:
+        return ""
     orig = _dbapi_cause(exc)
-    if orig is None:
-        return type(exc).__name__ if exc is not None else ""
-    first = (str(orig).splitlines() or [""])[0]
-    return f"{type(orig).__name__}: {first}"[:200]
+    if orig is not None:
+        shown, text = orig, str(orig)
+    elif quote_head:
+        # the Session's rollback error opens with a paragraph of advice and then quotes the original
+        shown, text = exc, _text_head(exc).rpartition("Original exception was: ")[2]
+    else:
+        return type(exc).__name__
+    first = (text.splitlines() or [""])[0]
+    return f"{type(shown).__name__}: {first}"[:200]
+
+
+def _io_error_detail(exc: BaseException | None) -> str:
+    """The detail kept for an I/O error (:func:`_first_line_detail`, class only without a driver)."""
+    return _first_line_detail(exc)
+
+
+def _disk_full_detail(exc: BaseException | None) -> str:
+    """The detail kept for a full drive (:func:`_first_line_detail`, with the quoted head)."""
+    return _first_line_detail(exc, quote_head=True)
 
 
 def _size_text(n: float | int | None) -> str:
@@ -627,7 +664,7 @@ class StorageGuard:
         self._last_io_error: dict[str, Any] | None = None
         self._io_reading: tuple[float, dict[str, Any]] | None = None
         self._io_reading_busy = False
-        self._failure_key: str | None = None
+        self._failure_keys: dict[str, str] = {}  # per path: what failed last, see log_failure_once
         self._hold_until: float | None = None
         self._last: dict[str, Any] = {}
         self._thresholds: dict[str, Any] = {}
@@ -670,7 +707,7 @@ class StorageGuard:
             self._io_errors = 0
             self._last_io_error = None
             self._io_reading, self._io_reading_busy = None, False
-            self._failure_key = None
+            self._failure_keys.clear()
             self._hold_until = None
             self._last, self._thresholds = {}, {}
             self._history.clear()
@@ -1018,7 +1055,7 @@ class StorageGuard:
         space is below the reserve, :meth:`note_io_error`); returns whether it latched. Never raises."""
         try:
             if is_disk_full(exc):
-                self.note_disk_full(f"{where + ': ' if where else ''}{type(exc).__name__}: {exc}")
+                self.note_disk_full(f"{where + ': ' if where else ''}{_disk_full_detail(exc)}")
                 return True
             return self.note_io_error(exc, where)
         except Exception:  # noqa: BLE001
@@ -1028,15 +1065,18 @@ class StorageGuard:
     def _io_error_reading(self) -> dict[str, Any]:
         """The drive reading an I/O error is classified by: a fresh one, or the last one taken
         within :data:`IO_READING_REUSE_S`, and never two at once (a caller that finds a reading in
-        flight takes the last one, or none, rather than queue behind a drive that may be hung).
-        An unreadable drive is ``{}``: "not classified"."""
+        flight takes the last one if it is younger than :data:`IO_READING_STALE_S`, and none
+        otherwise, rather than queue behind a drive that may be hung). An unreadable drive is
+        ``{}``: "not classified"."""
         now = self._clock()
         with self._lock:
             cached = self._io_reading
             if cached is not None and now - cached[0] < IO_READING_REUSE_S:
                 return cached[1]
             if self._io_reading_busy:
-                return cached[1] if cached is not None else {}
+                if cached is not None and now - cached[0] < IO_READING_STALE_S:
+                    return cached[1]
+                return {}
             self._io_reading_busy = True
         try:
             try:
@@ -1290,15 +1330,17 @@ class StorageGuard:
         happens (and when it changes), and at DEBUG while it repeats: a drain that raises on every
         tick would otherwise write a traceback every ten seconds into the 2,000-record error ring
         the diagnostics bundle carries (the pin report has the same once-per-change rule). The key
-        is the exception type and its first line; it never reaches a log line."""
+        is the exception type and its first line, kept PER PATH (``what``): two paths failing in turn
+        (the drain and the unsupervised poll) would otherwise flip one shared key and each log a
+        traceback again every time. It never reaches a log line."""
         try:
             first = (str(exc).splitlines() or [""])[0][:80]
         except Exception:  # noqa: BLE001 - a hostile __str__ is just a different key
             first = ""
         key = f"{what}|{type(exc).__name__}|{first}"
         with self._lock:
-            changed = key != self._failure_key
-            self._failure_key = key
+            changed = key != self._failure_keys.get(what)
+            self._failure_keys[what] = key
         (_LOG.warning if changed else _LOG.debug)(
             "storage guard: %s failed%s", what, "" if changed else " again", exc_info=exc
         )
@@ -1367,7 +1409,7 @@ class StorageGuard:
             with corpus_lease("storage-guard-drain"):
                 rec = self._drain()
             with self._lock:
-                self._failure_key = None  # a failure after this success is news again
+                self._failure_keys.pop("the drain", None)  # a failure after this success is news again
         except Exception as exc:  # noqa: BLE001 - the drain's own thread must not die of it
             self.log_failure_once("the drain", exc)
             rec = {"error": type(exc).__name__}
@@ -1676,7 +1718,7 @@ def on_engine_error(context) -> None:
     try:
         exc = getattr(context, "original_exception", None)
         if is_disk_full(exc):
-            storage_guard.note_disk_full(f"{type(exc).__name__}: {str(exc)[:120]}")
+            storage_guard.note_disk_full(_disk_full_detail(exc))
         else:
             storage_guard.note_io_error(exc)
     except Exception:  # noqa: BLE001 - an observer never replaces the real error

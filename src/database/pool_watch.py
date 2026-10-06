@@ -122,8 +122,8 @@ _POOL_LABELS: dict[int, tuple[Any, str]] = {}
 # counting past it, so an incident's size is never read off the ring's length.
 _INVALIDATIONS: deque[dict[str, Any]] = deque(maxlen=20)
 _INVALIDATED = 0
-#: At most one WARNING line per this many seconds (the ring above and the total keep every
-#: one): a disk incident can invalidate a connection on every checkin, and an unthrottled line
+#: At most one WARNING line per this many seconds (the ring above keeps the last 20 and the
+#: total counts every one): a disk incident can invalidate a connection on every checkin, and an unthrottled line
 #: per invalidation would fill the 2,000-record error ring the diagnostics bundle carries.
 INVALIDATION_LOG_EVERY_S = 30.0
 _INVAL_LOGGED_AT: float | None = None
@@ -245,7 +245,7 @@ def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
                 held_by["endpoint"],
                 rec["exception"],
                 rec["message"],
-                f" (+{skipped} more since the last line; all are in the pool-watch record)"
+                f" (+{skipped} more since the last line; the last 20 and the total are in the pool-watch record)"
                 if skipped
                 else "",
             )

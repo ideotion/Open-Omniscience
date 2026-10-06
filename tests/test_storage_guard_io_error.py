@@ -324,3 +324,38 @@ def test_a_reading_in_flight_is_never_queued_behind():
         release.set()
         first.join(10)
     assert g.engaged, "the first caller's reading latched DISK"
+
+
+def test_a_reading_older_than_the_stale_bound_is_not_used_while_another_is_in_flight():
+    """The PR 1306 check, N4. A caller that finds a read in flight does not wait for it; it used to take
+    the last reading whatever its age, so an incident hours after it, during a hung read, was classified
+    on a free-space figure from before. Older than ``IO_READING_STALE_S`` it is "not classified"."""
+    now = {"t": 10_000.0}
+    below = {"disk_free_bytes": 1 * GIB, "disk_total_bytes": _TOTAL}  # below the reserve
+    err = sqlite3.OperationalError("disk I/O error")
+
+    def _busy(age):
+        g = StorageGuard(readings_fn=lambda: {}, clock=lambda: now["t"], trip_after=2, resume_after=2)
+        g._io_reading = (now["t"] - age, dict(below))
+        g._io_reading_busy = True  # another thread's read is running
+        return g
+
+    young = _busy(sg.IO_READING_STALE_S - 1)
+    assert young.note_io_error(err, "pass") is True, "a recent figure is still the best there is"
+    old = _busy(3 * 3600)
+    assert old.note_io_error(err, "pass") is False and not old.engaged, "an hours-old figure classifies nothing"
+    st = old.state()
+    assert st["io_errors"] == 1 and st["last_io_error"]["latched"] is False, "still counted and recorded"
+
+
+def test_the_real_sqlcipher_exception_is_the_drivers_own_to_the_guard():
+    """The PR 1306 check, N6. ``_is_dbapi_error`` matches the exception's top-level module, and the store
+    is SQLCipher by default: pinned against the real driver's classes, so a driver whose exceptions
+    report another module cannot quietly stop matching the app's own errors."""
+    sqlcipher3 = pytest.importorskip("sqlcipher3")
+    err_cls = sqlcipher3.dbapi2.OperationalError
+    assert sg._is_dbapi_error(err_cls("disk I/O error"))
+    assert is_io_error(err_cls("disk I/O error"))
+    assert is_disk_full(err_cls("database or disk is full"))
+    wrapped = OperationalError("INSERT ...", ("a title",), err_cls("disk I/O error"))
+    assert sg._first_line_detail(wrapped) == f"{err_cls.__name__}: disk I/O error"

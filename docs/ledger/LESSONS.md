@@ -13152,8 +13152,8 @@ the merge on. The coordinator's reading check of the merged PR found three of th
 eleven by running the four files on main itself; the author's own focused run passed because it named the PR's new
 tests and the pool tests, and none of the tests that reach `_data_version` through the article list. The rule for the
 next such change: **before pushing a change to a helper many routes call, grep the tests for what reaches it
-(`rg "_data_version" tests/` finds none of the eleven: three reach it through the endpoint, eight through
-`_query_articles` directly), or run the whole directory of tests the helper's callers live in, not the set named after
+(`rg "_data_version" tests/` finds none of the eleven: two reach it through the endpoint, nine through
+`_query_articles` directly, counted by running the tests with the detach-everything probe back), or run the whole directory of tests the helper's callers live in, not the set named after
 the change.** `insights._detachable` now gates the detach on a queue pool or a null pool (the only engine that reaches the
 probe in production is a `ReservingQueuePool`, and every other engine the app builds is a queue or null pool too, so
 production behaviour is unchanged); `tests/test_status_probe_detached.py` pins both halves (an in-memory engine keeps its
@@ -13195,10 +13195,10 @@ for 17 M more Python blocks (about 3 GB), and the holder is not in any bundle. *
 the cheapest wrong fix is one for a defect the instrument never showed. The gap the evidence DID show was the recorder's own rule: `session_hwm` snapshots every
 thread at the crossing below the line and at each new low a step further down, and "none while memory sits on a plateau", so the slide had witnesses and the
 plateau, where the holder can still be read, had none. Two triggers were added: the moment the guard engages (with the guard's own reason), and a re-snapshot
-every `_PLATEAU_INTERVAL_S` (300 s) while memory is below the line or the guard is engaged; every snapshot now also says whether the guard was engaged. The
+every `_PLATEAU_INTERVAL_S` (300 s) while memory is below the line or the guard is engaged; a snapshot taken while the guard was engaged now says so. The
 cost is bounded and each bound says what it protects: 300 s (a snapshot is 0.3-0.6 s of the liveness thread under a GIL-holding burst), the existing stack
 caps (`_STACK_APP_FRAMES`, `_STACK_WALK_MAX`), the newest 8 kept on disk, kernel counters and `sys.getallocatedblocks()` only (never `gc.get_objects()`, at 90 M
-blocks the very work that could end the process; pinned by a test that makes `gc.get_objects` raise). **A trigger's baseline must be read on every tick, not only
+blocks the very work that could end the process; pinned by a test that spies on `gc.get_objects`, `gc.get_referrers` and `gc.get_referents`). **A trigger's baseline must be read on every tick, not only
 when no other trigger fires**: the guard's "was engaged" flag read only in the fallback branch went stale whenever the memory-short trigger took the tick, and
 the next tick reported a five-second-old pause as a new engagement (a mutant the suite now catches). What this does NOT do: it names the holder in the NEXT
 bundle, it does not stop the kill. Stopping cleanly when the guard stays engaged and memory does not recover is the user's open question 22, and a clean stop
@@ -13246,3 +13246,42 @@ this run's entries (the guard covers only the run that emitted nothing; older th
 nothing wrong is reused). **A
 test of a WAL decision needs a real WAL**: the two reader cases look identical to any fake (both have a log and `busy=1`);
 only the real PRAGMA rows told them apart, which is why these tests run on real SQLite files behind the patched engine.
+
+### AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT, AND WHAT PINS IT IS A LONG BACKGROUND READ (WAL / disk thread, 2026-10-06)
+
+The 10-06 bundles' `wal_history` carried maxima of 43, 36, 29, 26 and 23 GB (OOS-3, Asus, OOS-7, OOS-8, NUC), and a relay asked whether the log was still
+unbounded. **Read a history against the version that produced it**: every one of those hours is before the 10-01 update (the storage guard, #1306). From 10-01
+12:00 on the largest hour is NUC's 1,094 MiB (10-05 13:00), then OOS-11 1,008 MiB, OOS-12 507, OOS-8 414; hours over 64 MiB fell from 111 to 2 (OOS-3), 103 to 3
+(OOS-8), 85 to 1 (OOS-7), 45 to 6 (NUC). The machines' own `wal_high_bytes` are 1.0-1.1 GB (NUC 1,126,042,828 B, OOS-12 1,078,088,499 B), so about 1 GB is the guard
+working, not a runaway. Its cost is paused collection: NUC engaged 17 times for 16,055 s (4.5 h) and hP 18 times for 9,560 s (2.7 h), the kept tails 161-629 s
+each. What holds the log, from the guard's own last pin reports: NUC, `oo-briefing-bg` for 1,496 s (`briefing/service.py:349` -> `producers.py:3325 on_the_horizon`
+-> `analytics/queries.py:2597 trending` -> `_counts` -> `database/query.py:76 grouped_counts`, in `fetchmany`); hP, `oo-housekeeping-lane` for 1,428 s in
+`analytics/queries.py:1455 corpus_keywords`. OOS-12 was engaged at export time with 0 drains, so there the reader was the all-diagnostics build, whose reads
+export measured to end between members. **So the next cause to remove is a read that holds one snapshot for minutes, not a writer and not the build**: the
+fix is to read those two in chunks bounded by an id range fixed at the start, so a chunked result equals the single read when writes land between chunks.
+
+### A SAMPLER THAT ONLY FITS EVERY FIVE MINUTES MISSES A KILL THAT COMES IN TWENTY SECONDS: SPLIT IT, AND MAKE THE CHEAP HALF FREQUENT (WAL / disk thread, 2026-10-06)
+
+The pressure recorder's heavy snapshot (every thread, every stack) costs 0.3-0.6 s of the liveness thread under a burst, which is why the plateau cadence is 300 s;
+the October kills came within seconds of the last one, and a fatal slide measured about 20 MB/s, under 20 s from 384 MB available to none. Near the memory guard's line
+(available memory at most 1.5 times its floor, the process at least 1/1.5 of the share of RAM at which it trips, or the guard engaged) a LIGHT snapshot is now
+taken every 15 s: the kernel counters, the Python block count and what it gained, and the three working threads that spent the most CPU since the previous light
+one, each with its stack. **Bound the cost by what scales with the work, and say which**: the expensive part is not the stack walk but the per-thread `/proc` reads, each
+of which waits a switch interval for the GIL under a burst (`_thread_cpu`), so CPU is read for working threads only and for at most 16 of them
+(`_LIGHT_CPU_CANDIDATES`), only the busiest three get a stack, and each snapshot reports its own `took_ms`. It has its OWN ring (newest 8) and file
+(`session_pressure_light.json`), so a day of them never displaces a heavy snapshot; a thread the previous reading did not see has no delta (never its lifetime total
+presented as recent) and ranks after those that have one. **Memory is not measured per thread** (CPython has no such counter; `tracemalloc` multiplies the cost of every
+allocation on the machine about to be killed), so the blocks the process gained sit beside each thread's CPU delta and the report labels the pairing an inference.
+One test trap: a worker thread parked in `Event.wait` has `threading.py` as its innermost frame, which the module itself classes as WAITING, so a test of the busiest
+threads must park its workers in a C call such as `time.sleep` from test code.
+
+### SMALL RULES FROM THE THREE REVIEWS OF #1306, #1298 AND #1308 (WAL / disk thread, 2026-10-06)
+
+(1) **A queued attempt re-asks the state INSIDE the lock it queued on**: a second `POST /unlock` that waited behind a successful one re-ran the verify on an open app (disposed
+the live engine, marked it unqueryable, started a second start-up upkeep); the first thing done after taking `_UNLOCK_ONE_AT_A_TIME` is `app_lock_state()`. (2) **Classify an
+error on the head of its text, keep the driver's first line**: SQLAlchemy's wrapper appends `[SQL: ...]` and `[parameters: ...]` after the driver's message, so
+`is_disk_full` matching the whole text latched DISK on an `IntegrityError` whose bound title said "no space left on device", and `last_disk_full.detail` carried the
+statement and its values into the status payload; `is_io_error` had been fixed for exactly this and its sibling was not (`_text_head`, `_first_line_detail`). (3) **A count
+in a lesson is measured, not remembered**: "three through the endpoint, eight directly" was corrected to two and nine by putting the detach-everything probe back and
+running the four files (11 failures: 2 through `GET /api/articles`, 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
+each logs a traceback every pass: key it per path. (5) A reading taken for a caller that does not wait has an age bound, or an hours-old figure classifies a new incident.

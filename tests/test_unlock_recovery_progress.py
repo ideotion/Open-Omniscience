@@ -545,7 +545,9 @@ def test_the_timer_names_the_verify_phase_so_the_recovery_is_measured(dd):
 def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeypatch):
     """The second attempt (a reload and a second click, a second tab) used to race the first: it
     replaced the first's recovery notice, read the log the first was still recovering and then
-    recorded a rate several times too fast. It now waits its turn and finds the log written back."""
+    recorded a rate several times too fast. It now waits its turn, and finds the app already open:
+    it does not verify a passphrase that is proven, dispose the live engine, mark the app
+    unqueryable again or start a second start-up upkeep (the PR 1306 check, S2)."""
     import threading
     import time
 
@@ -555,9 +557,11 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
 
     real = connect_mod.connect
     events: list = []
+    answers: list = []
     first_inside = threading.Event()
     release_first = threading.Event()
     n = {"connect": 0}
+    state = {"now": "locked"}
 
     def spy(*a, **k):
         n["connect"] += 1
@@ -568,14 +572,15 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
             assert release_first.wait(30), "the test never released the first attempt"
         return real(*a, **k)
 
+    def finish(**kw):
+        events.append(("finish", kw["wal_state"]["state"]))
+        state["now"] = "unlocked-encrypted"  # what the real finish leaves behind
+
     monkeypatch.setattr(connect_mod, "connect", spy)
-    monkeypatch.setattr(
-        unlock_mod,
-        "_finish_unlock",
-        lambda **kw: events.append(("finish", kw["wal_state"]["state"])),
-    )
-    t1 = threading.Thread(target=lambda: unlock(PassphraseBody(passphrase=_KEY)))
-    t2 = threading.Thread(target=lambda: unlock(PassphraseBody(passphrase=_KEY)))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", finish)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: state["now"])
+    t1 = threading.Thread(target=lambda: answers.append(unlock(PassphraseBody(passphrase=_KEY))))
+    t2 = threading.Thread(target=lambda: answers.append(unlock(PassphraseBody(passphrase=_KEY))))
     t1.start()
     try:
         assert first_inside.wait(30)
@@ -587,11 +592,24 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
     t1.join(60)
     t2.join(60)
     assert not t1.is_alive() and not t2.is_alive()
-    assert [e[:2] for e in events] == [
-        ("connect", 1), ("finish", "present"), ("connect", 2), ("finish", "absent"),
-    ], events
-    # the second attempt found the log already written back: no recovery notice, nothing to measure
-    assert events[2][2] is False
+    # ONE verify and ONE finish: the second attempt found the app open and had nothing to prove
+    assert [e[:2] for e in events] == [("connect", 1), ("finish", "present")], events
+    assert answers == [{"unlocked": True, "state": "unlocked-encrypted"}] * 2, answers
+
+
+def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(crashed_store, monkeypatch):
+    """Not only a queued attempt: a request that arrives after the unlock finished (a stale tab, a
+    double click that lands late) is answered from the state, not run again."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    calls: list = []
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
+    assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
+    assert calls == [], calls
 
 
 @pytest.mark.parametrize("bad", ["12", None, True, float("nan"), float("inf"), -5, 0])

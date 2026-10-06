@@ -620,6 +620,12 @@ def unlock(body: PassphraseBody) -> dict:
     # as an estimate), and ran ``_finish_unlock`` beside it. Serialised, it starts after the
     # first has written the log back, reads an honest (empty) log and measures nothing.
     with _UNLOCK_ONE_AT_A_TIME:
+        # Re-asked INSIDE the lock: an attempt that queued behind one that succeeded finds the app
+        # already open. Run again, it would dispose the live engine, mark the app unqueryable for the
+        # whole verify and start a second start-up upkeep thread beside the first, to prove a
+        # passphrase that is already proven. The answer it gets is the true one: the app is open.
+        if app_lock_state() == "unlocked-encrypted":
+            return {"unlocked": True, "state": "unlocked-encrypted"}
         return _unlock_locked(body, p)
 
 
