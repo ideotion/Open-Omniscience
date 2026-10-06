@@ -76,15 +76,18 @@ def sqlite_engine(tmp_path):
     return engine
 
 
-def test_the_preflight_measures_twice_the_file_on_the_database_volume_and_the_memory_the_copy_is_held_in(sqlite_engine) -> None:
+def test_the_preflight_measures_twice_the_pages_in_use_on_the_database_volume_and_the_memory_the_copy_is_held_in(sqlite_engine) -> None:
     report = vacuum_preflight(sqlite_engine)
     assert report["checked"] is True
     assert report["sufficient"] is True, report
     assert report["db_bytes"] > 0
-    assert report["needed_bytes"] == int(report["db_bytes"] * VACUUM_HEADROOM)
+    # a store with no free pages and no log: what VACUUM copies is the file
+    assert report["copy_bytes_read"] is True and report["copy_bytes"] == report["db_bytes"] and report["wal_bytes"] == 0
+    assert report["needed_bytes"] == int(report["copy_bytes"] * VACUUM_HEADROOM) + report["wal_bytes"]
     assert set(report["free_bytes"]) == {"database"}, "the rebuild is held in memory: no temporary volume is written"
-    assert report["ram_estimate_bytes"] == int(report["db_bytes"] * VACUUM_RAM_FACTOR)
+    assert report["ram_estimate_bytes"] == int(report["copy_bytes"] * VACUUM_RAM_FACTOR)
     assert report["ram_factor"] == VACUUM_RAM_FACTOR == 1.25, "a figure changed: update the words that quote it"
+    assert report["not_read"] == [] and report["detail"] == "enough free space and memory for this VACUUM"
 
 
 def test_a_measured_shortfall_refuses_before_taking_the_write_lock(
@@ -157,8 +160,8 @@ def test_the_memory_asked_is_the_files_size_times_the_factor_plus_the_guards_flo
 ) -> None:
     """The coordinator's gate: the MEMORY VACUUM's copy holds the whole file in RAM, so it is refused when the machine cannot
     hold it and the memory guard's floor, with the reason and the numbers, and passes at exactly the figure."""
-    db_bytes = vacuum_preflight(sqlite_engine)["db_bytes"]
-    need = int(db_bytes * VACUUM_RAM_FACTOR) + 7_000
+    copy_bytes = vacuum_preflight(sqlite_engine)["copy_bytes"]
+    need = int(copy_bytes * VACUUM_RAM_FACTOR) + 7_000
     _memory(monkeypatch, need, floor=7_000)
     ok = vacuum_preflight(sqlite_engine)
     assert ok["sufficient"] is True and "short_on" not in ok, ok
@@ -167,10 +170,11 @@ def test_the_memory_asked_is_the_files_size_times_the_factor_plus_the_guards_flo
     short = vacuum_preflight(sqlite_engine)
     assert short["sufficient"] is False and short["short_on"] == ["memory"], short
     assert f"{need - 1:,} bytes of memory available" in short["detail"]
-    assert f"{int(db_bytes * VACUUM_RAM_FACTOR):,}" in short["detail"] and "7,000" in short["detail"]
-    assert "temporary file corrupts an encrypted file" in short["detail"], "the reason the copy is not moved to a file is not said"
+    assert f"{int(copy_bytes * VACUUM_RAM_FACTOR):,}" in short["detail"] and "7,000" in short["detail"]
+    assert "would corrupt an encrypted library at the app's page size" in short["detail"], "the reason the copy is not moved to a file is not said"
+    assert "every connection of the app keeps its temporary data there" in short["detail"], "the reason must hold for a plaintext store too"
     # the floor alone is enough to refuse: it is not an extra the estimate swallows
-    _memory(monkeypatch, int(db_bytes * VACUUM_RAM_FACTOR) + 6_999, floor=7_000)
+    _memory(monkeypatch, int(copy_bytes * VACUUM_RAM_FACTOR) + 6_999, floor=7_000)
     assert vacuum_preflight(sqlite_engine)["short_on"] == ["memory"]
 
 
@@ -183,7 +187,7 @@ def test_a_memory_shortfall_is_refused_before_the_write_lock_and_the_refusal_is_
 
     real_lock = writer.write_lock
     monkeypatch.setattr(writer, "write_lock", lambda *a, **k: (took_the_lock.append(True), real_lock(*a, **k))[1])
-    with caplog.at_level(logging.WARNING, logger="src.database.maintenance"), pytest.raises(VacuumSpaceError) as excinfo:
+    with caplog.at_level(logging.WARNING, logger="database.maintenance"), pytest.raises(VacuumSpaceError) as excinfo:
         vacuum_database(sqlite_engine)
     assert excinfo.value.report["short_on"] == ["memory"]
     assert not took_the_lock, "a refusal after the exclusive lock would stall every writer for a vacuum that never ran"
@@ -197,6 +201,7 @@ def test_when_the_disk_and_the_memory_both_fall_short_the_detail_says_both(sqlit
     report = vacuum_preflight(sqlite_engine)
     assert report["short_on"] == ["database", "memory"], report
     assert "volume has 1 bytes free" in report["detail"] and "bytes of memory available" in report["detail"]
+    assert report["not_read"] == [] and "not checked" not in report["detail"], "both were read: nothing is said to be unread"
 
 
 def test_an_unreadable_memory_figure_is_not_a_refusal_and_neither_is_an_unreadable_disk_figure(sqlite_engine, monkeypatch) -> None:
@@ -237,7 +242,7 @@ def test_a_successful_vacuum_carries_its_preflight(sqlite_engine) -> None:
     out = vacuum_database(sqlite_engine)
     assert out["supported"] is True
     assert out["preflight"]["sufficient"] is True
-    assert "twice the file size" in out["method"]
+    assert "twice the pages in use plus the log" in out["method"]
 
 
 def test_the_endpoint_maps_the_shortfall_to_its_own_status() -> None:
@@ -302,3 +307,139 @@ def test_ample_space_is_still_accepted(sqlite_engine, monkeypatch) -> None:
 
     monkeypatch.setattr(shutil, "disk_usage", _three_copies)
     assert vacuum_preflight(sqlite_engine)["sufficient"] is True
+
+
+# --------------------------------------------------------------------------- #
+#  the copy is sized from what VACUUM copies, not from the file on disk
+# --------------------------------------------------------------------------- #
+def _engine_with_rows(path, *, wal: bool, rows: int, keep: int | None = None):
+    """A store of ``rows`` one-kilobyte rows. ``wal``: in WAL mode with the automatic checkpoint off, so the rows stay in the
+    log (the file on disk is a few pages) and the pooled connection keeps it from being folded away. ``keep``: rows kept after
+    a delete, which leaves the file as large as it was and most of its pages free."""
+    from sqlalchemy import create_engine, event, text
+
+    engine = create_engine(f"sqlite:///{path}")
+
+    @event.listens_for(engine, "connect")
+    def _pragmas(dbapi, _record):
+        cur = dbapi.cursor()
+        if wal:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA wal_autocheckpoint=0")
+        cur.close()
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER PRIMARY KEY, blob TEXT)"))
+        conn.execute(text(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < :n) "
+            "INSERT INTO t (blob) SELECT hex(randomblob(500)) FROM n"
+        ), {"n": rows})
+        if keep is not None:
+            conn.execute(text("DELETE FROM t WHERE id > :k"), {"k": keep})
+    return engine
+
+
+def _page(engine) -> int:
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        return int(conn.execute(text("PRAGMA page_size")).scalar())
+
+
+def test_pages_still_only_in_the_log_are_part_of_the_copy_and_the_logs_size_is_added_to_the_disk_figure(tmp_path, monkeypatch) -> None:
+    """Measured: ``PRAGMA page_count`` on a connection includes the pages that are only in the write-ahead log, which the file's
+    size on disk does not. The first version sized everything from the file, so a log that held most of the store asked for a
+    few pages of memory (a lag of more than about a fifth under-asked)."""
+    engine = _engine_with_rows(tmp_path / "wal.db", wal=True, rows=3000)
+    report = vacuum_preflight(engine)
+    assert report["wal_bytes"] > 2_000_000, report
+    assert report["db_bytes"] < report["wal_bytes"] / 20, "the file on disk is not where the rows are"
+    assert report["copy_bytes_read"] is True and report["copy_bytes"] > 10 * report["db_bytes"], report
+    assert report["needed_bytes"] == int(report["copy_bytes"] * VACUUM_HEADROOM) + report["wal_bytes"], "the log's own size is added"
+    assert report["ram_estimate_bytes"] == int(report["copy_bytes"] * VACUUM_RAM_FACTOR)
+    real = shutil.disk_usage
+    for free, ok in ((report["needed_bytes"], True), (report["needed_bytes"] - 1, False)):
+        monkeypatch.setattr(shutil, "disk_usage", lambda path, free=free: type(real(path))(real(path).total, real(path).used, free))
+        assert vacuum_preflight(engine)["sufficient"] is ok, ("the disk boundary is exact", free)
+    monkeypatch.setattr(shutil, "disk_usage", real)
+    _memory(monkeypatch, int(report["copy_bytes"] * VACUUM_RAM_FACTOR) - 1)
+    assert vacuum_preflight(engine)["short_on"] == ["memory"], "a file-sized memory figure would have let this through"
+    engine.dispose()
+
+
+def test_the_free_pages_a_delete_left_are_not_part_of_the_copy(tmp_path, monkeypatch) -> None:
+    """After a big delete the file is as big as it was and nearly all of it is free pages; VACUUM copies the few that are in use
+    (measured: a 41 MB file with 10 MB in use grew the log by 10.3 MB and the file by nothing). Asking twice the FILE refused a
+    compaction that would have fit and was the one thing that gives the space back."""
+    engine = _engine_with_rows(tmp_path / "freed.db", wal=False, rows=4000, keep=200)
+    report = vacuum_preflight(engine)
+    page = _page(engine)
+    assert report["copy_bytes_read"] is True and report["copy_bytes"] % page == 0
+    assert report["copy_bytes"] < report["db_bytes"] / 5, ("the free pages were counted", report)
+    assert report["needed_bytes"] == int(report["copy_bytes"] * VACUUM_HEADROOM)
+    real = shutil.disk_usage
+    monkeypatch.setattr(
+        shutil, "disk_usage", lambda path: type(real(path))(real(path).total, real(path).used, int(report["db_bytes"] * VACUUM_HEADROOM) - 1)
+    )
+    assert vacuum_preflight(engine)["sufficient"] is True, "less than twice the file but more than twice what is in use must pass"
+    _memory(monkeypatch, int(report["db_bytes"] * VACUUM_RAM_FACTOR) - 1)
+    assert vacuum_preflight(engine)["sufficient"] is True, "the memory is gated on what is copied, not on the file"
+    engine.dispose()
+
+
+def test_pages_in_use_that_cannot_be_read_fall_back_to_the_whole_file_and_its_log_and_say_so(tmp_path, monkeypatch) -> None:
+    from src.database import maintenance
+
+    engine = _engine_with_rows(tmp_path / "wal2.db", wal=True, rows=800)
+    monkeypatch.setattr(maintenance, "_vacuum_copy_bytes", lambda engine: None)
+    report = vacuum_preflight(engine)
+    assert report["copy_bytes_read"] is False and report["copy_bytes"] == report["db_bytes"] + report["wal_bytes"], report
+    assert "the pages in use could not be read" in report["detail"] and report["sufficient"] is True
+    engine.dispose()
+
+
+def test_a_connection_that_fails_to_answer_is_an_unread_figure_and_never_a_refusal(sqlite_engine, monkeypatch) -> None:
+    from src.database import maintenance
+
+    real_connect = sqlite_engine.connect
+
+    def _boom(*a, **k):
+        raise OSError("no connection to ask")
+
+    monkeypatch.setattr(sqlite_engine, "connect", _boom, raising=False)
+    assert maintenance._vacuum_copy_bytes(sqlite_engine) is None
+    monkeypatch.setattr(sqlite_engine, "connect", real_connect, raising=False)
+    assert maintenance._vacuum_copy_bytes(sqlite_engine) is not None
+
+
+# --------------------------------------------------------------------------- #
+#  a figure that was not read is SAID not to have been (the memory guard's own fail-open rule, stated)
+# --------------------------------------------------------------------------- #
+def test_a_memory_figure_that_was_not_read_is_named_in_the_detail_and_the_vacuum_still_goes_ahead(sqlite_engine, monkeypatch) -> None:
+    _memory(monkeypatch, None)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["sufficient"] is True and report["not_read"] == ["the memory available"], report
+    assert report["detail"].startswith("enough free space for this VACUUM")
+    assert "not checked" in report["detail"] and "the memory available" in report["detail"]
+    assert "free space and memory" not in report["detail"], "it must not claim a memory it did not measure"
+
+
+def test_a_disk_figure_that_was_not_read_is_named_in_the_detail(sqlite_engine, monkeypatch) -> None:
+    def _boom(path):
+        raise OSError("statvfs is unavailable here")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["sufficient"] is True and report["not_read"] == ["the free space on the database's volume"], report
+    assert report["detail"].startswith("enough memory for this VACUUM")
+    assert "not checked" in report["detail"] and "free space" in report["detail"]
+
+
+def test_a_refusal_for_the_figure_that_was_read_still_names_the_one_that_was_not(sqlite_engine, monkeypatch) -> None:
+    def _boom(path):
+        raise OSError("statvfs is unavailable here")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+    _memory(monkeypatch, 1)
+    report = vacuum_preflight(sqlite_engine)
+    assert report["short_on"] == ["memory"] and "the free space on the database's volume" in report["detail"], report

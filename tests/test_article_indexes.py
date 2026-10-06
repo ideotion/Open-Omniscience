@@ -704,7 +704,11 @@ def test_the_sort_stays_in_memory_because_a_file_spill_would_hold_the_titles_in_
     """Measured 2026-10-06 on the bundled SQLCipher: with ``temp_store=FILE`` the sorter of ``CREATE INDEX`` writes the
     keys (the titles) to its temporary file unencrypted (the marker string was found in the file), where VACUUM's
     temporary database stays encrypted. So the build must never ask for FILE, and the app's own connections must keep
-    asking for MEMORY (a ``temp_store=FILE`` here would be a plaintext spill of an encrypted store)."""
+    asking for MEMORY (a ``temp_store=FILE`` here would be a plaintext spill of an encrypted store).
+
+    WHAT THIS PIN IS AND IS NOT (the lesson of the coordinator's check of e7f729d8, B1): it reads the text of two modules and follows no
+    call, so a ``temp_store`` set from another module, a pragma assembled from pieces, or a statement the engine builds is outside it;
+    the claim rests on the measurement above, and this test only keeps the two places that were read from changing under it."""
     assert "PRAGMA temp_store=MEMORY" in (ROOT / "src" / "database" / "session.py").read_text(encoding="utf-8")
     code = "\n".join(
         ln for ln in (ROOT / "src" / "database" / "article_indexes.py").read_text(encoding="utf-8").splitlines()
@@ -995,6 +999,10 @@ def test_the_manual_row_states_what_the_build_asks_and_what_a_killed_build_leads
     row = next(ln for ln in manual.splitlines() if ln.startswith("| `OO_ARTICLE_INDEXES`"))
     assert f"about {ai.BYTES_PER_ARTICLE} bytes of free space per article" in row
     assert f"about {ai.RAM_BYTES_PER_ARTICLE} bytes per article" in row and "memory" in row
+    assert ai.MAX_UNFINISHED_STARTS == 2, "the cap moved: the manual's 'two starts in a row' must move with it"
     assert ai.ATTEMPT_FILE in row and "two starts in a row" in row and "until the app is updated" in row
+    # 190 MB has no constant behind it (it is the measured 125 bytes an article for the pair, quoted in ``BYTES_PER_ARTICLE``'s comment,
+    # times 1.5 million, rounded): the figure is pinned as written, and the arithmetic is checked here so a changed measurement shows
+    assert round(125 * 1_500_000 / 1_000_000, -1) == 190
     assert "190 MB per 1.5 million articles" in row and "130 MB" not in row
     assert "anything the app saves waits" in row and "saving new articles waits" not in row

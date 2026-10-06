@@ -262,10 +262,10 @@ old order was set by a ceiling premise that no longer holds.
   created since 2026-08-13 (all of them at 16384) it silently produces an unopenable file. No live
   call site today; the plan and the 2026-07-18 ruling both named it, and both are corrected.
   Pinned by test so the next session cannot re-adopt it. ✅ closed as a trap
-- **DB-10 §2's missing backend half.** No refusal and no free-disk preflight on
-  `POST /api/database/vacuum` (a full VACUUM needs ~2× the file in scratch;
-  `src/safety/data_location.py` already has a `free_disk_bytes` helper), and nothing points at the
-  wired incremental pass. Small and self-contained. ⬜
+- **DB-10 §2's missing backend half.** ✅ the free-disk preflight exists (`maintenance.vacuum_preflight`, refusing
+  `POST /api/database/vacuum` with 507 and the numbers before the write lock: twice the pages in use plus the log's size on the
+  database's volume, and, since 2026-10-06, the memory the rebuilt copy is held in); nothing yet points at the wired incremental
+  pass from the compaction tool. ⬜
 - **The FTS hash-sharding prototype — a costed operator job, not a caveat.** MEASURED 1,925 B of
   FTS5 index per synthetic document at 2,692 docs/s ⇒ **89.6 GiB and 5.2 h per arm at 50 M**
   (179.3 GiB / 10.3 h at 100 M); a single-vs-sharded comparison needs two arms. Treat 89.6 GiB as

@@ -2010,11 +2010,12 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
                 _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
 
 
-#: SQLite's VACUUM rebuilds a COMPLETE second copy of the database and only then
-#: swaps it in: the copy is held in memory (every pooled connection of the app sets
-#: ``temp_store=MEMORY``, see :data:`VACUUM_RAM_FACTOR`) and its content is written back
-#: through the log, so the database's volume needs the file's size free again. 2.0x is
-#: the floor of that, not a safety margin on top of it.
+#: SQLite's VACUUM rebuilds the database into a second copy of its LIVE pages (the pages in use, not the free ones) and only
+#: then swaps it in: the copy is held in memory (every pooled connection of the app sets ``temp_store=MEMORY``, see
+#: :data:`VACUUM_RAM_FACTOR`) and its content is written back through the log, so the database's volume needs that much free
+#: again, on top of whatever log is already there. Measured 2026-10-06 (a 41 MB file of which 10 MB was live): the log grew by
+#: 10.3 MB, the live bytes, and the file did not grow at all. 2.0x the live bytes is therefore twice what the rewrite adds, a
+#: margin and not a floor.
 VACUUM_HEADROOM = 2.0
 
 #: What a VACUUM holds in RAM per byte of the file, under ``temp_store=MEMORY``. Measured
@@ -2042,25 +2043,49 @@ class VacuumSpaceError(RuntimeError):
         self.report = report
 
 
+def _vacuum_copy_bytes(engine: Engine) -> int | None:
+    """The bytes a VACUUM copies: the pages in use (``page_count`` minus ``freelist_count``) times the page size, read on a
+    connection, so pages that are still only in the write-ahead log count (the file's size on disk does not include them,
+    and does include the free pages a delete left). ``None`` when the connection cannot say."""
+    try:
+        with engine.connect() as conn:
+            pages = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
+            free = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
+            size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
+    except Exception:  # noqa: BLE001 - an unreadable figure is reported as unread, never as a refusal
+        _LOG.debug("vacuum preflight: the page count could not be read", exc_info=True)
+        return None
+    if pages <= 0 or size <= 0:
+        return None
+    return max(pages - free, 0) * size
+
+
 def vacuum_preflight(engine: Engine) -> dict:
     """Can this store be VACUUMed without filling the disk?
 
     DB-10 §2 carry-over. The UI already discloses an estimated DURATION and
-    confirms; nothing checked SPACE. A VACUUM needs room for a full second copy
-    of the file, and running out mid-rebuild is the worst moment to discover it.
+    confirms; nothing checked SPACE. A VACUUM rewrites the pages in use into a
+    second copy, and running out of room mid-rebuild is the worst moment to
+    discover it.
 
     TWO THINGS are measured: the free space on the database's volume (the new
     content goes through the log into the file) and the MEMORY the rebuilt copy is
-    held in (``VACUUM_RAM_FACTOR`` times the file, plus the memory guard's floor,
-    against what is available, through the guard's own reader). The temporary-file
-    volume is NOT measured: every pooled connection sets ``temp_store=MEMORY``, so
-    nothing is written there, and a refusal for a small ``/tmp`` would point the
-    operator at a volume the rebuild never touches.
+    held in (``VACUUM_RAM_FACTOR`` times the copy, plus the memory guard's floor,
+    against what is available, through the guard's own reader). THE COPY IS SIZED
+    FROM WHAT VACUUM COPIES, not from the file on disk: the pages in use (the pages
+    still only in the log count, the free pages a delete left do not), read on a
+    connection; when that cannot be read, the file plus its log is used and the report
+    says so. The log's own size is added to the disk figure (over-counting is the safe
+    side). The temporary-file volume is NOT measured: every pooled connection sets
+    ``temp_store=MEMORY``, so nothing is written there, and a refusal for a small
+    ``/tmp`` would point the operator at a volume the rebuild never touches.
 
     AN UNREADABLE FIGURE IS NOT A REFUSAL. ``shutil.disk_usage`` can raise, and
     a fabricated 0 would manufacture a refusal out of an unreadable ``statvfs``
     -- the same distinction ``vllm_lifecycle._free_disk_bytes`` already draws.
-    When the space cannot be read, ``sufficient`` is ``None`` and the caller
+    When a figure cannot be read it is NOT checked, and the detail NAMES it (an
+    unreadable memory figure lets a store of any size through, the memory guard's
+    own rule); when neither can be read, ``sufficient`` is ``None`` and the caller
     proceeds having been TOLD it was not preflighted, rather than being blocked
     by a measurement nobody took.
     """
@@ -2077,7 +2102,13 @@ def vacuum_preflight(engine: Engine) -> dict:
                 "detail": "no database file on disk to measure"}
 
     db_bytes = os.path.getsize(db_path)
-    needed = int(db_bytes * VACUUM_HEADROOM)
+    try:
+        wal_bytes = os.path.getsize(db_path + "-wal")
+    except OSError:
+        wal_bytes = 0
+    live_bytes = _vacuum_copy_bytes(engine)
+    copy_bytes = live_bytes if live_bytes is not None else db_bytes + wal_bytes
+    needed = int(copy_bytes * VACUUM_HEADROOM) + wal_bytes
 
     def _free(where: str) -> int | None:
         try:
@@ -2088,13 +2119,24 @@ def vacuum_preflight(engine: Engine) -> dict:
     volumes = {"database": os.path.dirname(os.path.abspath(db_path)) or "."}
     measured = {name: _free(path) for name, path in volumes.items()}
     readable = {k: v for k, v in measured.items() if v is not None}
-    ram_needed = int(db_bytes * VACUUM_RAM_FACTOR)
+    ram_needed = int(copy_bytes * VACUUM_RAM_FACTOR)
     floor = _memory._floor_bytes()
     available = _memory._available_ram_bytes()
+    unread = []
+    if not readable:
+        unread.append("the free space on the database's volume")
+    if available is None:
+        unread.append("the memory available")
+    counted_whole = (
+        "the pages in use could not be read, so the whole file and its log were counted" if live_bytes is None else ""
+    )
 
     report: dict = {
         "checked": bool(readable) or available is not None,
         "db_bytes": db_bytes,
+        "wal_bytes": wal_bytes,
+        "copy_bytes": copy_bytes,
+        "copy_bytes_read": live_bytes is not None,
         "needed_bytes": needed,
         "headroom": VACUUM_HEADROOM,
         "free_bytes": {k: measured[k] for k in measured},
@@ -2102,13 +2144,15 @@ def vacuum_preflight(engine: Engine) -> dict:
         "ram_floor_bytes": floor,
         "ram_available_bytes": available,
         "ram_factor": VACUUM_RAM_FACTOR,
+        "not_read": unread,
         "method": (
-            "VACUUM rebuilds the file into a full second copy before swapping it "
+            "VACUUM rewrites the pages in use into a second copy before swapping it "
             "in. The copy is held in memory (about "
-            f"{VACUUM_RAM_FACTOR} times the file, measured), so the machine must have that much "
+            f"{VACUUM_RAM_FACTOR} times the pages in use, measured), so the machine must have that much "
             "available on top of the floor the memory guard keeps free, and the "
-            "database's own volume needs about twice the current size free for the "
-            "new content. Nothing is written to the temporary-file volume."
+            f"database's own volume needs about {VACUUM_HEADROOM:g} times the pages in use free "
+            "for the new content, plus the size of the file's log. Nothing is written to the "
+            "temporary-file volume."
         ),
     }
     if not readable and available is None:
@@ -2129,20 +2173,29 @@ def vacuum_preflight(engine: Engine) -> dict:
         if "database" in short:
             parts.append(
                 f"the database volume has {readable['database']:,} bytes free and this "
-                f"VACUUM needs about {needed:,} (twice the {db_bytes:,}-byte file). "
-                "Free space, then retry."
+                f"VACUUM needs about {needed:,} ({VACUUM_HEADROOM:g} times the {copy_bytes:,} bytes in use, plus the "
+                f"{wal_bytes:,}-byte log). Free space, then retry."
             )
         if "memory" in short:
             parts.append(
                 f"this computer has {available:,} bytes of memory available and the rebuilt "
-                f"copy of the {db_bytes:,}-byte file is held in memory (about {ram_needed:,}) on top "
+                f"copy of the {copy_bytes:,} bytes in use is held in memory (about {ram_needed:,}) on top "
                 f"of the {floor:,} the memory guard keeps free. Close other programs and retry. "
-                "The copy is held in memory because writing it to a temporary file corrupts an "
-                "encrypted file at this page size (measured)."
+                "The copy is held in memory (every connection of the app keeps its temporary data there), "
+                "and a temporary file instead would corrupt an encrypted library at the app's page size (measured)."
             )
         report["detail"] = " ".join(parts)
+    elif unread:
+        what = " and ".join(
+            word for word, got in (("free space", bool(readable)), ("memory", available is not None)) if got
+        )
+        report["detail"] = f"enough {what} for this VACUUM"
     else:
         report["detail"] = "enough free space and memory for this VACUUM"
+    if unread:
+        report["detail"] += "; not checked, because it could not be read: " + " and ".join(unread)
+    if counted_whole:
+        report["detail"] += f"; {counted_whole}"
     return report
 
 
@@ -2193,7 +2246,7 @@ def vacuum_database(engine: Engine) -> dict:
         "method": (
             "SQLite VACUUM (full file rebuild; frees unused pages) followed by "
             "PRAGMA optimize. Real byte sizes from the filesystem. Checked first: free space "
-            "on the database's volume against twice the file size, and the memory the "
+            "on the database's volume against twice the pages in use plus the log, and the memory the "
             "rebuilt copy is held in against what is available."
         ),
     }

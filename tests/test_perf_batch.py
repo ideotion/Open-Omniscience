@@ -431,7 +431,12 @@ def test_stats_cached_with_disclosed_freshness(client):
     assert "computed_at" in third
 
 
-def test_vacuum_endpoint_reports_real_numbers(client):
+def test_vacuum_endpoint_reports_real_numbers(client, monkeypatch):
+    # the memory gate reads the host's real memory: a test of the endpoint must not depend on the machine that runs it
+    from src.database import article_indexes
+
+    monkeypatch.setattr(article_indexes, "_available_ram_bytes", lambda: 10**12)
+    monkeypatch.setattr(article_indexes, "_floor_bytes", lambda: 0)
     r = client.post("/api/database/vacuum")
     assert r.status_code == 200
     out = r.json()

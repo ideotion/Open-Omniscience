@@ -1654,9 +1654,11 @@ Official **figures** are not here at all — they are data, so they live under
     never interprets or removes data. It builds the compacted copy in memory
     (writing it to a temporary file corrupts an encrypted file at the app's page
     size, measured), so it first checks that the computer has the memory for it
-    (about 1.25 times the file, on top of the free memory the app always keeps
-    for itself) and room on the drive (about twice the file), and when either is
-    short it says which, with the numbers, and does not start.
+    (about 1.25 times the part of the file that is in use, on top of the free
+    memory the app always keeps for itself) and room on the drive (about twice
+    the part in use, plus the size of the file's log), and when either is short
+    it says which, with the numbers, and does not start. A figure it could not
+    read is not checked, and it says that too.
   - **Network fetch mode** — *Transparent* (default; polite, names the tool in the
     User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
     e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust
