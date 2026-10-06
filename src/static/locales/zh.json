@@ -3082,6 +3082,7 @@
   "Not enough coverage to compare framing for this term.": "此词条的报道量尚不足以比较框架。",
   "Not enough data to compare yet.": "数据尚不足以进行比较。",
   "Not enough data yet for a curve.": "数据尚不足以绘制曲线。",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "可用内存不足，无法合并到加密语料库：需要约 {needed}，仅有 {free} 可用。请关闭其他程序后重新导入。未向您的语料库写入任何内容。",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "{path} 的可用空间不足：需要 {needed}，仅剩 {free}。",
   "Not enough free space here for this file.": "此处的可用空间不足以存放该文件。",
   "Not enough keywords indexed to draw a map yet.": "已索引的关键词尚不足以绘制思维导图。",
