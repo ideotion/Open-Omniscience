@@ -631,7 +631,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
   }
 
   // ---- the usual archive (a manifest and one part) that "again" already handed over is not handed over a second time by the finished build
-  // (the cases above use nine files, which the five-file gate excludes anyway: a hand-over moved out of the same-archive branch would pass them all)
+  // (the cases above use nine files, which the five-file gate excludes anyway: they would still pass if the same-archive branch stopped recognising the archive, which is what this block catches)
   {
     const page = makePage();
     const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
@@ -827,25 +827,33 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
 
   // ---- "again" refused after the ready line was written leaves that line standing: the archive is still ready
   {
-    for (const status of [404, 409, 500]) {
+    for (const status of [404, 409, 500, 403, 429, 503, "parse"]) {
       const page = makePage();
-      const api = load(page, {api: async () => { const e = new Error("refused"); e.status = status; throw e; }});
+      const api = load(page, {api: async () => {
+        const e = status === "parse" ? new SyntaxError("Unexpected token '<'") : new Error("refused");
+        if (status !== "parse") e.status = status;
+        throw e;
+      }});
       page.els["all-diag-status"].textContent = READY_SENTENCE;
       await api.downloadDiagnosticsVolumes({disabled: false});
       assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE, status + ": a refused press wiped the ready line");
     }
   }
 
-  // ---- the split sweeps the previous archive's files BEFORE it writes the new ones: a failed or lost split leaves no dead set on the bar
+  // ---- a failed or lost split leaves no set of the PREVIOUS archive on the bar (the files are still on the server, but they are not
+  // ---- the new archive's), except after a 404 or 409, refused before any work; and each says what it is in the press path's sentences
   {
-    for (const failure of ["500", "network", "409", "404"]) {
+    // every way the split's answer can fail: a server error, the refusals a proxy or a busy server sends (403, 429, 503), a
+    // body that is not JSON (a proxy's HTML page: no status, a SyntaxError), a lost connection, and the two refused before any work
+    for (const failure of ["500", "403", "429", "503", "parse", "network", "409", "404"]) {
       const page = makePage(); let failNow = false;
       const api = load(page, {api: (url) => {
         if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
         if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
         if (failNow) {
-          const e = new Error(failure === "network" ? "network" : "split failed");
-          if (failure !== "network") e.status = Number(failure);
+          const e = failure === "parse" ? new SyntaxError("Unexpected token '<', \"<html>\" is not valid JSON")
+            : new Error(failure === "network" ? "network" : "split failed");
+          if (failure !== "network" && failure !== "parse") e.status = Number(failure);
           return Promise.reject(e);
         }
         return Promise.resolve(listing(8, 1));
@@ -865,7 +873,12 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
         await api.partsSaveNext();
         assert.strictEqual(page.clicked.length, before, failure + ": no click can ask for the dead files");
       }
-      assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
+      const words = {404: /^No archive to split yet/, 409: /^A build is running/}[failure] || /^Could not split the archive: /;
+      assert.ok(words.test(page.els["all-diag-status"].textContent), failure + ": " + page.els["all-diag-status"].textContent);
+      if (!["network", "parse", "409", "404"].includes(failure)) {
+        assert.ok(/split failed$/.test(page.els["all-diag-status"].textContent), failure + ": the reason follows the sentence");
+      }
+      if (failure === "parse") assert.ok(/not valid JSON$/.test(page.els["all-diag-status"].textContent), "a body that is not JSON names itself: " + page.els["all-diag-status"].textContent);
     }
     // a KEYWORD set on the bar is not the split's to drop
     const page = makePage(); let failNow = false;
