@@ -116,7 +116,7 @@ def unlock_ready(monkeypatch, tmp_path):
     monkeypatch.setattr(forensics, "wal_state_before_open", lambda: None)
     monkeypatch.setattr(unlock_mod, "_begin_recovery_notice", lambda wal_state: None)
     monkeypatch.setattr(unlock_mod, "_end_recovery_notice", lambda token: None)
-    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: None)
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase=None: None)
     return tmp_path / "oo.db"
 
 
@@ -364,7 +364,8 @@ def test_a_legacy_restore_that_cannot_read_its_file_says_so_without_the_key(lega
 # --------------------------------------------------------------------------- #
 def test_the_diagnostics_routes_that_take_the_backup_passphrase_answer_their_400s_with_it_out_of_the_detail(monkeypatch):
     """The destination check and the resume's preflight quote what they were given in their ValueError, and the answer's detail is
-    recorded by ``note_http_error`` knowing only what the process holds. MUTATION TARGET: the ``scrubbed`` of any of the three."""
+    the caller's own text, which a typed key does not come back in (the browser can send it on to the error journal, which knows
+    only what the process holds). MUTATION TARGET: the ``scrubbed`` of any of the three."""
     from src.api import diagnostics as d
     from src.monitoring import p0_validation, release_run
 
@@ -387,3 +388,92 @@ def test_the_diagnostics_routes_that_take_the_backup_passphrase_answer_their_400
         assert err.value.status_code == 400, name
         assert ss.REDACTED in err.value.detail, name
         _assert_none_of(str(err.value.detail), TYPED)
+
+
+# --------------------------------------------------------------------------- #
+#  The mailbox password
+# --------------------------------------------------------------------------- #
+#: A mailbox password is typed into the request and is not the store's passphrase, so no net holds it: an apostrophe and a
+#: backslash, so that the shapes it is written in differ from the typed one.
+MAILBOX = "mail-pass-9Xk'q\\w-2"
+
+
+def _mail_error(secret: str) -> str:
+    """What a mail library says of a login that failed: the line it was sent, in the shapes a library writes it in."""
+    return f"LOGIN me {secret} failed: sent {secret!r} and {json.dumps(secret)} and {secret.replace(chr(39), chr(39) * 2)}"
+
+
+def _the_ingest_email_route(monkeypatch, fetch):
+    """``ingest_email_endpoint`` over a fetch that raises, with nothing else in its way."""
+    from types import SimpleNamespace
+
+    from src.api import ingestion as ing
+
+    monkeypatch.setattr(ing, "_get_source", lambda db, source_id: SimpleNamespace(name="mailbox"))
+    monkeypatch.setattr(ing, "fetch_imap", fetch)
+    body = ing.IngestEmailRequest(host="mail.example", user="me", password=MAILBOX)
+    return lambda: ing.ingest_email_endpoint(7, body, db=None)
+
+
+def test_a_mail_library_error_that_quotes_the_password_leaves_the_ingest_email_route_with_it_out_of_everything(monkeypatch, caplog):
+    """MUTATION TARGET: the ``scrub_and_reraise`` around the fetch. ``imaplib``, ``ssl`` and ``OSError`` are not the
+    ``RuntimeError`` the route maps to a 409, so they used to reach the global handler, the server's log and the journal as raised,
+    carrying a password no net holds."""
+    import imaplib
+
+    caplog.set_level(logging.DEBUG, logger="api.ingestion")
+    for error in (imaplib.IMAP4.error(_mail_error(MAILBOX)), OSError(_mail_error(MAILBOX)), ValueError(_mail_error(MAILBOX))):
+
+        def fetch(*args, _error=error, **kwargs):
+            raise _error
+
+        caplog.clear()
+        with pytest.raises(RuntimeError) as err:
+            _the_ingest_email_route(monkeypatch, fetch)()
+        exc = err.value
+        assert exc.__suppress_context__ is True and exc.__cause__ is None, "raised from None: a traceback prints no original"
+        assert type(error).__name__ in str(exc) and ss.REDACTED in str(exc)
+        records = [r for r in caplog.records if r.name == "api.ingestion"]
+        assert len(records) == 1 and records[0].levelno == logging.ERROR and records[0].exc_info is None
+        _assert_none_of(_everything_written(caplog, exc), MAILBOX)
+
+
+def test_the_airplane_refusal_is_still_a_409_and_a_refusal_that_quotes_the_password_has_it_out_of_the_detail(monkeypatch, caplog):
+    caplog.set_level(logging.DEBUG, logger="api.ingestion")
+
+    def refuse(*args, **kwargs):
+        raise RuntimeError("network refused: airplane mode is engaged")
+
+    with pytest.raises(HTTPException) as err:
+        _the_ingest_email_route(monkeypatch, refuse)()
+    assert err.value.status_code == 409 and err.value.detail == "network refused: airplane mode is engaged"
+    assert not [r for r in caplog.records if r.name == "api.ingestion"], "an answer the code wrote is not logged as a failure"
+
+    def chatter(*args, **kwargs):
+        raise RuntimeError(_mail_error(MAILBOX))
+
+    with pytest.raises(HTTPException) as err:
+        _the_ingest_email_route(monkeypatch, chatter)()
+    assert err.value.status_code == 409 and ss.REDACTED in err.value.detail
+    _assert_none_of(_everything_written(caplog, err.value), MAILBOX)
+
+
+def test_a_mailbox_pull_that_fails_leaves_its_job_status_with_the_password_out_of_it_in_every_shape(monkeypatch):
+    """The pull runs as a background job whose ``error`` ``/api/jobs`` serves: the worker's own text is scrubbed where it is made,
+    in every shape and not only the one typed (the replace it used knew only that one). MUTATION TARGET: the ``scrubbed`` in
+    the worker."""
+    from types import SimpleNamespace
+
+    from src.api import ingestion as ing
+
+    def fetch(*args, **kwargs):
+        raise OSError(_mail_error(MAILBOX))
+
+    monkeypatch.setattr(ing, "fetch_mailbox", fetch)
+    ctx = SimpleNamespace(set_progress=lambda **kwargs: None)
+    with pytest.raises(RuntimeError) as err:
+        ing._mailbox_pull_worker(
+            ctx, protocol="imap", host="mail.example", user="me", password=MAILBOX, port=0, folder="INBOX", limit=5, use_ssl=True
+        )
+    assert err.value.__suppress_context__ is True and ss.REDACTED in str(err.value)
+    _assert_none_of(str(err.value) + "".join(traceback.format_exception(err.value)), MAILBOX)

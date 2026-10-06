@@ -14,7 +14,8 @@ one scrubs what it records, where it records it. No message on those paths names
 the engine one that does.
 
 ``errorlog.note_http_error`` is the other recorder the diagnostics bundle keeps of an error RESPONSE, and it records the
-status, the method and the path: a last test pins that no caller hands it a ``detail``.
+status, the method and the path and takes no text at all: a last test pins that its signature has no ``detail`` and that no
+caller hands it one.
 
 The static walk that holds the next handler in these modules to the same rule is in ``tests/test_p0_validation.py``
 (``_GUARDED_MODULES``).
@@ -221,10 +222,16 @@ def test_a_queue_started_without_a_passphrase_records_an_error_as_it_was_raised(
 # The recorder of an error response in the debug bundle
 # --------------------------------------------------------------------------- #
 def test_no_caller_hands_the_http_error_log_a_response_text():
-    """``errorlog.note_http_error(method, path, status, *, detail=None)`` can keep 200 characters of a response's text, and
-    the route layer's ``HTTPException`` details (``decryption failed: {exc}``) are texts that could name a passphrase. The
-    one caller (the request middleware) passes the status alone, and a caller that passed a ``detail``, a ``**kwargs`` that
-    could carry one, or a fourth positional would turn the routes' responses into a recorded text no scrub sees."""
+    """``errorlog.note_http_error(method, path, status)`` takes no text: the route layer's ``HTTPException`` details
+    (``decryption failed: {exc}``) are texts that could name a passphrase, and a parameter that kept 200 characters of one
+    would record them where no scrub sees them. It had one, with no caller, and the parameter is gone; this pins that it stays
+    gone (the signature) and that no caller hands it a ``detail``, a ``**kwargs`` that could carry one, or a fourth
+    positional."""
+    import inspect
+
+    from src.monitoring import errorlog
+
+    assert list(inspect.signature(errorlog.note_http_error).parameters) == ["method", "path", "status"]
     calls = []
     for path in sorted(SRC.rglob("*.py")):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):

@@ -81,14 +81,13 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure, scrubbed, scrubbed_value
 from src.monitoring.secret_scrub import scrub_file as _scrub_file
-from src.monitoring.secret_scrub import scrub_value as _scrub_value
 
 _LOG = logging.getLogger("monitoring.release_run")
 
@@ -1171,7 +1170,7 @@ def _fresh_install_restore(
     }
     env.pop("OO_DB_PLAINTEXT", None)
     t0 = time.monotonic()
-    scrubbed: dict[str, list[str]] | None = None
+    kept_scrub: dict[str, list[str]] | None = None
     fresh.mkdir(parents=True, exist_ok=False)
     try:
         proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
@@ -1219,7 +1218,7 @@ def _fresh_install_restore(
             "returncode": proc.returncode,
             # Scrubbed BEFORE the cut: a cut through the passphrase would leave a fragment that no
             # later replacement could find.
-            "stderr_tail": _scrub_value(stderr or "", run.params.passphrase)[-4000:],
+            "stderr_tail": scrubbed(stderr or "", run.params.passphrase)[-4000:],
         }
         payload: dict[str, Any] | None = None
         with contextlib.suppress(OSError, ValueError):
@@ -1232,10 +1231,10 @@ def _fresh_install_restore(
             # The child has exited, so what it wrote is closed, and its result is read. A kept install
             # is looked at later, off this run: its journal and reports are plain text beside the
             # encrypted database.
-            scrubbed = _scrub_kept_install(fresh, out_json, run.params.passphrase)
-            result["kept_install_scrub"] = scrubbed
+            kept_scrub = _scrub_kept_install(fresh, out_json, run.params.passphrase)
+            result["kept_install_scrub"] = kept_scrub
         # Before anything reads, stores or logs it (the failure text below included).
-        result = _scrub_value(result, run.params.passphrase)
+        result = scrubbed_value(result, run.params.passphrase)
         if not ctx.stopping:
             # The phase is a restore only if the child restored: its own ok and its exit status
             # decide, not the parent returning. What the child measured stays in the record
@@ -1257,7 +1256,7 @@ def _fresh_install_restore(
             shutil.rmtree(fresh, ignore_errors=True)
             with contextlib.suppress(OSError):
                 out_json.unlink()
-        elif scrubbed is None:
+        elif kept_scrub is None:
             # The scrub did not run on the way through (an exception came first). The error that brought
             # us here is the one to raise, so a failure of this is logged, never raised over it.
             try:
@@ -2129,20 +2128,6 @@ def request_collect_now() -> None:
     _COLLECT_NOW.set()
 
 
-def _log_phase_failure(name: str, exc: BaseException, why: str, secret: str) -> None:
-    """Log the exception being handled, with its traceback, and with the passphrase out of both. The
-    error log keeps the last 1,500 characters of a record's traceback in ``app_errors.jsonl``, which a
-    debug bundle carries, so an exception that named the passphrase would otherwise put it on disk. Where
-    the traceback does not hold it (the usual case) the record is the one it always was; where it does,
-    the record carries the scrubbed text instead, ``why`` (already scrubbed) first because the error log
-    keeps the start of a message and the exception line is at the end."""
-    text = "".join(traceback.format_exception(exc))
-    if secret and secret in text:
-        _LOG.warning("release run phase %s failed: %s\n%s", name, why[:200], _scrub_value(text, secret))
-    else:
-        _LOG.warning("release run phase %s failed", name, exc_info=True)
-
-
 def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[BaseException], ...] = ()) -> dict[str, Any]:
     """Run one phase under the closed status vocabulary. A named refusal (a bad
     precondition) is ``refused``; anything else that raises is ``error`` -- and neither
@@ -2150,7 +2135,12 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
     the operator with nothing after three days. What the exception says reaches the log,
     the state file and the report with the passphrase taken out (the module docstring's
     promise holds for every phase, not only the restore's), BEFORE the cut to 400
-    characters, so a cut through it cannot leave a fragment."""
+    characters, so a cut through it cannot leave a fragment. Every passphrase the process
+    holds is taken out with it, and a text that cannot be checked is the exception's class
+    and none of its words (``secret_scrub.scrubbed``). The log line is written through
+    ``log_failure``, which carries the scrubbed traceback and never the exception: the error
+    log keeps the tail of a record's traceback in ``app_errors.jsonl``, which a debug bundle
+    carries."""
     run.begin(name)
     ctx.set_progress(detail=name)
     secret = run.params.passphrase
@@ -2158,14 +2148,15 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
         result = fn()
     except _PhaseError as exc:
         # RR-2: what the phase measured before it failed stays in its record.
-        why = _scrub_value(str(exc), secret)
+        why = scrubbed(str(exc), secret, withheld=f"{type(exc).__name__}: its text is withheld")
         _LOG.warning("release run phase %s failed part of the way: %s", name, why)
         ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", why[:400], result=exc.partial)
     except refusals as exc:
-        ph = run.end("refused", _scrub_value(f"{type(exc).__name__}: {exc}", secret)[:400])
+        why = scrubbed(f"{type(exc).__name__}: {exc}", secret, withheld=f"{type(exc).__name__}: its text is withheld")
+        ph = run.end("refused", why[:400])
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to the report
-        why = _scrub_value(f"{type(exc).__name__}: {exc}", secret)
-        _log_phase_failure(name, exc, why, secret)
+        why = scrubbed(f"{type(exc).__name__}: {exc}", secret, withheld=f"{type(exc).__name__}: its text is withheld")
+        log_failure(_LOG, f"release run phase {name} failed", exc, secret, level=logging.WARNING)
         ph = run.end("error", why[:400])
     else:
         if ctx.stopping:

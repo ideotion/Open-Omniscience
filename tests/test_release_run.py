@@ -558,13 +558,23 @@ def client(monkeypatch, tmp_path):
 
 def test_start_refuses_a_bad_profile_and_a_destination_inside_the_data_dir(client, tmp_path):
     r = client.post("/api/diagnostics/release-run",
-                    json={"dest_dir": str(tmp_path / "elsewhere"), "passphrase": "x", "profile": "huge"})
+                    json={"dest_dir": str(tmp_path / "elsewhere"), "passphrase": NEEDLE, "profile": "huge"})
     assert r.status_code == 400
     r = client.post("/api/diagnostics/release-run",
-                    json={"dest_dir": str(tmp_path / "data" / "in"), "passphrase": "x"})
+                    json={"dest_dir": str(tmp_path / "data" / "in"), "passphrase": NEEDLE})
     assert r.status_code == 400 and "overlaps" in r.json()["detail"]
     r = client.post("/api/diagnostics/release-run", json={"dest_dir": str(tmp_path / "elsewhere"), "passphrase": ""})
     assert r.status_code == 400
+
+
+def test_a_refusal_for_a_passphrase_under_the_floor_withholds_the_words_it_would_have_said(client, tmp_path):
+    """A passphrase of one to three characters cannot be taken out of the refusal's text (``x`` is in nearly every word of a
+    path), so the route answers 400 with the fixed words of ``secret_scrub`` and not the text: the refusal is still a refusal.
+    MUTATION TARGET: the route's ``scrubbed`` call, which leaves such a text as it is."""
+    from src.monitoring import secret_scrub
+
+    r = client.post("/api/diagnostics/release-run", json={"dest_dir": str(tmp_path / "data" / "in"), "passphrase": "x"})
+    assert r.status_code == 400 and r.json()["detail"] == secret_scrub.UNREADABLE_TEXT, r.text
 
 
 def test_start_launches_the_job_and_the_status_carries_no_secret(client, tmp_path, monkeypatch):
@@ -1997,9 +2007,14 @@ def test_a_failed_start_removes_the_directory_with_rmdir_so_nothing_in_it_is_eve
     assert (fresh / "something.txt").read_text(encoding="utf-8") == "not this call's to delete"
 
 
-def test_a_failure_that_does_not_name_the_passphrase_is_logged_with_its_traceback_as_before(fast, caplog):
-    """The scrubbing replaces the record only where the passphrase is in it: the error log keeps a
-    traceback's tail, and every failure that never named the passphrase keeps it."""
+def test_a_failure_is_logged_through_log_failure_with_its_traceback_on_the_record(fast, caplog):
+    """Every failure of a phase is logged the one way ``secret_scrub.log_failure`` does it, whether or not it names the
+    passphrase: the exception's own line leads the message (the error log cuts a message at 500 characters), the traceback the
+    error log keeps the tail of rides the record as ``scrubbed_traceback`` with the frames that say where it happened, and the
+    record has no ``exc_info``, which is how an exception is written as it made its message. MUTATION TARGET: ``log_failure``
+    -> ``_LOG.warning(..., exc_info=True)`` in ``_run_phase``."""
+    from src.monitoring import secret_scrub
+
     run = rr._Run(rr.RunParams(**_params(fast["dest"])))
 
     def boom():
@@ -2008,8 +2023,55 @@ def test_a_failure_that_does_not_name_the_passphrase_is_logged_with_its_tracebac
     with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
         rr._run_phase(run, FakeCtx(), "ordinary", boom)
     (record,) = [r for r in caplog.records if "ordinary" in r.getMessage()]
-    assert record.exc_info and record.exc_info[0] is RuntimeError, "the traceback rides the record, not the text"
+    assert record.exc_info is None, "the exception is not written as it made its message"
+    assert record.getMessage().startswith("release run phase ordinary failed: RuntimeError: an ordinary failure")
+    tb = getattr(record, secret_scrub.TRACEBACK_ATTRIBUTE)
+    assert "Traceback (most recent call last)" in tb and "in boom" in tb and "RuntimeError: an ordinary failure" in tb
     assert "an ordinary failure" in caplog.text
+
+
+def test_a_failure_that_names_the_passphrase_is_logged_and_recorded_with_it_taken_out_of_both(fast, caplog):
+    """The log line, its traceback, the phase's detail and the report: none holds the passphrase, and the line still says what
+    failed. MUTATION TARGET: the secret handed to ``log_failure`` or ``scrubbed`` in ``_run_phase``."""
+    from src.monitoring import secret_scrub
+
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+
+    def boom():
+        raise RuntimeError(f"could not open {NEEDLE} for reading")
+
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        ph = rr._run_phase(run, FakeCtx(), "names-it", boom)
+    (record,) = [r for r in caplog.records if "names-it" in r.getMessage()]
+    written = [caplog.text, record.getMessage(), getattr(record, secret_scrub.TRACEBACK_ATTRIBUTE), json.dumps(ph)]
+    assert not [w for w in written if NEEDLE in w], written
+    assert ph["status"] == "error" and ph["detail"] == f"RuntimeError: could not open {secret_scrub.REDACTED} for reading"
+    assert record.getMessage().startswith(f"release run phase names-it failed: RuntimeError: could not open {secret_scrub.REDACTED}")
+
+
+def test_a_failure_whose_text_holds_a_short_passphrase_is_recorded_as_its_class_and_none_of_its_words(fast, caplog):
+    """A passphrase of one to three characters cannot be taken out of a text (``secret_scrub.MIN_SECRET_CHARS``), so the phase
+    records the exception's class and none of its words: the detail, the log line and its traceback. A failure whose text holds no
+    shape of it is recorded as it was. MUTATION TARGET: the ``withheld`` words in ``_run_phase``, or a ``scrubbed`` that passes a
+    text through for a secret under the floor."""
+    from src.monitoring import secret_scrub
+
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], passphrase="zq")))
+
+    def holds_it():
+        raise RuntimeError("could not open the zq file")
+
+    def does_not():
+        raise RuntimeError("could not open the file")
+
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        held = rr._run_phase(run, FakeCtx(), "short-held", holds_it)
+        clean = rr._run_phase(run, FakeCtx(), "short-clean", does_not)
+    assert held["detail"] == "RuntimeError: its text is withheld"
+    assert clean["detail"] == "RuntimeError: could not open the file"
+    (record,) = [r for r in caplog.records if "short-held" in r.getMessage()]
+    assert "zq" not in record.getMessage().replace("short-held", "") and "zq" not in getattr(record, secret_scrub.TRACEBACK_ATTRIBUTE)
+    assert record.getMessage().startswith("release run phase short-held failed: RuntimeError: its text is withheld")
 
 
 def test_the_real_child_on_a_missing_backup_exits_nonzero_and_reads_as_a_failed_restore(fast, tmp_path):
@@ -2214,13 +2276,17 @@ def _no_write_leaked(writes: list[str]) -> None:
     assert {"state", "interim", "final"} <= set(writes), f"the watcher saw too little to mean anything: {writes}"
 
 
-def test_the_release_run_scrubs_with_the_shared_helper():
-    """One definition of the scrub (``src/monitoring/secret_scrub.py``, tested in test_secret_scrub.py),
-    used by the parent that records the child's words and by the child that writes them."""
+def test_the_release_run_scrubs_with_the_shared_helpers():
+    """One definition of the scrub (``src/monitoring/secret_scrub.py``, tested in test_secret_scrub.py), used by the parent that
+    records the child's words and by the child that writes them: the helpers that take out every passphrase the process holds
+    (``scrubbed``, ``scrubbed_value``, ``log_failure``) for what is written, and the per-needle one only for the files a kept
+    install leaves, where the needle is the run's own."""
     from src.monitoring import secret_scrub
 
-    assert rr._scrub_value is secret_scrub.scrub_value
-    assert rr._scrub_value(f"a {NEEDLE} b", NEEDLE) == "a ***redacted*** b"
+    assert rr.scrubbed is secret_scrub.scrubbed and rr.scrubbed_value is secret_scrub.scrubbed_value
+    assert rr.log_failure is secret_scrub.log_failure and rr._scrub_file is secret_scrub.scrub_file
+    assert not hasattr(rr, "_scrub_value"), "the per-needle helper credits nothing a handler writes"
+    assert rr.scrubbed(f"a {NEEDLE} b", NEEDLE) == "a ***redacted*** b"
 
 
 def test_a_restore_child_that_echoes_the_passphrase_leaves_it_in_no_state_report_or_log(fast, monkeypatch, caplog):
@@ -2294,6 +2360,7 @@ def test_the_child_scrubs_its_own_error_text_before_cutting_it_to_600_characters
     assert len(text) == 600 and "hunter" not in text and "***red" in text, text[580:]
     assert child._error_text(RuntimeError("boom"), "") == "RuntimeError: boom", "no passphrase, nothing replaced"
     assert child._error_text(RuntimeError(f"key {NEEDLE} refused"), NEEDLE) == "RuntimeError: key ***redacted*** refused"
+    assert child._error_text(RuntimeError("key zq refused"), "zq") == "RuntimeError: its text is withheld", "under the floor"
 
 
 def test_a_resume_owes_the_passphrase_for_a_pre_migration_restore_it_has_not_finished(fast, monkeypatch):
@@ -2380,7 +2447,10 @@ def test_a_passphrase_that_is_a_piece_of_a_field_name_hides_no_failure_either(fa
     _child_process(monkeypatch, payload=payload, returncode=rc)
     rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=needle))["report"]
     phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
-    assert phase["status"] == "error" and fragment in phase["detail"], (needle, shape, phase)
+    # A needle under the floor (``ok``) cannot be taken out of a text, so a detail that holds it is withheld whole: the status
+    # and the exit status are the facts, and they are still there; the words are the class's.
+    withheld = phase["detail"] == "_PhaseError: its text is withheld" and needle == "ok"
+    assert phase["status"] == "error" and (fragment in phase["detail"] or withheld), (needle, shape, phase)
     assert rep["phase_results"]["fresh_install_restore"]["returncode"] == rc
     rows = {r["row"]: r for r in rep["board_rows"]}
     assert rows["A"]["status"] == "error" and rows["I"]["status"] == "error"

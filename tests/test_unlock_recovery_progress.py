@@ -666,7 +666,7 @@ def test_the_right_passphrase_repairs_an_open_app_that_holds_a_wrong_key(held_ke
     connect_mod.set_passphrase("a-wrong-key-from-the-environment")
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
     monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append(("connect", k.get("key"))))
-    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: calls.append("close"))
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase=None: calls.append("close"))
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
     assert calls == [("connect", _KEY), "close", "finish"], calls

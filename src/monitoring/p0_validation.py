@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import scrub_text, scrub_value
+from src.monitoring.secret_scrub import scrubbed, scrubbed_value
 
 _LOG = logging.getLogger("monitoring.p0_validation")
 
@@ -280,7 +280,8 @@ def validate_dest_dir(dest_dir: str | Path) -> Path:
 #  P0.1 — backup (+ incremental refresh) + verify
 # --------------------------------------------------------------------------- #
 def _exception_text(exc: BaseException, passphrase: str) -> str:
-    """What a caught exception says, for a report: ``Name: message`` with the passphrase taken out of it.
+    """What a caught exception says, for a report: ``Name: message`` with the passphrase taken out of it, and every
+    other one the process holds (the backup's key is not always the corpus's).
 
     The four checks that are handed the passphrase (the backup, its refresh, the verify and the restore
     probe) catch whatever the engine raises and write its words into the report, which is a file the debug
@@ -288,8 +289,11 @@ def _exception_text(exc: BaseException, passphrase: str) -> str:
     passphrase in a message today; this is the net where the text is MADE, so a message that did cannot
     reach any of those. Done on the text, never on the finished report: a report holds verdicts (``pass``,
     ``fail``) that code and the panel compare, and an exact-match scrub of a short passphrase (``a``,
-    ``pass``) would rewrite them."""
-    return scrub_text(f"{type(exc).__name__}: {exc}", passphrase)
+    ``pass``) would rewrite them. A text that cannot be checked is the exception's class and none of its
+    words."""
+    return scrubbed(
+        f"{type(exc).__name__}: {exc}", passphrase, withheld=f"{type(exc).__name__}: its text is withheld"
+    )
 
 
 def _check_backup(
@@ -444,7 +448,7 @@ def _check_backup(
     # them (a decrypt failure) carries the exception's own words: the engine scrubs it where it makes it, and
     # this is the net where the lines are copied, line by line, never the verdicts and the success sentence
     # around them (the coordinator's delta check of #1312, F2; its check of #1318, B1).
-    problems = scrub_value(None if vrep is None else vrep.get("problems"), passphrase)
+    problems = scrubbed_value(None if vrep is None else vrep.get("problems"), passphrase)
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
         "ok": None if vrep is None else vrep.get("ok"),
@@ -472,7 +476,7 @@ def _check_backup(
     else:
         # The join puts two lines side by side, so the tail is scrubbed once more (a passphrase that holds "; "
         # could end one line and start the next); the lead is the check's own words and is left alone.
-        probs = scrub_text("; ".join(problems or ["unknown"]), passphrase)
+        probs = scrubbed("; ".join(problems or ["unknown"]), passphrase)
         verify_check = _verdict(
             "fail", f"verification failed: {probs}", verify_measurements, bars["p0_1_verify"]
         )

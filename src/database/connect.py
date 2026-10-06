@@ -147,6 +147,15 @@ def set_passphrase(p: str | None) -> None:
     global _passphrase
     with _lock:
         _passphrase = p or None
+    # The scrub keeps ONE cache entry: the passphrases it last took out of a text and the shapes it made of them. A failed
+    # unlock or create and the crypto-erase clear the session's passphrase here, so they clear that copy too (a core dump is in
+    # the rule). Outside the lock, and never a reason for the call to fail.
+    try:
+        from src.monitoring.secret_scrub import forget_held
+
+        forget_held()
+    except Exception:  # noqa: BLE001 - the passphrase is set; a copy that could not be dropped is replaced by the next scrub
+        pass
 
 
 def get_passphrase() -> str | None:

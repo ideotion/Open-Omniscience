@@ -32,6 +32,9 @@ from src.monitoring import secret_scrub as ss
 
 HELD = "kQ7!vLm-it's-the-held-key"  # an apostrophe: the statement that carries it quotes it twice
 ENV = "zR4#nPt-the-env-key"
+#: What the response says when the scrub could not run, could not read what the process holds, or holds a passphrase it cannot
+#: take out of a text (``secret_scrub.MIN_SECRET_CHARS``).
+WITHHELD = "internal error (its text is withheld: the scrub could not run, or could not take a passphrase out of it)"
 
 
 @pytest.fixture
@@ -167,11 +170,30 @@ def test_a_handler_that_cannot_read_what_the_process_holds_writes_none_of_the_ex
     caplog.set_level(logging.DEBUG, logger="api")
     resp = _call(RuntimeError(f"the key {HELD} was refused"))
     assert resp.status_code == 500
-    assert json.loads(resp.body) == {"detail": "internal error (its text is withheld: the scrub could not run)"}
+    assert json.loads(resp.body) == {"detail": WITHHELD}
     written = resp.body.decode() + caplog.text
     assert HELD not in written and "refused" not in written
     (record,) = [r for r in caplog.records if r.name == "api"]
     assert "RuntimeError: its text is withheld" in record.getMessage() and record.exc_info is None
+
+
+def test_a_short_held_passphrase_withholds_the_words_of_the_response_and_the_log_line_that_hold_it(monkeypatch, caplog):
+    """A correct passphrase of an older store can be one to three characters, and it cannot be taken out of a text, so a response
+    and a log line that hold it are withheld whole (the class stays), and one that holds none of its shapes is written as it was.
+    MUTATION TARGET: a handler whose scrub reads only the long shapes of what the process holds."""
+    monkeypatch.setattr(connect, "_passphrase", "zq")
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    ss.forget_held()
+    caplog.set_level(logging.DEBUG, logger="api")
+    resp = _call(RuntimeError("the key zq was refused"))
+    assert resp.status_code == 500 and json.loads(resp.body) == {"detail": WITHHELD}
+    (record,) = [r for r in caplog.records if r.name == "api"]
+    assert record.getMessage().endswith("RuntimeError: its text is withheld\nRuntimeError: its text is withheld")
+    assert "refused" not in caplog.text and "zq" not in record.getMessage()
+    caplog.clear()
+    resp = _call(RuntimeError("the file was refused"))
+    assert json.loads(resp.body) == {"detail": "internal error: the file was refused"}
+    assert "the file was refused" in caplog.text
 
 
 @pytest.mark.parametrize("broken", ["scrubbed", "log_failure"])

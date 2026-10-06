@@ -599,17 +599,20 @@ def _writes_a_traceback(
 #: The names the secret goes by where the release run, the volume job and the import queue hold it, each with WHICH secret
 #: it is: the parameter or local a helper is given it as (``passphrase``; ``secret`` and ``needle`` in
 #: ``release_run.py``'s helpers, the same passphrase under another name; ``corpus_passphrase``, the restore job's second
-#: one). A function that holds two secrets has to name both in a call that scrubs for it ...
+#: one; ``password``, the mailbox password a request types, which no net holds either). A function that holds two secrets has to
+#: name both in a call that scrubs for it ...
 _SECRET_NAMES = {
     "passphrase": "passphrase",
     "secret": "passphrase",
     "needle": "passphrase",
     "corpus_passphrase": "corpus_passphrase",
+    "password": "password",
 }
 
 #: ... and, as an attribute (or ``getattr(obj, "passphrase")``), the one the run's parameters carry
 #: (``run.params.passphrase``, a request body's ``body.passphrase``), the one the import queue keeps for the length of a
-#: run (``self._passphrase``) and the restore's second one (``body.corpus_passphrase``, ``self._corpus_passphrase``). An
+#: run (``self._passphrase``), the restore's second one (``body.corpus_passphrase``, ``self._corpus_passphrase``) and a
+#: mailbox's password (``req.password``). An
 #: attribute is a secret by NAME here and a VALUE by the object it is read off: ``self._passphrase`` and ``body.passphrase`` are
 #: two secrets, and a function that reads both holds two, each of which a scrubbing call has to name.
 _SECRET_ATTRIBUTES = {
@@ -617,19 +620,19 @@ _SECRET_ATTRIBUTES = {
     "_passphrase": "passphrase",
     "corpus_passphrase": "corpus_passphrase",
     "_corpus_passphrase": "corpus_passphrase",
+    "password": "password",
 }
 
 #: The calls that write a caught exception as a text with the secret taken out of it: name -> (the index of the
 #: argument that carries what is written, the index of the secret). A handler may use the exception only inside the
 #: first, and only when the second IS the secret AND the function holds no other: a text scrubbed of one of two secrets
 #: still carries the other, which is what :data:`_SCRUBBING_CALLS_OVER_SECRETS` is for.
+#: The per-needle helpers of ``secret_scrub`` (``scrub_text``, ``scrub_value``, ``scrub_file``) are NOT here and credit nothing: they
+#: know one needle the caller made itself and nothing the process holds, and a secret under the floor they leave in the text, so
+#: a handler that writes a caught exception through one writes the passphrase the process holds as it is.
 _SCRUBBING_CALLS = {
-    "_exception_text": (0, 1),  # p0_validation: "Name: message", scrubbed, from the exception itself
+    "_exception_text": (0, 1),  # p0_validation: "Name: message" through ``scrubbed``, from the exception itself
     "_error_text": (0, 1),  # release_run_fresh_restore: the same, for the restore child
-    "_scrub_value": (0, 1),  # release_run: ``secret_scrub.scrub_value`` over a text built from the exception
-    "scrub_value": (0, 1),
-    "_log_phase_failure": (1, 3),  # release_run: logs the whole chain, with the secret out of it
-    "scrub_text": (0, 1),  # secret_scrub: the engine's words, scrubbed where ``verify_stream_backup`` makes the line
 }
 
 #: The same for the helpers of ``secret_scrub`` that take ANY NUMBER of secrets (the volume job's restore holds two,
@@ -638,6 +641,7 @@ _SCRUBBING_CALLS = {
 #: they name every secret the function holds, because a text scrubbed of one of two still carries the other.
 _SCRUBBING_CALLS_OVER_SECRETS = {
     "scrubbed": (0, 1),  # a text with each secret taken out
+    "scrubbed_value": (0, 1),  # a structure with each secret taken out of every string in it
     "traceback_text": (0, 1),  # the traceback of the exception, scrubbed
     "log_failure": (2, 3),  # logs the whole chain, with each secret out of it (the logger, then the words)
     "_restore_error": (1, 2),  # backup_v2: the 500 the legacy restore answers with, its detail scrubbed (the action, then the exception)
@@ -771,8 +775,9 @@ def _caught_exception_leaks(source: str, *, responses: bool = False) -> tuple[li
     route layer and inside a ``with scrub_and_reraise`` that names every secret (:func:`_covered_by_a_scrubbing_block`). It
     follows no call: a helper the handler calls that reads the exception itself is not seen. With ``responses`` (the route
     layer) the exception may also be the cause of what a call of :data:`_RESPONSE_BUILDERS` is raised as: the caller's own
-    response, whose TEXT is still the writer's to scrub (``detail=scrubbed(str(exc), body.passphrase)``: the recorder of a
-    response's detail, ``note_http_error``, knows only what the process holds)."""
+    response, whose TEXT is still the writer's to scrub (``detail=scrubbed(str(exc), body.passphrase)``: a typed key is held by no
+    net until it is accepted, and the browser can send what a response said back to the error journal through
+    ``note_frontend_error``, which knows only what the process holds; ``note_http_error`` records the status alone)."""
     tree = ast.parse(source)
     traceback_modules = _bound_as(tree, "traceback")
     traceback_functions = _traceback_function_names(tree)
@@ -881,7 +886,7 @@ _GUARDED_MODULES = {
             "_fresh_install_restore": (
                 "its `except BaseException` removes the empty directory a failed spawn leaves and raises the spawn's own error "
                 "again, before any child has been handed the passphrase; its caller, _run_phase, is read by this guard and "
-                "writes what it catches through _scrub_value and _log_phase_failure"
+                "writes what it catches through scrubbed and log_failure"
             )
         },
     ),
@@ -910,6 +915,7 @@ _GUARDED_MODULES = {
     "api/safety": ({"encrypted_backup"}, 1, True, {}),
     "api/diagnostics/p0": ({"p0_validation_start"}, 1, True, {}),
     "api/diagnostics/release_run": ({"release_run_start", "release_run_resume"}, 2, True, {}),
+    "api/ingestion": ({"ingest_email_endpoint", "_mailbox_pull_worker"}, 2, True, {}),
 }
 
 
@@ -919,8 +925,8 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
     into a report is how the next leak is made, and no test of the existing ones would see it. Every handler inside
     a function that holds the passphrase (takes it, reads it into a local, or reads it off the run's parameters or
     the queue's ``self``) may use the caught exception only inside a call that scrubs it with the secret
-    (``_exception_text``, the child's ``_error_text``, ``scrub_value``, ``_log_phase_failure``, ``scrub_text``, each of which
-    takes ONE secret and so counts only in a function that holds that one; ``secret_scrub``'s ``scrubbed``,
+    (``_exception_text`` and the child's ``_error_text``, each of which takes ONE secret and so counts only in a function that
+    holds that one, and writes it through ``scrubbed``; ``secret_scrub``'s ``scrubbed``, ``scrubbed_value``,
     ``traceback_text`` and ``log_failure``, which must be given EVERY secret the function holds, a restore's two, and
     which secret a name or an attribute is, is read from :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`), or ask
     for its class or a ``_PhaseError``'s ``status`` and ``partial``, and may ask for no
@@ -929,8 +935,9 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
     carries the caught one as its context, which a traceback prints: it is raised ``from None``, or inside a ``with
     scrub_and_reraise`` that names every secret. In the route layer (``responses``) the exception may be the CAUSE of the
     response the caller gets (``raise HTTPException(...) from exc``), and the response's TEXT is still the writer's to
-    scrub: ``note_http_error`` records it into the error journal, knowing only the passphrases the process holds, so a
-    ``detail=str(exc)`` carries a typed key into the bundle. And a function that raises what it caught AGAIN as it is (a bare
+    scrub: a typed key is held by no net until it is accepted, and the browser can send what a response said back to the error
+    journal through ``note_frontend_error``, which knows only the passphrases the process holds, so a ``detail=str(exc)`` can
+    carry a typed key into the bundle (``note_http_error`` records the status alone). And a function that raises what it caught AGAIN as it is (a bare
     ``raise``) outside such a block is listed with why whoever catches it next scrubs it. It reads the syntax of the modules in
     ``_GUARDED_MODULES`` and follows no call; what stays outside it is listed in ``LESSONS.md`` (the entry about a net going
     where the text is made) and in ``OPEN_QUEUE.md``, and the cases below pin what it sees.
@@ -993,7 +1000,7 @@ def _modules_that_hold_the_passphrase_and_write_what_they_catch() -> set[str]:
     found: set[str] = set()
     for path in sorted(src.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
-        if not any(word in text for word in ("passphrase", "secret", "needle")):
+        if not any(word in text for word in ("passphrase", "secret", "needle", "password")):
             continue
         try:
             _, offenders, routed = _caught_exception_leaks(text, responses=True)
@@ -1071,24 +1078,40 @@ _WAYS_THAT_LEAK = {
     "the secret in another position than the one the helper reads it at": _guarded(
         _NAMED, "err = _exception_text(exc, other, passphrase)"
     ),
-    "a scrub given a name that is not the secret": _guarded(_NAMED, "err = _scrub_value(str(exc), other)"),
+    "the exception handed to a scrub that is given a name that is not the secret": _guarded(
+        _NAMED, "err = scrubbed(str(exc), other)"
+    ),
+    # --- the per-needle helpers know one needle and nothing the process holds: they credit nothing, however they are called
+    "scrub_text, given the passphrase": _guarded(_NAMED, "err = scrub_text(str(exc), passphrase)"),
+    "scrub_value, given the passphrase": _guarded(_NAMED, "err = scrub_value(str(exc), passphrase)"),
+    "release_run's alias of scrub_value, given the passphrase": _guarded(_NAMED, "err = _scrub_value(str(exc), passphrase)"),
+    "the old logging helper of the release run": _guarded(_NAMED, "_log_phase_failure(name, exc, why, passphrase)"),
     "scrub_text given a name that is not the secret": _guarded(_NAMED, "err = scrub_text(str(exc), other)"),
     # --- a helper that takes ONE secret, in a function that holds two: the other one is in the text
-    "scrub_text, the one secret of two": _guarded(_NAMED, "err = scrub_text(str(exc), passphrase)", head=_TWO_SECRETS),
-    "scrub_text, the other secret of two": _guarded(
-        _NAMED, "err = scrub_text(str(exc), corpus_passphrase)", head=_TWO_SECRETS
+    "the one-secret helper, the one secret of two": _guarded(_NAMED, "err = _exception_text(exc, passphrase)", head=_TWO_SECRETS),
+    "the one-secret helper, the other secret of two": _guarded(
+        _NAMED, "err = _exception_text(exc, corpus_passphrase)", head=_TWO_SECRETS
     ),
-    "a scrub of one of two secrets read off the body": _guarded(
-        _NAMED, "err = _scrub_value(str(exc), body.passphrase)", head=_TWO_ATTRIBUTES
+    "the one-secret helper, one of two secrets read off the body": _guarded(
+        _NAMED, "err = _exception_text(exc, body.passphrase)", head=_TWO_ATTRIBUTES
+    ),
+    # --- the mailbox password is a secret like the others
+    "a mailbox password read off the request": (
+        "def check(req):\n    key = req.password\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = str(exc)\n"
+    ),
+    "a parameter named password": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, password):"),
+    "a text scrubbed of a passphrase in a function that holds a password too": _guarded(
+        _NAMED, "err = scrubbed(str(exc), passphrase)", head="def check(ctx, passphrase, password):"
     ),
     "the helper given one of two secrets": _guarded(
         _NAMED, "err = _exception_text(exc, passphrase)", head=_TWO_SECRETS
     ),
-    "a scrub given another field of the run": _guarded(_NAMED, "err = _scrub_value(str(exc), run.params.dest_dir)"),
-    "the exception again beside a scrub": _guarded(_NAMED, "err = _scrub_value(str(exc), passphrase) + str(exc)"),
+    "a scrub given another field of the run": _guarded(_NAMED, "err = scrubbed(str(exc), run.params.dest_dir)"),
+    "the exception again beside a scrub": _guarded(_NAMED, "err = scrubbed(str(exc), passphrase) + str(exc)"),
     "the message after the class name": _guarded(_NAMED, "err = f'{type(exc).__name__}: {exc}'"),
     "the logging helper, the exception in another place": _guarded(
-        _NAMED, "_log_phase_failure(name, other, exc, passphrase)"
+        _NAMED, "log_failure(_LOG, 'x', other, exc, passphrase)"
     ),
     "a field of the exception that is not plain": _guarded(_NAMED, "err = exc.message"),
     # --- a ``status`` or ``partial`` is data only on the run's own phase error
@@ -1180,17 +1203,22 @@ _WAYS_THAT_LEAK = {
 _WAYS_THAT_ARE_FINE = {
     "the helper, given the passphrase": (_guarded(_NAMED, "err = _exception_text(exc, passphrase)"), 1),
     "the child's helper, given the passphrase": (_guarded(_NAMED, "err = _error_text(exc, passphrase)"), 1),
-    "scrub_text, given the passphrase": (_guarded(_NAMED, "err = scrub_text(str(exc), passphrase)"), 1),
     "a scrub of a text built from the exception": (
-        _guarded(_NAMED, "err = _scrub_value(f'{type(exc).__name__}: {exc}', passphrase)[:400]"),
+        _guarded(_NAMED, "err = scrubbed(f'{type(exc).__name__}: {exc}', passphrase)[:400]"),
         1,
     ),
     "a scrub given the secret off the run's parameters": (
         "def check(run):\n    try:\n        go()\n    except Exception as exc:\n"
-        "        err = scrub_value(str(exc), run.params.passphrase)\n",
+        "        err = scrubbed(str(exc), run.params.passphrase)\n",
         1,
     ),
-    "the logging helper, given the secret": (_guarded(_NAMED, "_log_phase_failure(name, exc, why, passphrase)"), 1),
+    "a scrub given a mailbox password off the request": (
+        "def check(req):\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = scrubbed(str(exc), req.password)\n",
+        1,
+    ),
+    "a structure scrubbed of the passphrase": (_guarded(_NAMED, "err = scrubbed_value({'e': str(exc)}, passphrase)"), 1),
+    "the logging helper, given the secret": (_guarded(_NAMED, "log_failure(_LOG, 'x', exc, passphrase)"), 1),
     "only the exception's class": (_guarded(_NAMED, "_LOG.warning('x (%s)', type(exc).__name__)"), 0),
     "a phase error's status and partial": (_guarded(_PHASE, "end(exc.status, result=exc.partial)"), 0),
     "a log call that asks for no traceback": (_guarded(_UNNAMED, "_LOG.warning('x', exc_info=False)"), 0),
@@ -1210,12 +1238,12 @@ _WAYS_THAT_ARE_FINE = {
         1,
     ),
     # --- a helper that takes one secret is enough where one secret is held, whatever it goes by
-    "scrub_text, given the one secret a function holds under two names": (
-        _guarded(_NAMED, "err = scrub_text(str(exc), secret)", head="def check(ctx, passphrase, secret):"),
+    "the one-secret helper, given the one secret a function holds under two names": (
+        _guarded(_NAMED, "err = _exception_text(exc, secret)", head="def check(ctx, passphrase, secret):"),
         1,
     ),
-    "scrub_text, given the restore's second secret where it is the only one held": (
-        _guarded(_NAMED, "err = scrub_text(str(exc), corpus_passphrase)", head="def check(ctx, corpus_passphrase):"),
+    "the one-secret helper, given the restore's second secret where it is the only one held": (
+        _guarded(_NAMED, "err = _exception_text(exc, corpus_passphrase)", head="def check(ctx, corpus_passphrase):"),
         1,
     ),
     "a text built from the exception, scrubbed whole": (

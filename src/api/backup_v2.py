@@ -45,7 +45,8 @@ _LOG = logging.getLogger("api.backup_v2")
 
 def _restore_error(action: str, exc: Exception, *secrets: str | None) -> HTTPException:
     """Wrap ``classify_restore_error``'s honest detail (P0-2) in a 500, with the secrets the route holds taken out of it (and
-    the ones the process holds: ``scrubbed``). The detail is recorded by ``note_http_error`` as the response is served.
+    the ones the process holds: ``scrubbed``). The detail is the caller's own response text and a typed key does not come back
+    in it; the error journal records the response's status, method and path and never its text (``note_http_error``).
 
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
     from src.backup.merge import classify_restore_error

@@ -12,6 +12,8 @@ across requests.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -30,7 +32,10 @@ from src.ingest.email import (
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import scrub_and_reraise, scrubbed
 from src.safety.fetcher import following_fetcher
+
+_LOG = logging.getLogger("api.ingestion")
 
 router = APIRouter(prefix="/api", tags=["ingestion"])
 
@@ -155,17 +160,22 @@ def ingest_email_endpoint(
     Article rows under the given source. Single-user, loopback-only by design.
     """
     source = _get_source(db, source_id)
-    try:
-        raws = fetch_imap(
-            req.host,
-            req.user,
-            req.password,
-            folder=req.folder,
-            limit=req.limit,
-            use_ssl=req.use_ssl,
-        )
-    except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # The mailbox password typed into this request is held by no net (it is not the store's passphrase), and a mail library's
+    # exception is the server's own chatter, one line from echoing what it was sent: whatever leaves the block is a
+    # ``RuntimeError`` carrying the class and the message with the password out of them (every shape), and the record of the
+    # failure is written the same way. An ``HTTPException`` is the framework's own answer and passes as it is.
+    with scrub_and_reraise(_LOG, "ingest-email fetch failed", req.password):
+        try:
+            raws = fetch_imap(
+                req.host,
+                req.user,
+                req.password,
+                folder=req.folder,
+                limit=req.limit,
+                use_ssl=req.use_ssl,
+            )
+        except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
+            raise HTTPException(status_code=409, detail=scrubbed(str(exc), req.password)) from exc
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
 
@@ -669,19 +679,6 @@ _MAILBOX_DISCLOSURE = (
 )
 
 
-def _scrub(text: str, secret: str) -> str:
-    """Never let the password reach a job status.
-
-    ``BackgroundJob.status()`` does not expose the worker's kwargs, so the credential
-    itself stays on the thread — but it DOES expose ``error``, and a mail library's
-    exception is the server's own protocol chatter, which is one server bug away from
-    echoing the line it was sent. ``/api/jobs`` is unauthenticated (loopback-only, and
-    that is the boundary, not an excuse), so the message is scrubbed at the point it is
-    captured rather than trusted not to contain it.
-    """
-    return text.replace(secret, "***") if secret else text
-
-
 def _mailbox_pull_worker(
     ctx,
     *,
@@ -706,7 +703,14 @@ def _mailbox_pull_worker(
     try:
         raws = fetch_mailbox(protocol, host, user, password, **kwargs)
     except Exception as exc:
-        raise RuntimeError(_scrub(f"mailbox fetch failed: {exc}", password)) from None
+        # Never let the password reach a job status. ``BackgroundJob.status()`` does not expose the worker's kwargs, so the
+        # credential itself stays on the thread, but it DOES expose ``error``, and a mail library's exception is the server's
+        # own protocol chatter, which is one server bug away from echoing the line it was sent. ``/api/jobs`` is
+        # unauthenticated (loopback-only, and that is the boundary, not an excuse), so the message is scrubbed at the point
+        # it is captured, in every shape the password is written in, rather than trusted not to contain it.
+        raise RuntimeError(
+            scrubbed(f"mailbox fetch failed: {exc}", password, withheld=f"mailbox fetch failed: {type(exc).__name__}")
+        ) from None
     ctx.set_progress(done=0, total=len(raws), detail=f"anonymising {len(raws)} message(s)")
     with session_scope() as db:
         source = _get_mailbox_source(db)

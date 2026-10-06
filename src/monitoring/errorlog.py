@@ -194,7 +194,7 @@ def note_boot() -> None:
     )
 
 
-def note_http_error(method: str, path: str, status: int, *, detail: str | None = None) -> None:
+def note_http_error(method: str, path: str, status: int) -> None:
     """Record an HTTP error RESPONSE (status >= 400) the client received, so the
     downloadable diagnostic log shows EVERY error code the UI saw — not only the ones
     an endpoint happened to log (a 404 on an unmatched route logs nothing otherwise).
@@ -202,7 +202,9 @@ def note_http_error(method: str, path: str, status: int, *, detail: str | None =
     Best-effort; never raises. Identical (method, path, status) is throttled to once
     per ``_HTTP_THROTTLE_S`` so a poll loop cannot flood the capped log. Level
     ``HTTP`` keeps these out of the problem/lock counts (a response code is not, by
-    itself, an app fault)."""
+    itself, an app fault). It records the status, the method and the path and NEVER the
+    response's text (``tests/test_restore_paths_scrub_passphrase.py`` pins that it takes none):
+    the words of a response are the caller's own."""
     try:
         key = (str(method), str(path), int(status))
         now = time.monotonic()
@@ -215,8 +217,6 @@ def note_http_error(method: str, path: str, status: int, *, detail: str | None =
             _http_last[key] = now
         # _append (which re-acquires _LOCK) runs AFTER the `with` block releases it.
         msg = f"HTTP {status} {method} {path}"
-        if detail:
-            msg = f"{msg} — {scrubbed(str(detail))[:200]}"
         _append(
             {
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),

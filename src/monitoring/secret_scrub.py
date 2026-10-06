@@ -18,9 +18,9 @@ writes a secret in (:func:`_forms`: as typed and as an SQL literal holds it, eac
 writes it, and every one of those written again by the same writers, up to three deep); a copy made any other way (a
 re-encoding, a hash, a piece of it, a text cut through it) is not recognised in free text. The JSON files :func:`scrub_file`
 reads are parsed first, so the secret is found in the form their READER sees, and text it cannot parse is scrubbed in every
-one of those shapes. The P0 check, which is handed the same passphrase, uses :func:`scrub_text` on the exception texts it writes
-into its report (``p0_validation._exception_text``), where each is made, and :func:`scrub_value` on the failure lines the
-engine hands back as data (``problems``), where it copies them.
+one of those shapes. The P0 check, which is handed the same passphrase, writes the exception texts of its report
+(``p0_validation._exception_text``), where each is made, and the failure lines the engine hands back as data (``problems``),
+where it copies them, through :func:`scrubbed` and :func:`scrubbed_value`, which also take out what the process holds.
 
 WHAT IT GUARANTEES, and the three things a naive ``str.replace`` does not:
 
@@ -47,8 +47,8 @@ record or a journal line. They do it through :func:`scrubbed` (a text), :func:`t
 :func:`log_failure` (a log record), each handed EVERY secret the function holds; ``tests/test_p0_validation.py``
 reads the modules that hold one and fails on any other way a caught exception reaches a text.
 
-EVERY ONE OF THOSE ALSO TAKES OUT WHAT THE PROCESS HOLDS (:func:`held_passphrases`: the unlocked session's passphrase and
-``OO_DB_PASSPHRASE``), read when the text is written and never handed in. A handler cannot know which key a callee used: the
+EVERY ONE OF THOSE ALSO TAKES OUT WHAT THE PROCESS HOLDS (:func:`held_passphrases`: the unlocked session's passphrase,
+``OO_DB_PASSPHRASE`` and the signing keys' ``OO_KEY_PASSPHRASE``), read when the text is written and never handed in. A handler cannot know which key a callee used: the
 volume restore's handler holds the backup's passphrase and the corpus's, and the engine under it opened the store with the
 session's. When what the process holds cannot be read the text is WITHHELD, never kept on the chance that it holds none.
 
@@ -56,7 +56,15 @@ THE PLACES EVERY MODULE'S EXCEPTION PASSES THROUGH (2026-10-06) are handed no se
 (``src/api/main.py``), the error journal (``src/monitoring/errorlog.py``, every record that is logged and the browser's and the
 responses' texts it keeps) and a failed background job's error line (``src/jobs/background.py``, which also takes out the
 passphrase and password its own arguments carry). Each cuts AFTER the scrub, and when the scrub cannot run writes the
-exception's class and none of its words.
+exception's class and none of its words where it knows one (a log record, ``traceback_text``, a background job's error line, the
+global handler's log line) and the fixed words of :data:`UNREADABLE_TEXT` where it does not (the error journal's entries, the
+global handler's response, a route's ``detail``).
+
+A SECRET UNDER THE FLOOR (2026-10-06, :data:`MIN_SECRET_CHARS`) is not taken out of a text, because taking one to three
+characters out of every text would leave no record that says anything, and it is not passed through either: a text that holds
+one of ITS shapes is WITHHELD whole (the helpers above write ``withheld`` where the text was: the exception's class where the
+caller knows it), and a text that holds none is kept as it was. :func:`scrub_text`, :func:`scrub_value` and :func:`scrub_file`
+take ONE needle the caller made itself (the release run's own passphrase) and leave a needle under the floor in the text.
 
 A KEY THE PROCESS DOES NOT HOLD (2026-10-06): the one typed into a request being served (the lock screen's, a backup's, a
 mailbox's) is in no place the nets above can read until it is accepted. A route that takes one wraps its work in
@@ -85,18 +93,26 @@ _FALLBACK_MARKERS: tuple[str, ...] = ("###", "~~~", "???", "@@@")
 #: The attribute of a record :func:`log_failure` writes that holds the traceback with the secrets out of it, for the error
 #: journal of the debug bundle, which keeps the tail of a traceback and cannot read one from a record with no ``exc_info``.
 TRACEBACK_ATTRIBUTE = "scrubbed_traceback"
-#: What a text becomes when the passphrases the process holds could not be read (:func:`held_passphrases`): with the secrets
-#: unknown, no part of it can be ruled out as one. A caller that knows the exception's class writes it beside "its text is
-#: withheld" instead (``withheld=``).
-UNREADABLE_TEXT = "(text withheld: the passphrases this process holds could not be read)"
+#: What a text becomes when the passphrases the process holds could not be read (:func:`held_passphrases`), or when it holds a
+#: secret that is under the floor (:data:`MIN_SECRET_CHARS`): with the secrets unknown, no part of it can be ruled out as one, and
+#: one that cannot be taken out of the text takes the text with it. A caller that knows the exception's class writes it beside
+#: "its text is withheld" instead (``withheld=``).
+UNREADABLE_TEXT = "(text withheld: the passphrases this process holds could not be read, or one of them is too short to take out of a text)"
 
 #: The fewest characters, not counting whitespace, a secret has to have to be taken out of free text. WHAT IT PROTECTS is the
 #: readability of every record the nets write: a secret of one to three characters is a piece of nearly every text (one letter
 #: is in every word) and a whitespace secret is the indentation of every traceback, so taking it out would leave no record that
-#: says anything, which costs as much as the leak it prevents. The app does not make one this short (it refuses a passphrase
-#: under eight characters when it creates or encrypts a store, ``src/api/unlock.py``) and one this short is guessed rather than
-#: read, from the file alone, so a text gives away little the file does not. WHAT IT COSTS: a secret under the floor (set by
-#: hand in the environment, typed as a wrong attempt, or a backup's, which has no minimum of its own) is not found in text.
+#: says anything, which costs as much as the leak it prevents. A secret under it is therefore WITHHELD instead of taken out: a
+#: text that holds one of its shapes (:func:`_short_shapes`) is not kept, in any of the helpers that hold the passphrase
+#: (:func:`scrubbed` and what is built on it: the nets, the log filter, the journal), and a text that holds none is kept as it
+#: was. WHAT IT COSTS: such a secret turns the records that hold it into the exception's class (or the fixed words of
+#: :data:`UNREADABLE_TEXT`), and the shorter it is the more records that is (a one-letter passphrase leaves almost no word of
+#: any error record), which is what the passphrase rule asks for over a record that says something. WHO HAS ONE: the app refuses
+#: a passphrase under eight characters when it creates or encrypts a store (``src/api/unlock.py``) and COUNTS WHITESPACE, so a
+#: short secret is an older store's passphrase (the unlock accepts any that opens the file, and holds it), eight spaces, a wrong
+#: attempt typed at the lock screen, a backup's (which has no minimum of its own) or a variable set by hand. The per-needle
+#: helpers (:func:`scrub_text`, :func:`scrub_value`, :func:`scrub_file`) are for a needle the run made itself and leave a needle
+#: under the floor in the text.
 MIN_SECRET_CHARS = 4
 
 #: How many times the carriers (:func:`_carried`) are applied to a secret's two bases. WHAT IT PROTECTS: the text this code
@@ -108,11 +124,15 @@ CARRIER_DEPTH = 3
 
 def held_passphrases() -> tuple[str, ...] | None:
     """Every passphrase this process holds right now, for a scrub made where a text is written (a log record, the error
-    journal, a job's error line, a response): the one the unlocked session keeps (``src.database.connect._passphrase``) and the
-    one the environment hands the app (``OO_DB_PASSPHRASE``, which stays in the environment after a lock). Read when asked and
-    never kept, so a lock or an erase leaves no copy of the passphrase here (the shapes the scrub made of it, :func:`_held_forms`,
-    stay in one cache entry until the next read replaces them); an empty one is not one. ``None`` when what the process holds
-    could not be read: a caller treats that as "withhold the text", never as "holds nothing" (every helper of this module does).
+    journal, a job's error line, a response): the one the unlocked session keeps (``src.database.connect._passphrase``), the
+    one the environment hands the app (``OO_DB_PASSPHRASE``, which stays in the environment after a lock) and the one that wraps
+    the signing keys (``OO_KEY_PASSPHRASE``, ``src/custody/signing.py``: a passphrase the process holds like the others). Read
+    when asked and never kept: the shapes the scrub made of them (:func:`_held_forms`) stay in ONE cache entry, which clearing the
+    session's passphrase empties (a failed unlock or create, the crypto-erase: :func:`forget_held`, called by
+    ``connect.set_passphrase``), and a scrub that was in flight at that moment can put its entry back until the next scrub
+    replaces it; an empty one is not one. ``None`` when what the process
+    holds could not be read: a caller treats that as "withhold the text", never as "holds nothing" (every helper of this module
+    does).
 
     The session's is read off the store module's own global WITHOUT its lock (``connect.get_passphrase`` takes it, and a log
     record written by a thread that holds it would wait on itself), and the store module is looked up among the modules already
@@ -122,7 +142,11 @@ def held_passphrases() -> tuple[str, ...] | None:
     try:
         store = sys.modules.get("src.database.connect")
         session = None if store is None else vars(store).get("_passphrase")
-        found = tuple(dict.fromkeys(p for p in (session, os.environ.get("OO_DB_PASSPHRASE")) if p))
+        found = tuple(
+            dict.fromkeys(
+                p for p in (session, os.environ.get("OO_DB_PASSPHRASE"), os.environ.get("OO_KEY_PASSPHRASE")) if p
+            )
+        )
         return found if all(isinstance(p, str) for p in found) else None
     except Exception:  # noqa: BLE001 - what is held could not be read: the callers withhold
         return None
@@ -149,16 +173,14 @@ def _carried(text: str) -> tuple[str, ...]:
     return (repr(text)[1:-1], _python_inner(text), json.dumps(text)[1:-1], json.dumps(text, ensure_ascii=False)[1:-1])
 
 
-def _forms(secret: str | None) -> tuple[str, ...]:
-    """The shapes ``secret`` takes in text the code writes, each once and none empty. TWO BASES: as typed, and as an SQL string
+def _shapes(secret: object) -> tuple[str, ...]:
+    """The shapes ``secret`` takes in text the code writes, each once and none empty, WHATEVER ITS LENGTH. TWO BASES: as typed, and as an SQL string
     literal holds it (every ``'`` doubled, which is how ``PRAGMA key = '...'`` and ``ATTACH '...'`` carry it, and an engine's
     error can quote the statement). FOUR CARRIERS of a base (:func:`_carried`), applied up to :data:`CARRIER_DEPTH` times: a
     statement an engine quotes into an error is written again by ``str()`` of an exception that holds it, by the ``repr`` of that
     exception, by a dict or a list that holds the message and by the JSON body that carries the dict. A secret with no quote, no
-    backslash, no control and no letter outside ASCII has one shape; the most one has is 170. A missing, empty or too short
-    (:data:`MIN_SECRET_CHARS`) secret has no shape, so it matches nothing (replacing it would put the marker between every
-    character)."""
-    if not _scrubbable(secret):
+    backslash, no control and no letter outside ASCII has one shape; the most one has is 170. A missing or empty one has none."""
+    if not isinstance(secret, str) or not secret:
         return ()
     layer = list(dict.fromkeys((secret, secret.replace("'", "''"))))
     forms = list(layer)
@@ -168,33 +190,60 @@ def _forms(secret: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(form for form in forms if form))
 
 
-#: The shapes of the passphrases the process held at the last read, as ``(the passphrases, their shapes)``: ONE entry that the
-#: next read replaces when what is held has changed (an unlock, a lock, an erase). WHAT IT PROTECTS is the cost of the nets:
-#: they run on every record of every logger, and building the shapes of a passphrase with quotes in it is up to 170 strings.
-#: Nothing is kept that the process does not hold, and a secret a caller hands in (a typed key, a backup's) is never kept.
-_HELD_FORMS: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
+def _forms(secret: str | None) -> tuple[str, ...]:
+    """The shapes of ``secret`` (:func:`_shapes`) when it is long enough to be taken out of free text, else none: a secret under
+    :data:`MIN_SECRET_CHARS` matches nothing here (replacing it would put the marker between every character), and
+    :func:`_short_shapes` names what holds it instead."""
+    return _shapes(secret) if _scrubbable(secret) else ()
 
 
-def _held_forms(held: tuple[str, ...]) -> tuple[str, ...]:
+def _short_shapes(secret: str | None) -> tuple[str, ...]:
+    """The shapes of ``secret`` when it is UNDER the floor (:data:`MIN_SECRET_CHARS`), else none: a text that holds one of them
+    cannot have the secret taken out and is withheld whole (:func:`_clean`)."""
+    return () if _scrubbable(secret) else _shapes(secret)
+
+
+#: The shapes of the passphrases the process held at the last read, as ``(the passphrases, the shapes of those long enough to
+#: take out, the shapes of those under the floor)``: ONE entry that the next read replaces when what is held has changed and that
+#: :func:`forget_held` empties when the session's passphrase is cleared (``connect.set_passphrase``: a failed unlock or create, the
+#: crypto-erase), because the entry holds the passphrases themselves and a core dump is in the rule. WHAT IT PROTECTS is the cost
+#: of the nets: they run on every record of every logger, and building the shapes of a passphrase with quotes in it is up to 170
+#: strings. A secret a caller hands in (a typed key, a backup's) is never kept.
+_HELD_FORMS: tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] = ((), (), ())
+
+
+def forget_held() -> None:
+    """Empty the one cache entry (:data:`_HELD_FORMS`): no passphrase and no shape of one stays in this module after the session's
+    passphrase was cleared. Cheap, lock-free (one assignment) and never raises; the next scrub rebuilds what is still held."""
     global _HELD_FORMS
-    seen, forms = _HELD_FORMS
+    _HELD_FORMS = ((), (), ())
+
+
+def _held_forms(held: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    global _HELD_FORMS
+    seen, forms, short = _HELD_FORMS
     if seen != held:
         forms = tuple(dict.fromkeys(form for secret in held for form in _forms(secret)))
-        _HELD_FORMS = (held, forms)
-    return forms
+        short = tuple(dict.fromkeys(form for secret in held for form in _short_shapes(secret)))
+        _HELD_FORMS = (held, forms, short)
+    return forms, short
 
 
-def _forms_now(secrets: tuple[str | None, ...]) -> tuple[str, ...] | None:
-    """The shapes of every secret handed in AND of every passphrase the process holds, or ``None`` when what it holds could not
-    be read."""
+def _forms_now(secrets: tuple[str | None, ...]) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    """``(the shapes to take out, the shapes that withhold a text)`` of every secret handed in AND of every passphrase the process
+    holds: a secret long enough to be taken out of free text has the first, one under the floor (:data:`MIN_SECRET_CHARS`) the
+    second. ``None`` when what the process holds could not be read."""
     held = held_passphrases()
     if held is None:
         return None
-    forms = _held_forms(held)
+    forms, short = _held_forms(held)
     extra = [s for s in dict.fromkeys(secrets) if s and s not in held]
     if not extra:
-        return forms
-    return tuple(dict.fromkeys((*forms, *(form for secret in extra for form in _forms(secret)))))
+        return forms, short
+    return (
+        tuple(dict.fromkeys((*forms, *(form for secret in extra for form in _forms(secret))))),
+        tuple(dict.fromkeys((*short, *(form for secret in extra for form in _short_shapes(secret))))),
+    )
 
 
 def _redact(text: str, forms: tuple[str, ...], marker: str) -> str:
@@ -256,7 +305,9 @@ def _scrub(text: str, forms: tuple[str, ...]) -> str:
 
 def scrub_text(text: str, needle: str) -> str:
     """``text`` with the secret ``needle`` taken out in every shape :func:`_forms` lists, and none of them in what is
-    returned. An empty ``needle`` matches nothing, so the text comes back as it was."""
+    returned. An empty ``needle`` matches nothing, so the text comes back as it was, and so does a needle under the floor
+    (:data:`MIN_SECRET_CHARS`). THE PER-NEEDLE HELPERS (this, :func:`scrub_value`, :func:`scrub_file`) know ONE needle the caller
+    made itself and nothing the process holds: a handler that writes a caught exception uses :func:`scrubbed`, which does."""
     return _scrub(text, _forms(needle))
 
 
@@ -279,25 +330,32 @@ def _walk(value: Any, forms: tuple[str, ...]) -> Any:
     return value
 
 
+def _clean(text: str, forms: tuple[str, ...], short: tuple[str, ...]) -> str | None:
+    """``text`` with the shapes in ``forms`` taken out, as it was when it holds none, or ``None`` when it holds a shape of a
+    secret that is under the floor (``short``): that secret cannot be taken out, so the text is not kept."""
+    if any(form in text for form in short):
+        return None
+    if not any(form in text for form in forms):
+        return text
+    out = _redacted(text, forms)
+    if out is not None:
+        return out
+    for marker in (REDACTED, *_FALLBACK_MARKERS):  # no marker can stand in without giving a secret back
+        if not any(form in marker for form in forms):
+            return marker
+    return ""
+
+
 def _checked(text: str, secrets: tuple[str | None, ...]) -> str | None:
     """``text`` with EVERY secret taken out, in every shape (:func:`_forms`): the ones handed in and the passphrases the
-    process holds. ``None`` when that could not be done (what the process holds could not be read, or anything failed on the
-    way): a caller never keeps a text it could not check, and what is not a text (``None``, bytes) is not one."""
+    process holds. ``None`` when that could not be done (what the process holds could not be read, the text holds a secret that
+    is under the floor (:data:`MIN_SECRET_CHARS`) and so cannot have it taken out, or anything failed on the way): a caller
+    never keeps a text it could not check, and what is not a text (``None``, bytes) is not one."""
     try:
         if not isinstance(text, str):
             return None
-        forms = _forms_now(secrets)
-        if forms is None:
-            return None
-        if not any(form in text for form in forms):
-            return text
-        out = _redacted(text, forms)
-        if out is not None:
-            return out
-        for marker in (REDACTED, *_FALLBACK_MARKERS):  # no marker can stand in without giving a secret back
-            if not any(form in marker for form in forms):
-                return marker
-        return ""
+        shapes = _forms_now(secrets)
+        return None if shapes is None else _clean(text, *shapes)
     except Exception:  # noqa: BLE001 - the scrub could not run: the text is not kept
         return None
 
@@ -318,10 +376,42 @@ def scrubbed(text: str, *secrets: str | None, withheld: str = UNREADABLE_TEXT) -
     of the secrets it holds gets only those (and the process's) taken out, which is why ``tests/test_p0_validation.py``
     reads the call and requires every one.
 
-    It NEVER RAISES, and it never returns a text it could not check: when the passphrases the process holds cannot be read, or
-    anything fails, it returns ``withheld`` (a caller that knows the exception's class passes ``"Name: its text is withheld"``)."""
+    It NEVER RAISES, and it never returns a text it could not check: when the passphrases the process holds cannot be read, when
+    the text holds a secret that is under the floor (:data:`MIN_SECRET_CHARS`: one to three characters cannot be taken out of a
+    text without taking the text out, so it is withheld whole) or anything fails, it returns ``withheld`` (a caller that knows the
+    exception's class passes ``"Name: its text is withheld"``)."""
     out = _checked(text, secrets)
     return withheld if out is None else out
+
+
+def scrubbed_value(value: Any, *secrets: str | None, withheld: str = UNREADABLE_TEXT) -> Any:
+    """``value`` with EVERY string in it passed through :func:`scrubbed` (the secrets handed in, the passphrases the process
+    holds, a secret under the floor withholding the string that holds it), through dicts, lists and tuples. KEYS are kept as they
+    are (a field name the code defines; a passphrase that is a piece of one must not rename it), numbers, booleans and ``None``
+    pass through, and what JSON does not produce (bytes, sets, other objects) passes through as it is, so a caller round-trips
+    through JSON first when it holds anything else. The shapes are worked out ONCE for the whole walk. A string that cannot be
+    checked is replaced by ``withheld``, and a value that cannot be walked (nested past what the interpreter can read) is
+    replaced by ``withheld`` itself: it never raises and never returns a text it did not check. This is the call for the
+    structured results a report carries (a child's result, the engine's failure lines); :func:`scrub_value` is the per-needle
+    helper for a needle the run made itself."""
+    try:
+        shapes = _forms_now(secrets)
+        return _walk_checked(value, shapes, withheld)
+    except Exception:  # noqa: BLE001 - a value too deep to walk, or any other failure: nothing of it is kept
+        return withheld
+
+
+def _walk_checked(value: Any, shapes: tuple[tuple[str, ...], tuple[str, ...]] | None, withheld: str) -> Any:
+    if isinstance(value, str):
+        out = None if shapes is None else _clean(value, *shapes)
+        return withheld if out is None else out
+    if isinstance(value, dict):
+        return {k: _walk_checked(v, shapes, withheld) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_walk_checked(v, shapes, withheld) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_walk_checked(v, shapes, withheld) for v in value)
+    return value
 
 
 def _class_only(exc: BaseException) -> str:

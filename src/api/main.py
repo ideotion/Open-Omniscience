@@ -1032,7 +1032,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         what = scrubbed(f"unhandled error on {request.method} {request.url.path}")
         log_failure(logger, what, exc)
         detail = scrubbed(
-            f"internal error: {exc}", withheld="internal error (its text is withheld: the scrub could not run)"
+            f"internal error: {exc}",
+            withheld="internal error (its text is withheld: the scrub could not run, or could not take a passphrase out of it)",
         )
     except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)

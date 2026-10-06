@@ -207,14 +207,6 @@ def test_the_throttle_of_browser_errors_keys_on_the_scrubbed_text(journal):
     assert all(HELD not in repr(k) for k in errorlog._frontend_last)
 
 
-def test_the_detail_of_an_http_error_has_the_passphrases_out_of_it(journal):
-    errorlog._http_last.clear()
-    errorlog.note_http_error("POST", "/api/unlock", 400, detail=f"bad key {HELD} and {ENV} " + "y" * 300)
-    (entry,) = errorlog.recent_errors()
-    assert entry["message"].startswith("HTTP 400 POST /api/unlock — bad key ***redacted*** and ***redacted*** yyy")
-    assert HELD not in json.dumps(entry) and ENV not in json.dumps(entry)
-
-
 # --------------------------------------------------------------------------- #
 #  When what the process holds cannot be read, and what the summary counts a record for
 # --------------------------------------------------------------------------- #
@@ -234,16 +226,14 @@ def test_what_the_process_holds_that_cannot_be_read_leaves_an_entry_that_says_so
     assert HELD not in raw and "PRAGMA" not in raw and "failed with" not in raw
 
 
-def test_the_browsers_and_the_responses_words_are_withheld_the_same_way_when_what_is_held_cannot_be_read(journal, monkeypatch):
+def test_the_browsers_words_are_withheld_the_same_way_when_what_is_held_cannot_be_read(journal, monkeypatch):
     monkeypatch.setattr(ss, "held_passphrases", lambda: None)
     errorlog._frontend_last.clear()
-    errorlog._http_last.clear()
     errorlog.note_frontend_error("error", f"failed with {HELD}", source=f"app.js?k={ENV}", endpoint="/api/x")
-    errorlog.note_http_error("POST", "/api/unlock", 400, detail=f"bad key {HELD}")
     entries = errorlog.recent_errors()
-    assert len(entries) == 2
+    assert len(entries) == 1
     raw = json.dumps(entries, ensure_ascii=False)
-    assert HELD not in raw and ENV not in raw and "bad key" not in raw and "failed with" not in raw
+    assert HELD not in raw and ENV not in raw and "failed with" not in raw
     assert all(ss.UNREADABLE_TEXT in e["message"] for e in entries)
 
 

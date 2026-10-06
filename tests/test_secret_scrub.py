@@ -624,7 +624,9 @@ def test_a_plain_secret_has_one_shape_and_an_empty_or_missing_one_has_none(monke
     assert ss._forms("hunter2") == ("hunter2",)
     assert ss._forms("") == () and ss._forms(None) == ()
     monkeypatch.setattr(ss, "held_passphrases", lambda: ())
-    assert ss._forms_now(("a", "a", None, "", "b")) == ("a", "b"), "each once, and none that is empty or missing"
+    assert ss._forms_now(("a", "a", None, "", "b")) == (("a", "b"), ()), "each once, and none that is empty or missing"
+    monkeypatch.setattr(ss, "MIN_SECRET_CHARS", 2)
+    assert ss._forms_now(("a", "a", None, "", "bc")) == (("bc",), ("a",)), "one under the floor withholds and is never taken out"
     assert ss.scrub_text("anything", "") == "anything" and ss.scrubbed("anything", None, "") == "anything"
 
 

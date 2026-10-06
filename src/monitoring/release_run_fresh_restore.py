@@ -93,12 +93,16 @@ def _restore(backup: Path, passphrase: str) -> dict:
 
 def _error_text(exc: BaseException, passphrase: str) -> str:
     """The failure as the parent will read and record it: the exception's class and message, the passphrase
-    taken out of them BEFORE the cut to 600 characters (a cut through it would leave a fragment no later
-    replacement could find). Exact match only. No exception on this path is known to carry the passphrase
-    in its message; this is the net beneath that, not a replacement for it."""
-    from src.monitoring.secret_scrub import scrub_text
+    taken out of them (and every one this process holds: it is started with the corpus's in its environment)
+    BEFORE the cut to 600 characters (a cut through it would leave a fragment no later replacement could
+    find). Exact match only, and a text that cannot be checked is the exception's class and none of its
+    words. No exception on this path is known to carry the passphrase in its message; this is the net
+    beneath that, not a replacement for it."""
+    from src.monitoring.secret_scrub import scrubbed
 
-    return scrub_text(f"{type(exc).__name__}: {exc}", passphrase)[:600]
+    return scrubbed(
+        f"{type(exc).__name__}: {exc}", passphrase, withheld=f"{type(exc).__name__}: its text is withheld"
+    )[:600]
 
 
 def _result_text(result: dict, passphrase: str) -> str:
@@ -107,10 +111,10 @@ def _result_text(result: dict, passphrase: str) -> str:
     and the parent scrubs what it READS; the journal and reports the app writes while this process runs
     are cleaned by the parent after it exits. The round trip through JSON first turns whatever
     ``default=str`` would have stringified into a string the scrub can see."""
-    from src.monitoring.secret_scrub import scrub_value
+    from src.monitoring.secret_scrub import scrubbed_value
 
     plain = json.loads(json.dumps(result, default=str))
-    return json.dumps(scrub_value(plain, passphrase))
+    return json.dumps(scrubbed_value(plain, passphrase))
 
 
 def main() -> int:

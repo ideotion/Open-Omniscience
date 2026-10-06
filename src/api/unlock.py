@@ -542,7 +542,7 @@ def _begin_recovery_notice(wal_state: dict | None) -> int | None:
         return None
 
 
-def _close_after_checkpoint(conn) -> None:
+def _close_after_checkpoint(conn, passphrase: str | None = None) -> None:
     """Close the verify connection, writing the recovered log back into the database FIRST, through
     ``execute``, and NEVER waiting for a reader.
 
@@ -566,7 +566,9 @@ def _close_after_checkpoint(conn) -> None:
     writer failed with "database is locked" after its own 5 s). Waiting is never the fix here
     (``scheduler/hygiene.py`` records the same measurement: the whole hold IS the busy handler).
     A busy or failed checkpoint returns at once and falls back to what ``close()`` always did, so
-    this can only make the step answer other requests while it runs."""
+    this can only make the step answer other requests while it runs. ``passphrase`` is the key the
+    connection was opened with, which the process does not hold until the verify has accepted it: the
+    driver's words of a failure are written with it (and with what the process holds) taken out."""
     try:
         conn.execute("PRAGMA busy_timeout = 0")
         row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -579,12 +581,14 @@ def _close_after_checkpoint(conn) -> None:
         # WARNING, not DEBUG: a write-back that fails (a full drive, an I/O error) is invisible
         # otherwise -- close() then fails the same way silently, the verify reports success and
         # the notice ends -- and the next thing the person meets is init_db on the same drive.
-        # The driver's own message only (no SQL runs here, so it carries no statement).
+        # The driver's own message only (no SQL runs here, so it carries no statement), with the typed key out of
+        # it BEFORE the first line is taken and cut: a driver's error can still quote what it was handed.
+        said = scrubbed(str(exc), passphrase, withheld="its text is withheld")
         _LOG.warning(
             "the recovered log could not be written back into the database before the verify "
             "connection closed (%s: %s); close() will try again",
             type(exc).__name__,
-            (str(exc).splitlines() or [""])[0][:200],
+            (said.splitlines() or [""])[0][:200],
         )
     conn.close()
 
@@ -674,7 +678,7 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         _verify_t0 = time.monotonic()
         try:
             conn = connect(p, key=body.passphrase, check_same_thread=False)
-            _close_after_checkpoint(conn)
+            _close_after_checkpoint(conn, passphrase=body.passphrase)
         except WrongPassphraseError as exc:
             raise HTTPException(status_code=403, detail=scrubbed(str(exc), body.passphrase)) from exc
         finally:

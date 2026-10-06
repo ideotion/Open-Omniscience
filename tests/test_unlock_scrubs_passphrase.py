@@ -11,6 +11,7 @@ the line is still written, that what it writes is scrubbed, and that the unlock 
 from __future__ import annotations
 
 import logging
+import types
 
 import pytest
 
@@ -34,7 +35,7 @@ def failing_unlock(monkeypatch, tmp_path):
     monkeypatch.setattr(unlock_mod, "_begin_recovery_notice", lambda wal_state: None)
     monkeypatch.setattr(unlock_mod, "_end_recovery_notice", lambda token: None)
     monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: object())
-    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: None)
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase=None: None)
     monkeypatch.setattr(connect_mod, "set_passphrase", lambda p: held.append(p))
 
     def finish(**kw):
@@ -80,3 +81,70 @@ def test_the_unlock_still_ends_as_it_did_when_the_dispose_fails(failing_unlock):
     assert str(err.value) == "RuntimeError: the finish failed", "the dispose's failure replaced the finish's"
     assert err.value.__suppress_context__ is True
     assert held == [_PASS, None], "the unlock must be undone: the key set for the finish, then cleared"
+
+
+class _CheckpointConn:
+    """A verify connection whose write-back of the recovered log fails with the words it is given."""
+
+    def __init__(self, says: str) -> None:
+        self._says = says
+        self.closed = False
+
+    def execute(self, sql: str):
+        if "wal_checkpoint" in sql:
+            raise RuntimeError(self._says)
+        return types.SimpleNamespace(fetchone=lambda: None)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _checkpoint_warning(caplog, conn, **kwargs) -> logging.LogRecord:
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="api.unlock"):
+        unlock_mod._close_after_checkpoint(conn, **kwargs)
+    (record,) = [r for r in caplog.records if "could not be written back" in r.getMessage()]
+    assert conn.closed, "the connection is closed whatever the write-back said"
+    return record
+
+
+def test_the_checkpoint_before_the_close_writes_a_failure_with_the_typed_key_out_of_it(caplog, monkeypatch):
+    """The key the verify connection was opened with is typed into the request and held by nothing until the verify has accepted
+    it, so a driver that quotes what it was handed writes it through this line unless the caller names it. MUTATION TARGET: the
+    typed key not handed to the scrub, or the first line taken and cut BEFORE it (a key that holds a newline would leave its first
+    half in the line)."""
+    monkeypatch.setattr(connect_mod, "_passphrase", None)
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    record = _checkpoint_warning(caplog, _CheckpointConn(f"disk I/O error near PRAGMA key = '{_PASS}'"), passphrase=_PASS)
+    assert record.getMessage().endswith("(RuntimeError: disk I/O error near PRAGMA key = '***redacted***'); close() will try again")
+    assert _PASS not in caplog.text and record.exc_info is None
+
+    split = "first-half-of-the-key\nsecond-half-of-the-key"
+    record = _checkpoint_warning(caplog, _CheckpointConn(f"bad page near {split} end"), passphrase=split)
+    assert "(RuntimeError: bad page near ***redacted*** end)" in record.getMessage()
+    assert "first-half" not in caplog.text and "second-half" not in caplog.text
+
+
+def test_the_checkpoint_before_the_close_also_takes_out_what_the_process_holds_and_withholds_a_short_key(caplog, monkeypatch):
+    monkeypatch.setattr(connect_mod, "_passphrase", _PASS)
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    record = _checkpoint_warning(caplog, _CheckpointConn(f"I/O error with {_PASS}"))  # nothing handed in: the held one
+    assert "(RuntimeError: I/O error with ***redacted***)" in record.getMessage() and _PASS not in caplog.text
+    monkeypatch.setattr(connect_mod, "_passphrase", None)
+    record = _checkpoint_warning(caplog, _CheckpointConn("I/O error with zq"), passphrase="zq")  # one that cannot be taken out
+    assert "(RuntimeError: its text is withheld)" in record.getMessage() and "zq" not in record.getMessage()
+    record = _checkpoint_warning(caplog, _CheckpointConn("I/O error on the file"), passphrase="zq")
+    assert "(RuntimeError: I/O error on the file)" in record.getMessage(), "a text that holds none of its shapes is kept"
+
+
+def test_the_unlock_hands_the_typed_key_to_the_checkpoint_close(failing_unlock, monkeypatch):
+    """The verify connection is closed BEFORE the process holds the key, so the close's own scrub knows it only if the unlock flow
+    names it. MUTATION TARGET: the call in ``_unlock_locked`` that leaves ``passphrase=`` out."""
+    held, path = failing_unlock
+    seen: list = []
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase=None: seen.append(passphrase))
+    with pytest.raises(RuntimeError, match="the finish failed"):
+        unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
+    assert seen == [_PASS]

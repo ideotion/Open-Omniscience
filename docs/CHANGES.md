@@ -132,19 +132,21 @@ this section were still open.
   holds the passphrase and writes what it catches, to it. The one handler of the lock screen that wrote a traceback in a
   function holding the passphrase (the failed drop of the pool's connections after a failed unlock) writes through the
   same helper, and its module is held to the rule too.
-- The places where any module's exception becomes a record take every passphrase the process holds (the unlocked session's
-  and `OO_DB_PASSPHRASE`) out of the exception's words, in the forms the code writes one in (as typed, as an SQL statement
+- The places where any module's exception becomes a record take every passphrase the process holds (the unlocked session's,
+  `OO_DB_PASSPHRASE` and the signing keys' `OO_KEY_PASSPHRASE`) out of the exception's words, in the forms the code writes one in (as typed, as an SQL statement
   quotes it, as `repr` and as JSON write it, and each written again by the others, up to three deep) and with a passphrase
   that contains another leaving no tail of the longer one: the 500 response and the log record of the global error handler,
   the error journal the debug bundle carries (before its 500-character and 1,500-character cuts, the frames of a traceback
   kept; the browser's own error reports are sent whole and cut only by the server, after the scrub) and a failed
   background job's error line (`/api/jobs`, the task manager), which also takes out the passphrase or password the job was
-  started with. When the scrub itself cannot run, or cannot read what the process holds, the exception's class is written
-  and none of its words. A passphrase of fewer than four characters, spaces not counted, is not taken out of free text: it
-  would be a piece of nearly every message, and the app does not accept one under eight.
+  started with. When the scrub itself cannot run, or cannot read what the process holds, the exception's class (or, where
+  the writer has none to name, fixed words) is written and none of the exception's words. A passphrase of fewer than four
+  characters, spaces not counted, cannot be taken out of free text (it would be a piece of nearly every message), so a text
+  that holds one is withheld whole in the same way and a text that holds none of its shapes is kept: the app does not accept
+  such a passphrase for a new store, but an older store opens with its own and the unlock holds it.
 - A key typed into a request, which the process does not hold until it is accepted (the lock screen's unlock, create and
-  encrypt, the encrypted backup, the single-file restore, the volume backup, restore and verify starts and the import
-  queue's), is taken out of what a failure under that request raises and logs: the error that leaves is a `RuntimeError`
+  encrypt, the encrypted backup, the single-file restore, the volume backup, restore and verify starts, the import
+  queue's and the mailbox import's password), is taken out of what a failure under that request raises and logs: the error that leaves is a `RuntimeError`
   that names the class of the failure, with the key out of its words. The server's own log of the exception after the
   handler has answered, and the log files and the console beside the journal, stay outside and are recorded in the open
   queue with the change that closes them.

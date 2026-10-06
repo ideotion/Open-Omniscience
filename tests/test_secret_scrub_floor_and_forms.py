@@ -47,34 +47,128 @@ def _sql(secret: str) -> str:
 #  The floor
 # --------------------------------------------------------------------------- #
 def test_the_floor_is_counted_in_characters_that_are_not_whitespace_and_a_secret_at_it_is_taken_out(monkeypatch):
-    """MUTATION TARGET: the comparison (``>=`` against ``>``), the whitespace the count leaves out, or the number it is held to."""
+    """MUTATION TARGET: the comparison (``>=`` against ``>``), the whitespace the count leaves out, or the number it is held to.
+    A secret UNDER the floor is not taken out and is not left in either: ``scrubbed`` withholds the text that holds it
+    (``UNREADABLE_TEXT``, or the words the caller names), and the per-needle helpers, for a needle the caller made itself,
+    leave it."""
     floor = ss.MIN_SECRET_CHARS
     assert floor >= 4, "a secret of one to three characters is a piece of nearly every text"
     at, under = "a" * floor, "a" * (floor - 1)
     assert ss.scrub_text(f"x {at} y", at) == f"x {ss.REDACTED} y"
+    assert ss.scrubbed(f"x {at} y", at) == f"x {ss.REDACTED} y"
     assert ss.scrub_text(f"x {under} y", under) == f"x {under} y"
     assert ss.scrub_value({"k": f"x {under}"}, under) == {"k": f"x {under}"}
-    assert ss.scrubbed(f"x {under} y", under) == f"x {under} y"
+    assert ss.scrubbed(f"x {under} y", under) == ss.UNREADABLE_TEXT
+    assert ss.scrubbed(f"x {under} y", under, withheld="ValueError: its text is withheld") == "ValueError: its text is withheld"
+    assert ss.scrubbed_value({"k": f"x {under}", "n": 3}, under) == {"k": ss.UNREADABLE_TEXT, "n": 3}
+    assert ss.scrubbed("x y", under) == "x y", "a text that holds no shape of it is kept as it was"
     spaced = " ".join("a" * floor)  # as many characters as the floor, with whitespace between them
     assert ss.scrub_text(f"x {spaced} y", spaced) == f"x {ss.REDACTED} y"
     short_but_long_in_whitespace = "a" + " " * 40 + "b"
     assert ss.scrub_text(f"x {short_but_long_in_whitespace} y", short_but_long_in_whitespace) == f"x {short_but_long_in_whitespace} y"
+    assert ss.scrubbed(f"x {short_but_long_in_whitespace} y", short_but_long_in_whitespace) == ss.UNREADABLE_TEXT
 
 
 @pytest.mark.parametrize("secret", [" ", "\t", " " * 40, "\n" * 8, " \t\n\r" * 10])
-def test_a_secret_of_whitespace_is_never_taken_out_however_long_it_is(secret):
-    """A whitespace secret is the indentation of every traceback: taking it out would leave no record that says anything."""
+def test_a_secret_of_whitespace_is_never_taken_out_however_long_it_is_and_withholds_the_text_that_holds_it(secret):
+    """A whitespace secret is the indentation of every traceback: taking it out would leave no record that says anything, so a
+    text that holds it is WITHHELD whole by the helpers that hold the passphrase and left alone by the per-needle ones (eight
+    spaces are a passphrase the app accepts: creation counts whitespace). A text that holds none of its shapes is kept."""
     text = f"Traceback:{secret}File x{secret}line 3"
-    assert ss.scrub_text(text, secret) is text and ss.scrubbed(text, secret) is text
-    assert ss._forms(secret) == ()
+    assert ss.scrub_text(text, secret) is text
+    assert ss.scrubbed(text, secret) == ss.UNREADABLE_TEXT
+    assert ss.scrubbed(text, secret, withheld="OSError: its text is withheld") == "OSError: its text is withheld"
+    clean = "Traceback:File-x:line-3"  # no whitespace at all, so none of the shapes is in it
+    assert ss.scrubbed(clean, secret) is clean
+    assert ss._forms(secret) == () and ss._short_shapes(secret) != ()
 
 
-def test_a_held_passphrase_under_the_floor_is_not_taken_out_and_one_at_it_is_in_the_same_call(monkeypatch):
-    """The floor applies to what the process holds as to what is handed in, one at a time: the short one does not shred the text
-    and does not stop the long one being taken out."""
+def test_a_held_passphrase_under_the_floor_withholds_the_text_that_holds_it_and_does_not_stop_the_long_one_being_taken_out(monkeypatch):
+    """The floor applies to what the process holds as to what is handed in, one at a time: a text that holds a shape of the short
+    one is withheld whole (it cannot be taken out, and the long one with it), and a text that holds none of it still has the
+    long one taken out."""
     monkeypatch.setattr(connect, "_passphrase", "pw")
     monkeypatch.setenv("OO_DB_PASSPHRASE", OTHER)
-    assert ss.scrubbed(f"a pw b {OTHER} c") == f"a pw b {ss.REDACTED} c"
+    ss.forget_held()
+    assert ss.scrubbed(f"a pw b {OTHER} c") == ss.UNREADABLE_TEXT
+    assert ss.scrubbed(f"a b {OTHER} c") == f"a b {ss.REDACTED} c"
+    assert ss.scrubbed("a b c") == "a b c"
+
+
+SHORT = "zq"
+
+
+@pytest.mark.parametrize("how", ["held", "handed in"])
+def test_a_secret_under_the_floor_withholds_the_words_in_every_helper_that_holds_the_passphrase(monkeypatch, caplog, how):
+    """A correct passphrase of an older store is held whatever its length (the unlock accepts any that opens the file), and a short
+    one can be handed in (a backup's has no minimum of its own). Either way, every helper that writes a text with the passphrase
+    out of it withholds the text that holds the short one, in the words the caller names where it names any, and keeps the text
+    that holds none of its shapes. MUTATION TARGET: the short shapes dropped from any one of ``scrubbed``, ``scrubbed_value``,
+    ``traceback_text``, ``log_failure`` or ``scrub_and_reraise``, or a held secret that is read for its long shapes only."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "")
+    monkeypatch.setattr(connect, "_passphrase", SHORT if how == "held" else None)
+    ss.forget_held()
+    handed = () if how == "held" else (SHORT,)
+    text, clean = f"could not open {SHORT} for reading", "could not open the file"
+    assert ss.scrubbed(text, *handed) == ss.UNREADABLE_TEXT
+    assert ss.scrubbed(text, *handed, withheld="OSError: its text is withheld") == "OSError: its text is withheld"
+    assert ss.scrubbed(clean, *handed) is clean
+    assert ss.scrubbed_value({"a": [text, clean], "n": 1}, *handed) == {"a": [ss.UNREADABLE_TEXT, clean], "n": 1}
+    log = logging.getLogger("tests.floor_and_forms.short")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+    try:
+        raise OSError(text)
+    except OSError as exc:
+        assert ss.traceback_text(exc, *handed) == "OSError: its text is withheld"
+        ss.log_failure(log, "failed", exc, *handed)
+    (record,) = caplog.records
+    assert record.getMessage() == "failed: OSError: its text is withheld\nOSError: its text is withheld"
+    assert getattr(record, ss.TRACEBACK_ATTRIBUTE) == "OSError: its text is withheld"
+    with pytest.raises(RuntimeError) as err, ss.scrub_and_reraise(log, "route failed", *handed):
+        raise OSError(text)
+    assert str(err.value) == "OSError: its text is withheld"
+    assert SHORT not in caplog.text.replace("tests.floor_and_forms.short", "")
+
+
+def test_a_short_secret_that_is_only_in_a_frame_of_the_traceback_withholds_the_whole_record(monkeypatch, caplog):
+    """The exception's own line is clean and the frames are not (a frame prints the source line, which can hold the short secret
+    as any text can), so the traceback is withheld and the line with it: the record is the class alone. MUTATION TARGET: a
+    ``log_failure`` that withholds only the part that held the secret and writes the other as it was."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "")
+    monkeypatch.setattr(connect, "_passphrase", SHORT)
+    ss.forget_held()
+    log = logging.getLogger("tests.floor_and_forms.frame")
+    caplog.set_level(logging.DEBUG, logger=log.name)
+
+    def fails():
+        raise OSError("no key in this message")  # zq is in this frame's source line
+
+    try:
+        fails()
+    except OSError as exc:
+        ss.log_failure(log, "failed", exc)
+        assert ss.traceback_text(exc) == "OSError: its text is withheld"
+    (record,) = caplog.records
+    assert record.getMessage() == "failed: OSError: its text is withheld\nOSError: its text is withheld"
+    assert getattr(record, ss.TRACEBACK_ATTRIBUTE) == "OSError: its text is withheld"
+
+
+def test_a_short_held_passphrase_is_withheld_by_the_error_journal_too(monkeypatch, journal):
+    """The journal writes the fixed words where a record's message or traceback holds a short passphrase it cannot take out, and
+    keeps a record that holds none of its shapes as it was. MUTATION TARGET: the journal reading only the long shapes."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "")
+    monkeypatch.setattr(connect, "_passphrase", SHORT)
+    ss.forget_held()
+    journal.error("failed: could not open %s for reading", SHORT)
+    journal.error("failed: could not open the file")
+    try:
+        raise OSError(f"could not open {SHORT}")
+    except OSError as exc:
+        journal.error("failed again", exc_info=exc)
+    entries = errorlog.recent_errors()
+    messages = [e["message"] for e in entries]
+    assert ss.UNREADABLE_TEXT in messages and "failed: could not open the file" in messages and "failed again" in messages
+    assert all(SHORT not in json.dumps(e).replace("tests.floor_and_forms", "") for e in entries), entries
 
 
 def test_the_floor_is_stated_with_what_it_protects_and_what_it_costs():
@@ -267,6 +361,86 @@ def test_scrubbed_takes_out_what_the_process_holds_whether_or_not_it_is_handed_i
     except ValueError as exc:
         tb = ss.traceback_text(exc)
     assert KEY not in tb and OTHER not in tb and f"ValueError: a {ss.REDACTED} b {ss.REDACTED}" in tb
+
+
+def test_the_passphrase_that_wraps_the_signing_keys_is_held_like_the_others(monkeypatch):
+    """``OO_KEY_PASSPHRASE`` (``src/custody/signing.py``) is a passphrase the process holds, in its environment and its memory like
+    ``OO_DB_PASSPHRASE``. MUTATION TARGET: it dropped from ``held_passphrases``."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "")
+    monkeypatch.setattr(connect, "_passphrase", None)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    assert ss.held_passphrases() == ()
+    monkeypatch.setenv("OO_KEY_PASSPHRASE", "signing-key-wrap-9Qz")
+    assert ss.held_passphrases() == ("signing-key-wrap-9Qz",)
+    assert ss.scrubbed("a signing-key-wrap-9Qz b") == f"a {ss.REDACTED} b"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", KEY)
+    monkeypatch.setattr(connect, "_passphrase", KEY)
+    assert ss.held_passphrases() == (KEY, "signing-key-wrap-9Qz"), "each once, the session's first"
+
+
+def test_clearing_the_sessions_passphrase_clears_the_shapes_made_of_it(monkeypatch):
+    """The cache holds the passphrases themselves (a core dump is in the rule), so clearing the session's passphrase (a failed unlock or create,
+    the crypto-erase: ``connect.set_passphrase``) empties it. MUTATION TARGET: ``forget_held`` left out of ``set_passphrase``, or one that empties
+    nothing."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "")
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    monkeypatch.setattr(connect, "_passphrase", None)
+    ss.forget_held()
+    connect.set_passphrase("held-by-the-session-5Kd")
+    try:
+        assert ss.scrubbed("x held-by-the-session-5Kd y") == f"x {ss.REDACTED} y"
+        assert "held-by-the-session-5Kd" in repr(ss._HELD_FORMS), "the entry is the thing that is cleared"
+        connect.set_passphrase(None)
+        assert ss._HELD_FORMS == ((), (), ()) and "held-by-the-session-5Kd" not in repr(ss._HELD_FORMS)
+        assert ss.scrubbed("x held-by-the-session-5Kd y") == "x held-by-the-session-5Kd y", "a cleared session holds nothing"
+    finally:
+        connect.set_passphrase(None)
+
+
+def test_forget_held_empties_the_entry_and_the_next_scrub_rebuilds_what_is_still_held(monkeypatch):
+    monkeypatch.setenv("OO_DB_PASSPHRASE", OTHER)
+    monkeypatch.setattr(connect, "_passphrase", None)
+    ss.forget_held()
+    assert ss._HELD_FORMS == ((), (), ())
+    assert ss.scrubbed(f"x {OTHER} y") == f"x {ss.REDACTED} y"
+    assert OTHER in repr(ss._HELD_FORMS)
+    ss.forget_held()
+    assert ss._HELD_FORMS == ((), (), ())
+    assert ss.scrubbed(f"x {OTHER} y") == f"x {ss.REDACTED} y", "what is still held is taken out again after the entry was dropped"
+
+
+def test_scrubbed_value_walks_what_json_produces_and_leaves_keys_numbers_and_the_rest_alone(monkeypatch):
+    """Every STRING in a structure goes through ``scrubbed``: dict values, list and tuple members, at any depth. The KEYS are
+    field names the code defines (a passphrase that is a piece of one must not rename it), numbers, booleans and ``None`` pass
+    through, and what JSON does not produce passes through as it is. MUTATION TARGET: keys scrubbed too, a tuple or a nested
+    list skipped, the held passphrases not read."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", OTHER)
+    monkeypatch.setattr(connect, "_passphrase", None)
+    ss.forget_held()
+    value = {
+        f"key-{KEY}": f"a {KEY} b",
+        "list": [f"{OTHER}", {"deep": (f"{_sql(KEY)}", 3, None, True)}],
+        "n": 1.5,
+        "raw": b"bytes " + KEY.encode(),
+    }
+    out = ss.scrubbed_value(value, KEY)
+    assert out == {
+        f"key-{KEY}": f"a {ss.REDACTED} b",
+        "list": [ss.REDACTED, {"deep": (f"PRAGMA key = '{ss.REDACTED}'", 3, None, True)}],
+        "n": 1.5,
+        "raw": b"bytes " + KEY.encode(),
+    }
+    assert ss.scrubbed_value("a plain text") == "a plain text" and ss.scrubbed_value(7) == 7
+
+
+def test_scrubbed_value_withholds_every_string_when_what_is_held_cannot_be_read_and_never_raises(monkeypatch):
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    assert ss.scrubbed_value({"a": ["x", {"b": "y"}], "n": 2}) == {"a": [ss.UNREADABLE_TEXT, {"b": ss.UNREADABLE_TEXT}], "n": 2}
+    deep: object = "text"
+    for _ in range(sys.getrecursionlimit() + 50):
+        deep = [deep]
+    monkeypatch.undo()
+    assert ss.scrubbed_value(deep, withheld="too deep to read") == "too deep to read"
 
 
 def test_what_the_process_holds_is_read_at_each_call_and_a_changed_passphrase_is_the_one_taken_out_next(monkeypatch):
