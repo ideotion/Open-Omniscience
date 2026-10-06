@@ -131,7 +131,8 @@ logarithmic in the corpus. A merge is itself a bulk build (sorted load, indexes 
 `GROUP BY`) and drops tombstoned rows. It is **windowed and resumable** from the first line —
 the refresh's amendment to Phase C's GC (§3.2 there: *"a bounded windowed sweep … never one
 statement over all references"*) applies here for the same reason, and so does
-`temp_store=FILE` on its own connection.
+`temp_store=FILE` on its own connection (on an ENCRYPTED connection it is MEMORY instead: the
+sorter's spill file is written in the clear, see LESSONS, merge thread 2026-10-06).
 
 ### 3.6 Imports, and where `R24` lands
 

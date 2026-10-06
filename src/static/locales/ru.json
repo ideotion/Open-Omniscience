@@ -3082,6 +3082,7 @@
   "Not enough coverage to compare framing for this term.": "Недостаточно освещения, чтобы сравнить подачу этого термина.",
   "Not enough data to compare yet.": "Пока недостаточно данных для сравнения.",
   "Not enough data yet for a curve.": "Пока недостаточно данных для кривой.",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "Недостаточно свободной памяти для слияния с зашифрованным корпусом: нужно около {needed}, доступно только {free}. Закройте другие программы и повторите импорт. В ваш корпус ничего не записано.",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "Недостаточно свободного места в {path}: нужно {needed}, свободно только {free}.",
   "Not enough free space here for this file.": "Здесь недостаточно свободного места для этого файла.",
   "Not enough keywords indexed to draw a map yet.": "Пока недостаточно проиндексированных ключевых слов, чтобы построить карту.",

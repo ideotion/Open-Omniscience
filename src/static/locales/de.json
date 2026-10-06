@@ -3082,6 +3082,7 @@
   "Not enough coverage to compare framing for this term.": "Nicht genug Abdeckung, um die Rahmung für diesen Begriff zu vergleichen.",
   "Not enough data to compare yet.": "Noch nicht genug Daten für einen Vergleich.",
   "Not enough data yet for a curve.": "Noch nicht genug Daten für eine Kurve.",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "Nicht genug freier Arbeitsspeicher, um in ein verschlüsseltes Korpus zu importieren: benötigt etwa {needed}, nur {free} verfügbar. Schließen Sie andere Programme und importieren Sie erneut. In Ihr Korpus wurde nichts geschrieben.",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "Nicht genug freier Speicherplatz unter {path}: benötigt {needed}, nur {free} frei.",
   "Not enough free space here for this file.": "Hier ist nicht genug freier Speicher für diese Datei.",
   "Not enough keywords indexed to draw a map yet.": "Noch nicht genug Schlagwörter indexiert, um eine Mindmap zu zeichnen.",

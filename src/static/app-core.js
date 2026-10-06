@@ -1866,6 +1866,11 @@
       // folder_backup.py: the large-data folder backup's own check
       [new RegExp("Not enough free space at (.+?): needs " + _OO_SIZE_RE + ", only "
         + _OO_SIZE_RE + " free\\."), "folder"],
+      // merge.py: check_memory_for_encrypted_merge (an encrypted import holds its temp
+      // structures in memory, so it is refused before any row moves on a machine without it)
+      [new RegExp("Not enough free memory to merge into an encrypted corpus: needs about "
+        + _OO_SIZE_RE + ", only " + _OO_SIZE_RE + " available\\. Close other programs and "
+        + "import again\\. Nothing was written to your corpus\\."), "memory"],
     ];
     function ooServerText(msg) {
       const s = String(msg == null ? "" : msg);
@@ -1888,7 +1893,11 @@
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);
         if (!m) continue;
-        const out = kind === "what"
+        const out = kind === "memory"
+          ? tf("Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.", {
+              needed: size(m[1], m[2]), free: size(m[3], m[4]),
+            })
+          : kind === "what"
           ? tf("{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.", {
               what: _OO_SPACE_WHAT[m[1]] ? t(_OO_SPACE_WHAT[m[1]]) : m[1],
               needed: size(m[2], m[3]), free: size(m[4], m[5]), path: iso(m[6]),
