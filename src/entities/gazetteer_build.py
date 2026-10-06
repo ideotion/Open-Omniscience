@@ -473,7 +473,9 @@ def fetch_wikidata(
                 _reraise_refusal(exc)  # ... except a refusal by the transport or the kill switch
                 break
             if res.status == 200 and res.body is not None and not _asks_to_wait(res):
-                parsed = parse_wikidata(res.body, batch)
+                # An answer that mentions none of the asked ids (an error body behind a 200, ``{}``) is a
+                # refusal that looks like a success: it counts as a refused batch, never as a joined one.
+                parsed = parse_wikidata(res.body, batch) or None
                 break
             if not _asks_to_wait(res) or attempt == RETRY_MAX:
                 break

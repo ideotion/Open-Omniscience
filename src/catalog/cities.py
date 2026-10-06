@@ -108,7 +108,13 @@ def _load_file(p: Path) -> list[City]:
     file_source = str(data["source"]).strip() or None if data.get("source") else None
     default = file_source or _default_source(p)
     out: list[City] = []
-    for c in data.get("cities", []):
+    rows = data.get("cities") or []
+    if not isinstance(rows, list):
+        if p == PLACES_GAZETTEER_PATH:  # the same promise as the unreadable case: the world file's coverage stays
+            _LOG.warning("%s has no list of places; reading the world gazetteer alone", p.name)
+            return []
+        raise TypeError(f"{p.name}: 'cities' must be a list")
+    for c in rows:
         if not isinstance(c, dict) or c.get("name") is None:
             continue
         try:

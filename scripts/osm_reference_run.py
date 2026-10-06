@@ -32,6 +32,7 @@ name); the passphrase exists only in the children's environment. Exit: 0 done, 1
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from datetime import UTC, datetime
@@ -112,13 +113,23 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"preflight": report["preflight"], "inputs": report["inputs"], "host": report["host"],
                           "guards": report["guards"]}, indent=2, sort_keys=True))
         return 0 if report["preflight"]["ok"] else 2
-    phases = ", ".join(f"{p['name']}={p['status']} {p['wall_seconds']}s" for p in report["phases"]) or "none started"
-    print(f"status: {report['status']}  ({phases})")
-    if report.get("reason"):
-        print(f"reason: {report['reason']}")
-    print(f"store: {'kept at ' + str(kept) + ' (delete with --cleanup)' if kept else 'deleted' if report['store'].get('deleted') else 'none made'}")
-    print(f"report: {target.name}")
-    return {"ok": 0, "failed": 1, "interrupted": 3}.get(report["status"], 2)
+    # The exit code is settled BEFORE anything is printed: a closed terminal (a dropped session) makes print
+    # raise OSError, and that must not turn "interrupted" (3) into a traceback and a 1.
+    code = {"ok": 0, "failed": 1, "interrupted": 3}.get(report["status"], 2)
+    with contextlib.suppress(OSError):
+        phases = ", ".join(f"{p['name']}={p['status']} {p['wall_seconds']}s" for p in report["phases"]) or "none started"
+        print(f"status: {report['status']}  ({phases})")
+        if report.get("reason"):
+            print(f"reason: {report['reason']}")
+        if report.get("interrupted_by"):
+            print(f"note: the run finished on its own; a {report['interrupted_by']} reached the runner as it ended")
+        print(f"store: {'kept at ' + str(kept) + ' (delete with --cleanup)' if kept else 'deleted' if report['store'].get('deleted') else 'none made'}")
+        if report.get("report_write_error"):
+            print(f"the report could not be written ({report['report_write_error']}); it follows:")
+            print(json.dumps(report, indent=2, sort_keys=True, default=str))
+        else:
+            print(f"report: {target.name}")
+    return code
 
 
 if __name__ == "__main__":

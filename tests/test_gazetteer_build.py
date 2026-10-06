@@ -758,6 +758,22 @@ def test_the_run_stops_asking_after_consecutive_refused_batches():
     assert rep["asked"] == rep["ok"] + rep["refused"] + rep["missing_on_wikidata"] + rep["not_asked"]
 
 
+def test_a_200_with_an_error_body_counts_as_a_refused_batch_and_ends_the_run():
+    """A 200 carrying ``{"error": ...}`` (or ``{}``) mentions none of the asked ids: it is a refusal that looks
+    like a success, and it must neither reset the streak nor be reported as a joined batch."""
+    clock, calls = _Clock(), []
+
+    def getter(url):
+        calls.append(url)
+        return G.GetResult(200, {"error": {"code": "internal_api_error", "info": "try later"}} if len(calls) % 2 else {})
+
+    qids = [f"Q{n}" for n in range(1, 501)]
+    items, rep = G.fetch_wikidata(qids, getter=getter, gate=_gate(clock), sleep=clock.sleep, kill_switch=lambda: False)
+    assert items == {} and rep["ok"] == 0
+    assert len(calls) == G.CONSECUTIVE_REFUSED_MAX and rep["gave_up_after_refusals"] is True
+    assert rep["refused"] == 50 * G.CONSECUTIVE_REFUSED_MAX
+
+
 def test_a_stop_during_the_pace_wait_sends_no_request():
     clock, called = _Clock(), []
     stop = {"v": False}
@@ -780,6 +796,17 @@ def test_a_corrupt_place_artifact_never_takes_the_world_files_coverage_with_it(t
         {"name": "A", "lat": 1.0, "lon": 1.0, "country": "zz"}]})
     places = tmp_path / "places_gazetteer.yml"
     places.write_text("cities: [unclosed\n  - : :\n", encoding="utf-8")
+    monkeypatch.setattr(cities, "GAZETTEER_PATH", world)
+    monkeypatch.setattr(cities, "PLACES_GAZETTEER_PATH", places)
+    assert [c.name for c in cities.load_cities()] == ["A"]
+
+
+@pytest.mark.parametrize("body", ["cities:\n", "cities: {a: 1}\n", "cities: just-a-string\n"])
+def test_a_place_artifact_with_no_list_of_places_never_takes_the_world_files_coverage_with_it(tmp_path, monkeypatch, body):
+    world = _write(tmp_path / "cities.yml", {"as_of": "2026-06-01", "cities": [
+        {"name": "A", "lat": 1.0, "lon": 1.0, "country": "zz"}]})
+    places = tmp_path / "places_gazetteer.yml"
+    places.write_text(body, encoding="utf-8")
     monkeypatch.setattr(cities, "GAZETTEER_PATH", world)
     monkeypatch.setattr(cities, "PLACES_GAZETTEER_PATH", places)
     assert [c.name for c in cities.load_cities()] == ["A"]

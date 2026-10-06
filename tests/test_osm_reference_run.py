@@ -297,10 +297,10 @@ def _alive(pid: int) -> bool:
         return False
 
 
-def _wait_dead(pid: int) -> bool:
+def _wait_dead(pid: int, timeout: float = 10.0) -> bool:
     import time
 
-    for _ in range(100):
+    for _ in range(int(timeout * 10)):
         if not _alive(pid):
             return True
         time.sleep(0.1)
@@ -506,6 +506,7 @@ def test_a_signal_between_phases_stops_the_run_before_the_next_one(tmp_path, mon
     import signal as sg
 
     seen = {}
+    before = {n: sg.getsignal(getattr(sg, n)) for n in ("SIGHUP", "SIGTERM", "SIGINT", "SIGQUIT", "SIGTSTP")}
 
     def _phase_then_signal(spec, **kw):
         res = R.PhaseResult(spec.name)
@@ -519,7 +520,192 @@ def test_a_signal_between_phases_stops_the_run_before_the_next_one(tmp_path, mon
     assert seen["signal"] == "SIGTERM" and report["status"] == "interrupted"
     assert [p["name"] for p in report["phases"]] == ["first"], "a phase started after the signal"
     assert report["store"]["deleted"] is True
-    assert sg.getsignal(sg.SIGTERM) == sg.SIG_DFL or callable(sg.getsignal(sg.SIGTERM))
+    after = {n: sg.getsignal(getattr(sg, n)) for n in before}
+    assert after == before, "the run left a handler installed"
+
+
+def test_a_signal_during_the_start_of_a_phase_is_still_acted_on(tmp_path, monkeypatch):
+    """The signal lands after the loop's check and before the child exists: the sampler stops it at once."""
+    import signal as sg
+    import time
+
+    real = R._pdeathsig_preexec
+
+    def _signal_then_build():
+        os.kill(os.getpid(), sg.SIGTERM)  # between the check and the Popen
+        return real()
+
+    monkeypatch.setattr(R, "_pdeathsig_preexec", _signal_then_build)
+    t0 = time.monotonic()
+    report, _ = _run(tmp_path, phases_override=_scripted("import time; time.sleep(120)"))
+    assert time.monotonic() - t0 < 30, "the swallowed signal left the child running"
+    assert report["status"] == "interrupted" and report["phases"][0]["status"] == "interrupted"
+    assert report["store"]["deleted"] is True
+
+
+def test_a_third_signal_gives_the_default_action_so_there_is_always_a_way_out():
+    """Driven through the handler itself, in its own process: the default action ends that process."""
+    code = (
+        "import signal\nfrom src.osm import reference_run as R\n"
+        "with R._terminating_signals():\n"
+        "    h = signal.getsignal(signal.SIGTERM)\n"
+        "    h(signal.SIGTERM, None)\n    h(signal.SIGTERM, None)\n"
+        "    print('two handled', flush=True)\n"
+        "    h(signal.SIGTERM, None)\n"
+        "print('survived the third')\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+    assert done.returncode == -15 and "two handled" in done.stdout and "survived" not in done.stdout
+
+
+def test_a_sighup_ignored_by_nohup_is_left_ignored_but_sigterm_still_stops_the_run(tmp_path):
+    import signal as sg
+    import time
+
+    pidfile = tmp_path / "child.pid"
+    cfg = {"code": _CHILD.format(pf=str(pidfile)), "extract": str(_extract(tmp_path)), "work": str(tmp_path / "work"),
+           "report": str(tmp_path / "report.json")}
+    proc = subprocess.Popen([sys.executable, "-c", _RUNNER, json.dumps(cfg)], cwd=str(ROOT), text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                            preexec_fn=lambda: sg.signal(sg.SIGHUP, sg.SIG_IGN))  # what `nohup` does
+    try:
+        _wait_nonempty(pidfile)
+        proc.send_signal(sg.SIGHUP)
+        time.sleep(1.0)
+        assert proc.poll() is None and not _wait_dead(_pid(pidfile), 0.5), "nohup's choice was overridden"
+        proc.send_signal(sg.SIGTERM)
+        proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "interrupted" and "SIGTERM" in report["reason"]
+
+
+def test_a_signal_that_arrives_as_a_finished_child_exits_cleanly_keeps_the_real_outcome(tmp_path):
+    """The child leaves 0 on SIGTERM: the phase and the run are ``ok``, the signal is recorded BESIDE it."""
+    import signal as sg
+
+    pidfile = tmp_path / "child.pid"
+    code = ("import os, signal, sys, time\nsignal.signal(signal.SIGTERM, lambda *a: sys.exit(0))\n"
+            f"open({str(pidfile)!r}, 'w').write(str(os.getpid()))\ntime.sleep(120)")
+    proc = _spawn_runner(tmp_path, code)
+    try:
+        _wait_nonempty(pidfile)
+        proc.send_signal(sg.SIGTERM)
+        proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "ok" and report["interrupted_by"] == "SIGTERM"
+    assert report["phases"][0]["status"] == "ok" and report["phases"][0]["interrupted_by"] == "SIGTERM"
+
+
+def test_sigtstp_is_ignored_for_the_run_and_every_handler_comes_back_after_it():
+    import signal as sg
+
+    before = {n: sg.getsignal(getattr(sg, n)) for n in ("SIGHUP", "SIGTERM", "SIGINT", "SIGQUIT", "SIGTSTP")}
+    with R._terminating_signals():
+        assert sg.getsignal(sg.SIGTSTP) == sg.SIG_IGN, "Ctrl-Z would freeze the sampler and the guards"
+        assert callable(sg.getsignal(sg.SIGHUP)) and callable(sg.getsignal(sg.SIGQUIT))
+    assert {n: sg.getsignal(getattr(sg, n)) for n in before} == before
+
+
+def test_the_phase_status_never_lets_a_signal_rewrite_what_a_guard_or_the_child_did():
+    f = R._phase_status
+    assert f(refusal="reserve", returncode=-15, signalled=True) == "refused-mid-run"
+    assert f(refusal=None, returncode=0, signalled=True) == "ok"
+    assert f(refusal=None, returncode=-15, signalled=True) == "interrupted"
+    assert f(refusal=None, returncode=1, signalled=False) == "failed"
+    assert f(refusal=None, returncode=2, signalled=False) == "refused"
+
+
+def test_the_whole_group_is_gone_before_the_store_is_deleted(tmp_path, monkeypatch):
+    """killpg only SENDS: the runner waits for the group to be gone, so no writer is left in the store."""
+    pidfile = tmp_path / "helper.pid"
+    code = (
+        "import subprocess, sys\n"
+        "g = subprocess.Popen([sys.executable, '-c', 'import time\\nwhile True: time.sleep(0.1)'])\n"
+        f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
+    )
+    seen = {}
+    real = R._delete_store
+
+    def _checked(run_dir, probe):
+        seen["helper_alive_at_deletion"] = _alive(_pid(pidfile))
+        return real(run_dir, probe)
+
+    monkeypatch.setattr(R, "_delete_store", _checked)
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    assert report["status"] == "ok" and report["store"]["deleted"] is True
+    assert seen["helper_alive_at_deletion"] is False
+
+
+def test_a_member_that_survives_the_sweep_keeps_the_store_and_the_report_says_so(tmp_path, monkeypatch):
+    monkeypatch.setattr(R, "_wait_group_gone", lambda pgid, timeout_s: False)
+    called = []
+    monkeypatch.setattr(R, "_delete_store", lambda *a, **k: called.append(1) or {"deleted": True})
+    report, kept = _run(tmp_path, phases_override=_scripted("print(1)"))
+    assert not called, "the store was deleted under a member that was still alive"
+    assert report["status"] == "failed" and report["phases"][0]["group_survived"] is True
+    assert report["store"]["kept"] is True and "still alive" in report["store"]["note"]
+    assert kept is not None and kept.is_dir()
+    monkeypatch.undo()
+    assert R.cleanup(kept)["deleted"] is True
+
+
+def test_a_deletion_that_fails_is_reported_not_raised_and_the_report_is_still_written(tmp_path, monkeypatch):
+    def _boom(path, *a, **k):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(R.shutil, "rmtree", _boom)
+    rep = tmp_path / "report.json"
+    report, kept = _run(tmp_path, phases_override=_scripted("print(1)"), report_path=rep)
+    assert report["store"]["kept"] is True and report["store"]["deleted"] is False
+    assert "PermissionError" in report["store"]["error"] and "denied" not in json.dumps(report)
+    assert kept is not None and rep.is_file()
+    assert (kept / R.MARKER).is_file(), "the marker goes last: a cut-short deletion stays recognisable to --cleanup"
+    assert (kept.stat().st_mode & 0o777) == 0o700
+    monkeypatch.undo()
+    assert R.cleanup(kept)["deleted"] is True
+
+
+def test_the_runner_failing_inside_still_deletes_the_store_and_writes_a_report(tmp_path, monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError("a bug in the runner")
+
+    monkeypatch.setattr(R, "run_phase", _boom)
+    rep = tmp_path / "report.json"
+    report, kept = _run(tmp_path, phases_override=_scripted("print(1)"), report_path=rep)
+    assert report["status"] == "failed" and "RuntimeError" in report["reason"] and kept is None
+    assert report["store"]["deleted"] is True and rep.is_file()
+
+
+def test_the_run_refuses_to_start_off_the_main_thread(tmp_path):
+    import threading
+
+    caught = []
+
+    def _go():
+        try:
+            _run(tmp_path)
+        except ValueError as exc:
+            caught.append(str(exc))
+
+    t = threading.Thread(target=_go)
+    t.start()
+    t.join(60)
+    assert caught and "main thread" in caught[0]
+    assert not list((tmp_path / "work").glob("oo-osm-reference-run-*")), "a store was made without signal handling"
+
+
+def test_the_disks_own_loss_is_recorded_per_phase_and_the_next_floor_uses_the_larger_measure(tmp_path):
+    probe = _Probe(free=100 * GB, free_after=97 * GB, after_calls=2)
+    report, _ = _run(tmp_path, probe=probe, phases_override=_scripted("import time; time.sleep(1.5)"))
+    assert report["phases"][0]["disk_used_peak_bytes"] == 3 * GB
+    prior = {"inputs": {"extract": {"bytes": 1 * GB}},
+             "phases": [{"name": "ingest", "status": "ok", "peak_data_dir_bytes": 1 * GB, "disk_used_peak_bytes": 3 * GB}]}
+    pf = R.preflight(extract_bytes=10 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB, prior_report=prior)
+    assert pf["needed_bytes"] == int(3 * 1.25 * 10 * GB) + 2 * GB
 
 
 def test_the_reference_run_refuses_a_system_that_is_not_linux(tmp_path, monkeypatch):
@@ -566,11 +752,11 @@ def test_no_phase_the_runner_builds_carries_a_passphrase_in_its_argv():
 
 def test_database_url_is_dropped_from_the_childs_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:////home/someone/own-store.db")
-    code = "import os, json\nprint(json.dumps({'dburl': os.environ.get('DATABASE_URL'), 'tmp': os.environ.get('TMPDIR')}))"
+    code = "import os, json\nprint(json.dumps({'dburl': os.environ.get('DATABASE_URL'), 'tmp': os.environ.get('TMPDIR'), 'sqlite_tmp': os.environ.get('SQLITE_TMPDIR')}))"
     report, _ = _run(tmp_path, phases_override=_scripted(code))
     got = report["phases"][0]["app_report"]
     assert got["dburl"] is None, "the child could have opened the operator's own main database"
-    assert got["tmp"] == "<run>/tmp", "temp and spill files stay on the filesystem the guard reads"
+    assert got["tmp"] == "<run>/tmp" and got["sqlite_tmp"] == "<run>/tmp", "temp and spill files stay on the filesystem the guard reads"
 
 
 def test_a_path_inside_a_childs_json_report_is_scrubbed(tmp_path):
@@ -679,3 +865,45 @@ def test_there_is_no_download_flag():
     mod = (ROOT / "src" / "osm" / "reference_run.py").read_text("utf-8")
     for needle in ("import requests", "import httpx", "urllib.request", "create_connection"):
         assert needle not in mod
+
+
+def test_a_refused_preflight_still_writes_the_report_the_command_names(tmp_path):
+    ext = _extract(tmp_path)
+    rep = tmp_path / "refused.json"
+    rc, out = _cli("--extract", str(ext), "--country", "ZZ", "--report", str(rep), "--workdir", str(tmp_path / "w"),
+                   "--min-free-gb", "99999999")
+    assert rc == 2 and "status: refused-preflight" in out and rep.name in out
+    data = json.loads(rep.read_text("utf-8"))
+    assert data["status"] == "refused-preflight" and data["preflight"]["ok"] is False
+    assert not list((tmp_path / "w").glob("oo-osm-reference-run-*"))
+
+
+def test_the_exit_code_survives_a_closed_terminal(tmp_path, monkeypatch):
+    """A dropped session closes stdout: print raises OSError, and `interrupted` must still be exit code 3."""
+    report = {"status": "interrupted", "reason": "x", "phases": [], "store": {"deleted": True}}
+    monkeypatch.setattr(R, "run", lambda **kw: (report, None))
+
+    def _dead(*a, **k):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr("builtins.print", _dead)
+    assert CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")]) == 3
+
+
+def test_a_report_that_cannot_be_written_is_printed_instead_of_lost(tmp_path):
+    ext = _extract(tmp_path)
+    blocked = tmp_path / "run.json"
+    blocked.mkdir()  # the report's own path is a directory: the directory exists, the write cannot succeed
+    rc, out = _cli("--extract", str(ext), "--country", "ZZ", "--report", str(blocked),
+                   "--workdir", str(tmp_path / "w"), "--sample-seconds", "0.1")
+    assert rc == 0 and "could not be written" in out and '"schema_version"' in out
+
+
+def test_a_report_directory_that_cannot_be_made_is_refused_before_anything_runs(tmp_path):
+    ext = _extract(tmp_path)
+    blocker = tmp_path / "a-file"
+    blocker.write_text("x", encoding="utf-8")
+    rc, out = _cli("--extract", str(ext), "--country", "ZZ", "--report", str(blocker / "sub" / "run.json"),
+                   "--workdir", str(tmp_path / "w"))
+    assert rc == 2 and "report's directory" in out
+    assert not list((tmp_path / "w").glob("oo-osm-reference-run-*"))

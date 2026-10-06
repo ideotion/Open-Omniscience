@@ -30,8 +30,8 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   recorded ``refused-mid-run`` with the figures, and the rest of the run is not started. The same
   holds for available MEMORY (default 256 MiB): a 3.5 GB VM that is out of memory is a VM the
   operator cannot log into, and the ingest's own spill-to-disk path is what should be absorbing it.
-* **THE RUNNER DYING DOES NOT LEAVE THE CHILD RUNNING.** SIGHUP (a dropped SSH session), SIGTERM and a
-  second Ctrl-C stop the child's whole process group, delete the store and still write the report;
+* **THE RUNNER DYING DOES NOT LEAVE THE CHILD RUNNING.** SIGHUP (a dropped SSH session), SIGTERM and
+  Ctrl-C stop the child's whole process group (a second one kills it at once, a third gives the signal its default action), delete the store and still write the report;
   ``PR_SET_PDEATHSIG`` is the backstop for a runner that is KILLED, where no handler can run. After
   EVERY child exit the group is swept with SIGKILL before the store is deleted, so a helper that
   ignored SIGTERM, or outlived a clean exit, cannot write into a store being removed.
@@ -45,8 +45,8 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
 
 WHAT IS MEASURED, and how: per phase, wall time and CPU time and the kernel's own peak-memory
 high-water mark for the child (``wait4``), plus a sampler (once a second by default) for peak
-resident memory across the child and its descendants, peak allocated bytes of the data directory
-(which holds the spill work file) and the lowest free disk seen. WHAT IS NOT: see ``not_measured`` in
+resident memory across the child and its descendants, peak allocated bytes of the data directory and the
+run's own temp directory (which hold the spill work file and SQLite's temp files) and the lowest free disk seen. WHAT IS NOT: see ``not_measured`` in
 the report -- a fixture-scale run proves the instrument, never the VM.
 """
 
@@ -103,6 +103,9 @@ SAMPLE_SECONDS_MAX = 10.0
 #: The timeline keeps at most this many points; past it every second point is dropped and the stride
 #: doubles. It bounds the REPORT's size on a multi-day run, never the measured peaks (those are exact).
 TIMELINE_MAX = 600
+#: How long the runner waits, after SIGKILLing the child's group, for every member to be gone before it
+#: reports one as surviving (a process in uninterruptible I/O on a slow disk can take a while to leave).
+GROUP_GONE_TIMEOUT_S = 30.0
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -254,13 +257,17 @@ def preflight(
         try:
             # Only a phase that FINISHED measures the whole footprint: a stopped or failed one peaked early.
             ph = next(p for p in prior_report["phases"]
-                      if p["name"] == "ingest" and p.get("status") == "ok" and p.get("peak_data_dir_bytes"))
+                      if p["name"] == "ingest" and p.get("status") == "ok"
+                      and (p.get("peak_data_dir_bytes") or p.get("disk_used_peak_bytes")))
             inp = prior_report["inputs"]["extract"]["bytes"]
+            # The larger of the two measures: the directory scan cannot see SQLite's unlinked temp files, the
+            # disk's own loss counts them (and anyone else writing to that disk).
+            peak = max(int(ph.get("peak_data_dir_bytes") or 0), int(ph.get("disk_used_peak_bytes") or 0))
             # x1.25: the prior run's peak plus a quarter, because the next extract's footprint need not match
             # it byte for byte and a floor that is exactly the last peak refuses nothing it should.
-            ratio = ph["peak_data_dir_bytes"] / inp * 1.25
-            basis = (f"MEASURED by the prior report: its ingest peaked at {ph['peak_data_dir_bytes']} bytes for a "
-                     f"{inp}-byte extract, x1.25 margin, + the reserve")
+            ratio = peak / inp * 1.25
+            basis = (f"MEASURED by the prior report: its ingest peaked at {peak} bytes (the larger of the data directory's "
+                     f"size and the disk's loss) for a {inp}-byte extract, x1.25 margin, + the reserve")
         except (KeyError, StopIteration, ZeroDivisionError, TypeError):
             ratio = None
     factor = ratio if ratio is not None else floor_factor
@@ -313,9 +320,56 @@ class PhaseResult:
     error_tail: str | None = None
     samples: int = 0
     timeline: list[dict] = field(default_factory=list)
+    #: The most disk the machine lost during the phase (free before - lowest free): counts SQLite's unlinked
+    #: temp files, which a directory scan cannot see (it also counts anyone else writing to that disk).
+    disk_used_peak_bytes: int | None = None
+    #: A signal to the runner that landed while this phase was alive, when it did not change the phase's class.
+    interrupted_by: str | None = None
+    #: True when a process of the child's group was STILL alive after the SIGKILL sweep and the wait: the
+    #: store is then never deleted under it.
+    group_survived: bool = False
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
+
+
+def _phase_status(*, refusal: str | None, returncode: int | None, signalled: bool) -> str:
+    """How a finished phase is classed. A guard's stop keeps its own class and reason (a signal on top of
+    it is recorded as ``interrupted_by``, never allowed to rewrite what the guard did); a signal makes the
+    phase ``interrupted`` only if the child did not finish cleanly on its own."""
+    if refusal:
+        return "refused-mid-run"
+    if returncode == 0:
+        return "ok"
+    if signalled:
+        return "interrupted"
+    return "refused" if returncode == 2 else "failed"  # the app's own scripts exit 2 when they refuse by name
+
+
+def _group_alive(pgid: int) -> bool:
+    """Is any NON-zombie process still in process group ``pgid``? (The group id stays reserved while any
+    member lives, so this cannot be fooled by a recycled number.)"""
+    import psutil
+
+    for p in psutil.process_iter(["pid", "status"]):
+        try:
+            if p.info["status"] != psutil.STATUS_ZOMBIE and os.getpgid(p.info["pid"]) == pgid:
+                return True
+        except (ProcessLookupError, PermissionError, psutil.Error):
+            continue
+    return False
+
+
+def _wait_group_gone(pgid: int, timeout_s: float) -> bool:
+    """SIGKILL does not make a process vanish at once (a write in flight, a process in uninterruptible
+    I/O): wait until no live member is left, up to ``timeout_s``. False means a member is STILL alive."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        if not _group_alive(pgid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.02)
 
 
 def _children_rss(pid: int) -> int | None:
@@ -357,15 +411,21 @@ def _pdeathsig_preexec():
 
     It covers the leader only (the setting is cleared on fork, so a helper survives a SIGKILLed runner)
     and is the backstop for the one death no handler can see. It fails CLOSED: if the request fails, or
-    the runner is already gone by the time it runs, the phase does not start.
+    the runner is already gone by the time it runs, the phase does not start. The foreign function is
+    bound HERE, in the parent, so the child does no symbol lookup between fork and exec; and no sampler
+    thread of an earlier phase is left alive when this is used (``run_phase`` joins it), because
+    ``preexec_fn`` can deadlock in a child forked while another thread holds an interpreter or allocator lock.
     """
     import ctypes
 
     libc = ctypes.CDLL(None, use_errno=True)
-    pr_set_pdeathsig, sigkill, parent = 1, int(signal.SIGKILL), os.getpid()
+    prctl = libc.prctl
+    prctl.argtypes = [ctypes.c_int, ctypes.c_ulong]
+    prctl.restype = ctypes.c_int
+    sigkill, parent, getppid = int(signal.SIGKILL), os.getpid(), os.getppid
 
     def _set() -> None:
-        if libc.prctl(pr_set_pdeathsig, sigkill) != 0 or os.getppid() != parent:
+        if prctl(1, sigkill) != 0 or getppid() != parent:  # 1 = PR_SET_PDEATHSIG
             raise OSError("the parent-death backstop could not be set, or the runner is already gone")
 
     return _set
@@ -442,8 +502,8 @@ def run_phase(
             _signal_group(signal.SIGTERM)
             deadline = time.monotonic() + TERMINATE_GRACE_S
             while time.monotonic() < deadline and not stop.is_set():
-                if _disk_critical():
-                    break  # the grace must not spend the reserve it exists to protect
+                if _disk_critical() or _INT.count >= 2:
+                    break  # the grace must not spend the reserve it exists to protect; a second signal ends it
                 time.sleep(0.1)  # a poll fine enough to notice the child leaving, coarse enough to cost nothing
             if not stop.is_set():
                 _signal_group(signal.SIGKILL)
@@ -486,6 +546,11 @@ def run_phase(
                     _terminate(f"the sampler failed ({type(exc).__name__}), so the disk and memory guards were down; "
                                "the phase was stopped rather than left unguarded")
 
+        if _INT.signal is not None:  # a signal landed before this phase's child existed: do not start one
+            res.status, res.reason = "interrupted", f"the runner was interrupted ({_INT.signal}) before the phase started"
+            res.wall_seconds = round(time.monotonic() - t0, 3)
+            res.disk_free_after_bytes = probe.free_disk(run_dir)
+            return res
         try:
             # Its own session: the child leads a process GROUP, so a stop reaches every descendant and
             # none keeps writing to the disk this guard is protecting after the child itself is gone.
@@ -504,16 +569,24 @@ def run_phase(
         sampler = threading.Thread(target=_sample, name=f"ref-run-sampler-{spec.name}", daemon=True)
         status = None
         usage = None
+        sig_during = None
         try:
             _INT.pgid = proc.pid
             sampler.start()
             status, usage = _reap()
             proc.returncode = os.waitstatus_to_exitcode(status)
+            sig_during = _INT.signal
+            # killpg only SENDS the signal: wait until no member of the group is still alive, so nothing can
+            # write into the store the caller deletes next. A member that will not go is reported, and the
+            # store is kept.
+            res.group_survived = not _wait_group_gone(proc.pid, GROUP_GONE_TIMEOUT_S)
         finally:
             _INT.pgid = None
             stop.set()
             if sampler.is_alive():
-                sampler.join(timeout=5)  # the sampler wakes within one interval (at most 10 s); 5 s never blocks the run's end
+                # It wakes at once (``stop`` is set) unless it is inside one directory scan: wait that out,
+                # so the next phase's Popen never forks while a sampler thread is alive.
+                sampler.join(timeout=60)
             if not reaped["v"]:
                 with guard:
                     with contextlib.suppress(OSError):
@@ -532,17 +605,21 @@ def run_phase(
     peaks = [v for v in (res.peak_rss_bytes_kernel, res.peak_rss_bytes_sampled) if v]
     res.peak_rss_bytes = max(peaks) if peaks else None
     res.disk_free_after_bytes = probe.free_disk(run_dir)
-    if _INT.signal is not None:
-        res.status, res.reason = "interrupted", f"the runner was interrupted ({_INT.signal})"
-    else:
-        if refusal:
-            res.status, res.reason = "refused-mid-run", refusal[0]
-        elif proc.returncode == 0:
-            res.status = "ok"
-        elif proc.returncode == 2:
-            res.status = "refused"  # the app's own scripts exit 2 when they refuse by name
+    if res.disk_free_before_bytes is not None and res.disk_free_min_bytes is not None:
+        res.disk_used_peak_bytes = max(0, res.disk_free_before_bytes - min(res.disk_free_min_bytes, res.disk_free_after_bytes))
+    res.status = _phase_status(refusal=refusal[0] if refusal else None, returncode=proc.returncode,
+                               signalled=sig_during is not None)
+    if refusal:
+        res.reason = refusal[0]
+    if sig_during is not None:
+        if res.status == "interrupted":
+            res.reason = f"the runner was interrupted ({sig_during})"
         else:
-            res.status = "failed"
+            res.interrupted_by = sig_during
+    if res.group_survived:
+        res.status = "failed" if res.status == "ok" else res.status
+        res.reason = (res.reason + "; " if res.reason else "") + (
+            "a process of the child's group was still alive after SIGKILL: the store is kept, not deleted")
     try:
         raw = out_f.read_text("utf-8").strip()
         if raw.startswith("{"):
@@ -583,19 +660,31 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
             _INT.count += 1
             if _INT.signal is None:
                 _INT.signal = signal.Signals(signum).name
+            if _INT.count >= 3:
+                # The operator is insisting and something is stuck: give the signal its default action, so
+                # there is always a way out that is not kill -9.
+                signal.signal(signum, signal.SIG_DFL)
+                os.kill(os.getpid(), signum)
+                return
             pg = _INT.pgid
             if pg is not None:
                 with contextlib.suppress(OSError):
                     os.killpg(pg, signal.SIGTERM if _INT.count == 1 else signal.SIGKILL)
 
-        for name in ("SIGHUP", "SIGTERM", "SIGINT"):
+        for name in ("SIGHUP", "SIGTERM", "SIGINT", "SIGQUIT"):
             sig = getattr(signal, name, None)
             if sig is None:
                 continue
             try:
+                if signal.getsignal(sig) == signal.SIG_IGN:
+                    continue  # nohup (or `&`) chose to ignore it: that choice survives a dropped session
                 self._prev[sig] = signal.signal(sig, _handler)
             except (ValueError, OSError):  # pragma: no cover
                 continue
+        tstp = getattr(signal, "SIGTSTP", None)
+        if tstp is not None:  # Ctrl-Z would freeze the sampler (and the guards) while the child ran on
+            with contextlib.suppress(ValueError, OSError):
+                self._prev[tstp] = signal.signal(tstp, signal.SIG_IGN)
         return self
 
     def __exit__(self, *exc):
@@ -630,13 +719,16 @@ def _delete_store(run_dir: Path, probe: Probe) -> dict:
         return {"deleted": False, "refused": "the directory does not carry this runner's marker; nothing was removed"}
     before = dir_allocated_bytes(run_dir)
     free_before = probe.free_disk(run_dir.parent)
-    # The marker goes LAST: a deletion that is cut short leaves a directory ``--cleanup`` still recognises.
-    for child in sorted(run_dir.iterdir(), key=lambda c: c.name == MARKER):
-        if child.is_dir() and not child.is_symlink():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-    run_dir.rmdir()
+    try:
+        # The marker goes LAST: a deletion that is cut short leaves a directory ``--cleanup`` still recognises.
+        for child in sorted(run_dir.iterdir(), key=lambda c: c.name == MARKER):
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        run_dir.rmdir()
+    except OSError as exc:  # the report must still be written: what is left is named, never hidden
+        return {"deleted": False, "error": f"the deletion stopped: {type(exc).__name__}; delete the directory with --cleanup"}
     return {
         "deleted": True,
         "bytes_freed": before,
@@ -677,7 +769,7 @@ def build_phases(
                                             "--extract", str(extract), "--country", country, *reader_args]))
     if gazetteer != "off":
         assert gazetteer_out is not None
-        how = ["--no-wikidata"]  # the online join is NEVER run inside the throwaway store: see build_phases below
+        how = ["--no-wikidata"]  # the online join is NEVER run inside the throwaway store: see GAZETTEER_MODES above
         phases.append(PhaseSpec("gazetteer", [py, str(ROOT / "scripts" / "build_place_gazetteer.py"), "--country", country,
                                               "--out", str(gazetteer_out), *how]))
     return phases
@@ -703,6 +795,9 @@ def not_measured(*, history: bool, gazetteer: str, kernel_peak: bool) -> list[st
 
 def run(**kwargs: Any) -> tuple[dict, Path | None]:
     """:func:`_run` with SIGHUP / SIGTERM / SIGINT handled for the whole of it, the report write included."""
+    if threading.current_thread() is not threading.main_thread():
+        raise ValueError("the reference run must be called from the main thread: only there can its signal handling "
+                         "stop the child cleanly (a signal would otherwise take its default action and leave the child running)")
     with _terminating_signals():
         return _run(**kwargs)
 
@@ -774,6 +869,11 @@ def _run(
     if base == ROOT or ROOT in base.parents:
         raise ValueError("the throwaway store must live outside the repository (its passphrase file and logs would sit "
                          "in the working tree); pass --workdir elsewhere")
+    if report_path is not None:
+        try:  # an unwritable report location is found NOW, not after hours of measuring
+            Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(f"the report's directory cannot be created ({type(exc).__name__})") from None
     base.mkdir(parents=True, exist_ok=True)
     started = now()
     host = host_facts(base)
@@ -806,52 +906,67 @@ def _run(
         "not_measured": [],
     }
     kernel_peak = hasattr(os, "wait4")
+    stamp = started.strftime("%Y%m%dT%H%M%SZ")
+    g_out = Path(gazetteer_out).resolve() if gazetteer_out else None
+    if gazetteer != "off" and g_out is None:
+        g_out = base / f"places_gazetteer-{stamp}.yml"
+    secrets_ = (passphrase,)
+    try:
+        home: Path | None = Path.home()
+    except (RuntimeError, KeyError):  # no home directory to name: nothing of it to scrub
+        home = None
+    known: dict[str, str] = {}
+    for path, label in ((ROOT, "<repo>"), (base, "<workdir>"), (extract.parent, "<extract-dir>"),
+                        (Path(history).parent if history else None, "<history-dir>"),
+                        (g_out.parent if g_out else None, "<output-dir>"), (home, "<home>")):
+        if path is not None:
+            known.setdefault(str(path), label)
+    roots = tuple(sorted(known.items(), key=lambda kv: -len(kv[0])))
+
+    def _finish(run_dir: Path | None, kept_dir: Path | None) -> tuple[dict, Path | None]:
+        report["not_measured"] = report["not_measured"] or not_measured(
+            history=history is not None, gazetteer=gazetteer, kernel_peak=kernel_peak)
+        report["finished_at"] = now().isoformat()
+        final = _scrub_obj(report, secrets_=secrets_, run_dir=run_dir, roots=roots)
+        if report_path is not None:
+            try:
+                write_report(final, report_path)
+            except OSError as exc:  # the measurement must not be lost to a bad report path after hours of work
+                final["report_write_error"] = type(exc).__name__
+        return final, kept_dir
+
     if plan_only:
         report["status"] = "plan"
         report["not_measured"] = ["everything: --plan runs nothing"]
-        report["finished_at"] = now().isoformat()
-        return report, None
+        return _finish(None, None)
     if not pf["ok"]:
         report["status"] = "refused-preflight"
         report["reason"] = (f"free disk is {pf['free_bytes']} bytes and the run needs {pf['needed_bytes']} "
                             f"({pf['floor_basis']})")
         report["not_measured"] = ["everything: the preflight refused before any phase started"]
-        report["finished_at"] = now().isoformat()
-        return report, None
+        return _finish(None, None)  # a refusal is a result too: the report names it, so the operator is never pointed at nothing
 
-    stamp = started.strftime("%Y%m%dT%H%M%SZ")
     run_dir = base / f"oo-osm-reference-run-{stamp}-{secrets.token_hex(3)}"
     data_dir = run_dir / "data"
     tmp_dir = run_dir / "tmp"
     run_dir.mkdir(mode=0o700)
-    data_dir.mkdir()
-    tmp_dir.mkdir()
-    (run_dir / MARKER).write_text("a throwaway store made by scripts/osm_reference_run.py; safe to delete\n", "utf-8")
-    if on_start is not None:
-        on_start(run_dir)
-    secrets_ = (passphrase,)
-    env = {k: v for k, v in os.environ.items()
-           if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR", "DATABASE_URL")}
-    # Temporary and spill files stay on the filesystem the guard reads (and are deleted with the store).
-    env.update({"OO_DATA_DIR": str(data_dir), "OO_DB_PASSPHRASE": passphrase, "PYTHONUNBUFFERED": "1",
-                "TMPDIR": str(tmp_dir), "SQLITE_TMPDIR": str(tmp_dir)})
-
-    g_out = Path(gazetteer_out).resolve() if gazetteer_out else None
-    if gazetteer != "off" and g_out is None:
-        g_out = base / f"places_gazetteer-{stamp}.yml"
-    specs = phases_override if phases_override is not None else build_phases(
-        extract=extract, country=country, history=Path(history) if history else None, reader=reader,
-        gazetteer=gazetteer, gazetteer_out=g_out)
-
-    known: dict[str, str] = {}
-    for path, label in ((ROOT, "<repo>"), (base, "<workdir>"), (extract.parent, "<extract-dir>"),
-                        (Path(history).parent if history else None, "<history-dir>"),
-                        (g_out.parent if g_out else None, "<output-dir>"), (Path.home(), "<home>")):
-        if path is not None:
-            known.setdefault(str(path), label)
-    roots = tuple(sorted(known.items(), key=lambda kv: -len(kv[0])))
-
+    # From here ANYTHING that goes wrong still ends in the deletion step and a written report.
     try:
+        data_dir.mkdir()
+        tmp_dir.mkdir()
+        (run_dir / MARKER).write_text("a throwaway store made by scripts/osm_reference_run.py; safe to delete\n", "utf-8")
+        if on_start is not None:
+            with contextlib.suppress(OSError):  # a closed terminal must not end the run before it starts
+                on_start(run_dir)
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR", "DATABASE_URL")}
+        # Temporary and spill files stay on the filesystem the guard reads (and are deleted with the store).
+        env.update({"OO_DATA_DIR": str(data_dir), "OO_DB_PASSPHRASE": passphrase, "PYTHONUNBUFFERED": "1",
+                    "TMPDIR": str(tmp_dir), "SQLITE_TMPDIR": str(tmp_dir)})
+        specs = phases_override if phases_override is not None else build_phases(
+            extract=extract, country=country, history=Path(history) if history else None, reader=reader,
+            gazetteer=gazetteer, gazetteer_out=g_out)
+
         for spec in specs:
             if _INT.signal is not None:
                 report["status"] = "interrupted"
@@ -884,23 +999,29 @@ def _run(
             report.setdefault("outputs", {})["gazetteer"] = {
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
+    except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
+        report["status"] = "failed"
+        report["reason"] = f"the runner itself failed: {type(exc).__name__}: {exc}"
     finally:
-        # THE THIRD STEP: the throwaway store goes, and the report says so. A kept store is left on purpose.
+        # THE THIRD STEP: the throwaway store goes, and the report says so. A kept store is left on purpose --
+        # and so is one a child's group still held when the sweep ended: nothing is deleted under a live writer.
+        survived = any(p.get("group_survived") for p in report["phases"])
         if keep_store:
             report["store"] = {"kept": True, "note": "left for a separate gazetteer build; delete it with --cleanup"}
             kept_dir: Path | None = run_dir
+        elif survived:
+            report["store"] = {"kept": True, "deleted": False,
+                               "note": "a process of the child's group was still alive after SIGKILL, so the store was NOT "
+                                       "deleted; delete it with --cleanup once that process is gone"}
+            kept_dir = run_dir
         else:
-            report["store"] = {"kept": False, **_delete_store(run_dir, probe)}
-            kept_dir = None
+            gone = _delete_store(run_dir, probe)
+            report["store"] = {"kept": not gone.get("deleted"), **gone}
+            kept_dir = None if gone.get("deleted") else run_dir
     if _INT.signal is not None and report["status"] == "ok":
-        report["status"] = "interrupted"
-        report["reason"] = f"the runner was interrupted ({_INT.signal}) as the run ended"
-    report["not_measured"] = not_measured(history=history is not None, gazetteer=gazetteer, kernel_peak=kernel_peak)
-    report["finished_at"] = now().isoformat()
-    final = _scrub_obj(report, secrets_=secrets_, run_dir=run_dir, roots=roots)
-    if report_path is not None:
-        write_report(final, report_path)
-    return final, kept_dir
+        # Every phase finished on its own: the outcome stays what it was, and the signal is recorded beside it.
+        report["interrupted_by"] = _INT.signal
+    return _finish(run_dir, kept_dir)
 
 
 def write_report(report: dict, path: Path) -> None:
