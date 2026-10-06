@@ -1125,8 +1125,9 @@ def test_the_wiki_lane_tiers_stop_inside_a_window_when_the_check_is_armed(regist
 def test_the_check_is_the_boot_sequences_first_step():
     from src.api import boot_sequence
 
-    assert boot_sequence.STEPS[0] == "verify-database" and boot_sequence.STEPS[2] == "warm-cache"
-    assert boot_sequence.STEPS[1] == "article-indexes", "the index build goes after the check and before the warm-up"
+    assert boot_sequence.STEPS[0] == "verify-database" and boot_sequence.STEPS[3] == "warm-cache"
+    assert boot_sequence.STEPS[1] == "repair-database", "the repair goes right after the check that confirms the damage"
+    assert boot_sequence.STEPS[2] == "article-indexes", "the index build goes after the repair and before the warm-up"
 
 
 def test_the_boot_step_runs_the_armed_check_and_is_skipped_when_nothing_is_armed(healthy, files, monkeypatch):

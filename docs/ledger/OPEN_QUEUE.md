@@ -16511,3 +16511,30 @@ maintainer as a card.
   verdict in both states, and that the title index reads no drift in any state.)
 - **TO ADD ONCE THE BROWSE CHANGE (PR D) HAS LANDED**: the plan test builds the browse's ids query with the ORM, because `_query_articles`'s ids-first form is in PR D,
   which is not in this stack; add a test that takes the plan of the real function for a language filter and both title sorts.
+- **DAMAGED DATABASE, SLICE E3: THE REPAIR OF A CONFIRMED-DAMAGED LIBRARY FILE AT START-UP, AND WHAT IT DOES NOT DO (WAL / DISK THREAD, 2026-10-06; QUESTION 27 WAS ANSWERED a, `R121`;
+  QUESTION 35 (what happens to the damaged file the repair keeps) WAS ANSWERED b, `R129`: removed 30 days after the repaired file first reads clean; the plan is
+  `/mnt/project-files/wal-disk-pool/PLAN-damaged-database.md`).** (a) The repair acts on exactly one thing: a CORPUS file whose per-table check THIS process measured as `damaged`
+  (`damage.registry.confirmed_damage`). Not done: **E3b** a file found damaged while the app runs is latched and repaired at the NEXT start, not in place (an in-process repair
+  needs the engines quiesced and a window the operator did not ask for); the Wikipedia and law files are paused as before and not repaired (their latches contain them, and a lane's
+  file is rebuilt from its feed); a finding an earlier process made that this one did not read again is not acted on. **E3c** a finding limited to the search index is repaired by the
+  whole-file copy (which rebuilds the search index anyway); a rebuild of the search index alone, without a second copy of the library, is not built. (b) **Rows are not invented:** an
+  unreadable id is counted and its range listed in the repair record; children whose parent row could not be read are KEPT and counted per table (deleting them would turn one lost page
+  of a parent into the loss of every row that refers to it). **E3d, a known limit:** an AUTOINCREMENT table never hands out an id the damaged file's own counter or a lost range reached
+  (`sqlite_sequence` is raised to the highest id seen), but a table without AUTOINCREMENT hands out `max(rowid) + 1`, so ids at the very tail whose rows could not be read can be given
+  to new rows; the record says when a table's tail was unreadable (`open_ended`, `unreadable_from`). The derived stores re-read the new file through the corpus epoch (`bump_corpus_epoch`,
+  reason `salvage`), which is also what the keyword counters follow, and each source's stored article count is cleared so the live count is read. (c) Two guards stop a repair that itself
+  fails: `MAX_UNFINISHED_STARTS = 2` (two starts in a row that began a repair and did not see it end; not tried again until the app is updated, the record is `database-repair-attempt.json`)
+  and the room check (the file, its log and the disk guard's own reserve; an unreadable figure is not a refusal and the drive filling while the copy grows is what the number protects). A drive
+  that cannot give a file a second name is refused up front (`no-hard-links`): the alternative, a rename pair, has a moment in which no library file exists. (d) **R129, THE REMOVAL:**
+  `repair.sweep_kept_copies()` runs at the END of `run_now_and_wait()`, in the boot step, so it runs at a start and only at a start: an app that runs for weeks removes the file at the first
+  start after the date, and every notice says so (the removal is never a timer; a timer would have to prove, while the app serves, that no repair or check is running). A due file is removed only
+  when ALL hold (each refusal is recorded `kept_file_removal_refused` and is final, never retried, because a name that is another file now is not the file the user was told about): the
+  name is exactly `<stem>.damaged-<stamp>[-n]<suffix>` of the live library, in its folder (the record's folder resolves to the live folder), not a link and a regular file, its inode is the one
+  the swap noted when it made the second name (the device number is noted and NOT compared: it is not stable across mounts, and a mismatch there would make the refusal permanent for the right
+  file), and it is not the live file; nothing is removed while a repair or a check runs or the live library is latched damaged again (`waiting`, retried at the next start). The `-wal`
+  name the swap made goes with it by the same identity (an unrecognised `-wal` is left and recorded as `kept_wal_left`). A failed unlink is retried at the next start; a file the user removed is
+  recorded `kept_file_gone_at` and nothing is said. **The removal date is `clean_at + 30 days`, and `clean_at` is the FIRST clean read of the new file, kept through a resume by the sidecar.**
+  (e) **A kept file whose repair record has aged out is never removed:** `damage.REPAIRS_KEEP = 10` keeps the last ten repairs in `database-damage.json`; the sweep reads those records, so a
+  file whose record fell out (ten repairs, itself a sign of a failing drive) stays until the user removes it; the manual says so. The removal notice is shown for 30 days after it. NOT DONE: a
+  setting for the number of days (the user's answer fixed it at 30), and a list of kept files for the Diagnostics zip as a dump lister (the coordinator's diagnostics-members PR, RC's function).
+  (f) The salvage's passphrase scrub (`salvage._scrub`) is its own until RC's hardened `secret_scrub` lands; adapt it then (the repair's own sentence frames carry no engine text).

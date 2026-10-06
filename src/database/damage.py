@@ -75,7 +75,7 @@ import time
 import uuid
 import weakref
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -105,6 +105,13 @@ ROUTE_REBUILD_INDEX = "search-index-rebuild"
 #: Incidents kept in the record. Twenty is a day's worth of distinct problems on the worst machine
 #: measured, and a file that grows without bound in a failing data directory is its own incident.
 INCIDENTS_KEEP = 20
+#: How many repair attempts the record keeps (the newest). One attempt is a few hundred bytes plus its per-table lines.
+REPAIRS_KEEP = 10
+
+#: How many days the damaged file a repair set aside is kept, counted from the moment the repaired file first read clean (R129, the
+#: user's answer 35 = b); ``repair.KEPT_COPY_DAYS`` is this number, which lives here because the notice needs it and ``repair`` imports
+#: this module. The notice that the app removed the file is shown for as many days again, so a banner does not outlive its use.
+KEPT_COPY_DAYS = 30
 
 #: Repeats of a known incident are written back at most this often. The latch stops the writers within a
 #: statement or two, so a repeat is rare; the bound is for the case where something else keeps reading.
@@ -395,6 +402,8 @@ class DamageRegistry:
         self._verifying: dict[str, Any] | None = None
         #: The newest check of each file (this process's, or an earlier one's read from the record).
         self._verification: dict[str, dict[str, Any]] = {}
+        #: The attempts of the repair of a damaged file (``database/repair.py``), newest last, this process's and earlier ones'.
+        self._repairs: deque[dict[str, Any]] = deque(maxlen=REPAIRS_KEEP)
 
     def _reset_for_tests(self, *, path_fn=None) -> None:
         with self._lock:
@@ -409,6 +418,7 @@ class DamageRegistry:
             self._pending.clear()
             self._verifying = None
             self._verification.clear()
+            self._repairs.clear()
             self._path_fn = path_fn or record_path
 
     # -- persistence ------------------------------------------------------------------------------
@@ -474,6 +484,10 @@ class DamageRegistry:
                 # left unfinished); a result this process already produced is newer and wins.
                 if isinstance(ver, dict) and str(key) not in self._verification:
                     self._verification[str(key)] = dict(ver)
+            mine = list(self._repairs)  # an attempt noted while the file was being read stays newest
+            self._repairs.clear()
+            self._repairs.extend(r for r in (raw.get("repairs") or [])[-REPAIRS_KEEP:] if isinstance(r, dict))
+            self._repairs.extend(mine)
         except (AttributeError, TypeError, ValueError):
             self._prior_unreadable = True
 
@@ -489,6 +503,7 @@ class DamageRegistry:
             "files": {k: {kk: vv for kk, vv in v.items() if kk not in _MEMORY_ONLY} for k, v in self._files.items()},
             "incidents": [dict(i) for i in self._incidents],
             "verification": {k: dict(v) for k, v in self._verification.items()},
+            "repairs": [dict(r) for r in self._repairs],
         }
 
     def _flush(self, doc: dict[str, Any]) -> None:
@@ -1264,6 +1279,118 @@ class DamageRegistry:
             ),
         )
 
+    # -- the repair of a damaged file (database/repair.py) ----------------------------------------
+    def confirmed_damage(self, file_key: str) -> dict[str, Any] | None:
+        """What THIS process's start-up check confirmed about ``file_key``: ``{"tables": [the names read as damaged],
+        "file_name"}``, or ``None`` when it did not (no check ran, it read clean, it was left unfinished, or the finding
+        is an earlier process's, carried over: a repair acts only on a verdict this process measured)."""
+        self._ensure_loaded()
+        with self._lock:
+            entry = self._verification.get(file_key)
+            if (
+                entry is None
+                or entry.get("process") != self._process
+                or entry.get("state") != "done"
+                or entry.get("verdict") != VERDICT_DAMAGED
+            ):
+                return None
+            tables = [t for t in entry.get("tables") or [] if isinstance(t, dict)]
+            return {
+                "tables": [str(t.get("table")) for t in tables if t.get("verdict") == VERDICT_DAMAGED],
+                "file_name": entry.get("file_name"),
+            }
+
+    def repair_upsert(self, rec_id: str, **fields: Any) -> None:
+        """Create or update one repair attempt of the record (``fields`` are counts, names, times and a reason code:
+        never a value, a path or an engine message). Never raises."""
+        try:
+            self._ensure_loaded()
+            with self._lock:
+                for rec in self._repairs:
+                    if rec.get("id") == rec_id:
+                        rec.update(fields)
+                        break
+                else:
+                    self._repairs.append({"id": rec_id, "process": self._process, **fields})
+            self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+        except Exception:  # noqa: BLE001 - a record that cannot be kept must never stop a repair
+            _LOG.debug("database damage: could not record a repair attempt", exc_info=True)
+
+    def repairs(self) -> list[dict[str, Any]]:
+        """The attempts, oldest first (copies)."""
+        self._ensure_loaded()
+        with self._lock:
+            return [dict(r) for r in self._repairs]
+
+    def _repair_notes_locked(self, corpus_latched: bool) -> list[dict[str, Any]]:
+        """The sentences about the repair. Caller holds the lock. This process's newest attempt says what it did; a
+        repaired file says where the damaged one is kept for as long as it is there; a latched corpus with no attempt of
+        this process says the repair happens at the next start."""
+        out: list[dict[str, Any]] = []
+        mine = [r for r in self._repairs if r.get("process") == self._process]
+        newest = mine[-1] if mine else None
+        if newest is not None:
+            state, reason = newest.get("state"), newest.get("reason")
+            if state == "running":
+                out.append({"kind": "repair", "file": FILE_CORPUS, "frame": FRAME_REPAIRING, "vars": {}})
+            elif state == "refused" or state == "failed":
+                frame = {
+                    "no-room": FRAME_REPAIR_NO_ROOM,
+                    "schema-unreadable": FRAME_REPAIR_NO_SCHEMA,
+                    "no-hard-links": FRAME_REPAIR_NO_LINKS,
+                    "writer-busy": FRAME_REPAIR_BUSY,
+                    "unfinished-starts": FRAME_REPAIR_UNFINISHED,
+                }.get(str(reason), FRAME_REPAIR_FAILED)
+                values: dict[str, Any] = {}
+                if frame == FRAME_REPAIR_NO_ROOM:
+                    values = {"free": int(newest.get("free_mb") or 0), "needed": int(newest.get("needed_mb") or 0)}
+                if corpus_latched:
+                    out.append({"kind": "repair", "file": FILE_CORPUS, "frame": frame, "vars": values})
+        elif corpus_latched and repair_switch_on():
+            out.append({"kind": "repair", "file": FILE_CORPUS, "frame": FRAME_REPAIR_NEXT_START, "vars": {}})
+        done = [r for r in self._repairs if r.get("state") == "done" and r.get("kept_file")]
+        if done:
+            last = done[-1]
+            what = {
+                "kept": int(last.get("kept_rows") or 0),
+                "lost": int(last.get("unreadable_ids") or 0),
+            }
+            kept = _kept_file_of(last)
+            removed_at = last.get("kept_file_removed_at") if _within_days(last.get("kept_file_removed_at"), KEPT_COPY_DAYS) else None
+            if kept is not None or removed_at:
+                out.append(
+                    {
+                        "kind": "repaired",
+                        "file": FILE_CORPUS,
+                        "frame": FRAME_REPAIRED_OPEN if last.get("open_ended") else FRAME_REPAIRED,
+                        "vars": what,
+                    }
+                )
+            name = str(last["kept_file"])
+            if removed_at:
+                out.append(
+                    {
+                        "kind": "repaired",
+                        "file": FILE_CORPUS,
+                        "frame": FRAME_KEPT_REMOVED,
+                        "vars": {"name": name, "size": _bytes_words(last.get("kept_file_removed_bytes")), "date": str(removed_at)[:10]},
+                    }
+                )
+            elif kept is not None:
+                where = {"name": name, "size": _size_words(kept), "folder": str(kept.parent)}
+                if last.get("kept_file_removal_refused"):
+                    out.append({"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_KEPT_NOT_REMOVED, "vars": where})
+                elif last.get("kept_file_removal_after"):
+                    out.append(
+                        {
+                            "kind": "repaired",
+                            "file": FILE_CORPUS,
+                            "frame": FRAME_KEPT_UNTIL,
+                            "vars": {**where, "date": str(last["kept_file_removal_after"])[:10]},
+                        }
+                    )
+        return out
+
     # -- what a surface shows -------------------------------------------------------------------
     def notes(self) -> list[dict[str, Any]]:
         """The sentences to show, one per latched file, as frames the page translates: ``{kind, file,
@@ -1317,6 +1444,8 @@ class DamageRegistry:
                             "vars": {"tries": int(st["check_stopped_after"])},
                         }
                     )
+            corpus = self._files.get(FILE_CORPUS)
+            out.extend(self._repair_notes_locked(bool(on and corpus and corpus["latched"])))
         return out
 
     def state(self, *, detail: bool = False) -> dict[str, Any]:
@@ -1330,6 +1459,7 @@ class DamageRegistry:
             prior_unreadable = self._prior_unreadable
             verifying = dict(self._verifying) if self._verifying is not None else None
             verification = {k: dict(v) for k, v in self._verification.items()}
+            repairs = [dict(r) for r in self._repairs]
         # ``latched`` is the files whose writers are paused; a file with no writer to pause is NAMED
         # (``recorded_only``, and a note) and nothing waits on it.
         latched = sorted(k for k, v in files.items() if v["latched"] and k in PAUSED_FILES) if switch_on() else []
@@ -1347,6 +1477,7 @@ class DamageRegistry:
             "record_file": RECORD_FILE,
             "verifying": verifying,
             "verification": verification if detail else {k: _verification_brief(v) for k, v in verification.items()},
+            "repairs": repairs if detail else [_repair_brief(r) for r in repairs],
         }
         if detail:
             out["incidents"] = incidents
@@ -1367,6 +1498,62 @@ def carried_damage(entry: dict[str, Any] | None) -> list[str] | None:
         read = [t["table"] for t in entry.get("tables") or [] if isinstance(t, dict) and t.get("verdict") == VERDICT_DAMAGED]
         names |= set(read) or {SCHEMA_ENTRY}
     return sorted(names) or None
+
+
+def repair_switch_on() -> bool:
+    """``OO_BOOT_REPAIR=0`` turns the repair of a damaged data file off (the file stays paused and named, and nothing is
+    copied). Its own switch, never the damage pause's or the check's."""
+    return os.getenv("OO_BOOT_REPAIR", "1") != "0"
+
+
+def _kept_file_of(rec: dict[str, Any]) -> Path | None:
+    """The damaged file a finished repair kept, when it is still where it was put (a stat; ``None`` once it is gone)."""
+    try:
+        name = rec.get("kept_file")
+        if not name:
+            return None
+        base = Path(str(rec.get("folder") or ""))
+        path = base / str(name)
+        return path if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _within_days(when: Any, days: int) -> bool:
+    """Whether the ISO time ``when`` is less than ``days`` days before now (or later than now). ``False`` for anything that is not a time."""
+    try:
+        then = datetime.fromisoformat(str(when))
+    except (TypeError, ValueError):
+        return False
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return datetime.now(UTC) - then < timedelta(days=days)
+
+
+def _size_words(path: Path) -> str:
+    """A file's size in SI units for a sentence (``12.4 GB``)."""
+    try:
+        return _bytes_words(path.stat().st_size)
+    except OSError:
+        return "?"
+
+
+def _bytes_words(size: Any) -> str:
+    """A number of bytes in SI units for a sentence (``12.4 GB``); ``?`` when it is not a number."""
+    try:
+        n = float(size)
+    except (TypeError, ValueError):
+        return "?"
+    for unit in ("B", "kB", "MB", "GB", "TB"):
+        if n < 1000 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1000.0
+    return f"{n:.1f} TB"
+
+
+def _repair_brief(rec: dict[str, Any]) -> dict[str, Any]:
+    """A repair attempt without its per-table lines (the polled status carries this; the bundle carries all)."""
+    return {k: v for k, v in rec.items() if k != "tables"}
 
 
 def _verification_brief(entry: dict[str, Any]) -> dict[str, Any]:
@@ -1412,10 +1599,10 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
         return {"error": f"{type(exc).__name__}: {first}"}
 
 
-#: The plain sentences. Frames the page translates (each is also a locale key, x12). None of them says
-#: the file is being repaired: nothing is (E3). None says what is still intact either: a damage sentence
-#: comes from an error, and what the per-table check read is in the record, not in the sentence. They say
-#: what is true. "Collection will not write to it" holds whether the scheduler is running or stopped;
+#: The plain sentences. Frames the page translates (each is also a locale key, x12). The damage sentences say
+#: nothing of a repair: the repair has its own (the ``FRAME_REPAIR*`` ones below), said only when it is what is
+#: happening. None says what is still intact either: a damage sentence comes from an error, and what the per-table
+#: check read is in the record, not in the sentence. They say what is true. "Collection will not write to it" holds whether the scheduler is running or stopped;
 #: "paused" would claim a state it may not be in.
 FRAME_DATA = (
     "Part of your library's data file could not be read: the database reported damage. An unexpected "
@@ -1469,6 +1656,70 @@ FRAME_PAUSE_OFF = (
     "database-damage.json in your data folder."
 )
 
+#: The repair of a damaged library file (E3, ``database/repair.py``). Each says what is true and what was NOT done: a refusal
+#: says the data files were not changed, and the damaged file a repair set aside is kept for ``repair.KEPT_COPY_DAYS`` days
+#: after the new file first reads clean and then removed by the app (R129, the user's answer 35 = b), which the notices say.
+FRAME_REPAIR_NEXT_START = (
+    "The app repairs a damaged library file by itself at its next start: it copies every row it can still read into a "
+    "new file, checks it, and switches to it. The damaged file is kept beside it for 30 days after the new file first "
+    "reads clean, and then removed; you can remove it sooner. Until the repair, collection will not write to the damaged "
+    "file."
+)
+FRAME_REPAIRING = (
+    "The app is repairing your damaged library file: it is copying every row it can still read into a new file, and it "
+    "switches to the new file only when that reads clean. Anything the app saves waits until it is done. The damaged "
+    "file is kept for 30 days after that, and then removed."
+)
+FRAME_REPAIRED = (
+    "Your library file was damaged, and the app repaired it: {kept} rows were copied and up to {lost} entries could not "
+    "be read. Articles that could not be read are collected again by ordinary collection."
+)
+FRAME_REPAIRED_OPEN = (
+    "Your library file was damaged, and the app repaired it: {kept} rows were copied. The end of the article list could "
+    "not be read, so how many entries were lost is not known (at least {lost}). Articles that could not be read are "
+    "collected again by ordinary collection."
+)
+FRAME_KEPT_UNTIL = (
+    "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. The app removes it at the first start "
+    "on or after {date} (30 days after the repaired file first read clean), unless your library is damaged again then; "
+    "you can remove it yourself before that."
+)
+FRAME_KEPT_REMOVED = (
+    "The damaged file the repair set aside ({name}, {size}) was removed on {date}, 30 days after the repaired file "
+    "first read clean."
+)
+FRAME_KEPT_NOT_REMOVED = (
+    "The app will not remove the damaged file the repair set aside ({name}, {size}) in {folder}: what is there now is "
+    "not the file the repair recorded, or it is a link. It stays until you remove it yourself."
+)
+FRAME_REPAIR_NO_ROOM = (
+    "The app did not repair your damaged library file: the drive has {free} MB free and the repair needs about {needed} "
+    "MB. Free some space and restart the app; the repair then starts by itself. Your data files were not changed."
+)
+FRAME_REPAIR_NO_SCHEMA = (
+    "The app cannot repair your damaged library file: the list of its tables cannot be read, so nothing can be copied. "
+    "Restore a backup. Your data files were not changed."
+)
+FRAME_REPAIR_NO_LINKS = (
+    "The app did not repair your damaged library file: the drive it is on cannot give a file a second name, which the "
+    "safe switch to a repaired file needs. Your data files were not changed. Restore a backup, or move your library to "
+    "another drive."
+)
+FRAME_REPAIR_BUSY = (
+    "The app did not repair your damaged library file: another job was still writing to your library when the repaired "
+    "file was ready, so nothing was switched. Your data files were not changed. The repair is tried again at the next "
+    "start."
+)
+FRAME_REPAIR_FAILED = (
+    "The app could not finish repairing your damaged library file, and it changed nothing. The reason is in the file "
+    "database-damage.json in your data folder. The repair is tried again at the next start."
+)
+FRAME_REPAIR_UNFINISHED = (
+    "The app did not repair your damaged library file: two starts in a row ended while it was being repaired (the "
+    "computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is "
+    "updated. Your data files were not changed."
+)
+
 METHOD = (
     "A failed database statement counts only when the DRIVER's own error is SQLITE_CORRUPT (code 11 and "
     "its extended codes); a wrong passphrase (code 26) never does, and SQLAlchemy's wrapper text, which "
@@ -1490,7 +1741,10 @@ METHOD = (
     "well formed and the records readable), not that an index agrees with its table and not every "
     "row's content; the search index (a virtual table) is checked by SQLite's own integrity check for "
     "its inverted index (SQLite 3.44 and later), which does not compare it with the articles. "
-    "Nothing here repairs anything."
+    "The repair of a damaged library file is database/repair.py's, at start-up and only on a damaged verdict this "
+    "process's check measured: it copies every row the file can still give into a new file, checks the new file with "
+    "the same per-table check, and switches to it, keeping the damaged file under a dated name; this record keeps "
+    "its attempts (counts, names and id ranges, never a value)."
 )
 
 

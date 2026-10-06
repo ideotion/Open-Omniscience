@@ -242,6 +242,11 @@ def _open(path: Path):
     return con
 
 
+#: The public name of the opener: the salvage copy (``database/salvage.py``) reads a damaged file through the same read-only,
+#: ``query_only`` connection the check does, so the one thing that opens a file it must not write is one piece of code.
+open_read_only = _open
+
+
 def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 

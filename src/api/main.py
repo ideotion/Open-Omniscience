@@ -176,6 +176,12 @@ def _stop_database_check() -> None:
         article_indexes.stop()  # a quit is not a build that brought the process down: the attempt is given back
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.debug("could not give back the article-list index attempt", exc_info=True)
+    try:
+        from src.database import repair
+
+        repair.stop()  # the copy in hand ends at its next batch; the attempt is given back like the index build's
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not stop the repair of the damaged library file", exc_info=True)
 
 
 def _ends_the_check_wait(fn):

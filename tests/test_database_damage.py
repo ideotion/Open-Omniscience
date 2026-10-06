@@ -704,14 +704,18 @@ def test_the_pause_has_its_own_switch_and_the_record_does_not(tmp_path, monkeypa
 
 def test_the_sentences_are_plain_and_name_what_is_true(registry):
     _note(registry, FILE_CORPUS)
-    [note] = registry.notes()
+
+    def about_the_damage():  # the repair's own sentences (E3) are tested in test_repair.py; this is what the damage says
+        return [n for n in registry.notes() if n["kind"] == "damage"]
+
+    [note] = about_the_damage()
     assert note["frame"] == damage.FRAME_DATA and note["vars"] == {}
     registry.retry(reason="t")
     _note(registry, FILE_CORPUS, statement="SELECT block FROM article_fts_data")
     assert registry.notes()[0]["frame"] == damage.FRAME_SEARCH_INDEX
     _note(registry, "wiki")
     _note(registry, "law")
-    frames = {n["file"]: n["frame"] for n in registry.notes()}
+    frames = {n["file"]: n["frame"] for n in about_the_damage()}
     assert frames == {
         FILE_CORPUS: damage.FRAME_SEARCH_INDEX,
         "wiki": damage.FRAME_WIKI,
@@ -719,7 +723,7 @@ def test_the_sentences_are_plain_and_name_what_is_true(registry):
     }
     # a file with no writer this module pauses is SAID, with a sentence that claims no pause
     _note(registry, "osm")
-    assert {n["file"]: n["frame"] for n in registry.notes()}["osm"] == damage.FRAME_RECORDED
+    assert {n["file"]: n["frame"] for n in about_the_damage()}["osm"] == damage.FRAME_RECORDED
     for frame in (
         damage.FRAME_DATA,
         damage.FRAME_SEARCH_INDEX,
