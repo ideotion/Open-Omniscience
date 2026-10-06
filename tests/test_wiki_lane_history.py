@@ -514,7 +514,7 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
 
     def other_thread_holds():
         write_gate.acquire()
-        time.sleep(0.15)
+        time.sleep(0.8)
         write_gate.release()
 
     def fake_drain_once(*a, **k):
@@ -534,7 +534,9 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
         R.drain_once = original
     g = runner.drain_status()["drain_duration"]["write_gate"]
     assert g["measured_drains"] == 1 and g["grants"] == 1
-    assert 0.03 <= g["held_s"] < 0.15, "only this thread's own hold, not the other thread's 0.15 s"
+    # the other thread's hold is 0.8 s; this thread's own is 0.03 s plus whatever a loaded runner adds
+    # (a macOS CI run measured 0.18 s for a 0.03 s sleep), so the bound sits well between the two
+    assert 0.03 <= g["held_s"] < 0.6, "only this thread's own hold, not the other thread's 0.8 s"
     assert g["longest_hold_s"] == g["held_s"]
     with lane_session("wiki") as db:
         runner._history.flush(db)
