@@ -16437,3 +16437,8 @@ maintainer as a card.
   next start sees no earlier finding and, unless the stop was unclean, does not read the file; the failure is said (`prior_record_unreadable`) and the NEXT incident or verification write REPLACES the
   unreadable file, so the evidence of what it held goes with it. Nothing re-derives the finding from the data file. If a ruling wants it closed, the way is one more reason for the start-up check (a
   record that could not be read), and keeping the unreadable file under another name before it is replaced, not a second copy of the findings.
+
+- **E2 FOLD 3: A DAMAGED VERDICT NEEDS A SECOND READ ON A NEW CONNECTION (WAL / DISK THREAD, 2026-10-06; the coordinator's ruling, R100).** The per-table check, the `(schema)` listing and the `(pages)` pass are read again and filed `damaged` only when the second read agrees (`second_read`
+  `agreed`, `clean` or `unavailable` on the entry). **Left, on purpose:** (a) the second read is not independent of the machine (a pressure that lasts through both reads fails both): it guards against a read that differs, and the record says what each read said; (b) the page pass of a large encrypted file is
+  read twice when it reports damage (about a second per 230 MB each, only on a damaged file); (c) a re-read whose second read differs leaves the older confirmed entry as it was (the registry's merge rule: only `rechecked_at` moves), so the record does not say that a re-read disagreed; (d) E1's in-app latch
+  (a first failed read pauses collection) is not covered here: its follow-up is its own small PR, in the poisoned-connection entry's (d).

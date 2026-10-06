@@ -38,6 +38,16 @@ Nothing else asks it: a healthy file, a wrong passphrase and a busy or locked fi
 the generic error a failing page also gives, and the pass then says what it read: a page it could not read is counted apart from a
 page that failed, and is never filed as damage).
 
+A DAMAGED ANSWER IS A SECOND READ'S TO CONFIRM (the coordinator's ruling, R100: a verdict must be measured). A table, the list of tables (``(schema)``)
+and the page pass (``(pages)``) that report damage are read AGAIN, on a NEW connection, and are filed ``damaged`` only when the second read agrees
+(``second_read: agreed`` on the entry). A second read that is clean (``second_read: clean``) or could not be made (``second_read: unavailable``,
+with ``second_detail`` saying why: busy, locked, a stop, an I/O error) files the entry ``unchecked`` instead, with the first read's own first line kept
+(``first_read``) and the sentence "nothing was concluded": nothing latches, nothing is repaired and the file is not called clean either. An ``ok`` or an
+``unchecked`` first read is final and costs one read, so only a damaged answer costs two. A re-read that settles nothing never replaces a finding two reads
+agreed on earlier (``DamageRegistry.recheck_finished`` keeps the older ``damaged`` entry over a newer ``unchecked`` one). What a second read does NOT
+prove: it is not independent of the machine's state (a pressure that lasts through both reads fails both), so it is a guard against a read that
+differs, not a proof of damage; the page numbers of the first pass are the ones kept.
+
 The results go into the damage record (``verification``, per file, a few hundred bytes a table), and a
 damaged table latches its file by the SAME door a corruption error does (``DamageRegistry._apply_incident``):
 the scope is ``search-index`` only when every damaged table belongs to the full-text index, else ``data``.
@@ -161,6 +171,17 @@ PAGE_PASS_LIMIT_BYTES = 1 << 32
 #: detail line, and the half that matters (the pages were NOT checked) is its end, so it stays under that (pinned by a test); the
 #: measurement is in :data:`PAGE_PASS_LIMIT_BYTES`'s comment and the module docstring.
 _OVER_LIMIT_REASON = "the file is longer than 4 GiB, where the page check reads the wrong bytes (measured), so its pages were not checked"
+
+#: What a damaged answer is filed as when the SECOND read, on a new connection, did not repeat it (a verdict must be measured, R100; a read that
+#: two connections disagree about measured nothing). ``second_read`` is the KEY on the entry: ``agreed`` (the damage stands), ``clean`` (the
+#: second read answered ``ok``, or listed the tables) or ``unavailable`` (it could not be made: busy, locked, a passphrase, a stop, an I/O error).
+#: WHAT THE LENGTH PROTECTS: each sentence is cut at ``DETAIL_CHARS`` like every detail line and the half that matters (nothing was concluded) is
+#: its end, so both stay under that (pinned by a test).
+SECOND_READ_AGREED = "agreed"
+SECOND_READ_CLEAN = "clean"
+SECOND_READ_UNAVAILABLE = "unavailable"
+_DIFFERENTLY = "a second read on a new connection did not report the damage the first one did, so nothing was concluded"
+_SECOND_UNMADE = "a second read on a new connection could not be made, so the damage the first one reported is not confirmed and nothing was concluded"
 
 
 def _size_of(path: Path) -> int:
@@ -348,8 +369,38 @@ def inspect_file(path: Path, *, opener: Opener | None = None) -> dict[str, Any]:
             con.close()
 
 
-def check_table(path: Path, table: str, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
-    """One table (and its indexes) through ``PRAGMA quick_check``, on its own connection. Never raises."""
+def inspect_confirmed(path: Path, *, opener: Opener | None = None) -> dict[str, Any]:
+    """:func:`inspect_file`, with an answer that reads as DAMAGE (a schema that cannot be read) read again on a NEW connection:
+
+    * the first answer, unchanged, when it was not damage (the list, or a reason that is not damage);
+    * the first answer with ``second_read: agreed`` when the second read reports damage too;
+    * the SECOND read's list with ``second_read: clean`` and ``first_read`` (the first read's reason) when it lists the tables: the list is the
+      answer, the caller reads every table, and files a ``(schema)`` entry that is ``unchecked`` (:func:`_not_concluded`);
+    * ``error: (unchecked, ...)`` with ``second_read: unavailable``, the second read's own ``sqlite_code`` and ``second_detail`` when the second
+      read could not be made.
+    Nothing latches on a listing that two connections disagree about."""
+    first = inspect_file(path, opener=opener)
+    err = first.get("error")
+    if err is None or err[0] != VERDICT_DAMAGED:
+        return first
+    second = inspect_file(path, opener=opener)
+    err2 = second.get("error")
+    if err2 is not None and err2[0] == VERDICT_DAMAGED:
+        return {**first, "second_read": SECOND_READ_AGREED}
+    seen = [err[1][:DETAIL_CHARS]]
+    if err2 is None:
+        return {**second, "second_read": SECOND_READ_CLEAN, "first_read": seen}
+    return {
+        **second,
+        "error": (VERDICT_UNCHECKED, _SECOND_UNMADE),
+        "second_read": SECOND_READ_UNAVAILABLE,
+        "first_read": seen,
+        "second_detail": [str(err2[1])[:DETAIL_CHARS]],
+    }
+
+
+def _read_table(path: Path, table: str, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
+    """ONE read of one table (and its indexes) through ``PRAGMA quick_check``, on its own connection. Never raises."""
     t0 = time.monotonic()
     detail: list[str] | None = None
     code: int | None = None
@@ -385,6 +436,46 @@ def check_table(path: Path, table: str, *, opener: Opener | None = None, cancel:
     if code is not None:
         out["sqlite_code"] = code
     return out
+
+
+def _not_concluded(first: dict[str, Any], second_read: str, second: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The entry for what ONE read reported as damaged and a second read, on a NEW connection, did not confirm: ``unchecked`` (never ``damaged``),
+    with the key of what the second read did, the first read's own first line (the record says what was reported and not repeated) and, when the
+    second read could not be made, why. Nothing latches on it and nothing is repaired because of it."""
+    out: dict[str, Any] = {
+        "table": first.get("table"),
+        "verdict": VERDICT_UNCHECKED,
+        "seconds": round(float(first.get("seconds") or 0) + float((second or {}).get("seconds") or 0), 2),
+        "detail": [(_DIFFERENTLY if second_read == SECOND_READ_CLEAN else _SECOND_UNMADE)[:DETAIL_CHARS]],
+        "second_read": second_read,
+        "first_read": [str(d)[:DETAIL_CHARS] for d in (first.get("detail") or [])[:1]],
+    }
+    if second_read == SECOND_READ_UNAVAILABLE and second is not None and second.get("detail"):
+        out["second_detail"] = [str(d)[:DETAIL_CHARS] for d in second["detail"][:1]]
+    return out
+
+
+def _second_read(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    """The entry of a damaged first read once the second read (another entry of the same kind, made on a new connection) is in."""
+    if second.get("verdict") == VERDICT_DAMAGED:
+        return {**first, "second_read": SECOND_READ_AGREED, "seconds": round(float(first.get("seconds") or 0) + float(second.get("seconds") or 0), 2)}
+    if second.get("verdict") == VERDICT_OK:
+        return _not_concluded(first, SECOND_READ_CLEAN, second)
+    return _not_concluded(first, SECOND_READ_UNAVAILABLE, second)
+
+
+def check_table(path: Path, table: str, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
+    """One table (and its indexes) through ``PRAGMA quick_check``, on its own connection. Never raises.
+
+    A ``damaged`` answer is read AGAIN, on a NEW connection, and stands only when the second read agrees (``second_read: agreed``): a read that
+    two connections disagree about, or a second read that could not be made, is ``unchecked`` with the key of what happened (R100: nothing
+    latches and nothing is repaired on a verdict that was not measured twice). An ``ok`` or an ``unchecked`` answer is final and costs one read."""
+    first = _read_table(path, table, opener=opener, cancel=cancel)
+    if first["verdict"] != VERDICT_DAMAGED:
+        return first
+    if cancel is not None and cancel.is_set():
+        return _not_concluded(first, SECOND_READ_UNAVAILABLE, {"detail": [_SQLITE_REASONS[9]]})
+    return _second_read(first, _read_table(path, table, opener=opener, cancel=cancel))
 
 
 def file_verdict(tables: list[dict[str, Any]]) -> str:
@@ -442,8 +533,8 @@ class _Kept:
             self.lines.append(line)
 
 
-def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
-    """The ``(pages)`` entry of an encrypted file: ``PRAGMA cipher_integrity_check``, once, on a read-only connection that is
+def _page_pass(path: Path, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
+    """ONE page pass of an encrypted file: ``PRAGMA cipher_integrity_check``, once, on a read-only connection that is
     closed on every path. Never raises. ``damaged`` when any page fails its authentication tag (``pages`` the first
     :data:`MAX_PAGES_LISTED` numbers, ``pages_total`` ALL of them), ``ok`` when none does, ``unchecked`` with the reason when the
     pass could not be made: a stop was asked for before it began, this build has no such pragma, or the driver raised (the
@@ -541,6 +632,18 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
         lines.append(unread_line)
     lines.extend(other.lines)
     return entry(VERDICT_DAMAGED, lines[:DETAIL_LINES], pages=pages, pages_total=failing, **counts)
+
+
+def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
+    """The ``(pages)`` entry of an encrypted file (:func:`_page_pass`: ``PRAGMA cipher_integrity_check`` on a read-only connection that is
+    closed on every path). Never raises. A ``damaged`` pass is run AGAIN on a NEW connection and stands only when the second pass agrees
+    (``second_read: agreed``, the first pass's page list kept); a second pass that is clean, or could not be made, files ``unchecked`` with the key of
+    what happened (:func:`_not_concluded`): nothing latches and nothing is repaired on a damage that was not measured twice. A pass that is
+    clean, or could not be made at all, is final and costs one pass."""
+    first = _page_pass(path, opener=opener, cancel=cancel)
+    if first["verdict"] != VERDICT_DAMAGED:
+        return first
+    return _second_read(first, _page_pass(path, opener=opener, cancel=cancel))  # a stop already asked for ends that pass before it opens anything
 
 
 def page_check(
@@ -855,7 +958,7 @@ def run_armed(*, opener: Opener | None = None) -> bool:
 
 def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
     reg = damage.registry
-    inspected = [(key, path, attempts, inspect_file(path, opener=opener)) for key, path, attempts in plan["files"]]
+    inspected = [(key, path, attempts, inspect_confirmed(path, opener=opener)) for key, path, attempts in plan["files"]]
     reg.verification_begin(sum(len(i.get("names", ())) for _k, _p, _a, i in inspected))
     with _LOCK:
         _GAVE_BACK.clear()
@@ -871,9 +974,28 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
             verdict, reason = info["error"]
             reg.verification_file_started(key, path=path, trigger=plan["trigger"], tables_total=0, attempts=attempts + 1)
             schema_tables: list[dict[str, Any]] = (
-                [{"table": SCHEMA_ENTRY, "verdict": VERDICT_DAMAGED, "seconds": 0.0, "detail": [reason[:DETAIL_CHARS]]}]
+                [
+                    {
+                        "table": SCHEMA_ENTRY,
+                        "verdict": VERDICT_DAMAGED,
+                        "seconds": 0.0,
+                        "detail": [reason[:DETAIL_CHARS]],
+                        "second_read": info.get("second_read", SECOND_READ_AGREED),
+                    }
+                ]
                 if verdict == VERDICT_DAMAGED
-                else []
+                else (
+                    # The list read as damage once and the second read could not be made: no verdict, and the record says what was reported.
+                    [
+                        _not_concluded(
+                            {"table": SCHEMA_ENTRY, "seconds": 0.0, "detail": info.get("first_read")},
+                            SECOND_READ_UNAVAILABLE,
+                            {"detail": info.get("second_detail")},
+                        )
+                    ]
+                    if info.get("second_read") == SECOND_READ_UNAVAILABLE
+                    else []
+                )
             )
             pages = None
             unread_kept = 0
@@ -904,6 +1026,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                             "verdict": VERDICT_DAMAGED,
                             "seconds": 0.0,
                             "detail": [f"the table list could not be read ({reason}); see {PAGES_ENTRY}"[:DETAIL_CHARS]],
+                            "second_read": info.get("second_read", SECOND_READ_AGREED),
                         }
                     ]
                 schema_tables = [*schema_tables, pages]
@@ -923,7 +1046,13 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
             continue
         names = info["names"]
         reg.verification_file_started(key, path=path, trigger=plan["trigger"], tables_total=len(names), attempts=attempts + 1)
-        tables: list[dict[str, Any]] = []
+        # A list that read as damage once and as a list the second time is no verdict either way: every table is read below, and the (schema)
+        # entry says so (``unchecked``, so the file is not called clean either).
+        tables: list[dict[str, Any]] = (
+            [_not_concluded({"table": SCHEMA_ENTRY, "seconds": 0.0, "detail": info.get("first_read")}, SECOND_READ_CLEAN)]
+            if info.get("second_read") == SECOND_READ_CLEAN
+            else []
+        )
         for name in names:
             if _CANCEL.is_set():
                 break
@@ -1025,7 +1154,7 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
         try:
             if _CANCEL.is_set():
                 continue
-            info = inspect_file(path)
+            info = inspect_confirmed(path)
             if "error" in info:
                 verdict, why = info["error"]
                 # A schema that cannot be read as damage is damage; anything else is no answer about the tables.

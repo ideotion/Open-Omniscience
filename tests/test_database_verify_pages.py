@@ -526,8 +526,10 @@ def test_the_connection_is_closed_on_every_path(rows, boom, verdict, words):
     verify._reset_for_tests()
     entry = verify.confirm_encrypted_damage(Path("whatever.db"), opener=lambda p: con)
     assert entry["verdict"] == verdict and words in entry["detail"][0], entry
-    assert con.closed == 1, "the pass's connection was not closed exactly once"
-    assert con.statements == ["PRAGMA cipher_integrity_check"]
+    # a damaged answer is read AGAIN on a new connection (here the opener hands out the same stand-in), each pass closing its own
+    passes = 2 if verdict == VERDICT_DAMAGED else 1
+    assert con.closed == passes, "a pass's connection was not closed exactly once"
+    assert con.statements == ["PRAGMA cipher_integrity_check"] * passes
 
 
 def test_a_connection_that_cannot_be_opened_is_unchecked_and_nothing_is_left_open():
@@ -551,8 +553,9 @@ def test_the_pass_opens_the_file_read_only(unchecked, monkeypatch):
         return real(path, **kw)
 
     monkeypatch.setattr(connect_mod, "connect", spy)
-    verify.confirm_encrypted_damage(unchecked)
-    assert seen == ["True"], "the pass opened the file for writing"
+    out = verify.confirm_encrypted_damage(unchecked)
+    # the file is damaged, so the pass is read again on a new connection: both opens are read-only
+    assert out["verdict"] == VERDICT_DAMAGED and seen == ["True", "True"], "the pass opened the file for writing"
 
 
 # --------------------------------------------------------------------------- #
@@ -973,3 +976,125 @@ def test_a_stop_while_no_pass_runs_leaves_the_pass_marker_clear():
     verify.stop()
     assert verify._PASS_FILE is None and not verify._GAVE_BACK
     verify._reset_for_tests()
+
+
+# --------------------------------------------------------------------------- #
+#  a damaged pass is read AGAIN on a new connection and stands only when the second pass agrees (E2 fold 3, R100)
+# --------------------------------------------------------------------------- #
+_FAILING = [("HMAC verification failed for page 7",), ("HMAC verification failed for page 9",)]
+
+
+def _openers(*cons):
+    """An opener that hands out ``cons`` in turn (one per call), and the list of calls it saw."""
+    calls: list[Path] = []
+    queue = list(cons)
+
+    def opener(path):
+        calls.append(Path(path))
+        nxt = queue.pop(0)
+        if isinstance(nxt, BaseException):
+            raise nxt
+        return nxt
+
+    return opener, calls
+
+
+def test_a_damaged_pass_stands_when_a_second_pass_on_a_new_connection_agrees_and_keeps_the_first_pass_pages():
+    first, second = _Rows(rows=_FAILING), _Rows(rows=_FAILING[:1])
+    opener, calls = _openers(first, second)
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=opener)
+    assert entry["verdict"] == VERDICT_DAMAGED and entry["second_read"] == verify.SECOND_READ_AGREED
+    assert entry["pages"] == [7, 9] and entry["pages_total"] == 2, "the first pass's finding was replaced"
+    assert len(calls) == 2 and first.closed == 1 and second.closed == 1
+
+
+def test_a_second_pass_that_reads_clean_files_the_pages_unchecked_and_says_what_each_read_said():
+    opener, calls = _openers(_Rows(rows=_FAILING), _Rows(rows=[]))
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=opener)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["second_read"] == verify.SECOND_READ_CLEAN
+    assert entry["detail"] == [verify._DIFFERENTLY] and "pages" not in entry and "pages_total" not in entry
+    assert "2 page(s) failed" in entry["first_read"][0], entry
+    assert len(calls) == 2
+
+
+def test_a_second_pass_that_could_not_be_made_files_the_pages_unchecked_with_why():
+    sqc = pytest.importorskip("sqlcipher3.dbapi2")
+    busy = sqc.OperationalError("database is locked")
+    busy.sqlite_errorcode = 5
+    opener, _calls = _openers(_Rows(rows=_FAILING), busy)
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=opener)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["second_read"] == verify.SECOND_READ_UNAVAILABLE
+    assert entry["detail"] == [verify._SECOND_UNMADE] and entry["second_detail"] == ["the file was busy"], entry
+    assert "2 page(s) failed" in entry["first_read"][0]
+
+
+def test_a_stop_between_the_two_passes_makes_no_second_pass_and_no_verdict():
+    stopped = threading.Event()
+
+    class Stopping(_Rows):
+        def close(self):
+            super().close()
+            stopped.set()  # the stop arrives as the first pass ends
+
+    first = Stopping(rows=_FAILING)
+    opener, calls = _openers(first)
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=opener, cancel=stopped)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["second_read"] == verify.SECOND_READ_UNAVAILABLE
+    assert entry["second_detail"] == ["the check was stopped"] and len(calls) == 1
+
+
+def test_a_clean_pass_and_a_pass_that_could_not_be_made_cost_one_pass():
+    for rows, boom in ((_Rows(rows=[]), None), (None, OSError("gone"))):
+        con = rows if rows is not None else _Rows(boom=boom)
+        opener, calls = _openers(con, _Rows(rows=_FAILING))
+        entry = verify.confirm_encrypted_damage(Path("x.db"), opener=opener)
+        assert entry["verdict"] in (VERDICT_OK, VERDICT_UNCHECKED) and "second_read" not in entry
+        assert len(calls) == 1, "a pass that was not damaged was read twice"
+
+
+def test_the_two_reasons_fit_the_detail_cut_and_end_on_what_matters():
+    for reason in (verify._DIFFERENTLY, verify._SECOND_UNMADE):
+        assert len(reason) <= verify.DETAIL_CHARS, "the sentence would be cut before it says nothing was concluded"
+        assert reason.endswith("nothing was concluded")
+
+
+def test_real_damage_is_confirmed_by_two_real_passes_and_a_real_flaky_first_read_is_not(tmp_path, unchecked, healthy):
+    """Real encrypted files: the damaged file's two passes agree; a first pass that reads the damaged file and a second pass that reads a
+    healthy one (what a read that differs between two connections looks like to the check) is unchecked."""
+    confirmed = verify.confirm_encrypted_damage(unchecked)
+    assert confirmed["verdict"] == VERDICT_DAMAGED and confirmed["second_read"] == verify.SECOND_READ_AGREED
+    assert confirmed["pages_total"] >= 1
+
+    paths = iter([unchecked, healthy])
+    flaky = verify.confirm_encrypted_damage(unchecked, opener=lambda p: verify._open(next(paths)))
+    assert flaky["verdict"] == VERDICT_UNCHECKED and flaky["second_read"] == verify.SECOND_READ_CLEAN, flaky
+
+
+def test_a_run_files_a_page_finding_damaged_only_after_two_passes_and_latches_on_it(tmp_path, unchecked, files, monkeypatch, asked):
+    _run(files, unchecked, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    pages = _by_table(entry)[verify.PAGES_ENTRY]
+    assert pages["verdict"] == VERDICT_DAMAGED and pages["second_read"] == verify.SECOND_READ_AGREED
+    assert damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_run_whose_second_pass_reads_a_different_file_latches_nothing_and_says_so(tmp_path, unchecked, healthy, files, monkeypatch):
+    real_open = verify._open
+    seen = {"n": 0}
+
+    def flaky(path):
+        seen["n"] += 1
+        # the list (1), the two tables (2, 3) and the first pass (4) read the damaged file; the read after them (the second pass) reads
+        # the healthy copy
+        return real_open(unchecked if seen["n"] <= 4 else healthy)
+
+    files[FILE_CORPUS] = unchecked
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed(opener=flaky) is True
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    pages = _by_table(entry)[verify.PAGES_ENTRY]
+    assert pages["verdict"] == VERDICT_UNCHECKED and pages["second_read"] == verify.SECOND_READ_CLEAN, pages
+    assert entry["verdict"] == VERDICT_UNCHECKED
+    assert not damage.registry.latched(FILE_CORPUS), "a finding that two connections disagreed about latched the file"
+    assert sg.StorageGuard().admit() is None

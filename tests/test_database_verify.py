@@ -27,6 +27,7 @@ import sqlite3
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -2707,3 +2708,251 @@ def test_a_check_or_a_re_read_that_fails_records_the_type_of_the_failure_never_i
     assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
     assert all(r.exc_info is None for r in caplog.records)
     assert "the re-read of the corpus file failed (RuntimeError)" in caplog.text, caplog.text
+
+
+# --------------------------------------------------------------------------- #
+#  a damaged answer is read AGAIN on a new connection and stands only when the second read agrees (E2 fold 3, R100)
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def clean_copy(tmp_path):
+    """A healthy store of its own name, to stand for what a second connection reads when the first read was a fluke (``healthy`` and
+    ``damaged`` share one file name)."""
+    path = tmp_path / "clean.db"
+    _build_store(path)
+    return path
+
+
+def _corrupt(message: str = "database disk image is malformed") -> sqlite3.DatabaseError:
+    err = sqlite3.DatabaseError(message)
+    err.sqlite_errorcode = 11
+    return err
+
+
+def _opens(*sources):
+    """An opener over the stores of ``sources`` in turn (an exception in the list is raised at that open; the LAST source repeats), and the
+    list of the connections it opened."""
+    opened: list[Any] = []
+    queue = list(sources)
+
+    def opener(path):
+        nxt = queue.pop(0) if len(queue) > 1 else queue[0]
+        if isinstance(nxt, BaseException):
+            raise nxt
+        con = verify._open(nxt)
+        opened.append(con)
+        return con
+
+    opener.opened = opened  # type: ignore[attr-defined]
+    return opener
+
+
+def _differing_second_read(damaged_path, clean_path):
+    """``verify._read_table`` as a flaky pair of connections: the FIRST read of a table is of the damaged file, every later read of the same table is of
+    a healthy copy (the order the tables are read in is the check's business, so the reads are counted per table)."""
+    real = verify._read_table
+    reads: list[str] = []
+
+    def read(path, table, **kw):
+        reads.append(table)
+        return real(damaged_path if reads.count(table) == 1 else clean_path, table, **kw)
+
+    return read
+
+
+def test_a_damaged_table_stands_only_when_a_second_read_on_a_new_connection_agrees(damaged):
+    path, _bad = damaged
+    opener = _opens(path)
+    out = verify.check_table(path, "articles", opener=opener)
+    assert out["verdict"] == VERDICT_DAMAGED and out["second_read"] == verify.SECOND_READ_AGREED and out["detail"], out
+    assert len(opener.opened) == 2 and opener.opened[0] is not opener.opened[1], "the second read did not use a new connection"
+
+
+def test_a_table_that_reads_ok_or_could_not_be_read_costs_one_read(healthy):
+    one = _opens(healthy)
+    assert verify.check_table(healthy, "articles", opener=one)["verdict"] == VERDICT_OK and len(one.opened) == 1
+    locked = sqlite3.OperationalError("database is locked")
+    locked.sqlite_errorcode = 5
+    calls: list[int] = []
+
+    def opener(p):
+        calls.append(1)
+        raise locked
+
+    out = verify.check_table(healthy, "articles", opener=opener)
+    assert out["verdict"] == VERDICT_UNCHECKED and "second_read" not in out and len(calls) == 1
+
+
+def test_a_damaged_first_read_and_a_clean_second_read_is_unchecked_with_both_reads_named(damaged, clean_copy):
+    path, _bad = damaged
+    out = verify.check_table(path, "articles", opener=_opens(path, clean_copy))
+    assert out["verdict"] == VERDICT_UNCHECKED and out["table"] == "articles" and out["second_read"] == verify.SECOND_READ_CLEAN
+    assert out["detail"] == [verify._DIFFERENTLY] and out["first_read"] and "second_detail" not in out, out
+    assert all(len(line) <= verify.DETAIL_CHARS for line in out["detail"] + out["first_read"])
+
+
+def test_a_damaged_first_read_and_a_second_read_that_could_not_be_made_is_unchecked_with_why(damaged):
+    path, _bad = damaged
+    locked = sqlite3.OperationalError("database is locked")
+    locked.sqlite_errorcode = 5
+    out = verify.check_table(path, "articles", opener=_opens(path, locked))
+    assert out["verdict"] == VERDICT_UNCHECKED and out["second_read"] == verify.SECOND_READ_UNAVAILABLE
+    assert out["detail"] == [verify._SECOND_UNMADE] and out["second_detail"] == ["the file was busy"], out
+    assert out["first_read"]
+
+
+def test_a_damaged_first_read_raising_code_11_is_confirmed_the_same_way(healthy):
+    """The first read may RAISE corruption instead of answering a row: that too needs a second read."""
+    agreed = verify.check_table(healthy, "articles", opener=_opens(_corrupt()))
+    assert agreed["verdict"] == VERDICT_DAMAGED and agreed["second_read"] == verify.SECOND_READ_AGREED
+    differing = verify.check_table(healthy, "articles", opener=_opens(_corrupt(), healthy))
+    assert differing["verdict"] == VERDICT_UNCHECKED and differing["second_read"] == verify.SECOND_READ_CLEAN
+
+
+def test_a_stop_between_the_two_reads_makes_no_second_read_and_no_verdict(damaged, monkeypatch):
+    path, _bad = damaged
+    stop = threading.Event()
+    real = verify._read_table
+    calls: list[int] = []
+
+    def stop_after_the_first(p, t, **kw):
+        calls.append(1)
+        out = real(p, t, **kw)
+        stop.set()
+        return out
+
+    monkeypatch.setattr(verify, "_read_table", stop_after_the_first)
+    out = verify.check_table(path, "articles", cancel=stop)
+    assert out["verdict"] == VERDICT_UNCHECKED and out["second_read"] == verify.SECOND_READ_UNAVAILABLE
+    assert out["second_detail"] == ["the check was stopped"] and len(calls) == 1
+
+
+def test_the_two_reasons_fit_the_detail_cut_and_end_on_what_matters():
+    for reason in (verify._DIFFERENTLY, verify._SECOND_UNMADE):
+        assert len(reason) <= verify.DETAIL_CHARS and reason.endswith("nothing was concluded")
+
+
+def test_a_boot_check_whose_second_read_is_clean_files_the_table_unchecked_and_latches_nothing(tmp_path, damaged, clean_copy, files, monkeypatch):
+    path, _bad = damaged
+    files[FILE_CORPUS] = path
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    monkeypatch.setattr(verify, "_read_table", _differing_second_read(path, clean_copy))
+    assert verify.run_armed() is True
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    tables = _by_table(entry)
+    assert tables["articles"]["verdict"] == VERDICT_UNCHECKED and tables["articles"]["second_read"] == verify.SECOND_READ_CLEAN
+    assert tables["notes"]["verdict"] == VERDICT_OK
+    assert entry["verdict"] == VERDICT_UNCHECKED, "a file with a table nobody could confirm was called clean"
+    assert not damage.registry.latched(FILE_CORPUS), "a finding that two connections disagreed about latched the file"
+    assert damage.registry.state()["incident_count"] == 0
+    assert sg.StorageGuard().admit() is None
+
+
+def test_a_boot_check_whose_two_reads_agree_latches_and_the_record_says_it_was_confirmed(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    table = _by_table(_record(tmp_path)["verification"][FILE_CORPUS])["articles"]
+    assert table["verdict"] == VERDICT_DAMAGED and table["second_read"] == verify.SECOND_READ_AGREED
+
+
+def test_a_re_read_whose_first_listing_reads_as_damage_and_second_lists_files_no_schema_damage(tmp_path, damaged, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    real = verify.inspect_file
+    lists: list[int] = []
+
+    def flaky(p, **kw):
+        lists.append(1)
+        if len(lists) == 1:
+            return {"error": (VERDICT_DAMAGED, "malformed database schema (x)")}
+        return real(p, **kw)
+
+    monkeypatch.setattr(verify, "inspect_file", flaky)
+    damage.retry_for_collection_start("the network toggle went online")
+    _join_rechecks()
+    assert len(lists) == 2, "the list was read once and its first answer taken"
+    tables = _by_table(damage.registry.state(detail=True)["verification"][FILE_CORPUS])
+    assert tables.get(verify.SCHEMA_ENTRY, {}).get("verdict") != VERDICT_DAMAGED, "a listing two connections disagreed about was filed damaged"
+    assert tables["articles"]["verdict"] == VERDICT_DAMAGED and damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_listing_that_reads_as_damage_twice_is_the_schema_damaged_and_confirmed(healthy):
+    out = verify.inspect_confirmed(healthy, opener=_opens(_corrupt("malformed database schema (x)")))
+    assert out["error"][0] == VERDICT_DAMAGED and out["second_read"] == verify.SECOND_READ_AGREED
+
+
+def test_a_listing_that_reads_as_damage_once_and_lists_the_second_time_is_the_list_with_the_first_read_kept(healthy):
+    out = verify.inspect_confirmed(healthy, opener=_opens(_corrupt("malformed database schema (x)"), healthy))
+    assert "error" not in out and set(out["names"]) == {"articles", "notes"}
+    assert out["second_read"] == verify.SECOND_READ_CLEAN and out["first_read"] == ["malformed database schema (x)"]
+
+
+def test_a_listing_whose_second_read_could_not_be_made_is_unchecked_with_the_first_read_and_why(healthy):
+    locked = sqlite3.OperationalError("database is locked")
+    locked.sqlite_errorcode = 5
+    out = verify.inspect_confirmed(healthy, opener=_opens(_corrupt(), locked))
+    assert out["error"] == (VERDICT_UNCHECKED, verify._SECOND_UNMADE) and out["second_read"] == verify.SECOND_READ_UNAVAILABLE
+    assert out["first_read"] and out["second_detail"] == ["the file was busy"]
+
+
+def test_a_listing_that_is_not_damage_is_read_once(healthy):
+    calls: list[int] = []
+
+    def opener(p):
+        calls.append(1)
+        raise PermissionError("no")
+
+    out = verify.inspect_confirmed(healthy, opener=opener)
+    assert out["error"][0] == VERDICT_UNCHECKED and len(calls) == 1 and "second_read" not in out
+
+
+def test_a_boot_check_whose_listing_differs_between_reads_reads_every_table_and_files_the_schema_unchecked(tmp_path, healthy, files, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed(opener=_opens(_corrupt("malformed database schema (x)"), healthy)) is True
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    tables = _by_table(entry)
+    assert tables[verify.SCHEMA_ENTRY]["verdict"] == VERDICT_UNCHECKED
+    assert tables[verify.SCHEMA_ENTRY]["second_read"] == verify.SECOND_READ_CLEAN and tables[verify.SCHEMA_ENTRY]["first_read"]
+    assert tables["articles"]["verdict"] == VERDICT_OK and tables["notes"]["verdict"] == VERDICT_OK
+    assert entry["verdict"] == VERDICT_UNCHECKED, "a listing nobody could confirm left the file called clean"
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_boot_check_whose_listing_could_not_be_read_twice_is_unchecked_and_keeps_the_first_read(tmp_path, healthy, files, monkeypatch):
+    locked = sqlite3.OperationalError("database is locked")
+    locked.sqlite_errorcode = 5
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed(opener=_opens(_corrupt(), locked)) is True
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    schema = _by_table(entry)[verify.SCHEMA_ENTRY]
+    assert entry["verdict"] == VERDICT_UNCHECKED and schema["verdict"] == VERDICT_UNCHECKED
+    assert schema["second_read"] == verify.SECOND_READ_UNAVAILABLE and schema["first_read"] and schema["second_detail"] == ["the file was busy"]
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_boot_check_whose_listing_reads_as_damage_twice_files_the_schema_damaged_with_the_key(tmp_path, healthy, files, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed(opener=_opens(_corrupt("malformed database schema (x)"))) is True
+    schema = _by_table(_record(tmp_path)["verification"][FILE_CORPUS])[verify.SCHEMA_ENTRY]
+    assert schema["verdict"] == VERDICT_DAMAGED and schema["second_read"] == verify.SECOND_READ_AGREED
+    assert damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_re_read_whose_second_read_is_clean_does_not_release_the_latch_or_replace_the_confirmed_finding(tmp_path, damaged, clean_copy, files, monkeypatch):
+    path, _bad = damaged
+    _latch_by_check(files, path, monkeypatch)
+    assert _file_state()["check_tables"] == ["articles"]
+    monkeypatch.setattr(verify, "_read_table", _differing_second_read(path, clean_copy))
+    damage.retry_for_collection_start("the network toggle went online")
+    _join_rechecks()
+    assert damage.registry.latched(FILE_CORPUS), "a table whose reads disagreed released the latch"
+    assert _file_state()["check_tables"] == ["articles"]
+    # a read that settled nothing never replaces a finding two reads agreed on earlier (R100: a measured verdict does not give way)
+    table = _by_table(damage.registry.state(detail=True)["verification"][FILE_CORPUS])["articles"]
+    assert table["verdict"] == VERDICT_DAMAGED and table["second_read"] == verify.SECOND_READ_AGREED
