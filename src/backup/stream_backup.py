@@ -2036,7 +2036,7 @@ def read_stream_backup(
     *,
     corpus_passphrase: str | None = None,
     include_merge_budget: bool = True,
-) -> "StagedArtifact":
+) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble an oo-volumes-2 set into a staged
     artifact the additive merge engine consumes. Streams member by member
     (bounded RAM); an encrypted corpus/custody member is converted to the
