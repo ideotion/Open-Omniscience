@@ -42,7 +42,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
 
-from src.monitoring.kernel_log import _kernel_lines, _run, journal_boot_arg
+from src.monitoring.kernel_log import (
+    HINT_NO_ACCESS,
+    _kernel_lines,
+    _run,
+    journal_boot_arg,
+    journal_notice,
+)
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -70,7 +76,7 @@ _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
 _KILLER_UNITS = ("systemd-oomd", "earlyoom", "nohang")
 # systemd-oomd names the cgroup it killed: "Killed /user.slice/.../app-x.scope due to ...".
 _OOMD_KILLED = re.compile(r"\bKilled (/\S+)")
-_HINT_NO_ACCESS = "not seeing messages from other users and the system"
+_HINT_NO_ACCESS = HINT_NO_ACCESS  # one sentence for both journal readers (see kernel_log)
 
 _TRACE_HANDLE: IO[str] | None = None
 
@@ -279,7 +285,8 @@ def read_userspace_killers(
             + (" (the read timed out)" if rc == 124 else "")
         )
         return out
-    if _HINT_NO_ACCESS in text:
+    notice = journal_notice(text)
+    if notice == "no-access":
         # journalctl says so itself, then shows only this user's own journal: the
         # killers' lines are in the SYSTEM journal, which this user cannot see.
         out["verdict"] = "no-journal"
@@ -289,7 +296,17 @@ def read_userspace_killers(
             "not an absence of evidence"
         )
         return out
-    lines = [ln for ln in _kernel_lines(text) if not ln.startswith("Hint:")]
+    if notice == "no-files":
+        # `No journal files were found.` with exit 0 and `-- No entries --`: nothing was read, and
+        # "none of these daemons named this process" would be a statement about a log that was
+        # never opened. The cause is NOT named as a permission gap: there may be no journal at all.
+        out["verdict"] = "no-journal"
+        out["reason"] = (
+            "journalctl found no journal file it could open (none exist, or this user may not "
+            "read them), so the memory killers' log was not observed -- not an absence of evidence"
+        )
+        return out
+    lines = _kernel_lines(text)
     matched = [ln for ln in lines if _names_us(ln, pid, cgroup)]
     out["lines"] = matched[-20:]
     if matched:
@@ -416,6 +433,29 @@ def previous_trace(pid: int | None, boot_id: str | None = None) -> dict[str, Any
 # --------------------------------------------------------------------------- #
 
 
+# Verdicts of the two journal readers that mean "did not look" -- could not (`no-journal`,
+# `no-journalctl`) or was told not to (`disabled`, the operator's own opt-out) -- as opposed to
+# "looked and found nothing" (`no-kernel-evidence`, `no-userspace-evidence`). An opted-out read is
+# still a gap: a summary built on it must not assert that no journal line named the app.
+_JOURNAL_UNREAD = ("no-journal", "no-journalctl", "disabled")
+
+
+def _why_unread(*witnesses: dict[str, Any] | None) -> str:
+    """One short cause for a journal that was not read, from the witnesses' own reasons.
+
+    The permission gap is named as such (it is the common one and the one an operator can fix);
+    anything else keeps the first witness's own words, which already say what failed."""
+    for w in witnesses:
+        if w and (w.get("permission_note") or HINT_NO_ACCESS in str(w.get("reason", ""))
+                  or "cannot read the system journal" in str(w.get("reason", ""))):
+            return "this user is not in 'adm' or 'systemd-journal'"
+    for w in witnesses:
+        reason = (w or {}).get("reason")
+        if reason:
+            return str(reason)[:160]
+    return "no reason recorded"
+
+
 def how_it_ended(
     *,
     launcher: dict[str, Any] | None,
@@ -427,6 +467,7 @@ def how_it_ended(
     """One sentence on how the previous session ended, built ONLY from the witnesses
     that answered, each named. Never a guess: with no witness it says so."""
     parts: list[str] = []
+    gaps: list[str] = []
     if drive:
         # The data-drive incident log (R86) lives on the internal disk: the one witness
         # that can speak when the drive holding the session sentinel was the thing lost.
@@ -450,12 +491,37 @@ def how_it_ended(
         )
     if trace:
         parts.append(f"it left a crash trace: {trace.get('summary')}")
+    # THE TWO JOURNAL WITNESSES IN ONE SENTENCE. They read the same journal with the same
+    # permissions, so the account of one must agree with the account of the other: where
+    # either could not look, say so ONCE, naming which, instead of letting one witness assure
+    # ("no kernel line names us") beside the other's "cannot read the system journal". A
+    # witness that could not look is a gap in the evidence, never evidence of absence.
+    k_blind = kverdict in _JOURNAL_UNREAD
+    u_blind = uverdict in _JOURNAL_UNREAD
+    if k_blind and u_blind:
+        gaps.append(
+            "neither the kernel log nor the memory killers' log was read "
+            f"({_why_unread(kernel, killers)}), so no account of a kill from either was "
+            "observed: a gap in the witnesses, not evidence that nothing killed it"
+        )
+    elif k_blind:
+        gaps.append(
+            f"the kernel log was not read ({_why_unread(kernel)}), so a kill the kernel "
+            "logged would not show here"
+        )
+    elif u_blind:
+        gaps.append(
+            f"the memory killers' log was not read ({_why_unread(killers)}), so a kill "
+            "systemd-oomd or earlyoom logged would not show here"
+        )
     if not parts:
         return {
             "known": False,
             "summary": (
-                "no witness named how it ended: no launcher record, no journal line from a "
+                f"no witness named how it ended: no launcher record, no crash trace, and {'; '.join(gaps)}"
+                if gaps
+                else "no witness named how it ended: no launcher record, no journal line from a "
                 "memory killer or the kernel, and no crash trace"
             ),
         }
-    return {"known": True, "summary": "; ".join(parts)}
+    return {"known": True, "summary": "; ".join(parts + gaps)}

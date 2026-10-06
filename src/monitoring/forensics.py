@@ -1176,6 +1176,45 @@ def _render_memory_budget(reading: Any) -> list[str]:
     ]
 
 
+def _lowest_kept_snapshot(snaps: Any) -> tuple[float, str] | None:
+    """The lowest ``avail_mb`` among the kept pressure snapshots and when it was read, or None."""
+    best: tuple[float, str] | None = None
+    for snap in snaps if isinstance(snaps, list) else []:
+        if not isinstance(snap, dict):
+            continue
+        avail = snap.get("avail_mb")
+        if isinstance(avail, int | float) and (best is None or avail < best[0]):
+            best = (avail, str(snap.get("at") or "a time that was not recorded"))
+    return best
+
+
+def _render_rss_and_swap_apart(comp: dict) -> str | None:
+    """RSS and the swapped-out pages on ONE line, RSS with its share of RAM and the swapped-out
+    pages with none, and the statement that they are not added.
+
+    A "footprint" that sums them (3,118.9 MB RSS + 671.9 MB swapped out = 96.6% of 3,924.7 MB in
+    the field analysis) is not RAM use: a swapped-out page has LEFT RAM, and RSS alone read
+    79.5%. They are listed apart, here and in the JSON, so nobody has to re-derive which is
+    which. Only RSS is given as a share OF RAM: a share of RAM for pages that are not in RAM would
+    invite exactly the sum this line forbids. A record whose figures are not numbers renders
+    nothing here rather than raising (a forensic read degrades, never fails)."""
+    rss, swapped, total = comp.get("rss_mb"), comp.get("swapped_out_mb"), comp.get("total_mb")
+    if not isinstance(rss, int | float):
+        return None
+    share = (
+        f" ({rss / total:.1%} of {total:g} MB of RAM)"
+        if isinstance(total, int | float) and total > 0 else ""
+    )
+    line = f"  - at that peak: RSS {rss} MB{share}"
+    if swapped is not None:
+        line += f"; separately, {swapped} MB swapped out"
+    return (
+        line
+        + " -- kept apart on purpose: swapped-out pages are not resident in RAM, so the two are "
+        "never added into one footprint"
+    )
+
+
 def _render_at_peak(comp: Any, heap_peak: Any = None) -> list[str]:
     """The composition at the RSS peak and, when that peak could not read the C heap,
     the newest earlier peak that did, on its own line with its own size and time: the
@@ -1191,6 +1230,9 @@ def _render_at_peak(comp: Any, heap_peak: Any = None) -> list[str]:
         why = comp.get("heap_skipped") or "memory was already short, or not glibc"
         parts.append(f"C heap not read ({why})")
     lines = [f"  - made of, at {comp.get('rss_mb')} MB ({comp.get('at')}): {', '.join(parts)}"]
+    apart = _render_rss_and_swap_apart(comp)
+    if apart:
+        lines.append(apart)
     if (
         comp.get("heap_in_use_mb") is None
         and isinstance(heap_peak, dict)
@@ -1477,7 +1519,19 @@ def render_text(d: dict[str, Any] | None = None) -> str:
                 if peaks.get(key) is None:
                     lines.append(f"  - {label}: not measured (omitted, never zero)")
                 else:
-                    lines.append(f"  - {label}: {peaks[key]} {unit}")
+                    # A lifetime mark, so it says WHEN it was set: without a time it cannot be
+                    # placed beside a burst or a snapshot. A record from a build that did not
+                    # stamp it says so, rather than leaving the reader to assume "at the end".
+                    at = peaks.get(key.removesuffix("_mb") + "_at")
+                    when = f" at {at}" if at else " (time not recorded: a record from a build that did not stamp it)"
+                    lines.append(f"  - {label}: {peaks[key]} {unit}{when}")
+            low = _lowest_kept_snapshot(peaks.get("pressure"))
+            if low is not None:
+                lines.append(
+                    f"  - lowest available memory inside the kept snapshots below: {low[0]} MB "
+                    f"at {low[1]} (the snapshots are a sample of the session; the minimum above "
+                    "was set by a reading that may not be among them)"
+                )
             if peaks.get("phase"):
                 lines.append(f"  - last phase seen: {peaks['phase']}")
             if peaks.get("last_ts"):
