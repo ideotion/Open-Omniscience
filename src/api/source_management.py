@@ -296,8 +296,9 @@ def overlay_revert(db: Session = Depends(get_db)) -> dict:
 
     The rows go back to "no verdict has been reached here", which is what they actually
     said before adoption touched them. Rows this install has since judged for itself are
-    left alone and counted, as are rows the overlay stamped over a curated catalogue
-    stamp -- reverting those would invent a state rather than restore one. Local only.
+    left alone and counted, as are rows with a newer verdict a backup merge brought in
+    (``imported_since``) and rows the overlay stamped over a curated catalogue stamp --
+    reverting those would invent a state rather than restore one. Local only.
     """
     from src.catalog.qualification_overlay import revert_overlay
 

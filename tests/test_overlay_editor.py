@@ -18,7 +18,7 @@ So the tests below are mostly about the SECOND path and the REFUSALS:
     word for a stamp this instance did not measure, so the audit says which KIND of
     evidence let a source in;
   * a revert puts back only what it can PROVE this install's adoption stamped, and names
-    the two populations it will not touch rather than skipping them silently;
+    the three populations it will not touch rather than skipping them silently;
   * a revert HOLDS -- adoption looks for rows reading ``unqualified``, which is exactly
     the state a revert restores, so without the preference the next boot would undo it.
 
@@ -384,6 +384,33 @@ def test_a_verdict_a_merge_gave_a_row_is_not_an_adoption_here_and_is_never_rever
     out = revert_overlay(db, now=NOW + timedelta(hours=1), path=overlay_file)
     assert out["reverted"] == 0
     assert _by_domain(db, "cat.example").status == STATUS_QUALIFIED
+
+
+def test_an_imported_curated_attempt_does_not_make_an_adoption_look_like_it_replaced_a_catalogue_stamp(
+    db: Session, overlay_file: Path
+) -> None:
+    """``was_curated_before`` asks what THIS install's row looked like before THIS install's adoption.
+    A ``curated`` attempt a merge brought in is another instance's stamp, and its date says nothing
+    about that, so it must not turn a real local adoption into a refused revert."""
+    from src.database.models import MergeBatch, MergedRow
+
+    apply_overlay(db, now=NOW, path=overlay_file)
+    cat = _by_domain(db, "cat.example")
+    attempt = SourceQualificationAttempt(
+        source_id=cat.id, attempted_at=NOW - timedelta(days=1),
+        verdict="curated", criteria_version="t")
+    db.add(attempt)
+    db.flush()
+    batch = MergeBatch()
+    db.add(batch)
+    db.flush()
+    db.add(MergedRow(batch_id=batch.id, table_name="source_qualification_attempts", row_id=attempt.id))
+    db.commit()
+
+    out = revert_overlay(db, now=NOW + timedelta(hours=1), path=overlay_file)
+    # ``cur.example`` is the fixture's own local catalogue stamp and is the one refusal; cat.example is not
+    assert out["declined"][REVERT_DECLINE_CURATED] == 1
+    assert _by_domain(db, "cat.example").status == STATUS_UNQUALIFIED, "the adoption was put back"
 
 
 def test_revert_refuses_a_row_this_install_judged_since_and_counts_it(
