@@ -357,8 +357,8 @@ def test_the_map_serve_declines_while_a_heavy_boot_step_runs(monkeypatch):
 
 def test_a_declined_rollup_build_and_a_refused_drain_are_not_shown_as_done(seq, monkeypatch):
     log, step = seq
-    from src.analytics import rollup_serve
     import src.backup.volume_job as vj
+    from src.analytics import rollup_serve
 
     monkeypatch.undo()  # the fixture's fakes go; install exactly the two refusals under test
     bs._reset()
