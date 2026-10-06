@@ -60,13 +60,15 @@ const FRAME_STOPPED = frame("Collection cannot be kept running against this limi
 const FRAME_HELD = frame("The drive refused a write for lack of space a short while ago, so collection cannot be forced on yet");
 const FRAME_UNREADABLE = frame("Free space on the data drive cannot be read, so a forced resume could not be kept within");
 const FRAME_OVERRIDE_WAL = frame("Collection was resumed by you although the database's working file");
+const FRAME_OVERRIDE_DAMAGE = frame("Collection cannot be forced on: the database reported damage in your library's file");
+const FRAME_DAMAGE_DATA = frame("Part of your library's data file could not be read: the database reported damage.");
 const OVERRIDDEN = { engaged: true, overridden: true, notes: [{ kind: "override-wal", frame: FRAME_OVERRIDE_WAL, vars: { size: 3221225472, limit: 1073741824, floor: 3221225472 } }] };
 const ok = (over) => Object.assign({ running: true, online: true, storage_guard: GUARD }, over || {});
 
 const app = new Function("esc", "_fmtBytes",
-  extract(APP, "_storageGuardTail") + extract(APP, "_storageGuardHtml") + "return _storageGuardHtml;")(esc, bytes);
+  extract(APP, "_storageGuardTail") + extract(APP, "_damageHtml") + extract(APP, "_storageGuardHtml") + "return _storageGuardHtml;")(esc, bytes);
 const tm = new Function("esc", "fmtBytes", "tf", "t",
-  extract(TM, "storageGuardTail") + extract(TM, "storageGuardHtml") + "return storageGuardHtml;")(esc, bytes, tf, (s) => s);
+  extract(TM, "storageGuardTail") + extract(TM, "damageHtml") + extract(TM, "storageGuardHtml") + "return storageGuardHtml;")(esc, bytes, tf, (s) => s);
 const render = {
   "the app": (a) => app(a, (s) => s, tf),
   "/tasks": (a) => tm(a),
@@ -137,6 +139,50 @@ for (const [ui, draw] of Object.entries(render)) {
     assert.strictEqual(draw(ok({ storage_guard: { engaged: false, notes: [] } })), "");
     assert.strictEqual(draw(ok({ storage_guard: null })), "");
     assert.strictEqual(draw(null), "");
+  });
+
+  // The database-damage notice (database/damage.py): a fact about the DATA, so unlike the limits
+  // it draws whether or not the scheduler is on and in airplane mode; no number, no button (the
+  // operator's way back is starting collection again, which the sentence says).
+  const DAMAGE = { latched: ["corpus"], notes: [{ kind: "damage", file: "corpus", frame: FRAME_DAMAGE_DATA, vars: {} }] };
+  const withDamage = (over) => ok(Object.assign({ storage_guard: { engaged: false, notes: [], database_damage: DAMAGE } }, over || {}));
+  check(ui + ": a damaged file draws its sentence and the long form on hover, with no button", () => {
+    const html = draw(withDamage());
+    assert.ok(html.includes("Part of your library&#39;s data file could not be read") || html.includes("Part of your library's data file could not be read"), html);
+    assert.ok(html.includes('class="vwarn"'), html);
+    assert.ok(html.includes("database disk image is malformed"), "the hover lost its long form: " + html);
+    assert.ok(html.includes("database-damage.json"), html);
+    assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), "a damage notice offers no override: " + html);
+    assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
+  });
+  check(ui + ": the damage notice draws with the scheduler stopped and in airplane mode", () => {
+    assert.ok(draw(withDamage({ running: false })).includes("could not be read"));
+    assert.ok(draw(withDamage({ online: false })).includes("could not be read"));
+  });
+  check(ui + ": an engaged limit and a damaged file are both said", () => {
+    const g = Object.assign({}, GUARD, { database_damage: DAMAGE });
+    const html = draw(ok({ storage_guard: g }));
+    assert.ok(html.includes("could not be read"), html);
+    assert.ok(html.includes("has grown to 3072 MB"), html);
+  });
+  check(ui + ": an engaged limit with the scheduler stopped or offline still draws the damage and not the limit", () => {
+    const g = Object.assign({}, GUARD, { database_damage: DAMAGE });
+    for (const over of [{ running: false }, { online: false }]) {
+      const html = draw(ok(Object.assign({ storage_guard: g }, over)));
+      assert.ok(html.includes("could not be read"), "the damage went quiet with the limit engaged: " + html);
+      assert.ok(!html.includes("has grown to"), "the limit's sentence is about collection running: " + html);
+    }
+  });
+  check(ui + ": while the corpus is damaged the refusal is said where the Resume button would be, and no button", () => {
+    const refusal = { kind: "damage", frame: FRAME_OVERRIDE_DAMAGE, vars: {} };
+    const g = Object.assign({}, GUARD, { database_damage: DAMAGE, override_refusal: refusal });
+    const html = draw(ok({ storage_guard: g }));
+    assert.ok(html.includes("Collection cannot be forced on"), html);
+    assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), "a button beside its own refusal: " + html);
+  });
+  check(ui + ": no latched file means no damage notice", () => {
+    const g = { engaged: false, notes: [], database_damage: { latched: [], notes: [] } };
+    assert.strictEqual(draw(ok({ storage_guard: g })), "");
   });
 }
 
@@ -220,6 +266,11 @@ for (const [ui, fn] of [["the app", pausedApp], ["/tasks", pausedTm]]) {
     assert.strictEqual(fn("paused-wal-pinned", OVERRIDDEN), null);
     assert.strictEqual(fn("paused-low-disk", OVERRIDDEN), null);
     assert.strictEqual(fn("collecting", GUARD), null);
+  });
+  check(ui + ": the damage pause label survives an override (the override does not cover it)", () => {
+    assert.ok(/^Paused: the database reported damage/.test(fn("paused-damaged", OVERRIDDEN)));
+    assert.ok(/^Paused: the database reported damage/.test(fn("paused-damaged", GUARD)));
+    assert.ok(/^Paused: the database reported damage/.test(fn("paused-damaged", undefined)));
   });
 }
 const callSites = (src, name) => (src.match(new RegExp(name + "\\(a\\.phase[^)]*\\)", "g")) || []);

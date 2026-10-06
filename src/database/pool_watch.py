@@ -91,6 +91,24 @@ def _endpoint_label() -> str | None:
     return label
 
 
+def endpoint_template() -> str | None:
+    """The route TEMPLATE the current request serves ("GET /api/articles/{id}/view"), or ``None`` when only
+    the raw path is known (it may carry an article id or a file name, so a record that outlives the request
+    does not keep it)."""
+    cur = _ENDPOINT.get()
+    if cur is None:
+        return None
+    _label, method, scope = cur
+    try:
+        if scope is not None and method:
+            template = getattr(scope.get("route"), "path", None)
+            if isinstance(template, str) and template:
+                return f"{method} {template}"
+    except Exception:  # noqa: BLE001 - an instrument must never break a checkout
+        pass
+    return None
+
+
 def reset_endpoint(token: contextvars.Token) -> None:
     with contextlib.suppress(ValueError):  # a token from another context: leave it, never raise
         _ENDPOINT.reset(token)

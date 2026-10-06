@@ -337,13 +337,20 @@ def start_wiki_lane() -> bool:
             if _state_of() != "running":
                 _LOG.info("the Wikipedia lane is not started: its setting does not say running")
                 return False
+            drain_alive = (
+                _RUNNER is not None and _DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive()
+            )
+            # A live stream beside a DEAD drain loop is not a healthy lane: the stream fills its
+            # bounded buffer and nothing stores it. It falls through to the teardown and the
+            # rebuild below, with a fresh drain thread.
+            if _RUNNER is not None and _RUNNER.streaming and drain_alive:
+                return True
+            # Turning the lane on is the operator trying again: release a damage latch on the
+            # Wikipedia file (database/damage.py); the first failed read puts it back.
+            from src.database import damage
+
+            damage.registry.retry(reason="the Wikipedia lane was started", files=("wiki",))
             if _RUNNER is not None:
-                drain_alive = _DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive()
-                # A live stream beside a DEAD drain loop is not a healthy lane: the stream fills
-                # its bounded buffer and nothing stores it. It falls through to the teardown and
-                # the rebuild below, with a fresh drain thread.
-                if _RUNNER.streaming and drain_alive:
-                    return True
                 if drain_alive:
                     if _RUNNER.revive_stream():
                         return True
