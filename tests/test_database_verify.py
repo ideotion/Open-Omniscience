@@ -2676,3 +2676,34 @@ def test_the_virtual_table_check_tests_run_in_ci():
         assert sqlite3.sqlite_version_info >= (3, 44), (
             f"CI's SQLite is {sqlite3.sqlite_version}: the full-text index's integrity check tests are skipped on it"
         )
+
+
+def test_a_check_or_a_re_read_that_fails_records_the_type_of_the_failure_never_its_text(healthy, files, monkeypatch, caplog):
+    """The passphrase rule: the check opens keyed connections, so what an engine, a driver or the exception it was raised from
+    says can hold a ``PRAGMA key`` statement, and a log record's traceback rides the diagnostics bundle. Only the type is kept."""
+    import logging
+
+    secret = "correct horse battery staple 8842"
+
+    def boom(*a, **k):
+        try:
+            raise sqlite3.OperationalError(f"PRAGMA key = '{secret}' failed")
+        except sqlite3.OperationalError as driver:
+            raise RuntimeError("could not open the library") from driver
+
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    monkeypatch.setattr(verify, "_run_plan", boom)
+    with caplog.at_level(logging.DEBUG):
+        assert verify.run_armed() is True
+    assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error a driver's was raised from"
+    assert "the start-up check failed (RuntimeError)" in caplog.text
+    caplog.clear()
+    monkeypatch.setattr(verify, "check_table", boom)
+    with caplog.at_level(logging.DEBUG):
+        verify._recheck_main([(FILE_CORPUS, healthy, ["articles"])], "t", {})
+    assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
+    assert all(r.exc_info is None for r in caplog.records)
+    assert "the re-read of the corpus file failed (RuntimeError)" in caplog.text, caplog.text

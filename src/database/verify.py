@@ -789,8 +789,11 @@ def run_armed(*, opener: Opener | None = None) -> bool:
     try:
         _run_plan(plan, opener=opener)
         return True
-    except Exception:  # noqa: BLE001
-        _LOG.warning("database check: the start-up check failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        # The TYPE only, never the text or a traceback: the check opens keyed connections, and an engine's or a driver's message
+        # (and the error a driver's was raised from, which a traceback prints too) can carry a statement that holds the
+        # passphrase. A record's ``exc_info`` rides the diagnostics bundle through data/app_errors.jsonl.
+        _LOG.warning("database check: the start-up check failed (%s)", type(exc).__name__)
         return True
     finally:
         reg.verification_end()
@@ -1018,8 +1021,9 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
                 reason,
                 "clean, released" if released else "latch stays",
             )
-        except Exception:  # noqa: BLE001 - a re-read that failed gives no answer, and the latch stays
-            _LOG.warning("database check: the re-read of the %s file failed", key, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a re-read that failed gives no answer, and the latch stays
+            # The TYPE only: the re-read opens keyed connections (see ``run_armed``).
+            _LOG.warning("database check: the re-read of the %s file failed (%s)", key, type(exc).__name__)
         finally:
             reg.recheck_abandoned(key, token)  # a no-op after an answer: ends THIS claim whatever happened
 
