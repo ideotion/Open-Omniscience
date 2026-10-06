@@ -2552,6 +2552,7 @@
   "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Jadikan setiap seri tersimpan dapat ditemukan lewat pencarian biasa: satu Artikel per indikator per negara, memuat setiap tahun yang disimpan. Hanya lokal — membaca angka yang sudah Anda miliki dan tidak mengunduh apa pun.",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Buat panjang — beberapa kata tak berhubungan lebih kuat daripada satu kata cerdik. Jika berkas basis data Anda disalin, ia bisa ditebak secara offline; jadi panjang adalah perlindungan yang sebenarnya (bukan secepat apa layar ini menjawab).",
   "Make it my default": "Jadikan bawaan saya",
+  "Making a temporary copy of your data…": "Membuat salinan sementara dari data Anda…",
   "Manage calendars & sources in Settings → Agenda.": "Kelola kalender & sumber di Pengaturan → Agenda.",
   "Manage sources": "Kelola sumber",
   "Manual ingest": "Penelanan manual",

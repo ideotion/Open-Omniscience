@@ -2552,6 +2552,7 @@
   "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Tornar cada série armazenada localizável na pesquisa comum: um artigo por indicador e por país, com todos os anos guardados. Apenas local — lê números que já tem e não descarrega nada.",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Faça-a longa — várias palavras não relacionadas superam uma só palavra esperta. Se o seu arquivo de banco de dados for copiado, ele pode ser adivinhado offline; por isso o comprimento é a proteção real (não a rapidez desta tela).",
   "Make it my default": "Tornar meu padrão",
+  "Making a temporary copy of your data…": "Criando uma cópia temporária dos seus dados…",
   "Manage calendars & sources in Settings → Agenda.": "Gerencie calendários e fontes em Configurações → Agenda.",
   "Manage sources": "Gerenciar fontes",
   "Manual ingest": "Ingestão manual",

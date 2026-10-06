@@ -2552,6 +2552,7 @@
   "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "让每个已存储的序列都能通过普通搜索找到：每个指标每个国家一篇文章，包含所保存的每一年。仅本地——只读取你已有的数字，不下载任何内容。",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "请设得长一些 — 几个不相关的词胜过一个巧妙的词。若数据库文件被复制，可在离线状态下被暴力猜测；所以真正的保护是长度，而非此界面的响应速度。",
   "Make it my default": "设为我的默认值",
+  "Making a temporary copy of your data…": "正在为你的数据创建临时副本…",
   "Manage calendars & sources in Settings → Agenda.": "在设置 → 日程中管理日历与来源。",
   "Manage sources": "管理来源",
   "Manual ingest": "手动采集",

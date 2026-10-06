@@ -31,6 +31,7 @@ protection is the artifact's own OOENC1 envelope).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -644,8 +645,44 @@ def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
     return True
 
 
+class SnapshotStopped(Exception):
+    """A snapshot was interrupted because its caller's ``should_stop`` turned true. The partial
+    copy has been removed."""
+
+
+@contextlib.contextmanager
+def _interrupt_when(conn, should_stop):
+    """Watch ``should_stop`` from a daemon thread and call ``conn.interrupt()`` the moment it turns
+    true (``sqlite3_interrupt`` is thread-safe and aborts a running statement, which is what
+    ``sqlcipher_export`` is). Yields a one-element list that holds True once it fired."""
+    fired = [False]
+    done = threading.Event()
+
+    def watch() -> None:
+        while not done.wait(0.25):
+            try:
+                if should_stop():
+                    fired[0] = True
+                    conn.interrupt()
+                    return
+            except Exception:  # noqa: BLE001 - a broken callback must never kill the copy
+                return
+
+    t = threading.Thread(target=watch, name="oo-snapshot-stop-watch", daemon=True)
+    t.start()
+    try:
+        yield fired
+    finally:
+        done.set()
+        t.join(1.0)
+
+
 def snapshot_preserving(
-    src: Path | str, dest: Path | str, *, allow_file_copy: bool = False
+    src: Path | str,
+    dest: Path | str,
+    *,
+    allow_file_copy: bool = False,
+    should_stop=None,
 ) -> Path:
     """Consistent snapshot KEEPING the source's encryption state — working
     copies and pre-restore safety nets must never silently change the corpus's
@@ -656,7 +693,14 @@ def snapshot_preserving(
     It is OPT-IN rather than automatic because the fast path holds the single-writer
     gate for the whole copy: that is free during an import (which owns the machine and
     has collection paused) and rude during ordinary operation, so the caller — who
-    knows which it is — decides."""
+    knows which it is — decides.
+
+    ``should_stop`` (optional, a no-argument callable) lets the caller cancel a long copy:
+    an ENCRYPTED copy is one statement and is interrupted within about a second (the partial
+    file is removed and :class:`SnapshotStopped` raised). A PLAINTEXT copy uses SQLite's backup
+    API in one step, which ``interrupt()`` cannot abort (measured) and which must stay one
+    step: stepping it in chunks restarts it whenever another connection commits. So a stop
+    takes effect when a plaintext copy ends, and the caller polls it then."""
     src_p, dest_p = Path(src), Path(dest)
     dest_p.parent.mkdir(parents=True, exist_ok=True)
     dest_p.unlink(missing_ok=True)
@@ -679,8 +723,22 @@ def snapshot_preserving(
     try:
         conn.execute(f"ATTACH DATABASE ? AS snap KEY '{_sql_literal_escape(key)}'", (str(dest_p),))
         _match_source_pragmas(conn, "snap")
-        _export(conn, "snap")
+        if should_stop is None:
+            _export(conn, "snap")
+        else:
+            with _interrupt_when(conn, should_stop) as fired:
+                try:
+                    _export(conn, "snap")
+                except Exception:
+                    if fired[0]:
+                        raise SnapshotStopped("the snapshot was stopped") from None
+                    raise
         conn.execute("DETACH DATABASE snap")
-    finally:
+    except SnapshotStopped:
         conn.close()
+        dest_p.unlink(missing_ok=True)  # never leave a partial copy to be mistaken for one
+        raise
+    finally:
+        with contextlib.suppress(Exception):
+            conn.close()
     return dest_p

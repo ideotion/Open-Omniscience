@@ -2552,6 +2552,7 @@
   "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "جعل كل سلسلة مخزَّنة قابلة للعثور عليها بالبحث العادي: مقال واحد لكل مؤشر ولكل بلد، يحمل كل سنة محفوظة. محلي فقط — يقرأ أرقامًا لديك بالفعل ولا يجلب شيئًا.",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "اجعلها طويلة — عدة كلمات غير مترابطة أفضل من كلمة واحدة ذكية. إذا نُسخ ملف قاعدة بياناتك فيمكن تخمينه دون اتصال؛ لذا فإن الطول هو الحماية الحقيقية (وليست سرعة رد هذه الشاشة).",
   "Make it my default": "اجعله الافتراضي",
+  "Making a temporary copy of your data…": "جارٍ إنشاء نسخة مؤقتة من بياناتك…",
   "Manage calendars & sources in Settings → Agenda.": "أدر التقويمات والمصادر في الإعدادات ← المفكرة.",
   "Manage sources": "إدارة المصادر",
   "Manual ingest": "إدخال يدوي",

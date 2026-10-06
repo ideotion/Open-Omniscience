@@ -2552,6 +2552,7 @@
   "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "সংরক্ষিত প্রতিটি সিরিজকে সাধারণ অনুসন্ধানে খুঁজে পাওয়ার উপযোগী করুন: প্রতি সূচক ও প্রতি দেশে একটি নিবন্ধ, রক্ষিত প্রতিটি বছর সহ। কেবল স্থানীয় — এটি আপনার কাছে ইতিমধ্যে থাকা সংখ্যা পড়ে, কিছুই নামায় না।",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "এটি লম্বা করুন — কয়েকটি অসম্পর্কিত শব্দ একটি চতুর শব্দের চেয়ে ভালো। আপনার ডাটাবেস ফাইল কপি হলে তা অফলাইনে অনুমান করা যায়; তাই দৈর্ঘ্যই আসল সুরক্ষা (এই স্ক্রিন কত দ্রুত উত্তর দেয় তা নয়)।",
   "Make it my default": "এটিকে আমার ডিফল্ট করুন",
+  "Making a temporary copy of your data…": "আপনার ডেটার একটি অস্থায়ী অনুলিপি তৈরি করা হচ্ছে…",
   "Manage calendars & sources in Settings → Agenda.": "ক্যালেন্ডার ও উৎস সেটিংস → কর্মসূচি-তে পরিচালনা করুন।",
   "Manage sources": "উৎস পরিচালনা করুন",
   "Manual ingest": "ম্যানুয়াল ইনজেস্ট",

@@ -2552,6 +2552,7 @@
   "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).",
   "Make it my default": "Make it my default",
+  "Making a temporary copy of your data…": "Making a temporary copy of your data…",
   "Manage calendars & sources in Settings → Agenda.": "Manage calendars & sources in Settings → Agenda.",
   "Manage sources": "Manage sources",
   "Manual ingest": "Manual ingest",

@@ -55,6 +55,16 @@ HONESTY: the writer gate is HELD while the corpus member streams (that is the
 consistency guarantee), so collection writes pause for the duration — reported
 as ``gate_held_s`` in the summary and as the "corpus (writes paused)" phase,
 never hidden. All wall times and byte counts in the summary are measured.
+
+A BACKUP NEVER CARRIES A RESIDUAL WRITE-AHEAD LOG (2026-10-01). The live file is
+streamed only when it alone is a complete image: every committed frame of the
+log is in the main file (the checkpoint's own result row says so, not the size
+of the ``-wal`` file). When a long reader keeps frames only in the log, the
+corpus is COPIED first through SQLite's own read-transaction snapshot onto the
+destination drive, the copy is sized and refused for before it is made, and the
+member streams from the copy; the summary reports the copy's seconds and bytes
+beside ``gate_held_s``. Old archives that carry a ``corpus-wal`` member still
+restore (the restore side is unchanged).
 """
 
 from __future__ import annotations
@@ -104,6 +114,12 @@ BUILDING_NAME = "volumes.building.json"
 _BUILDING_KIND = "oo-volumes-2-building"
 _CHUNK = 4 * 1024 * 1024
 _KEY_CHECK_PLAINTEXT = b"oo-volumes-2 key check"
+#: How long the in-window drain waits for a reader to leave before the corpus is copied
+#: instead. It protects ONE case: a transient reader. Up to this many seconds of paused
+#: writers spare a copy of minutes when the reader goes away; against a persistent reader the
+#: whole wait buys nothing (src/scheduler/hygiene.py measured a pinned TRUNCATE returning the
+#: same busy flag after the full timeout), which is why a free PASSIVE step runs first and a
+#: reader that only holds the END of the log never spends it. Chosen, not measured.
 _CHECKPOINT_WAIT_S = 30.0
 _SAFE_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -142,6 +158,127 @@ def is_active_staging(path: Path | str) -> bool:
 
 _TEMP_DIR_PREFIXES = (".bak-build-", ".restore-")
 _TEMP_FILE_SUFFIXES = (".oopart", ".reassembling")
+_OWNER_MARKER = ".owner.json"
+_DESTS_FILE = "backup-temp-dests.json"
+_DESTS_KEEP = 16
+
+
+def _write_owner_marker(staging: Path) -> None:
+    """Record WHICH process made this staging dir (pid + its start time), so a sweep can tell
+    a dead owner's leftover from a live job's dir without waiting a day. A backup that made a
+    temporary copy of the corpus and then crashed left 8 to 40 GB on the user's drive, and the
+    24 h age rule meant a retry within a day was refused for lack of the very space it held.
+    Best-effort: a dir without a marker keeps the age rule."""
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        (staging / _OWNER_MARKER).write_text(
+            json.dumps({"pid": proc.pid, "started": round(proc.create_time(), 3)}),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 - the age rule still covers a dir with no marker
+        _LOG.debug("backup: could not write the staging owner marker", exc_info=True)
+
+
+def _owner_state(staging: Path) -> str:
+    """``"alive"`` / ``"dead"`` for a dir whose marker names a process, ``"unknown"`` for a dir with
+    no readable marker (then only the age rule applies). A recycled pid is told apart by the
+    process start time recorded beside it."""
+    try:
+        data = json.loads((staging / _OWNER_MARKER).read_text(encoding="utf-8"))
+        pid, started = int(data["pid"]), float(data["started"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return "unknown"
+    try:
+        import psutil
+
+        if not psutil.pid_exists(pid):
+            return "dead"
+        return "alive" if abs(psutil.Process(pid).create_time() - started) < 1.0 else "dead"
+    except Exception as exc:  # noqa: BLE001 - psutil.NoSuchProcess is "dead", the rest "unknown"
+        return "dead" if type(exc).__name__ == "NoSuchProcess" else "unknown"
+
+
+def remember_snapshot_destination(dest: Path | str) -> None:
+    """Remember a destination that was given a temporary copy of the corpus, in the data dir, so
+    the boot janitor can sweep a crash's leftover there even if the user never exports to that
+    drive again (:func:`sweep_remembered_destinations`). Best-effort, bounded."""
+    try:
+        path = data_dir() / _DESTS_FILE
+        try:
+            known = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
+        except (OSError, ValueError, TypeError):
+            known = []
+        d = str(Path(dest).resolve())
+        known = [d] + [x for x in known if x != d]
+        _write_json_atomic(path, known[:_DESTS_KEEP])
+    except Exception:  # noqa: BLE001 - a missed entry costs only the next-export sweep
+        _LOG.debug("backup: could not remember the snapshot destination", exc_info=True)
+
+
+def sweep_remembered_destinations() -> int:
+    """Boot janitor for a crash that left a temporary corpus copy on a backup drive: sweep each
+    remembered destination (dead-owner dirs at once, unmarked ones by age), drop the ones that
+    hold nothing more, and SKIP a destination that is not mounted (kept for later). Returns the
+    number of staging dirs removed."""
+    path = data_dir() / _DESTS_FILE
+    try:
+        known = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
+    except (OSError, ValueError, TypeError):
+        return 0
+    removed, keep = 0, []
+    for d in known:
+        root = Path(d)
+        if not root.is_dir():
+            keep.append(d)  # an unmounted drive: look again at the next boot
+            continue
+        removed += sweep_stale_backup_temps(root)
+        try:
+            left = any(
+                p.is_dir() and p.name.startswith(".bak-build-") for p in root.iterdir()
+            )
+        except OSError:
+            left = True
+        if left:
+            keep.append(d)
+    if keep != known:
+        try:
+            _write_json_atomic(path, keep)
+        except Exception:  # noqa: BLE001
+            _LOG.debug("backup: could not update the remembered destinations", exc_info=True)
+    return removed
+
+
+_REMEMBERED_SWEEP_LOCK = threading.Lock()
+_REMEMBERED_SWEEP: threading.Thread | None = None
+
+
+def sweep_remembered_destinations_in_background() -> threading.Thread | None:
+    """Run :func:`sweep_remembered_destinations` on a daemon thread, one at a time.
+
+    On its own thread because the first thing it does to a destination is ask whether it is there,
+    and a backup drive that is a stale network mount can hold that one call for minutes: the boot
+    path and the maintenance pass that call the janitor must never wait on somebody else's drive.
+    Returns the thread (``None`` when a sweep is already running or there is nothing remembered),
+    so a test can join it."""
+    global _REMEMBERED_SWEEP
+    with _REMEMBERED_SWEEP_LOCK:
+        if _REMEMBERED_SWEEP is not None and _REMEMBERED_SWEEP.is_alive():
+            return None
+
+        def run() -> None:
+            try:
+                n = sweep_remembered_destinations()
+                if n:
+                    _LOG.info("backup: removed %d leftover temporary copy dir(s) from a backup drive", n)
+            except Exception:  # noqa: BLE001 - a janitor never takes anything down
+                _LOG.warning("backup: the remembered-destination sweep failed", exc_info=True)
+
+        t = threading.Thread(target=run, name="oo-backup-remembered-sweep", daemon=True)
+        _REMEMBERED_SWEEP = t
+        t.start()
+        return t
 
 
 def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -> int:
@@ -149,7 +286,9 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
     ``.bak-build-*`` / ``.restore-*`` staging dirs and ``*.oopart`` /
     ``*.reassembling`` files older than ``max_age_hours``. A LIVE job's paths are
     protected twice over — the active-staging registry and the age guard (a dir
-    being written has a fresh mtime). Never touches volumes, manifests or the
+    being written has a fresh mtime). A ``.bak-build-*`` dir that carries an owner marker
+    is judged by its OWNER instead: a dead owner's leftover goes at once whatever its age,
+    a live owner's dir stays. Never touches volumes, manifests or the
     resume log (``volumes.building.json``). Returns the number removed."""
     rootp = Path(root)
     if not rootp.is_dir():
@@ -165,6 +304,13 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
             if is_active_staging(p):
                 continue
             if p.is_dir() and p.name.startswith(_TEMP_DIR_PREFIXES):
+                owner = _owner_state(p) if p.name.startswith(".bak-build-") else "unknown"
+                if owner == "alive":
+                    continue
+                if owner == "dead":
+                    shutil.rmtree(p, ignore_errors=True)
+                    removed += 1
+                    continue
                 # A dir's own mtime can stay old while files are written INSIDE it —
                 # age-guard on the newest entry within, so a live tree is never swept.
                 newest = p.stat().st_mtime
@@ -188,7 +334,7 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
 # --------------------------------------------------------------------------- #
 #  Small helpers
 # --------------------------------------------------------------------------- #
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_atomic(path: Path, payload: Any) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, path)
@@ -327,17 +473,55 @@ def _sign_manifest(m: dict[str, Any]) -> dict[str, str]:
 #  Corpus source (the live default + a seam for tests/benches)
 # --------------------------------------------------------------------------- #
 @dataclass
+class SnapshotCopy:
+    """A temporary copy of the corpus, made because the live file alone was not a complete
+    image (a long reader kept committed frames only in the write-ahead log). It lives in the
+    export's staging dir on the destination drive; the corpus member streams from it."""
+
+    path: Path
+    bytes: int  # the copy's size on disk
+    seconds: float  # how long the copy took (collection stayed paused, writes were not gated)
+    gate_held_s: float  # how long the write gate was held by the window that decided to copy
+
+
+@dataclass
 class CorpusSource:
     """What the corpus member streams from. ``freeze()`` yields the residual WAL
-    path (or None) with the file guaranteed stable for the duration. ``facts_key``
-    opens the store for the descriptive stats when the ambient process key is not
-    its key (test/bench corpora); the live store always opens with the ambient key."""
+    path (or None) with the file guaranteed stable for the duration, OR a
+    :class:`SnapshotCopy` when the live file alone was not a complete image and the
+    corpus was copied inside the freeze (the member then streams from the copy).
+    ``facts_key`` opens the store for the descriptive stats when the ambient process
+    key is not its key (test/bench corpora); the live store always opens with the
+    ambient key. ``logical_bytes`` is the live store's real size through the log
+    (``page_count`` x ``page_size``), which the sizing and the free-space check use
+    instead of the main file's size; ``snapshot`` is set when the copy was already made
+    before the sizing."""
 
     path: Path
     member_name: str
     encrypted: bool
-    freeze: Callable[[], Any]  # context manager -> Path | None (residual wal)
+    freeze: Callable[[], Any]  # context manager -> Path | SnapshotCopy | None
     facts_key: str | None = None
+    logical_bytes: int | None = None
+    snapshot: SnapshotCopy | None = None
+
+
+def _noop(*_a: Any, **_k: Any) -> None:
+    return None
+
+
+@dataclass
+class _LiveHooks:
+    """What the live source needs from the export that built it, so a copy can be sized,
+    refused for, labelled, journalled and cancelled from inside the freeze. The defaults
+    make ``_live_corpus_source`` callable on its own (tests, benches)."""
+
+    side_bytes: int = 0
+    parity_fraction: float = 0.1
+    should_stop: Callable[[], bool] | None = None
+    set_phase: Callable[[str], None] = _noop
+    milestone: Callable[..., None] = _noop
+    on_stopped: Callable[[], None] = _noop
 
 
 @contextmanager
@@ -345,27 +529,96 @@ def _no_freeze() -> Iterator[None]:
     yield None
 
 
-def _drain_wal(db_path: Path) -> Path | None:
-    """Fold the WAL into the main file (TRUNCATE checkpoint, retried briefly).
-    Returns the WAL path if frames REMAIN (a long reader held them) — the caller
-    then carries the WAL as a member instead of blocking forever."""
+_CKPT_SQL = {
+    "PASSIVE": "PRAGMA wal_checkpoint(PASSIVE)",
+    "TRUNCATE": "PRAGMA wal_checkpoint(TRUNCATE)",
+}
+
+
+def _wal_row(mode: str) -> tuple[int, int, int] | None:
+    """The result row ``(busy, log frames, checkpointed frames)`` of ``PRAGMA wal_checkpoint``
+    in ``mode`` (``PASSIVE`` never waits for a reader or a writer; ``TRUNCATE`` waits for readers
+    up to the connection's busy timeout), run through a pooled connection. ``None`` when the
+    call raised or answered something unreadable: UNKNOWN, never "complete"."""
     from src.database.session import engine
 
+    try:
+        with engine.connect() as conn:
+            row = conn.exec_driver_sql(_CKPT_SQL[mode]).fetchone()
+        if row is None or len(row) < 3:
+            return None
+        return int(row[0]), int(row[1]), int(row[2])
+    except Exception:  # noqa: BLE001 - checkpoint is best-effort; the caller treats None as unknown
+        _LOG.warning("backup: WAL checkpoint (%s) failed", mode, exc_info=True)
+        return None
+
+
+def _wal_complete(db_path: Path, row: tuple[int, int, int] | None) -> bool | None:
+    """Whether the MAIN FILE ALONE is a complete image of the committed state: ``True``, ``False``
+    (frames remain only in the log) or ``None`` (cannot tell).
+
+    The decision is the checkpoint's own row, not the size of the ``-wal`` file: a reader that
+    started after the last commit leaves ``(1, 104, 104)`` and a 428 KB ``-wal`` whose frames are
+    ALL in the main file (a main-file-only copy had every row), while a reader older than a later
+    commit leaves ``(1, 206, 104)`` and an unusable main file. A negative log count is a store
+    that is not in WAL mode. With no row (the call raised) only an EMPTY or missing ``-wal`` is
+    proof of completeness."""
+    if row is not None:
+        _busy, log, checkpointed = row
+        return log < 0 or checkpointed >= log
     wal = db_path.with_name(db_path.name + "-wal")
+    try:
+        return True if (not wal.exists() or wal.stat().st_size == 0) else None
+    except OSError:
+        return None
+
+
+def _drain_wal(db_path: Path) -> Path | None:
+    """Fold the WAL into the main file, and say whether the main file ALONE is now a complete
+    image. Returns ``None`` when it is, else the ``-wal`` path (frames remain only in the log:
+    a reader older than a later commit holds them, or the checkpoint could not run and the log is
+    not empty). The caller never carries that WAL: it copies the corpus through a read
+    transaction instead.
+
+    A free PASSIVE step first: when it already shows every frame in the main file, nothing is
+    gained by waiting for the log to reset (a backup does not need the file reset), so a reader
+    that holds only the END of the log no longer costs the 30 s hold. Otherwise TRUNCATE, which
+    waits for readers up to the pooled connection's busy timeout (one wait, not sixty retries),
+    re-read after each try until ``_CHECKPOINT_WAIT_S``; a call that raised ends the retrying."""
+    wal = db_path.with_name(db_path.name + "-wal")
+    if _wal_complete(db_path, _wal_row("PASSIVE")):
+        return None
     deadline = time.monotonic() + _CHECKPOINT_WAIT_S
     while True:
-        try:
-            with engine.connect() as conn:
-                conn.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
-        except Exception:  # noqa: BLE001 - checkpoint is best-effort; the wal member covers it
-            _LOG.warning("backup: WAL checkpoint failed", exc_info=True)
-            break
-        if not wal.exists() or wal.stat().st_size == 0:
+        row = _wal_row("TRUNCATE")
+        if _wal_complete(db_path, row):
             return None
-        if time.monotonic() >= deadline:
-            break
+        if row is None or time.monotonic() >= deadline:
+            _LOG.info(
+                "backup: the main file is not a complete image (checkpoint row %s)", row
+            )
+            return wal
         time.sleep(0.5)
-    return wal if wal.exists() and wal.stat().st_size > 0 else None
+
+
+def _logical_db_bytes(path: Path) -> int:
+    """The store's size through the log: ``PRAGMA page_count`` x ``page_size``, never less than
+    the main file. A log that holds growth leaves the main file short (measured: main file 8,192
+    bytes, logical size 8,220,672), so sizing or refusing from ``stat()`` under-counts exactly the
+    case a copy exists for."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    try:
+        from src.database.session import engine
+
+        with engine.connect() as conn:
+            pages = int(conn.exec_driver_sql("PRAGMA page_count").scalar() or 0)
+            page_size = int(conn.exec_driver_sql("PRAGMA page_size").scalar() or 0)
+        return max(size, pages * page_size)
+    except Exception:  # noqa: BLE001 - fall back to the file size, as before
+        return size
 
 
 @contextmanager
@@ -409,38 +662,147 @@ def _collection_paused(notes: list[str]) -> Iterator[None]:
         yield
 
 
+_SNAPSHOT_NOTE = (
+    "a temporary copy of your data was made so this backup is complete; "
+    "incremental volume reuse does not apply to this run"
+)
+_GATE_OFF_NOTE = (
+    "WARNING: OO_WRITE_GATE=0 — the write gate was disabled, so the "
+    "corpus was NOT streamed under a write pause. If collection was "
+    "active this snapshot may be inconsistent; re-enable the gate (or "
+    "stop collection) for a guaranteed-consistent backup."
+)
+
+
+def _snapshot_file(live: Path, dest: Path, should_stop: Callable[[], bool] | None) -> None:
+    """One read-transaction copy of the live corpus (the backup API for a plaintext store,
+    ``sqlcipher_export`` for an encrypted one, KEYED with the live key: no plaintext lands on
+    disk). ``should_stop`` is passed only when there is one, so a spy of the two-argument call
+    keeps working."""
+    from src.database import connect as _connect
+
+    if should_stop is None:
+        _connect.snapshot_preserving(live, dest)
+    else:
+        _connect.snapshot_preserving(live, dest, should_stop=should_stop)
+
+
+def _take_snapshot(
+    live: Path, tmp_dir: Path, member: str, hooks: _LiveHooks, *, gate_held_s: float
+) -> SnapshotCopy:
+    """Copy the live corpus into ``tmp_dir`` (on the DESTINATION drive), after refusing for lack
+    of room BEFORE a byte is written. Runs under the collection pause the caller already holds
+    and with NO write gate: the copy is one read transaction, so it is a consistent image
+    whatever commits meanwhile, and holding the gate for it would stall every writer for minutes
+    (the incident tests/test_export_pauses_collection.py records). A stop interrupts an encrypted
+    copy within about a second; a plaintext copy (the backup API) cannot be interrupted and the
+    stop takes effect when it ends."""
+    copy_bytes = _logical_db_bytes(live)
+    _preflight_snapshot(tmp_dir.parent, copy_bytes, hooks.side_bytes, hooks.parity_fraction)
+    remember_snapshot_destination(tmp_dir.parent)
+    hooks.set_phase("snapshot")
+    hooks.milestone("stage_begin", "export:snapshot", copy_bytes=copy_bytes)
+    snap = tmp_dir / member
+    t0 = time.monotonic()
+    from src.database.connect import SnapshotStopped
+
+    try:
+        _snapshot_file(live, snap, hooks.should_stop)
+    except SnapshotStopped:
+        hooks.on_stopped()
+        raise VolumeStopped("volume backup stopped") from None
+    seconds = time.monotonic() - t0
+    size = snap.stat().st_size
+    hooks.milestone("stage_end", "export:snapshot", seconds=round(seconds, 3), bytes=size)
+    return SnapshotCopy(path=snap, bytes=size, seconds=seconds, gate_held_s=gate_held_s)
+
+
+def _clean_source(
+    live: Path,
+    tmp_dir: Path,
+    member: str,
+    enc: bool,
+    notes: list[str],
+    hooks: _LiveHooks,
+    logical_bytes: int,
+) -> CorpusSource:
+    """The live file, streamed under the pause and the gate once the drain says the main file
+    alone is a complete image: today's sequence. If the drain finds frames only in the log (a
+    reader appeared after the probe: the gap holds the side members and the blobs and can last
+    hours) the corpus is copied HERE, late, under the same pause window, instead of failing the
+    export or carrying the log."""
+
+    @contextmanager
+    def freeze() -> Iterator[Path | SnapshotCopy | None]:
+        from src.database.writer import gate_enabled, write_lock
+
+        with _collection_paused(notes), ExitStack() as gate:
+            gate_t0 = time.monotonic()
+            gate.enter_context(write_lock())
+            if _drain_wal(live) is None:
+                if not gate_enabled():
+                    # The write gate IS the snapshot-consistency guarantee: collection
+                    # writes pause while the corpus streams. Under OO_WRITE_GATE=0 the
+                    # lock is a no-op, so a concurrent commit could tear the streamed
+                    # image while the summary still reports a "writes paused" phase.
+                    # Degrade LOUDLY — never present a possibly-inconsistent backup as
+                    # a paused-and-consistent one.
+                    notes.append(_GATE_OFF_NOTE)
+                yield None
+                return
+            gate_s = time.monotonic() - gate_t0
+            gate.close()  # collection stays paused; the copy is a read transaction
+            copy = _take_snapshot(live, tmp_dir, member, hooks, gate_held_s=gate_s)
+            notes.append(_SNAPSHOT_NOTE)
+            yield copy
+
+    return CorpusSource(
+        path=live, member_name=member, encrypted=enc, freeze=freeze, logical_bytes=logical_bytes
+    )
+
+
 def _live_corpus_source(
-    tmp_dir: Path, include_newsletters: bool, notes: list[str]
+    tmp_dir: Path,
+    include_newsletters: bool,
+    notes: list[str],
+    hooks: _LiveHooks | None = None,
 ) -> CorpusSource:
     from src.backup.sqlite_backup import live_db_path
     from src.database.connect import is_encrypted_file
 
+    hooks = hooks or _LiveHooks()
     live = live_db_path()
     enc = bool(is_encrypted_file(live))
     member = "corpus.db.sqlcipher" if enc else "corpus.db"
     if include_newsletters:
+        logical = _logical_db_bytes(live)
+        clean = _clean_source(live, tmp_dir, member, enc, notes, hooks, logical)
+        # THE PROBE: one PASSIVE row, no pause and no gate (PASSIVE waits for nobody). A main
+        # file that is already a complete image takes today's sequence, unchanged.
+        if _wal_complete(live, _wal_row("PASSIVE")):
+            return clean
+        # A reader older than a commit (or an unreadable row): the EARLY WINDOW decides BEFORE the
+        # sizing, so the volume sizing, the free-space check and the facts all see the copy. One
+        # pause window covers the drain and the copy; the notes it writes are kept only if a
+        # copy was made (a reader that left costs nothing and leaves no false sentence behind).
+        from src.database.writer import write_lock
 
-        @contextmanager
-        def freeze() -> Iterator[Path | None]:
-            from src.database.writer import gate_enabled, write_lock
-
-            if not gate_enabled():
-                # The write gate IS the snapshot-consistency guarantee: collection
-                # writes pause while the corpus streams. Under OO_WRITE_GATE=0 the
-                # lock is a no-op, so a concurrent commit could tear the streamed
-                # image while the summary still reports a "writes paused" phase.
-                # Degrade LOUDLY — never present a possibly-inconsistent backup as
-                # a paused-and-consistent one.
-                notes.append(
-                    "WARNING: OO_WRITE_GATE=0 — the write gate was disabled, so the "
-                    "corpus was NOT streamed under a write pause. If collection was "
-                    "active this snapshot may be inconsistent; re-enable the gate (or "
-                    "stop collection) for a guaranteed-consistent backup."
-                )
-            with _collection_paused(notes), write_lock():
-                yield _drain_wal(live)
-
-        return CorpusSource(path=live, member_name=member, encrypted=enc, freeze=freeze)
+        early_notes: list[str] = []
+        copy: SnapshotCopy | None = None
+        with _collection_paused(early_notes):
+            gate_t0 = time.monotonic()
+            with write_lock():
+                residual = _drain_wal(live)
+            gate_s = time.monotonic() - gate_t0
+            if residual is not None:
+                copy = _take_snapshot(live, tmp_dir, member, hooks, gate_held_s=gate_s)
+        if copy is None:
+            return clean
+        notes.extend(early_notes)
+        notes.append(_SNAPSHOT_NOTE)
+        return CorpusSource(
+            path=copy.path, member_name=member, encrypted=enc, freeze=_no_freeze, snapshot=copy
+        )
 
     # Newsletter exclusion needs a modifiable copy: a DISPOSABLE snapshot that
     # PRESERVES the at-rest encryption state (never a plaintext staging), filtered
@@ -449,8 +811,9 @@ def _live_corpus_source(
     from src.database.connect import snapshot_preserving
 
     snap = tmp_dir / member
-    # The snapshot holds the gate for its checkpoint + copy too (connect.py), so it
-    # gets the same pause. The filtering below works on the private copy.
+    # The copy is one read transaction (``snapshot_preserving`` without ``allow_file_copy``
+    # takes NO write gate), so it gets the collection pause only. The filtering below works
+    # on the private copy.
     with _collection_paused(notes):
         snapshot_preserving(live, snap)
     _drop_newsletters_in_file(snap)
@@ -993,6 +1356,7 @@ def write_stream_backup(
 
     tmp_dir = dest / f".bak-build-{secrets.token_hex(6)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
+    _write_owner_marker(tmp_dir)  # a crash's leftover is told from a live job's dir by its owner
     gate_held_s = 0.0
     with active_staging(tmp_dir):
         try:
@@ -1038,12 +1402,6 @@ def write_stream_backup(
             # only so the manifest can carry the placement index the restore needs.
             blob_pairs = collect_blob_members(include_blobs or ())
             blobs = [mf for mf, _ in blob_pairs]
-            src = (
-                corpus_source
-                if corpus_source is not None
-                else _live_corpus_source(tmp_dir, include_newsletters, notes)
-            )
-            corpus_bytes = src.path.stat().st_size
             side_sizes = [m.path.stat().st_size for m in side]
             blob_sizes = [m.path.stat().st_size for m in blobs]
             # Blob bytes enter BOTH the adaptive volume sizing and the disk preflight.
@@ -1053,6 +1411,39 @@ def write_stream_backup(
             # hold -- a refusal after 20 GB of writing is not a refusal.
             side_sizes = [*side_sizes, *blob_sizes]
             side_bytes = sum(side_sizes)
+
+            def _set_phase(label: str) -> None:
+                st.phase = label
+                st.progress()
+
+            def _on_stopped() -> None:
+                st.save_building()
+
+            src = (
+                corpus_source
+                if corpus_source is not None
+                else _live_corpus_source(
+                    tmp_dir,
+                    include_newsletters,
+                    notes,
+                    _LiveHooks(
+                        side_bytes=side_bytes,
+                        parity_fraction=parity_fraction,
+                        should_stop=should_stop,
+                        set_phase=_set_phase,
+                        milestone=_ms,
+                        on_stopped=_on_stopped,
+                    ),
+                )
+            )
+            # The live store's size THROUGH the log, not the main file's: a log that holds
+            # growth leaves the file short (see _logical_db_bytes). A source without one (an
+            # injected test/bench source) is its file.
+            corpus_bytes = (
+                src.logical_bytes
+                if src.logical_bytes is not None
+                else src.path.stat().st_size
+            )
             if not explicit_vsize:
                 # DB-9: size volumes so N+M stays under the GF(2^8) parity ceiling at any scale
                 # (byte-identical below ~100 GB where the 512 MiB floor wins). Size against the
@@ -1078,7 +1469,13 @@ def write_stream_backup(
                             "replaced atomically only on success (never orphaned mid-run)"
                         )
             _preflight_dest(
-                dest, corpus_bytes, side_bytes, parity_fraction, reuse_possible=bool(pool)
+                dest,
+                corpus_bytes,
+                side_bytes,
+                parity_fraction,
+                # After a copy no old volume is credited: the copy re-encrypts with fresh IVs
+                # and the previous set stays on disk until the final swap.
+                reuse_possible=bool(pool) and src.snapshot is None,
             )
 
             _ms("stage_end", "export:collecting")
@@ -1129,9 +1526,17 @@ def write_stream_backup(
             _ms("stage_begin", "export:gate_window")
             gate_t0 = time.monotonic()
             wal_member: str | None = None
-            with src.freeze() as wal_path:
+            with src.freeze() as frozen:
+                # A late copy (a reader appeared after the probe) replaces the live file as the
+                # stream; an old-format source still yields a residual WAL path (or None).
+                late_copy = frozen if isinstance(frozen, SnapshotCopy) else None
+                wal_path = None if late_copy is not None else frozen
+                corpus_path = late_copy.path if late_copy is not None else src.path
+                if late_copy is not None:
+                    st.phase = "corpus (from a temporary copy)"
+                    st.progress()
                 _ms("stage_begin", "export:corpus_member", durable=False)
-                ce = _emit_member(st, MemberFile(src.member_name, "corpus", src.path))
+                ce = _emit_member(st, MemberFile(src.member_name, "corpus", corpus_path))
                 ce["sqlcipher"] = src.encrypted
                 members_out.append(ce)
                 _ms("stage_end", "export:corpus_member", durable=False)
@@ -1150,9 +1555,15 @@ def write_stream_backup(
                     )
                     _ms("stage_end", "export:wal_member", durable=False)
                 _ms("stage_begin", "export:corpus_facts", durable=False)
-                stats, arev = _corpus_facts(src.path, key=src.facts_key)
+                stats, arev = _corpus_facts(corpus_path, key=src.facts_key)
                 _ms("stage_end", "export:corpus_facts", durable=False)
             gate_held_s = time.monotonic() - gate_t0
+            # A copy was made (before the sizing, or late inside the freeze): the gate was held
+            # only by the window that decided to copy, not for the copy or the stream, so say
+            # that figure, and report the copy's own seconds and bytes beside it.
+            snap = late_copy or src.snapshot
+            if snap is not None:
+                gate_held_s = snap.gate_held_s
             _ms("stage_end", "export:gate_window", seconds=round(gate_held_s, 3))
 
             _ms("stage_begin", "export:finalizing")
@@ -1240,11 +1651,40 @@ def write_stream_backup(
                 "resumed": resumed,
                 "orphans_removed": gc_removed,
                 "gate_held_s": round(gate_held_s, 3),
+                "snapshot_s": round(snap.seconds, 3) if snap is not None else None,
+                "snapshot_bytes": snap.bytes if snap is not None else None,
                 "wall_s": round(time.monotonic() - t0, 3),
                 "notes": notes,
             }
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _volumes_need(corpus_bytes: int, side_bytes: int, parity_fraction: float) -> int:
+    """What the finished volume set needs on the destination. ``(1 + parity)``: the data volumes
+    plus the Reed-Solomon parity volumes. ``1.02``: generic slack (the envelope's own overhead is
+    about 16 bytes per 4 MiB chunk, ~0.0004 %, so this is not that). ``64 MiB``: the fixed small
+    members (manifest, key check, metadata). A BOUND, not a prediction."""
+    needed = int((corpus_bytes + side_bytes) * (1.0 + max(0.0, parity_fraction)) * 1.02)
+    return needed + 64 * 1024 * 1024
+
+
+def _preflight_snapshot(
+    dest: Path, copy_bytes: int, side_bytes: int, parity_fraction: float
+) -> None:
+    """Refuse loudly BEFORE the temporary copy of the corpus is made, so a drive that cannot hold
+    it is told so now and not after twelve minutes of copying. The copy and the volume set exist
+    at the same time (the copy goes in the ``finally`` at the end of the run, not before the
+    parity step, so this is a safe upper bound), and no old volume is credited: the copy
+    re-encrypts with fresh IVs, so incremental reuse is lost and the previous set stays on disk
+    until the final swap. The message is ``preflight_free_space``'s own shape: how much is
+    needed, how much is free and where, and what to do (free space or choose another location)."""
+    from src.backup.artifact import preflight_free_space
+
+    needed = copy_bytes + _volumes_need(copy_bytes, side_bytes, parity_fraction)
+    preflight_free_space(
+        dest, needed, what="volume backup (it first makes a temporary copy of your data)"
+    )
 
 
 def _preflight_dest(
@@ -1262,8 +1702,7 @@ def _preflight_dest(
     budget must then cover both generations at once."""
     from src.backup.artifact import preflight_free_space
 
-    needed = int((corpus_bytes + side_bytes) * (1.0 + max(0.0, parity_fraction)) * 1.02)
-    needed += 64 * 1024 * 1024
+    needed = _volumes_need(corpus_bytes, side_bytes, parity_fraction)
     if reuse_possible:
         existing = 0
         for p in dest.glob("*.ooenc"):
