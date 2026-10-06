@@ -58,6 +58,17 @@ class _Probe(R.Probe):
         return self._avail
 
 
+@pytest.fixture(autouse=True)
+def _core_limit(monkeypatch):
+    """The CLI sets RLIMIT_CORE to 0 in the process that runs it; here that process is pytest, so the real call is
+    replaced by a recorder (and what it was asked for is asserted in one test)."""
+    import resource
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(resource, "setrlimit", lambda which, limits: calls.append((which, limits)))
+    return calls
+
+
 def _extract(tmp_path: Path, src: Path = FIXTURE) -> Path:
     d = tmp_path / "inputs"
     d.mkdir(exist_ok=True)
@@ -563,11 +574,11 @@ def test_the_third_signal_kills_the_childs_group_first_and_a_sigquit_takes_the_s
         "import os, signal, subprocess, sys\nfrom src.osm import reference_run as R\n"
         "child = subprocess.Popen(['sleep', '120'], start_new_session=True)\n"
         "print(child.pid, flush=True)\n"
+        "signal.signal(signal.SIGQUIT, signal.SIG_DFL)  # whatever this test run was started with\n"
         "with R._terminating_signals():\n"
-        "    R._INT.pgid = child.pid\n"
         "    h = signal.getsignal(signal.SIGQUIT)\n"
-        "    h(signal.SIGQUIT, None); R._INT.last = None\n"
-        "    h(signal.SIGQUIT, None); R._INT.last = None\n"
+        "    R._INT.pgid, R._INT.count = child.pid, 2  # two events already: only the THIRD may touch the child\n"
+        "    assert child.poll() is None\n"
         "    h(signal.SIGQUIT, None)\n"
         "print('survived the third')\n"
     )
@@ -812,6 +823,42 @@ def test_the_passphrase_value_never_reaches_the_report_whatever_the_child_prints
     assert report["status"] == "failed"
 
 
+def test_a_passphrase_straddling_the_report_cut_leaves_no_tail_of_itself(tmp_path):
+    """The child's stdout is cut to its last 600 characters: scrub FIRST, or the cut leaves the secret's tail."""
+    seen = tmp_path / "seen.txt"
+    code = ("import os\n"
+            "p = os.environ['OO_DB_PASSPHRASE']\n"
+            f"open({str(seen)!r}, 'w').write(p)\n"
+            "print('x' * 10 + p + 'z' * 584)\n"  # the 600-character cut falls INSIDE the passphrase (17 characters in)
+            "raise SystemExit(1)")
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    secret = seen.read_text(encoding="utf-8")
+    text = json.dumps(report)
+    assert report["phases"][0]["error_tail"], "the child's output must reach the report for this to test anything"
+    for n in range(6, len(secret) + 1):
+        assert secret[-n:] not in text, f"the last {n} characters of the passphrase are in the report"
+
+
+def test_a_passphrase_that_holds_a_newline_is_scrubbed_before_the_stderr_tail_is_cut(tmp_path):
+    """The tail keeps 12 lines: with the passphrase's first line outside them, scrub-after-cut finds no whole secret."""
+    key = tmp_path / "op.key"
+    key.write_text("first-half-of-it\nsecond-half-of-it", "utf-8")  # an INNER newline is part of the passphrase
+    code = ("import os, sys\n"
+            "print(os.environ['OO_DB_PASSPHRASE'] + '\\n' + '\\n'.join(['noise'] * 11), file=sys.stderr)\n"
+            "sys.exit(1)")
+    report, _ = _run(tmp_path, phases_override=_scripted(code), passphrase_file=key)
+    assert "noise" in json.dumps(report), "the tail must reach the report for this to test anything"
+    for part in ("first-half-of-it", "second-half-of-it"):
+        assert part not in json.dumps(report), part
+
+
+def test_a_passphrase_too_short_to_be_one_is_refused(tmp_path):
+    key = tmp_path / "weak.key"
+    key.write_text("status", "utf-8")
+    with pytest.raises(ValueError, match="at least"):
+        _run(tmp_path, passphrase_file=key)
+
+
 def test_no_phase_the_runner_builds_carries_a_passphrase_in_its_argv():
     for gaz in ("off", "osm-only"):
         phases = R.build_phases(extract=Path("e.osm.pbf"), country="ZZ", history=Path("h.osm.pbf"), reader=None,
@@ -1024,3 +1071,18 @@ def test_the_runner_failing_after_a_phase_keeps_the_phase_it_measured(tmp_path, 
     report, _ = _run(tmp_path, phases_override=_scripted("print(1)", "one") + _scripted("print(2)", "two"))
     assert report["status"] == "failed" and [p["name"] for p in report["phases"]] == ["one"]
     assert any("phase two" in n for n in report["not_measured"])
+
+
+
+def test_the_command_switches_core_dumps_off_before_the_run_reads_the_passphrase(tmp_path, _core_limit):
+    import resource
+
+    _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--plan", "--workdir", str(tmp_path / "w"))
+    assert (resource.RLIMIT_CORE, (0, 0)) in _core_limit
+
+
+def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):
+    report = {"status": "interrupted", "reason": "x", "phases": [], "store": {"deleted": True}}
+    monkeypatch.setattr(R, "run", lambda **kw: (report, None))
+    monkeypatch.setattr(sys, "stdout", None)  # `cmd >&-`
+    assert CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")]) == 3

@@ -33,7 +33,7 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
 * **THE RUNNER DYING DOES NOT LEAVE THE CHILD RUNNING.** SIGHUP (a dropped SSH session), SIGTERM and
   Ctrl-C stop the child's whole process group, delete the store and still write the report (signals within 250 ms of
   each other are ONE event; a second kills the group at once; a third SIGKILLs the group and gives the runner the
-  signal's default action -- SIGTERM for a Ctrl-\\ -- so it leaves NO report and keeps the store, which ``--cleanup`` removes), delete the store and still write the report;
+  signal's default action -- SIGTERM for a Ctrl-\\ -- so it leaves NO report and keeps the store, which ``--cleanup`` removes);
   ``PR_SET_PDEATHSIG`` is the backstop for a runner that is KILLED, where no handler can run. After
   EVERY child exit the group is swept with SIGKILL before the store is deleted, so a helper that
   ignored SIGTERM, or outlived a clean exit, cannot write into a store being removed.
@@ -75,6 +75,9 @@ from typing import Any
 from src.monitoring.secret_scrub import scrub_text
 
 SCHEMA_VERSION = 1
+#: The shortest passphrase the runner accepts from ``--passphrase-file``: shorter than any report field name worth
+#: renaming by accident (the scrub also covers keys), and nothing a store's key should be anyway.
+MIN_PASSPHRASE_CHARS = 12
 MARKER = ".oo-osm-reference-run"
 GIB = 1024**3
 MIB = 1024**2
@@ -232,7 +235,9 @@ def _tail(path: Path, lines: int = 12, *, secrets_: tuple[str, ...], run_dir: Pa
         raw = path.read_text("utf-8", errors="replace")
     except OSError:
         return ""
-    return scrub("\n".join(raw.strip().splitlines()[-lines:]), secrets_=secrets_, run_dir=run_dir, roots=roots)
+    # SCRUB FIRST, then cut: a passphrase that straddles the cut (or holds a newline) would otherwise keep its tail.
+    clean = scrub(raw, secrets_=secrets_, run_dir=run_dir, roots=roots)
+    return "\n".join(clean.strip().splitlines()[-lines:])
 
 
 # --------------------------------------------------------------------------- #
@@ -647,7 +652,7 @@ def run_phase(
         if raw.startswith("{"):
             res.app_report = json.loads(raw)
         elif raw:
-            res.error_tail = scrub(raw[-600:], secrets_=secrets_, run_dir=run_dir, roots=roots)
+            res.error_tail = scrub(raw, secrets_=secrets_, run_dir=run_dir, roots=roots)[-600:]  # scrub, THEN cut
     except (OSError, ValueError):
         pass
     if res.status != "ok":
@@ -680,7 +685,7 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
 
         def _handler(signum, _frame):
             now_m = time.monotonic()
-            if _INT.signal is not None and _INT.last is not None and now_m - _INT.last < SIGNAL_DEBOUNCE_S:
+            if _INT.last is not None and now_m - _INT.last < SIGNAL_DEBOUNCE_S:
                 return  # the same event as the one just handled (a dropped session sends several at once)
             _INT.last = now_m  # stored and counted BEFORE anything else runs: a handler nested here sees them
             _INT.count += 1
@@ -883,6 +888,9 @@ def _run(
             raise ValueError(f"cannot read the passphrase file ({type(exc).__name__})") from None
         if not passphrase:
             raise ValueError("the passphrase file is empty")
+        if len(passphrase) < MIN_PASSPHRASE_CHARS:
+            # A short value could equal a field name of the report, and scrubbing it would rename that field.
+            raise ValueError(f"the passphrase must be at least {MIN_PASSPHRASE_CHARS} characters")
     else:
         passphrase = secrets.token_urlsafe(24)
     if gazetteer not in GAZETTEER_MODES:

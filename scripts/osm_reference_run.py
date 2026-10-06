@@ -27,7 +27,7 @@ THE REPORT holds no secret and no path outside the run's own directory (inputs a
 name); the passphrase exists only in the children's environment. Exit: 0 done, 1 a phase failed,
 2 refused (preflight, mid-run guard, or a phase's own refusal),
 3 interrupted (SIGHUP, SIGTERM or Ctrl-C: the child was stopped, the store deleted, the report written).
-A third signal (within a few seconds, more than a quarter of a second apart) kills the child's group and the runner at once: no
+A third signal (each more than a quarter of a second after the last) kills the child's group and the runner at once: no
 report, the store kept (the 'store:' line named it at the start; ``--cleanup`` removes it); the shell shows 128 plus the signal.
 """
 
@@ -96,8 +96,9 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             print("refused: the prior report cannot be read as JSON")
             return 2
-    # An rlimit is inherited by every child: no crash of the runner or a child dumps a core holding the store's key.
-    with contextlib.suppress(ValueError, OSError):
+    # An rlimit is inherited by every child: no crash of the runner or a child writes a core FILE holding the store's
+    # key (a core piped to a handler by the system's core_pattern is that handler's policy, not this limit's).
+    with contextlib.suppress(ImportError, ValueError, OSError):  # ImportError: no `resource` module (Windows)
         import resource
 
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -137,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(report, indent=2, sort_keys=True, default=str))
         else:
             print(f"report: {target.name}")
-        sys.stdout.flush()  # a dead pipe fails HERE, inside the try, not at interpreter shutdown (which would exit 120)
+        if sys.stdout is not None:  # None when the command was started with stdout closed
+            sys.stdout.flush()  # a dead pipe fails HERE, inside the try, not at interpreter shutdown (which would exit 120)
     except OSError:
         # The failed bytes would sit in stdout's buffer and fail again at interpreter shutdown, which would
         # turn this exit code into 120: point stdout at nowhere.
