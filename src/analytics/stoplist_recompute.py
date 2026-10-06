@@ -19,7 +19,8 @@ predicate, as on every other listing.
 
 WHEN IT RUNS. When the fingerprint of the shipped list (sha256 of the sorted words) differs from the
 one recorded by the last finished run, in the off-peak maintenance window and its offline timer. A
-fresh install records the fingerprint after a run that finds nothing, so it never pays. The
+fresh install records the fingerprint after a run that finds nothing, so it never pays; the first
+run on an existing corpus has no baseline and walks without the shortcut, once (see below). The
 fingerprint is written AFTER the last chunk: a kill, a restart or a failure leaves it unwritten and
 the next window resumes from the stored cursor.
 
@@ -29,14 +30,32 @@ stored representative id cannot show; the test therefore reads the article's own
 per-article covering index, no join to the wide article row) and asks whether a hidden word reached
 the highest count. An article whose stored columns already equal the recomputed ones is counted and
 not written (its record is wide, so a write rewrites many pages). An article whose columns are NULL
-("never computed") is left for the index to fill, except where a word taken off the list is concerned (below). Each affected article is handled once, when its
-walk reaches its LOWEST hidden keyword.
+("never computed") is left for the index to fill, except where a word taken off the list is
+concerned (below). Each affected article is handled once, when its walk reaches its LOWEST walked
+keyword.
 
-A WORD TAKEN OFF THE LIST. A word the previous finished run hid and the shipped list no longer
-holds (a ring exemption, a retired entry) is walked too, as a RESTORED keyword: its articles' stored
-tops were made without it, so each reached article is recomputed from its mentions and compared with
-what is stored, with no shortcut (an unhidden word may now top an article that never held a hidden
-one). The previous list is the sorted word list recorded with the fingerprint.
+THE SHORTCUT AND WHAT IT ASSUMES. "A hidden word below the top leaves the top alone" is true only if
+the stored top was made under a list that is a SUBSET of today's hidden set (every word hidden when
+the top was made is still hidden). Three things can break that, and the pass is built so that none
+of them can leave a hidden word in a top:
+
+* A word TAKEN OFF the list (a ring exemption, a retired entry) is walked as a RESTORED keyword:
+  its articles' tops were made without it, so each reached article is recomputed from its mentions
+  and compared with what is stored, with no shortcut, a NULL included (an article with only hidden
+  words was written NULL, which looks like "never computed").
+* A pass that STOPS or crashes on an intermediate list leaves tops made under lists the finished
+  baseline does not know. So before a pass writes anything it records ``words_pending`` = every list
+  walked since the last finished run (a checked write: no pass starts if it cannot be written), the
+  restored words are (finished list + pending) minus today's, and the run counts as current only
+  when the fingerprint matches AND nothing is pending.
+* A baseline that does not travel with the data. The state file lives beside the database, not in
+  it, so a restore, a merge swap or a moved database can read as current while its tops are older.
+  The finished fingerprint is therefore ALSO written to ``derived_meta`` in the same transaction as
+  the last cursor delete, and "current" needs both to agree. When they do not (or the file is missing,
+  unreadable or the wrong type), the baseline is UNKNOWN and every hidden word is walked WITHOUT the
+  shortcut, so no hidden word can stay in a top whatever list made it. A word taken off the list
+  since a lost baseline can stay missing from tops until its articles are re-indexed (the lost list
+  cannot be known).
 
 WHAT EACH NUMBER PROTECTS. Nothing here caps the work; every number says how it shares the machine.
 A chunk reads, decides and writes in ONE short transaction under the write window, and no read
@@ -45,14 +64,14 @@ about 1,500 s). The chunk size is not a constant: it moves so the write window i
 :data:`TARGET_HOLD_S` seconds, the time another writer waits behind one chunk (aimed at, not guaranteed:
 the controller reacts after the fact, and 0.32 to 0.36 s was the longest measured), between
 :data:`MIN_CHUNK` (a chunk that still makes progress when each row is slow) and :data:`MAX_CHUNK` (the
-most mention rows one chunk reads and the most article records it can rewrite). The write-ahead log a
-chunk adds is MEASURED, not derived: 4.6 to 4.9 MiB over a whole 200,000-article pass and 19.7 MiB when
-every one of 50,000 articles with 12 KB bodies was rewritten (a three-column update rewrites the
-whole record, overflow pages included, when its size changes); rows wider than that are bounded by
-the time target alone. The window timed is the one other writers wait behind, from the gate
-being HELD to the commit, so waiting for the gate never shrinks a chunk. The pass
-stops at a chunk boundary when the storage guard (a pinned log or a full drive) or the memory guard
-is engaged, on a stop request, or at its soft budget, and resumes at its cursor.
+most mention rows one chunk reads and the most article records it can rewrite). The write-ahead log is
+MEASURED, as the polled high-water of the whole pass, not per chunk: 4.2 to 4.9 MiB over a
+200,000-article pass and 19.7 MiB when every one of 50,000 articles with 12 KB bodies was rewritten (a
+three-column update rewrites the whole record, overflow pages included, when its size changes); rows
+wider than that are bounded by the time target alone. The window timed is the one other writers wait
+behind, from the gate being HELD to the commit, so waiting for the gate never shrinks a chunk. The
+pass stops at a chunk boundary when the storage guard (a pinned log or a full drive) or the memory
+guard is engaged, on a stop request, or at its soft budget, and resumes at its cursor.
 """
 
 from __future__ import annotations
@@ -76,14 +95,18 @@ _LOG = logging.getLogger("analytics.stoplist_recompute")
 #: The resume point: ``<fingerprint>:<hidden keyword id>:<last article id>`` in ``derived_meta``.
 #: It carries the fingerprint it was made under, so a cursor from an older list is never resumed.
 CURSOR_KEY = "stoplist_recompute_cursor"
+#: The fingerprint of the last FINISHED run, in the database beside the data it describes (written in
+#: the transaction that deletes the last cursor), so a restored or moved database cannot read as
+#: current on the strength of a state file that stayed behind.
+DONE_KEY = "stoplist_recompute_done"
 
 #: Write-window hold per chunk the size adapts to (see the module docstring).
 TARGET_HOLD_S = 0.25
 MIN_CHUNK = 25
 MAX_CHUNK = 2000
 #: The first chunk: small enough that a slow store holds the window briefly before anything is
-#: measured; the controller doubles it each chunk under half the target (about six chunks, measured, to
-#: reach 1,600 on the 200,000-article store).
+#: measured; the controller doubles it each chunk that held the window under half the target (three
+#: doublings, so four chunks at the least, from here to 1,600).
 START_CHUNK = 200
 #: Articles remembered as reached within one pass. It protects the pass's resident memory (measured
 #: about 63 bytes an id as a Python set of ints: 2 million ids took 125 MiB, so this cap is about
@@ -98,7 +121,11 @@ _IN_CHUNK = 900
 
 
 def _budget_s() -> float:
-    """Soft wall-clock budget of one pass (``OO_STOPLIST_RECOMPUTE_BUDGET_S``; 0 = unbounded)."""
+    """Soft wall-clock budget of one pass (``OO_STOPLIST_RECOMPUTE_BUDGET_S``; 0 = unbounded).
+
+    It protects the scheduler's run lock, which the maintenance window holds while the pass runs: a
+    "Collect now" asked meanwhile answers busy for up to this long. It is read once a chunk has run, so
+    it bounds the wait without ever stopping a pass before it moves."""
     try:
         return float(os.getenv("OO_STOPLIST_RECOMPUTE_BUDGET_S", "30"))
     except ValueError:
@@ -143,21 +170,45 @@ def read_state() -> dict:
     return {}
 
 
-def _write_state(doc: dict) -> None:
+def _write_state(doc: dict) -> bool:
+    """Write the state file; False (and a log line) when it could not be written."""
     try:
         p = _state_path()
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(doc, ensure_ascii=False, sort_keys=True), encoding="utf-8")
         tmp.replace(p)
+        return True
     except Exception:  # noqa: BLE001 - the record is bookkeeping; the cursor decides resumption
         _LOG.warning("stoplist recompute state could not be written")
+        return False
+
+
+def _words_of(value: Any) -> set[str] | None:
+    """A recorded word list as a set; None when it is not a list of strings (an unusable record)."""
+    if isinstance(value, list) and all(isinstance(w, str) for w in value):
+        return set(value)
+    return None
+
+
+def _pending_of(state: dict) -> set[str] | None:
+    """The lists walked since the last finished run (empty when none); None when unusable."""
+    raw = state.get("words_pending")
+    return set() if raw is None else _words_of(raw)
+
+
+def _is_current(state: dict, fp: str) -> bool:
+    """The state file alone says nothing is owed: the fingerprint matches and nothing is pending."""
+    pending = _pending_of(state)
+    return state.get("fingerprint") == fp and pending is not None and not pending
 
 
 def needs_run() -> bool:
-    """True while the recorded fingerprint is not the shipped list's."""
+    """True while the state file does not say the shipped list is finished (a fingerprint that is
+    not the list's, or lists walked since the last finished run). The database's own record is
+    checked by the pass itself."""
     try:
-        return read_state().get("fingerprint") != current_fingerprint()
+        return not _is_current(read_state(), current_fingerprint())
     except Exception:  # noqa: BLE001 - unknown means "not known to be pending"
         return False
 
@@ -167,7 +218,7 @@ def incomplete() -> bool:
     passes back to back only then)."""
     try:
         st = read_state()
-        return st.get("fingerprint") != current_fingerprint() and (st.get("last_pass") or {}).get(
+        return not _is_current(st, current_fingerprint()) and (st.get("last_pass") or {}).get(
             "complete"
         ) is False
     except Exception:  # noqa: BLE001
@@ -196,16 +247,26 @@ def _cursor_get(session: Any, fp: str) -> tuple[int, int]:
     return 0, 0
 
 
-def _cursor_set(session: Any, fp: str, kid: int, aid: int) -> None:
+def _meta_set(session: Any, key: str, value: str) -> None:
     from src.database.models import DerivedMeta
 
-    value = f"{fp}:{int(kid)}:{int(aid)}"
-    row = session.get(DerivedMeta, CURSOR_KEY)
+    row = session.get(DerivedMeta, key)
     if row is None:
-        session.add(DerivedMeta(key=CURSOR_KEY, value=value, updated_at=datetime.now(UTC)))
+        session.add(DerivedMeta(key=key, value=value, updated_at=datetime.now(UTC)))
     else:
         row.value = value
         row.updated_at = datetime.now(UTC)
+
+
+def _cursor_set(session: Any, fp: str, kid: int, aid: int) -> None:
+    _meta_set(session, CURSOR_KEY, f"{fp}:{int(kid)}:{int(aid)}")
+
+
+def _done_get(session: Any) -> str | None:
+    from src.database.models import DerivedMeta
+
+    raw = session.query(DerivedMeta.value).filter(DerivedMeta.key == DONE_KEY).scalar()
+    return str(raw) if raw else None
 
 
 # ---------------------------------------------------------------------------------- the pass
@@ -260,6 +321,7 @@ def _one_chunk(
     hidden: frozenset[int],
     seen: set[int] | None = None,
     restored: frozenset[int] = frozenset(),
+    full_check: bool = False,
 ) -> dict:
     """Read, decide and write one chunk inside the caller's transaction (the write window is
     already held). The chunk covers up to ``n`` mention rows of the hidden keywords from
@@ -271,9 +333,10 @@ def _one_chunk(
     after a resume it starts empty and the lowest-keyword test below still keeps each article to one
     handling.
 
-    ``restored`` holds the keywords a previous finished run hid and the list no longer holds: an
-    article reached through one is recomputed from its mentions and compared with what is stored,
-    with no shortcut.
+    ``restored`` holds the keywords a previous run hid and the list no longer holds: an article
+    reached through one is recomputed from its mentions and compared with what is stored, with no
+    shortcut, a NULL included. ``full_check`` drops the shortcut for every article (the baseline is
+    unknown, see the module docstring) but leaves NULLs for the index.
 
     Returns the new position ``(pos, after)`` and the counts."""
     from sqlalchemy import bindparam, select
@@ -335,9 +398,9 @@ def _one_chunk(
             out["handled_later"] += 1  # its lowest walked keyword is another one
             continue
         visible = {k: c for k, c in cont.items() if k not in hidden}
-        if any(k in restored for k in walked):  # only a restored word defeats the shortcut
+        if any(k in restored for k in walked):  # a restored word defeats the shortcut and fills NULLs
             via_restored.add(aid)
-        else:
+        elif not full_check:
             top_hidden = max((cont[k] for k in walked), default=0)
             top_visible = max((c for c in visible.values() if c > 0), default=0)
             if top_hidden <= 0 or top_hidden < top_visible:
@@ -405,7 +468,7 @@ def maybe_recompute_top_keywords(
     stop = should_stop or (lambda: False)
     try:
         fp = current_fingerprint()
-        if read_state().get("fingerprint") == fp:
+        if _is_current(read_state(), fp) and _database_done() == fp:
             return {"skipped": "current"}
         reason = _guard_reason()
         if reason:
@@ -417,6 +480,14 @@ def maybe_recompute_top_keywords(
         text = f"{type(exc).__name__}: {engine_text(exc)}"[:200]
         _LOG.warning("stoplist recompute failed: %s", text)
         return {"skipped": text, "complete": False}
+
+
+def _database_done() -> str | None:
+    """The finished fingerprint the DATABASE carries (None when it carries none)."""
+    from src.database.session import session_scope
+
+    with session_scope() as session:
+        return _done_get(session)
 
 
 def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
@@ -444,13 +515,32 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
     }
     from src.analytics.extract import global_stopwords
 
-    taken_off = set(read_state().get("words") or ()) - set(global_stopwords())
+    shipped = set(global_stopwords())
+    state = read_state()
+    finished_words = _words_of(state.get("words"))
+    pending = _pending_of(state)
     with session_scope() as session:  # a short read of its own; nothing spans two chunks
         require_mentions_view(session)
+        done_here = _done_get(session)
+        # The baseline is KNOWN only when the file and the database agree on the last finished run
+        # and the file's lists are readable; otherwise the shortcut is off for the whole pass.
+        known = (
+            finished_words is not None
+            and pending is not None
+            and done_here is not None
+            and state.get("fingerprint") == done_here
+        )
+        taken_off = ((finished_words or set()) | (pending or set())) - shipped if known else set()
         hidden_ids = hidden_keyword_ids(session)
         restored_ids = hidden_keyword_ids(session, taken_off) if taken_off else []
         ids = sorted(set(hidden_ids) | set(restored_ids))
         kid0, after0 = _cursor_get(session, fp)
+    # Before the first chunk commits, every list this walk is about to leave tops under is recorded
+    # (a checked write): a stop, a crash or a later change of list can then still account for them.
+    walked = (pending or set()) | shipped
+    if walked != pending and not _write_state({**state, "words_pending": sorted(walked)}):
+        return {"skipped": "state_unwritable", "complete": False}
+    tally["baseline_known"] = known
     tally["hidden_keywords"] = len(hidden_ids)
     tally["restored_keywords"] = len(set(restored_ids) - set(hidden_ids))
     tally["resumed_at"] = [kid0, after0] if (kid0 or after0) else None
@@ -473,7 +563,7 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
         with session_scope() as session:
             hold_write_window(session)
             held0 = time.monotonic()  # the window others wait behind: gate held to commit
-            got = _one_chunk(session, ids, pos, after, n, hidden, seen, restored)
+            got = _one_chunk(session, ids, pos, after, n, hidden, seen, restored, not known)
             pos, after = got["pos"], got["after"]
             _cursor_set(session, fp, ids[pos] if pos < len(ids) else ids[-1] + 1, after)
         held = time.monotonic() - held0
@@ -485,10 +575,11 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
             tally[key] += got[key]
         n = next_chunk_size(n, held)
     with session_scope() as session:  # the walk is done: a cursor must not outlive its fingerprint
+        hold_write_window(session)
         row = session.get(DerivedMeta, CURSOR_KEY)
         if row is not None:
-            hold_write_window(session)
             session.delete(row)
+        _meta_set(session, DONE_KEY, fp)  # in the same transaction: the data carries its baseline
     tally["complete"] = True
     tally["chunk_size_at_end"] = n
     _finish(tally, fp)
@@ -510,6 +601,7 @@ def _finish(tally: dict, fp: str) -> None:
     if tally.get("complete"):
         doc["fingerprint"] = fp
         doc["completed_at"] = tally["at"]
+        doc.pop("words_pending", None)  # everything walked is now accounted for
         if words is not None:
             doc["words"] = sorted(words)  # the list this run finished: the next one finds what left it
     _write_state(doc)

@@ -191,7 +191,10 @@ def test_the_top_columns_follow_the_shipped_list_and_nothing_else_moves(env):
     _assert_final(_tops(env), before, w)
     assert _mentions(env) == mentions_before, "the raw counts every other reader uses are untouched"
     assert out["updated"] == 5 and out["to_none"] == 1
-    assert out["already_clean"] == 1 and out["never_computed"] == 1 and out["top_unaffected"] == 1
+    # a fresh state knows no baseline: the shortcut is off, so the hidden-below article is READ and
+    # found clean instead of being skipped, and the NULL is still left for the index
+    assert out["baseline_known"] is False and out["top_unaffected"] == 0
+    assert out["already_clean"] == 2 and out["never_computed"] == 1
 
 
 def test_an_article_with_two_hidden_words_is_handled_once(env):
@@ -523,3 +526,254 @@ def test_a_list_that_only_grew_restores_nothing(env):
     env.set_words(["hid1", "hid2", "other"])
     out = sr.maybe_recompute_top_keywords()
     assert out["complete"] is True and out["restored_keywords"] == 0
+
+
+# ------------------------------------------------- the baseline: pending lists and what travels
+
+
+def _known_baseline(env, words=None):
+    """Make the state file and the database agree that a run finished on ``words`` earlier."""
+    words = sorted(env.stoplist if words is None else words)
+    (sr._state_path()).write_text(
+        __import__("json").dumps({"fingerprint": "earlier", "words": words}), encoding="utf-8"
+    )
+    with env.session() as s:
+        sr._meta_set(s, sr.DONE_KEY, "earlier")
+
+
+def _oracle(env, hidden_terms):
+    """What every stored top must be: the top of the article's mentions minus the hidden words."""
+    with env.session() as s:
+        hid = {k.id for k in s.query(Keyword) if k.normalized_term in hidden_terms}
+        mentions: dict[int, dict[int, int]] = {}
+        for aid, kid, c in s.execute(select(_MT.c.article_id, _MT.c.keyword_id, _MT.c.count)):
+            mentions.setdefault(aid, {})[kid] = c
+        return {
+            a.hash: top_keyword_of({k: c for k, c in mentions.get(a.id, {}).items() if k not in hid})
+            for a in s.query(Article)
+        }
+
+
+def _assert_tops_equal_oracle(env, hidden_terms):
+    want = _oracle(env, hidden_terms)
+    got = {h: v[:3] for h, v in _tops(env).items()}
+    want.pop("never_computed", None)  # a NULL is left for the index to fill
+    got.pop("never_computed", None)
+    assert got == want
+
+
+def test_a_known_baseline_keeps_the_shortcut(env):
+    _world(env)
+    _known_baseline(env)
+    out = sr.maybe_recompute_top_keywords()
+    assert out["baseline_known"] is True and out["top_unaffected"] == 1
+    assert out["already_clean"] == 1 and out["never_computed"] == 1
+
+
+def test_a_database_that_lost_its_baseline_is_walked_without_the_shortcut(env):
+    """A restore, a merge swap or a moved database: the state file says current, the data says
+    nothing. A stored top that holds a hidden word BELOW a visible one is invisible to the shortcut;
+    the full check finds it."""
+    with env.session() as s:
+        h1, a = _keyword(s, "hid1"), _keyword(s, "aa")
+        _article(s, "stale", {h1: 3, a: 5}, stored=(h1, 3, 1))  # made under a list that did not hide it
+    _known_baseline(env)
+    with env.session() as s:  # the data came from elsewhere: it carries no finished fingerprint
+        s.query(DerivedMeta).filter(DerivedMeta.key == sr.DONE_KEY).delete()
+    st = sr.read_state()
+    st["fingerprint"] = sr.current_fingerprint()  # the file left behind claims the list is finished
+    sr._state_path().write_text(__import__("json").dumps(st), encoding="utf-8")
+    out = sr.maybe_recompute_top_keywords()
+    assert out["baseline_known"] is False and out["complete"] is True
+    assert _tops(env)["stale"][:3] == (a, 5, 1)
+    # with the baseline present the same article is, by assumption, already right and is skipped
+    with env.session() as s:
+        s.execute(Article.__table__.update().values(top_keyword_id=h1, top_keyword_count=3,
+                                                    top_keyword_tied_n=1, updated_at=_STAMP))
+    env.set_words(["hid1", "hid2", "other"])
+    out = sr.maybe_recompute_top_keywords()
+    assert out["baseline_known"] is True and _tops(env)["stale"][:3] == (h1, 3, 1)
+
+
+@pytest.mark.parametrize("state", ['{"fingerprint": "earlier", "words": "not-a-list"}', "[1, 2]", "{{{"])
+def test_an_unusable_state_file_leaves_the_baseline_unknown(env, state):
+    with env.session() as s:
+        h1, a = _keyword(s, "hid1"), _keyword(s, "aa")
+        _article(s, "stale", {h1: 3, a: 5}, stored=(h1, 3, 1))
+        sr._meta_set(s, sr.DONE_KEY, "earlier")
+    sr._state_path().write_text(state, encoding="utf-8")
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True and out["baseline_known"] is False
+    assert _tops(env)["stale"][:3] == (a, 5, 1)
+
+
+def test_a_finished_run_writes_its_fingerprint_into_the_database_with_the_cursor_delete(env):
+    _world(env)
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    with env.session() as s:
+        assert sr._done_get(s) == sr.current_fingerprint()
+        assert s.get(DerivedMeta, sr.CURSOR_KEY) is None
+    assert sr.read_state().get("words_pending") is None
+
+
+def test_a_pass_that_cannot_record_its_pending_lists_does_not_start(env, monkeypatch):
+    _world(env)
+    before = _tops(env)
+    monkeypatch.setattr(sr, "_write_state", lambda doc: False)
+    out = sr.maybe_recompute_top_keywords()
+    assert out == {"skipped": "state_unwritable", "complete": False}
+    assert _tops(env) == before
+
+
+def _stop_after(chunks):
+    calls = {"n": 0}
+
+    def stop():
+        calls["n"] += 1
+        return calls["n"] > chunks
+
+    return stop
+
+
+def test_a_pass_stopped_on_a_list_that_was_taken_off_is_accounted_for_when_the_list_returns(env, monkeypatch):
+    """(b) L1 finishes; L2 takes a word off, the restored walk puts it back where it leads and the pass
+    stops; L3 is L1 again, so the fingerprint matches the finished run's: it must NOT skip, and the
+    word must leave every top it re-entered. Also pins restore, stop, resume."""
+    w = _world(env)
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    fp1 = sr.current_fingerprint()
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)
+    env.set_words(["hid2"])  # hid1 leaves the list
+    first = sr.maybe_recompute_top_keywords(should_stop=_stop_after(1))
+    assert first["complete"] is False
+    st = sr.read_state()
+    assert st["fingerprint"] == fp1 and st["words"] == ["hid1", "hid2"], "the baseline moves only at the end"
+    assert st["words_pending"], "the lists walked since are recorded before the first chunk commits"
+    assert _tops(env)["lone_top"][:3] == (w["h1"], 5, 1), "the restored word is back where it leads"
+
+    env.set_words(["hid1", "hid2"])  # L3 = L1
+    assert sr.needs_run() and sr.incomplete()
+    out = sr.maybe_recompute_top_keywords()
+    assert out != {"skipped": "current"} and out["complete"] is True
+    _assert_tops_equal_oracle(env, {"hid1", "hid2"})
+    assert not sr.needs_run()
+
+
+def test_a_pass_stopped_on_a_list_that_added_a_word_is_accounted_for_when_the_list_returns(env, monkeypatch):
+    """(a) L1 finishes; L2 adds a word and its pass stops after rewriting some tops; L3 is L1: the
+    word is visible again and the tops made without it must be recomputed with it."""
+    with env.session() as s:
+        h1, h2, a = _keyword(s, "hid1"), _keyword(s, "hid2"), _keyword(s, "aa")
+        for i in range(4):
+            _article(s, f"x{i}", {h1: 2, a: 1})
+        for i in range(4):
+            _article(s, f"y{i}", {h2: 5, a: 1})
+    env.set_words(["hid1"])
+    _known_baseline(env, ["hid1"])
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)
+    env.set_words(["hid1", "hid2"])  # L2 adds hid2
+    assert sr.maybe_recompute_top_keywords(should_stop=_stop_after(6))["complete"] is False
+    assert any(_tops(env)[f"y{i}"][:3] == (a, 1, 1) for i in range(4)), "some tops were rewritten"
+    env.set_words(["hid1"])  # L3 = L1: hid2 visible again
+    out = sr.maybe_recompute_top_keywords()
+    assert out != {"skipped": "current"} and out["complete"] is True
+    _assert_tops_equal_oracle(env, {"hid1"})
+
+
+def test_a_swap_of_one_word_for_another_after_a_stopped_pass_leaves_no_hidden_word_in_a_top(env, monkeypatch):
+    """(c) L2 adds w2 and its pass rewrites A's top to w3 and stops. L3 swaps w2 for w3: w3 is hidden
+    now and w2 visible. The shortcut alone calls A unaffected (w2 outranks w3); the restored walk of
+    w2 recomputes it."""
+    with env.session() as s:
+        w2, w3, w4, f = (_keyword(s, t) for t in ("hid2", "hid3", "hid4", "ff"))
+        _article(s, "A", {w2: 5, w3: 3, f: 1})
+        _article(s, "B", {w4: 2, f: 1})
+    env.set_words([])
+    _known_baseline(env, [])
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)
+    env.set_words(["hid2", "hid4"])
+    assert sr.maybe_recompute_top_keywords(should_stop=_stop_after(1))["complete"] is False
+    assert _tops(env)["A"][:3] == (w3, 3, 1)
+    env.set_words(["hid3", "hid4"])
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    _assert_tops_equal_oracle(env, {"hid3", "hid4"})
+    assert _tops(env)["A"][:3] == (w2, 5, 1)
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_no_stream_of_lists_stops_and_returns_leaves_a_hidden_word_in_a_top(env, monkeypatch, seed):
+    """Random lists over five words, random stops: after the last list finishes, every stored top is
+    the top of the article's mentions minus the list that finished (the model the coordinator's check
+    ran, 108 of 6,000 streams wrong before the pending record, none after)."""
+    import random
+
+    rnd = random.Random(seed)
+    vocab = ["hid1", "hid2", "hid3", "hid4", "hid5"]
+    with env.session() as s:
+        ids = [_keyword(s, t) for t in vocab] + [_keyword(s, "ff"), _keyword(s, "gg")]
+        first = set(rnd.sample(vocab, rnd.randint(0, 3)))
+        for i in range(14):
+            counts = {k: rnd.randint(1, 5) for k in rnd.sample(ids, rnd.randint(1, 5))}
+            hid = {ids[vocab.index(t)] for t in first}
+            top = top_keyword_of({k: c for k, c in counts.items() if k not in hid})
+            _article(s, f"r{i}", counts, stored=top)
+    env.set_words(sorted(first))
+    _known_baseline(env, sorted(first))
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, rnd.choice([1, 2]))
+    last = first
+    for _step in range(rnd.randint(2, 6)):
+        last = set(rnd.sample(vocab, rnd.randint(0, 4)))
+        env.set_words(sorted(last))
+        sr.maybe_recompute_top_keywords(should_stop=_stop_after(rnd.randint(0, 3)))
+    env.set_words(sorted(last))
+    out = sr.maybe_recompute_top_keywords()
+    while out.get("complete") is False and out.get("stopped_by"):
+        out = sr.maybe_recompute_top_keywords()
+    assert sr.maybe_recompute_top_keywords() == {"skipped": "current"}
+    _assert_tops_equal_oracle(env, last)
+
+
+def test_the_window_timed_starts_after_the_gate_and_not_before(env, monkeypatch):
+    from types import SimpleNamespace
+
+    import src.database.writer as writer
+
+    _world(env)
+    clock = {"t": 0.0}
+
+    def tick():
+        clock["t"] += 0.01
+        return clock["t"]
+
+    def slow_gate(_session):
+        clock["t"] += 10.0  # waiting for the gate is not the window others wait behind
+
+    monkeypatch.setattr(writer, "hold_write_window", slow_gate)
+    monkeypatch.setattr(sr, "time", SimpleNamespace(monotonic=tick))
+    out = sr.maybe_recompute_top_keywords(budget_s=0)
+    assert out["complete"] is True
+    assert 0 < out["max_window_s"] < 1.0, out["max_window_s"]
+    assert out["write_window_s"] < 1.0 * out["chunks"]
+
+
+def test_a_duplicate_mention_row_is_summed_the_way_the_index_reads_it(env):
+    """Without the unique index two rows of one (keyword, article) are possible in an old store; the
+    pass sums them, as ``index_article``'s legacy read does."""
+    with env.engine.begin() as conn:
+        conn.exec_driver_sql("DROP INDEX ix_mention_keyword_article")
+    with env.session() as s:
+        h1, a = _keyword(s, "hid1"), _keyword(s, "aa")
+        aid = _article(s, "dup", {h1: 3, a: 4}, stored=(None, None, None))
+        s.execute(_MT.insert().values(keyword_id=h1, article_id=aid, count=2, first_offset=1))
+        s.execute(Article.__table__.update().where(Article.__table__.c.id == aid)
+                  .values(top_keyword_id=h1, top_keyword_count=3, top_keyword_tied_n=1))
+    _known_baseline(env)
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True
+    assert _tops(env)["dup"][:3] == (a, 4, 1), "3 + 2 = 5 > 4 would make the hidden word lead; hidden it is not"

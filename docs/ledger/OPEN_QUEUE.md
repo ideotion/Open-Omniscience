@@ -16393,24 +16393,37 @@ length or built-in switch, which are read-time settings). The Home cache records
 marker repair's throttle (a cache written before the field refreshes once). The stored `top_keyword_*` columns are recomputed by one resumable job in the off-peak window and its offline timer, only for
 articles whose top set held a hidden word (a hidden NON-lowest member of a tie included), written to those three columns only (`updated_at` is written back as itself, no mention row moves, no epoch
 bump: nothing but the Articles list reads these columns, grep-checked). The fingerprint is recorded after the last chunk, never before. **Measured** (synthetic stores, local disk, 12 KB article bodies, 2,555 hidden words, an independent recompute over every article after each run: 0 mismatches in all of them).
-**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten.** Plaintext: 6.0 to 11.2 s over four runs; the same store as an ENCRYPTED copy (SQLCipher, the app's own
-`reencrypt_plain_to`, opened through the app's own connection factory with a passphrase): 7.3 and 10.6 s. The run-to-run spread (the page cache's state) is larger than any difference between the two
-stores, so no encrypted penalty is claimed. The last runs time the window the way the pass now records it, `max_window_s` = from the write gate HELD to the COMMIT: plaintext 0.36 s, encrypted
-0.32 s (the controller aims at 0.25 s and reacts after the fact, so one chunk can overshoot; the chunk body alone, which the earlier runs reported, was 0.26 and 0.31 s). Peak log 4.2 MiB
-plaintext, 4.5 MiB encrypted over the whole pass; the largest process size seen, 266 and 202 MiB, is the MEASURING process (it holds a 200,000-row snapshot of its own for the check), not the
-pass's own memory. **Worst case (50,000 articles, each holding about 22 hidden mentions and a hidden top word, so every article is rewritten), plaintext only:** 14.0 s (about 28 s per 100,000
-articles touched), longest chunk body 0.21 s, peak log 19.7 MiB (a three-column update rewrites the whole record, overflow pages included, so the log a chunk adds grows with the width of the
-article rows; rows wider than 12 KB are bounded by the time target alone). **The selection plans, the same on both stores, no temp b-tree on either** (the code has no GROUP BY or DISTINCT,
-and its one ORDER BY is answered by the index): the walk `SEARCH keyword_mentions USING COVERING INDEX ix_mention_keyword_article (keyword_id=? AND article_id>?)`, the per-article mention read
-`COVERING INDEX ix_mention_article_count (article_id=?)`, the article read `INTEGER PRIMARY KEY (rowid=?)` (the three top columns and the id only, never the content), the keyword lookup
-`COVERING INDEX idx_keyword_normalized_term`. **The in-pass memory (`SEEN_CAP`, 500,000 ids):** a Python set of ints costs about 63 bytes an id (2 million ids took 125 MiB resident, so the cap is
-about 31 MiB, under 1 % of the 4 GiB tier; the figure at 500,000 is that measurement scaled, not a run of its own); it protects memory only: on the worst-case store a cap one fifth of the corpus
-took 67 s and no memory at all took 86 s against 14 s, with the same answer, so a cap below the corpus costs time and never correctness, and a corpus under 500,000 articles never meets it. A
-bitmap sized to the highest article id would remove the cap (about 170 KB at 1.3 M articles) and is the obvious next step if a corpus outgrows it. The in-pass memory is not derived from the
-memory tier (`memory_budget.resolved_reading()`; the tier PR has not landed). **Two readers of the one read, folded:** a word TAKEN OFF the list is walked as a restored keyword and the articles
-it reaches are recomputed with it (the sorted list a finished run saw is kept in `data/stoplist_recompute.json`); and the keyword fold (`keyword_fold.py`) now computes the stored top without
-the shipped list's words, the way this pass does, so a page of folded mentions cannot write a hidden word back. **Known and left:** the pass runs inside the maintenance window and holds the
-scheduler's run lock for up to its 30 s soft budget (a "Collect now" in that window answers busy), and the gate is acquired without a timeout, like the other maintenance writers.
+**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten.** With a KNOWN baseline (the shortcut on): plaintext 6.4, 9.3 and 11.2 s over three runs, the same store as an
+ENCRYPTED copy (SQLCipher, the app's own `reencrypt_plain_to`, opened through the app's own connection factory with a passphrase) 7.3 and 10.6 s over two; the page cache's state moves a run more than
+the store does, so no encrypted penalty is claimed. The FIRST run on an existing corpus knows no baseline and reads and compares every article it reaches (41,130 more article reads than the
+shortcut skips): plaintext 14.0 s, encrypted 13.5 s, once. The window is timed the way the pass records it, `max_window_s` = from the write gate HELD to the COMMIT: 0.28 to 0.39 s over these runs
+(the controller aims at 0.25 s and reacts after the fact, so one chunk can overshoot; the chunk body alone, which the first runs reported, was 0.265 and 0.294 s, then 0.26 to 0.31 s). The log high-water
+the polling saw over a whole pass was 4.2 to 4.9 MiB (a pass's high-water, not what one chunk adds); the largest process size, 202 to 360 MiB, is the MEASURING process (it holds a 200,000-row
+snapshot of its own for the check), not the pass's own memory. **Worst case (50,000 articles, each holding about 22 hidden mentions and a hidden top word, so every article is rewritten),
+plaintext only, measured before the window timing moved to gate-to-commit:** 14.0 s (about 28 s per 100,000 articles touched), longest chunk body 0.21 s, log high-water 19.7 MiB (a three-column
+update rewrites the whole record, overflow pages included, so the log grows with the width of the article rows; rows wider than 12 KB are bounded by the time target alone). **The selection plans,
+the same on both stores, no temp b-tree on either** (the code has no GROUP BY or DISTINCT, and its one ORDER BY is answered by the index): the walk `SEARCH keyword_mentions USING COVERING INDEX
+ix_mention_keyword_article (keyword_id=? AND article_id>?)`, the per-article mention read `COVERING INDEX ix_mention_article_count (article_id=?)`, the article read `INTEGER PRIMARY KEY (rowid=?)`
+(the three top columns and the id only, never the content), the keyword lookup `COVERING INDEX idx_keyword_normalized_term`. **The in-pass memory (`SEEN_CAP`, 500,000 ids):** a Python set of ints costs
+about 63 bytes an id (2 million ids took 125 MiB resident, so the cap is about 31 MiB, under 1 % of the 4 GiB tier; the figure at 500,000 is that measurement scaled, not a run of its own); it
+protects memory only: on the worst-case store a cap one fifth of the corpus took 67 s and no memory at all took 86 s against 14 s, with the same answer, so a cap below the corpus costs time and never
+correctness, and a corpus under 500,000 articles never meets it. A bitmap sized to the highest article id would remove the cap (about 170 KB at 1.3 M articles) and is the obvious next step if a corpus
+outgrows it. The in-pass memory is not derived from the memory tier (`memory_budget.resolved_reading()`; the tier PR has not landed).
+
+**What keeps a hidden word out of a stored top (the coordinator's check of the read's folds).** The shortcut "a hidden word below the top leaves the top alone" assumes the stored top was made under a
+list that is a subset of today's hidden set. It is kept true three ways, each pinned by a test that fails with it reverted: (1) a word TAKEN OFF the list is walked as a restored keyword and the
+articles it reaches are recomputed with no shortcut, a NULL included; (2) before a pass writes anything it records `words_pending` (every list walked since the last finished run) with a checked
+write, the restored words are (the finished list + pending) minus today's, and the run counts as current only with a matching fingerprint and nothing pending, so a pass that stops or crashes on an
+intermediate list is accounted for when the list changes again or returns (a random-stream test over five words and random stops pins it; the coordinator's model had 108 of 6,000 such streams end
+wrong without it); (3) the finished fingerprint is also written to `derived_meta` in the transaction that deletes the last cursor, "current" needs both records to agree, and when they do not (a
+restore, a merge swap, a moved database, a missing or unusable state file) the baseline is UNKNOWN and every hidden word is walked without the shortcut. **Known and left:** a word taken off the list
+since a LOST baseline can stay missing from tops until its articles are re-indexed (the lost list cannot be known); the pass runs inside the maintenance window and holds the scheduler's run lock for
+up to its 30 s soft budget (a "Collect now" in that window answers busy), and the gate is acquired without a timeout, like the other maintenance writers; the keyword fold (`keyword_fold.py`) now
+computes the stored top without the shipped list's words, once per job. **NOT DONE, a deliberate gap with its fix named:** the backup merge's carry plan (`src/backup/merge.py`, the UPDATEs after the
+`_refuse` calls in `_plan_derived_carry`, written by `_carry_derived_rows`) computes `top_keyword_*` over the incoming mention rows with NO hidden filter, so a carried article can arrive with a
+hidden word in its top, and the finished fingerprint in the live database does not change, so nothing repairs it. The fix is a `temp.carry_hidden(new)` table of the local ids of the shipped list's
+words and a `NOT IN` on the three statements; it is new logic in a module other threads are changing and wants its own read, so it is a follow-up for whoever lands it with merge.py, or a one-line
+reset of `derived_meta.stoplist_recompute_done` after a merge (the next window then walks the whole corpus without the shortcut, once).
 
 **T2 still open:** bulletin coverage, stories and articles (through the export thread, the sole pusher of the bulletin code), `supergroup_rising`/`supergroup_stats`, `source_topics`, the AI keywords. **Left on
 purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage

@@ -413,8 +413,8 @@ def test_the_fold_writes_the_top_without_the_shipped_stoplist_words(tmp_path, mo
     _mention(s, hid, a, count=5)
     _mention(s, studies, a, count=3)
     _mention(s, study, a, count=2)
-    # `b`: nothing visible changes its top (a lone hidden-led article whose stored top the pass
-    # already left empty); the fold must leave the columns as they are
+    # `b`: the hidden word leads and `studies` folds into `study`: the visible top keeps its count
+    # but moves to the target keyword, so its columns are rewritten to (study, 1, 1), never to `the`
     _mention(s, hid, b, count=4)
     _mention(s, studies, b, count=1)
     s.execute(text("UPDATE articles SET top_keyword_id=:k, top_keyword_count=1, top_keyword_tied_n=1 "
