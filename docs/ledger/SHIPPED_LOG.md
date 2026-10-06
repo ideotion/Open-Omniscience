@@ -10446,12 +10446,19 @@ restore gate compares (`backup_ok` reads `p0_1_verify`'s `pass`), and an exact-m
 one of them into the marker and reads a good backup as one that did not verify, so the restore would not have run. A test runs the
 whole run with that passphrase (a mutation that scrubs the whole result fails it), one drives the four sites with the engine
 raising the passphrase, one runs the real P0 phase through a release run and finds the passphrase in no file under the data
-folder or the destination, and a static test holds every handler of a function of `p0_validation.py` that takes a parameter named
-`passphrase` to using the caught exception only through the helper and to asking for no traceback (a log call's `exc_info`,
-`.exception()`, the `traceback` module, `sys.exc_info()`; it follows no call, and its own walk is tested on seventeen ways a
-caught exception can reach a text and four forms it must leave alone). The delta check's F2 is the one route of that shape the walk
-cannot see, the engine's failure lines returned as data (`problems`): scrubbed line by line where the verify check copies them,
-with a test that the verdict and the check's own words are left alone for a passphrase of `pass` or `fail`. The run's parameters no longer print the passphrase in their repr, a failed start removes its
+folder or the destination, and a static test holds every `except` handler of a function that holds the passphrase, in
+`p0_validation.py`, `release_run.py` and the restore child, to using the caught exception only inside a call that scrubs it with the
+secret (a missing, empty or other second argument does not count), as its class or as a phase error's `status` and `partial`, and to
+asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module, `sys.exc_info()`). The first version of
+that test (PR #1312) read `p0_validation.py` alone and a parameter named `passphrase`; PR #1318 widened it. It follows no call, so it
+does not see a secret held as `**kwargs`, a `pw` or a closure (the job worker's two online probes put `{exc}` of a network call into
+their result and are handed no secret), a helper that reads the exception for itself, a bare re-raise, a raise without `from`, a
+`finally`, an alias of the `traceback` module or `repr(locals())`, the engine's failure lines handed back as data, or any other
+module; its own walk is tested on thirty-three ways a caught exception can reach a text or a function can hold the secret, ten forms
+it must leave alone and a function it must not read, and forty mutations of the walk are each caught. The delta check's F2 is the
+one route of that shape the walk cannot see, the engine's failure lines returned as data (`problems`): scrubbed line by line where
+the verify check copies them, with a test that the verdict and the check's own words are left alone for a passphrase of `pass` or
+`fail`. The run's parameters no longer print the passphrase in their repr, a failed start removes its
 directory with `rmdir` (an empty directory and nothing else), and a failure that wraps another is scrubbed from its whole
 traceback, with a test for `__cause__` and for `__context__`. Recorded, not fixed (small, and the PR carries no logic for them): a
 cancel that lands after the restore committed reads the phase as `cancelled` while its install exists, the scrub's own

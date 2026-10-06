@@ -13288,13 +13288,23 @@ stubs the phase whole. The fix proposed was one scrub of the finished report or 
 those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an exact-match scrub by a passphrase of `pass` (the
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
-passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function of
-`p0_validation.py` that takes a parameter named `passphrase` to the helper and to asking for no traceback (a log call's
-`exc_info`, `.exception()`, the `traceback` module, `sys.exc_info()`), so a fifth handler there cannot be added unseen by those
-routes. It reads that one module's syntax and follows no call, so three things are outside it: the engine's own failure lines
-handed back as DATA (`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed line by
-line where the verify check copies them, and pinned by its own test), a secret held under another name or through an object
-(`release_run.py` holds it as `run.params.passphrase`), and a helper that reads the exception for itself. **A scrub of a value
+passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
+holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py`, to using the caught exception
+only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
+`_log_phase_failure`; a missing, empty or other second argument does not count), as its class, or as a phase error's `status`
+and `partial`, and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
+a parameter, reads a local or reads an attribute named `passphrase` (the release run holds it as `run.params.passphrase`), or
+takes or reads one named `secret` or `needle`. The test reads those three modules' syntax and follows no call, so this stays
+outside it: a secret held under another name or route (a parameter named `pw`, `**kwargs`, a closure or a global; the job
+worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` of a network call into their result and are
+handed no secret); a helper the handler calls that reads the exception for itself, a bare re-raise or a raise without `from`
+(which let the original out as it is or as the context), a `finally` that reads the traceback, an alias (`import traceback as
+tb`, `from sys import exc_info as ei`) and `repr(locals())`; the engine's own failure lines handed back as DATA
+(`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed line by line where the verify
+check copies them, and pinned by its own test), and a phase error's `partial` (what a phase measured before it failed, scrubbed
+where the phase makes it); and every other module (the endpoint that receives the passphrase, the engines it is handed to). **A
+scrub of a value
 code compares changes the value: scrub the
 text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted

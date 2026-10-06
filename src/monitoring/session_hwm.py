@@ -273,8 +273,8 @@ def _loaded_files() -> list[str] | None:
 
     THE LIMIT, measured: the map is read when the setting is asked for, and it lists a library loaded AFTER the
     process started (a ``ctypes`` or ``dlopen`` load) as well, which does not take malloc over. A stand-in named
-    like mimalloc and loaded through ``ctypes`` moved the same process from ``capped at 2`` to ``replaced, no
-    effect``. Nothing in this application loads such a library, and the error is on the modest side (it says a cap
+    like mimalloc and loaded through ``ctypes`` moved the same process from the note ``capped at 2`` to the note that
+    malloc is replaced and has no arenas for ``MALLOC_ARENA_MAX`` to cap. Nothing in this application loads such a library, and the error is on the modest side (it says a cap
     had no effect that did), but a reading taken later than the start can say it."""
     try:
         lines = Path("/proc/self/maps").read_bytes().decode("utf-8", errors="replace").splitlines()
