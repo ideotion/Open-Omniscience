@@ -10561,3 +10561,11 @@ detail is hardening with no change in behaviour (the driver's exception never ca
 Also recorded: the post-10-01 reading of the 10-06 bundles (the log is held near 1 GB by the guard; the pins are long background
 reads). Lessons: `LESSONS.md`, the entries "AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT", "A SAMPLER THAT ONLY FITS EVERY
 FIVE MINUTES" and "SMALL RULES FROM THE THREE REVIEWS OF #1306, #1298 AND #1308".
+
+- **2026-10-06 · wal-disk-pool/damaged-database-e1 (WAL / disk thread, slice E1 of the damaged-database plan).**
+A file the database itself calls malformed is now noticed, named and contained, per file. A `handle_error` observer on the corpus engine and on every lane engine reads the DRIVER's code
+(`SQLITE_CORRUPT` 11 and its extended codes; a wrong SQLCipher passphrase, code 26, never counts) and latches that file: the corpus latch stops collection, maintenance and the housekeeping lanes
+(`StorageGuard.admit()` answers `"damage"`, phase `paused-damaged`), a Wikipedia latch stops that lane's writing (the loop and, within one window, its tiers), a law latch skips the law step, an OSM incident is recorded only. One incident record
+per distinct (file, scope, statement shape) per process in `data/database-damage.json` (newest 20, repeats counted, no value, no passphrase), exposed under the storage guard's detail key
+`database_damage` for the diagnostics bundle. A statement over the full-text index that does not also read `articles` files an incident as the index (a suspicion, with its basis; a damaged index reads as plain 11 through MATCH; the gated Search statement also reads `articles` and is `data`) and the worst scope wins. The latch is memory-only and released by the operator starting collection, running it now, going online or the unattended start (the corpus's and the law file's; going online also starts the Wikipedia lane, whose own start releases its file) or by a swapped-in corpus file, never by a courtesy resume after a backup or a restore; "Resume anyway" is refused while the corpus is latched; nothing verifies, repairs or salvages yet (E2, E3). Lesson:
+`LESSONS.md`, the entry "A DATABASE THAT SAYS MALFORMED WHILE count(*) AND THE FIRST PAGE ANSWER". Opened by the Asus bundle (corrupt from 10-02, collection ran on 1.5 days).

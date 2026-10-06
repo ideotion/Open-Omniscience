@@ -339,7 +339,16 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
         end.update({"at": None, "clean": False if state and state != "clean" else None,
                     "basis": "the sentinel names no end time and nothing else dated it, so the end has no time"})
     if hwm:
-        peaks = {k: hwm[k] for k in ("rss_max_mb", "avail_min_mb", "swap_used_max_mb", "phase") if k in hwm}
+        # The marks AND when each was set: the chronology shows these beside the session's other dated
+        # events, and a minimum with no time cannot be placed among them.
+        peaks = {
+            k: hwm[k]
+            for k in (
+                "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at",
+                "swap_used_max_mb", "swap_used_max_at", "phase",
+            )
+            if k in hwm
+        }
         if peaks:
             end["previous_peaks"] = peaks
     _append(end)
