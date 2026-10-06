@@ -22,8 +22,9 @@ HOW WIKIDATA IS JOINED is a choice you must make, because the default makes no r
                             wbgetentities, up to 50 QIDs each, ONE request at a time, every 10 seconds
                             (R8: it protects Wikidata's shared servers and this User-Agent's standing),
                             with maxlag and a descriptive User-Agent, Retry-After honoured, through the
-                            app's one guarded fetch path and your transport setting. It refuses by name
-                            under airplane mode.
+                            app's one guarded fetch path and your transport setting (it refuses unless
+                            the transport is named by this data directory or your environment, or you pass
+                            --clearnet). It refuses by name under airplane mode.
 
     python scripts/build_place_gazetteer.py --country FR --plan
     python scripts/build_place_gazetteer.py --country FR --online
@@ -55,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     how.add_argument("--no-wikidata", action="store_true", help="OSM-only artifact")
     how.add_argument("--wikidata-fixture", type=Path, help="join from a recorded wbgetentities answer")
     how.add_argument("--online", action="store_true", help="join from www.wikidata.org (your consent to those requests)")
+    ap.add_argument("--clearnet", action="store_true",
+                    help="with --online: accept the clearnet transport when this data directory and your environment "
+                         "name none (OO_FETCH_MODE / OO_HTTP_PROXY, or persisted safety settings)")
     ap.add_argument("--passphrase-file", type=Path, help="a file holding the osm.db passphrase (instead of OO_DB_PASSPHRASE)")
     ap.add_argument("--built-date", help="YYYY-MM-DD recorded as the build date (default: today, UTC)")
     args = ap.parse_args(argv)
@@ -116,6 +120,15 @@ def main(argv: list[str] | None = None) -> int:
         items = G.items_from_fixture(args.wikidata_fixture)
         wikidata = {"joined": True, "via": "fixture", "items": len(items)}
     elif args.online:
+        ts = G.transport_state()
+        if not ts["explicit"] and not args.clearnet:
+            print("refused: this data directory and your environment name no transport, so --online would go out on "
+                  "clearnet by default. If you use Tor or a proxy, set OO_FETCH_MODE=protected and OO_HTTP_PROXY "
+                  "(a store kept by scripts/osm_reference_run.py has none of your settings); if clearnet is what "
+                  "you want, say so with --clearnet")
+            return 2
+        out["transport"] = {"mode": ts["mode"], "protected": ts["protected"],
+                            "chosen_by": "settings or environment" if ts["explicit"] else "--clearnet"}
         try:
             items, fetch = G.fetch_wikidata(qids, getter=G.guarded_getter)
         except G.AirplaneRefusal as exc:

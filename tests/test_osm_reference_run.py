@@ -261,6 +261,61 @@ def test_the_timeline_stays_bounded(tmp_path, monkeypatch):
     assert ph["samples"] > 20 and 1 <= len(ph["timeline"]) <= 6
 
 
+def _alive(pid: int) -> bool:
+    import psutil
+
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+def test_a_guard_stop_reaches_the_whole_process_group_so_no_grandchild_keeps_writing(tmp_path, monkeypatch):
+    pidfile = tmp_path / "grandchild.pid"
+    code = (
+        "import subprocess, sys, time\n"
+        "g = subprocess.Popen([sys.executable, '-c', 'import time\\nwhile True: time.sleep(0.1)'])\n"
+        f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
+        "time.sleep(120)\n"
+    )
+    probe = _Probe(free=100 * GB, free_after=1 * GB, after_calls=6)
+    report, _ = _run(tmp_path, probe=probe, phases_override=_scripted(code), reserve_bytes=2 * GB)
+    assert report["status"] == "refused-mid-run"
+    pid = int(pidfile.read_text())
+    import time
+
+    for _ in range(50):
+        if not _alive(pid):
+            break
+        time.sleep(0.1)
+    assert not _alive(pid), "a grandchild outlived the guard's stop"
+
+
+def test_a_child_that_ignores_sigterm_is_killed_after_the_grace(tmp_path, monkeypatch):
+    monkeypatch.setattr(R, "TERMINATE_GRACE_S", 0.5)
+    code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)"
+    import time
+
+    t0 = time.monotonic()
+    report, _ = _run(tmp_path, probe=_Probe(free=100 * GB, free_after=1 * GB, after_calls=4),
+                     phases_override=_scripted(code), reserve_bytes=2 * GB)
+    assert report["status"] == "refused-mid-run" and time.monotonic() - t0 < 30
+
+
+def test_the_online_join_is_not_offered_inside_the_throwaway_store(tmp_path):
+    """Its store has none of the operator's persisted transport settings: a silent clearnet fallback."""
+    with pytest.raises(ValueError, match="separate step"):
+        _run(tmp_path, gazetteer="online")
+    with pytest.raises(SystemExit):
+        CLI.main(["--extract", "x", "--country", "ZZ", "--gazetteer", "online"])
+
+
+def test_a_workdir_inside_the_repository_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="outside the repository"):
+        R.run(extract=_extract(tmp_path), country="ZZ", workdir=ROOT / "oo-should-not-exist")
+    assert not (ROOT / "oo-should-not-exist").exists()
+
+
 def test_the_children_get_the_passphrase_in_their_environment_only(tmp_path):
     code = ("import os, sys, json; print(json.dumps({'has': bool(os.environ.get('OO_DB_PASSPHRASE')), "
             "'plain': os.environ.get('OO_DB_PLAINTEXT'), 'argv': ' '.join(sys.argv)}))")

@@ -30,6 +30,8 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   recorded ``refused-mid-run`` with the figures, and the rest of the run is not started. The same
   holds for available MEMORY (default 256 MiB): a 3.5 GB VM that is out of memory is a VM the
   operator cannot log into, and the ingest's own spill-to-disk path is what should be absorbing it.
+* **A KEPT STORE** holds a ``.throwaway-passphrase`` file, created owner-only (0600) from its first
+  byte, outside the repository (the runner refuses a workdir inside it) and removed with the store.
 * **THE REPORT** carries no secret and no path outside this run's own data directory: inputs by
   file name, children's error text scrubbed of the passphrase and of every absolute path.
 
@@ -63,14 +65,25 @@ MARKER = ".oo-osm-reference-run"
 GIB = 1024**3
 MIB = 1024**2
 
-#: What the machine keeps for itself (see the module docstring). Guesses, labelled in the report.
+#: WHAT THE MACHINE KEEPS FOR ITSELF. Guesses, labelled as such in the report; each protects one thing.
+#: 2 GiB of free disk protects the operating system's own writes (journal, logs, swap growth), a login
+#: shell the operator can still open, and this report's own write: a VM whose disk is full cannot even
+#: record why the run was stopped. Below it the sampler stops the child.
 DEFAULT_RESERVE_BYTES = 2 * GIB
+#: 256 MiB of available memory protects the machine staying responsive (the VM is 3.5 GB): below it for
+#: three samples in a row the kernel's OOM killer is close, and it kills whatever is largest, which may
+#: not be this run. The ingest's own spill-to-disk path should have absorbed the pressure first.
 DEFAULT_MIN_AVAILABLE_BYTES = 256 * MIB
 #: The preflight floor when nothing measured exists: this many times the input's size, plus the reserve.
+#: It protects against STARTING a run the disk plainly cannot finish (hours of reading, then a full
+#: disk). It is a GUESS: the code has no size model for osm.db or the work file, which is why the
+#: report says so and a measured report (``--prior-report``) replaces it.
 DEFAULT_FLOOR_FACTOR = 2.0
-#: How long a stopped child gets to leave on SIGTERM before it is killed.
+#: How long a stopped child's process group gets to leave on SIGTERM (so SQLite closes its files
+#: cleanly) before SIGKILL: long enough to flush a WAL, short enough that a guard actually guards.
 TERMINATE_GRACE_S = 30.0
-#: The timeline keeps at most this many points; past it every second point is dropped and the stride doubles.
+#: The timeline keeps at most this many points; past it every second point is dropped and the stride
+#: doubles. It bounds the REPORT's size on a multi-day run, never the measured peaks (those are exact).
 TIMELINE_MAX = 600
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -309,22 +322,32 @@ def run_phase(
     t0 = time.monotonic()
 
     with open(out_f, "wb") as fo, open(err_f, "wb") as fe:
-        proc = subprocess.Popen(spec.argv, env=env, stdout=fo, stderr=fe, cwd=str(ROOT))  # noqa: S603
+        try:
+            # Its own session: the child leads a process GROUP, so a stop reaches every descendant and
+            # none keeps writing to the disk this guard is protecting after the child itself is gone.
+            proc = subprocess.Popen(spec.argv, env=env, stdout=fo, stderr=fe, cwd=str(ROOT), start_new_session=True)  # noqa: S603
+        except OSError as exc:
+            res.status, res.reason = "failed", f"the phase could not be started ({type(exc).__name__})"
+            res.wall_seconds = round(time.monotonic() - t0, 3)
+            res.disk_free_after_bytes = probe.free_disk(run_dir)
+            return res
+
+        def _signal_group(sig: int) -> None:
+            # The child is not reaped until the main thread's wait4 returns, so its pid cannot have been
+            # reused while this runs: the group id is still ours.
+            try:
+                os.killpg(proc.pid, sig)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
 
         def _terminate(reason: str) -> None:
             refusal.append(reason)
-            try:
-                proc.send_signal(signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                return
+            _signal_group(signal.SIGTERM)
             deadline = time.monotonic() + TERMINATE_GRACE_S
             while time.monotonic() < deadline and not stop.is_set():
                 time.sleep(0.1)
             if not stop.is_set():
-                try:
-                    proc.kill()
-                except (ProcessLookupError, OSError):
-                    pass
+                _signal_group(signal.SIGKILL)
 
         def _sample() -> None:
             low_mem_strikes = 0
@@ -368,11 +391,18 @@ def run_phase(
         except KeyboardInterrupt:
             res.status = "interrupted"
             res.reason = "the operator interrupted the run"
-            try:
-                proc.send_signal(signal.SIGTERM)
-                proc.wait(timeout=TERMINATE_GRACE_S)
-            except Exception:  # noqa: BLE001
-                proc.kill()
+            _signal_group(signal.SIGTERM)
+            deadline = time.monotonic() + TERMINATE_GRACE_S
+            status = None
+            while time.monotonic() < deadline:
+                pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
+                if pid:
+                    break
+                time.sleep(0.1)
+            else:
+                _signal_group(signal.SIGKILL)
+                _pid, status, usage = os.wait4(proc.pid, 0)
+            proc.returncode = os.waitstatus_to_exitcode(status)
         finally:
             stop.set()
             sampler.join(timeout=5)
@@ -454,6 +484,13 @@ def cleanup(run_dir: Path, *, probe: Probe | None = None) -> dict:
     return _delete_store(Path(run_dir), probe or Probe())
 
 
+#: The gazetteer modes the runner offers. ``online`` is deliberately absent: the throwaway store carries
+#: none of the operator's persisted transport settings (Tor, a proxy), so a Wikidata join run inside it
+#: would reach the network on a different transport than the operator chose -- a silent downgrade. The
+#: join is a separate step, on a KEPT store, with the operator's own OO_FETCH_MODE / OO_HTTP_PROXY.
+GAZETTEER_MODES = ("off", "osm-only")
+
+
 def build_phases(
     *,
     extract: Path,
@@ -473,7 +510,7 @@ def build_phases(
                                             "--extract", str(extract), "--country", country, *reader_args]))
     if gazetteer != "off":
         assert gazetteer_out is not None
-        how = ["--no-wikidata"] if gazetteer == "osm-only" else ["--online"]
+        how = ["--no-wikidata"]  # the online join is NEVER run inside the throwaway store: see build_phases below
         phases.append(PhaseSpec("gazetteer", [py, str(ROOT / "scripts" / "build_place_gazetteer.py"), "--country", country,
                                               "--out", str(gazetteer_out), *how]))
     return phases
@@ -490,7 +527,8 @@ def not_measured(*, history: bool, gazetteer: str, kernel_peak: bool) -> list[st
     if gazetteer == "off":
         out.append("the gazetteer phase: not run (--gazetteer off)")
     elif gazetteer == "osm-only":
-        out.append("the Wikidata join of the gazetteer: not run (--gazetteer osm-only)")
+        out.append("the Wikidata join of the gazetteer: not run here (--gazetteer osm-only); it needs the operator's own transport setting, "
+                   "so it is a separate step on a kept store: scripts/build_place_gazetteer.py --online")
     if not kernel_peak:
         out.append("the kernel's peak-memory high-water mark: unavailable on this platform; the sampled peak stands alone")
     return out
@@ -523,6 +561,8 @@ def run(
     deleted; with ``keep_store`` it is the directory to hand to ``--cleanup`` later.
     ``phases_override`` exists for tests (a scripted child in place of the app's scripts).
     """
+    if gazetteer not in GAZETTEER_MODES:
+        raise ValueError(f"--gazetteer {gazetteer!r} is not offered here; the Wikidata join is a separate step on a kept store")
     probe = probe or Probe()
     extract = Path(extract).resolve()  # the children run from the repository, so a relative path would not find it
     if not extract.is_file():
@@ -534,6 +574,9 @@ def run(
         raise FileNotFoundError(f"the history file {Path(history).name} is not on disk; download it in the app first "
                                 "(Settings, OpenStreetMap, Full history)")
     base = Path(workdir).resolve() if workdir else extract.parent
+    if base == ROOT or ROOT in base.parents:
+        raise ValueError("the throwaway store must live outside the repository (its passphrase file and logs would sit "
+                         "in the working tree); pass --workdir elsewhere")
     base.mkdir(parents=True, exist_ok=True)
     started = now()
     host = host_facts(base)
@@ -590,9 +633,13 @@ def run(
            if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR")}
     env.update({"OO_DATA_DIR": str(data_dir), "OO_DB_PASSPHRASE": passphrase, "PYTHONUNBUFFERED": "1"})
     if keep_store:
-        key_file = run_dir / ".throwaway-passphrase"
-        key_file.write_text(passphrase, "utf-8")
-        os.chmod(key_file, 0o600)
+        # Owner-only from the first byte (never written 0644 and then chmod'ed), outside the repository
+        # (the guard above), and removed with the store by --cleanup. The passphrase protects nothing
+        # of value -- the store holds public OpenStreetMap data -- it exists so the measured path is
+        # the encrypted one and so a separate gazetteer build can open the kept store.
+        fd = os.open(run_dir / ".throwaway-passphrase", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(passphrase)
 
     g_out = Path(gazetteer_out).resolve() if gazetteer_out else None
     if gazetteer != "off" and g_out is None:

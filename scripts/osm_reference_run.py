@@ -20,7 +20,7 @@ the thing being measured). It refuses before reading a byte if the disk cannot p
 stops a phase cleanly, recording why, if free disk falls below the reserve (``--reserve-gb``, default
 2) or available memory below ``--min-available-mb`` (default 256) during the run. The throwaway store
 is deleted at the end and the report records the deletion; ``--keep-store`` leaves it so the
-gazetteer build can read it separately (``--gazetteer`` runs that build inside the run), and
+gazetteer build can read it separately (``--gazetteer osm-only`` runs the OSM-only build inside the run), and
 ``--cleanup RUN_DIR`` deletes a kept one.
 
 THE REPORT holds no secret and no path outside the run's own directory (inputs appear by file
@@ -47,9 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--country", help="ISO 3166-1 alpha-2 or alpha-3")
     ap.add_argument("--history", type=Path, help="the full-history planet (.osm.pbf); adds the history phase")
     ap.add_argument("--reader", choices=("pyosmium", "python"), default=None)
-    ap.add_argument("--gazetteer", choices=("off", "osm-only", "online"), default="off",
-                    help="also build the place gazetteer from the throwaway store (online = the Wikidata join, "
-                         "which makes requests; see scripts/build_place_gazetteer.py)")
+    ap.add_argument("--gazetteer", choices=R.GAZETTEER_MODES, default="off",
+                    help="also build the OSM-only place gazetteer from the throwaway store. The Wikidata join is NOT "
+                         "offered here: use --keep-store, then scripts/build_place_gazetteer.py --online with your own "
+                         "transport setting (the throwaway store has none)")
     ap.add_argument("--gazetteer-out", type=Path, help="where the gazetteer artifact is written (outside the throwaway store)")
     ap.add_argument("--workdir", type=Path, help="where the throwaway store is made (default: beside the extract)")
     ap.add_argument("--report", type=Path, help="the JSON report (default: ./osm-reference-run-<time>.json)")
@@ -94,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             min_free_override=int(args.min_free_gb * R.GIB) if args.min_free_gb is not None else None,
             prior_report=prior, sample_seconds=args.sample_seconds, plan_only=args.plan,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         print(f"refused: {exc}")
         return 2
 

@@ -342,6 +342,28 @@ def guarded_getter(url: str) -> GetResult:
     return GetResult(resp.status_code, body, _retry_after_seconds(resp.headers.get("Retry-After")))
 
 
+def transport_state() -> dict:
+    """The transport an ``--online`` join would use, and whether the operator CHOSE it.
+
+    ``explicit`` is True when this data directory holds persisted safety settings or the environment
+    names one (``OO_FETCH_MODE``, ``OO_HTTP_PROXY``, ``OO_HTTP_PROXIES``). A build run against a
+    throwaway or fresh store has neither, so the default (clearnet) would apply SILENTLY -- on an
+    install whose operator chose Tor, that is a deanonymisation rather than a default. The CLI therefore
+    refuses ``--online`` unless the transport is explicit or the operator says ``--clearnet``.
+    """
+    import os
+
+    from src.safety import settings as safety
+
+    st = safety.load_settings()
+    named = any(os.getenv(k) is not None for k in ("OO_FETCH_MODE", "OO_HTTP_PROXY", "OO_HTTP_PROXIES"))
+    try:
+        persisted = safety._read_raw() is not None  # read-only; a missing or locked store reads as absent
+    except Exception:  # noqa: BLE001
+        persisted = False
+    return {"mode": st.fetch_mode, "protected": st.is_protected, "explicit": persisted or named}
+
+
 def _kill_switch_active() -> bool:
     from src.ingest import kill_switch_active
 

@@ -464,9 +464,55 @@ def test_online_under_airplane_mode_is_refused_by_name_and_the_getter_is_never_b
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        rc = CLI.main(["--country", "ZZ", "--out", str(osm_lane_dir / "x.yml"), "--online"])
+        rc = CLI.main(["--country", "ZZ", "--out", str(osm_lane_dir / "x.yml"), "--online", "--clearnet"])
     assert rc == 2 and "airplane mode is engaged" in buf.getvalue()
     assert not (osm_lane_dir / "x.yml").exists()
+
+
+def _no_transport_env(monkeypatch):
+    for k in ("OO_FETCH_MODE", "OO_HTTP_PROXY", "OO_HTTP_PROXIES"):
+        monkeypatch.delenv(k, raising=False)
+
+
+def test_online_refuses_when_no_transport_is_named_unless_clearnet_is_said(osm_lane_dir, monkeypatch):
+    """A fresh or throwaway store holds none of the operator's Tor settings: clearnet must be a choice."""
+    _seed()
+    _no_transport_env(monkeypatch)
+    monkeypatch.setattr(G, "guarded_getter", lambda url: pytest.fail("a request was attempted"))
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = CLI.main(["--country", "ZZ", "--out", str(osm_lane_dir / "x.yml"), "--online"])
+    assert rc == 2 and "name no transport" in buf.getvalue() and "--clearnet" in buf.getvalue()
+    assert not (osm_lane_dir / "x.yml").exists()
+    assert G.transport_state()["explicit"] is False
+
+
+def test_online_end_to_end_through_an_injected_getter_records_its_transport(osm_lane_dir, monkeypatch):
+    _seed()
+    _no_transport_env(monkeypatch)
+    payload = json.loads(WD_FIXTURE.read_text("utf-8"))
+    seen = []
+
+    def getter(url):
+        seen.append(url)
+        return G.GetResult(200, payload)
+
+    monkeypatch.setattr(G, "guarded_getter", getter)
+    monkeypatch.setattr(G, "_kill_switch_active", lambda: False)
+    rc, data, out = _run(osm_lane_dir, "--online", "--clearnet")
+    assert rc == 0, data
+    assert data["transport"]["chosen_by"] == "--clearnet" and data["transport"]["protected"] is False
+    assert data["fetch"]["requests_made"] == 1 and data["fetch"]["asked"] == 5 and len(seen) == 1
+    assert "maxlag=5" in seen[0]
+    assert _by_osm(out)["node/9001"]["population"] == 12000
+    # An environment that names the transport is the operator's choice, and needs no flag.
+    monkeypatch.setenv("OO_FETCH_MODE", "open")
+    assert G.transport_state()["explicit"] is True
+    rc, data, _o = _run(osm_lane_dir, "--online")
+    assert rc == 0 and data["transport"]["chosen_by"] == "settings or environment"
 
 
 def test_the_offline_modes_open_no_socket(osm_lane_dir, monkeypatch):
