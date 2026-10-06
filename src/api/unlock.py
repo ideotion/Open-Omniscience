@@ -638,10 +638,12 @@ def unlock(body: PassphraseBody) -> dict:
             from src.database.connect import get_passphrase
 
             held = get_passphrase()
-            if held is not None:
-                if not hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
-                    raise HTTPException(status_code=403, detail="Wrong passphrase — try again.")
+            if held is not None and hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
                 return {"unlocked": True, "state": "unlocked-encrypted"}
+            # Not the held key: it is verified against the FILE below, never trusted and never refused on the held
+            # key's say-so. A wrong one is refused there (403), and the right one repairs an app that reads as open
+            # while it holds a wrong key (a mis-set ``OO_DB_PASSPHRASE``: the held key is trusted for the state, but
+            # it never opened the store).
         return _unlock_locked(body, p)
 
 

@@ -457,7 +457,7 @@ def is_io_error(exc: BaseException | None) -> bool:
     at all (a query can echo "disk I/O error" into an error of another code); the message is the
     fallback for a driver without a code, and only for the DRIVER's own exception: SQLAlchemy's
     wrapper text carries the statement and its bound parameters, so an ``IntegrityError`` whose
-    bound title happened to say "disk I/O error" was counted as one (the Opus read of #1289)."""
+    bound title happened to say "disk I/O error" was counted as one (the deep read of #1289)."""
     seen: set[int] = set()
     cur = exc
     while cur is not None and id(cur) not in seen:

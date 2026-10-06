@@ -334,7 +334,7 @@ def test_a_bound_value_that_says_disk_full_is_not_a_full_drive():
 
 
 def test_a_query_that_echoes_a_full_drive_into_another_error_is_not_one():
-    """N1 of the findings PR's Opus read. A driver message can repeat what the query said: an FTS5
+    """N1 of the findings PR's deep read. A driver message can repeat what the query said: an FTS5
     ``MATCH '"database or disk is full" :'`` raises ``no such column: database or disk is full``
     (code 1), and ``'"disk i/o error":x'`` the same with the other phrase. With a code on the driver's
     exception the code is trusted and the words are not read, through SQLAlchemy's wrapper too."""
@@ -2841,7 +2841,7 @@ def test_two_failing_paths_in_turn_are_each_news_once_not_every_time(caplog):
 
 
 def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch):
-    """N2 of the findings PR's Opus read: the key of a failing path was never cleared by a success of
+    """N2 of the findings PR's deep read: the key of a failing path was never cleared by a success of
     that path, so a failure that came back hours after recovery was only DEBUG. The drain popped its
     own key (and no test could fail it); the unsupervised poll and the background drain did not."""
     import logging

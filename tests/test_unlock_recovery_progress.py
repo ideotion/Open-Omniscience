@@ -627,7 +627,8 @@ def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, mon
 def test_a_wrong_passphrase_on_an_open_app_is_refused_not_told_it_worked(held_key, monkeypatch):
     """The short-circuit answers from the state, so it must still check WHICH key: a second tab that types a
     misremembered passphrase after the first tab unlocked used to get 200 (THE passphrase has no recovery, so
-    'that one was right' is the one false answer that costs something later)."""
+    'that one was right' is the one false answer that costs something later). A key that is not the held one is
+    checked against the file, which refuses a wrong one (403) and starts no work."""
     from fastapi import HTTPException
 
     from src.api import unlock as unlock_mod
@@ -635,24 +636,50 @@ def test_a_wrong_passphrase_on_an_open_app_is_refused_not_told_it_worked(held_ke
     from src.database import connect as connect_mod
 
     calls: list = []
+
+    def refuse(*a, **k):
+        calls.append("connect")
+        raise connect_mod.WrongPassphraseError("Wrong passphrase — try again.")
+
     connect_mod.set_passphrase(_KEY)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
-    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(connect_mod, "connect", refuse)
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     with pytest.raises(HTTPException) as err:
         unlock(PassphraseBody(passphrase="definitely-not-the-passphrase"))
-    assert err.value.status_code == 403 and calls == [], "a wrong key was answered, or it started work"
+    assert err.value.status_code == 403 and calls == ["connect"], "a wrong key was answered, or it started work"
+    assert connect_mod.get_passphrase() == _KEY, "a refused key replaced the held one"
+
+
+def test_the_right_passphrase_repairs_an_open_app_that_holds_a_wrong_key(held_key, monkeypatch):
+    """With ``OO_DB_PASSPHRASE`` set wrong the app reads as open (the held key is trusted), and a POST /unlock with
+    the RIGHT passphrase was refused with 403 by the comparison, where the verify used to repair it (the deep
+    read's N4). A key that is not the held one is verified against the file: right replaces the held key and runs
+    the finish."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    calls: list = []
+    connect_mod.set_passphrase("a-wrong-key-from-the-environment")
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append(("connect", k.get("key"))))
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: calls.append("close"))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
+    assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
+    assert calls == [("connect", _KEY), "close", "finish"], calls
+    assert connect_mod.get_passphrase() == _KEY, "the right passphrase did not replace the wrong held one"
 
 
 def test_a_finish_that_fails_returns_the_app_to_locked_so_the_retry_is_a_real_retry(held_key, monkeypatch):
     """A key in memory means 'a key is in memory', not 'the unlock finished'. Left after a failed finish (init_db on
     a full drive or a damaged file), the app read as open, the retry was answered from that state with nothing run,
-    and the page waited on 'opening the database' for ever (the Opus read of the findings PR, B1)."""
+    and the page waited on 'opening the database' for ever (the deep read of the findings PR, B1)."""
+    from sqlalchemy.exc import OperationalError
+
     from src.api import unlock as unlock_mod
     from src.api.unlock import PassphraseBody, unlock
     from src.database import connect as connect_mod
-
-    from sqlalchemy.exc import OperationalError
 
     finishes: list = []
     disposed: list = []

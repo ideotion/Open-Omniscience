@@ -218,7 +218,7 @@ def test_an_idle_data_version_probe_connection_does_not_pin_the_wal(store):
     probe.close()
 
 
-# --- what a pooled CHECKOUT pins, by what the checkout did (the Opus read of the findings PR, S2) ---------
+# --- what a pooled CHECKOUT pins, by what the checkout did (the deep read of the findings PR, S2) ---------
 #
 # The pin report lists checked-out connections; it can only call them CANDIDATES. These are the measured
 # facts that say which checkouts ARE holders, on the driver's own default (legacy) transaction mode, which is
