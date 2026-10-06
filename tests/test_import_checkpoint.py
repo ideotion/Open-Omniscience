@@ -403,6 +403,91 @@ def test_the_saved_discard_reason_and_item_error_carry_no_passphrase(tmp_path, m
     assert not any(f in saved for f in _forms(_PW)), "the passphrase reached the saved queue"
 
 
+def _run_two(tmp_path, monkeypatch, outcome):
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d", "report": {"held": True}}}
+    mgr = _FakeVolumeManager([held, outcome])
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
+    gdir = tmp_path / "grp"
+    monkeypatch.setattr(iq, "_new_group_dir", lambda: (gdir.mkdir(exist_ok=True), gdir)[1])
+    _no_lookahead(monkeypatch, True)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=3)
+    q._passphrase = _PW
+    q._drive()
+    return q, json.dumps(q._items) + (tmp_path / "queue.json").read_text(encoding="utf-8")
+
+
+def test_a_refusal_the_restore_returns_is_scrubbed_in_the_item_error_and_the_saved_report(
+    tmp_path, monkeypatch
+):
+    """A refused restore RETURNS (it does not raise): its ``refused`` text and the whole report are
+    saved to the queue file, and the report's problem lines can quote what the engine said."""
+    report = {"refused": f"verification refused: KEY '{_PW}'", "problems": [f"row said {_PW}"]}
+    q, saved = _run_two(
+        tmp_path, monkeypatch, {"state": "done", "summary": {"report": report, "held": False}}
+    )
+    assert [it["state"] for it in q._items] == ["discarded", "error"]
+    assert not any(f in saved for f in _forms(_PW)), "the passphrase reached the saved queue"
+    assert "verification refused" in q._items[1]["error"], "the refusal still reads"
+
+
+def test_the_log_lines_for_a_failed_item_carry_no_passphrase_and_no_raw_traceback(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    mgr_outcome = {"state": "error", "error": f"driver said KEY '{_PW}'"}
+    with caplog.at_level(logging.DEBUG, logger="src.backup.import_queue"):
+        _run_two(tmp_path, monkeypatch, mgr_outcome)
+    text = caplog.text + "".join(str(r.exc_info) for r in caplog.records if r.exc_info)
+    assert "import item" in caplog.text and "failed" in caplog.text
+    assert not any(f in text for f in _forms(_PW)), "a log line carried the passphrase"
+    assert not any(r.exc_info for r in caplog.records), "a raw traceback was logged"
+
+
+def test_the_log_line_for_an_item_stopped_mid_merge_carries_no_passphrase(tmp_path, monkeypatch, caplog):
+    import logging
+
+    class _StoppingManager(_FakeVolumeManager):
+        def __init__(self, queue):
+            super().__init__([{"state": "error", "error": f"interrupted at KEY '{_PW}'"}])
+            self.queue = queue
+
+        def start_restore(self, path, pw, **kw):
+            super().start_restore(path, pw, **kw)
+            self.queue._stop.set()  # the Stop lands while the item is in flight
+
+        def cancel(self):
+            pass
+
+    import src.backup.volume_job as vj
+
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=1)
+    q._passphrase = _PW
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: _StoppingManager(q))
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "1")
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    with caplog.at_level(logging.DEBUG, logger="src.backup.import_queue"):
+        q._drive()
+    assert q._items[0]["state"] == "stopped"
+    assert "stopped mid-merge" in caplog.text
+    assert not any(f in caplog.text for f in _forms(_PW)), "the stop line carried the passphrase"
+
+
+def test_a_scrub_that_leaves_a_form_behind_withholds_the_text(tmp_path, monkeypatch):
+    """Fail-closed by construction: even when the scrub 'succeeds' but a form is still there."""
+    import src.monitoring.secret_scrub as ss
+
+    monkeypatch.setattr(ss, "scrub_value", lambda value, needle: value)
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
+    q._passphrase = _PW
+    assert "withheld" in q._failure_text(RuntimeError(f"key {_PW}"))
+    assert q._scrubbed({"report": f"key {_PW}"}) == {"withheld": q._WITHHELD}
+
+
 def test_a_refused_verification_discards_the_group_rather_than_carrying_it_on(tmp_path):
     q, gdir = _with_open_group(tmp_path)
     q._after_item(

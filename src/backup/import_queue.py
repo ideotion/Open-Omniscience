@@ -631,11 +631,14 @@ class ImportQueueManager:
                         # operator trusting that label could delete the only copy of the
                         # one backup that actually failed.
                         state = "error"
+                    # The refusal and the report are the engine's own text and are saved to the
+                    # queue file, so they go through the same scrub as a raised failure's.
+                    safe_summary = self._scrubbed(summary)
                     with self._lock:
                         item["state"] = state
-                        item["summary"] = summary
+                        item["summary"] = safe_summary
                         if refusal and state == "error":
-                            item["error"] = refusal
+                            item["error"] = self._failure_text(refusal)
                     # OUTSIDE the item's own verdict. Every path in _after_item is
                     # already non-raising (rmtree ignores errors, _save swallows, the
                     # staging guard is wrapped), but it sits inside the try that
@@ -658,11 +661,21 @@ class ImportQueueManager:
                     # group is discarded exactly as for a failure -- a half-merged copy
                     # is unsafe whatever interrupted it.
                     stopped_here = self._stop.is_set()
-                    if stopped_here:
-                        _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), exc)
-                    else:
-                        _LOG.exception("import item %s failed", item.get("id"))
+                    # Logged from the SCRUBBED text: the exception's own text and its traceback
+                    # (which ends with it, and with every chained message) are a sink, and
+                    # ``data/app_errors.jsonl`` rides the debug bundle.
                     detail = self._failure_text(exc)
+                    if stopped_here:
+                        _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), detail)
+                    else:
+                        import traceback
+
+                        _LOG.warning(
+                            "import item %s failed: %s\n%s",
+                            item.get("id"),
+                            detail,
+                            self._scrubbed("".join(traceback.format_exception(exc))),
+                        )
                     with self._lock:
                         item["state"] = "stopped" if stopped_here else "error"
                         item["error"] = detail
@@ -867,34 +880,45 @@ class ImportQueueManager:
                 _LOG.warning("releasing the checkpoint group's staging guard failed", exc_info=True)
         return group
 
-    #: How much of a failure's own text a discarded item's reason keeps. It protects the one sentence
-    #: a refusal gives (the memory refusal runs to about 250 characters) while the reason is saved to the
-    #: queue file for EVERY item of the group; the cut is made AFTER the scrub, never before it.
+    #: How much of a failure's own text a discarded or errored item keeps (the discard reason and
+    #: ``item["error"]``). It protects the one sentence a refusal gives (the memory refusal runs to about
+    #: 250 characters) while the text is saved to the queue file for EVERY item of the group; the cut is
+    #: made AFTER the scrub, never before it.
     _FAILURE_TEXT_KEEP = 600
+    _WITHHELD = "the failure text was withheld because it could not be checked for a passphrase"
 
-    def _failure_text(self, exc: BaseException) -> str:
-        """``str(exc)`` for the queue file and the status, with the backup's passphrase and the corpus
-        passphrase taken out in every form the code writes (as typed, SQL ''-doubled, JSON-escaped, repr)
-        BEFORE the cut, and withheld whole if the scrub itself fails: a failure text is a sink, and the
-        engine's text may quote what it was handed."""
+    def _secret_forms(self) -> list[str]:
+        """The backup's passphrase and the corpus passphrase, each in every form the code writes (as
+        typed, SQL ''-doubled, JSON-escaped, repr)."""
+        from src.database.connect import get_passphrase
+
+        out: list[str] = []
+        for secret in (self._passphrase, get_passphrase() or ""):
+            if secret:
+                out += [secret, secret.replace("'", "''"), json.dumps(secret)[1:-1], repr(secret)[1:-1]]
+        return [f for f in dict.fromkeys(out) if f]
+
+    def _scrubbed(self, value: Any) -> Any:
+        """``value`` (a string, or the dicts, lists and strings of a report) with the passphrases taken
+        out in every form, and CHECKED once more at the end so that fail-closed holds by construction:
+        a result that still holds a form, or any error, gives ``_WITHHELD`` for text and
+        ``{"withheld": ...}`` for a report."""
+        from src.monitoring.secret_scrub import scrub_value
+
         try:
-            from src.database.connect import get_passphrase
-            from src.monitoring.secret_scrub import scrub_text
+            forms = self._secret_forms()
+            out = value
+            for form in forms:
+                out = scrub_value(out, form)
+            if any(f in json.dumps(out, default=str) for f in forms):
+                raise ValueError("a form of the passphrase survived the scrub")
+            return out
+        except Exception:  # noqa: BLE001 - fail closed: nothing rather than unscrubbed text
+            return self._WITHHELD if isinstance(value, str) else {"withheld": self._WITHHELD}
 
-            text = str(exc)
-            for secret in {self._passphrase, get_passphrase() or ""}:
-                if not secret:
-                    continue
-                for form in (
-                    secret,
-                    secret.replace("'", "''"),
-                    json.dumps(secret)[1:-1],
-                    repr(secret)[1:-1],
-                ):
-                    text = scrub_text(text, form)
-            return text[: self._FAILURE_TEXT_KEEP]
-        except Exception:  # noqa: BLE001 - fail closed: no text rather than unscrubbed text
-            return "the failure text was withheld because it could not be checked for a passphrase"
+    def _failure_text(self, exc: BaseException | str) -> str:
+        """The failure's text for the queue file and the status: scrubbed first, THEN cut."""
+        return str(self._scrubbed(str(exc)))[: self._FAILURE_TEXT_KEEP]
 
     def _discard_group(self, reason: str) -> None:
         """Throw the carried working copy away and SAY which items went with it."""

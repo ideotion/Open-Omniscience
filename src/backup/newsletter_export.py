@@ -11,8 +11,8 @@ THE RULES THIS FILE HOLDS, each pinned by a test that fails without it:
 
   * The key never enters SQL text or an exception. It is bound (``ATTACH DATABASE ? AS x KEY ?``) on
     the raw driver connection, and nothing on this path raises or records the text of what the driver
-    said: a failure is reported by its class, and the text that is kept is run through
-    ``secret_scrub.scrub_text`` first.
+    said: a failure is reported by its class (or, for this module's own refusals, by their fixed
+    text), and the text that is logged is run through ``secret_scrub.scrub_text`` first.
   * Every cipher setting of the source is copied, not only the page size, and the result is read back
     through the production open path before it replaces the copy. A setting the export cannot carry
     over (a plaintext header, which needs a salt of its own) refuses the export instead.
@@ -87,8 +87,9 @@ def _settings_equal(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
 
 
 def _index_bytes(con) -> int:
-    """The search index's size, from the lengths of its segment blobs (a blob's length is in its record
-    header, so this does not read the index). 0 when there is no index."""
+    """The search index's size, from the lengths of its segment blobs (the blobs' own bytes, not the pages
+    they sit on: a block that spills onto an overflow page occupies more on disk). 0 when there is no
+    index."""
     if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'article_fts_data' AND type = 'table'").fetchone():
         return 0
     return int(con.execute("SELECT COALESCE(SUM(LENGTH(block)), 0) FROM article_fts_data").fetchone()[0])
@@ -176,15 +177,20 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
     out = db_path.with_name(db_path.name + ".fresh")
     exported = False
     try:
-        # The index merge writes the merged segment while the old ones still exist, and with secure_delete
-        # on the zeroed old pages are logged too: about twice the index, on the drive the copy is on.
-        # (Measured at 60,000 articles: the whole run peaked at 2.06 x the copy; the preflight's bound is
-        # 2.12 x, so this is asked again here, from the copy's own index, rather than assumed.)
-        merge_room = 2 * _index_bytes(con)
-        if merge_room:
-            preflight_free_space(
-                db_path.parent, merge_room, what="search-index merge that leaves the newsletters' words out (no backup was written)"
-            )
+        # The deletes and the index merge run in ONE transaction with secure_delete on, so the rollback
+        # journal holds every page they free before it is zeroed (the deleted articles' pages as well
+        # as the old index segments) while the merged segment is written beside them. Bound: the
+        # journal cannot hold more than the file does, plus the merged segment, which is no larger than
+        # the index. Measured, delete-journal mode: 90% of 30,000 articles deleted, peak 2.0 x the copy
+        # with the index 39% of it (the extra was 2.6 x the index); the 25% case peaked at 2.06 x. A
+        # figure taken from the index alone undershot (the review's probe: over 2 x the index in 5 of 6
+        # runs). Asked here, on the copy, so a drive in the gap is refused in words and not by the driver.
+        merge_room = db_path.stat().st_size + _index_bytes(con)
+        preflight_free_space(
+            db_path.parent,
+            merge_room,
+            what="newsletter filter and search-index merge (no backup was written)",
+        )
         # The deleted pages are zeroed, so the path that does not rewrite the file leaves nothing.
         con.execute("PRAGMA secure_delete = ON")
         dropped = _drop_newsletter_rows(con, vacuum=False)
