@@ -319,12 +319,16 @@ def test_a_re_verified_catalogue_row_reads_measured(db):
     assert source_provenance(db, s.id)["qualification_basis"] == "measured"
 
 
-def _withdrawn_row(db):
+def _withdrawn_row(db, *, imported_followed=False):
     """What the boot repair leaves: status disqualified, no criteria version, the catalogue's own
-    curated attempt and another instance's disqualifying judgement in the history."""
+    curated attempt and another instance's disqualifying judgement in the history. With
+    ``imported_followed`` that judgement is recorded as a merge records its attempts (``merged_rows``),
+    which is what a real withdrawn row's followed attempt is."""
     s = _src(db, "withdrawn.example")
     stamp_curated_catalog(db, now=NOW)
     _attempt(db, s, STATUS_DISQUALIFIED, at=NOW + timedelta(days=5), criteria_version=CRITERIA_VERSION)
+    if imported_followed:
+        _mark_imported(db, s, at=NOW + timedelta(days=5))
     s.status = STATUS_DISQUALIFIED
     s.qualification_criteria_version = None
     db.commit()
@@ -464,7 +468,7 @@ def test_a_local_attempt_older_than_the_imported_one_does_not_decide(db, monkeyp
 
 def test_residue_an_imported_attempt_with_no_merged_rows_row_reads_as_local(db, monkeypatch):
     """THE RESIDUE, pinned: an attempt that arrived by a path that left no ``merged_rows`` row (a
-    batch removed by hand in the database, a full replace-restore) cannot be shown to be imported, so
+    batch removed by hand in the database) cannot be shown to be imported, so
     it reads as this install's own. Nothing in the app writes such a row; if this test starts failing
     because something else tells them apart, say so in OPEN_QUEUE and the 0.4 gate."""
     import src.catalog.qualification_integrity as qi
@@ -481,6 +485,79 @@ def test_residue_an_imported_attempt_with_no_merged_rows_row_reads_as_local(db, 
     db.execute(text("DELETE FROM merge_batches"))
     db.commit()
     assert _basis_of(db, s, 21)[0] == "measured"
+
+
+def test_a_followed_attempt_that_is_itself_imported_keeps_the_row_inherited(db, monkeypatch):
+    """What a real withdrawn row looks like: the attempt the repair followed came in through a merge,
+    so nothing local is newer and the row stays inherited (flip `newest_local is None` and this
+    fails); an OLDER local attempt does not decide either (flip the `<=` and this fails)."""
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db, imported_followed=True)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    assert _basis_of(db, s, 6)[0] == "inherited"
+    assert source_provenance(db, s.id)["qualification_basis"] == "inherited"
+    _attempt(db, s, STATUS_QUALIFIED, at=NOW + timedelta(days=1), criteria_version=CRITERIA_VERSION)
+    assert _basis_of(db, s, 6)[0] == "inherited"
+    _attempt(db, s, STATUS_DISQUALIFIED, at=NOW + timedelta(days=9), criteria_version=CRITERIA_VERSION)
+    assert _basis_of(db, s, 10)[0] == "measured"
+
+
+def test_only_an_attempt_of_the_attempts_table_marks_an_attempt_imported(db, monkeypatch):
+    """``merged_rows`` names rows of many tables by id: another table's row with the same id must not
+    make a local judgement read as imported."""
+    import src.catalog.qualification_integrity as qi
+    from src.database.models import MergeBatch, MergedRow
+
+    s = _withdrawn_row(db, imported_followed=True)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    later = NOW + timedelta(days=20)
+    _attempt(db, s, STATUS_DISQUALIFIED, at=later, criteria_version=CRITERIA_VERSION)
+    attempt = db.query(SourceQualificationAttempt).filter_by(source_id=s.id, attempted_at=later).one()
+    batch = MergeBatch()
+    db.add(batch)
+    db.flush()
+    db.add(MergedRow(batch_id=batch.id, table_name="articles", row_id=attempt.id))
+    db.commit()
+    assert _basis_of(db, s, 21)[0] == "measured"
+
+
+def test_a_newer_attempt_that_is_not_a_judgement_does_not_decide(db, monkeypatch):
+    """Only judging verdicts count: a newer ``inherited`` attempt (an overlay adoption) is not this
+    install judging the source."""
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db, imported_followed=True)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    _attempt(db, s, VERDICT_INHERITED, at=NOW + timedelta(days=20), criteria_version=CRITERIA_VERSION)
+    assert _basis_of(db, s, 21)[0] == "inherited"
+
+
+def test_a_source_whose_whole_judging_history_was_imported_is_not_this_installs_measurement(db):
+    """The same rule for every row, not only repaired ones: a merge into a young install copies the
+    sources' verdicts AND their attempts, and the export used to ship those as `measured` here."""
+    imported = _src(db, "imported.example", status=STATUS_QUALIFIED, qualified_at=NOW,
+                    criteria_version=CRITERIA_VERSION)
+    own = _src(db, "own.example", status=STATUS_QUALIFIED, qualified_at=NOW,
+               criteria_version=CRITERIA_VERSION)
+    _attempt(db, imported, STATUS_QUALIFIED, at=NOW, criteria_version=CRITERIA_VERSION)
+    _attempt(db, own, STATUS_QUALIFIED, at=NOW, criteria_version=CRITERIA_VERSION)
+    _mark_imported(db, imported, at=NOW)
+    export = build_overlay_export(db, now=NOW + timedelta(days=1))
+    basis = {v["domain"]: v["basis"] for v in export["verdicts"]}
+    assert basis == {"imported.example": "inherited", "own.example": "measured"}
+    assert source_provenance(db, imported.id)["qualification_basis"] == "inherited"
+    assert source_provenance(db, own.id)["qualification_basis"] == "measured"
+
+
+def test_a_curated_row_with_imported_history_is_still_counted_as_having_judging_history(db):
+    """The mismatch counter is about attempts COPIED IN: it keeps counting them."""
+    s = _src(db, "curated-with-history.example")
+    stamp_curated_catalog(db, now=NOW)
+    _attempt(db, s, STATUS_DISQUALIFIED, at=NOW + timedelta(days=2), criteria_version=CRITERIA_VERSION)
+    _mark_imported(db, s, at=NOW + timedelta(days=2))
+    export = build_overlay_export(db, now=NOW + timedelta(days=3))
+    assert export["basis"]["curated_stamp_with_judging_history"] == 1
 
 
 def test_a_repair_stamp_that_cannot_be_read_is_read_as_still_followed(db, monkeypatch):

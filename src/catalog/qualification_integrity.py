@@ -155,10 +155,10 @@ def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
 
     ``judged_at`` is the date of the imported attempt the repair followed. A row in this mapping
     carries a verdict taken from an imported history, not one this install measured, so the
-    qualification export labels it ``inherited`` only while its newest judging attempt is still that
-    one (a later judging attempt this install made makes it ``measured``, in either direction; a later
-    attempt a backup merge brought in does not, ``merged_rows`` naming it -- the residue is an imported
-    attempt with no ``merged_rows`` row, see ``repair_still_followed``). A run record
+    qualification export labels it ``inherited`` while no judging attempt this install made is newer
+    than that one (a later local judgement makes it ``measured``, in either direction; a later attempt a
+    backup merge brought in does not, ``merged_rows`` naming it -- the residue is an imported attempt with
+    no ``merged_rows`` row, see ``repair_still_followed``). A run record
     that cannot be read is skipped (its domains are unknown) and its id is returned, so the caller
     can say that the list is incomplete.
     """
@@ -187,6 +187,24 @@ def repaired_domains() -> set[str]:
     return set(repaired_rows()[0])
 
 
+def not_imported(attempt_entity):
+    """SQL clause: this attempt row is NOT one a backup merge inserted (``merged_rows`` does not name it).
+
+    A correlated probe, served by ``ix_merged_rows_lookup`` (table, row id): one index lookup per
+    attempt, where ``id NOT IN (SELECT row_id ...)`` rebuilds the whole imported list for every
+    repaired row of an export. Used by every reader that must tell this install's own judgements from
+    an imported history (rule 12 = b): the repaired-row check below, the export's basis and the
+    provenance page."""
+    from sqlalchemy import exists
+
+    from src.database.models import MergedRow
+
+    return ~exists().where(
+        MergedRow.table_name == "source_qualification_attempts",
+        MergedRow.row_id == attempt_entity.id,
+    )
+
+
 def repair_still_followed(session, source, judged_at) -> bool:
     """True while no judging attempt THIS install made is newer than the imported one a boot repair
     followed. An attempt a backup merge brought in (``merged_rows`` names it) never counts: that is the
@@ -197,25 +215,22 @@ def repair_still_followed(session, source, judged_at) -> bool:
 
     THE RESIDUE: an imported attempt with no ``merged_rows`` row reads as this install's own. Nothing in
     the app writes one (every merge path records its rows, since the attempts were first merged), and
-    the app never deletes a merge batch, so it takes a batch removed by hand in the database or a full
-    replace-restore (whose rows are the restored library, not a merge). Pinned by a test.
+    the app never deletes a merge batch, so it takes a batch removed by hand in the database. Pinned by a
+    test. (An attempt id reused after a hard delete of the newest rows can also read a local judgement as
+    imported; that fails safe, towards ``inherited``.)
 
     ``revert_repairs`` makes a stricter check (any newer attempt of any origin stops a revert), which is
     why it does not call this."""
     if not judged_at:
         return True
-    from src.database.models import MergedRow
     from src.database.models import SourceQualificationAttempt as A
 
     sid = int(source.id)
     if _newest_judging(session, sid) is None:
         return False
-    imported = session.query(MergedRow.row_id).filter(
-        MergedRow.table_name == "source_qualification_attempts"
-    )
     newest_local = (
         session.query(A)
-        .filter(A.source_id == sid, A.verdict.in_(JUDGING_VERDICTS), A.id.notin_(imported))
+        .filter(A.source_id == sid, A.verdict.in_(JUDGING_VERDICTS), not_imported(A))
         .order_by(A.attempted_at.desc(), A.id.desc())
         .first()
     )

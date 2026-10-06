@@ -200,9 +200,9 @@ def _qualification_basis(session, source) -> str | None:
     # attempts copied in beside a still-curated stamp do not make the stamp a measurement.
     if source.qualification_criteria_version == CURATED_CRITERIA_VERSION:
         return "curated"
-    # A row the boot repair withdrew on an imported history's say reads `inherited` while its
-    # newest judging attempt is still that imported one, exactly as the export labels it (and, like
-    # the export, only a row that still carries a judging verdict).
+    # A row the boot repair withdrew on an imported history's say reads `inherited` while no judging
+    # attempt this install made is newer than that imported one, exactly as the export labels it (and,
+    # like the export, only a row that still carries a judging verdict).
     try:
         from src.catalog.qualification_integrity import repair_still_followed, repaired_rows
 
@@ -215,11 +215,20 @@ def _qualification_basis(session, source) -> str | None:
             return "inherited"
     except Exception:  # noqa: BLE001 - an unreadable record leaves the basis as it was read; the page says so
         pass
-    if verdicts & set(JUDGING_VERDICTS):
+    # Only a judgement THIS install made is a measurement; one a backup merge brought in is inherited,
+    # as the export labels it (rule 12 = b).
+    from src.catalog.qualification_integrity import not_imported
+
+    if (
+        session.query(A.id)
+        .filter(A.source_id == source.id, A.verdict.in_(JUDGING_VERDICTS), not_imported(A))
+        .first()
+        is not None
+    ):
         return "measured"
     if VERDICT_CURATED in verdicts:
         return "curated"
-    if VERDICT_INHERITED in verdicts:
+    if VERDICT_INHERITED in verdicts or verdicts & set(JUDGING_VERDICTS):
         return "inherited"
     return None
 

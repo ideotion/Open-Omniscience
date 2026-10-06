@@ -81,18 +81,23 @@ def _iso(value: datetime | None) -> str | None:
     return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
 
 
-def _locally_measured_ids(session: Session) -> set[int]:
-    """Sources this instance actually JUDGED at some point -- an attempt row whose verdict
-    is a real judgement. ``inherited`` and ``no_evidence`` rows are excluded because neither
-    is this instance measuring anything."""
+def _judged_ids(session: Session, *, local_only: bool) -> set[int]:
+    from src.catalog.qualification_integrity import not_imported
     from src.database.models import SourceQualificationAttempt as A
 
-    return {
-        int(sid)
-        for (sid,) in session.query(A.source_id)
-        .filter(A.verdict.in_(JUDGING_VERDICTS))
-        .distinct()
-    }
+    q = session.query(A.source_id).filter(A.verdict.in_(JUDGING_VERDICTS))
+    if local_only:
+        q = q.filter(not_imported(A))
+    return {int(sid) for (sid,) in q.distinct()}
+
+
+def _locally_measured_ids(session: Session) -> set[int]:
+    """Sources this instance actually JUDGED at some point -- an attempt row whose verdict
+    is a real judgement that THIS install made. ``inherited`` and ``no_evidence`` rows are excluded
+    because neither is this instance measuring anything, and so is an attempt a backup merge brought
+    in (``merged_rows`` names it): a source whose whole history was imported is not this install's
+    measurement however judged it reads (rule 12 = b; it exports as ``inherited``)."""
+    return _judged_ids(session, local_only=True)
 
 
 def _curated_stamp_ids(session: Session) -> set[int]:
@@ -116,6 +121,7 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
 
     now = now or datetime.now(UTC)
     measured = _locally_measured_ids(session)
+    judged_any = _judged_ids(session, local_only=False)
 
     app_only = app_provided_filter(Source.tags)
     judged = (
@@ -155,7 +161,7 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             # "measured" on two field instances, which then shipped as this instance's own
             # verdict and counted as corroboration. Counted apart so the mismatch is visible.
             basis = BASIS_CURATED
-            if s.id in measured:
+            if s.id in judged_any:
                 curated_stamp_with_judging_history += 1
         elif s.domain in repaired and repair_still_followed(session, s, repaired[s.domain]):
             # withdrawn by the boot repair on an imported history's say, and no judging attempt this

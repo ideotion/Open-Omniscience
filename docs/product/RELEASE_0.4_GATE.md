@@ -208,7 +208,7 @@ What this adds to the clause, none of it a new bar:
    the imported one the repair followed: a later local judgement (in either direction) makes it
    `measured`, a later attempt a backup merge brought in (named in `merged_rows`) does not (PR #1294,
    merged 06:36 UTC; PR #1316 for the imported attempts). The residue, an imported attempt with no
-   `merged_rows` row (a batch removed by hand in the database, a full replace-restore), reads as local and is pinned by a test. A repair run whose record
+   `merged_rows` row (a batch removed by hand in the database), reads as local and is pinned by a test. The same rule decides every judged row: a source whose whole judging history a backup merge brought in exports `inherited`, never `measured` (PR #1316). A repair run whose record
    cannot be read is named in `basis.repair_runs_unreadable`, and the rows it withdrew may then
    read `measured` although an imported history decided them.
 
