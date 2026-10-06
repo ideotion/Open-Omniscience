@@ -191,6 +191,17 @@ class BackgroundJob:
             with self._lock:
                 self._ended_at = time.time()
 
+    def join(self, timeout: float | None = None) -> bool:
+        """Wait for the worker thread to end (a caller that runs in a sequence needs the result before
+        it goes on). ``True`` once no run is in flight, also when none ever started; ``False`` when
+        ``timeout`` ran out first."""
+        with self._lock:
+            t = self._thread
+        if t is None:
+            return True
+        t.join(timeout)
+        return not t.is_alive()
+
     def cancel(self) -> None:
         """Ask the worker to stop at its next safe point (cooperative; never kills a thread)."""
         self._stop.set()

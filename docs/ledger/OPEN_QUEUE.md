@@ -16444,3 +16444,28 @@ maintainer as a card.
   (a first failed read pauses collection) is not covered here: its follow-up is its own small PR, in the poisoned-connection entry's (d).
   FOLD 4 (the coordinator's check): the re-read files a listing two connections disagreed about as `(schema)` `unchecked`, as the start-up check and the manual call do, so a `(schema)` latch stays; the `(schema)` entry filed for a failed
   page pass carries the PAGE pass's `second_read`, and a re-read's confirmed schema damage says `agreed`.
+## 2026-10-06 — THE ARTICLE LIST'S TWO INDEXES (R128 = «34a»): WHAT IS NOT DONE, AND WHY (WAL / DISK THREAD)
+
+- **ANSWERED «34a»** (both indexes; the question was `34`, from the browse change). Built: `src/database/article_indexes.py`, the
+  `article-indexes` step of `src/api/boot_sequence.py` (after the check of the data files, before the warm-up), `maintenance.DEFERRED_INDEXES`,
+  migration `c3a91f5e7b24`, `tests/test_article_indexes.py`. What follows is what it deliberately leaves, so a later session does not take it for an oversight.
+- **THE BUILD ON A BIG STORE ON A SLOW DRIVE WAS NOT MEASURED.** The question said "a few minutes"; the measured figure is 4.0 s plus 0.1 s on a COLD 2 GB file
+  (the first read of the whole table), which scales with rows and bytes read, not with a measured wall time on a 14 GB file on a spinning disk. The step records
+  its own figure: `boot_sequence.article_indexes` in the diagnostics bundle (the seconds each index took, the rows and free space it measured, the seconds it
+  waited for the writer gate). **When the first bundle with that block arrives, put the real number where "a few minutes" was written** (the manual row for
+  `OO_ARTICLE_INDEXES`, the label's hover if one is added).
+- **`idx_article_language (language)` IS NOT DROPPED.** The new `(language, published_at)` index makes it redundant for the list, but the counts and the
+  per-language tally still use it (`tests/test_library_language_growth.py` names it), and dropping it saves ~38 bytes an article against a planner change nobody
+  measured. A drop is its own decision, after the plans of the count queries are measured with the new index present.
+- **THE FREE-SPACE FIGURE IS AN ESTIMATE, AND SAYS SO**: 400 bytes an article on the database's volume and on the temporary-file volume (what it protects: a disk
+  that fills while the write-ahead log grows, which would fail every writer in the app). Sized on titles twice the synthetic store's; the row count is `MAX(id)`,
+  an upper bound read without touching a row. A figure that cannot be read is NOT a refusal (the `vacuum_preflight` rule).
+- **THE BUILD IS NOT CANCELLABLE** (a single statement is opaque, so the row offers no Cancel) and holds the write gate for each statement; the app starts
+  offline, so no collection normally waits behind it, and the gate's watchdog names a hold past its threshold. A refusal for space is a FAILED row whose error is
+  English only (an error string, like every job's); the label and the progress line are in all twelve languages.
+- **THE STAMP ALIGNMENT SAYS `schema-behind` FOR ONE START.** The language index is declared on the model and `init_db` leaves it out, so between `init_db` and the step
+  the live schema lacks a model index; the stamp is kept (harmless: the migration is `IF NOT EXISTS`) and the next start finds the schema at head. The step does NOT
+  align the stamp itself: that run drops the derived-row view while it executes, and the step runs while the app serves. (`tests/test_article_indexes.py` pins the
+  verdict in both states, and that the title index reads no drift in any state.)
+- **TO ADD ONCE THE BROWSE CHANGE (PR D) HAS LANDED**: the plan test builds the browse's ids query with the ORM, because `_query_articles`'s ids-first form is in PR D,
+  which is not in this stack; add a test that takes the plan of the real function for a language filter and both title sorts.

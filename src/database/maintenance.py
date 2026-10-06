@@ -161,7 +161,38 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_keyword_indexed_at "
         "ON articles (keyword_indexed_at)"
     ),
+    # The article list's language filter (R128, 2026-10-06). The list orders by the date, which
+    # idx_article_language (language) does not carry: the planner found the rows by language and then
+    # read one whole row per candidate to sort them (1,284 ms cold on a 40,000-article, 2 GB store).
+    # Language FIRST (the filter is an equality), the date SECOND (the order), so the walk is one
+    # index range read backwards with no sort step: 1,447 -> 3 ms cold, plan `SEARCH articles USING
+    # COVERING INDEX`. DEFERRED (see DEFERRED_INDEXES): built by the start-up step that shows in the
+    # task manager, not inside init_db. Mirrored on the model and in migration c3a91f5e7b24.
+    "idx_article_language_published": (
+        "CREATE INDEX IF NOT EXISTS idx_article_language_published "
+        "ON articles (language, published_at)"
+    ),
+    # The article list's sort by title, which orders COLLATE NOCASE (src/api/main.py:_query_articles):
+    # a plain index on title cannot serve it, the collation has to be the index's own. With it the
+    # sort is an index walk (807 -> 3 ms cold, same store) instead of reading every row's title and
+    # sorting them. DEFERRED, like the one above. NOT a drift: the model declares it through the
+    # `collate(title, "NOCASE")` and the stamp alignment reports no difference with
+    # it present or absent (tests/test_article_indexes.py pins both). Migration c3a91f5e7b24.
+    "idx_article_title_nocase": (
+        "CREATE INDEX IF NOT EXISTS idx_article_title_nocase "
+        "ON articles (title COLLATE NOCASE)"
+    ),
 }
+
+# The HOT_INDEXES entries init_db does NOT build: a CREATE INDEX over a corpus-sized table reads every
+# row once and holds the write lock while it runs, so on a big store on a slow drive it is minutes with
+# nothing on screen, inside the call that opens the database. They are built instead by the
+# ``article-indexes`` start-up step (src/database/article_indexes.py): after the check of the data
+# files, one at a time, with the free space measured first and its progress in the task manager. A
+# database that has no articles yet (a fresh one) gets them from create_all with the table.
+DEFERRED_INDEXES: frozenset[str] = frozenset(
+    {"idx_article_language_published", "idx_article_title_nocase"}
+)
 
 # --------------------------------------------------------------------------- #
 # PROPOSED, deliberately NOT wired: idx_keyword_normterm_nocase
@@ -196,6 +227,11 @@ HOT_INDEXES: dict[str, str] = {
 # -- after which it reports a permanent spurious "changed index". So shipping this
 # needs a migrations-layer decision (an `include_object` exclusion, or an equivalent),
 # which belongs to whoever owns models.py/migrations rather than to a perf pass.
+# UPDATE (R128, 2026-10-06): idx_article_title_nocase (above, in HOT_INDEXES) IS a COLLATE NOCASE
+# index and ships declared on its model as ``collate(title, "NOCASE")`` (NOT as a ``text()``: that
+# form reads as a permanent ``remove_index``); the stamp alignment reports no difference with it present
+# or absent (tests/test_article_indexes.py). That is the mirroring this note says is missing, so this
+# index may be shippable the same way -- not tried here.
 # Two honest limits on the numbers above, for whoever picks it up: WHICH full
 # traversal the planner takes before the fix varies with table statistics and with the
 # exact ORDER BY form (a bare table scan and a full index scan were both measured), so
@@ -225,8 +261,11 @@ _INDEX_REQUIRES: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
-def ensure_hot_indexes(engine: Engine) -> list[str]:
-    """Create any missing hot-path indexes (idempotent). Returns those created."""
+def ensure_hot_indexes(engine: Engine, *, include_deferred: bool = True) -> list[str]:
+    """Create any missing hot-path indexes (idempotent). Returns those created.
+
+    ``include_deferred=False`` leaves out :data:`DEFERRED_INDEXES`, the ones the start-up step builds
+    with a visible progress; ``init_db`` passes it. Every other caller keeps the whole map."""
     if engine.url.get_backend_name() != "sqlite":
         return []
     created: list[str] = []
@@ -241,6 +280,8 @@ def ensure_hot_indexes(engine: Engine) -> list[str]:
         cols_of: dict[str, set[str]] = {}
         for name, ddl in HOT_INDEXES.items():
             if name in existing:
+                continue
+            if not include_deferred and name in DEFERRED_INDEXES:
                 continue
             need = _INDEX_REQUIRES.get(name)
             if need is not None:

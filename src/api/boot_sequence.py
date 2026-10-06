@@ -13,6 +13,10 @@ the process was SIGKILLed with all of them running.
 THE ORDER, and why. (0) the check of the data files after an unexpected stop (``database/verify.py``),
 which does nothing after a clean end: it goes FIRST because it reads each table once before anything writes
 to the files again, and the warm-up and the rollup are whole-corpus reads that would compete with it;
+(0b) the build of the article list's two indexes (``database/article_indexes.py``, R128), which does
+nothing once they exist: it comes second because it is a one-time statement per index that reads the whole
+articles table and holds the write lock, and the warm-up's reads would only slow it, while a re-index
+(which writes) would queue it for the lock; it is a task-manager job, so the wait is on screen;
 (1) the cache warm-up: about a minute, and what makes Home fast; (2) the
 rollup's first build: the biggest read, which analytics need and which the warm-up's own reads
 kick off; (3) the re-index resume: it owes hours and holds the write gate, so it goes last. After
@@ -46,7 +50,7 @@ _LOG = logging.getLogger(__name__)
 SLOW_STEP_S = 300.0
 
 # The steps, in the order they run. A step's state: pending | running | done | failed | skipped | declined.
-STEPS = ("verify-database", "warm-cache", "rollup", "reindex-resume")
+STEPS = ("verify-database", "article-indexes", "warm-cache", "rollup", "reindex-resume")
 
 _LOCK = threading.Lock()
 _STATE: dict[str, object] = {"warm": "pending", "reindex_pending": None}
@@ -68,8 +72,11 @@ def snapshot() -> dict:
     """Where the boot sequence is, for the diagnostics bundle: per step its state, when it started
     (UTC) and the seconds it has run (a running step) or took (a finished one); for a pending step
     the seconds it has waited behind the earlier ones. Counts and times only, no score."""
+    from src.database import article_indexes
+
     now = time.time()
     progress = _progress_of("rollup")  # read before _LOCK: the build holds its own lock briefly, never this one
+    indexes = article_indexes.snapshot()
     with _LOCK:
         began = _SEQUENCE["started_at"]
         steps = []
@@ -88,8 +95,13 @@ def snapshot() -> dict:
             "order": list(STEPS),
             "steps": steps,
             "reindex_requested": _STATE["reindex_pending"],
+            # What the article-indexes step did: its outcome, the seconds each index took, the rows and
+            # free space it measured, the seconds it waited for the writer gate ({} before it has run).
+            "article_indexes": indexes,
             "method": (
-                "The check of the data files after an unexpected stop (nothing after a clean end) and the three heavy start-up jobs run one after the other. A rollup a serve kicks after "
+                "The check of the data files after an unexpected stop (nothing after a clean end), the "
+                "build of the article list's two indexes (nothing once they exist) and the three heavy "
+                "start-up jobs run one after the other. A rollup a serve kicks after "
                 "the re-index has started builds beside it, and declines when memory is short. "
                 "No timeout: a step that does not end shows here as running, with its seconds; the rollup step "
                 "also shows its build's stage, rows streamed, rows/s and seconds since it last moved, and the "
@@ -260,6 +272,20 @@ def _verify_database() -> None:
         raise _Skipped
 
 
+def _article_indexes() -> None:
+    """The two article-list indexes, when the store lacks them (database/article_indexes.py): built as a
+    task-manager job while the app is still offline, after the check and before the warm-up."""
+    from src.database import article_indexes
+
+    outcome = article_indexes.run_now_and_wait()
+    if outcome == "declined":
+        raise _Skipped("declined")
+    if outcome == "failed":
+        raise RuntimeError("the article-list index build failed (see the article_indexes block)")
+    if outcome != "built":  # present / skipped: nothing was built, so the step reads as skipped
+        raise _Skipped
+
+
 def _rollup_first_build() -> None:
     from src.analytics import rollup_serve
 
@@ -299,7 +325,8 @@ def run(warm: Callable[[], None]) -> None:
         _STATE["warm"] = "running"
         _SEQUENCE["started_at"] = time.time()
     try:
-        _timed("verify-database", _verify_database, holds="the cache warm-up, the rollup build and the re-index")
+        _timed("verify-database", _verify_database, holds="the index build, the cache warm-up, the rollup build and the re-index")
+        _timed("article-indexes", _article_indexes, holds="the cache warm-up, the rollup build and the re-index")
         _timed("warm-cache", warm, holds="the rollup build and the re-index")
     finally:
         with _LOCK:
