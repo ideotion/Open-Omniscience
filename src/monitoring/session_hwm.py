@@ -148,12 +148,15 @@ _LIGHT_METHOD = (
     "the kernel's memory counters, the Python block count and the blocks gained since the previous "
     "light snapshot (over_s says over how long, for the threads' CPU too), and the threads that "
     "spent the most CPU in that time, with their stacks, chosen among the first 16 working threads "
-    "found (cpu_read_for says how many were read of working_threads). Memory is not measured per "
-    "thread (CPython has no such counter): the pairing of the blocks gained with the busiest "
-    "threads is an INFERENCE about who allocated. took_ms is the time to take the readings and "
-    "choose the threads; writing the file is not in it. The file is replaced whole and atomically "
-    "(it survives the process being killed) but is not fsynced, so a hard stop of the machine "
-    "itself can lose the newest few seconds."
+    "found (cpu_asked_for says how many the CPU was asked for and cpu_read_for how many it was read "
+    "for, of working_threads; where the platform cannot read a thread's CPU, thread_cpu says so and "
+    "the threads are not ranked). Memory is not measured per thread (CPython has no such counter): "
+    "the pairing of the blocks gained with the busiest threads is an INFERENCE about who allocated. "
+    "took_ms is the time to take the readings and choose the threads; writing the file is not in it. "
+    "The file is replaced whole and atomically (it survives the process being killed) but is not "
+    "fsynced: a hard stop of the machine itself can lose the newest seconds, or, on a filesystem that "
+    "does not flush a replaced file when it is renamed, the whole file; and a replace that another "
+    "program's hold on the file refuses (Windows) leaves that snapshot unwritten, with a log line."
 )
 # A thread whose innermost frame is in one of these is waiting, not working: a lock, a
 # queue, a socket, the event loop's select.
@@ -183,6 +186,7 @@ _LAST_BURST = _NEVER
 _GUARD_WAS_ENGAGED = False  # the memory guard's state at the previous liveness reading
 _LIGHT: list[dict[str, Any]] = []
 _LIGHT_TAKEN = 0
+_LIGHT_FAILED = 0  # light snapshots that raised, this session (their count is in the marks)
 _LAST_LIGHT = _NEVER
 _LIGHT_BASELINE: dict[str, Any] | None = None  # {"at", "blocks", "cpu": {tid: s}} of the last light one
 _PREV: dict[str, Any] | None = None
@@ -384,44 +388,40 @@ def _frame_line(frame: types.FrameType) -> str:
     return f"{_short_path(frame.f_code.co_filename)}:{frame.f_lineno} {frame.f_code.co_name}"
 
 
+def _linux_thread_clock(tid: int) -> int:
+    """The kernel's CPU-time clock id of the thread with kernel id ``tid`` (the scheduler-time flavour,
+    ``MAKE_THREAD_CPUCLOCK(tid, CPUCLOCK_SCHED)`` of ``linux/posix-timers.h``: the same number
+    ``pthread_getcpuclockid`` returns on glibc and musl, and a stable part of the kernel's interface)."""
+    return ((~tid) << 3) | 6
+
+
 def _thread_cpu(tids: list[int]) -> dict[int, float]:
     """CPU seconds (user + system) of the given kernel thread ids; a thread whose time
     cannot be read is absent.
 
-    Only the threads asked for, and where the platform has it by the thread's own CPU clock
-    (``pthread_getcpuclockid``): that is one system call that never releases the GIL, measured
-    0.02-0.04 ms for eight threads, where every ``/proc`` read waits for the GIL and under a
-    thread that holds it (the very burst being recorded) each one waits a switch interval -- eight
-    reads took 1.2-1.7 s with eight busy threads, psutil's scan of all forty-odd 0.5-0.7 s. A
-    thread the clock cannot name (it exited, or it is not a ``threading`` thread) falls back to
-    one ``/proc`` read on Linux; elsewhere psutil, whose thread list there is one native call
-    (on macOS its ids are not the ones ``threading`` reports, so nothing matches and the time
-    is absent)."""
+    Only the threads asked for. On Linux by the thread's own kernel CPU clock
+    (:func:`_linux_thread_clock` and ``clock_gettime``): one system call that never releases the GIL,
+    measured 0.01-0.12 ms for four to twenty busy threads, where every ``/proc`` read waits for the GIL
+    and under a thread that holds it (the very burst being recorded) each one waits a switch
+    interval -- eight reads took 1.2-1.7 s with eight busy threads, psutil's scan of all forty-odd
+    0.5-0.7 s. The id used is the KERNEL's thread id (``native_id``), never a ``pthread_t``:
+    ``pthread_getcpuclockid`` dereferences the thread's own record, which another thread's ``join`` can free
+    between the lookup and the call (a segfault, and a recycled record read as ANOTHER thread's clock,
+    both reproduced at a 1 microsecond switch interval), where a kernel id that no longer names a thread
+    is only an error, ``EINVAL``, and a tid of another process is one too. A thread the clock refuses
+    falls back to one ``/proc`` read; on other platforms psutil, whose thread list there is one native call
+    (on macOS its ids are not the ones ``threading`` reports, so nothing matches and the time is absent)."""
     out: dict[int, float] = {}
     if not tids:
         return out
     rest = list(tids)
-    if hasattr(time, "pthread_getcpuclockid"):
-        # ``pthread_getcpuclockid`` dereferences the thread's own record, so a thread id that no longer
-        # names a live thread is not an error to catch but memory to fault on. What keeps the record
-        # valid: a thread this module did not start (a ``_DummyThread``: a foreign C thread that called
-        # into Python, whose life nothing here controls) is never asked, and for the others the
-        # ``Thread`` objects stay referenced for the whole loop, because since Python 3.13 (the floor)
-        # a thread is joinable and its record lives until its handle lets go; an exited one then
-        # reads as "no such thread" (ESRCH), which falls back to ``/proc`` and finds nothing.
-        threads = [t for t in threading.enumerate() if t.native_id is not None and t.is_alive()]
-        by_native = {t.native_id: t.ident for t in threads if type(t).__name__ != "_DummyThread"}
+    if sys.platform.startswith("linux") and hasattr(time, "clock_gettime"):
         rest = []
         for tid in tids:
-            ident = by_native.get(tid)
-            if ident is None:
-                rest.append(tid)
-                continue
             try:
-                out[tid] = round(time.clock_gettime(time.pthread_getcpuclockid(ident)), 2)
-            except (OSError, OverflowError, ValueError):
+                out[tid] = round(time.clock_gettime(_linux_thread_clock(tid)), 2)
+            except (OSError, OverflowError, ValueError, AttributeError):
                 rest.append(tid)
-        del threads
         if not rest:
             return out
     if sys.platform.startswith("linux"):
@@ -799,10 +799,11 @@ def _busiest_threads(
 ) -> tuple[list[dict[str, Any]], dict[int, float], int, int]:
     """The ``_LIGHT_THREADS`` working threads that spent the most CPU since ``previous_cpu``, with
     their stacks; the CPU reading of every candidate (the next call's baseline); how many threads
-    were working; and for how many of them the CPU was read (the first ``_LIGHT_CPU_CANDIDATES``
-    found, not the busiest: which are busiest is what the read decides). Only the threads whose
-    innermost frame is not a wait are read at all, and only the busiest get a stack. A thread the previous reading did not see has no delta (absent,
-    never its lifetime total presented as recent), and ranks after those that have one."""
+    were working; and for how many of them the CPU was ASKED for (the first ``_LIGHT_CPU_CANDIDATES``
+    found, not the busiest: which are busiest is what the read decides; the readings returned say how many
+    of those it got). Only the threads whose innermost frame is not a wait are read at all, and only the
+    busiest get a stack. A thread the previous reading did not see has no delta (absent, never its
+    lifetime total presented as recent), and ranks after those that have one."""
     frames = sys._current_frames()
     by_ident = {t.ident: t for t in threading.enumerate()}
     me = threading.get_ident()
@@ -852,7 +853,7 @@ def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] 
     snap["memory"] = composition(walk_heap=False)
     with _LOCK:
         before = _LIGHT_BASELINE
-    threads, cpu, working, read_for = _busiest_threads(before["cpu"] if before else {})
+    threads, cpu, working, asked_for = _busiest_threads(before["cpu"] if before else {})
     blocks = snap["memory"].get("py_alloc_blocks")
     if before is not None:
         # The time the deltas are over, beside the threads' CPU as well as the blocks: the first
@@ -861,7 +862,13 @@ def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] 
         if isinstance(blocks, int) and isinstance(before.get("blocks"), int):
             snap["blocks_gained"] = blocks - before["blocks"]
     snap["working_threads"] = working
-    snap["cpu_read_for"] = read_for
+    # The threads the CPU was asked for and the ones it was READ for are not the same number: on a platform
+    # that cannot read a thread's CPU (macOS without a matching id, a host without psutil) nothing is read,
+    # and the threads below are then the first found, not the busiest -- said, never left to be assumed.
+    snap["cpu_asked_for"] = asked_for
+    snap["cpu_read_for"] = len(cpu)
+    if asked_for and not cpu:
+        snap["thread_cpu"] = "unavailable on this platform: the threads below are not ranked by CPU"
     snap["threads"] = threads
     with _LOCK:
         _LIGHT_BASELINE = {"mono": mono, "blocks": blocks, "cpu": cpu}
@@ -872,10 +879,11 @@ def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] 
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
-    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE
+    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE, _LIGHT_FAILED
     _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
     _LAST_BLOCKS, _LAST_BURST, _GUARD_WAS_ENGAGED = None, _NEVER, False
     _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE = [], 0, _NEVER, None
+    _LIGHT_FAILED = 0
 
 
 def capture_previous() -> dict[str, Any] | None:
@@ -918,12 +926,13 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
     a burst that holds the GIL a snapshot measured 0.3-0.6 s, which that thread can
     spare and the collector's monitor -- which feeds the memory guard every 1.5 s, at
     exactly that moment -- cannot."""
-    global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN, _LIGHT_TAKEN
+    global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
     try:
         readings = _readings()
         now = time.monotonic()
         pressure = None
         light = None
+        light_failure: str | None = None
         if may_snapshot_threads:
             # The burst reading is taken on every call, so its baseline is always the
             # previous 5 s reading, even when this call is a memory-short snapshot.
@@ -941,9 +950,13 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
             if pressure is None and (near := _light_due(readings, guard, now)) is not None:
                 try:
                     light = _light_snapshot(readings, near, guard)
-                except Exception:  # noqa: BLE001 - its own failure must not skip the marks below
-                    # (retried at the next 15 s claim, which ``_light_due`` already made).
+                except Exception as exc:  # noqa: BLE001 - its own failure must not skip the marks below
+                    # (retried at the next 15 s claim, which ``_light_due`` already made). Never silent: the
+                    # first failure of a session is a WARNING and every one is counted in the marks, because
+                    # "no light snapshot" must not read the same as "never near the line".
                     _LOG.debug("light pressure snapshot failed", exc_info=True)
+                    first = str(exc).splitlines()[0][:160] if str(exc) else ""
+                    light_failure = f"{type(exc).__name__}: {first}"
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
         at_peak = None
@@ -990,6 +1003,12 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                     "kept": _PRESSURE_KEEP,
                     "snapshots": list(_PRESSURE),
                 }
+            first_light_failure = False
+            if light_failure is not None:
+                _LIGHT_FAILED += 1
+                first_light_failure = _LIGHT_FAILED == 1
+                _MARKS["pressure_light_failed"] = _LIGHT_FAILED
+                _MARKS["pressure_light_last_failure"] = light_failure
             light_doc: dict[str, Any] = {}
             if light is not None:
                 _LIGHT.append(light)
@@ -1031,6 +1050,11 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 snapshot = {}
         if pressure_doc:
             _write(pressure_doc, _pressure_path())
+        if first_light_failure:
+            _LOG.warning(
+                "a light pressure snapshot failed (%s); the count is in the session marks as pressure_light_failed",
+                light_failure,
+            )
         if light_doc:
             _write(light_doc, _light_path())
         if snapshot:
@@ -1082,8 +1106,9 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
     It carries the minutes before a kill and nothing else about memory: the LIGHT snapshots of this
     session and of the previous one (the previous session's tail is the one an unclean end is read
     from), each ring cut oldest-first to its half of what the member's fixed part leaves, with the
-    count dropped. A budget that cannot hold the fixed part gets a short note saying so, never a
-    member larger than asked. The previous session's light ring is also copied into
+    count dropped. A budget that cannot hold the fixed part gets a short note saying so (a member
+    larger than the budget only when the budget is smaller than that note itself, about 85 bytes), never
+    a truncated snapshot. The previous session's light ring is also copied into
     ``session-forensics.json`` (``previous_session_peaks.pressure_light``), so the two files carry the same
     snapshots until the slot table decides which one keeps them. Counts, times, sizes and stack
     locations only."""
@@ -1111,7 +1136,10 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
         fixed = len(json.dumps(out, separators=(",", ":"), default=str))
         room = budget - fixed - _MEMBER_SLACK
         if room < 0:
-            return {"omitted": "max_bytes is below the member's fixed part", "needs_at_least_bytes": fixed + _MEMBER_SLACK}
+            return {
+                "omitted": "max_bytes is below the member's fixed part",
+                "needs_at_least_bytes": fixed + _MEMBER_SLACK,
+            }
         half = room // 2
         for key, source in (("this_session", now), ("previous_session", prev)):
             ring, cut = _fit_newest(list(source.get("pressure_light") or []), half)

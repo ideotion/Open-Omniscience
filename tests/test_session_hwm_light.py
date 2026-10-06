@@ -249,8 +249,9 @@ def test_cpu_is_read_for_a_bounded_number_of_threads_however_many_are_working(ri
 
 
 def test_the_light_snapshot_says_how_many_threads_it_read_and_over_how_long_the_deltas_are(rig, no_heavy, workers):
-    """``cpu_read_for`` is how many of the working threads the CPU was read for (the first 16 found,
-    not the busiest), and ``over_s`` is the time every delta is over, the threads' CPU as well as
+    """``cpu_asked_for`` is how many of the working threads the CPU was asked for (the first 16 found,
+    not the busiest) and ``cpu_read_for`` how many it was READ for (the fake clock here knows only the
+    fixture's own workers), and ``over_s`` is the time every delta is over, the threads' CPU as well as
     the blocks: the first snapshot of a new episode compares with the last of the previous one."""
     extra = _Workers([f"oo-x{i}" for i in range(40)])
     try:
@@ -259,8 +260,9 @@ def test_the_light_snapshot_says_how_many_threads_it_read_and_over_how_long_the_
         got = rig(215.0)[-1]
     finally:
         extra.close()
-    assert "over_s" not in first and first["cpu_read_for"] == session_hwm._LIGHT_CPU_CANDIDATES
-    assert got["working_threads"] >= 44 and got["cpu_read_for"] == session_hwm._LIGHT_CPU_CANDIDATES
+    assert "over_s" not in first and first["cpu_asked_for"] == session_hwm._LIGHT_CPU_CANDIDATES
+    assert got["working_threads"] >= 44 and got["cpu_asked_for"] == session_hwm._LIGHT_CPU_CANDIDATES
+    assert got["cpu_read_for"] <= got["cpu_asked_for"], "read counts the readings obtained, not the asks"
     assert got["over_s"] == 215.0
 
 
@@ -270,12 +272,17 @@ def test_the_methods_say_the_cadence_is_a_ceiling_and_the_candidates_are_the_fir
     assert str(session_hwm._LIGHT_CPU_CANDIDATES) == "16"
 
 
-@pytest.mark.skipif(not hasattr(real_time, "pthread_getcpuclockid"), reason="the thread CPU clock is POSIX")
-def test_cpu_is_read_from_the_threads_own_clock_so_it_never_waits_for_the_gil(monkeypatch):
+LINUX = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the kernel's thread CPU clocks are Linux's")
+
+
+@LINUX
+def test_cpu_is_read_from_the_threads_own_kernel_clock_so_it_never_waits_for_the_gil(monkeypatch):
     """MUTATION TARGET: reading ``/proc`` (or psutil) first. Each of those reads releases the GIL and
     waits a switch interval behind a busy thread: eight reads measured 1.2-1.7 s with eight
-    busy threads, the thread clock 0.02-0.04 ms, so under that contention this must stay fast
-    and must never open a file."""
+    busy threads, the thread clock 0.01-0.12 ms, so under that contention this must stay fast
+    and must never open a file. ``pthread_getcpuclockid`` is never called (it dereferences a thread
+    record another thread's ``join`` can free: a segfault, reproduced at a 1 microsecond switch
+    interval), so the call is made to fail the test if anything reaches it."""
     stop = threading.Event()
 
     def spin():
@@ -287,6 +294,12 @@ def test_cpu_is_read_from_the_threads_own_clock_so_it_never_waits_for_the_gil(mo
         t.start()
     opened = []
     monkeypatch.setattr(session_hwm.Path, "read_bytes", lambda self: opened.append(str(self)) or b"")
+    if hasattr(real_time, "pthread_getcpuclockid"):
+
+        def must_not_be_called(ident):
+            raise AssertionError("the thread's pthread record must never be handed to the C call")
+
+        monkeypatch.setattr(real_time, "pthread_getcpuclockid", must_not_be_called)
     try:
         real_time.sleep(0.2)
         tids = [t.native_id for t in busy]
@@ -302,49 +315,96 @@ def test_cpu_is_read_from_the_threads_own_clock_so_it_never_waits_for_the_gil(mo
     assert took < 0.5, f"{took:.3f} s under eight busy threads"
 
 
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc is Linux's")
-def test_a_thread_the_clock_cannot_name_falls_back_to_proc_and_an_exited_one_is_absent(monkeypatch):
-    seen = []
+@LINUX
+def test_the_kernel_clock_id_is_the_one_the_c_library_returns_and_a_gone_thread_is_only_an_error():
+    """The id is computed from the kernel thread id (``MAKE_THREAD_CPUCLOCK`` of the scheduler-time
+    clock), so it must equal what ``pthread_getcpuclockid`` returns for a LIVE thread (the calling one:
+    safe to ask), and a thread that has gone, or a number no thread has, must be an ``OSError`` and
+    not a fault."""
+    me = threading.get_native_id()
+    if hasattr(real_time, "pthread_getcpuclockid"):
+        assert session_hwm._linux_thread_clock(me) == real_time.pthread_getcpuclockid(threading.get_ident())
+    assert real_time.clock_gettime(session_hwm._linux_thread_clock(me)) > 0.0
+    done = threading.Event()
+    t = threading.Thread(target=done.wait, daemon=True)
+    t.start()
+    gone = t.native_id
+    done.set()
+    t.join(5)
+    for tid in (gone, 2**22 - 1):
+        with pytest.raises(OSError):
+            real_time.clock_gettime(session_hwm._linux_thread_clock(tid))
+
+
+@LINUX
+def test_a_thread_the_clock_refuses_falls_back_to_proc_and_an_exited_one_is_absent(monkeypatch):
     done = threading.Event()
     t = threading.Thread(target=done.wait, daemon=True, name="oo-parked")
     t.start()
     real_time.sleep(0.05)
+    asked = []
+    real_clock = real_time.clock_gettime
 
-    def no_such_thread(ident):
-        seen.append(ident)
-        raise OSError(3, "No such process")  # what the C call reports for a thread that has gone
+    def refused(clk):
+        asked.append(clk)
+        raise OSError(22, "Invalid argument")  # what the kernel reports for an id it does not know
 
-    monkeypatch.setattr(real_time, "pthread_getcpuclockid", no_such_thread)
+    monkeypatch.setattr(real_time, "clock_gettime", refused)
     try:
         got = session_hwm._thread_cpu([t.native_id])
+        assert asked and list(got) == [t.native_id], "the clock refused (OSError), /proc answered"
+        monkeypatch.setattr(real_time, "clock_gettime", real_clock)
     finally:
         done.set()
         t.join(5)
-    assert seen == [t.ident] and list(got) == [t.native_id], "the clock failed (OSError), /proc answered"
     assert session_hwm._thread_cpu([t.native_id]) == {}, "an exited thread has no time, from either"
-    assert seen == [t.ident], "and an exited thread is never handed to the C call at all"
 
 
-@pytest.mark.skipif(not hasattr(real_time, "pthread_getcpuclockid"), reason="the thread CPU clock is POSIX")
-def test_a_thread_this_module_did_not_start_is_never_handed_to_the_thread_clock(monkeypatch):
-    """The C call faults on an id that no longer names a thread (a segfault, found while writing this
-    test with an invented id), so a ``_DummyThread`` -- a foreign thread nothing here controls --
-    goes to ``/proc`` instead."""
-    seen = []
-    monkeypatch.setattr(real_time, "pthread_getcpuclockid", lambda ident: seen.append(ident) or real_time.CLOCK_REALTIME)
+@LINUX
+def test_a_thread_this_module_did_not_start_is_read_by_its_kernel_id():
+    """A ``_DummyThread`` -- a foreign thread that called into Python, which nothing here controls -- has a
+    kernel id like any other, so it is read without ever being looked up in ``threading`` (the old
+    lookup of its ``pthread_t`` was the unsafe part)."""
+    import _thread
+
     box = {}
 
     def foreign():
-        box["tid"], box["ident"] = threading.get_native_id(), threading.get_ident()
+        box["tid"] = threading.get_native_id()
         box["dummy"] = type(threading.current_thread()).__name__
+        end = real_time.thread_time() + 0.05
+        while real_time.thread_time() < end:
+            sum(range(1000))
         box["cpu"] = session_hwm._thread_cpu([box["tid"]])
-
-    import _thread
 
     done = threading.Event()
     _thread.start_new_thread(lambda: (foreign(), done.set()), ())
     assert done.wait(5)
-    assert box["dummy"] == "_DummyThread" and box["ident"] not in seen
+    assert box["dummy"] == "_DummyThread"
+    assert box["cpu"].get(box["tid"], 0) > 0.0, box
+
+
+def test_a_platform_that_cannot_read_a_threads_cpu_says_so_and_does_not_pretend_to_rank(rig, no_heavy, monkeypatch):
+    """The threads' CPU was asked for and none was read (macOS, a host without psutil): the snapshot says how
+    many were asked and how many read, names the platform limit, and the report does not call the
+    threads 'the busiest' or say there was no earlier reading to compare."""
+    monkeypatch.setattr(session_hwm, "_thread_cpu", lambda tids: {})
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    workers = _Workers(["oo-w1", "oo-w2"])
+    try:
+        [snap] = rig(5.0)
+    finally:
+        workers.close()
+    assert snap["cpu_asked_for"] >= 2 and snap["cpu_read_for"] == 0
+    assert "unavailable" in snap["thread_cpu"] and "not ranked" in snap["thread_cpu"]
+    text = "\n".join(forensics._render_light([snap]))
+    assert "CPU time not readable here" in text and "no earlier reading" not in text, text
+
+
+def test_the_methods_pin_the_fsync_limit_and_the_asked_versus_read_counts():
+    method = session_hwm._LIGHT_METHOD
+    assert "not fsynced" in method and "newest seconds" in method and "the whole file" in method
+    assert "cpu_asked_for" in method and "cpu_read_for" in method and "thread_cpu" in method
 
 
 def test_a_light_snapshot_never_walks_the_heap_and_says_what_it_cost(dd, monkeypatch):
@@ -503,6 +563,34 @@ def test_the_previous_sessions_tail_is_cut_oldest_first_too_and_the_whole_member
     assert _compact(out) <= budget, "the WHOLE member fits the budget it was given, not only one ring"
 
 
+def test_with_both_rings_full_each_is_cut_to_its_half_and_the_whole_member_still_fits(rig, no_heavy, monkeypatch):
+    """MUTATION TARGET: giving each ring the WHOLE room (``half = room``). The two tests above leave the
+    other ring empty, so that mutant passed them: with both rings holding six snapshots and a budget that
+    forces a cut in each, it measured 4,926 bytes against a 3,144-byte budget."""
+    ticks = iter(f"2026-10-06T00:00:{i:02d}+00:00" for i in range(60))
+    monkeypatch.setattr(session_hwm, "_now", lambda: next(ticks))
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    for _ in range(6):
+        rig(15.0)
+    session_hwm._PREV_LOADED, session_hwm._PREV = False, None
+    session_hwm.capture_previous()  # the first six are now the previous session's tail
+    for _ in range(6):
+        rig(15.0)
+    mine = session_hwm.current()["pressure_light"]
+    full = session_hwm.diagnostics_member(10**7)
+    assert len(mine) == 6 and len(full["this_session"]["snapshots"]) == 6
+    assert len(full["previous_session"]["snapshots"]) == 6
+    one = _compact(mine[-1])
+    skeleton = json.loads(json.dumps(full))
+    skeleton["this_session"]["snapshots"] = skeleton["previous_session"]["snapshots"] = []
+    budget = _compact(skeleton) + session_hwm._MEMBER_SLACK + 2 * (2 * one + 10)
+    out = session_hwm.diagnostics_member(budget)
+    for key in ("this_session", "previous_session"):
+        ring = out[key]
+        assert ring["snapshots"] and ring["dropped_oldest_to_fit"] == 6 - len(ring["snapshots"]) > 0, key
+    assert _compact(out) <= budget, f"{_compact(out)} bytes against a budget of {budget}"
+
+
 def test_the_real_guard_line_is_read_from_the_memory_guards_own_attributes(monkeypatch):
     """Every other light test patches ``_guard_line``: if the guard's attribute names drifted, the light
     snapshot would silently stop firing by readings and every test would stay green."""
@@ -527,6 +615,28 @@ def test_a_failing_light_snapshot_does_not_skip_the_marks_of_that_tick(rig, no_h
     rig.state["readings"] = dict(NEAR_AVAIL)
     rig(15.0)
     assert session_hwm.current().get("rss_max_mb") == NEAR_AVAIL["rss_mb"], "the marks fold must still run"
+
+
+def test_a_light_snapshot_that_always_fails_is_counted_and_warned_once_never_silent(rig, no_heavy, monkeypatch, caplog):
+    """'No light snapshot' must not read the same as 'never near the line': the first failure of a session is
+    a WARNING naming the exception, and every failure is counted in the marks beside the last one."""
+    import logging
+
+    def boom(*a, **k):
+        raise RuntimeError("the light snapshot failed")
+
+    monkeypatch.setattr(session_hwm, "_light_snapshot", boom)
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    with caplog.at_level(logging.DEBUG, logger="monitoring.session_hwm"):
+        for _ in range(3):
+            rig(15.0)
+    marks = session_hwm.current()
+    assert marks["pressure_light_failed"] == 3 and marks["pressure_light_last_failure"] == (
+        "RuntimeError: the light snapshot failed"
+    )
+    assert "pressure_light_taken" not in marks
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and "light pressure snapshot failed" in r.getMessage()]
+    assert len(warned) == 1, "a WARNING the first time, then only the count"
 
 
 def test_a_budget_below_the_fixed_part_gets_a_note_naming_the_floor_not_a_larger_member(rig, no_heavy):

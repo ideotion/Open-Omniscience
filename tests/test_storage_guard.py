@@ -540,6 +540,22 @@ def test_a_gate_busy_skip_and_a_busy_truncate_are_logged_as_different_facts(capl
     assert "write gate stayed busy" in caplog.text and "TRUNCATE is busy" not in caplog.text
 
 
+def test_the_pin_log_line_names_each_holders_pool_so_a_snapshot_is_not_called_a_mere_candidate(caplog, monkeypatch):
+    """A read_snapshot checkout IS a snapshot (the caveat says so); the log line must carry the pool so the
+    reader can tell it from a legacy-mode checkout that only may pin."""
+    holders = [
+        {"thread": "oo-api", "age_s": 91.0, "pool": "corpus", "stack": ["src/api/x.py:1 handler"]},
+        {"thread": "oo-snap", "age_s": 40.0, "pool": "read_snapshot"},
+    ]
+    monkeypatch.setattr(storage_guard, "_pin_report", lambda d: {"holders": holders, "instrument": "attached"})
+    caplog.set_level("WARNING", logger="scheduler.storage_guard")
+    g = _guard(drain_fn=lambda: {"busy": 1, "skipped": None})
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    assert "oo-api (91 s) [corpus pool] at src/api/x.py:1 handler" in caplog.text, caplog.text
+    assert "oo-snap (40 s) [read_snapshot pool]" in caplog.text, caplog.text
+
+
 def test_the_pin_report_names_at_most_the_stated_holders_with_the_stated_stack_depth(monkeypatch):
     rows = [{"ident": 100 + i, "thread": f"t{i}", "age_s": 100.0 - i} for i in range(12)]
     asked = {}
@@ -2860,7 +2876,7 @@ def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch
             raise s
 
     monkeypatch.setattr(g2, "poll", poll)
-    monkeypatch.setattr(g2, "drain_if_due", lambda: None)
+    monkeypatch.setattr(g2, "drain_if_due", lambda: {"busy": 0})  # a drain that RAN: the path works
     monkeypatch.setattr(storage_guard, "supervisor_running", lambda: False)
     monkeypatch.setattr(g2, "enabled", lambda: True)
     caplog.clear()
@@ -2877,6 +2893,7 @@ def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch
         s = next(steps3)
         if s is not None:
             raise s
+        return {"busy": 0}  # a drain that ran
 
     monkeypatch.setattr(g3, "drain_if_due", due)
     caplog.clear()
@@ -2884,3 +2901,29 @@ def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch
         for _ in range(3):
             storage_guard._drain_in_background(g3, threading.Event())
     assert [r.getMessage() for r in warnings()] == ["storage guard: the background drain failed"] * 2
+
+
+def test_a_tick_where_no_drain_was_due_does_not_clear_the_drain_paths_failure(caplog, monkeypatch):
+    """N2 of the coordinator's delta check: ``drain_if_due`` returns None when nothing was due, which proves
+    nothing about the path that failed, so clearing the key there re-armed the WARNING (with its traceback) at
+    every due tick. Only a drain that RAN clears it."""
+    import logging
+
+    g = _guard()
+    steps = iter([KeyError("x"), None, KeyError("x"), {"busy": 0}, KeyError("x")])
+
+    def due():
+        s = next(steps)
+        if isinstance(s, Exception):
+            raise s
+        return s
+
+    monkeypatch.setattr(g, "drain_if_due", due)
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(5):
+            storage_guard._drain_in_background(g, threading.Event())
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and " failed" in r.getMessage()]
+    # failure (news), a tick where none was due (still the same failure), failure again (DEBUG), a drain that
+    # RAN (clears), a failure after it (news again): two WARNINGs, not four
+    assert len(warned) == 2, [r.getMessage() for r in warned]
+

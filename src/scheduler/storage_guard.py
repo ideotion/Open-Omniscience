@@ -1383,8 +1383,11 @@ class StorageGuard:
             return
         try:
             self.poll()
-            self.drain_if_due()
-            self.clear_failure("the unsupervised poll")
+            # Only a pass in which a drain RAN says the drain path works: a tick where none was due returns
+            # None and proves nothing about it, so a failure only the due path raises would be news again
+            # (a WARNING with a traceback) at every due tick instead of once.
+            if self.drain_if_due() is not None:
+                self.clear_failure("the unsupervised poll")
         except Exception as exc:  # noqa: BLE001 - a waiter must never die of the guard's own reading
             self.log_failure_once("the unsupervised poll", exc)
 
@@ -1488,6 +1491,7 @@ class StorageGuard:
             log = _LOG.warning if fresh else _LOG.info
             tops = "; ".join(
                 f"{h['thread']} ({h['age_s']:.0f} s)"
+                + (f" [{h['pool']} pool]" if h.get("pool") else "")
                 + (f" at {h['stack'][-1]}" if h.get("stack") else "")
                 for h in report.get("holders", [])[:PIN_LOG_HOLDERS]
             )
@@ -1781,8 +1785,8 @@ def _drain_in_background(g: StorageGuard, stop: threading.Event) -> None:
     if stop.is_set():
         return  # shutting down: a drain that has not started must not reach the engine now
     try:
-        g.drain_if_due()
-        g.clear_failure("the background drain")
+        if g.drain_if_due() is not None:  # None: none was due, which says nothing about the drain path
+            g.clear_failure("the background drain")
     except Exception as exc:  # noqa: BLE001 - the drain must never kill anything but itself
         g.log_failure_once("the background drain", exc)
 

@@ -10438,9 +10438,9 @@ guard's line, with its own ring and file, the busiest threads by CPU since the p
 `session_hwm.diagnostics_member(max_bytes)` is the tail as one bundle member (this session's and the previous session's, newest kept, the cut named, a
 note instead of a larger member when the budget cannot hold its fixed part); it is not called at this head: the slot table of the single Diagnostics zip (R119) is
 planned with the button, and until it decides which file keeps them the previous session's light ring is also in `session-forensics.json`.
-The pin report names the pool each holder came from and no longer says every checkout pins the log; the light snapshot reads each thread's own CPU clock (the
-`/proc` reads cost seconds under the burst it is for); a driver's error code is trusted over its words. The unlock re-ask checks the held key
-(a wrong passphrase on an open app is refused) and a failed finish is not answered "unlocked". Each item has a test; the mutants of the main ones were run
+The pin report names the pool each holder came from and no longer says every checkout pins the log; the light snapshot reads each thread's own kernel CPU clock by its kernel thread id (the
+`/proc` reads cost seconds under the burst it is for; a `pthread_t` lookup could fault, so none is made), says how many threads it asked and read, and says when a platform cannot read thread CPU at all; a light snapshot that fails is counted in the marks and warned once; a driver's error code is trusted over its words. The unlock re-ask checks the held key
+(a wrong passphrase on an open app is refused) and a failed finish, of any exception type, is not answered "unlocked" and drops the keyed pool; an upkeep thread that cannot start no longer fails the unlock. Each item has a test; the mutants of the main ones were run
 (the unlock re-ask and its key, head-only classification, the age bound, the per-path key and its clearing, the start-time match, the newest kept, the member's whole-size bound and the previous ring's cut, the real guard-line reader, a failing light snapshot not skipping the marks); the engine hook's
 detail is hardening with no change in behaviour (the driver's exception never carried the statement), pinned through a real engine.
 Also recorded: the post-10-01 reading of the 10-06 bundles (the log is held near 1 GB by the guard; the pins are long background

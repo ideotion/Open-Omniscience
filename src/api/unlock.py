@@ -430,7 +430,13 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
             # so the corpus is usable — report ready rather than trap the user.
             set_startup("ready", "", error=str(exc))
 
-    threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
+    try:
+        threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
+    except Exception as exc:  # noqa: BLE001 - e.g. "can't start new thread" on a machine out of memory
+        # The upkeep is best-effort and the store is queryable: a thread that cannot be created must not
+        # return a usable app to the lock screen (the caller clears the key on any failure here).
+        _LOG.warning("post-unlock startup upkeep could not be started", exc_info=True)
+        set_startup("ready", "", error=str(exc))
 
 
 class _forensic_timer:
@@ -671,6 +677,13 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         # that state without running anything, and the page waits on "opening the database" for ever. Back to
         # locked, as ``create_db`` does, so the retry is a real one.
         set_passphrase(None)
+        try:
+            # the pool keeps the connections init_db opened with the key; drop them with it
+            from src.database.session import dispose_engine
+
+            dispose_engine()
+        except Exception:  # noqa: BLE001 - the retry disposes the engine again before it connects
+            _LOG.debug("engine dispose after a failed unlock finish failed", exc_info=True)
         raise
     _LOG.info("store unlocked")
     return {"unlocked": True, "state": app_lock_state()}

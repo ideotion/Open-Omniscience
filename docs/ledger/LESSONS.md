@@ -13269,12 +13269,16 @@ taken every 15 s: the kernel counters, the Python block count and what it gained
 one (among the first 16 found), each with its stack. **Bound the cost by what scales with the work, and say which**: the expensive part is not the stack walk but the per-thread `/proc` reads, each
 of which waits a switch interval for the GIL under a burst. A cap on the NUMBER of reads (16, `_LIGHT_CPU_CANDIDATES`) bounds how many, not how long: measured under busy threads in
 pure Python, the light snapshot took 676-2,346 ms with eight of them and up to 10.5 s with twenty, eight `/proc` reads alone 1.2-1.7 s, where
-`time.clock_gettime(time.pthread_getcpuclockid(ident))` for the same eight took 0.02-0.04 ms because it never releases the GIL. So `_thread_cpu` reads each thread's own CPU
-clock and keeps `/proc` (then psutil) as the fallback for a thread the clock cannot name. **That C call dereferences the thread's own record**: an id that no longer names a
-thread is not an exception to catch, it segfaulted the interpreter here (found writing the test, with an invented id). So only live threads the `threading` module
-started are asked (a `_DummyThread`, a foreign C thread nothing here controls, goes to `/proc`), with their `Thread` objects referenced for the whole loop (a thread is joinable
-since 3.13, the project's floor, and its record lives until its handle lets go). The first 16 working threads found are read, not the busiest (the busiest is what the read
-decides), and the snapshot says so (`cpu_read_for` of `working_threads`); only the busiest three get a stack, and each snapshot reports its own `took_ms`
+`time.clock_gettime(...)` of the thread's own CPU clock for the same eight took 0.01-0.12 ms because it never releases the GIL. So `_thread_cpu` reads each thread's own kernel
+CPU clock BY ITS KERNEL THREAD ID, `clock_gettime(((~tid) << 3) | 6)` (the id `pthread_getcpuclockid` returns on glibc and musl), and keeps `/proc` (then psutil) as the fallback.
+**Never go through the `pthread_t`, and a reference to an object is not a lock on its memory**: `pthread_getcpuclockid` dereferences the thread's own record, which another thread's `join`
+can free between the lookup and the call. The first version asked only live `threading` threads and kept their `Thread` objects referenced (a thread is joinable since 3.13, the floor), and an
+Opus read still reproduced a SIGSEGV at that line and a recycled record read as ANOTHER thread's clock (116 of 1.9 M reads, a fabricated figure under a dead thread's id), at a 1 microsecond
+switch interval (none in 29 M calls at the default 5 ms: rare, and fatal to the process being watched at the moment it exists to record). A kernel id that no longer names a thread, or names one
+of another process, is only an `OSError` (EINVAL), so a stale id cannot fault and a `_DummyThread` needs no special case. What is left of the cost is not the clock: `composition(walk_heap=False)`'s
+`/proc` reads wait for the GIL like the rest, measured up to about 0.65 s with eight busy threads, so "light" is a relative word. The first 16 working threads found are asked, not the busiest (the
+busiest is what the read decides), and the snapshot says how many it asked (`cpu_asked_for`) and how many it READ (`cpu_read_for`, of `working_threads`); where the platform cannot read a thread's CPU at all
+(macOS, a host without psutil) it says `thread_cpu: unavailable` and the threads are not ranked, never "no earlier reading to compare". Only the busiest three get a stack, and each snapshot reports its own `took_ms`
 (the readings and the choice of threads, not the write of the file). It has its OWN ring (newest 8) and file
 (`session_pressure_light.json`), so a day of them never displaces a heavy snapshot; a thread the previous reading did not see has no delta (never its lifetime total
 presented as recent) and ranks after those that have one. **Memory is not measured per thread** (CPython has no such counter; `tracemalloc` multiplies the cost of every

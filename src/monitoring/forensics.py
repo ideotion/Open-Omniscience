@@ -747,7 +747,7 @@ def _previous_peaks() -> dict[str, Any] | None:
         "when available memory ran short, the moment the memory guard engaged, and every "
         "300 s while memory stayed short or the guard stayed engaged, what every thread was "
         "doing (pressure: name, CPU time and stack, the newest snapshots kept; a snapshot "
-        "taken while the guard was engaged carries a guard block) and, every 15 s while "
+        "taken while the guard was engaged carries a guard block) and, at most every 15 s while "
         "memory was within 1.5 times the guard's line, a light snapshot of the threads that "
         "spent the most CPU since the previous one, among the first 16 working threads found "
         "(pressure_light; the pairing with the Python blocks gained is an inference, memory is "
@@ -1210,12 +1210,20 @@ def _render_light(snaps: Any, taken: Any = None) -> list[str]:
         if snap.get("took_ms") is not None:
             bits.append(f"took {snap['took_ms']} ms")
         out.append(f"    - {snap.get('at')}, {snap.get('why') or 'near the line'}: {', '.join(bits) or 'no reading'}")
+        unreadable = snap.get("thread_cpu")
+        if unreadable:
+            out.append(f"      - thread CPU time: {unreadable}")
         for t in snap.get("threads") or []:
             if not isinstance(t, dict):
                 continue
             cpu = t.get("cpu_delta_s")
             over = f" in {snap['over_s']} s" if cpu is not None and snap.get("over_s") is not None else ""
-            note = f" (+{cpu} s of CPU{over})" if cpu is not None else " (no earlier reading to compare)"
+            if cpu is not None:
+                note = f" (+{cpu} s of CPU{over})"
+            elif unreadable:
+                note = " (CPU time not readable here)"
+            else:
+                note = " (no earlier reading to compare)"
             out.append(f"      - {t.get('name')}{note}: {' <- '.join(t.get('stack') or [])}")
     return out
 
