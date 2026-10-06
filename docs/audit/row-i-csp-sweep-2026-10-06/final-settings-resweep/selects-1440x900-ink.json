@@ -1,0 +1,156 @@
+[
+ {
+  "where": "settings > general",
+  "id": "set-theme",
+  "options": 3,
+  "status": "ok",
+  "picked": "system",
+  "held": true,
+  "effect": "ui",
+  "idle_net": 0,
+  "idle_mut": 0
+ },
+ {
+  "where": "settings > general",
+  "id": "oo-lang-select",
+  "options": 12,
+  "status": "ok",
+  "picked": "fr",
+  "held": true,
+  "effect": "ui",
+  "idle_net": 2,
+  "idle_mut": 13
+ },
+ {
+  "where": "settings > models",
+  "id": "ai-backend-select",
+  "options": 3,
+  "status": "ok",
+  "picked": "ollama",
+  "held": true,
+  "effect": "none",
+  "idle_net": 5,
+  "idle_mut": 31
+ },
+ {
+  "where": "settings > wikipedia",
+  "id": "wiki-lang",
+  "options": 147,
+  "status": "ok",
+  "picked": "zh",
+  "held": true,
+  "effect": "none",
+  "idle_net": 3,
+  "idle_mut": 34
+ },
+ {
+  "where": "settings > wikipedia",
+  "id": "dump-lang",
+  "options": 17,
+  "status": "ok",
+  "picked": "zh",
+  "held": true,
+  "effect": "dom",
+  "idle_net": 1,
+  "idle_mut": 5
+ },
+ {
+  "where": "settings > data",
+  "id": "alt-status",
+  "options": 3,
+  "status": "ok",
+  "picked": "kept",
+  "held": true,
+  "effect": "none",
+  "idle_net": 1,
+  "idle_mut": 102
+ },
+ {
+  "where": "settings > data",
+  "id": "mbox-proto",
+  "options": 2,
+  "status": "ok",
+  "picked": "pop3",
+  "held": true,
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 1
+ },
+ {
+  "where": "settings > advanced",
+  "id": "bi-enabled",
+  "options": 3,
+  "status": "ok",
+  "picked": "",
+  "held": true,
+  "effect": "dom",
+  "idle_net": 4,
+  "idle_mut": 42
+ },
+ {
+  "where": "settings > advanced",
+  "id": "src-enabled",
+  "options": 3,
+  "status": "ok",
+  "picked": "true",
+  "held": true,
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 49
+ },
+ {
+  "where": "settings > advanced",
+  "id": "feeddir-status-filter",
+  "options": 4,
+  "status": "ok",
+  "picked": "ok",
+  "held": true,
+  "effect": "dom",
+  "idle_net": 0,
+  "idle_mut": 1
+ },
+ {
+  "where": "settings > advanced",
+  "id": "feeddir-sort",
+  "options": 5,
+  "status": "ok",
+  "picked": "country",
+  "held": true,
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 1005
+ },
+ {
+  "where": "settings > advanced",
+  "id": "chrono-anchor",
+  "options": 2,
+  "status": "ok",
+  "picked": "install",
+  "held": true,
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
+ },
+ {
+  "where": "settings > advanced",
+  "id": "fetch-mode",
+  "options": 2,
+  "status": "ok",
+  "picked": "protected",
+  "held": true,
+  "effect": "none",
+  "idle_net": 0,
+  "idle_mut": 1
+ },
+ {
+  "where": "settings > advanced",
+  "id": "uninstall-mode",
+  "options": 4,
+  "status": "ok",
+  "picked": "full",
+  "held": true,
+  "effect": "net",
+  "idle_net": 0,
+  "idle_mut": 0
+ }
+]
