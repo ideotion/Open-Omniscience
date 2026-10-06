@@ -13268,7 +13268,7 @@ scrubbed in both forms. What stays outside the net is stated where it is made: a
 `.restore-release-run-*` directory (nothing sweeps that destination, the claim that something does was wrong), and a path
 the operator typed that holds the passphrase is kept as typed. Each was found by simulating the case through the real
 function, none by reading the code for the cases it handles.
-**(6) One secret has several forms, and the marker for a LATER form can rebuild an EARLIER one** (the Opus read of 87e5284e).
+**(6) One secret has several forms, and the marker for a LATER form can rebuild an EARLIER one** (the independent read of 87e5284e).
 The scrub of text that does not parse took out the typed form and then the two forms JSON writes (escaped, and with its
 non-ASCII letters kept), each through a replacement that checked its OWN form and no other. A passphrase of a star and a
 quote has the escaped form star, backslash, quote; where that form is followed by the quote that closed its JSON string, the
@@ -13289,12 +13289,14 @@ those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function that is given
-the passphrase to the helper, so a fifth cannot be added unseen. **A scrub of a value code compares changes the value: scrub the
+the passphrase to the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`sys.exc_info()`), so a fifth cannot be added unseen by those routes; it follows no call, so a helper that reads the exception for
+itself is not seen, and the walk's own cases are pinned. **A scrub of a value code compares changes the value: scrub the
 text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
 traceback, and a test names the passphrase only in the cause (`from`, and an implicit context).
 
-### A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/release_run.py`, the Opus read of 87e5284e)
+### A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/release_run.py`, the independent read of 87e5284e)
 
 The fresh-install restore of the release run made its directory as `.restore-release-run-<label>-<pid>` with `mkdir(exist_ok=True)`.
 The server runs more than one release run in its lifetime (a resumed run, a second run for another backup), so the second attempt
@@ -13341,11 +13343,11 @@ a ceiling of 436. `python3 -m pip install --target <dir> ruff==<version>` and `P
 give the CI figure without touching the venv (the script runs `sys.executable -m ruff`, so a binary on PATH is not enough, and it then reports
 "0 findings, unknown version" rather than failing).
 
-### A READING OF ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/session_hwm.py`, the Opus read of R114 / #1304)
+### A READING OF ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/session_hwm.py`, the independent read of R114 / #1304)
 
 `allocator_setting()` reports whether a process "runs with the cap" from the environment it started with, and it shipped with a docstring
 that said glibc and `os.environ` both keep the LAST of two `MALLOC_ARENA_MAX` entries, a test that pinned that order, and a number parser
-(`strip()` plus `isdigit()`) written from how a person reads "4". The Opus read ran glibc itself (children started with a crafted
+(`strip()` plus `isdigit()`) written from how a person reads "4". The independent read ran glibc itself (children started with a crafted
 environment block, arenas counted with `malloc_info` after 16 allocating threads, glibc 2.39, 4 cores) and every one of those was wrong:
 the FIRST entry wins in both (8 then 1 gives 8 arenas where the reading said "capped at 1"), so the test pinned the wrong order and the
 mutation that restored the right one passed; blanks and tabs may LEAD a number (`" 4"` applies), anything after the digits makes glibc ignore
@@ -13372,9 +13374,10 @@ is the first ACCEPTED entry: a value glibc cannot parse is skipped, so `("4 ", "
 separator there: it makes the tunable's value invalid, the tunable is ignored, and `MALLOC_ARENA_MAX` applies. Each is pinned
 against a real glibc child, against a real jemalloc where the runner has one, and against fake maps for the shapes it has not.
 The check of that fix found a row of the table wrong the same way: `-2` was said to be IGNORED by glibc, and glibc reads it with
-`strtoul`, which takes a sign, as the largest number there is, a cap that bounds nothing (named first, it keeps all 17 arenas with
-`2` after it). A machine with three CPUs or more cannot tell it from an ignored value, because glibc's own limit (8 arenas per
-CPU) lies above what 16 threads ask for and both keep 17; below that the default bites and they differ. **A table of what a
+`strtoul`, which takes a sign and wraps it to 2**64 - 2, a cap so large it bounds nothing (named first, it keeps all 17 arenas
+with `2` after it). A machine with three CPUs or more cannot tell it from an ignored value, because glibc's own limit (8 arenas
+per online CPU, applied once nine exist) lies above what 16 threads ask for and both keep 17; with fewer CPUs the default bites
+and they differ (not measured here: glibc counts online CPUs, so pinning does not reproduce it). **A table of what a
 program does needs a test that tells two behaviours apart on EVERY machine it runs on, not only on the one where they differ**:
 each ignored value is now named first with a bounding value second (an ignored one lets the second apply, an accepted one does
 not), and the rows that expect a cap that bounds nothing compare with what a huge valid cap keeps, not with the default.

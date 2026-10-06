@@ -132,7 +132,7 @@ record_exit() {
 # Start the server in the background so we can wait for health, then open a browser.
 #
 # Cap glibc's malloc arenas at 2 for the SERVER (R114, the maintainer's ruling of 2026-10-01).
-# glibc gives every busy thread an arena of its own, up to 8 per core, and memory freed in an
+# glibc gives every busy thread an arena of its own, up to 8 per online CPU, and memory freed in an
 # arena stays held by it until glibc can trim it (a freed chunk of more than about a kilobyte
 # goes back to the arena that allocated it, whichever thread frees it; a smaller one waits in
 # the freeing thread's own cache first): the app runs dozens of threads, and the one reading

@@ -301,7 +301,8 @@ def test_no_form_of_the_secret_is_in_the_cut_text_for_any_secret_and_text_made_o
     """EXHAUSTIVE over a small alphabet, not a sample: every secret of one to three characters from the marker's
     own and JSON's punctuation (155), against every text of one to three pieces from its forms, the quote that
     closes a string, a star and a letter (21,256 pairs). 28 of them left a form in the text when each form was
-    replaced once, in turn (seven secrets, all made of stars and quotes); none does now."""
+    replaced once, in turn (seven secrets: four of stars and quotes alone, three with an ``x`` among them); none
+    does now."""
     from itertools import product
 
     alphabet = ("*", '"', "\\", "#", "x")

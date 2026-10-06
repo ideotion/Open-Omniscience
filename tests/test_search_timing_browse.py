@@ -428,7 +428,7 @@ def test_the_browse_aggregate_says_which_page_sizes_it_mixes():
     # A browse is recorded right after its rows are in hand (src/api/main.py, with no try/finally), so a
     # call that raised BEFORE that is in neither the window nor the durable log, and one that raises
     # after it (while the response is built) is in both: the report says so, and says where the first
-    # kind is counted instead (the coordinator's check of #1292, S1; the Opus read of #1312, D2).
+    # kind is counted instead (the coordinator's check of #1292, S1; the independent read of #1312, D2).
     assert "once its query has returned the page: a call that failed before then is not in it" in method
     assert "route latency log counts those" in method
     assert "one that fails after it, while its response is built, is; a call for a fixed set" in method
@@ -441,7 +441,7 @@ def test_a_call_that_fails_after_its_rows_are_in_hand_is_in_the_browse_window_an
     inside ``_query_articles`` right after its rows are read, with no try/finally, so a call that raises while the
     response is built (after) is in the window and the durable log, and one that raises before the query is not
     (the route latency log counts those). The coordinator's check of #1292 said the first kind was absent; the
-    Opus read of #1312 found it is not (D2)."""
+    independent read of #1312 found it is not (D2)."""
     def boom(*args, **kwargs):
         raise RuntimeError("the call failed")
 

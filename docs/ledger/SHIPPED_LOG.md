@@ -10428,7 +10428,7 @@ reports a kept fresh install leaves on the drive (`src/monitoring/secret_scrub.p
 clear-text alerts that were the scrubber's own name (`without_secret`) and a test fixture's (`SECRET`), not a passphrase
 reaching a file; they became `scrub_value` and `NEEDLE`, and the next head read "No new alerts". Main's own red (the
 blocking ruff lane, the style ratchet at 439 against a ceiling of 436, three French strings) is ported from PR #1311
-byte for byte so this PR's tests run in CI. The Opus read of the PR's head 87e5284e then found one blocking fault and three
+byte for byte so this PR's tests run in CI. The independent read of the PR's head 87e5284e then found one blocking fault and three
 should-fixes in this part, fixed with tests: every restore attempt's directory had a name from the backup's label and the process
 id and was made with `exist_ok=True`, so a second release run in one server restored into the first one's kept install (and a
 later run that did not keep its install deleted it), where it now has a random part and is made with `exist_ok=False`; the wait
@@ -10447,18 +10447,20 @@ one of them into the marker and reads a good backup as one that did not verify, 
 whole run with that passphrase (a mutation that scrubs the whole result fails it), one drives the four sites with the engine
 raising the passphrase, one runs the real P0 phase through a release run and finds the passphrase in no file under the data
 folder or the destination, and a static test holds every handler of a function that is given the passphrase to using the caught
-exception only through the helper. The run's parameters no longer print the passphrase in their repr, a failed start removes its
+exception only through the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`sys.exc_info()`; it follows no call, and its own walk is tested on seventeen ways a caught exception can reach a text and four forms
+it must leave alone). The run's parameters no longer print the passphrase in their repr, a failed start removes its
 directory with `rmdir` (an empty directory and nothing else), and a failure that wraps another is scrubbed from its whole
 traceback, with a test for `__cause__` and for `__context__`. Recorded, not fixed (small, and the PR carries no logic for them): a
 cancel that lands after the restore committed reads the phase as `cancelled` while its install exists, the scrub's own
 result is not recorded when it runs from `finally`, and the test that ties `UNLOCK_ROUTES` to the unlock router's own routes
-catches a route the router lost but not one it gained. Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
+catches a route the router lost but not one it gained (`OPEN_QUEUE.md` holds the three as deliberate omissions). Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
 CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING
 THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS", "CODEQL READS NAMES: A HELPER THAT TAKES A
 SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE" and "THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF".
 
-- **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the Opus read of R114 / #1304).** #1304
-was merged before its Opus read ended. The read ran glibc 2.39 itself with crafted environments (children started through
+- **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the independent read of R114 / #1304).** #1304
+was merged before its independent read ended. The read ran glibc 2.39 itself with crafted environments (children started through
 `execve`, arenas counted with `malloc_info` after 16 allocating threads) and found that the allocator setting each session
 records could say the opposite of what the allocator did: a variable named twice read as its LAST value where glibc and
 `os.environ` take the first (8 then 1 gives 8 arenas, the reading said capped at 1, and the test pinned that order), and
@@ -10478,10 +10480,10 @@ replacement), so the reading asks what the process LOADED, from `/proc/self/maps
 so a first value glibc ignores (`"4 "`) lets the second apply and reads as not known; `GLIBC_TUNABLES` is parsed in every copy
 and `;` is no separator there (the tunable's value is invalid, so it is ignored and the variable applies). Measured against a
 real glibc child (29 environments) and a real jemalloc. The coordinator's check of that fix then found a row of the table wrong:
-`-2` was said to be IGNORED by glibc, and it is read with `strtoul`, which takes a sign, as the largest number there is, a cap that
+`-2` was said to be IGNORED by glibc, and it is read with `strtoul`, which takes a sign and wraps it to 2**64 - 2, a cap that
 bounds nothing (named first it keeps all 17 arenas, with `2` after it); three CPUs or more cannot tell it from an ignored value
 (both keep 17), so the rows that expect a cap that bounds nothing now compare with what a huge valid cap keeps (below three CPUs
-glibc's own limit of 8 arenas per CPU bites and the two differ), and each ignored value is proved ignored by naming it first with a
+glibc's own limit of 8 arenas per online CPU bites and the two differ), and each ignored value is proved ignored by naming it first with a
 bounding value second. Lessons: `LESSONS.md`, the entry "A READING OF
 ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE" (the second read is its last paragraph).
 

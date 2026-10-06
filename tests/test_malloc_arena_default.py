@@ -139,7 +139,7 @@ def _launch(tmp_path: Path, *, env_extra: dict[str, str] | None = None, oo_env: 
 @posix_only
 def test_the_launcher_starts_the_server_with_the_arena_cap_when_nobody_chose_one(tmp_path):
     """MUTATION TARGET: delete the cap from the server's command in ``scripts/launch.sh`` and
-    the server starts with glibc's default (up to 8 arenas per core) -- the instances the
+    the server starts with glibc's default (up to 8 arenas per online CPU) -- the instances the
     ruling is about."""
     assert _launch(tmp_path) == "2"
 
@@ -437,7 +437,7 @@ def test_a_process_started_without_it_reads_as_not_capped_never_as_zero():
     assert got["arena_cap"] is None, "not set is None, never 0"
     assert got["effective"] is False
     if got["allocator"].startswith("glibc"):
-        assert "was not set" in got["note"] and "8 malloc arenas per core" in got["note"]
+        assert "was not set" in got["note"] and "8 malloc arenas per online CPU" in got["note"]
 
 
 @linux_only
@@ -520,9 +520,10 @@ def test_a_first_value_glibc_ignores_lets_the_second_apply_and_the_reading_claim
 def test_a_first_value_glibc_reads_as_a_huge_number_applies_so_a_negative_one_bounds_nothing(arena_ceiling):
     """The coordinator's delta check of #1312, N2: the table's ``-2`` row said glibc IGNORES a negative number, and a
     machine with three or more CPUs could not tell (a value ignored and a cap past every arena both keep 17 there).
-    glibc reads the value with ``strtoul``, which takes a sign: ``-2`` is the largest number there is, and named
-    first it keeps every arena even with ``2`` behind it (measured, glibc 2.39: 17 against 2). The reading does not
-    claim it (``unknown``), which is modest and not wrong. The row now says what glibc did."""
+    glibc reads the value with ``strtoul``, which takes a sign and wraps: ``-2`` reads as 2**64 - 2, a cap so large
+    it bounds nothing, and named first it keeps every arena even with ``2`` behind it (measured, glibc 2.39: 17
+    against 2). The reading does not claim it (``unknown``), which is modest and not wrong. The row now says what
+    glibc did."""
     for first in ("-2", "9" * 18):
         got = _count_arenas(twice=("MALLOC_ARENA_MAX", first, "2"))
         assert got["arenas"] == arena_ceiling, (first, got["arenas"], arena_ceiling)
@@ -556,10 +557,11 @@ def arena_baseline() -> int:
 def arena_ceiling(arena_baseline) -> int:
     """The arenas the same threads leave under a cap that is valid and far past any limit: what a cap glibc
     APPLIES but that bounds nothing keeps. It is the baseline wherever glibc's own default limit (8 arenas per
-    online CPU) is above what 16 threads ask for (three CPUs or more); below that the default bites (16 on two,
-    8 on one) and a cap that bounds nothing keeps MORE than the baseline, so a row that expects glibc to have
-    applied such a cap compares with this and a row that expects glibc to have ignored the setting with the
-    baseline (the coordinator's delta check of #1312, N2: both were the baseline, which only holds on four)."""
+    online CPU, applied once nine arenas exist) is above what 16 threads ask for (three CPUs or more); with fewer
+    the default bites and a cap that bounds nothing keeps MORE than the baseline (not measured here: glibc counts
+    ONLINE CPUs, so pinning the process does not reproduce it). A row that expects glibc to have applied such a
+    cap compares with this and a row that expects glibc to have ignored the setting with the baseline (the
+    coordinator's delta check of #1312, N2: both were the baseline, which only holds with three CPUs or more)."""
     ceiling = _count_arenas({"MALLOC_ARENA_MAX": "1000"})["arenas"]
     assert ceiling >= arena_baseline, "a cap past every arena cannot keep fewer than the default does"
     return ceiling
@@ -595,7 +597,7 @@ _REAL_SHAPES = [
     ("a full-width digit", {"MALLOC_ARENA_MAX": "\uff12"}, "unknown", "baseline"),
     ("a number past 64 bits", {"MALLOC_ARENA_MAX": "9" * 23}, "unknown", "baseline"),
     # glibc DOES read these as numbers; the reading does not claim them, so it is only ever too modest. A
-    # negative one is among them: ``strtoul`` takes the sign, so ``-2`` is the largest number there is, a cap that
+    # negative one is among them: ``strtoul`` takes the sign and wraps, so ``-2`` reads as 2**64 - 2, a cap that
     # bounds nothing (the row said glibc IGNORES it until the coordinator's delta check of #1312, N2).
     ("a negative number", {"MALLOC_ARENA_MAX": "-2"}, "unknown", "ceiling"),
     ("octal", {"MALLOC_ARENA_MAX": "010"}, "unknown", None),
@@ -978,9 +980,9 @@ _LOADED_AND_READ = (
 
 @linux_only
 def test_the_loader_is_what_decides_a_library_through_a_symlink_loads_and_a_path_it_cannot_open_does_not(tmp_path):
-    """The two Opus-read cases through a REAL loader. The library is a stand-in: named like the allocator and
-    loaded like one, with no malloc of its own, so this pins which file the reading follows and nothing about
-    jemalloc's arenas (a real one is the next test, where the machine has it)."""
+    """The two cases the independent read raised, through a REAL loader. The library is a stand-in: named like
+    the allocator and loaded like one, with no malloc of its own, so this pins which file the reading follows
+    and nothing about jemalloc's arenas (a real one is the next test, where the machine has it)."""
     if session_hwm._glibc_version() is None:
         pytest.skip("not glibc")
     library = _standin_library(tmp_path)
@@ -1059,7 +1061,7 @@ _CAPPED = {
 _UNCAPPED = {
     "allocator": "glibc 2.39", "arena_cap": None, "effective": False,
     "source": "the environment the process started with",
-    "note": "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per core, glibc's default on a 64-bit machine",
+    "note": "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per online CPU, glibc's default on a 64-bit machine",
 }
 
 

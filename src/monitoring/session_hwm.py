@@ -263,7 +263,13 @@ def _loaded_files() -> list[str] | None:
     mentions. The kernel lists the file a library was really loaded from, so each of those reads right.
     Measured on glibc 2.39 with a real jemalloc: a nonexistent ``LD_PRELOAD`` path is absent from the
     map and the process ran on glibc's arenas; the same library through a symlink named
-    ``libfastalloc.so`` is listed as ``libjemalloc.so.2`` and the process ran on one glibc arena."""
+    ``libfastalloc.so`` is listed as ``libjemalloc.so.2`` and the process ran on one glibc arena.
+
+    THE LIMIT, measured: the map is read when the setting is asked for, and it lists a library loaded AFTER the
+    process started (a ``ctypes`` or ``dlopen`` load) as well, which does not take malloc over. A stand-in named
+    like mimalloc and loaded through ``ctypes`` moved the same process from ``capped at 2`` to ``replaced, no
+    effect``. Nothing in this application loads such a library, and the error is on the modest side (it says a cap
+    had no effect that did), but a reading taken later than the start can say it."""
     try:
         lines = Path("/proc/self/maps").read_bytes().decode("utf-8", errors="replace").splitlines()
     except OSError:
@@ -360,7 +366,7 @@ def allocator_setting() -> dict[str, Any]:
             )
         elif raw is None:
             out["note"] = (
-                "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per core, glibc's default "
+                "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per online CPU, glibc's default "
                 "on a 64-bit machine"
             )
         elif cap is None:
