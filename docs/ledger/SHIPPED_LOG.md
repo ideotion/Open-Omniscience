@@ -10509,3 +10509,13 @@ a copy are swept at boot on a thread of their own. The summary reports `snapshot
 (which now means the deciding window only); the progress label is "Making a temporary copy of your data..." in 12 languages.
 Restore still reads an old archive's `corpus-wal` member. Lesson: `LESSONS.md`, the entry "A BACKUP THAT CANNOT FOLD THE LOG INTO
 THE MAIN FILE COPIES THE CORPUS".
+
+- **2026-10-06 · diagnostics/first-run-hand-over (keyword-export thread; the maintainer's 02:36 UTC report).**
+"Running the full diagnostics did not work, I had to push the 'run again' button": the ten bundles (eight machines) carry no error;
+in five of them (Asus 10-03, Lenovo, NUC, OOS-11, OOS-12) the route counts show a build run to the end, split (`/volumes` 200),
+nothing downloaded, then run again 27 to 116 minutes after the split. Reproduced in
+Chromium: the end of the build blanked the line beside the button and the Save button was 300-500 px lower (off screen at 1024x640).
+The parts bar now sits directly under the buttons that fill it, is scrolled into view when the pressed button is still on screen,
+and a set that fits one click (five files; no split set in the reports was larger than two) is handed to the browser by the page at the end of the
+build. Lesson: `LESSONS.md`, the entry "A LONG BUILD ENDED IN SILENCE". Open beside it: the build runs on one pooled session for
+its whole 9 to 48 minutes, and the checkpoint record names it as the oldest reader in 6 of the 10 bundles (WAL 1.19 GB after one such checkpoint).

@@ -1600,7 +1600,8 @@ Official **figures** are not here at all — they are data, so they live under
   **Saving the numbered files.** The page says how many files are ready ("13 files of at most 1 MB each are ready (manifest: 1, numbered parts: 12)")
   and hands them to your browser **five to a click**, the manifest first, because five is what one upload message takes and a click is what makes a
   browser accept a download. Your browser may ask once to allow several downloads: allow them. After the first five the button says "Save the next 5";
-  "Save all the rest" is offered whenever more than five files remain, for one click that does everything. The page can only *ask your browser* to save
+  "Save all the rest" is offered whenever more than five files remain, for one click that does everything. A bundle of five files or fewer, which is the usual case, is
+  handed to your browser by the page itself when the build ends (the click that started it is long past); "All diagnostics, again" sends the same files again. The page can only *ask your browser* to save
   a file, so it says "Asked your browser to save 5 of 13 files", never that they are saved: look in your downloads folder (a browser that refused the
   several-downloads question saves nothing and does not tell the page). While files are on their way the buttons are greyed, and a second click does
   nothing. Every file is at most 1,000,000 bytes (files of about 1.2 MB and up failed to upload) and opens on its own, so you can send some now and
