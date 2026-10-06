@@ -13254,7 +13254,7 @@ unbounded. **Read a history against the version that produced it**: every one of
 12:00 on the largest hour is NUC's 1,094 MiB (10-05 13:00), then OOS-11 1,008 MiB, OOS-12 507, OOS-8 414; hours over 64 MiB fell from 111 to 2 (OOS-3), 103 to 3
 (OOS-8), 85 to 1 (OOS-7), 45 to 6 (NUC). The machines' own `wal_high_bytes` are 1.0-1.1 GB (NUC 1,126,042,828 B, OOS-12 1,078,088,499 B), so about 1 GB is the guard
 working, not a runaway. Its cost is paused collection: NUC engaged 17 times for 16,055 s (4.5 h) and hP 18 times for 9,560 s (2.7 h), the kept tails 161-629 s
-each. What holds the log, from the guard's own last pin reports: NUC, `oo-briefing-bg` for 1,496 s (`briefing/service.py:349` -> `producers.py:3325 on_the_horizon`
+each. What holds the log, from the guard's own last pin reports (a pin report says where a thread was and how long its connection had been out, not how long one statement ran; a checkout is a candidate, because in the driver's legacy mode a plain read starts no transaction and only a running statement, an open cursor or an uncommitted write pins the log): NUC, `oo-briefing-bg` for 1,496 s (`briefing/service.py:349` -> `producers.py:3325 on_the_horizon`
 -> `analytics/queries.py:2597 trending` -> `_counts` -> `database/query.py:76 grouped_counts`, in `fetchmany`); hP, `oo-housekeeping-lane` for 1,428 s in
 `analytics/queries.py:1455 corpus_keywords`. OOS-12 was engaged at export time with 0 drains, so there the reader was the all-diagnostics build, whose reads
 export measured to end between members. **So the next cause to remove is a read that holds one snapshot for minutes, not a writer and not the build**: the
@@ -13266,9 +13266,16 @@ The pressure recorder's heavy snapshot (every thread, every stack) costs 0.3-0.6
 the October kills came within seconds of the last one, and a fatal slide measured about 20 MB/s, under 20 s from 384 MB available to none. Near the memory guard's line
 (available memory at most 1.5 times its floor, the process at least 1/1.5 of the share of RAM at which it trips, or the guard engaged) a LIGHT snapshot is now
 taken every 15 s: the kernel counters, the Python block count and what it gained, and the three working threads that spent the most CPU since the previous light
-one, each with its stack. **Bound the cost by what scales with the work, and say which**: the expensive part is not the stack walk but the per-thread `/proc` reads, each
-of which waits a switch interval for the GIL under a burst (`_thread_cpu`), so CPU is read for working threads only and for at most 16 of them
-(`_LIGHT_CPU_CANDIDATES`), only the busiest three get a stack, and each snapshot reports its own `took_ms`. It has its OWN ring (newest 8) and file
+one (among the first 16 found), each with its stack. **Bound the cost by what scales with the work, and say which**: the expensive part is not the stack walk but the per-thread `/proc` reads, each
+of which waits a switch interval for the GIL under a burst. A cap on the NUMBER of reads (16, `_LIGHT_CPU_CANDIDATES`) bounds how many, not how long: measured under busy threads in
+pure Python, the light snapshot took 676-2,346 ms with eight of them and up to 10.5 s with twenty, eight `/proc` reads alone 1.2-1.7 s, where
+`time.clock_gettime(time.pthread_getcpuclockid(ident))` for the same eight took 0.02-0.04 ms because it never releases the GIL. So `_thread_cpu` reads each thread's own CPU
+clock and keeps `/proc` (then psutil) as the fallback for a thread the clock cannot name. **That C call dereferences the thread's own record**: an id that no longer names a
+thread is not an exception to catch, it segfaulted the interpreter here (found writing the test, with an invented id). So only live threads the `threading` module
+started are asked (a `_DummyThread`, a foreign C thread nothing here controls, goes to `/proc`), with their `Thread` objects referenced for the whole loop (a thread is joinable
+since 3.13, the project's floor, and its record lives until its handle lets go). The first 16 working threads found are read, not the busiest (the busiest is what the read
+decides), and the snapshot says so (`cpu_read_for` of `working_threads`); only the busiest three get a stack, and each snapshot reports its own `took_ms`
+(the readings and the choice of threads, not the write of the file). It has its OWN ring (newest 8) and file
 (`session_pressure_light.json`), so a day of them never displaces a heavy snapshot; a thread the previous reading did not see has no delta (never its lifetime total
 presented as recent) and ranks after those that have one. **Memory is not measured per thread** (CPython has no such counter; `tracemalloc` multiplies the cost of every
 allocation on the machine about to be killed), so the blocks the process gained sit beside each thread's CPU delta and the report labels the pairing an inference.
@@ -13283,5 +13290,5 @@ error on the head of its text, keep the driver's first line**: SQLAlchemy's wrap
 `is_disk_full` matching the whole text latched DISK on an `IntegrityError` whose bound title said "no space left on device", and `last_disk_full.detail` carried the
 statement and its values into the status payload; `is_io_error` had been fixed for exactly this and its sibling was not (`_text_head`, `_first_line_detail`). (3) **A count
 in a lesson is measured, not remembered**: "three through the endpoint, eight directly" was corrected to two and nine by putting the detach-everything probe back and
-running the four files (11 failures: 2 through `GET /api/articles`, 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
+running the four files (11 failures: 1 through `GET /api/articles`, 1 through `GET /api/articles/export` and 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
 each logs a traceback every pass: key it per path. (5) A reading taken for a caller that does not wait has an age bound, or an hours-old figure classifies a new incident.

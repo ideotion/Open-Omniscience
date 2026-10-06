@@ -201,6 +201,7 @@ def test_the_busiest_threads_by_cpu_since_the_previous_snapshot_with_their_stack
     assert len(got[-1]["threads"]) == session_hwm._LIGHT_THREADS == 3
     assert all(t["stack"] and t["tid"] for t in got[-1]["threads"])
     assert got[-1]["working_threads"] >= 4
+    assert got[-1]["over_s"] == 15.0, "the time the CPU deltas are over rides beside them"
 
 
 def test_a_thread_the_previous_reading_did_not_see_has_no_delta_and_ranks_after(rig, no_heavy, workers):
@@ -245,6 +246,105 @@ def test_cpu_is_read_for_a_bounded_number_of_threads_however_many_are_working(ri
     finally:
         extra.close()
     assert max(len(r) for r in workers.reads) <= session_hwm._LIGHT_CPU_CANDIDATES
+
+
+def test_the_light_snapshot_says_how_many_threads_it_read_and_over_how_long_the_deltas_are(rig, no_heavy, workers):
+    """``cpu_read_for`` is how many of the working threads the CPU was read for (the first 16 found,
+    not the busiest), and ``over_s`` is the time every delta is over, the threads' CPU as well as
+    the blocks: the first snapshot of a new episode compares with the last of the previous one."""
+    extra = _Workers([f"oo-x{i}" for i in range(40)])
+    try:
+        rig.state["readings"] = dict(NEAR_AVAIL)
+        [first] = rig(5.0)
+        got = rig(215.0)[-1]
+    finally:
+        extra.close()
+    assert "over_s" not in first and first["cpu_read_for"] == session_hwm._LIGHT_CPU_CANDIDATES
+    assert got["working_threads"] >= 44 and got["cpu_read_for"] == session_hwm._LIGHT_CPU_CANDIDATES
+    assert got["over_s"] == 215.0
+
+
+def test_the_methods_say_the_cadence_is_a_ceiling_and_the_candidates_are_the_first_found():
+    assert "at most every 15 s" in session_hwm._LIGHT_METHOD
+    assert "first 16 working threads" in session_hwm._LIGHT_METHOD and "took_ms" in session_hwm._LIGHT_METHOD
+    assert str(session_hwm._LIGHT_CPU_CANDIDATES) == "16"
+
+
+@pytest.mark.skipif(not hasattr(real_time, "pthread_getcpuclockid"), reason="the thread CPU clock is POSIX")
+def test_cpu_is_read_from_the_threads_own_clock_so_it_never_waits_for_the_gil(monkeypatch):
+    """MUTATION TARGET: reading ``/proc`` (or psutil) first. Each of those reads releases the GIL and
+    waits a switch interval behind a busy thread: eight reads measured 1.2-1.7 s with eight
+    busy threads, the thread clock 0.02-0.04 ms, so under that contention this must stay fast
+    and must never open a file."""
+    stop = threading.Event()
+
+    def spin():
+        while not stop.is_set():
+            sum(range(1000))
+
+    busy = [threading.Thread(target=spin, daemon=True, name=f"oo-spin{i}") for i in range(8)]
+    for t in busy:
+        t.start()
+    opened = []
+    monkeypatch.setattr(session_hwm.Path, "read_bytes", lambda self: opened.append(str(self)) or b"")
+    try:
+        real_time.sleep(0.2)
+        tids = [t.native_id for t in busy]
+        t0 = real_time.perf_counter()
+        got = session_hwm._thread_cpu(tids)
+        took = real_time.perf_counter() - t0
+    finally:
+        stop.set()
+        for t in busy:
+            t.join(5)
+    assert set(got) == set(tids) and all(v > 0 for v in got.values()), got
+    assert opened == [], "no /proc file is read while the thread clock answers"
+    assert took < 0.5, f"{took:.3f} s under eight busy threads"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc is Linux's")
+def test_a_thread_the_clock_cannot_name_falls_back_to_proc_and_an_exited_one_is_absent(monkeypatch):
+    seen = []
+    done = threading.Event()
+    t = threading.Thread(target=done.wait, daemon=True, name="oo-parked")
+    t.start()
+    real_time.sleep(0.05)
+
+    def no_such_thread(ident):
+        seen.append(ident)
+        raise OSError(3, "No such process")  # what the C call reports for a thread that has gone
+
+    monkeypatch.setattr(real_time, "pthread_getcpuclockid", no_such_thread)
+    try:
+        got = session_hwm._thread_cpu([t.native_id])
+    finally:
+        done.set()
+        t.join(5)
+    assert seen == [t.ident] and list(got) == [t.native_id], "the clock failed (OSError), /proc answered"
+    assert session_hwm._thread_cpu([t.native_id]) == {}, "an exited thread has no time, from either"
+    assert seen == [t.ident], "and an exited thread is never handed to the C call at all"
+
+
+@pytest.mark.skipif(not hasattr(real_time, "pthread_getcpuclockid"), reason="the thread CPU clock is POSIX")
+def test_a_thread_this_module_did_not_start_is_never_handed_to_the_thread_clock(monkeypatch):
+    """The C call faults on an id that no longer names a thread (a segfault, found while writing this
+    test with an invented id), so a ``_DummyThread`` -- a foreign thread nothing here controls --
+    goes to ``/proc`` instead."""
+    seen = []
+    monkeypatch.setattr(real_time, "pthread_getcpuclockid", lambda ident: seen.append(ident) or real_time.CLOCK_REALTIME)
+    box = {}
+
+    def foreign():
+        box["tid"], box["ident"] = threading.get_native_id(), threading.get_ident()
+        box["dummy"] = type(threading.current_thread()).__name__
+        box["cpu"] = session_hwm._thread_cpu([box["tid"]])
+
+    import _thread
+
+    done = threading.Event()
+    _thread.start_new_thread(lambda: (foreign(), done.set()), ())
+    assert done.wait(5)
+    assert box["dummy"] == "_DummyThread" and box["ident"] not in seen
 
 
 def test_a_light_snapshot_never_walks_the_heap_and_says_what_it_cost(dd, monkeypatch):
@@ -293,6 +393,15 @@ def test_they_are_written_through_to_their_own_file_and_reach_the_next_boot(rig,
     doc["pid"] = (doc["pid"] or 0) + 1
     (dd / "session_pressure_light.json").write_text(json.dumps(doc), encoding="utf-8")
     assert "pressure_light" not in session_hwm._read_record(), "another session's file is never read"
+    # the same pid with another START TIME is another session too (a container reuses a low pid on
+    # every boot, so the start time is the half of the match that tells two boots apart)
+    doc["pid"] -= 1
+    doc["started_at"] = "1999-01-01T00:00:00+00:00"
+    (dd / "session_pressure_light.json").write_text(json.dumps(doc), encoding="utf-8")
+    assert "pressure_light" not in session_hwm._read_record(), "same pid, another start: not this session's"
+    doc["started_at"] = got["started_at"]
+    (dd / "session_pressure_light.json").write_text(json.dumps(doc), encoding="utf-8")
+    assert len(session_hwm._read_record()["pressure_light"]) == 2, "both halves match: read"
     # and a new session starts without the old file
     session_hwm.capture_previous()
     assert not (dd / "session_pressure_light.json").exists()
@@ -309,7 +418,7 @@ def test_the_report_names_them_and_says_the_pairing_is_an_inference(rig, no_heav
         "available": True, "pressure_light": got, "pressure_light_taken": 9}}})
     assert "near the memory guard's line, 2 snapshot(s) of 9 taken, the newest kept" in txt
     assert "which thread allocated the blocks gained is an inference" in txt
-    assert "oo-a (+7.5 s of CPU)" in txt and "took " in txt
+    assert "oo-a (+7.5 s of CPU in 15.0 s)" in txt and "took " in txt
     # a record with the count but no file says so, as the heavy ones do
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": {
         "available": True, "pressure_light_taken": 4}}})
@@ -343,18 +452,44 @@ def test_the_member_carries_this_sessions_tail_and_the_previous_ones_with_the_me
     json.dumps(out)  # a member is JSON
 
 
-def test_a_member_over_its_budget_keeps_the_newest_and_says_how_many_it_cut(rig, no_heavy):
+def _compact(obj) -> int:
+    return len(json.dumps(obj, separators=(",", ":"), default=str))
+
+
+def test_a_member_over_its_budget_keeps_the_newest_and_says_how_many_it_cut(rig, no_heavy, monkeypatch):
+    """MUTATION TARGET: keeping the OLDEST. Every snapshot gets its own ``at`` (the rig advances only
+    the monotonic clock, so with the real ``_now`` the six would share one second and the order could
+    not be told), and the kept ones are compared with the tail of the ring, whole."""
+    ticks = iter(f"2026-10-06T00:00:{i:02d}+00:00" for i in range(60))
+    monkeypatch.setattr(session_hwm, "_now", lambda: next(ticks))
     rig.state["readings"] = dict(NEAR_AVAIL)
     for _ in range(6):
         rig(15.0)
     ring = session_hwm.current()["pressure_light"]
-    assert len(ring) == 6
-    one = len(json.dumps(ring[-1], separators=(",", ":")))
-    out = session_hwm.diagnostics_member(1024 + 2 * (2 * one + 10))
+    assert len(ring) == 6 and len({s["at"] for s in ring}) == 6
+    one = _compact(ring[-1])
+    fixed = session_hwm.diagnostics_member(10**7)
+    fixed["this_session"]["snapshots"] = fixed["previous_session"]["snapshots"] = []
+    budget = _compact(fixed) + session_hwm._MEMBER_SLACK + 2 * (2 * one + 10)
+    out = session_hwm.diagnostics_member(budget)
     mine = out["this_session"]
     assert mine["snapshots"] and mine["dropped_oldest_to_fit"] == 6 - len(mine["snapshots"]) > 0
-    assert mine["snapshots"][-1]["at"] == ring[-1]["at"], "the NEWEST is what stays"
-    assert len(json.dumps(mine["snapshots"], separators=(",", ":"))) <= (1024 + 2 * (2 * one + 10) - 1024) // 2
+    assert mine["snapshots"] == ring[-len(mine["snapshots"]):], "the NEWEST is what stays"
+    assert _compact(out) <= budget, "the member fits the budget it was given"
+
+
+def test_a_budget_below_the_fixed_part_gets_a_note_naming_the_floor_not_a_larger_member(rig, no_heavy):
+    """A ``max_bytes`` of 100 used to be raised silently to a 768-byte member, which the bundle's
+    per-member cap then drops whole without saying why."""
+    rig.state["readings"] = dict(NEAR_AVAIL)
+    rig(15.0)
+    out = session_hwm.diagnostics_member(100)
+    assert set(out) == {"omitted", "needs_at_least_bytes"} and "max_bytes" in out["omitted"]
+    floor = out["needs_at_least_bytes"]
+    assert 100 < floor < 4096
+    at_floor = session_hwm.diagnostics_member(floor)
+    assert "omitted" not in at_floor and _compact(at_floor) <= floor
+    assert "omitted" in session_hwm.diagnostics_member(floor - 1)
 
 
 def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(monkeypatch):
@@ -362,6 +497,6 @@ def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(mon
     monkeypatch.setattr(session_hwm, "current", lambda: {})
     out = session_hwm.diagnostics_member(50_000)
     assert out["previous_session"]["found"] is False and out["previous_session"]["snapshots"] == []
-    assert session_hwm.diagnostics_member(-5)["method"], "a nonsense budget is raised to the smallest, not an error"
+    assert "omitted" in session_hwm.diagnostics_member(-5), "a nonsense budget is named, not an error"
     monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError("boom\nsecond line")))
     assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError: boom"}

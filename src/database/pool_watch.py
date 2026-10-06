@@ -6,9 +6,12 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The write gate names whoever is inside the WRITE window (src/database/writer.py).
 It cannot name a thread that is merely holding a checked-out connection -- and
-that is the thread that pins the WAL: an open read transaction stops
-``PRAGMA wal_checkpoint(TRUNCATE)`` from reclaiming anything, which is how the
-field's WAL reached three hours of growth with the gate free the whole time.
+that thread is a CANDIDATE for the one that pins the WAL: a statement or a cursor still running
+on the connection, an uncommitted write, or (on the ``read_snapshot`` pool) a snapshot held from
+the first read, stops ``PRAGMA wal_checkpoint(TRUNCATE)`` from reclaiming anything, which is how
+the field's WAL reached three hours of growth with the gate free the whole time. A plain read on
+the corpus pool starts no transaction in the driver's legacy mode, so a listed checkout there is
+a candidate, never a measured holder.
 
 So: a checkout/checkin/detach trio, recording per live connection ``{thread, ident, endpoint,
 collector, pool, checkout_at}`` and a weak reference to its record (to re-verify it at read time),
@@ -19,7 +22,7 @@ and nothing else. Three properties are load-bearing.
   handed the connection back is worse than no instrument: every reading would
   accuse whoever ran last.
 * It stores no statement text and no stack by default -- this is on the pool's hot path.
-  The age and the ENDPOINT identify a pinner (the endpoint is the route the request
+  The age and the ENDPOINT identify a candidate (the endpoint is the route the request
   was serving at checkout, read from a ContextVar the request middleware sets, so a
   thread-pool worker names the route that took the connection, not just "AnyIO worker
   thread"); :func:`stacks_for` takes a stack for the named thread ON DEMAND (the storage

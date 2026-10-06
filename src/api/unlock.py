@@ -21,6 +21,7 @@ machine or a copied file, never a compromised running session.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import threading
@@ -625,7 +626,16 @@ def unlock(body: PassphraseBody) -> dict:
         # whole verify and start a second start-up upkeep thread beside the first, to prove a
         # passphrase that is already proven. The answer it gets is the true one: the app is open.
         if app_lock_state() == "unlocked-encrypted":
-            return {"unlocked": True, "state": "unlocked-encrypted"}
+            # The app is open, so the key IN MEMORY is the one that opened it: compare, never assume. "That
+            # one was right" is the one false answer that costs the person something later (THE passphrase has
+            # no recovery), and a wrong key on an open app was refused before this short-circuit existed.
+            from src.database.connect import get_passphrase
+
+            held = get_passphrase()
+            if held is not None:
+                if not hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
+                    raise HTTPException(status_code=403, detail="wrong passphrase")
+                return {"unlocked": True, "state": "unlocked-encrypted"}
         return _unlock_locked(body, p)
 
 
@@ -653,7 +663,15 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         _end_recovery_notice(_recovery_token)
     _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
     set_passphrase(body.passphrase)
-    _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+    try:
+        _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+    except Exception:
+        # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
+        # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
+        # that state without running anything, and the page waits on "opening the database" for ever. Back to
+        # locked, as ``create_db`` does, so the retry is a real one.
+        set_passphrase(None)
+        raise
     _LOG.info("store unlocked")
     return {"unlocked": True, "state": app_lock_state()}
 

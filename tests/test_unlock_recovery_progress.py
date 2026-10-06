@@ -270,6 +270,17 @@ def crashed_store(dd, monkeypatch, finish_calls):
     return db, wal
 
 
+@pytest.fixture()
+def held_key(crashed_store, monkeypatch):
+    """``crashed_store`` makes ``set_passphrase`` a no-op (the engine must not really switch keys); the open-app
+    answers need the real behaviour of the in-memory key, so this gives it back: set, held, readable."""
+    from src.database import connect as connect_mod
+
+    monkeypatch.setattr(connect_mod, "_passphrase", None)
+    monkeypatch.setattr(connect_mod, "set_passphrase", lambda p: setattr(connect_mod, "_passphrase", p or None))
+    return connect_mod
+
+
 def test_the_real_unlock_shows_the_log_while_the_real_connect_runs(crashed_store, monkeypatch):
     db, wal = crashed_store
     wal_size = wal.stat().st_size
@@ -542,7 +553,7 @@ def test_the_timer_names_the_verify_phase_so_the_recovery_is_measured(dd):
     assert rec is not None and rec["seconds_per_gib"] == 40.0 and rec["wal_bytes"] == 3 * _GIB
 
 
-def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeypatch):
+def test_two_overlapping_attempts_run_one_after_the_other(held_key, monkeypatch):
     """The second attempt (a reload and a second click, a second tab) used to race the first: it
     replaced the first's recovery notice, read the log the first was still recovering and then
     recorded a rate several times too fast. It now waits its turn, and finds the app already open:
@@ -597,7 +608,7 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
     assert answers == [{"unlocked": True, "state": "unlocked-encrypted"}] * 2, answers
 
 
-def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(crashed_store, monkeypatch):
+def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, monkeypatch):
     """Not only a queued attempt: a request that arrives after the unlock finished (a stale tab, a
     double click that lands late) is answered from the state, not run again."""
     from src.api import unlock as unlock_mod
@@ -605,11 +616,57 @@ def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(crashed_store
     from src.database import connect as connect_mod
 
     calls: list = []
+    connect_mod.set_passphrase(_KEY)  # an open app holds the key that opened it
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
     monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
     assert calls == [], calls
+
+
+def test_a_wrong_passphrase_on_an_open_app_is_refused_not_told_it_worked(held_key, monkeypatch):
+    """The short-circuit answers from the state, so it must still check WHICH key: a second tab that types a
+    misremembered passphrase after the first tab unlocked used to get 200 (THE passphrase has no recovery, so
+    'that one was right' is the one false answer that costs something later)."""
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    calls: list = []
+    connect_mod.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
+    with pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase="definitely-not-the-passphrase"))
+    assert err.value.status_code == 403 and calls == [], "a wrong key was answered, or it started work"
+
+
+def test_a_finish_that_fails_returns_the_app_to_locked_so_the_retry_is_a_real_retry(held_key, monkeypatch):
+    """A key in memory means 'a key is in memory', not 'the unlock finished'. Left after a failed finish (init_db on
+    a full drive or a damaged file), the app read as open, the retry was answered from that state with nothing run,
+    and the page waited on 'opening the database' for ever (the Opus read of the findings PR, B1)."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    finishes: list = []
+
+    def finish(**kw):
+        finishes.append(1)
+        if len(finishes) == 1:
+            raise OSError("no space left on device")
+
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", finish)
+    connect_mod.set_passphrase(None)
+    assert unlock_mod.app_lock_state() == "locked"
+    with pytest.raises(OSError):
+        unlock(PassphraseBody(passphrase=_KEY))
+    assert connect_mod.get_passphrase() is None and unlock_mod.app_lock_state() == "locked"
+    assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
+    assert len(finishes) == 2, "the retry was answered without running the finish"
 
 
 @pytest.mark.parametrize("bad", ["12", None, True, float("nan"), float("inf"), -5, 0])

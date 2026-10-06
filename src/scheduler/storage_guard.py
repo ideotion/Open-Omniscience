@@ -396,6 +396,19 @@ def is_disk_full(exc: BaseException | None) -> bool:
         seen.add(id(cur))
         if isinstance(cur, OSError) and cur.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
             return True
+        code = getattr(cur, "sqlite_errorcode", None)
+        orig = getattr(cur, "orig", None)
+        if _is_dbapi_error(cur) and isinstance(code, int):
+            # The driver says what it was: trust that and not its words, which can echo the query
+            # (``MATCH '"database or disk is full" :'`` fails with ``no such column: database or disk is
+            # full``, code 1).
+            if (code & 0xFF) == 13:  # SQLITE_FULL
+                return True
+            cur = orig or cur.__cause__ or cur.__context__
+            continue
+        if orig is not None and _is_dbapi_error(orig) and isinstance(getattr(orig, "sqlite_errorcode", None), int):
+            cur = orig  # SQLAlchemy's wrapper repeats the driver's words in its head: read the driver's code
+            continue
         msg = _text_head(cur).lower()
         if (
             "database or disk is full" in msg
@@ -440,10 +453,11 @@ def is_io_error(exc: BaseException | None) -> bool:
     SQLite then says "disk I/O error" instead of "database or disk is full". The two are
     told apart by one measurement, the drive's free space at that moment
     (:meth:`StorageGuard.note_io_error`), never by the message. A driver that carries
-    ``sqlite_errorcode`` (Python 3.11 and later) is matched on it; the message is the fallback,
-    and only for the DRIVER's own exception: SQLAlchemy's wrapper text carries the statement and
-    its bound parameters, so an ``IntegrityError`` whose bound title happened to say "disk I/O
-    error" was counted as one (the Opus read of #1289)."""
+    ``sqlite_errorcode`` (Python 3.11 and later) is matched on it, and its message is then not read
+    at all (a query can echo "disk I/O error" into an error of another code); the message is the
+    fallback for a driver without a code, and only for the DRIVER's own exception: SQLAlchemy's
+    wrapper text carries the statement and its bound parameters, so an ``IntegrityError`` whose
+    bound title happened to say "disk I/O error" was counted as one (the Opus read of #1289)."""
     seen: set[int] = set()
     cur = exc
     while cur is not None and id(cur) not in seen:
@@ -451,8 +465,8 @@ def is_io_error(exc: BaseException | None) -> bool:
         code = getattr(cur, "sqlite_errorcode", None)
         if isinstance(code, int) and (code & 0xFF) == 10:  # SQLITE_IOERR
             return True
-        if _is_dbapi_error(cur) and "disk i/o error" in str(cur).lower():
-            return True
+        if _is_dbapi_error(cur) and not isinstance(code, int) and "disk i/o error" in str(cur).lower():
+            return True  # no code to trust: the message, which a query can echo, is all there is
         cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
     return False
 
@@ -602,6 +616,7 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
                 {
                     "thread": r["thread"],
                     "endpoint": r.get("endpoint"),
+                    "pool": r.get("pool"),
                     "age_s": r["age_s"],
                     "stack": stacks.get(r["ident"], []) if r.get("ident") else [],
                 }
@@ -620,10 +635,13 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
         "A read that is not a pooled connection checkout (a cursor another thread left open on "
         "a connection it already returned, a connection opened outside the watched engines) "
         "is invisible to this list; an empty list does not mean nobody is reading. And the "
-        "other way round: a listed checkout is a candidate, not proof. This engine runs the "
-        "driver's legacy transaction mode, where a plain SELECT starts no transaction, so a "
-        "checkout pins the log only while a statement or an open cursor of it is running; the "
-        "oldest checkout is the likeliest holder, never a measured one."
+        "other way round: a listed checkout is a candidate, not proof. On the corpus pool the "
+        "driver runs its legacy transaction mode, where a plain SELECT starts no transaction, so "
+        "a checkout there pins the log only while a statement or an open cursor of it is running, "
+        "or after a write it has not committed; a read_snapshot checkout holds its snapshot "
+        "from its first read until it ends. The pool field says which. The oldest checkout is "
+        "the likeliest holder, never a measured one, and an age says how long the connection "
+        "has been out, not how long a statement ran."
     )
     return out
 
@@ -1349,6 +1367,11 @@ class StorageGuard:
             "storage guard: %s failed%s", what, "" if changed else " again", exc_info=exc
         )
 
+    def clear_failure(self, what: str) -> None:
+        """A path that worked again: its next failure is news (WARNING with a traceback), not "again"."""
+        with self._lock:
+            self._failure_keys.pop(what, None)
+
     def poll_and_drain_unsupervised(self) -> None:
         """Sample and drain on the CALLER's thread when no supervisor thread is running.
 
@@ -1361,6 +1384,7 @@ class StorageGuard:
         try:
             self.poll()
             self.drain_if_due()
+            self.clear_failure("the unsupervised poll")
         except Exception as exc:  # noqa: BLE001 - a waiter must never die of the guard's own reading
             self.log_failure_once("the unsupervised poll", exc)
 
@@ -1412,8 +1436,7 @@ class StorageGuard:
         try:
             with corpus_lease("storage-guard-drain"):
                 rec = self._drain()
-            with self._lock:
-                self._failure_keys.pop("the drain", None)  # a failure after this success is news again
+            self.clear_failure("the drain")  # a failure after this success is news again
         except Exception as exc:  # noqa: BLE001 - the drain's own thread must not die of it
             self.log_failure_once("the drain", exc)
             rec = {"error": type(exc).__name__}
@@ -1454,7 +1477,7 @@ class StorageGuard:
                 self._last_pin_report = report
                 self._last_pin_mono = now_mono
         if report is not None:
-            # The oldest holder is the pinner: the younger ones churn with the workers (and
+            # The oldest checkout is the likeliest candidate: the younger ones churn with the workers (and
             # more so under an override, when collection runs), so keying on all of them would
             # bring back the one-warning-a-minute flood this key exists to stop.
             holders = report.get("holders", [])
@@ -1759,6 +1782,7 @@ def _drain_in_background(g: StorageGuard, stop: threading.Event) -> None:
         return  # shutting down: a drain that has not started must not reach the engine now
     try:
         g.drain_if_due()
+        g.clear_failure("the background drain")
     except Exception as exc:  # noqa: BLE001 - the drain must never kill anything but itself
         g.log_failure_once("the background drain", exc)
 

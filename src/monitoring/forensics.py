@@ -748,9 +748,10 @@ def _previous_peaks() -> dict[str, Any] | None:
         "300 s while memory stayed short or the guard stayed engaged, what every thread was "
         "doing (pressure: name, CPU time and stack, the newest snapshots kept; a snapshot "
         "taken while the guard was engaged carries a guard block) and, every 15 s while "
-        "memory was within 1.5 times the guard's line, a light snapshot of the busiest "
-        "threads by CPU since the previous one (pressure_light; the pairing with the Python "
-        "blocks gained is an inference, memory is not measured per thread). allocator is "
+        "memory was within 1.5 times the guard's line, a light snapshot of the threads that "
+        "spent the most CPU since the previous one, among the first 16 working threads found "
+        "(pressure_light; the pairing with the Python blocks gained is an inference, memory is "
+        "not measured per thread). allocator is "
         "which C allocator the session ran on and whether its malloc arenas were capped "
         "(R114), read from the environment the process started with; a record written "
         "before it was kept has none. A field that could not be measured is ABSENT "
@@ -1191,9 +1192,9 @@ def _render_light(snaps: Any, taken: Any = None) -> list[str]:
     if isinstance(taken, int) and taken > len(snaps):
         count += f" of {taken} taken, the newest kept"
     out = [
-        f"  - near the memory guard's line, {count}, one every 15 s at most (the busiest threads by "
-        "CPU since the previous one; memory is not measured per thread, so which thread allocated "
-        "the blocks gained is an inference):"
+        f"  - near the memory guard's line, {count}, one every 15 s at most (the threads that spent the "
+        "most CPU since the previous one, among the first 16 working threads found; memory is not "
+        "measured per thread, so which thread allocated the blocks gained is an inference):"
     ]
     for snap in snaps:
         mem = snap.get("memory") or {}
@@ -1213,7 +1214,8 @@ def _render_light(snaps: Any, taken: Any = None) -> list[str]:
             if not isinstance(t, dict):
                 continue
             cpu = t.get("cpu_delta_s")
-            note = f" (+{cpu} s of CPU)" if cpu is not None else " (no earlier reading to compare)"
+            over = f" in {snap['over_s']} s" if cpu is not None and snap.get("over_s") is not None else ""
+            note = f" (+{cpu} s of CPU{over})" if cpu is not None else " (no earlier reading to compare)"
             out.append(f"      - {t.get('name')}{note}: {' <- '.join(t.get('stack') or [])}")
     return out
 

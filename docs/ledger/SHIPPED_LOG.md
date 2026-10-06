@@ -10435,7 +10435,14 @@ classify an I/O error while another read is in flight; the failure key of the gu
 the three PRs is corrected (a recovery floor, the checkpoint timings, the pool-watch record, the pressure method text, the count of
 eleven tests, split two and nine by measurement). New: a LIGHT pressure snapshot every 15 s while memory is near the memory
 guard's line, with its own ring and file, the busiest threads by CPU since the previous one, the blocks gained and its own cost.
-`session_hwm.diagnostics_member(max_bytes)` hands that tail (this session's and the previous session's, newest kept, the cut named) to the single Diagnostics zip of R119, which then does not write the same minutes twice.
+`session_hwm.diagnostics_member(max_bytes)` is the tail as one bundle member (this session's and the previous session's, newest kept, the cut named, a
+note instead of a larger member when the budget cannot hold its fixed part); it is not called at this head: the slot table of the single Diagnostics zip (R119) is
+planned with the button, and until it decides which file keeps them the previous session's light ring is also in `session-forensics.json`.
+The pin report names the pool each holder came from and no longer says every checkout pins the log; the light snapshot reads each thread's own CPU clock (the
+`/proc` reads cost seconds under the burst it is for); a driver's error code is trusted over its words. The unlock re-ask checks the held key
+(a wrong passphrase on an open app is refused) and a failed finish is not answered "unlocked". Each item has a test; the mutants of the main ones were run
+(the unlock re-ask and its key, head-only classification, the age bound, the per-path key and its clearing, the start-time match, the newest kept); the engine hook's
+detail is hardening with no change in behaviour (the driver's exception never carried the statement), pinned through a real engine.
 Also recorded: the post-10-01 reading of the 10-06 bundles (the log is held near 1 GB by the guard; the pins are long background
 reads). Lessons: `LESSONS.md`, the entries "AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT", "A SAMPLER THAT ONLY FITS EVERY
 FIVE MINUTES" and "SMALL RULES FROM THE THREE REVIEWS OF #1306, #1298 AND #1308".
