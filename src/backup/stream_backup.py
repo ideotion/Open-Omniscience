@@ -905,15 +905,17 @@ def _live_corpus_source(
     from src.database.connect import snapshot_preserving
 
     # Refused for lack of room BEFORE a byte is copied, like the other copy paths.
-    # An encrypted copy is rewritten into a fresh file after the filter, so for a moment the drive
-    # holds the copy AND its rewrite: the bound below already covers both (it asks for the copy plus
-    # a volume set at least the copy's size, and the rewrite is gone before the volumes are written).
+    # An encrypted copy is filtered and rewritten in place (``newsletter_export``): its rollback
+    # journal holds at most the file again, the merged search index is added, and then the fresh file
+    # is written, all before the volumes exist. The extra is the copy plus its index, and the index is
+    # part of the copy, so it is at most two copies; the filter asks again, exactly, on the copy.
     _preflight_snapshot(
         tmp_dir.parent,
         _logical_db_bytes(live),
         hooks.side_bytes,
         hooks.parity_fraction,
         credit=hooks.reuse_credit(member),
+        transient_bytes=2 * _logical_db_bytes(live) if enc else 0,
     )
     snap = tmp_dir / member
     # The copy is one read transaction (``snapshot_preserving`` without ``allow_file_copy``
@@ -1820,6 +1822,7 @@ def _preflight_snapshot(
     *,
     side_written: bool = False,
     credit: int = 0,
+    transient_bytes: int = 0,
 ) -> None:
     """Refuse loudly BEFORE the temporary copy of the corpus is made, so a drive that cannot hold
     it is told so now and not after twelve minutes of copying. The copy and the volume set exist
@@ -1842,7 +1845,10 @@ def _preflight_snapshot(
     # reused as they are up to their own size. One of the two, never both: taking both off asked
     # for the copy alone, then the corpus volumes and the parity hit a full drive.
     need -= side_part if side_written else min(max(0, credit), side_part)
-    needed = copy_bytes + need
+    # ``transient_bytes`` is room used beside the copy BEFORE the volumes exist (the encrypted
+    # newsletter filter's journal, merged index and rewrite), so the peak is the larger of the two
+    # moments, not their sum.
+    needed = copy_bytes + max(need, transient_bytes)
     preflight_free_space(
         dest, needed, what="volume backup (it first makes a temporary copy of your data)"
     )

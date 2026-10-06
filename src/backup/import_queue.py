@@ -885,36 +885,14 @@ class ImportQueueManager:
     #: 250 characters) while the text is saved to the queue file for EVERY item of the group; the cut is
     #: made AFTER the scrub, never before it.
     _FAILURE_TEXT_KEEP = 600
-    _WITHHELD = "the failure text was withheld because it could not be checked for a passphrase"
-
-    def _secret_forms(self) -> list[str]:
-        """The backup's passphrase and the corpus passphrase, each in every form the code writes (as
-        typed, SQL ''-doubled, JSON-escaped, repr)."""
-        from src.database.connect import get_passphrase
-
-        out: list[str] = []
-        for secret in (self._passphrase, get_passphrase() or ""):
-            if secret:
-                out += [secret, secret.replace("'", "''"), json.dumps(secret)[1:-1], repr(secret)[1:-1]]
-        return [f for f in dict.fromkeys(out) if f]
 
     def _scrubbed(self, value: Any) -> Any:
-        """``value`` (a string, or the dicts, lists and strings of a report) with the passphrases taken
-        out in every form, and CHECKED once more at the end so that fail-closed holds by construction:
-        a result that still holds a form, or any error, gives ``_WITHHELD`` for text and
-        ``{"withheld": ...}`` for a report."""
-        from src.monitoring.secret_scrub import scrub_value
+        """``value`` (a string, or a report) with the backup's passphrase and the corpus passphrase taken
+        out in every form, checked once more, and withheld whole on any failure
+        (``runlog.scrub_secrets``)."""
+        from src.backup.runlog import scrub_secrets
 
-        try:
-            forms = self._secret_forms()
-            out = value
-            for form in forms:
-                out = scrub_value(out, form)
-            if any(f in json.dumps(out, default=str) for f in forms):
-                raise ValueError("a form of the passphrase survived the scrub")
-            return out
-        except Exception:  # noqa: BLE001 - fail closed: nothing rather than unscrubbed text
-            return self._WITHHELD if isinstance(value, str) else {"withheld": self._WITHHELD}
+        return scrub_secrets(value, self._passphrase)
 
     def _failure_text(self, exc: BaseException | str) -> str:
         """The failure's text for the queue file and the status: scrubbed first, THEN cut."""

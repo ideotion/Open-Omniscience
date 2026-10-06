@@ -919,6 +919,38 @@ def test_an_encrypted_newsletter_excluded_copy_says_it_is_rewritten_and_earns_no
     assert [n for n in notes if "re-encrypted by the copy, so its volumes are rewritten" in n], notes
 
 
+@pytest.mark.parametrize("encrypted", [True, False])
+def test_the_newsletter_excluded_copy_reserves_the_filters_room_only_when_it_is_encrypted(
+    live, tmp_path, monkeypatch, encrypted
+):
+    """An encrypted copy is filtered and rewritten in place (journal, merged index, fresh file) before
+    the volumes exist, at most two more copies; a plain one is vacuumed in place and asks for nothing
+    extra. MUTATION TARGET: the ``transient_bytes`` argument."""
+    stage = tmp_path / "drive" / ".bak-build-x"
+    stage.mkdir(parents=True)
+    seen: list[dict] = []
+    real = sb._preflight_snapshot
+    monkeypatch.setattr(sb, "_preflight_snapshot", lambda *a, **kw: (seen.append(kw), real(*a, **kw))[1])
+    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p, _n=None: 0)
+    monkeypatch.setattr(connect_mod, "is_encrypted_file", lambda _p: encrypted)
+    monkeypatch.setattr(connect_mod, "snapshot_preserving", lambda src, dest, **_k: shutil.copy(src, dest))
+    sb._live_corpus_source(stage, False, [])
+    logical = sb._logical_db_bytes(live.db)
+    assert seen and seen[0]["transient_bytes"] == (2 * logical if encrypted else 0), seen
+
+
+def test_the_transient_room_counts_when_it_exceeds_the_volume_set(monkeypatch):
+    from src.backup import artifact as art
+
+    seen: list[int] = []
+    monkeypatch.setattr(art, "preflight_free_space", lambda _d, needed, what="": seen.append(needed))
+    copy = 50 * 2**30
+    sb._preflight_snapshot(Path("."), copy, 0, 0.1, transient_bytes=2 * copy)
+    assert seen[0] == 3 * copy, "the copy plus the filter's two copies"
+    sb._preflight_snapshot(Path("."), copy, 0, 0.1)
+    assert seen[1] == copy + sb._volumes_need(copy, 0, 0.1), "without it the volume set decides, as before"
+
+
 def test_a_source_that_rewrites_the_corpus_earns_the_other_members_credit_only_in_the_destination_check(
     tmp_path, monkeypatch
 ):

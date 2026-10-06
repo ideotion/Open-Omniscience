@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from src.backup import import_queue as iq
+from src.backup import runlog as ss_runlog
 from src.backup.import_queue import (
     CHECKPOINT_K_DEFAULT,
     CHECKPOINT_K_MAX,
@@ -477,6 +478,34 @@ def test_the_log_line_for_an_item_stopped_mid_merge_carries_no_passphrase(tmp_pa
     assert not any(f in caplog.text for f in _forms(_PW)), "the stop line carried the passphrase"
 
 
+def test_a_held_success_whose_report_holds_a_passphrase_form_in_a_key_still_persists_its_report(
+    tmp_path, monkeypatch
+):
+    """The recheck must not blank a GOOD report: ``_persist_held_report`` finds no report and writes no
+    history entry for a held backup whose summary became ``{"withheld": ...}``."""
+    odd = {"held": True, f"k{_PW}": 1, "imported": 12}
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d1", "report": odd}}
+    commit = {"state": "done", "summary": {"held": False, "report": {"committed": True}}}
+    mgr = _FakeVolumeManager([held, commit])
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "2")
+    gdir = tmp_path / "grp"
+    monkeypatch.setattr(iq, "_new_group_dir", lambda: (gdir.mkdir(exist_ok=True), gdir)[1])
+    _no_lookahead(monkeypatch, True)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    monkeypatch.setattr(ImportQueueManager, "_stamp_persisted_report", lambda self, it, rep: None)
+    persisted: list[dict] = []
+    monkeypatch.setattr(ImportQueueManager, "_persist_held_report", lambda self, it, by: persisted.append(it))
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=2)
+    q._passphrase = _PW
+    q._drive()
+    assert [it["state"] for it in q._items] == ["done", "done"]
+    assert len(persisted) == 1
+    assert persisted[0]["summary"]["report"] == odd, "the held report was blanked by the recheck"
+
+
 def test_a_scrub_that_leaves_a_form_behind_withholds_the_text(tmp_path, monkeypatch):
     """Fail-closed by construction: even when the scrub 'succeeds' but a form is still there."""
     import src.monitoring.secret_scrub as ss
@@ -485,7 +514,7 @@ def test_a_scrub_that_leaves_a_form_behind_withholds_the_text(tmp_path, monkeypa
     q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
     q._passphrase = _PW
     assert "withheld" in q._failure_text(RuntimeError(f"key {_PW}"))
-    assert q._scrubbed({"report": f"key {_PW}"}) == {"withheld": q._WITHHELD}
+    assert q._scrubbed({"report": f"key {_PW}"}) == {"withheld": ss_runlog.FAILURE_WITHHELD}
 
 
 def test_a_refused_verification_discards_the_group_rather_than_carrying_it_on(tmp_path):

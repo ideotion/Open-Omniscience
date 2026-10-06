@@ -454,18 +454,15 @@ class VolumeBackupManager:
                     self._state = "cancelled"
                 runlog.end("cancelled")
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            _LOG.exception("volume backup failed")
-            import traceback
-
-            runlog.milestone(
-                "error",
-                cls=type(exc).__name__,
-                msg=str(exc)[:2000],
-                traceback="".join(traceback.format_exception(exc))[-8000:],
-            )
+            # The log line and the journal line are written from the SCRUBBED fields, never from the
+            # exception (its text and its traceback are sinks, and ``app_errors.jsonl`` rides the debug
+            # bundle): no ``_LOG.exception``, no ``exc_info``.
+            fields = runlog.failure_fields(exc, passphrase)
+            _LOG.warning("volume backup failed: %s\n%s", fields["msg"], fields["traceback"])
+            runlog.milestone("error", **fields)
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
-                self._state, self._error = "error", str(exc)
+                self._state, self._error = "error", fields["msg"]
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
@@ -942,7 +939,8 @@ class VolumeBackupManager:
                 self._error = None
                 self._progress = {"phase": "cancelled", "detail": str(exc)}
         except Exception as exc:  # noqa: BLE001
-            _LOG.exception("volume restore failed")
+            fields = runlog.failure_fields(exc, passphrase, corpus_passphrase)
+            _LOG.warning("volume restore failed: %s\n%s", fields["msg"], fields["traceback"])
             from src.backup.merge import MergeError, classify_restore_error
 
             # A MergeError is an intentional, well-formed refusal (the live DB stays
@@ -954,15 +952,10 @@ class VolumeBackupManager:
             # "UNIQUE constraint failed:" in the UI (field bug 2026-07-15).
             detail = str(exc) if isinstance(exc, MergeError) else classify_restore_error("restore", exc)
             # The traceback, bounded and scrubbed. `cls` + `msg` alone lose the
-            # single most useful artefact a failed run leaves behind.
-            import traceback
-
-            runlog.milestone(
-                "error",
-                cls=type(exc).__name__,
-                msg=str(exc)[:2000],
-                traceback="".join(traceback.format_exception(exc))[-8000:],
-            )
+            # single most useful artefact a failed run leaves behind. The detail the job serves is
+            # scrubbed too (a classified message can quote the exception it wraps), then cut.
+            detail = str(runlog.scrub_secrets(detail, passphrase, corpus_passphrase))[: runlog.FAILURE_MSG_KEEP]
+            runlog.milestone("error", **fields)
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
                 self._state, self._error = "error", detail
@@ -1018,9 +1011,10 @@ class VolumeBackupManager:
                 self._summary = {"report": report}
                 self._progress = {"phase": "done"}
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            _LOG.exception("volume verify failed")
+            fields = runlog.failure_fields(exc, passphrase)
+            _LOG.warning("volume verify failed: %s\n%s", fields["msg"], fields["traceback"])
             with self._lock:
-                self._state, self._error = "error", str(exc)
+                self._state, self._error = "error", fields["msg"]
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:
