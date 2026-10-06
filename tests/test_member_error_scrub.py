@@ -23,7 +23,8 @@ pin the net beneath that, at the one place the text is made (``_all_diag_err_str
     reasons, a deadline abort chained under a 503, the two journal-read failures, and the error texts
     ``performance.json`` writes (``tests/test_perf_batch.py``); the two warnings for a left-over journal
     log the scrubbed text and no traceback (``tests/test_all_diagnostics_job.py``);
-  * a net that lost one carrier fails a test: one passphrase writes each form unlike every other.
+  * a net that lost one carrier fails a test: the passphrases between them write each form unlike every
+    other.
 """
 
 from __future__ import annotations

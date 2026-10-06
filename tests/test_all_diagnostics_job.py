@@ -862,9 +862,16 @@ def test_the_two_warnings_for_a_left_over_journal_log_the_scrubbed_text_and_no_t
     mine = [r for r in caplog.records if "previous runs' journals" in r.getMessage()]
     assert len(mine) == 2, [r.getMessage() for r in caplog.records]
     assert "PermissionError" in mine[0].getMessage() and "RuntimeError" in mine[1].getMessage()
+    # The record's text went through the ASCII clip, which writes a letter outside ASCII as an escape: the
+    # clipped form of each is searched too (a log argument that was clipped but not scrubbed would pass
+    # a search of the raw forms alone), and the marker must be there, so the test cannot pass on a
+    # message that never carried the failure.
+    forms = _written_forms(_KEY)
+    forms = forms + [_diag_bundle._ascii_clip(f, 10**6) for f in forms]
     for rec in mine:
         assert rec.exc_info is None and rec.exc_text is None
-        for form in _written_forms(_KEY):
+        assert "***redacted***" in rec.getMessage(), rec.getMessage()
+        for form in forms:
             assert form not in rec.getMessage(), (form, rec.getMessage())
 
 
