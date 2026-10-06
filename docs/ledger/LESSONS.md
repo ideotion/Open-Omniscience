@@ -13288,10 +13288,14 @@ stubs the phase whole. The fix proposed was one scrub of the finished report or 
 those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an exact-match scrub by a passphrase of `pass` (the
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
-passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function that is given
-the passphrase to the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
-`sys.exc_info()`), so a fifth cannot be added unseen by those routes; it follows no call, so a helper that reads the exception for
-itself is not seen, and the walk's own cases are pinned. **A scrub of a value code compares changes the value: scrub the
+passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function of
+`p0_validation.py` that takes a parameter named `passphrase` to the helper and to asking for no traceback (a log call's
+`exc_info`, `.exception()`, the `traceback` module, `sys.exc_info()`), so a fifth handler there cannot be added unseen by those
+routes. It reads that one module's syntax and follows no call, so three things are outside it: the engine's own failure lines
+handed back as DATA (`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed line by
+line where the verify check copies them, and pinned by its own test), a secret held under another name or through an object
+(`release_run.py` holds it as `run.params.passphrase`), and a helper that reads the exception for itself. **A scrub of a value
+code compares changes the value: scrub the
 text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
 traceback, and a test names the passphrase only in the cause (`from`, and an implicit context).

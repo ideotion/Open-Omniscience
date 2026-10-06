@@ -106,7 +106,8 @@ this section were still open.
   measured (#1312): a restore its engine refused, or that died, now reads `error` with its own words,
   a resumed run retakes it and asks for the passphrase again, and the passphrase is kept out of what a
   kept fresh install leaves on the drive (and out of every form a half-written file holds it in), and
-  out of the exception texts the P0 check writes into its report, which the debug bundle carries. Every
+  out of the exception texts and the engine's failure lines the P0 check writes into its report, which
+  the debug bundle carries. Every
   restore attempt has a directory of its own, so a second run in the same server never restores into
   an earlier kept install, and the restore's output is read while it runs, so a child that says more
   than a pipe holds is no longer left blocked until the run is cancelled.

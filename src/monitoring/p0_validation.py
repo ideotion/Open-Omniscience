@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import scrub_text
+from src.monitoring.secret_scrub import scrub_text, scrub_value
 
 _LOG = logging.getLogger("monitoring.p0_validation")
 
@@ -440,6 +440,10 @@ def _check_backup(
         vrep = verify_stream_backup(dest_dir, passphrase)
     except Exception as exc:  # noqa: BLE001
         verr = _exception_text(exc, passphrase)
+    # The engine's own failure lines come back as DATA (``problems``), in no handler of this module, and one of
+    # them (a decrypt failure) carries the exception's own words: scrubbed where they are copied, line by line,
+    # never the verdicts and the success sentence around them (the coordinator's delta check of #1312, F2).
+    problems = scrub_value(None if vrep is None else vrep.get("problems"), passphrase)
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
         "ok": None if vrep is None else vrep.get("ok"),
@@ -448,7 +452,7 @@ def _check_backup(
         "bad_volumes": None if vrep is None else vrep.get("bad_volumes"),
         "missing_volumes": None if vrep is None else vrep.get("missing_volumes"),
         "parity": None if vrep is None else vrep.get("parity"),
-        "problems": None if vrep is None else vrep.get("problems"),
+        "problems": problems,
         "method": None if vrep is None else vrep.get("method"),
     }
     if verr is not None:
@@ -465,7 +469,7 @@ def _check_backup(
             bars["p0_1_verify"],
         )
     else:
-        probs = "; ".join((vrep or {}).get("problems") or ["unknown"])
+        probs = "; ".join(problems or ["unknown"])
         verify_check = _verdict(
             "fail", f"verification failed: {probs}", verify_measurements, bars["p0_1_verify"]
         )

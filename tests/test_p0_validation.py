@@ -447,6 +447,51 @@ def test_the_passphrase_is_out_of_every_exception_text_a_p0_report_writes_down(t
     assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
 
 
+def test_the_passphrase_is_out_of_the_failure_lines_the_engine_hands_back_as_data(tmp_path, monkeypatch):
+    """The fifth way a message reaches a report, and the only one with no handler of this module in it:
+    ``verify_stream_backup`` returns its failure lines as ``problems`` (a decrypt failure's line carries the
+    exception's own words), and the verify check copies them into its measurements and its reason, which the P0
+    file the debug bundle carries and, in a release run, the run's state hold. Every message the engine raises
+    there is a literal today; this is the net where the lines are copied (the coordinator's delta check of
+    #1312, F2). MUTATION TARGET: the scrub of ``problems``."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    secret = "p0-problem-line-passphrase-5k2"
+    lines = [f"member data.db failed to decrypt: could not reach {secret} on the drive", "volume 2 failed its checksum"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    clean = ["member data.db failed to decrypt: could not reach ***redacted*** on the drive", "volume 2 failed its checksum"]
+    assert verify["verdict"] == "fail"
+    assert verify["reason"] == "verification failed: " + "; ".join(clean), verify["reason"]
+    assert verify["measurements"]["problems"] == clean
+    assert secret not in json.dumps(out)
+    assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
+    assert secret in lines[0], "the engine's own list is read, never edited"
+
+
+@pytest.mark.parametrize("secret", ["pass", "fail"])
+def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verify_verdict_and_its_lead_alone(
+        tmp_path, monkeypatch, secret):
+    """The scrub is on the engine's lines and on nothing around them: the verdict is ``fail`` and the check's own
+    words lead its reason whatever the passphrase is (the run puts no minimum on its length). MUTATION TARGET: a
+    scrub of the check's reason, or of the whole report, in place of the lines."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    line = f"member data.db failed to decrypt: {secret}"
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": [line]})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["verdict"] == "fail" and verify["measurements"]["ok"] is False
+    assert verify["reason"] == "verification failed: " + line.replace(secret, "***redacted***"), verify["reason"]
+
+
 def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verdicts_and_the_success_texts_alone(
         tmp_path, monkeypatch):
     """Why the scrub is on the caught texts and not on the finished report: a report holds verdicts
