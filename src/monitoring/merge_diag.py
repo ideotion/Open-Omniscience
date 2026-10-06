@@ -188,9 +188,10 @@ def engine_facts() -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - an absent driver is a fact, not a failure
             out[name] = {"unavailable": f"{type(exc).__name__}: {exc}"}
     out["note"] = (
-        "The merge sets PRAGMA temp_store=FILE explicitly. Where the default is MEMORY, "
-        "every statement journal and temp table would otherwise be held in RAM, unbounded "
-        "by cache_size."
+        "The merge sets PRAGMA temp_store explicitly: FILE on a plain working copy, where the "
+        "default (MEMORY) would hold every statement journal and temp table in RAM, unbounded "
+        "by cache_size; MEMORY on an encrypted one, because the sorter's spill file is written "
+        "in the clear."
     )
     return out
 

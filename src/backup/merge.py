@@ -718,6 +718,67 @@ _MERGE_WINDOW_MAX_IDS = 200_000
 #: once per windowed step, against the tens of GB the step itself moves.
 _MERGE_SAMPLE_ROWS = 200
 
+#: WHERE THE MERGE'S TEMP STRUCTURES LIVE, and why it depends on the store.
+#:
+#: A PLAIN working copy keeps ``temp_store=FILE``: measured on the shipped engine, one
+#: INSERT..SELECT costs ~5 KB of RAM per row inserted under MEMORY and none under FILE, with no
+#: time penalty (the table above). An ENCRYPTED working copy cannot: SQLCipher encrypts what the
+#: pager writes, and the SORTER does not write through the pager -- CREATE INDEX, ORDER BY,
+#: GROUP BY, DISTINCT, UNION and IN-subqueries that cannot use an index spill to a temp file
+#: through the VFS, below the codec, as plain text in the temp directory (a tmpfs on some
+#: machines, the disk on others). Measured 2026-10-06 (WAL's reading, reproduced here): 300,000
+#: rows, a 1 MiB cache, the spill file read through ``/proc/<pid>/fd`` during CREATE INDEX held
+#: every row; under MEMORY no temp file was ever opened. So an encrypted copy holds its temp
+#: structures in RAM, and what RAM that takes is bounded here instead of by the corpus.
+#:
+#: WHAT THAT COSTS, measured the same day on the production engine (an encrypted working copy,
+#: ``merge_corpus`` end to end, peak RSS of the busiest step over its start, MEMORY against FILE):
+#: 20,000 articles of 8 KB +62 MB, 6,000 of 32 KB +64 MB, 300,000 of 100 B (a 200,000-id window)
+#: +41 MB. The windows are denominated in bytes, so the cost follows ``_MERGE_WINDOW_BYTES`` and
+#: not the corpus. The gate asks for twice that, plus the memory guard's own floor.
+_ENCRYPTED_TEMP_NEED_BYTES = 2 * _MERGE_WINDOW_BYTES
+
+
+def _temp_store_for(con: sqlite3.Connection) -> str:
+    """``MEMORY`` for an encrypted working copy, ``FILE`` for a plain one (see above)."""
+    from src.database.connect import _is_sqlcipher_conn
+
+    return "MEMORY" if _is_sqlcipher_conn(con) else "FILE"
+
+
+def check_memory_for_encrypted_merge(
+    available_mb: float | None = None, floor_mb: float | None = None
+) -> None:
+    """Refuse, before any row moves, when this machine cannot hold an encrypted merge's temp memory.
+
+    The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` plus the memory guard's own floor
+    (``memory_guard.avail_floor_mb``), against the memory available now. A machine that cannot
+    report its available memory is never refused: an unreadable figure is not a shortage
+    (the memory guard's own rule). The sentence is fixed in shape, so the page reads it back
+    into a keyed frame (``ooServerText``), the same way as the free-space refusals; the server's
+    English stays the log line and the API's answer."""
+    from src.backup.folder_backup import human_bytes
+    from src.database.maintenance import _available_mb_now
+
+    avail = available_mb if available_mb is not None else _available_mb_now()
+    if avail is None:
+        return
+    if floor_mb is None:
+        try:
+            from src.scheduler import memguard
+
+            floor_mb = float(memguard.memory_guard.avail_floor_mb)
+        except Exception:  # noqa: BLE001 - no guard, no floor: never a fabricated one
+            floor_mb = 0.0
+    need = _ENCRYPTED_TEMP_NEED_BYTES + int(max(0.0, floor_mb) * 1024 * 1024)
+    if avail * 1024 * 1024 < need:
+        raise MergeError(
+            "Not enough free memory to merge into an encrypted corpus: needs about "
+            f"{human_bytes(need)}, only {human_bytes(int(avail * 1024 * 1024))} available. "
+            "Close other programs and import again. Nothing was written to your corpus."
+        )
+
+
 #: Where a windowed insert's bound is spliced in. A caller that opts into
 #: windowing and forgets the marker would run the WHOLE-corpus statement once
 #: per window -- quadratic, and silent. So its absence is a hard error, never a
@@ -1606,16 +1667,20 @@ def merge_corpus(
 
     con = db_connect(working_copy, check_same_thread=False)
     con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
-    # Temp storage on DISK, not in RAM. The bundled sqlcipher3 is compiled
-    # SQLITE_TEMP_STORE=2 (verified: `PRAGMA compile_options` says TEMP_STORE=2,
-    # against the stdlib's TEMP_STORE=1), so every statement journal, temp table
-    # and transient index defaults to memory -- and none of it is bounded by
-    # cache_size. Measured on that engine, one INSERT..SELECT costs ~5 KB of RAM
-    # per row inserted under the default and ZERO under FILE, with no time
-    # penalty (see _MERGE_WINDOW_BYTES). Windowing bounds this too; setting it
-    # explicitly means a later window-size increase cannot quietly bring it back.
+    # Where the temp structures live depends on whether the working copy is ENCRYPTED. See
+    # _temp_store_for: a PLAIN copy keeps its temp storage on disk (RAM per inserted row is the
+    # measured reason), an ENCRYPTED one holds it in memory because the sorter's spill file is
+    # written in the clear. The memory an encrypted merge may then need is checked first, so a
+    # machine without it is told so before any row moves rather than killed part-way.
     try:
-        con.execute("PRAGMA temp_store=FILE")
+        temp_store = _temp_store_for(con)
+        if temp_store == "MEMORY":
+            check_memory_for_encrypted_merge()
+    except BaseException:
+        con.close()
+        raise
+    try:
+        con.execute(f"PRAGMA temp_store={temp_store}")
     except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
         pass
     if cache_mb:

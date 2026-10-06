@@ -3081,6 +3081,7 @@
   "Not enough coverage to compare framing for this term.": "التغطية غير كافية لمقارنة تأطير هذا المصطلح.",
   "Not enough data to compare yet.": "لا توجد بيانات كافية للمقارنة بعد.",
   "Not enough data yet for a curve.": "لا توجد بيانات كافية لرسم منحنى بعد.",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "لا توجد ذاكرة حرة كافية للدمج في مجموعة مشفّرة: يلزم نحو {needed} والمتاح {free} فقط. أغلق البرامج الأخرى وأعد الاستيراد. لم يُكتب أي شيء في مجموعتك.",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "لا توجد مساحة حرة كافية في {path}: يلزم {needed}، والمتاح {free} فقط.",
   "Not enough free space here for this file.": "لا توجد مساحة حرة كافية هنا لهذا الملف.",
   "Not enough keywords indexed to draw a map yet.": "لا توجد بعد كلمات مفتاحية مفهرسة كافية لرسم خريطة.",

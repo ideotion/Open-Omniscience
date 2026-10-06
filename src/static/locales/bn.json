@@ -3081,6 +3081,7 @@
   "Not enough coverage to compare framing for this term.": "এই পদে ফ্রেমিং তুলনা করার মতো যথেষ্ট কভারেজ নেই।",
   "Not enough data to compare yet.": "তুলনার জন্য এখনও যথেষ্ট তথ্য নেই।",
   "Not enough data yet for a curve.": "বক্ররেখা আঁকার জন্য এখনও যথেষ্ট তথ্য নেই।",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "এনক্রিপ্টেড কর্পাসে মার্জ করার জন্য পর্যাপ্ত ফাঁকা মেমোরি নেই: প্রায় {needed} দরকার, আছে মাত্র {free}। অন্য প্রোগ্রামগুলো বন্ধ করে আবার ইমপোর্ট করুন। আপনার কর্পাসে কিছুই লেখা হয়নি।",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "{path}-এ যথেষ্ট ফাঁকা জায়গা নেই: {needed} প্রয়োজন, মাত্র {free} ফাঁকা।",
   "Not enough free space here for this file.": "এই ফাইলের জন্য এখানে যথেষ্ট খালি জায়গা নেই।",
   "Not enough keywords indexed to draw a map yet.": "মানচিত্র আঁকার জন্য এখনও যথেষ্ট কীওয়ার্ড সূচিবদ্ধ হয়নি।",

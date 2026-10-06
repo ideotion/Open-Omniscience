@@ -3081,6 +3081,7 @@
   "Not enough coverage to compare framing for this term.": "Liputan belum cukup untuk membandingkan pembingkaian pada istilah ini.",
   "Not enough data to compare yet.": "Data belum cukup untuk dibandingkan.",
   "Not enough data yet for a curve.": "Data belum cukup untuk membuat kurva.",
+  "Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.": "Memori kosong tidak cukup untuk menggabungkan ke korpus terenkripsi: dibutuhkan sekitar {needed}, hanya {free} yang tersedia. Tutup program lain dan impor lagi. Tidak ada yang ditulis ke korpus Anda.",
   "Not enough free space at {path}: needs {needed}, only {free} free.": "Ruang kosong di {path} tidak cukup: perlu {needed}, hanya {free} kosong.",
   "Not enough free space here for this file.": "Ruang kosong di sini tidak cukup untuk berkas ini.",
   "Not enough keywords indexed to draw a map yet.": "Kata kunci yang terindeks belum cukup untuk menggambar peta.",
