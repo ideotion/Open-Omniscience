@@ -13579,6 +13579,57 @@ in a lesson is measured, not remembered**: "three through the endpoint, eight di
 running the four files (11 failures: 1 through `GET /api/articles`, 1 through `GET /api/articles/export` and 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
 each logs a traceback every pass: key it per path. (5) A reading taken for a caller that does not wait has an age bound, or an hours-old figure classifies a new incident.
 
+### A RECORDER ON A PERIODIC PATH IS COSTED IN THREAD CPU, NOT WALL TIME, AND ITS LOG COUNTER TAKES A LEAF LOCK (export thread, 2026-10-06)
+
+The vitals history (`src/monitoring/vitals_history.py`, R119) rides the 5-second liveness tick. (1) **The first measurement, 190 ms a tick, was the liveness thread
+queueing for the GIL behind three busy Python threads**; the same tick costs 0.11 ms of CPU on an idle machine and 3.3 ms of CPU under them (`time.thread_time()`
+beside the wall clock: what it takes beside what it waits). An instrument's cost is quoted under load and in CPU, or a fast machine hides it and a busy one
+frightens. **The wall figure was then quoted as CPU in a status message ("0.16 s a tick", read off the wrong column of the benchmark's output), and the coordinator
+reasonably took it for 3% of a core**; a number carried from a benchmark into a sentence is re-read against the column it came from. What the 3.3 ms was made of, measured
+piece by piece in thread CPU: five psutil reads of `/proc` at 0.4-0.9 ms each under load and 0.01-0.04 ms idle (a GIL hand-off per read, not work), so the thread count and
+the swap, 1.4 ms between them and neither moving in seconds, moved to the once-a-minute group: 0.98 ms a tick under load, 0.047 ms idle. (2) **A handler that counts log records takes a LEAF lock of its own, never the lock the recorder holds while it folds rows**: `logging` calls `emit`
+with the handler's lock held, so a main lock held across anything slow (the minute's thread walk, 0.3-0.6 s under a GIL-holding burst) stalls every logging
+thread, and a main lock taken inside `emit` against a thread that logs while holding it is a deadlock. The thread sample is therefore taken after the lock is
+released, and two tests pin both halves (a thread holding the main lock cannot stop an `emit`; the sample runs with the lock free). (3) **A budget written before
+the data existed was wrong, twice**: 160 KB would have cut the 48 hours the member exists to show, and the 200 KB that replaced it was sized before the previous sessions' tails existed
+(140 KB at the full retention with 25 loggers, 189 KB with the three tails, 246 KB with 58-character logger names), so it is 260 KB, 6 per cent above a fixture that is not a maximum (a real row is heavier and a logger name has no length ceiling), and the test builds the heaviest member the
+recorder can make. Measure the heaviest document, not the one the first test happens to build, before a number is fixed. (4) **An open accumulator
+restored from a stored, ROUNDED row needs its weight** (the tick count): without it the mean across a restart quietly becomes a mean of means, and the open bucket is
+kept apart from the closed rows in the file so a tick is counted once (both are mutants the suite now kills).
+(5) **A "leaf" lock inside a logging handler is RE-ENTRANT or it is a deadlock** (the independent read reproduced it): CPython runs the cyclic collector and Python-level signal handlers
+between any two bytecodes, so a finalizer that logs (SQLAlchemy's pool does, asyncio's "Task exception was never retrieved" does) or a SIGHUP handler that logs re-enters
+`emit` on the thread already inside it; a plain `Lock` makes that thread wait for itself while it holds the handler's own lock, and every other thread that logs waits
+behind it. The standard library's handler locks are `RLock`s for this reason, and the test re-enters `emit` from inside `emit` with its own lock of the module's kind, so a
+regression fails instead of hanging every later test. (6) **A minute's CPU is a difference between two readings, so the baseline has an age and the row says its span**: a
+baseline kept across ten minutes of skipped samples charged all ten to one minute (605 s in a row of 60), a thread parked in its queue at the sample instant has no figure
+that minute and needs its last one carried, and "no baseline yet" is `null` with a reason, never `[]` (which says "none was busy"). (7) **State restored from a DISPLAY row
+loses what the display summed**: the open log hour came back with its quiet loggers' sum as a logger named "other" and a real logger of that name overwritten, so a
+crash loop's second restart in an hour lost lines; persist the raw (logger, level, count) triples and build the display row at read time. (8) **A clock step is counted once and
+bounded**: a hold that keeps adding to the open bucket until the clock catches up piled an hour into one row of 721 ticks and counted 719 "steps" for one; a step beyond two
+buckets closes everything open, starts again at the clock's time and records the step, rows staying in the order they were written. (9) **A member's cost keeps CPU and wall
+apart and says which is which**: the same tick reads 1 ms of CPU and 532 ms of wall under three busy threads, and a reader who takes the wall figure for work blames the
+recorder for the machine's load, which is the mistake (1) records.
+(10) **A guard against a failure mode is checked against the SHORT version of that failure as well**: "a session killed within its first minute leaves the tails it found" was true only
+until the session's second write, because the file is written at the first tick and then every five minutes, so a crash loop of six-minute sessions pushed out the tail of the one
+that ran long; the line is now five minute rows and a short tail is the first evicted. **An edge that is measured from a bucket-aligned origin is exact; one measured from the last
+tick is not** (a step back of 600 s is held and of 601 s starts a new history, whichever second of the bucket the last tick fell in, and the tests pin both sides at two phases).
+**A bound on one step is not a bound on a stream of them**: a clock that flaps closed the open buckets on every tick and would have pushed 48 hours out of a 576-row table in under
+two hours, so a new history starts at most once every five minutes by the monotonic clock and the steps between are held and marked `kept_open`. **An instrument's own clock can be
+missing**: `time.thread_time()` raises where the platform has no per-thread clock, and read before the readings it failed every tick, so the recorder recorded nothing; its cost
+reports CPU as `null` (never 0) and keeps recording.
+(11) **The second independent read found the four defects the delta introduced, each by running the failure and not by reading the diff**: (a) a "fix" that walked the counts in Python
+under the re-entrant lock (`sorted(... _HOUR_LOGS.items())`) re-opened what the RLock closed, because a finalizer that logs then adds a key to the dictionary being iterated and
+the flush or the member fails ("dictionary changed size"): take a C-level `dict(...)` copy under the lock and walk the copy; (b) a start that closed a restored hour and set the
+open hour to none made a session that ended before its first tick write `open_logs_t: 0`, so the next start dropped the lines of its boot, which in a crash loop are the lines
+that matter: date what is written when it is written, never leave a zero beside counts that exist; (c) one reason ("the first minute, or the first after memory was short") was
+attached to four different facts (an idle process, a held clock, memory that was short, the first minute), so an idle night read as a memory shortage every minute: a null that
+carries a reason carries the reason that happened; (d) a step measured from the bucket's start understated itself (595 s read as 300) and a gap beside a clock correction read
+as down time: say the size from the clock's own last reading, and mark a gap that has a recorded step at its edge, because the correction forward is not recorded. **A guard in
+the budget code was also wrong in a way only a heavier fixture shows**: the notes a cut adds (`dropped_*`) were added after the size check, so a member said it was held to N
+bytes and weighed up to 118 more; measure with the notes in. **A test that takes the constant as its own parameter cannot fail when the constant moves**: the hold edge is
+pinned with the literals 600 and 601 (and `v.CLOCK_HOLD_S == 600`), at two phases of the bucket.
+(12) **The coordinator's own delta check found four more by running the control flow, not by reading the diff**: (a) the END of a hold is not a second step: a big clock step that was held open (it came too soon after the last rebase) and rebased later was recorded again with a size of 0 or -5 and counted twice, because the rebase measured the step from the clock's last reading, which was already on the stepped clock; the test that covered it passed because it asserted the `kept_open` FLAGS and never the sizes or the count: assert the values a record exists to carry, and put the end of a hold on the record the hold made (`new_history_at`); (b) a reason that says "an idle process" must be true where the platform gives a working thread no CPU figure (macOS), or every minute of a busy session reads as idle: say idle only when every thread was waiting; (c) one bad cell inside a stored row emptied the whole history at start (`int("x")` inside the try that resets everything): check every cell and drop that row alone; (d) a comment that calls a number "the heaviest it can be" describes the test's FIXTURE: say "sized above the fixture" where the input has no ceiling (a logger name has none), and keep ONE rule for what a failure leaves in a zip (its type and the system's reason, never its message, which can name a path).
+
 ### A RE-INDEX THAT REWRITES ROWS IT HAS NOT CHANGED (keyword thread, re-index drain, 2026-10-06)
 
 (1) **Read the field rate before the sandbox rate**: Lenovo's own bundle (`keyword_write_cost.write_rate`) gave 7,673 articles an hour (2.1 a second, 80 mentions each) for the drain, a plaintext
