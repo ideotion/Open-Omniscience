@@ -322,6 +322,7 @@ def test_incoming_rows_are_counted_on_an_encrypted_connection_too(
     try:
         con.isolation_level = None
         assert merge_mod._incoming_group_rows(con, staged)["keywords"] == 3
+        assert "cnt" not in [r[1] for r in con.execute("PRAGMA database_list")]
     finally:
         con.close()
 
@@ -342,6 +343,51 @@ def test_a_missing_table_counts_as_nothing_but_any_other_failure_refuses(tmp_pat
     with pytest.raises(MergeError, match="Could not read the incoming file's row counts") as err:
         merge_mod._incoming_group_rows(_open_plain(), junk)
     assert "Nothing was written to your corpus." in str(err.value)
+    # a missing file is a refusal too, and the count does not CREATE it (ATTACH would, and every
+    # COUNT would then read as "no such table": an empty corpus nobody staged)
+    absent = tmp_path / "absent.db"
+    with pytest.raises(MergeError, match="Could not read the incoming file's row counts"):
+        merge_mod._incoming_group_rows(_open_plain(), absent)
+    assert not absent.exists()
+    # only the message that names THIS table is a zero: a view over a table that is missing says
+    # "no such table" about the OTHER table, and that is damage, not an empty corpus
+    viewed = tmp_path / "viewed.db"
+    c = sqlite3.connect(viewed)
+    c.execute("CREATE VIEW keywords AS SELECT * FROM nonexistent")
+    c.commit()
+    c.close()
+    with pytest.raises(MergeError, match="Could not read the incoming file's row counts"):
+        merge_mod._incoming_group_rows(_open_plain(), viewed)
+
+
+def test_a_count_that_fails_leaves_nothing_behind_and_quotes_nothing(tmp_path) -> None:
+    """The passphrase rule, pinned: engine text can quote a path and, on a damaged encrypted page,
+    more than that, so the refusal must carry only the exception class -- not in its message, its
+    cause, its context or the traceback it prints -- and the throwaway alias must be gone."""
+    import sqlite3
+    import traceback
+
+    secret_engine = "ENGINETEXT-4e1c disk image is malformed"
+    staged = tmp_path / "PATHMARK-77b2" / "staged.db"
+    _staged_with_keywords(staged, 1)
+
+    class Boom(sqlite3.Connection):
+        def execute(self, sql, *a, **kw):  # noqa: ANN001, ANN002, ANN003, ANN202
+            if "COUNT(*)" in sql:
+                raise sqlite3.DatabaseError(f"{secret_engine} {staged}")
+            return super().execute(sql, *a, **kw)
+
+    con = sqlite3.connect(":memory:", factory=Boom)
+    con.isolation_level = None
+    with pytest.raises(MergeError, match="Could not read the incoming file's row counts") as err:
+        merge_mod._incoming_group_rows(con, staged)
+    shown = "".join(traceback.format_exception(err.value))
+    for needle in ("ENGINETEXT-4e1c", "PATHMARK-77b2", "malformed"):
+        assert needle not in str(err.value), needle
+        assert needle not in shown, needle
+    assert "DatabaseError" in str(err.value)
+    assert err.value.__cause__ is None and err.value.__context__ is None
+    assert "cnt" not in [r[1] for r in sqlite3.Connection.execute(con, "PRAGMA database_list")]
 
 
 @pytest.mark.parametrize(

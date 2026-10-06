@@ -769,7 +769,12 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
     from src.database.connect import attach
 
     out: dict[str, int] = {}
+    failure: str | None = None
     try:
+        if not Path(staged_corpus).is_file():
+            # ATTACH would CREATE an empty database here and every COUNT would then say "no such
+            # table": a missing file must not read as a staged corpus with nothing in it.
+            raise FileNotFoundError("the staged file is missing")
         attach(con, staged_corpus, "cnt")
         try:
             for table in _ENCRYPTED_REP_BYTES_PER_ROW:
@@ -777,19 +782,24 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
                     out[table] = int(
                         con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 - fixed table names from this module's own map
                     )
-                except Exception as exc:  # noqa: BLE001 - told apart below, never swallowed
-                    if "no such table" not in str(exc).lower():
+                except Exception as exc:  # noqa: BLE001 - only the one message that names THIS table is a zero
+                    if str(exc).lower() != f"no such table: cnt.{table}":
                         raise
         finally:
-            try:
+            # A failed attach never reaches here (it is raised before the try); this covers a
+            # DETACH that fails after a good attach, which must not mask the real outcome.
+            with suppress(Exception):
                 con.execute('DETACH DATABASE "cnt"')
-            except Exception:  # noqa: BLE001 - a failed attach has nothing to detach
-                pass
     except Exception as exc:  # noqa: BLE001 - one plain refusal for every unreadable-file shape
+        failure = type(exc).__name__
+    if failure is not None:
+        # Raised OUTSIDE the except block, from nothing: the engine's own text can quote the path
+        # and, on a damaged encrypted page, more than that, so neither the message, the cause nor
+        # the context may carry it. Only the exception class is named.
         raise MergeError(
             "Could not read the incoming file's row counts to size the memory this merge needs "
-            f"({type(exc).__name__}). Nothing was written to your corpus."
-        ) from None
+            f"({failure}). Nothing was written to your corpus."
+        )
     return out
 
 
