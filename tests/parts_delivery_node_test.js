@@ -630,6 +630,60 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     assert.strictEqual(pg2.els["all-diag-status"].textContent, "", "and no 'press again' line is written for an archive already fetched");
   }
 
+  // ---- the usual archive (a manifest and one part) that "again" already handed over is not handed over a second time by the finished build
+  // (the cases above use nine files, which the five-file gate excludes anyway: a hand-over moved out of the same-archive branch would pass them all)
+  {
+    const page = makePage();
+    const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(listing(1, 1))});
+    await api.downloadDiagnosticsVolumes({disabled: false});            // "again": both files go out
+    assert.strictEqual(page.clicked.length, 2, "setup: the two files of the archive went out once");
+    const same = api.state();
+    page.els["all-diag-status"].textContent = "stale";
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.clicked.length, 2, "the finished build did not send the same two files again");
+    assert.strictEqual(api.state(), same, "the same set stays on the bar");
+    assert.strictEqual(page.els["all-diag-status"].textContent, "", "and no 'press again' line is written for an archive already fetched");
+  }
+
+  // ---- the browser's several-downloads sentence is still on the bar after the automatic hand-over (the save's own line used to replace it)
+  {
+    const HINT = "Your browser may ask once to allow several downloads: allow them.";
+    const page = makePage();
+    const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(listing(1, 1))});
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.clicked.length, 2, "setup: the usual two files were handed over");
+    const line = page.els["parts-status"].textContent;
+    assert.ok(line.startsWith("Asked your browser to save all 2 files."), line);
+    assert.ok(line.endsWith(HINT), "what to do about the browser's question is on screen when it can appear: " + line);
+    assert.strictEqual(line.split(HINT).length, 2, "and it is there once");
+    // one file raises no several-downloads question, so the sentence is not written for it
+    const pg1 = makePage();
+    const one = load(pg1, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(listing(1, 0))});
+    await one.runAllDiagnostics({disabled: false});
+    assert.strictEqual(pg1.clicked.length, 1, "setup: the one file was handed over");
+    assert.ok(!pg1.els["parts-status"].textContent.includes(HINT), pg1.els["parts-status"].textContent);
+  }
+  {
+    // a press that takes the bar while the hand-over is mid-save keeps its own line: the sentence is not added to it
+    const page = makePage(); const hold = [];
+    const api = load(page, {hold, api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true})
+        : url === "/api/diagnostics/all-job/volumes" ? Promise.resolve(listing(1, 1)) : Promise.resolve(listing(3, 1))});
+    const diag = api.runAllDiagnostics({disabled: false});
+    for (let spin = 0; spin < 40 && hold.length === 0; spin++) await Promise.resolve();
+    assert.ok(hold.length > 0, "setup: the hand-over is between two files");
+    await api.downloadKeywordParts({disabled: false}, "default");
+    assert.strictEqual(api.state().kind, "keywords", "setup: the newer press has the bar");
+    const mine = page.els["parts-status"].textContent;
+    while (hold.length) { hold.shift()(); for (let s = 0; s < 8; s++) await Promise.resolve(); }
+    await diag;
+    assert.strictEqual(api.state().kind, "keywords");
+    assert.strictEqual(page.els["parts-status"].textContent, mine, "the finished hand-over wrote nothing over the newer set's line");
+  }
+
   // ---- a newer press that an even newer press overtook does not keep the archive off a bar that ended up empty
   {
     const page = makePage(); const statusHeld = []; const keywordHeld = []; let volumeCalls = 0;
