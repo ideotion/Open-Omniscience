@@ -54,7 +54,10 @@ from typing import Any
 #: The most any file handed to the maintainer may weigh. The maintainer's number, and what it
 #: protects is their UPLOADS: files of about 1.2 MB and up failed to upload (2026-09-30); 1,000,000
 #: bytes and not 2**20 keeps a margin under that. It is not a memory or disk limit, and it bounds
-#: each FILE, never the total (an export asking for no total cap is simply more files).
+#: each FILE, never the total (an export asking for no total cap is simply more files). The one
+#: thing that moves it is an operator's own override of the diagnostics set's cap
+#: (``OO_DIAG_VOLUME_MAX_MB``, in MiB, so ``1`` is 1,048,576 bytes); the default, every keyword
+#: set and the manifest zips are this number.
 UPLOAD_PART_BYTES = 1_000_000
 
 PART_KIND = "oo-upload-part-1"
@@ -64,6 +67,33 @@ MANIFEST_KIND = "oo-upload-parts-manifest-1"
 #: because deflate's worst case is a hair LARGER than its input and a part also carries its own
 #: zip headers and index: at 0.8 a piece that does not compress at all still fits a part alone.
 PIECE_FRACTION = 0.8
+
+#: The least a piece may weigh, and the least a part may leave for one. What it protects: below
+#: this a piece is mostly the zip structure around it, so a cap that small is refused (``ValueError``)
+#: rather than written as thousands of files that each hold a line.
+_MIN_PIECE_BYTES = 256
+
+#: How much of the room a part has left, after its own structure, one piece may take. What it
+#: protects: a piece is never what puts a part over the cap, whatever the compressor does with it
+#: (deflate's worst case is a little LARGER than its input). A tenth is generous on purpose: the
+#: post-check that refuses an over-cap part stays a backstop that nothing is expected to reach.
+_PIECE_ROOM_SHARE = 0.9
+
+#: Bytes allowed for the name of a member in the structure a part carries. A name is stored twice
+#: (local header and central directory), and the ones this module writes are 30 to 60 bytes
+#: (``keywords/<language>.from-NNNNNN.json`` and its numbered pieces); 96 leaves room for a long one.
+_MEMBER_NAME_ALLOWANCE = 96
+
+#: The widest position and total a part's own index (part.json) is MEASURED with, as in
+#: ``part-999999-of-999999``: the index is sized before the number of parts is known, so it is
+#: sized for the widest, and the room reserved for it is an upper bound whatever the final
+#: numbering. A million parts of a megabyte is a terabyte, past anything an export writes.
+_WIDEST_PART_NUMBER = 999_999
+
+#: The widest record index and count a part's per-group entry is measured with, for the same
+#: reason: a thousand million records is far past any corpus (the largest measured holds about
+#: 410 thousand keywords).
+_WIDEST_RECORD_NUMBER = 999_999_999
 
 #: A dict child no larger than this share of a piece joins its siblings in one "shell" piece
 #: instead of being split on its own (many small children are one document, not many).
@@ -127,7 +157,7 @@ def _size(value: Any) -> int:
 
 def piece_limit(cap: int = UPLOAD_PART_BYTES) -> int:
     """Raw bytes one piece may weigh so that it fits a part on its own."""
-    return max(256, int(cap * PIECE_FRACTION))
+    return max(_MIN_PIECE_BYTES, int(cap * PIECE_FRACTION))
 
 
 def split_json_value(value: Any, limit: int, path: tuple[str, ...] = ()) -> Iterator[dict]:
@@ -382,15 +412,15 @@ class PartWriter:
         self._serial = 0
         self._records = 0
         self._oversize: list[dict] = []
-        self._pj_final_name = part_file_name(stem, 999_999, 999_999)
+        self._pj_final_name = part_file_name(stem, _WIDEST_PART_NUMBER, _WIDEST_PART_NUMBER)
         # What a part costs before it holds anything: part.json, two members' zip structure and
         # names, the end record. A piece must leave room for it, whatever the cap.
         self._fixed = (
-            len(self._part_json_bytes([], 999_999, 999_999, self._pj_final_name))
-            + 2 * (_LOCAL_FIXED + _CENTRAL_FIXED + 96) + _END_FIXED + _MEMBER_TAIL
+            len(self._part_json_bytes([], _WIDEST_PART_NUMBER, _WIDEST_PART_NUMBER, self._pj_final_name))
+            + 2 * (_LOCAL_FIXED + _CENTRAL_FIXED + _MEMBER_NAME_ALLOWANCE) + _END_FIXED + _MEMBER_TAIL
         )
-        self._piece_limit = min(piece_limit(cap), int((cap - self._fixed) * 0.9))
-        if self._piece_limit < 256:
+        self._piece_limit = min(piece_limit(cap), int((cap - self._fixed) * _PIECE_ROOM_SHARE))
+        if self._piece_limit < _MIN_PIECE_BYTES:
             raise ValueError(
                 f"a part cap of {cap} bytes is too small: a part's own index needs {self._fixed}"
             )
@@ -454,7 +484,7 @@ class PartWriter:
         self._serial += 1
         part = _PartFile(self.out_dir / f".part-{self._serial:06d}.zip.tmp", self._stamp)
         part.front = front
-        part.pj_reserve = len(self._part_json_bytes([], 999_999, 999_999, self._pj_final_name)) \
+        part.pj_reserve = len(self._part_json_bytes([], _WIDEST_PART_NUMBER, _WIDEST_PART_NUMBER, self._pj_final_name)) \
             + _LOCAL_FIXED + len(PART_INDEX_NAME) + _DEFLATE_SLACK
         self._part = part
         return part
@@ -517,7 +547,7 @@ class PartWriter:
             names.append(part.cur.name)
         if opening:
             names.append(name)
-            pj += len(_dumps(self._meta_for(group, 999_999_999, 999_999_999))) + 1
+            pj += len(_dumps(self._meta_for(group, _WIDEST_RECORD_NUMBER, _WIDEST_RECORD_NUMBER))) + 1
         names.append(PART_INDEX_NAME)
         final = (
             part.fh.tell() + len(out) + _MEMBER_TAIL + _directory_size(names) + pj
@@ -711,7 +741,7 @@ class PartWriter:
             only = self._done[0]
             metas = [{"member": n, "kind": "file"} for _k, n, _d in front_items]
             extra = (
-                len(self._part_json_bytes(only.meta + metas, 999_999, 999_999, self._pj_final_name))
+                len(self._part_json_bytes(only.meta + metas, _WIDEST_PART_NUMBER, _WIDEST_PART_NUMBER, self._pj_final_name))
                 + _LOCAL_FIXED + len(PART_INDEX_NAME) + _DEFLATE_SLACK
                 + _CENTRAL_FIXED + len(PART_INDEX_NAME)
             )

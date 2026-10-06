@@ -780,7 +780,8 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     }
   }
 
-  // ---- the split sweeps the previous archive's files BEFORE it writes the new ones: a failed or lost split leaves no dead set on the bar
+  // ---- a failed or lost split leaves no set of the PREVIOUS archive on the bar (the files are still on the server, but they are not
+  // ---- the new archive's), except after a 404 or 409, refused before any work; and each says what it is in the press path's sentences
   {
     for (const failure of ["500", "network", "409", "404"]) {
       const page = makePage(); let failNow = false;
@@ -809,7 +810,9 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
         await api.partsSaveNext();
         assert.strictEqual(page.clicked.length, before, failure + ": no click can ask for the dead files");
       }
-      assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
+      const words = {404: /^No archive to split yet/, 409: /^A build is running/}[failure] || /^Could not split the archive: /;
+      assert.ok(words.test(page.els["all-diag-status"].textContent), failure + ": " + page.els["all-diag-status"].textContent);
+      if (failure === "500") assert.ok(/split failed$/.test(page.els["all-diag-status"].textContent), "the reason follows the sentence");
     }
     // a KEYWORD set on the bar is not the split's to drop
     const page = makePage(); let failNow = false;

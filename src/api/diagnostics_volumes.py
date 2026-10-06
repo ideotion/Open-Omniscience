@@ -157,9 +157,14 @@ class VolumeError(RuntimeError):
     """Raised when a diagnostics volume set is malformed or incomplete."""
 
 
+class VolumeRoomError(VolumeError):
+    """Raised when the drive cannot take a volume set (the caller answers 507, not 500)."""
+
+
 def volume_max_bytes() -> int:
     """The per-volume ceiling: ``UPLOAD_PART_BYTES`` (1,000,000 bytes, the maintainer's number),
-    env-tunable via ``OO_DIAG_VOLUME_MAX_MB`` (in MiB, as before) for a channel that takes more.
+    env-tunable via ``OO_DIAG_VOLUME_MAX_MB`` for a channel that takes more. The unit is MiB, as it
+    always was, so ``1`` means 1,048,576 bytes: past the default, which is the point of an override.
 
     It was 9 MiB (under the common 10 MB attachment limit); the maintainer then asked for 1 MB
     files because uploads of about 1.2 MB and up failed.
@@ -770,6 +775,44 @@ def write_volume_set(
         json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return sidecar
+
+
+def publish_volume_set(
+    build_dir: str | os.PathLike[str], out_dir: str | os.PathLike[str]
+) -> dict[str, Any]:
+    """Move a FINISHED set from ``build_dir`` into ``out_dir``, then retire the files it replaces.
+
+    A set is written in a folder of its own (``write_volume_set(src, build_dir)``) and moved in
+    only when it is whole, so the set that is in ``out_dir`` keeps answering through the whole
+    split and survives a split that fails: before, the previous files were deleted first and the new
+    ones written into the live folder, which left no set (and the half-written volumes) on a full
+    disk, and 404 for every name while a split ran. Both folders must be on one drive (a rename).
+
+    THE SIDECAR (``MANIFEST_NAME``) MOVES LAST, because it is what makes a set exist and what the
+    download route resolves names against: until it moves, the old sidecar still names old files,
+    all of which are still there; after it moves, the new one names new files, all of which are in.
+    Only then are the files nothing names any more removed (a file that cannot be removed, such as one
+    a download holds open on Windows, is left and swept by the next publish; a leftover is never
+    served, as only a name the sidecar lists is). One window remains and is stated: a rebuild of the
+    SAME archive under another cap can reuse a file name, and for the moment between that file's
+    move and the sidecar's the old sidecar describes a file that has changed; the checksum a person
+    compares then fails, which is the honest outcome, and the set is one file-move from right.
+    """
+    build, out = Path(build_dir), Path(out_dir)
+    manifest = load_manifest(build)
+    names = [v["name"] for v in manifest["volumes"]] + [
+        f["name"] for f in manifest.get("manifest_files", [])
+    ]
+    out.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        os.replace(build / name, out / name)
+    os.replace(build / MANIFEST_NAME, out / MANIFEST_NAME)
+    keep = {*names, MANIFEST_NAME}
+    for stale in out.iterdir():
+        if stale.name not in keep:
+            with contextlib.suppress(OSError):
+                stale.unlink()
+    return manifest
 
 
 def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:

@@ -526,6 +526,26 @@ def test_performance_report_says_so_when_the_keyword_export_is_declined(client, 
     assert row[0]["run"] == 0, "the row says the probe did not run, not only that it was skipped"
 
 
+def test_performance_report_carries_the_gate_reading_for_the_keyword_export_probe(
+    client, seeded, monkeypatch
+):
+    """The probe's gate reading is the bundle member's own (same function, same fields), so the
+    two can be compared; it sits beside the rows, never inside one (every row has a fixed shape)."""
+    import src.api.diagnostics.bundle as bundle_mod
+
+    monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
+    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: 512.0)
+    monkeypatch.setattr("src.database.maintenance._available_mb", lambda: 64.0)
+    monkeypatch.setattr("src.database.maintenance._read_memory_floor_mb", lambda: 256.0)
+    monkeypatch.setitem(bundle_mod._MEMBER_NEED_ESTIMATORS, "keyword-log-digest.json", lambda _db: 900.0)
+    st = client.get("/api/diagnostics/performance").json()["data"]["selftest"]
+    gate = st["keyword_export_gate"]
+    assert gate["decision"] == "declined" and gate["need_mb"] == 900.0
+    assert gate["total_mb"] == 512.0 and gate["available_mb"] == 64.0
+    row = [x for x in st["results"] if x["probe"] == "keyword_export_streamed"]
+    assert len(row) == 1 and "skipped" in row[0] and "gate" not in row[0]
+
+
 def test_performance_report_selftest_can_be_skipped(client):
     body = client.get("/api/diagnostics/performance?selftest=false").json()
     assert body["data"]["selftest"]["ran"] is False

@@ -1228,20 +1228,28 @@
                 if (((m && m.files) || []).length <= _PARTS_PER_CLICK) await _partsSave(_PARTS_PER_CLICK);
               }
             } catch (e) {
-              // The split sweeps the previous archive's files BEFORE it writes the new ones, so a
-              // failure after that point (a full disk, an answer lost on the way) leaves a diagnostics
-              // set on the bar pointing at files that are gone. A 404 (no archive) and a 409 (another build
-              // is running) are refused before anything is swept; every other failure empties such a bar
-              // (the sentence below says why the archive is not offered), whatever the set is doing: the
-              // page cannot tell a failure before the sweep from one after it, so it takes the safe side,
-              // and a set an "again" had just fetched for THIS archive goes with it if the answer was lost.
-              if (_partsSet && _partsSet.kind === "diagnostics" && !(e && (e.status === 404 || e.status === 409))) {
+              // The new set is built beside the previous one and moved in whole, so a failed split
+              // leaves the previous archive's files on the server: a diagnostics set on the bar does
+              // not point at files that are gone, it is of the PREVIOUS archive, and the person asked
+              // for the new one. Offered beside "Could not split the archive" it would hand them last
+              // bundle's files as this bundle's, so every failure empties such a bar (whatever the set
+              // is doing, an "again" that had just fetched THIS archive's set included when only the
+              // answer was lost) except a 404 (no archive) and a 409 (another build is running), which
+              // are refused before any work and say so in the sentences the press path uses.
+              const status = e && e.status;
+              if (_partsSet && _partsSet.kind === "diagnostics" && !(status === 404 || status === 409)) {
                 ++_partsGen; _partsSet = null; _partsRender();
                 const barEl = $("parts-bar"), line = $("parts-status");
                 if (line) line.textContent = "";
                 if (barEl) barEl.hidden = true;
               }
-              set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
+              if (status === 404) {
+                set(t("No archive to split yet — build one with the All diagnostics button first."));
+              } else if (status === 409) {
+                set(t("A build is running — wait for it, then split the archive it produces."));
+              } else {
+                set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
+              }
             }
             break;
           }
