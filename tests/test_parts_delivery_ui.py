@@ -118,6 +118,33 @@ def test_the_buttons_and_the_bar_exist_and_use_no_inline_handlers() -> None:
         assert f'"{name}"' in on, name
 
 
+def test_the_bar_sits_directly_under_the_buttons_that_fill_it() -> None:
+    """The 2026-10-06 field report: «running the full diagnostics did not work, I had to push the
+    "again" button». The Save button of a finished build sat after every unrelated button of the
+    panel, 300-500 px below the one that was pressed (measured in Chromium: below the screen at
+    1024x640, on its last pixels at 1280x720), so a build of twelve to fifty-five minutes ended in
+    silence. Reading the attribute order cannot prove a pixel distance, so the pin is the thing the
+    distance came from: between the diagnostics button and the bar there are ONLY the buttons that
+    fill the bar, and everything unrelated comes after it."""
+    html = (_STATIC / "index.html").read_text(encoding="utf-8")
+    first, bar = html.index('id="all-diag-btn"'), html.index('id="parts-bar"')
+    assert first < bar
+    assert re.findall(r'data-on-click="([^"]+)"', html[first:bar]) == [
+        "runAllDiagnostics(this)",
+        "downloadDiagnosticsVolumes(this)",
+        "downloadKeywordParts(this, 'default')",
+        "downloadKeywordParts(this, 'all')",
+        "downloadKeywordParts(this, 'again')",
+    ], "only the buttons that fill the bar may sit between the first of them and the bar"
+    after = html[bar:]
+    for unrelated in ("viewKeywordGrowth(this)", "discoverWorld(this)", "ooOpenUrl('/api/diagnostics/source-quality?download=1')"):
+        assert after.index(f'data-on-click="{unrelated}"') > 0, unrelated
+    assert "viewKeywordGrowth" not in html[first:bar]
+    # the page still brings the bar into view for a person who is looking at the button they pressed
+    js = (_STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
+    assert "_partsShow(btn);" in js and 'scrollIntoView({block: "nearest"})' in js
+
+
 def test_hidden_wins_on_the_bar_and_the_part_number_box() -> None:
     """`label { display:block }` and `.row` are author rules, and an author `display` beats the
     browser's `[hidden]`: the Chromium walk of 2026-10-01 saw the "Start at part number" box on a

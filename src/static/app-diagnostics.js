@@ -1024,6 +1024,25 @@
       return set;
     }
 
+    // WHERE THE ANSWER LANDS (field report 2026-10-06: «running the full diagnostics did not work, I had
+    // to push the "again" button»). A build is twelve to fifty-five minutes on the machines that
+    // reported, and when it ended the line beside the button was blanked while the Save button sat
+    // 300-500 px lower than the button that was pressed, under every unrelated button of the panel:
+    // measured in Chromium at 1280x720 and 1024x640, the button was off the screen or on its last
+    // pixels. The person saw the progress end in silence and pressed the one button that does save at
+    // once ("again"). So the bar now sits directly under the buttons that fill it (index.html), and
+    // this brings it into view when the person is still looking at the button they pressed. It does
+    // NOT move a page whose reader has gone elsewhere: a page that scrolls by itself is worse than a
+    // button to find. `near` is the pressed button.
+    function _partsShow(near) {
+      const bar = $("parts-bar");
+      if (!bar || bar.hidden || !near || typeof near.getBoundingClientRect !== "function") return;
+      const r = near.getBoundingClientRect();
+      const vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (!vh || r.bottom < 0 || r.top > vh) return;   // the pressed button is off the screen: the person is elsewhere
+      if (typeof bar.scrollIntoView === "function") bar.scrollIntoView({block: "nearest"});
+    }
+
     // The keyword log as numbered files. mode: "default" (top 5,000 per language, aims under 9 MB
     // in all), "all" (every keyword, no total cap) or "again" (the newest set still on this
     // machine, saved again without rebuilding it, starting at the typed part number).
@@ -1196,6 +1215,17 @@
                 ++_partsGen;
                 set("");
                 _partsReady(m, "diagnostics");
+                _partsShow(btn);
+                // A set that fits one click (the five files a click saves; every bundle of the
+                // 2026-10-06 reports was two: the manifest and one part) is handed to the browser
+                // now, because the person pressed «All diagnostics» to GET these files and a
+                // finished build that only offers a second button is the failure that was
+                // reported (R111: the first run works as it is). The build spent the click that
+                // started it, so a browser may ask once to allow several downloads, or refuse
+                // without telling the page: the line says «Asked your browser», never «saved», and
+                // «All diagnostics, again» beside it sends the same files again. A larger set
+                // still waits for the button, five to a click.
+                if (((m && m.files) || []).length <= _PARTS_PER_CLICK) await _partsSave(_PARTS_PER_CLICK);
               }
             } catch (e) {
               // The split sweeps the previous archive's files BEFORE it writes the new ones, so a

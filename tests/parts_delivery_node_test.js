@@ -65,9 +65,9 @@ function load(page, opts) {
     extract("_partsFiles"), extract("_partsWindow"), extract("_partsNextLabel"),
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
-    extract("_partsReady"), extract("downloadKeywordParts"), extract("downloadDiagnosticsVolumes"),
+    extract("_partsReady"), extract("_partsShow"), extract("downloadKeywordParts"), extract("downloadDiagnosticsVolumes"),
     extract("runAllDiagnostics"),
-    "return {_partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, partsSaveNext," +
+    "return {_partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, _partsShow, partsSaveNext," +
     " partsSaveRest, partsSaveFrom, downloadKeywordParts, downloadDiagnosticsVolumes, runAllDiagnostics," +
     " state: () => _partsSet};",
   ].join("\n");
@@ -887,6 +887,103 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
       await next;
       assert.strictEqual(api.state().kind, "diagnostics", failure + ": a later again press takes the bar");
     }
+  }
+
+  // ---- THE FIRST RUN HANDS THE FILES OVER (field report 2026-10-06: «running the full diagnostics did not
+  // work, I had to push the "again" button to get those»). A finished build used to blank the line beside
+  // the button and wait for a Save button that sat below every unrelated button of the panel; the
+  // reports' bundles were all two files (the manifest and one part).
+  const finishedBuild = (files) => (url) => {
+    if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
+    if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
+    if (url === "/api/diagnostics/all-job/volumes") return Promise.resolve(files);
+    return Promise.reject(new Error("unexpected " + url));
+  };
+  {
+    // a set that fits one click is handed to the browser at the end of the build, manifest first, no press
+    const page = makePage(); const api = load(page, {api: finishedBuild(listing(1, 1))});
+    await api.runAllDiagnostics({disabled: false});
+    assert.deepStrictEqual(page.clicked.map((c) => c.download), ["oo-x-manifest.zip", partName(1, 1)],
+      "the two files of the reports' bundles went out without a second press: " + page.clicked.map((c) => c.download));
+    assert.ok(/^Asked your browser to save all 2 files\./.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    assert.ok(!/ saved/.test(page.els["parts-status"].textContent.split(".")[0]), "the page asks, it does not claim a file was saved");
+    assert.strictEqual(page.els["parts-bar"].hidden, false, "and the line saying so is on screen, in the bar under the buttons");
+    assert.strictEqual(page.els["all-diag-status"].textContent, "", "the progress line is not left standing as if it were the outcome");
+    assert.strictEqual(api.state().kind, "diagnostics");
+  }
+  {
+    // the boundary is the click's own size: five files go out, six wait for the button
+    const five = makePage(); const a5 = load(five, {api: finishedBuild(listing(4, 1))});
+    await a5.runAllDiagnostics({disabled: false});
+    assert.strictEqual(five.clicked.length, 5, "five files are one click: handed over");
+    const six = makePage(); const a6 = load(six, {api: finishedBuild(listing(5, 1))});
+    await a6.runAllDiagnostics({disabled: false});
+    assert.strictEqual(six.clicked.length, 0, "six files are two clicks: nothing is handed over without the person");
+    assert.ok(/^6 files of at most 1 MB each are ready \(manifest: 1, numbered parts: 5\)\./.test(six.els["parts-status"].textContent),
+      six.els["parts-status"].textContent);
+    assert.strictEqual(six.els["parts-next"].textContent, "Save the first 5", "and the button under the buttons says what one click does");
+  }
+  {
+    // a large set (a corpus of a million articles) is never poured out unasked: still five to a click
+    const page = makePage(); const api = load(page, {api: finishedBuild(listing(40, 1))});
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.clicked.length, 0);
+    assert.strictEqual(api.state().pos, 0);
+  }
+  {
+    // a keyword set the person is in the middle of is still never cut by a small archive
+    const page = makePage(); const hold = [];
+    const api = load(page, {hold, api: finishedBuild(listing(1, 1))});
+    api._partsOffer(listing(30, 1), "keywords");
+    const saving = api.partsSaveNext();
+    const build = api.runAllDiagnostics({disabled: false});
+    let finished = 0; saving.then(() => finished++); build.then(() => finished++);
+    for (let spin = 0; spin < 400 && finished < 2; spin++) { await Promise.resolve(); if (hold.length) hold.shift()(); }
+    assert.strictEqual(finished, 2, "both finished");
+    assert.strictEqual(page.clicked.length, 5, "only the keyword set's five went out: the small archive did not take the click");
+    assert.ok(page.clicked.every((c) => c.href.startsWith("/api/diagnostics/keywords/parts/set1/")), "all five are the keyword files");
+    assert.strictEqual(api.state().kind, "keywords");
+    assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE);
+  }
+  {
+    // the bar is brought into view when the person is still looking at the button they pressed...
+    const view = (rect) => {
+      const page = makePage(); const scrolls = [];
+      page.els["parts-bar"].scrollIntoView = (o) => scrolls.push(o);
+      page.document.documentElement = {clientHeight: 700};
+      const api = load(page, {api: finishedBuild(listing(1, 1))});
+      return api.runAllDiagnostics({disabled: false, getBoundingClientRect: () => rect}).then(() => scrolls);
+    };
+    assert.deepStrictEqual(await view({top: 300, bottom: 340}), [{block: "nearest"}], "in view: the bar is brought to it, by the least movement");
+    // ...and never when they have gone elsewhere on the page: a page that scrolls by itself is worse than a button to find
+    assert.deepStrictEqual(await view({top: 900, bottom: 940}), [], "the pressed button is below the screen");
+    assert.deepStrictEqual(await view({top: -200, bottom: -160}), [], "the pressed button is above the screen");
+    // a bar that is not on the page's screen (hidden) is never scrolled to
+    const hid = makePage(); const hs = [];
+    hid.els["parts-bar"].scrollIntoView = (o) => hs.push(o);
+    hid.document.documentElement = {clientHeight: 700};
+    const hapi = load(hid);
+    hapi._partsShow({getBoundingClientRect: () => ({top: 300, bottom: 340})});
+    assert.deepStrictEqual(hs, [], "a hidden bar has nothing to show");
+    hid.els["parts-bar"].hidden = false;
+    hapi._partsShow({getBoundingClientRect: () => ({top: 300, bottom: 340})});
+    assert.deepStrictEqual(hs, [{block: "nearest"}], "the same call scrolls once the bar is on screen");
+    // a button the page cannot measure (a caller passing nothing) moves nothing and breaks nothing
+    const page = makePage(); const scrolls = [];
+    page.els["parts-bar"].scrollIntoView = (o) => scrolls.push(o);
+    const api = load(page, {api: finishedBuild(listing(1, 1))});
+    await api.runAllDiagnostics(null);
+    assert.deepStrictEqual(scrolls, []);
+    assert.strictEqual(page.clicked.length, 2, "and the files still went out");
+  }
+  {
+    // a failed split still says so beside the button and hands over nothing
+    const page = makePage();
+    const api = load(page, {api: (url) => url === "/api/diagnostics/all-job/volumes"
+      ? Promise.reject(Object.assign(new Error("boom"), {status: 500, detail: "split failed"})) : finishedBuild(null)(url)});
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.clicked.length, 0);
+    assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
   }
 
   console.log("all assertions passed");

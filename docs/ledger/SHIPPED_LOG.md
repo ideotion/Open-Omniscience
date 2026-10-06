@@ -10413,3 +10413,12 @@ available memory and engaged in that crash, so no gate change was made. Cost bou
 stack caps, 8 kept, counters only, never `gc.get_objects`). Lesson: `LESSONS.md`, the entry "A PLATEAU UNDER THE MEMORY
 LINE WAS UNRECORDED BY DESIGN". Stopping cleanly when memory does not recover stays the user's question 22; a relaunch
 starts offline under R117, so a clean stop alone would not resume the run.
+
+- **2026-10-06 · diagnostics/first-run-hand-over (keyword-export thread; the maintainer's 02:36 UTC report).**
+"Running the full diagnostics did not work, I had to push the 'run again' button": the eight bundles carry no error; their route
+counts show a build run to the end, split (`/volumes` 200), nothing downloaded, then pressed again hours later. Reproduced in
+Chromium: the end of the build blanked the line beside the button and the Save button was 300-500 px lower (off screen at 1024x640).
+The parts bar now sits directly under the buttons that fill it, is scrolled into view when the pressed button is still on screen,
+and a set that fits one click (five files; every reported bundle was two) is handed to the browser by the page at the end of the
+build. Lesson: `LESSONS.md`, the entry "A LONG BUILD ENDED IN SILENCE". Open beside it: the build holds one read transaction for
+its whole 12-55 minutes, so the WAL cannot be checkpointed meanwhile (up to 1.19 GB measured).

@@ -49,10 +49,13 @@ function functionBody(src, name) {
 // or lowering it in app.js cannot silently make this test describe a different function.
 const ceilMatch = APP.match(/const _ALL_DIAG_POLL_CEILING_MS = ([^;]+);/);
 assert.ok(ceilMatch, "_ALL_DIAG_POLL_CEILING_MS must be declared in app.js");
+// ...and the click's size, for the same reason: the finished build hands a set over only when it fits one click.
+const clickMatch = APP.match(/const _PARTS_PER_CLICK = (\d+);/);
+assert.ok(clickMatch, "_PARTS_PER_CLICK must be declared in app.js");
 
 // --- the harness ------------------------------------------------------------------ //
 
-let clock, statusText, opened, apiCalls, respond, readyListings;
+let clock, statusText, opened, apiCalls, respond, readyListings, shownFor, savedCounts;
 
 function install() {
   clock = 1_000_000;           // any epoch; only differences matter
@@ -70,12 +73,16 @@ function install() {
   global._fmtBytes = (n) => n + " B";
   readyListings = [];
   global._partsReady = (m) => readyListings.push(m);   // the numbered-files bar, defined elsewhere
+  shownFor = []; savedCounts = [];
+  global._partsShow = (near) => shownFor.push(near);           // brings the bar into view (its own test is parts_delivery_node_test.js)
+  global._partsSave = async (count) => { savedCounts.push(count); };   // hands files to the browser
   global._partsSet = null; global._partsGen = 0; global._partsBusy = 0;       // the bar's state: a finished build takes a number
   global.api = async (url) => { apiCalls.push(url); return respond(url); };
 }
 
 const SRC =
   "const _ALL_DIAG_POLL_CEILING_MS = " + ceilMatch[1] + ";\n" +
+  "const _PARTS_PER_CLICK = " + clickMatch[1] + ";\n" +
   "async function runAllDiagnostics(btn) " + functionBody(APP, "runAllDiagnostics") + "\n" +
   "module.exports = { runAllDiagnostics };";
 
@@ -147,6 +154,31 @@ async function readyStillOffersTheFiles() {
     "must not have replaced the normal path",
   );
   assert.ok(!/Could not split|Still building|Build failed/.test(statusText || ""), "got: " + JSON.stringify(statusText));
+  // The answer lands where the press was (2026-10-06: a build of 12-55 minutes ended in silence and the person
+  // pressed the button that saves at once): the bar is brought into view, and a set that fits one click is
+  // handed over by the page.
+  assert.strictEqual(shownFor.length, 1, "the bar is brought into view once, at the end of the build");
+  assert.deepStrictEqual(savedCounts, [5], "a set of one click is handed to the browser, five files at most");
+}
+
+// A set of more than one click is never poured out unasked: it waits for the button, five to a click.
+async function aLargeSetWaitsForTheButton() {
+  install();
+  let polls = 0;
+  const files = [{ name: "x-manifest.zip", kind: "manifest" }];
+  for (let i = 1; i <= 5; i++) files.push({ name: "x-part-" + i + "-of-5.zip", kind: "part" });
+  const listing = { set: "x", files };
+  respond = (url) => {
+    if (url.endsWith("/all-job/volumes")) return listing;
+    if (!url.endsWith("/status")) return { started: true };
+    polls++;
+    return polls < 2 ? { state: "running", done: 1, total: 55, detail: "debug-bundle.json", started_at: 0 }
+                     : { state: "done", ready: true };
+  };
+  await runAllDiagnostics(null);
+  assert.deepStrictEqual(readyListings, [listing], "the listing reaches the bar");
+  assert.strictEqual(shownFor.length, 1, "and the bar is brought into view");
+  assert.deepStrictEqual(savedCounts, [], "six files are two clicks: nothing is handed over without the person");
 }
 
 // --- 3. the twin, other direction: a real failure still reads as a failure --------- //
@@ -173,6 +205,7 @@ async function errorStillReportsFailure() {
 (async () => {
   await ceilingReportsInsteadOfFreezing();
   await readyStillOffersTheFiles();
+  await aLargeSetWaitsForTheButton();
   await errorStillReportsFailure();
   console.log("ok - all-diagnostics poll loop: ceiling speaks, terminal states still win");
 })().catch((e) => { console.error(e); process.exit(1); });
