@@ -1321,6 +1321,44 @@ def _trim_after_heavy_member(probe: "_RssProbe", rss_after: int | None) -> dict 
     return {"trimmed": True, "freed_kb": freed}
 
 
+#: What the manifest's ``run.read_release`` says about itself, beside its three counts.
+_READ_RELEASE_METHOD = (
+    "between two members the build ends its session's read transaction "
+    "(src.database.session.release_idle_connection), so the pooled connection goes back "
+    "and a checkpoint, the pin report and the collector's reserved slots no longer see a "
+    "standing reader for the whole run"
+)
+_READ_RELEASE_CAVEAT = (
+    "it does not bound ONE member: a statement or an open cursor inside a member still pins "
+    "the log for as long as that member reads, which the slow members' own wall time "
+    "(run.slowest_members) is the measure of. `none_held` counts boundaries where the session "
+    "had no transaction open, `declined` those where releasing could have discarded work"
+)
+
+
+def _release_read_between_members(db) -> str:
+    """End the build session's READ transaction at a member boundary; say what happened.
+
+    The build runs every member on ONE session opened before the first and closed after the
+    last, so its pooled connection was checked out for the whole run (the checkpoint record of
+    the 2026-10-06 bundles names ``bgjob-all-diagnostics`` as the oldest reader, 26 to 3,171 s,
+    beside a log of up to 1.19 GB). ``release_idle_connection`` is the app's one way to give
+    that connection back without losing work: it declines a session that has pending, flushed
+    or bulk-written state and never raises, so a member that wrote is slower, never wrong.
+
+    Returns ``"released"``, ``"none_held"`` (nothing was open: a member that opened its own
+    session, or a stub) or ``"declined"``."""
+    try:
+        in_txn = getattr(db, "in_transaction", None)
+        if in_txn is None or not in_txn():
+            return "none_held"
+        from src.database.session import release_idle_connection
+
+        return "released" if release_idle_connection(db) else "declined"
+    except Exception:  # noqa: BLE001 - the build is the evidence channel; a release never costs it
+        return "declined"
+
+
 _ALL_DIAG_DEADLINE_SENTINEL = object()
 
 
@@ -1810,6 +1848,7 @@ def _all_diagnostics_manifest(
     exclusive: dict | None = None,
     profile: str = "full",
     previous_runs: dict | None = None,
+    read_release: dict | None = None,
 ) -> dict:
     import platform
     import sys as _sys
@@ -1880,6 +1919,19 @@ def _all_diagnostics_manifest(
             "exclusive": exclusive
             if exclusive is not None
             else {"held": False, "reason": "not requested by this caller"},
+            # THE SESSION'S READ TRANSACTION, member boundary by member boundary. ABSENT when the
+            # build had no session (a caller that passed none); a count of 0 released beside a
+            # high `declined` would say a member wrote and the old standing reader is back.
+            **(
+                {
+                    "read_release": {
+                        **read_release,
+                        "method": _READ_RELEASE_METHOD,
+                        "caveat": _READ_RELEASE_CAVEAT,
+                    }
+                }
+                if read_release is not None else {}
+            ),
         },
         "members": results,
         # THE PROFILE THIS RUN USED, and what it cost (the light/full toggle, 2026-09-22).
@@ -2013,6 +2065,9 @@ def _write_all_diagnostics_zip(
     results: list[dict] = []
     total = len(members)
     run_started_at = _time.time()
+    # What ending the session's read transaction at each boundary came to (see
+    # _release_read_between_members); reported in the manifest, never assumed.
+    read_release = {"released": 0, "none_held": 0, "declined": 0}
     # Left open across the whole loop (appended + fsync'd per member) and closed in the
     # `finally` below -- a `with` here would have to wrap the entire member loop AND the
     # conditional-None case, which reads worse than the explicit open/close pair below.
@@ -2205,6 +2260,11 @@ def _write_all_diagnostics_zip(
                 if trim is not None:
                     entry["release"] = trim
             results.append(entry)
+            if db is not None:
+                # THE BOUNDARY: the member is over and its bytes are in the archive, so the
+                # session's read transaction (and the pooled connection under it) is of no use
+                # to anyone until the next member asks for it again.
+                read_release[_release_read_between_members(db)] += 1
 
             if journal_fp is not None:
                 try:
@@ -2243,6 +2303,7 @@ def _write_all_diagnostics_zip(
     manifest = _all_diagnostics_manifest(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
         exclusive=exclusive, profile=profile, previous_runs=previous_block,
+        read_release=read_release if db is not None else None,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
