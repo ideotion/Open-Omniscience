@@ -13700,3 +13700,8 @@ not read as one about the new file). **What this does NOT do, and is the open de
 online included) still releases a latch the check set, as it releases one a corruption error set; for an error "the first failed read puts it back" is the safety, and a latch the check found has no failed read to
 put it back. The sentences shown say "Starting collection again tries once more", which a hold-until-repaired would make false for these latches (five strings x12). Two exits are open: a re-check at the start
 (the check IS the retry), or the latch held until a repair or replacement.
+(10) **Three small rules the deep read forced**: a quit during the check gives the attempt back (`verification_file_stopped`: the entry stays `running` so the next start reads the file again, but quitting three
+times must not skip a check that nothing ever failed); a stop before a file is begun spends no attempt on it; a result for a file that was REPLACED while it was read is dropped (the entry `verification_forget`
+removed is not `running`), so a verdict about the old file cannot latch the new one; and **an error `connect()` chains must be the FIRST candidate's** (the page size that opened the path last), because the
+last candidate is the undeclared default size and fails with code 26 whatever the file's state: a schema page damaged under the right key read as "the passphrase did not open the file". A record whose
+`attempts` is not a number counts as none instead of aborting the whole plan.

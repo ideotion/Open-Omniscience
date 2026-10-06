@@ -867,6 +867,20 @@ class DamageRegistry:
         except Exception:  # noqa: BLE001
             _LOG.debug("database damage: could not forget a check's record", exc_info=True)
 
+    def verification_file_stopped(self, file_key: str) -> None:
+        """The check of ``file_key`` was interrupted by a stop (the app is shutting down). The entry stays ``running`` so
+        the next start reads the file again, but the attempt is given back: a quit is not a failure of the check, and
+        quitting three times during it must not skip it. Never raises."""
+        try:
+            with self._lock:
+                entry = self._verification.get(file_key)
+                if entry is None or entry.get("process") != self._process or entry.get("state") != "running":
+                    return
+                entry["attempts"] = max(0, int(entry.get("attempts") or 1) - 1)
+            self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+        except Exception:  # noqa: BLE001
+            _LOG.debug("database damage: could not give an attempt back", exc_info=True)
+
     def verification_file_skipped(self, file_key: str, *, path: Path | None, attempts: int, reason: str) -> None:
         """Say that the check of ``file_key`` was NOT run (an earlier check was left unfinished on every one of
         the last ``MAX_VERIFY_ATTEMPTS`` starts): the next unexpected stop starts the count again."""
@@ -893,7 +907,13 @@ class DamageRegistry:
             at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
             damaged = [t["table"] for t in result.get("tables", []) if t.get("verdict") == VERDICT_DAMAGED]
             with self._lock:
-                entry = dict(self._verification.get(file_key) or {})
+                held = self._verification.get(file_key)
+                if held is None or held.get("process") != self._process or held.get("state") != "running":
+                    # Not a check this process began and still holds: the file was REPLACED while it was read
+                    # (``verification_forget``), so this verdict is about a file that no longer is.
+                    _LOG.info("database damage: a check's result for the %s file is stale and was dropped", file_key)
+                    return
+                entry = dict(held)
                 entry.update(result)
                 entry.update(file=file_key, process=self._process, state="done", finished_at=at, attempts=0)
                 self._verification[file_key] = entry

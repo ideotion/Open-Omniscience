@@ -767,7 +767,8 @@ def test_a_stop_ends_the_run_without_a_verdict_and_the_next_start_reads_the_file
     verify._reset_for_tests()
     monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
     plan = verify.plan_boot(previous_end=CLEAN)
-    assert plan and plan["trigger"] == verify.TRIGGER_UNFINISHED and plan["files"][0][2] == 1
+    assert plan and plan["trigger"] == verify.TRIGGER_UNFINISHED
+    assert plan["files"][0][2] == 0, "a quit is not a failed attempt: the count was not given back"
 
 
 def test_the_shutdown_stops_the_check():
@@ -868,7 +869,8 @@ def test_resume_anyway_is_refused_with_a_sentence_while_the_check_reads_the_file
 
 
 def test_an_engaged_limit_names_itself_first_and_the_refusal_says_the_check(files, healthy, monkeypatch):
-    from tests.test_database_damage import _engaged_guard  # noqa: PLC0415 - the one engaged-guard builder
+    # the one engaged-guard builder
+    from tests.test_database_damage import _engaged_guard  # noqa: PLC0415
 
     g = _engaged_guard(monkeypatch)
     _arm(files, healthy, monkeypatch)
@@ -1134,6 +1136,74 @@ def test_the_restore_swap_forgets_the_verdict_beside_releasing_the_latch():
     src = (ROOT / "src" / "backup" / "merge.py").read_text(encoding="utf-8")
     release = src.index('damage.registry.retry(reason="the corpus file was replaced"')
     assert "damage.registry.verification_forget(damage.FILE_CORPUS)" in src[release : release + 400]
+
+
+def test_quitting_during_the_check_many_times_never_skips_it(tmp_path, healthy, files, monkeypatch):
+    """A quit is the operator's, not the check's failure: only a check that ends by being killed counts."""
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    for i in range(MAX_VERIFY_ATTEMPTS + 2):
+        _new_process(tmp_path, monkeypatch)
+        monkeypatch.setattr(damage, "_previous_end", (lambda: UNCLEAN) if i == 0 else (lambda: CLEAN))
+        verify._CANCEL.clear()
+        assert verify.arm_at_boot() is True, "the check was skipped after quits"
+        real = verify.check_table
+
+        def stop_first(path, table, _real=real, **kw):
+            out = _real(path, table, **kw)
+            verify.stop()
+            return out
+
+        monkeypatch.setattr(verify, "check_table", stop_first)
+        verify.run_armed()
+        monkeypatch.setattr(verify, "check_table", real)
+    verify._CANCEL.clear()
+
+
+def test_a_stop_before_a_file_is_begun_spends_no_attempt(tmp_path, healthy, files, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.arm_at_boot()
+    verify.stop()
+    verify.run_armed()
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["state"] == "owed" and entry["attempts"] == 0, entry  # still owed, nothing begun
+    verify._CANCEL.clear()
+
+
+def test_a_record_with_a_non_numeric_attempt_count_does_not_stop_the_plan(tmp_path, files, healthy, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    doc = tmp_path / "database-damage.json"
+    doc.write_text(
+        json.dumps({"verification": {FILE_CORPUS: {"state": "running", "process": "another", "attempts": "three"}}}),
+        encoding="utf-8",
+    )
+    _new_process(tmp_path, monkeypatch)
+    assert verify.arm_at_boot() is True and verify._PLAN["files"][0][2] == 0
+
+
+def test_a_check_result_that_arrives_after_the_file_was_replaced_is_dropped(tmp_path, files, damaged, monkeypatch):
+    """A restore during the boot check releases the latch and forgets the verdict; the check's own result for the OLD file
+    must not latch the new, healthy one."""
+    path, _bad = damaged
+    files[FILE_CORPUS] = path
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.arm_at_boot()
+    real = verify.check_table
+    done = []
+
+    def replace_midway(p, table, **kw):
+        out = real(p, table, **kw)
+        if not done:
+            done.append(True)
+            damage.registry.verification_forget(FILE_CORPUS)  # the restore swapped the file in
+        return out
+
+    monkeypatch.setattr(verify, "check_table", replace_midway)
+    verify.run_armed()
+    assert not damage.registry.latched(FILE_CORPUS), "a verdict about the old file latched the new one"
+    assert FILE_CORPUS not in _record(tmp_path).get("verification", {})
 
 
 def test_a_second_arming_changes_nothing(files, healthy, monkeypatch):

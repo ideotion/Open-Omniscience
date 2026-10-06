@@ -272,6 +272,14 @@ def _path_of(file_key: str) -> Path | None:
     return path
 
 
+def _attempts_of(entry: dict[str, Any]) -> int:
+    """The attempts a record carries; a record with anything else there counts as none, rather than aborting the plan."""
+    try:
+        return max(0, int(entry.get("attempts") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """What the start-up check will do, or ``None`` when it has nothing to do.
 
@@ -304,7 +312,7 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         damaged_before = last is not None and last.get("state") == "done" and last.get("verdict") == VERDICT_DAMAGED
         if not (unclean or unfinished or damaged_before):
             continue
-        attempts = int(last.get("attempts") or 0) if (last is not None and unfinished) else 0
+        attempts = _attempts_of(last) if (last is not None and unfinished) else 0
         if attempts >= damage.MAX_VERIFY_ATTEMPTS:
             skipped.append({"file": key, "path": path, "attempts": attempts})
             continue
@@ -438,6 +446,8 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
     reg.verification_begin(sum(len(i.get("names", ())) for _k, _p, _a, i in inspected))
     done = 0
     for key, path, attempts, info in inspected:
+        if _CANCEL.is_set():
+            return  # stopped before this file was begun: no attempt is spent on it
         t0 = time.monotonic()
         if "error" in info:
             verdict, reason = info["error"]
@@ -469,6 +479,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
             # Stopped (the app is shutting down): what was read is not a verdict on the file, and the record keeps
             # ``state: running`` so the next start reads it again (the attempt count bounds that).
             _LOG.info("database check: stopped before the %s file was finished", key)
+            reg.verification_file_stopped(key)
             return
         result = {
             "verdict": file_verdict(tables),

@@ -119,7 +119,7 @@ def heavy_step_verdict() -> dict | None:
     if busy:
         return {
             "reason": "boot_order",
-            "detail": "the start-up cache warm-up or rollup build is running; this build waits its turn",
+            "detail": "the start-up file check, cache warm-up or rollup build is running; this build waits its turn",
         }
     return None
 
