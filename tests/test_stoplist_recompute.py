@@ -343,9 +343,13 @@ def test_a_failure_is_recorded_without_the_passphrase_and_without_a_traceback(en
     assert out["complete"] is False
     assert secret not in out["skipped"] and out["skipped"].startswith("RuntimeError:")
     assert sr.needs_run(), "a failed pass records nothing"
+    logged = [r for r in caplog.records if "stoplist recompute failed" in r.getMessage()]
+    assert logged, "a failed pass says so in the log"
     for rec in caplog.records:
         assert secret not in rec.getMessage()
         assert rec.exc_info is None
+    # the log line carries the class and no engine text at all: the words live in the skip record
+    assert all("PRAGMA" not in r.getMessage() and "RuntimeError" in r.getMessage() for r in logged)
 
 
 def test_the_module_never_logs_a_traceback_and_names_no_write_model_of_the_mentions():
