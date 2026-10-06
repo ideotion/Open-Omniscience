@@ -13319,3 +13319,19 @@ skips where there is nothing for the cap to bound (not glibc, or a runtime that 
 decimal number only (up to 18 digits), says "not known" (`effective: None`) for anything else glibc may read differently, for an arena-limit
 tunable and nowhere else, says `effective: False` under a preloaded malloc replacement, and names `arena_cap` only when the process runs
 with that cap. Fifteen mutations of the reading, the launcher's order and the soak window are each caught.
+
+### A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS (release candidate diagnostics, 2026-10-06, PR #1312, `scripts/launch.sh`, the coordinator's check of #1304, should-fix 1)
+
+R114 ruled `MALLOC_ARENA_MAX=2` for the instance, and the launcher shipped it as `export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"` near its
+top. That is true of the ruling's subject, the server, and equally of everything else the script or the server starts afterwards: the browser
+`xdg-open` opens (on a fresh start, and on the "already running" path where no server starts at all) and, through the server's `os.environ`,
+the Ollama daemon, the vLLM server and the installs and weights download that `launch_env()` copies it into. Nothing ruled or measured a cap
+of 2 for an inference engine's many allocating threads, and the diagnostics built to read the cost see only the server's own allocator, so the
+one place the cap could have slowed somebody down was the one place nobody was reading. **An environment variable reaches every descendant
+unless something stops it. A default decided for one process is handed to that process's command (`env VAR=value cmd`, which also cannot trip
+a `readonly` declaration of the operator's under `set -e`), and where the process's own children would still inherit it, the launcher says so
+in a marker that lets the server tell its default from a value somebody chose** (here `OO_ARENA_MAX_DEFAULTED=1`, cleared first so a marker the
+caller's environment already carried is never taken for this launcher's word about this number): the engines drop the marked default and keep
+an operator's own value, which carries no marker. The tests that count run the real launcher against fake server, browser and `curl` programs
+that record what they were started with, on both launcher paths, plus a source tie between the two spellings of the marker, because bash and
+Python share nothing else.

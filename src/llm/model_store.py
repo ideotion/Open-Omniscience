@@ -51,6 +51,14 @@ _LOG = logging.getLogger("llm.model_store")
 _MANIFESTS = "manifests"
 _BLOBS = "blobs"
 
+# R114: ``scripts/launch.sh`` starts the app SERVER with ``MALLOC_ARENA_MAX=2`` when nobody chose a
+# value, and sets this variable to "1" on that command and only then. The cap was ruled and measured
+# for the server alone, so the engines the server starts do not take the launcher's default
+# (:func:`launch_env`); the marker is the only way to tell that default from a value the operator
+# chose, which they keep. A test ties the launcher's spelling of it to this one.
+ARENA_DEFAULT_MARKER = "OO_ARENA_MAX_DEFAULTED"
+_ARENA_VAR = "MALLOC_ARENA_MAX"
+
 
 def app_models_root() -> Path:
     """The app-owned root for every locally downloaded model artifact."""
@@ -116,8 +124,18 @@ def launch_env(base: dict | None = None) -> dict:
 
     An operator-set value is preserved: :func:`ollama_store` and :func:`hf_home`
     already resolve to it, so re-exporting it is a no-op rather than an override.
+
+    The launcher's DEFAULT malloc-arena cap is left out (R114): it was ruled and measured for the
+    app server, nothing says what it does to an inference engine's many allocating threads, and the
+    diagnostics read only the server's. The launcher marks its own default with
+    :data:`ARENA_DEFAULT_MARKER`, so that default is dropped here and an operator's own
+    ``MALLOC_ARENA_MAX`` (unmarked) still reaches the engine like any other environment variable.
+    The marker itself means nothing to a child and is never passed on. Every spawner of an engine
+    or of a download (Ollama, the vLLM server, the weights and installs) builds its environment here.
     """
     env = dict(base if base is not None else os.environ)
+    if env.pop(ARENA_DEFAULT_MARKER, None) == "1":
+        env.pop(_ARENA_VAR, None)
     try:
         o_store = ollama_store()
         h_home = hf_home()

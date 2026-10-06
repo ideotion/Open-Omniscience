@@ -58,9 +58,19 @@ def _exe(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
-def _launch(tmp_path: Path, *, env_extra: dict[str, str] | None = None, oo_env: str | None = None) -> str:
-    """Run the real ``scripts/launch.sh`` in a throwaway tree whose server records the
-    ``MALLOC_ARENA_MAX`` it was started with ("UNSET" when it had none)."""
+def _run_launcher(
+    tmp_path: Path,
+    *,
+    env_extra: dict[str, str] | None = None,
+    oo_env: str | None = None,
+    running: bool = False,
+) -> dict[str, str | None]:
+    """Run the real ``scripts/launch.sh`` in a throwaway tree and report what its children saw.
+
+    ``server`` is the ``MALLOC_ARENA_MAX`` the server was started with, ``marker`` its
+    ``OO_ARENA_MAX_DEFAULTED``, ``browser`` the ``MALLOC_ARENA_MAX`` the browser the launcher
+    opened was started with: each "UNSET" when the child had none, and None when that child never
+    ran. ``running`` takes the "a server is already healthy" path, which starts no server."""
     root = tmp_path / "oo"
     (root / "scripts").mkdir(parents=True)
     shutil.copy2(REPO / "scripts" / "launch.sh", root / "scripts" / "launch.sh")
@@ -72,18 +82,26 @@ def _launch(tmp_path: Path, *, env_extra: dict[str, str] | None = None, oo_env: 
     fake = tmp_path / "bin"
     fake.mkdir()
     seen = tmp_path / "arena.seen"
+    browser = tmp_path / "browser.seen"
     _exe(
         fake / "open-omniscience",
-        '#!/usr/bin/env bash\nprintf "%s" "${MALLOC_ARENA_MAX-UNSET}" > "$OO_TEST_ARENA_SEEN"\n',
+        '#!/usr/bin/env bash\nprintf "%s|%s" "${MALLOC_ARENA_MAX-UNSET}" '
+        '"${OO_ARENA_MAX_DEFAULTED-UNSET}" > "$OO_TEST_ARENA_SEEN"\n',
     )
     # The first curl is the launcher's "is one already running?" probe and must fail; the
-    # health wait after it succeeds, so the test does not wait 20 s.
+    # health wait after it succeeds, so the test does not wait 20 s. In ``running`` mode the
+    # probe itself succeeds.
     _exe(
         fake / "curl",
-        '#!/usr/bin/env bash\nf="$OO_TEST_CURLCOUNT"\nn=$(cat "$f" 2>/dev/null || echo 0)\n'
+        "#!/usr/bin/env bash\nexit 0\n"
+        if running
+        else '#!/usr/bin/env bash\nf="$OO_TEST_CURLCOUNT"\nn=$(cat "$f" 2>/dev/null || echo 0)\n'
         'echo $((n + 1)) > "$f"\n[ "$n" -ge 1 ]\n',
     )
-    _exe(fake / "xdg-open", "#!/usr/bin/env bash\nexit 0\n")
+    _exe(
+        fake / "xdg-open",
+        '#!/usr/bin/env bash\nprintf "%s" "${MALLOC_ARENA_MAX-UNSET}" > "$OO_TEST_BROWSER_SEEN"\n',
+    )
     env = {
         k: v for k, v in os.environ.items()
         if not k.startswith(("OO_", "XDG_DATA_HOME")) and k != "MALLOC_ARENA_MAX"
@@ -92,6 +110,7 @@ def _launch(tmp_path: Path, *, env_extra: dict[str, str] | None = None, oo_env: 
         PATH=f"{fake}{os.pathsep}{os.environ['PATH']}",
         HOME=str(tmp_path / "home"),
         OO_TEST_ARENA_SEEN=str(seen),
+        OO_TEST_BROWSER_SEEN=str(browser),
         OO_TEST_CURLCOUNT=str(tmp_path / "curl.count"),
     )
     env.update(env_extra or {})
@@ -100,20 +119,31 @@ def _launch(tmp_path: Path, *, env_extra: dict[str, str] | None = None, oo_env: 
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
-    return seen.read_text(encoding="utf-8")
+    server, marker = seen.read_text(encoding="utf-8").split("|") if seen.exists() else (None, None)
+    return {
+        "server": server,
+        "marker": marker,
+        "browser": browser.read_text(encoding="utf-8") if browser.exists() else None,
+    }
+
+
+def _launch(tmp_path: Path, *, env_extra: dict[str, str] | None = None, oo_env: str | None = None) -> str | None:
+    """The ``MALLOC_ARENA_MAX`` the launcher started the server with ("UNSET" when it had none)."""
+    return _run_launcher(tmp_path, env_extra=env_extra, oo_env=oo_env)["server"]
 
 
 @posix_only
 def test_the_launcher_starts_the_server_with_the_arena_cap_when_nobody_chose_one(tmp_path):
-    """MUTATION TARGET: delete the export from ``scripts/launch.sh`` and the server starts
-    with glibc's default (up to 8 arenas per core) -- the instances the ruling is about."""
+    """MUTATION TARGET: delete the cap from the server's command in ``scripts/launch.sh`` and
+    the server starts with glibc's default (up to 8 arenas per core) -- the instances the
+    ruling is about."""
     assert _launch(tmp_path) == "2"
 
 
 @posix_only
 def test_a_value_the_operator_already_chose_is_kept(tmp_path):
-    """MUTATION TARGET: an unconditional ``export MALLOC_ARENA_MAX=2`` would overwrite an
-    operator's own tuning. R114 is a default, never an override."""
+    """MUTATION TARGET: an unconditional ``MALLOC_ARENA_MAX=2`` on the server's command would
+    overwrite an operator's own tuning. R114 is a default, never an override."""
     assert _launch(tmp_path, env_extra={"MALLOC_ARENA_MAX": "8"}) == "8"
 
 
@@ -130,14 +160,163 @@ def test_a_value_recorded_in_the_install_file_is_kept(tmp_path):
 
 @posix_only
 def test_a_variable_the_install_file_unsets_or_empties_still_gets_the_default(tmp_path):
-    """MUTATION TARGETS. The default is applied AFTER ``oo.env`` is read, so an install file
+    """MUTATION TARGETS. The default is decided AFTER ``oo.env`` is read, so an install file
     that unsets the variable, or leaves it empty, has chosen no number and gets the default;
-    exported BEFORE the file it would reach the server unset, or empty. And an EMPTY value
-    from the caller is no choice either (``:-``, not ``-``): glibc ignores an empty value, so
-    keeping it would leave the arenas uncapped while the launcher reads as having capped them."""
+    decided BEFORE the file it would reach the server unset, or empty. And an EMPTY value
+    from the caller is no choice either (``-n``/``:-``, not ``-v``/``-``): glibc ignores an
+    empty value, so keeping it would leave the arenas uncapped while the launcher reads as
+    having capped them."""
     assert _launch(tmp_path / "a", oo_env="unset MALLOC_ARENA_MAX\n") == "2"
     assert _launch(tmp_path / "b", oo_env="export MALLOC_ARENA_MAX=\n") == "2"
     assert _launch(tmp_path / "c", env_extra={"MALLOC_ARENA_MAX": ""}) == "2"
+
+
+@posix_only
+def test_the_default_is_the_servers_alone_the_browser_the_launcher_opens_never_gets_it(tmp_path):
+    """MUTATION TARGET: ``export`` it again and the browser, started from the launcher's own
+    shell on both paths (a fresh start, and "a server is already running", which starts no
+    server at all), inherits a setting that was ruled and measured for the server. What the
+    operator exports is the operator's own, and reaches the browser as it always did."""
+    started = _run_launcher(tmp_path / "a")
+    assert (started["server"], started["browser"]) == ("2", "UNSET")
+    running = _run_launcher(tmp_path / "b", running=True)
+    assert (running["server"], running["browser"]) == (None, "UNSET")
+    assert _run_launcher(tmp_path / "c", env_extra={"MALLOC_ARENA_MAX": "8"})["browser"] == "8"
+
+
+@posix_only
+def test_the_launcher_marks_its_own_default_and_nothing_else(tmp_path):
+    """MUTATION TARGETS: the marker is how the server tells the launcher's default (kept out
+    of the LLM engines it starts) from a number somebody chose (which reaches them). Set it
+    always and an operator's own tuning is stripped from the engines; never and the default
+    reaches them. A marker the CALLER's environment already carried is not this launcher's word
+    about this number, so it is cleared."""
+    default = _run_launcher(tmp_path / "a")
+    assert (default["server"], default["marker"]) == ("2", "1")
+    operators = (
+        {"env_extra": {"MALLOC_ARENA_MAX": "8"}},
+        {"env_extra": {"MALLOC_ARENA_MAX": "2"}},  # the same number, still their choice
+        {"oo_env": "export MALLOC_ARENA_MAX='4'\n"},
+        {"oo_env": "MALLOC_ARENA_MAX=3\n"},
+    )
+    for n, kwargs in enumerate(operators):
+        got = _run_launcher(tmp_path / f"operator{n}", **kwargs)
+        assert got["marker"] == "UNSET", (kwargs, got)
+    stale = _run_launcher(
+        tmp_path / "stale", env_extra={"MALLOC_ARENA_MAX": "8", "OO_ARENA_MAX_DEFAULTED": "1"}
+    )
+    assert (stale["server"], stale["marker"]) == ("8", "UNSET")
+
+
+@posix_only
+def test_an_install_file_that_makes_the_variable_readonly_cannot_stop_the_app_starting(tmp_path):
+    """The default is handed to the server's command through ``env``, not assigned in the
+    launcher's own shell: a ``readonly`` declaration in ``oo.env`` (only an operator writes one)
+    made the assignment fail, and ``set -e`` ended the launcher with no server."""
+    got = _run_launcher(tmp_path, oo_env="readonly MALLOC_ARENA_MAX=4\n")
+    assert (got["server"], got["marker"]) == ("4", "UNSET")
+
+
+def test_the_launchers_marker_is_the_one_the_server_reads():
+    """The launcher is bash and the server is Python, so nothing but this ties the spelling of
+    the marker in one to the constant the other strips: a typo in either keeps the launcher's
+    default in the LLM engines while every other test stays green."""
+    from src.llm import model_store
+
+    script = (REPO / "scripts" / "launch.sh").read_text(encoding="utf-8")
+    assert f"{model_store.ARENA_DEFAULT_MARKER}=1" in script
+    assert f"unset {model_store.ARENA_DEFAULT_MARKER}" in script
+
+
+# --------------------------------------------------------------------------- #
+#  The engines the server starts do not take the launcher's default
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def engine_env(tmp_path, monkeypatch):
+    """The server's own environment as the launcher leaves it (the default and its marker),
+    with the model store inside ``tmp_path`` and no operator-set store variables."""
+    from src.llm import model_store
+
+    monkeypatch.setattr("src.llm.model_store.data_dir", lambda: tmp_path)
+    for var in ("OLLAMA_MODELS", "HF_HOME", "HF_HUB_CACHE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("MALLOC_ARENA_MAX", "2")
+    monkeypatch.setenv(model_store.ARENA_DEFAULT_MARKER, "1")
+    return monkeypatch
+
+
+def test_the_launchers_default_is_left_out_of_what_an_engine_is_started_with(engine_env):
+    """MUTATION TARGET: drop the strip from ``launch_env`` and Ollama and vLLM run on a cap that
+    was ruled and measured for the app server alone, and that no diagnostic reads for them."""
+    from src.llm import model_store
+
+    marker = model_store.ARENA_DEFAULT_MARKER
+    got = model_store.launch_env({"PATH": "/bin", "MALLOC_ARENA_MAX": "2", marker: "1"})
+    assert "MALLOC_ARENA_MAX" not in got and marker not in got
+    assert got["PATH"] == "/bin", "the rest of the environment is untouched"
+    # the server's own environment is only read, never changed
+    assert os.environ["MALLOC_ARENA_MAX"] == "2" and os.environ[marker] == "1"
+
+
+def test_an_operators_own_value_still_reaches_the_engines_like_any_environment_variable(engine_env):
+    """MUTATION TARGET: stripping the variable whenever it is present, marked or not, would
+    discard a number the operator chose on purpose (their environment, or ``oo.env``). The
+    marker, which means nothing to a child, is never passed on, whatever it says."""
+    from src.llm import model_store
+
+    marker = model_store.ARENA_DEFAULT_MARKER
+    assert model_store.launch_env({"MALLOC_ARENA_MAX": "4"})["MALLOC_ARENA_MAX"] == "4"
+    for said in ("0", "", "yes"):
+        got = model_store.launch_env({"MALLOC_ARENA_MAX": "4", marker: said})
+        assert got["MALLOC_ARENA_MAX"] == "4" and marker not in got, said
+    # a marker with nothing to strip is harmless
+    assert marker not in model_store.launch_env({marker: "1"})
+
+
+def test_every_spawner_of_an_engine_or_a_download_builds_its_environment_without_the_default(
+    engine_env, tmp_path
+):
+    """The three spawners the app has -- the Ollama daemon, the vLLM server, and the installs and
+    weights download -- all take the environment from ``launch_env``, so none of them inherits
+    the launcher's default. A fourth that built its own from ``os.environ`` would, and this is
+    the list to extend."""
+    from src.llm import model_store, ollama_lifecycle, vllm_lifecycle
+
+    marker = model_store.ARENA_DEFAULT_MARKER
+    for what, env in (
+        ("the vLLM server", vllm_lifecycle._server_env()),
+        ("the installs and the weights download", vllm_lifecycle._install_env(tmp_path / "pip")),
+    ):
+        assert "MALLOC_ARENA_MAX" not in env and marker not in env, what
+
+    spawned: dict = {}
+
+    class _Daemon:
+        pid = 1
+
+        def poll(self):
+            return None
+
+    engine_env.setattr(ollama_lifecycle, "_proc", None)  # restored afterwards: start() sets it
+    engine_env.setattr(ollama_lifecycle, "binary_path", lambda: "/fake/ollama")
+    engine_env.setattr(ollama_lifecycle, "is_running", lambda: False)
+    engine_env.setattr(
+        ollama_lifecycle.subprocess, "Popen", lambda argv, **kw: spawned.update(kw) or _Daemon()
+    )
+    ollama_lifecycle.start(wait=False)
+    assert spawned, "the daemon was not spawned"
+    assert "MALLOC_ARENA_MAX" not in spawned["env"] and marker not in spawned["env"], "the Ollama daemon"
+
+    # and an operator's own value reaches all three
+    engine_env.delenv(marker)
+    engine_env.setenv("MALLOC_ARENA_MAX", "6")
+    assert vllm_lifecycle._server_env()["MALLOC_ARENA_MAX"] == "6"
+    assert vllm_lifecycle._install_env(tmp_path / "pip")["MALLOC_ARENA_MAX"] == "6"
+    spawned.clear()
+    ollama_lifecycle.start(wait=False)
+    assert spawned["env"]["MALLOC_ARENA_MAX"] == "6"
 
 
 # --------------------------------------------------------------------------- #

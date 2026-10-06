@@ -10447,3 +10447,11 @@ launcher's comment and the changelog no longer say freed memory stays in its own
 that an install file that unsets or empties the variable, or a caller that passes it empty, still gets the default. A test
 starts a child with the variable named twice and counts the arenas glibc kept. Lesson: `LESSONS.md`, the entry "A READING OF
 ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE".
+
+- **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the coordinator's check of #1304, should-fix 1).** R114 ruled the
+cap for the instance and the launcher exported it, so the browser it opened and, through the server's environment, the Ollama daemon, the vLLM server
+and the installs and weights download inherited it, none of them ruled or measured for it and none read by the diagnostics. The launcher now gives it
+to the server's command alone (through `env`, so a `readonly` declaration in `oo.env` cannot stop the app starting) and marks its own default with
+`OO_ARENA_MAX_DEFAULTED=1` (cleared first); `launch_env` drops the variable when the marker says it was the launcher's default and always drops the
+marker, and an operator's own value, which carries none, still reaches the engines. Recorded in the R114 row and queue entry as a session decision
+under `16c`. Lesson: `LESSONS.md`, the entry "A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS".

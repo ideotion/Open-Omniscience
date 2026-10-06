@@ -29,19 +29,6 @@ if [ -f "$DIR/oo.env" ]; then
     . "$DIR/oo.env" || true
 fi
 
-# Cap glibc's malloc arenas at 2 (R114, the maintainer's ruling of 2026-10-01). glibc gives
-# every busy thread an arena of its own, up to 8 per core, and memory freed in an arena stays
-# held by it until glibc can trim it (a freed chunk goes back to the arena that allocated it,
-# whichever thread frees it): the app runs dozens of threads, and the one reading taken inside
-# a death (2026-09-30) found 988.7 MB of 3,437 MB of anonymous memory freed but held by glibc's
-# heap. A value the operator already chose (oo.env above, or the caller's environment) is
-# kept, so this is only a default; unset or empty is no choice. glibc reads the variable once,
-# when the server process starts, so it takes effect at the next launch; where the allocator is
-# not glibc (macOS, Alpine, Windows) it does nothing, and the app's diagnostics say which
-# allocator each session ran on. The processes the server starts inherit it too (a local
-# Ollama or vLLM, a browser started by xdg-open), and the diagnostics report only the server's.
-export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
-
 PORT="${OO_PORT:-8000}"
 BASE="http://127.0.0.1:${PORT}"
 URL="${BASE}${UI_PATH}"
@@ -143,7 +130,32 @@ record_exit() {
 }
 
 # Start the server in the background so we can wait for health, then open a browser.
-open-omniscience &
+#
+# Cap glibc's malloc arenas at 2 for the SERVER (R114, the maintainer's ruling of 2026-10-01).
+# glibc gives every busy thread an arena of its own, up to 8 per core, and memory freed in an
+# arena stays held by it until glibc can trim it (a freed chunk goes back to the arena that
+# allocated it, whichever thread frees it): the app runs dozens of threads, and the one reading
+# taken inside a death (2026-09-30) found 988.7 MB of 3,437 MB of anonymous memory freed but
+# held by glibc's heap. A value the operator already chose (oo.env above, or the caller's
+# environment) is kept, so this is only a default; unset or empty is no choice. glibc reads the
+# variable once, when the server process starts, so it takes effect at the next launch; where
+# the allocator is not glibc (macOS, Alpine, Windows) it does nothing, and the app's diagnostics
+# say which allocator each session ran on.
+#
+# It is the SERVER's default, so it is given to the server's command alone and never exported:
+# the browser opened below does not inherit it, and OO_ARENA_MAX_DEFAULTED=1 tells the server
+# the number is this launcher's own, which is how the server keeps it out of the Ollama, vLLM
+# and model-download processes it starts (src/llm/model_store.py, launch_env): nothing ruled or
+# measured it for them, and the diagnostics report only the server's. A value the operator chose
+# is theirs and carries no marker, so it reaches those too, as any environment variable does.
+# `env` hands the value to the one command without assigning it in this shell, so an install
+# file that declared the variable readonly cannot stop the app from starting.
+unset OO_ARENA_MAX_DEFAULTED
+if [ -n "${MALLOC_ARENA_MAX:-}" ]; then
+    env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience &
+else
+    env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience &
+fi
 SERVER=$!
 SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Stop the server when this launcher exits (window closed / Ctrl-C).
