@@ -16267,7 +16267,7 @@ maintainer as a card.
 - **ROW F, FOUND IN THE 2026-10-06 BUNDLES AND NOT FIXED BY PR #1314 (recorded 2026-10-06):** (1) the walk lists about 24 pages per request, not
   the planned 50 (en 18, fr 29 on hP; bn 1.4 and pt 1.2 on Lenovo, es 46). Read from the numbers, not reproduced (the sandbox cannot reach Wikipedia): every
   request weighs 262 to 312 bytes a page and no page is listed twice, so an answer really holds that many pages, and the yield is the non-redirect share of the 50
-  titles each request scans (`gapfilterredir=nonredirects` is applied after the window on Wikimedia's servers). The request cannot cover more titles (50 is the
+  titles each request scans (`gapfilterredir=nonredirects` is applied after the window on Wikimedia's servers: the mechanism is read from MediaWiki's documentation, not reproduced, while the per-edition shares are measured). The request cannot cover more titles (50 is the
   anonymous limit), so a pass costs (articles + redirects) / 50 requests: about 400,000 for en and 95,000 for fr, extrapolated from the part walked
   (`/mnt/project-files/plan-v05/lane-pace/WALK_PACE.md`); the plan's «480,000 requests for all twenty-four million articles» is wrong. (2) WARM is switched on and has no
   rows on both machines that switched it on (`warm-never-run`): its queue is fed inside the idle window only, and the `service` block and the hourly history will say

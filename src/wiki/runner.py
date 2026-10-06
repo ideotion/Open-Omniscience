@@ -450,6 +450,9 @@ class WikiLaneRunner:
         self._history = HistoryBuffer()
         self._drain_ms: deque[float] = deque(maxlen=DRAIN_RING)
         self._stage_totals_ms: dict[str, int] = {}
+        #: What THIS drain thread held of the corpus's write gate, summed over drains that could be
+        #: measured (the gate keeps a thread's holds by name, src/database/writer.py ``watch``).
+        self._gate_totals: dict[str, int] = {"measured": 0, "grants": 0, "held_ms": 0, "longest_ms": 0}
         self._tick_parts: dict[str, int] = {}
         self._tick_totals_ms: dict[str, int] = {}
         self._tick_last: deque[dict[str, int]] = deque(maxlen=TICK_RING)
@@ -528,8 +531,8 @@ class WikiLaneRunner:
             "last_stream_restart_at": self.last_stream_restart_at,
             # WHERE THE TIME GOES, since this runner started (src/wiki/history.py keeps the hourly
             # record across restarts). ``tick`` parts are seconds spent in the drain, the
-            # pageview top-up, the search index, WARM, the walk and the sleep; a tick is all of
-            # them, and the walk's pace is whatever the others leave of its 30 s window.
+            # pageview top-up, the search index, WARM, the walk, the sleep and, for a lane that is
+            # failing, the failure wait; a tick is all of them, and the walk's pace is whatever the others leave of its 30 s window.
             "tick": {
                 "ticks": self.ticks,
                 "totals_s": {k: round(v / 1000, 1) for k, v in sorted(self._tick_totals_ms.items())},
@@ -540,6 +543,7 @@ class WikiLaneRunner:
             "history": {
                 "pending_rows": self._history.pending(),
                 "flush_failures": self._history.flush_failures,
+                "dropped_rows": self._history.dropped_rows,
                 "last_flush_error": self._history.last_flush_error,
             },
         }
@@ -547,9 +551,12 @@ class WikiLaneRunner:
     def _drain_duration(self) -> dict:
         """The measured durations of this runner's drains: count, p50, p95 and the longest.
 
-        The corpus connection is held for the ``feeds`` stage (texts are fetched while it is open),
-        so ``stage_totals_s`` is the time that connection was held, summed. Absent figures are
-        ``None`` with the count beside them, never a zero.
+        ``stage_totals_s`` is the wall time of each stage, summed: ``feeds-wall`` includes opening
+        the lane, waiting for a connection and the HTTP text fetches between stores, so it is an
+        upper bound on how long the corpus was occupied and NOT that figure. The figure itself is
+        ``write_gate``: the holds this drain thread took of the corpus's single writer, from the
+        gate's own accounting of that one thread. Failed drains are in the durations. Absent
+        figures are ``None`` with the count beside them, never a zero.
         """
         data = list(self._drain_ms)
         p50 = percentile(data, 0.5)
@@ -561,6 +568,22 @@ class WikiLaneRunner:
             "max_s": None if not data else round(max(data) / 1000, 2),
             "window": f"the last {DRAIN_RING} drains this process ran",
             "stage_totals_s": {k: round(v / 1000, 1) for k, v in sorted(self._stage_totals_ms.items())},
+            "write_gate": self._gate_block(),
+        }
+
+    def _gate_block(self) -> dict:
+        g = self._gate_totals
+        measured = g["measured"]
+        return {
+            "measured_drains": measured,
+            "grants": g["grants"] if measured else None,
+            "held_s": round(g["held_ms"] / 1000, 2) if measured else None,
+            "longest_hold_s": round(g["longest_ms"] / 1000, 2) if measured else None,
+            "method": (
+                "the corpus write gate's own accounting of THIS drain thread's holds, read and cleared "
+                "around each drain (a hold in flight at the end is not in it); another thread's holds "
+                "are never in these figures"
+            ),
         }
 
     # -- the stream half ---------------------------------------------------- #
@@ -701,6 +724,7 @@ class WikiLaneRunner:
         hot_ms = 0
         ok = False
         self.drain_stage, self.drain_feed = "hot-sets", None
+        gate_name = self._watch_gate()
         try:
             budget = self._budget()
             hot = self._hot_sets()
@@ -736,26 +760,77 @@ class WikiLaneRunner:
             total_ms = self._ms_since(started)
             if died_in_hot_sets:
                 hot_ms = total_ms
-            self._note_drain(ok, total_ms, hot_ms, report if ok else None)
+            self._note_drain(
+                ok, total_ms, hot_ms, report if ok else None,
+                gate=self._take_gate(gate_name), died_in_hot_sets=died_in_hot_sets,
+            )
         self._last_drain_ended = self._monotonic()
         self.last_drain = report.as_dict()
         self.drains += 1
         return report
 
-    def _note_drain(self, ok: bool, total_ms: int, hot_ms: int, report: DrainReport | None) -> None:
-        """Record one drain's duration, its two stages and what it stored. Never raises."""
+    def _watch_gate(self) -> str | None:
+        """Ask the corpus write gate to keep this thread's holds for the drain about to run."""
+        try:
+            from src.database.writer import watch_holder
+
+            name = threading.current_thread().name
+            watch_holder(name)
+            return name
+        except Exception:  # noqa: BLE001 - the record is not the work
+            _LOG.debug("could not watch the write gate", exc_info=True)
+            return None
+
+    def _take_gate(self, name: str | None) -> dict | None:
+        """What this thread held of the write gate during the drain that just ended, or ``None``."""
+        if name is None:
+            return None
+        try:
+            from src.database.writer import take_watched_holder
+
+            return take_watched_holder(name)
+        except Exception:  # noqa: BLE001 - the record is not the work
+            _LOG.debug("could not read the write gate's per-thread figures", exc_info=True)
+            return None
+
+    def _note_drain(
+        self,
+        ok: bool,
+        total_ms: int,
+        hot_ms: int,
+        report: DrainReport | None,
+        gate: dict | None = None,
+        died_in_hot_sets: bool = False,
+    ) -> None:
+        """Record one drain's duration, its stages, its gate holds and what it stored. Never raises."""
         try:
             feeds_ms = max(0, total_ms - hot_ms)
             self._drain_ms.append(float(total_ms))
             self._stage_totals_ms["hot-sets"] = self._stage_totals_ms.get("hot-sets", 0) + hot_ms
-            self._stage_totals_ms["feeds"] = self._stage_totals_ms.get("feeds", 0) + feeds_ms
+            if not died_in_hot_sets:
+                self._stage_totals_ms["feeds-wall"] = self._stage_totals_ms.get("feeds-wall", 0) + feeds_ms
             self._tick_part("drain", total_ms)
             self._history.note(
                 "drain", kind="ok" if ok else "failed", ms=total_ms,
                 pages=report.revisions_stored if report is not None else 0,
             )
             self._history.note("drain_stage", kind="hot-sets", ms=hot_ms)
-            self._history.note("drain_stage", kind="feeds", ms=feeds_ms)
+            if not died_in_hot_sets:
+                # WALL time of the stage, an upper bound on the corpus connection's hold (see
+                # ``_drain_duration``); the hold itself is the ``drain_gate`` rows below.
+                self._history.note("drain_stage", kind="feeds-wall", ms=feeds_ms)
+            if gate is not None:
+                held_ms = int(round(gate["held_s"] * 1000))
+                longest_ms = int(round(gate["longest_s"] * 1000))
+                grants = int(gate["grants"])
+                self._history.note("drain_gate", kind="held", ms=held_ms)
+                self._history.note("drain_gate", kind="longest", ms=longest_ms)
+                self._history.note("drain_gate", kind="grants", n=grants)
+                g = self._gate_totals
+                g["measured"] += 1
+                g["grants"] += grants
+                g["held_ms"] += held_ms
+                g["longest_ms"] = max(g["longest_ms"], longest_ms)
             if report is not None and report.gaps_recorded:
                 self._history.note("drain", kind="gaps", n=report.gaps_recorded)
         except Exception:  # noqa: BLE001 - the record is not the work

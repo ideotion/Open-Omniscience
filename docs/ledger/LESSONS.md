@@ -13210,15 +13210,16 @@ alone would not resume the run, because a relaunch starts offline under R117 (on
   (the ceiling protects how long a recovered lane sits idle and how long the corpus's single writer is left alone) and reports `degraded` and `retry_in_s`. Collection
   Start and Run-now call `start_wiki_lane` too, so every path that brings the network back brings the lane back. A zero-byte lane file reads as "never stored anything",
   not as an error. Mutation-checked: removing the revive call, or restoring end-at-three, fails the new tests.
-  **A DOUBLING WAIT NEEDS A CAPPED EXPONENT, NOT ONLY A CAPPED RESULT (the coordinator's check of #1314, 2026-10-06):** `min(interval * 2 ** n, ceiling)` caps the wait but still computes
+- **A DOUBLING WAIT NEEDS A CAPPED EXPONENT, NOT ONLY A CAPPED RESULT (the coordinator's check of #1314, 2026-10-06):** `min(interval * 2 ** n, ceiling)` caps the wait but still computes
   `2 ** n`, and with a float interval `2 ** 1024` raises OverflowError, inside the except handler of the loop it was written to keep alive: 85 hours of drains failing at the ceiling,
   then the thread ends with a traceback on stderr only. The exponent is capped (`min(over + 1, 16)`) and a test drives the failure count past 1,026. Likewise a loop that is "kept alive"
   must be checked for every statement in its handler, not only the happy path.
-  **A PER-ITEM LOOP AROUND A WHOLE-TABLE READ IS A QUADRATIC YOU DO NOT SEE UNTIL THE TABLE IS BIG (the Wikipedia lane's hot sets, 2026-10-06):** `build_hot_sets` ran every drain and,
+- **A PER-ITEM LOOP AROUND A WHOLE-TABLE READ IS A QUADRATIC YOU DO NOT SEE UNTIL THE TABLE IS BIG (the Wikipedia lane's hot sets, 2026-10-06):** `build_hot_sets` ran every drain and,
   for each of the 12 followed editions, read the lane's whole entity table and parsed every id to keep the 1/12 that was its own: twelve full selects for one table's worth of answer.
   Benchmarked on a 200,000-entity lane (in-memory SQLite, one thread, ids of the real `{wiki}:p{pageid}` form): 2.3 s of CPU per drain against 0.34 s in one pass, about 6,600 s a day
   of GIL-holding work competing with the walk and the stream. The first bench used ids of the wrong form and reported 3.6 s: a benchmark is only as true as its fixture's keys. The
   fix is one pass with a cheap prefix pre-check, and the test is EQUIVALENCE against the verbatim old per-edition read on a lane with unparseable ids, pins and unfollowed editions,
-  plus a count of the SELECTs. **A diagnostic that keeps no history cannot answer "when" (same PR):** the lane's counters were process-cumulative, so a bundle could say a lane was
+  plus a count of the SELECTs.
+- **A diagnostic that keeps no history cannot answer "when" (same PR):** the lane's counters were process-cumulative, so a bundle could say a lane was
   slow but never WHICH hour; the lane now keeps its own hourly rows (`wiki_lane_hourly`, 7 days, in the lane's file so a restart and an update do not erase it), written in the
-  transaction that already existed (the walk's own, one flush per tick) so recording adds no commit and cannot fail the work it measures.
+  transaction that already existed for the walk's rows (the walk's own) and in one lane transaction per tick for the rest, so recording adds no commit per event and a failure writing it is kept for the next tick, not raised into the work it measures (guarded by a savepoint for the walk's rows).

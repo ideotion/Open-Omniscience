@@ -139,6 +139,13 @@ class WriterGate:
         # already holds (the 2026-08-06 rule about instruments on hot paths).
         self._total_held_s = 0.0
         self._timeouts = 0  # bounded acquires that gave up (S2.5)
+        # WATCHED HOLDERS (2026-10-06): the holds of ONE named thread, accumulated until it reads
+        # them. ``_total_held_s`` is the whole process's, so no per-drain share can be taken from
+        # it: another thread's holds inside the interval are in it too. A thread asks to be watched
+        # by name (``watch``), reads and clears its own figures (``take_watched``), and the cost on
+        # the acquire and release paths is one dict lookup inside the lock they already hold. Only
+        # names that asked are kept, so the table is as large as the number of watchers.
+        self._watched: dict[str, dict[str, float]] = {}
         # S2.6 (c): FIFO handoff. Without it acquire() grants to whichever thread
         # happens to find the gate free, so a looping re-acquirer can starve a
         # waiter indefinitely -- which means max_wait_s measures STARVATION and
@@ -154,6 +161,9 @@ class WriterGate:
         self._grants += 1
         self._holder = threading.current_thread().name
         self._held_since = time.monotonic()
+        watched = self._watched.get(self._holder)
+        if watched is not None:
+            watched["grants"] += 1
 
     def acquire(self, timeout: float | None = None) -> bool:
         """Take the write window. Returns True when granted.
@@ -244,6 +254,11 @@ class WriterGate:
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
                     # is counted once rather than once per level.
                     self._total_held_s += held
+                    watched = self._watched.get(self._holder or "")
+                    if watched is not None:
+                        watched["held_s"] += held
+                        if held > watched["longest_s"]:
+                            watched["longest_s"] = held
                     if held > self._max_hold_s:
                         self._max_hold_s = held
                         # Retained AFTER release on purpose: the peak hold is
@@ -290,6 +305,23 @@ class WriterGate:
                 cv.notify_all()
             self._queue.clear()
             self._cond.notify_all()
+
+    def watch(self, name: str) -> None:
+        """Start (or restart, from zero) keeping the holds of the thread called ``name``."""
+        with self._cond:
+            self._watched[name] = {"grants": 0, "held_s": 0.0, "longest_s": 0.0}
+
+    def take_watched(self, name: str) -> dict[str, float] | None:
+        """Read and clear what ``name`` held since it was watched, or ``None`` if it was not.
+
+        A hold still in flight is not in it (it is added at release), exactly as ``stats``'s
+        ``total_held_s`` says of itself."""
+        with self._cond:
+            taken = self._watched.get(name)
+            if taken is None:
+                return None
+            self._watched[name] = {"grants": 0, "held_s": 0.0, "longest_s": 0.0}
+            return taken
 
     def stats(self) -> dict:
         """A point-in-time copy of the gate's counters (honest, no estimates)."""
@@ -386,6 +418,16 @@ def write_lock(timeout: float | None = None) -> Iterator[None]:
 def write_gate_stats() -> dict:
     """Public accessor for the gate's observability counters."""
     return write_gate.stats()
+
+
+def watch_holder(name: str) -> None:
+    """Ask the gate to keep the holds of the thread called ``name`` (see ``take_watched_holder``)."""
+    write_gate.watch(name)
+
+
+def take_watched_holder(name: str) -> dict[str, float] | None:
+    """What the watched thread ``name`` held since ``watch_holder``: grants, held_s, longest_s."""
+    return write_gate.take_watched(name)
 
 
 # --- S2.6: the watchdog that gives a long hold a name ---------------------- #

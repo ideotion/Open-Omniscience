@@ -3,7 +3,7 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Read from 17 operator bundles (2026-10-06): the walk ran at 37 % of what its own answer time
+Read from 15 operator bundles (2026-10-06): the walk ran at 37 % of what its own answer time
 allows and nothing recorded where the rest went; a refusal kept only its LAST error; a drain's
 hold of the corpus connection was visible once, by luck. The history answers those from a bundle
 and survives a restart. What may not regress: it never raises into the lane, it is bounded, an
@@ -324,7 +324,7 @@ def test_a_drain_records_its_duration_its_stages_and_whether_it_failed(lane):
         R.drain_once = original
     d = runner.drain_status()["drain_duration"]
     assert d["measured"] == 2 and d["max_s"] == 7.0 and d["p50_s"] == 3.0
-    assert d["stage_totals_s"] == {"feeds": 6.0, "hot-sets": 4.0}
+    assert d["stage_totals_s"] == {"feeds-wall": 6.0, "hot-sets": 4.0}
     with lane_session("wiki") as db:
         runner._history.flush(db)
     ok = _rows(metric="drain", kind="ok")[0]
@@ -454,7 +454,7 @@ def test_a_drain_that_dies_building_its_hot_sets_is_booked_there_not_as_corpus_t
     with pytest.raises(RuntimeError):
         runner.drain()
     d = runner.drain_status()["drain_duration"]
-    assert d["stage_totals_s"] == {"feeds": 0.0, "hot-sets": 30.0}
+    assert d["stage_totals_s"] == {"hot-sets": 30.0}, "no feeds stage ran, so none is booked"
 
 
 def test_a_lane_that_keeps_failing_writes_its_history_while_it_is_failing(lane):
@@ -486,3 +486,199 @@ def test_a_lane_that_keeps_failing_writes_its_history_while_it_is_failing(lane):
     assert failed and failed[0].n == 2, "both failed drains reached the file before any recovery"
     waits = _rows(metric="tick", kind="failure-wait")
     assert waits and waits[0].sum_ms > 0, "the failure waits are recorded, not lost"
+
+
+# --------------------------------------------------------------------------- #
+# The coordinator's delta check of #1314 (2026-10-06): the write-gate hold and the rest.
+# --------------------------------------------------------------------------- #
+def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_elses(lane):
+    """The hold is the gate's accounting of THIS thread, read and cleared around each drain: another
+    thread's hold inside the same interval is in the process-wide ``total_held_s`` and not here."""
+    import threading
+    import time
+
+    import src.wiki.runner as R
+    from src.database.writer import write_gate
+
+    clock = _Clock()
+    runner = _runner(clock)
+
+    class Lane:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *a):
+            return False
+
+    runner._lane_session = lambda: Lane()
+
+    def other_thread_holds():
+        write_gate.acquire()
+        time.sleep(0.15)
+        write_gate.release()
+
+    def fake_drain_once(*a, **k):
+        t = threading.Thread(target=other_thread_holds, name="somebody-else")
+        t.start()
+        t.join()
+        write_gate.acquire()
+        time.sleep(0.03)
+        write_gate.release()
+        return R.DrainReport(revisions_stored=1)
+
+    original = R.drain_once
+    R.drain_once = fake_drain_once
+    try:
+        runner.drain()
+    finally:
+        R.drain_once = original
+    g = runner.drain_status()["drain_duration"]["write_gate"]
+    assert g["measured_drains"] == 1 and g["grants"] == 1
+    assert 0.03 <= g["held_s"] < 0.12, "only this thread's own hold, not the other thread's 0.15 s"
+    assert g["longest_hold_s"] == g["held_s"]
+    with lane_session("wiki") as db:
+        runner._history.flush(db)
+    assert _rows(metric="drain_gate", kind="grants")[0].n == 1
+    assert _rows(metric="drain_gate", kind="held")[0].sum_ms >= 30
+    assert _rows(metric="drain_gate", kind="longest")[0].max_ms >= 30
+
+
+def test_an_unwatched_drain_has_no_gate_figure_rather_than_a_zero():
+    runner = _runner(_Clock())
+    g = runner.drain_status()["drain_duration"]["write_gate"]
+    assert g["measured_drains"] == 0 and g["held_s"] is None and g["grants"] is None
+
+
+def test_a_retry_after_of_thousands_of_digits_is_absent_not_a_crash():
+    resp = requests.Response()
+    resp.status_code = 429
+    resp.headers["Retry-After"] = "9" * 5000  # past Python's integer-from-string limit
+    assert H.retry_after_of(requests.HTTPError("429", response=resp)) is None
+
+
+def test_the_tick_is_closed_before_a_stop_and_after_every_failure_wait(lane):
+    """Run one successful drain and stop: the file has the tick. And a failing lane has its FIRST
+    failed drain on disk before the second one runs, not only at the end."""
+    clock = _Clock()
+    state = {"value": "running"}
+    seen_in_file = []
+
+    def build():
+        return WikiLaneRunner(
+            adapter=SimpleNamespace(offer=lambda _c: None, note_position=lambda *_a: None),
+            stream=SimpleNamespace(run=lambda *a, **k: None, counters=None),
+            lane_session=lambda: lane_session("wiki"),
+            state_of=lambda: state["value"],
+            hot_sets=dict,
+            budget=lambda: None,
+            sleep=lambda s: setattr(clock, "t", clock.t + s),
+            monotonic=clock,
+        )
+
+    one = build()
+
+    def ok_drain():
+        clock.t += 1.0
+        one._note_drain(True, 1000, 0, None)
+        one.drains += 1
+
+    one.drain = ok_drain  # type: ignore[method-assign]
+    one.refresh_one_pageview_top = lambda: None  # type: ignore[method-assign]
+    one.run_until_stopped(max_drains=1)
+    assert _rows(metric="tick", kind="drain")[0].sum_ms == 1000, "the last drain before a stop is written"
+
+    two = build()
+    calls = {"n": 0}
+
+    def failing():
+        calls["n"] += 1
+        if calls["n"] == 2:
+            seen_in_file.append(sum(r.n for r in _rows(metric="drain", kind="failed")))
+            state["value"] = "halted"
+        two._note_drain(False, 2000, 0, None)
+        raise RuntimeError("busy")
+
+    two.drain = failing  # type: ignore[method-assign]
+    two.run_until_stopped()
+    assert seen_in_file == [1], "the first failed drain was already on disk when the second ran"
+
+
+def test_a_row_unwritable_past_the_retention_window_is_dropped_and_counted():
+    now = [NOW]
+    buf = H.HistoryBuffer(now=lambda: now[0])
+    buf.note("drain", kind="ok", ms=1)
+    now[0] = NOW + timedelta(days=H.RETENTION_DAYS + 1)
+    buf.note("drain", kind="ok", ms=2)
+
+    class Broken:
+        def execute(self, *_a, **_k):
+            raise RuntimeError("disk is full")
+
+    with pytest.raises(RuntimeError):
+        buf.flush(Broken())
+    assert buf.dropped_rows == 1 and buf.pending() == 1, "the week-old row went, the fresh one stayed"
+
+
+def test_a_lane_file_from_before_the_history_table_is_unmeasured_and_the_table_comes_back(lane):
+    from sqlalchemy import text
+
+    from src.wiki.service import lane_history
+
+    with lane_session("wiki") as db:
+        db.execute(text("DROP TABLE wiki_lane_hourly"))
+    out = lane_history()
+    assert out["measured"] is False and out["rows"] == [] and "no history table" in out["reason"]
+    dispose_all()
+    create_lane("wiki")  # what every drain open does
+    buf = H.HistoryBuffer(now=lambda: NOW)
+    buf.note("drain", kind="ok", ms=5)
+    with lane_session("wiki") as db:
+        assert buf.flush(db) == 1
+    assert lane_history()["measured"] is True
+
+
+def test_an_idle_window_is_slept_in_slices_and_ends_when_stopped():
+    clock = _Clock()
+    runner = _runner(clock)
+    slept: list[float] = []
+
+    def sleeper(seconds):
+        slept.append(seconds)
+        clock.t += seconds
+        if len(slept) == 2:
+            runner._stop.set()
+
+    runner._sleep = sleeper  # type: ignore[method-assign]
+    runner.idle(30.0)
+    assert slept == [1.0, 1.0], "one unsliced sleep would have been [30.0] and ignored the stop"
+
+
+def test_a_failure_writing_the_walks_history_row_does_not_lose_the_pages(lane, monkeypatch):
+    def boom(*_a, **_k):
+        raise RuntimeError("history table is broken")
+
+    monkeypatch.setattr(W.history, "record", boom)
+    client = _Scripted([_batch([_p(1, "A"), _p(2, "B")], cont={"gapcontinue": "C"})])
+    _walker(client).walk_for(3600, max_requests=2)
+    with lane_session("wiki") as db:
+        from src.wiki.lane_models import WikiWalkPage
+
+        assert len(db.execute(select(WikiWalkPage)).scalars().all()) == 2, "the walk's page rows were committed"
+    assert _rows(metric="walk") == []
+
+
+def test_a_database_error_writing_the_walks_history_row_rolls_back_only_that_row(lane, monkeypatch):
+    """The failure that surfaces at the SAVEPOINT's flush (a unique conflict), not in the Python call."""
+
+    def conflicting(lane_, metric, **_k):
+        for _ in range(2):
+            lane_.add(WikiLaneHour(hour_start=HOUR, metric=metric, edition="en", kind="dup"))
+
+    monkeypatch.setattr(W.history, "record", conflicting)
+    client = _Scripted([_batch([_p(1, "A"), _p(2, "B")], cont={"gapcontinue": "C"})])
+    _walker(client).walk_for(3600, max_requests=2)
+    with lane_session("wiki") as db:
+        from src.wiki.lane_models import WikiWalkPage
+
+        assert len(db.execute(select(WikiWalkPage)).scalars().all()) == 2
+    assert _rows(metric="walk") == []

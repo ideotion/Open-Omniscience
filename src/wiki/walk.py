@@ -63,6 +63,17 @@ from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST
 
 _LOG = logging.getLogger("wiki.walk")
 
+
+def _record(lane: Any, metric: str, **fields: Any) -> None:
+    """``history.record`` inside its own SAVEPOINT and guarded: the history is a record of the walk,
+    so a failure writing it must not roll back the page rows, the cursor or the sample the walk is
+    committing beside it."""
+    try:
+        with lane.begin_nested():
+            history.record(lane, metric, **fields)
+    except Exception:  # noqa: BLE001 - the record is not the work
+        _LOG.warning("could not record the walk's history row", exc_info=True)
+
 #: The whole walk waits: the operator's airplane switch is on. Same token the lane's
 #: other surfaces use for it, so one translation says it everywhere.
 PAUSED_NETWORK_OFF = "network_off"
@@ -516,7 +527,7 @@ class WikiWalker:
             self._sample(lane, at, pages=len(pages), size=size, busy_ms=busy_ms)
             # THE LANE'S OWN HISTORY, per edition per hour (src/wiki/history.py): answer time,
             # bytes, pages and the bookmark, in the same transaction as the page rows.
-            history.record(
+            _record(
                 lane, "walk", edition=edition, kind="ok", ms=busy_ms, bytes_=size,
                 pages=len(pages), at=at,
                 detail=None if completed else json.dumps(result.get("continue"), sort_keys=True),
@@ -582,7 +593,7 @@ class WikiWalker:
             row.updated_at = at
             # Every refusal counted per edition per hour by its kind, with the longest
             # Retry-After: the cursor row keeps only the LAST one.
-            history.record(
+            _record(
                 lane, "walk", edition=edition, kind=token, ms=busy_ms,
                 retry_after_s=retry_after_s, detail=str(detail), at=at,
             )

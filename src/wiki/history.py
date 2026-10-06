@@ -3,7 +3,7 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-WHY THIS EXISTS. The 17 operator bundles of 2026-10-06 could not say where the walk's time went
+WHY THIS EXISTS. The 15 operator bundles of 2026-10-06 could not say where the walk's time went
 (it ran at 37 % of what its own answer time allows), which replies Wikipedia gave (the walk kept
 only its LAST error), how long a drain held the corpus's writer, or why two lanes went quiet for
 days: the counters lived in memory and a bundle read after a restart saw none of them. A
@@ -17,10 +17,15 @@ WHAT IS RECORDED (``metric`` / ``kind``):
   longest ``Retry-After`` seen and the latest detail (the walk's bookmark on ``ok``, the
   exception TYPE and HTTP status on a refusal, never a URL or a message);
 * ``drain`` / ``ok`` or ``failed``: drains, their duration, revisions stored; ``drain_stage`` /
-  ``hot-sets`` or ``feeds``: how long each stage took, and ``feeds`` is the time the corpus
-  connection is held;
-* ``tick`` / ``index``, ``warm``, ``walk``, ``pageviews``, ``sleep``: where the idle time of a
-  tick went, which is the question the walk's pace raised;
+  ``hot-sets`` or ``feeds-wall``: the WALL time of each stage (``feeds-wall`` includes opening the
+  lane, waiting for a connection and the HTTP text fetches between stores, so it is an upper bound
+  on how long the corpus was occupied, not that figure); ``drain_gate`` / ``held``, ``longest``,
+  ``grants``: what the drain thread itself held of the corpus's single writer, from the gate's
+  own accounting of that thread (``held`` sums the drain's holds, ``longest`` is its longest one,
+  ``grants`` how many times it took the gate);
+* ``tick`` / ``drain``, ``pageviews``, ``index``, ``warm``, ``walk``, ``sleep`` and
+  ``failure-wait``: where the seconds of a tick went, which is the question the walk's pace
+  raised (a lane that keeps failing records the wait between its tries as ``failure-wait``);
 * ``stream`` / a counter name, per edition for the kept events: what the stream delivered,
   reconnected, timed out on and failed, as per-tick differences of its own counters.
 
@@ -31,12 +36,14 @@ hour with a restart in it holds the part before and the part after added togethe
 BOUNDED, AND THE BOUND SAYS WHAT IT PROTECTS. Rows older than :data:`RETENTION_DAYS` are
 pruned (once an hour, at the flush), because the table is read whole into a diagnostics
 bundle with a size limit and seven days is the soak window's own window: a longer history
-would be a second window nobody reads. The buffer is flushed in ONE lane transaction per drain
-tick, never per event, so recording adds one small write every thirty seconds and nothing to
-the stream's hot path.
+would be a second window nobody reads. The walk's own rows ride the transaction it already
+makes for its pages; every other row is noted in memory and written in ONE lane transaction per
+drain tick (one commit of its own, never one per event), so recording adds one small write
+every thirty seconds and nothing to the stream's hot path.
 
-NEVER RAISES INTO THE LANE. A history that cannot be written is counted and dropped (the
-caller wraps the flush); the lane's job is the pages, not this.
+NEVER RAISES INTO THE LANE. A history that cannot be written is counted and kept for the next
+tick (the caller wraps the flush), and a row that stays unwritable past the retention window is
+dropped and counted; the lane's job is the pages, not this.
 """
 
 from __future__ import annotations
@@ -50,6 +57,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
+
+from src.wiki.lane_models import HOUR_DETAIL_MAX, HOUR_EDITION_MAX, HOUR_KIND_MAX
 
 _LOG = logging.getLogger("wiki.history")
 
@@ -74,7 +83,8 @@ STREAM_DELTA_KEYS: tuple[str, ...] = (
     "transport_errors",
 )
 
-_DETAIL_MAX = 160
+# The column widths, from the model that owns them (``wiki_lane_hourly``).
+_DETAIL_MAX = HOUR_DETAIL_MAX
 
 
 def hour_of(at: datetime) -> datetime:
@@ -104,7 +114,10 @@ def retry_after_of(exc: BaseException) -> int | None:
     # ``isdigit`` alone accepts superscripts and other Unicode digits that ``int`` rejects.
     if not (text.isascii() and text.isdigit()):
         return None
-    return min(int(text), RETRY_AFTER_MAX_S)
+    try:
+        return min(int(text), RETRY_AFTER_MAX_S)
+    except ValueError:  # more digits than Python's integer-from-string limit: not a usable figure
+        return None
 
 
 @dataclass(slots=True)
@@ -226,6 +239,9 @@ class HistoryBuffer:
         #: Flushes that failed (their rows were kept for the next one), for a status surface.
         self.flush_failures = 0
         self.last_flush_error: str | None = None
+        #: Rows dropped because they stayed unwritable past the retention window (a disk that
+        #: stays full for weeks must not grow this buffer for weeks).
+        self.dropped_rows = 0
 
     def note(
         self,
@@ -241,7 +257,7 @@ class HistoryBuffer:
         detail: str | None = None,
     ) -> None:
         at = self._now()
-        key = (hour_of(at), metric, edition[:16], kind[:64])
+        key = (hour_of(at), metric, edition[:HOUR_EDITION_MAX], kind[:HOUR_KIND_MAX])
         with self._lock:
             agg = self._rows.get(key)
             if agg is None:
@@ -254,7 +270,7 @@ class HistoryBuffer:
             return len(self._rows)
 
     def flush(self, lane: Any) -> int:
-        """Write everything noted so far into an open lane session. Returns the rows written.
+        """Write everything noted so far into an open lane session and COMMIT it. Returns the rows written.
 
         The aggregates are taken out of the buffer FIRST and put back (merged) when the write
         fails, so a failed flush loses nothing and a concurrent ``note`` is never blocked behind
@@ -282,6 +298,11 @@ class HistoryBuffer:
                         self._rows[key] = agg
                     else:
                         mine.merge(agg)
+                cutoff = hour_of(self._now()) - timedelta(days=RETENTION_DAYS)
+                stale = [k for k in self._rows if k[0] < cutoff]
+                for k in stale:
+                    del self._rows[k]
+                self.dropped_rows += len(stale)
             self.flush_failures += 1
             self.last_flush_error = f"{type(exc).__name__}: {exc}"[:200]
             raise

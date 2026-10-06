@@ -78,8 +78,9 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   bn 0.19 M · hi ≈ 0.17 M, older); up to 50 titles per request, serial. The sheet's ARITHMETIC — ~480 k
   requests, ~5.6 days per pass at 1 request/s on clearnet, 150–250 GB of wikitext at ~10 KB/page FROM MEMORY
   — is a planning figure the row replaces with the measured first-week rate. **Corrected 2026-10-06 from the
-  first week's bundles:** a request scans 50 titles redirects included and returns the non-redirect ones (36 %
-  for en, 58 % fr, 91 % de/es, 4 % bn/pt), so a pass is (articles + redirects) / 50 requests: about 400 k for en
+  first week's bundles:** a request returns the non-redirect pages of the 50 titles it scans (the shares are measured: 36 %
+  for en, 58 % fr, 91 % de/es, 4 % bn/pt; that the redirects are filtered after the 50-title window is read from
+  MediaWiki's documentation, not reproduced), so a pass is (articles + redirects) / 50 requests: about 400 k for en
   and 95 k for fr, not articles / 50; the pace seen on one machine was 559 requests an hour. Per-edition edit rates and
   EventStreams' 7-day retention are FROM MEMORY — confirm before building on them.
 - Lesson (`LESSONS.md`, 2026-09-12): a scale claim inherits the fetch granularity it assumed — name the

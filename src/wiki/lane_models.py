@@ -186,16 +186,26 @@ class WikiWalkSample(LaneBase):
         return f"<WikiWalkSample({self.hour_start} {self.transport}: {self.pages} pages)>"
 
 
+#: Column widths of ``wiki_lane_hourly``. The history cuts its text to these, so a longer value is
+#: shortened by the writer rather than refused by the column (or silently kept by a database that
+#: does not enforce a length): one place, so the cuts and the columns cannot drift.
+HOUR_METRIC_MAX = 24
+HOUR_EDITION_MAX = 16
+HOUR_KIND_MAX = 64
+HOUR_DETAIL_MAX = 160
+
+
 class WikiLaneHour(LaneBase):
     """What THIS lane did, one row per hour per kind of event: its own history, kept by itself.
 
-    The 17 operator bundles of 2026-10-06 could not say where the walk's time went, which
+    The 15 operator bundles of 2026-10-06 could not say where the walk's time went, which
     replies Wikipedia gave, how long a drain held the writer or why a lane went quiet: the
     counters lived in memory and the walk kept only its LAST error. This table is the small,
     bounded record that answers those from a bundle, and it is the lane's own, so it survives a
     restart and an update (the run clock does too).
 
-    ``metric`` names the kind of event (``walk``, ``drain``, ``tick``, ``stream``), ``kind``
+    ``metric`` names the kind of event (``walk``, ``drain``, ``drain_stage``, ``drain_gate``,
+    ``tick``, ``stream``), ``kind``
     its outcome (``ok``, a refusal token, a stage name), ``edition`` the edition when the
     event has one. A row aggregates one hour: ``n`` events, ``sum_ms``/``max_ms`` of time spent
     inside them, bytes and pages where those mean something, the longest ``Retry-After`` the
@@ -208,16 +218,16 @@ class WikiLaneHour(LaneBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     hour_start: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False)
-    metric: Mapped[str] = mapped_column(String(24), nullable=False)
-    edition: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    kind: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    metric: Mapped[str] = mapped_column(String(HOUR_METRIC_MAX), nullable=False)
+    edition: Mapped[str] = mapped_column(String(HOUR_EDITION_MAX), nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(HOUR_KIND_MAX), nullable=False, default="")
     n: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     sum_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     max_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     sum_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     sum_pages: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     max_retry_after_s: Mapped[int | None] = mapped_column(Integer)
-    last_detail: Mapped[str | None] = mapped_column(String(160))
+    last_detail: Mapped[str | None] = mapped_column(String(HOUR_DETAIL_MAX))
     last_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
 
     __table_args__ = (

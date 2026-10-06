@@ -421,7 +421,10 @@ def lane_history() -> dict:
             return {**base, "measured": False,
                     "reason": "the Wikipedia lane has never stored anything, so it has no history"}
         with lane_session("wiki") as lane:
-            return {"measured": True, **history.snapshot(lane)}
+            snap = history.snapshot(lane)
+            # A lane file from before this build has no table yet: that is an unmeasured history
+            # with a reason, never a measured one with no rows.
+            return {"measured": "reason" not in snap, **snap}
     except Exception as exc:  # noqa: BLE001 - a diagnostic never fails the caller
         _LOG.warning("could not read the Wikipedia lane history", exc_info=True)
         return {**base, "measured": False, "reason": f"unreadable: {type(exc).__name__}"}
