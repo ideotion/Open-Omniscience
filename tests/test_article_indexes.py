@@ -21,6 +21,7 @@ still offline, with the progress in the task manager. What is pinned here, again
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 from pathlib import Path
@@ -39,6 +40,7 @@ from src.jobs.background import Framed
 from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parents[1]
+_REAL_AVAILABLE_RAM = ai._available_ram_bytes  # the reader the autouse fixture below replaces
 LANG = "idx_article_language_published"
 TITLE = "idx_article_title_nocase"
 LANGS = ["en", "fr", "de", "es", "ru"]
@@ -137,6 +139,10 @@ def eng(tmp_path):
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch, tmp_path):
     ai._reset_for_tests()
+    # the attempt record lives in the data folder: one of its own, and a machine with room, so no test here
+    # depends on how much memory the box running it has free (the tests of the gate set their own figure)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 8 * 1024**3)
     # a registry of its own, nothing latched: the module's global one may carry another test's state
     monkeypatch.setattr(damage, "registry", DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json"))
     monkeypatch.delenv("OO_ARTICLE_INDEXES", raising=False)
@@ -417,6 +423,24 @@ def test_an_unreadable_free_space_figure_is_not_a_refusal(eng, monkeypatch):
 
     monkeypatch.setattr(ai.shutil, "disk_usage", boom)
     rep = ai.build_missing(eng)
+    assert rep["outcome"] == "built" and rep["preflight"]["sufficient"] is True, "the memory was read and is enough"
+    assert rep["preflight"]["free_bytes"] == {"database": None}, "said as not measured, never as 0"
+
+
+def test_an_unreadable_memory_figure_is_not_a_refusal(eng, monkeypatch):
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: None)
+    rep = ai.build_missing(eng)
+    assert rep["outcome"] == "built" and rep["preflight"]["sufficient"] is True
+    assert rep["preflight"]["ram_available_bytes"] is None, "said as not measured, never as 0"
+
+
+def test_when_nothing_could_be_read_the_answer_is_unknown_and_the_build_goes_ahead(eng, monkeypatch):
+    def boom(where):
+        raise OSError("statvfs failed")
+
+    monkeypatch.setattr(ai.shutil, "disk_usage", boom)
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: None)
+    rep = ai.build_missing(eng)
     assert rep["outcome"] == "built" and rep["preflight"]["sufficient"] is None
 
 
@@ -590,6 +614,249 @@ def test_join_waits_for_the_worker_and_is_true_when_none_ever_ran():
 
 
 # --------------------------------------------------------------------------- #
+#  the memory the sort holds, and the record of an attempt
+# --------------------------------------------------------------------------- #
+def _marker() -> dict | None:
+    try:
+        return json.loads(ai._marker_path().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+
+
+def test_too_little_memory_refuses_with_the_numbers_and_the_row_carries_the_keyed_frame(eng, monkeypatch):
+    from src.api import jobs as jobs_api
+
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 50_000)
+    monkeypatch.setattr(ai, "_floor_bytes", lambda: 0)
+    with pytest.raises(ai.Declined) as exc:
+        ai.build_missing(eng)
+    msg = str(exc.value)
+    assert "50,000 bytes of memory available" in msg and "75,000" in msg and "up to 600 articles" in msg and "restart" in msg
+    assert not ({LANG, TITLE} & _names(eng))
+    assert _marker() is None, "a refusal never began the build and must not count as a start"
+    assert ai.run_now_and_wait(eng) == "declined"
+    row = next(j for j in jobs_api.list_jobs()["jobs"] if j["id"] == "article-indexes")
+    assert row["detail_i18n"] == ai.FRAME_NO_MEMORY, row
+    assert row["detail_vars"] == {"free": 0, "needed": 1, "rows": 600}, row["detail_vars"]
+    assert row["detail"] == ai.FRAME_NO_MEMORY.format(**row["detail_vars"])
+
+
+def test_the_memory_asked_is_the_estimate_plus_the_guards_floor_and_the_boundary_is_exact(eng, monkeypatch):
+    monkeypatch.setattr(ai, "_floor_bytes", lambda: 1_000)
+    need = 1_000 * ai.RAM_BYTES_PER_ARTICLE + 1_000
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: need)
+    ok = ai.preflight(eng, 1_000)
+    assert ok["sufficient"] is True and "short_on" not in ok
+    assert ok["ram_estimate_bytes"] == 125_000 and ok["ram_floor_bytes"] == 1_000 and ok["ram_available_bytes"] == need
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: need - 1)
+    short = ai.preflight(eng, 1_000)
+    assert short["sufficient"] is False and short["short_on"] == ["memory"]
+    assert "memory guard" in short["detail"] and f"{need - 1:,} bytes of memory" in short["detail"]
+
+
+def test_the_floor_is_the_memory_guards_own_and_the_reading_is_the_guards_reader(monkeypatch):
+    from src.scheduler import memguard
+
+    monkeypatch.setattr(memguard.memory_guard, "avail_floor_mb", 512)
+    assert ai._floor_bytes() == 512 * 1024 * 1024
+    monkeypatch.setattr(memguard, "_psutil_readings", lambda: {"mem_avail_mb": 1000.5})
+    assert _REAL_AVAILABLE_RAM() == int(1000.5 * 1024 * 1024)
+    monkeypatch.setattr(memguard, "_psutil_readings", lambda: {"mem_avail_mb": None})
+    assert _REAL_AVAILABLE_RAM() is None, "no reading is None, never 0"
+    monkeypatch.setattr(memguard, "_psutil_readings", lambda: (_ for _ in ()).throw(RuntimeError("no psutil")))
+    assert _REAL_AVAILABLE_RAM() is None
+
+
+def test_when_both_fall_short_the_space_is_shown_first_and_the_detail_says_both(eng, monkeypatch):
+    from src.api import jobs as jobs_api
+
+    class Usage:
+        free = 1_000
+
+    monkeypatch.setattr(ai.shutil, "disk_usage", lambda where: Usage)
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 50_000)
+    monkeypatch.setattr(ai, "_floor_bytes", lambda: 0)
+    rep = ai.preflight(eng, 600)
+    assert rep["short_on"] == ["database", "memory"]
+    assert "1,000 bytes free" in rep["detail"] and "50,000 bytes of memory" in rep["detail"]
+    assert ai.run_now_and_wait(eng) == "declined"
+    row = next(j for j in jobs_api.list_jobs()["jobs"] if j["id"] == "article-indexes")
+    assert row["detail_i18n"] == ai.FRAME_NO_ROOM, "the one a restart does not cure comes first"
+
+
+def test_the_sort_stays_in_memory_because_a_file_spill_would_hold_the_titles_in_the_clear():
+    """Measured 2026-10-06 on the bundled SQLCipher: with ``temp_store=FILE`` the sorter of ``CREATE INDEX`` writes the
+    keys (the titles) to its temporary file unencrypted (the marker string was found in the file), where VACUUM's
+    temporary database stays encrypted. So the build must never ask for FILE, and the app's own connections must keep
+    asking for MEMORY (a ``temp_store=FILE`` here would be a plaintext spill of an encrypted store)."""
+    assert "PRAGMA temp_store=MEMORY" in (ROOT / "src" / "database" / "session.py").read_text(encoding="utf-8")
+    code = "\n".join(
+        ln for ln in (ROOT / "src" / "database" / "article_indexes.py").read_text(encoding="utf-8").splitlines()
+        if not ln.lstrip().startswith("#")
+    )
+    assert not re.search(r"PRAGMA\s+temp_store\s*=?\s*\(?\s*(FILE|1)\b", code, re.IGNORECASE)
+
+
+def test_the_attempt_is_recorded_before_the_first_statement_and_cleared_when_the_build_ends(eng):
+    seen: list[dict | None] = []
+
+    @event.listens_for(eng, "before_cursor_execute")
+    def _look(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE INDEX"):
+            seen.append(_marker())
+
+    rep = ai.build_missing(eng)
+    assert rep["outcome"] == "built" and rep["attempt_recorded"] is True
+    assert [m["attempts"] for m in seen if m] == [1, 1] and len(seen) == 2, "recorded before EACH statement could end the process"
+    assert set(seen[0]) == {"schema", "version", "attempts", "written_at", "rows_bound", "ram_available_mb"}, (
+        "counts, the version and times only: never a title, a path or a value"
+    )
+    assert seen[0]["rows_bound"] == 600 and seen[0]["ram_available_mb"] == 8192
+    assert _marker() is None, "a build that ended leaves no record"
+
+
+def test_a_statement_that_fails_clears_the_record_too_a_failure_is_a_row_not_a_missing_end(eng, monkeypatch):
+    monkeypatch.setitem(HOT_INDEXES, TITLE, f"CREATE INDEX {TITLE} ON no_such_table (x)")
+    with pytest.raises(Exception):  # noqa: B017, PT011 - whichever the driver raises for a missing table
+        ai.build_missing(eng)
+    assert ai.snapshot()["outcome"] == "failed" and _marker() is None
+
+
+def test_one_unfinished_start_is_tried_again_and_counts_as_the_second(eng):
+    ai._write_marker(1)
+    seen: list[int] = []
+
+    @event.listens_for(eng, "before_cursor_execute")
+    def _look(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE INDEX"):
+            seen.append(_marker()["attempts"])
+
+    rep = ai.build_missing(eng)
+    assert rep["outcome"] == "built" and rep["unfinished_starts"] == 1 and seen == [2, 2]
+    assert _marker() is None
+
+
+def test_two_unfinished_starts_in_a_row_decline_the_third_with_a_keyed_row_and_keep_declining(eng):
+    from src.api import jobs as jobs_api
+
+    ai._write_marker(ai.MAX_UNFINISHED_STARTS)
+    with pytest.raises(ai.Declined) as exc:
+        ai.build_missing(eng)
+    assert "not tried again until the app is updated" in str(exc.value)
+    assert not ({LANG, TITLE} & _names(eng)) and ai.snapshot()["unfinished_starts"] == 2
+    assert _marker()["attempts"] == 2, "the record stays: the next start declines too, until an update"
+    assert ai.run_now_and_wait(eng) == "declined"
+    row = next(j for j in jobs_api.list_jobs()["jobs"] if j["id"] == "article-indexes")
+    assert row["detail_i18n"] == ai.FRAME_UNFINISHED and row["detail"] == ai.FRAME_UNFINISHED
+
+
+def test_an_update_tries_again_because_the_record_names_the_version_that_wrote_it(eng):
+    ai._marker_path().write_text(
+        json.dumps({"schema": 1, "version": "0.0.0-an-older-one", "attempts": 5}), encoding="utf-8"
+    )
+    assert ai._unfinished_starts() == 0
+    assert ai.build_missing(eng)["outcome"] == "built"
+
+
+@pytest.mark.parametrize("content", ["not json {", "[]", '{"version": 3, "attempts": "x"}', ""])
+def test_a_record_that_cannot_be_read_is_not_a_reason_to_refuse(eng, content):
+    ai._marker_path().write_text(content, encoding="utf-8")
+    assert ai._unfinished_starts() == 0
+    assert ai.build_missing(eng)["outcome"] == "built"
+
+
+def test_a_record_that_cannot_be_kept_is_said_in_the_report_and_the_build_goes_ahead(eng, monkeypatch, tmp_path):
+    blocker = tmp_path / "a-file-not-a-folder"
+    blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(ai, "_marker_path", lambda: blocker / ai.ATTEMPT_FILE)
+    rep = ai.build_missing(eng)
+    assert rep["outcome"] == "built" and rep["attempt_recorded"] is False
+
+
+def _quit_during_the_first_statement(eng, left: list):
+    @event.listens_for(eng, "before_cursor_execute")
+    def _quit(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE INDEX") and not left:
+            ai.stop()  # the shutdown hook
+            left.append((_marker() or {}).get("attempts"))
+
+
+def test_an_orderly_quit_gives_the_attempt_back_so_quitting_twice_never_stops_the_build(eng):
+    left: list[int | None] = []
+    _quit_during_the_first_statement(eng, left)
+    ai.build_missing(eng)
+    assert left == [None], "the only attempt was this start's: nothing is left to count"
+    assert _marker() is None
+
+
+def test_a_quit_gives_back_only_this_starts_attempt_an_earlier_unfinished_one_stays_counted(eng):
+    ai._write_marker(1)  # an earlier start that was killed
+    left: list[int | None] = []
+    _quit_during_the_first_statement(eng, left)
+    ai.build_missing(eng)
+    assert left == [1]
+
+
+def test_the_apps_shutdown_hook_gives_the_attempt_back(monkeypatch):
+    """The wiring: ``main._stop_database_check`` is what the lifespan calls on the way out, and it must reach the index
+    build's ``stop`` (a quit that did not would count as an unfinished start). The check's own stop is replaced so its
+    process-wide cancel flag is not left set for the tests that follow."""
+    from src.api import main
+    from src.database import verify
+
+    monkeypatch.setattr(verify, "stop", lambda: None)
+    assert ai._arm(1) is True and _marker()["attempts"] == 1
+    main._stop_database_check()
+    assert _marker() is None
+
+
+def test_a_quit_when_no_build_of_this_process_is_running_touches_nothing():
+    ai._write_marker(1)
+    ai.stop()
+    assert _marker()["attempts"] == 1, "the record of an EARLIER start is not this process's to give back"
+
+
+def test_the_report_carries_the_peak_before_and_after_labelled_as_the_high_water_mark(eng, monkeypatch):
+    peaks = iter([100.0, 180.5])
+    monkeypatch.setattr(ai, "_peak_rss_mb", lambda: next(peaks))
+    rep = ai.build_missing(eng)
+    assert rep["peak_rss_mb_before"] == 100.0 and rep["peak_rss_mb_after"] == 180.5
+    assert "high-water mark" in rep["peak_rss_note"] and "never goes down" in rep["peak_rss_note"]
+    assert ai.snapshot()["peak_rss_mb_after"] == 180.5
+
+
+def test_the_peak_is_read_in_mib_from_the_kernels_high_water_mark():
+    peak = ai._peak_rss_mb()
+    assert peak is None or peak > 1.0, "a Python process holds more than a MiB"
+
+
+def test_a_refused_build_reports_no_peak_because_it_never_ran(eng, monkeypatch):
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 10)
+    with pytest.raises(ai.Declined):
+        ai.build_missing(eng)
+    assert "peak_rss_mb_before" not in ai.snapshot()
+
+
+def test_what_the_build_reports_is_a_copy_so_the_workers_own_dict_is_never_shared_with_a_snapshot():
+    mine = {"x": 1}
+    ai._record(built=mine)
+    mine["y"] = 2  # the worker adds a key after the record
+    assert ai.snapshot()["built"] == {"x": 1}, "the snapshot shares the worker's dict: a deepcopy can see it change size"
+
+
+def test_a_run_that_finds_nothing_to_do_carries_nothing_of_a_refused_one(eng, monkeypatch):
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 10)
+    assert ai.run_now_and_wait(eng) == "declined" and "reason" in ai.snapshot()
+    monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 8 * 1024**3)
+    with eng.begin() as c:
+        for n in (LANG, TITLE):
+            c.execute(text(HOT_INDEXES[n]))
+    assert ai.run_now_and_wait(eng) == "present"
+    snap = ai.snapshot()
+    assert snap["outcome"] == "present" and "reason" not in snap and "preflight" not in snap, snap
+
+
+# --------------------------------------------------------------------------- #
 #  the boot step
 # --------------------------------------------------------------------------- #
 def test_the_step_comes_after_the_check_and_before_the_warm_up_inside_the_warm_window():
@@ -649,13 +916,11 @@ def test_a_second_start_finds_them_and_the_step_is_skipped(eng, monkeypatch):
     assert {r["step"]: r["state"] for r in boot_sequence.snapshot()["steps"]}["article-indexes"] == "skipped"
 
 
-def test_a_serve_kicked_build_during_the_window_is_told_the_index_build_may_be_what_it_waits_for():
-    with boot_sequence._LOCK:
-        boot_sequence._STATE["warm"] = "running"
-    try:
-        verdict = boot_sequence.heavy_step_verdict()
-    finally:
-        boot_sequence._reset()
+def test_a_serve_kicked_build_during_the_window_is_told_the_index_build_may_be_what_it_waits_for(monkeypatch):
+    # setitem, not an assignment: ``boot_sequence._reset`` does not restore ``_STATE``, so a plain assignment leaked
+    # "running" into the next test that asked (the rollup build's memory gate would read "declined (boot_order)")
+    monkeypatch.setitem(boot_sequence._STATE, "warm", "running")
+    verdict = boot_sequence.heavy_step_verdict()
     assert verdict and verdict["reason"] == "boot_order" and "index build" in verdict["detail"], verdict
 
 
@@ -668,12 +933,18 @@ def test_the_label_and_the_progress_frame_are_keys_in_every_locale():
     for p in sorted((ROOT / "src" / "static" / "locales").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
         assert ai.LABEL in d and ai.FRAME_BUILDING in d and ai.FRAME_NO_ROOM in d, p.name
-        frame, room = d[ai.FRAME_BUILDING], d[ai.FRAME_NO_ROOM]
+        assert ai.FRAME_NO_MEMORY in d and ai.FRAME_UNFINISHED in d, p.name
+        frame = d[ai.FRAME_BUILDING]
         assert "{index}" in frame and "{total}" in frame, p.name
-        assert all(f"{{{v}}}" in room for v in ("free", "needed", "rows")), p.name
+        for key in (ai.FRAME_NO_ROOM, ai.FRAME_NO_MEMORY):
+            assert all(f"{{{v}}}" in d[key] for v in ("free", "needed", "rows")), (p.name, key[:40])
+        assert "{" not in d[ai.FRAME_UNFINISHED], f"{p.name}: the frame has no variable"
         if p.stem != "en":
             assert frame != ai.FRAME_BUILDING and d[ai.LABEL] != ai.LABEL, f"{p.name}: left in English"
-            assert room != ai.FRAME_NO_ROOM, f"{p.name}: the refusal is left in English"
+            for key in (ai.FRAME_NO_ROOM, ai.FRAME_NO_MEMORY, ai.FRAME_UNFINISHED):
+                assert d[key] != key, f"{p.name}: a refusal is left in English ({key[:40]})"
+    assert ai.MAX_UNFINISHED_STARTS == 2 and "two starts in a row" in ai.FRAME_UNFINISHED, "the number moved: update the words"
+    assert "up to {rows} articles" in ai.FRAME_NO_ROOM, "{rows} is the largest id, an upper bound"
     assert ai.FRAME_BUILDING.format(index=1, total=2).startswith("Building the indexes that keep the article list fast: 1 of 2")
     assert "anything the app saves waits" in ai.FRAME_BUILDING, "every gated write waits, not only a new article's"
 

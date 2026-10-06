@@ -13834,7 +13834,7 @@ no record, so a test built on it cannot see an `ok` replace a `damaged` in the r
 
 (1) **An index serves a sort only with the sort's own collation.** The list orders `title COLLATE NOCASE`; a plain `(title)` index is scanned for the column but the ORDER BY still sorts (`USE TEMP B-TREE FOR ORDER BY`,
 pinned by a test), while `(title COLLATE NOCASE)` gives `SCAN articles USING COVERING INDEX` with no sort step: 807 ms to 3 ms cold on a 40,000-article, 2 GB store, and `(language, published_at)` (the equality first, the order
-second) turns the language filter's `idx_article_language` + row reads + temp sort into one covering range: 1,447 ms to 3 ms. Results are identical with and without them (ties and NULL dates included).
+second) turns the language filter's `idx_article_language` + row reads + temp sort into one covering range: 1,284 ms to 3 ms. Results are identical with and without them (ties and NULL dates included).
 (2) **Declare a collated index on the model with `collate(column, "NOCASE")`, not `text("col COLLATE NOCASE")`.** Measured on the stamp alignment (`_schema_diffs_vs_head`): with `collate()` it reads no difference with the live index
 present or absent; with the `text()` form the live index reads as a permanent `remove_index`. This contradicts the "mirroring does not fix it" note on `idx_keyword_normterm_nocase` in `maintenance.py` for the `collate()` form (not tried on
 that table). A declared plain index that is absent reads `add_index` (schema-behind, stamp kept, harmless, ends at the next start). Inside the class body the column is a `MappedColumn` typed `Mapped[...]`: mypy needs a `cast` for `collate`.
@@ -13846,9 +13846,16 @@ leaves such entries out of `init_db`'s pass (`ensure_hot_indexes(engine, include
 sequence must have the result before the next step. **Adding a step to the sequence runs it for real in every test that runs the real sequence**: four existing tests (`test_boot_sequence.py`, `test_database_verify.py`,
 `test_import_lifecycle_stages.py`, `test_bulk_build_window.py`'s source-order pin) had to be changed, which is the cost of an unpatched side effect on a path the suite drives.
 
-**A CREATE INDEX IN THIS APP SORTS IN RAM, SO ITS COST IS MEMORY, NOT A TEMP VOLUME (the R128 deep read, 2026-10-06)**: every connection sets `temp_store=MEMORY` and the bundled SQLCipher is compiled
-`SQLITE_TEMP_STORE=2` anyway (L2862), so the sorter of `CREATE INDEX` never writes a temporary file: it holds every key (+73 MB resident for 600,000 articles with 76-character titles, +1 MB under FILE).
-A free-space check that measures `tempfile.gettempdir()` therefore refuses on a volume the build never touches (and would measure `/tmp` where SQLite's own directory is `/var/tmp`), and says nothing of the
-memory it does need. The check now measures the database's volume only and STATES the memory (`RAM_BYTES_PER_ARTICLE`, not gated). The same model sits in `maintenance.vacuum_preflight` (VACUUM +266 MB RSS under
-MEMORY, +4 MB under FILE) and is not yet corrected. **And a refusal that only fills a job's `error` is invisible**: neither task-manager renderer draws `error` for a kind that is not a download, so the keyed
-detail frame (`Framed`, which survives into the error state) is what reaches the screen in twelve languages; a test of the API field never saw the missing line.
+**A CREATE INDEX IN THIS APP SORTS IN RAM, SO ITS COST IS MEMORY, NOT A TEMP VOLUME, AND IT MUST NOT BE MOVED TO A FILE (the R128 deep reads, 2026-10-06)**: every connection sets `temp_store=MEMORY` and the bundled
+SQLCipher is compiled `SQLITE_TEMP_STORE=2` anyway (L2862), so the sorter of `CREATE INDEX` never writes a temporary file: it holds every key (+73 MB resident for 600,000 articles with 76-character titles, about 125
+bytes an article). A free-space check that measures `tempfile.gettempdir()` therefore refuses on a volume the build never touches. **The obvious fix for the memory, `temp_store=FILE` as `backup/merge.py` does, is WRONG on
+an encrypted store (measured the same day, 300,000 rows, `cache_size` 1 MiB, the spill file read through `/proc/<pid>/fd` while the statement ran): the sorter's temporary file holds the titles IN THE CLEAR (the marker string
+was found in every file observed, on SQLCipher as on plain SQLite), whereas VACUUM's temporary database under FILE stayed encrypted (no marker in 11 observations).** The sorter writes through the VFS, not the pager,
+so the codec never sees it; statement journals go through the pager and are encrypted. So the cost is gated as what it is: the build is declined when the machine's AVAILABLE memory is below the estimate plus the memory
+guard's floor (`memguard.avail_floor_mb`), through the guard's own reader; an unreadable figure does not refuse. The gate does not catch an estimate that is too small (one opaque statement), so a record of the attempt
+is written before the first statement and cleared when the build ends however it ends: two unfinished starts in a row (a kill, a power cut) stop it until the app is updated (the record carries the version), and an
+orderly quit gives its attempt back. **PRE-EXISTING, not fixed here:** `backup/merge.py` sets `temp_store=FILE` on the working copy of an encrypted store; a statement of the merge that sorts or builds an index would spill
+plaintext rows to the temporary directory (statement journals do not). Check the statements before relying on it. **And a refusal that only fills a job's `error` is invisible**: neither task-manager renderer draws `error`
+for a kind that is not a download, so the keyed detail frame (`Framed`, which survives into the error state) is what reaches the screen in twelve languages; a test of the API field never saw the missing line. **Two
+more from the same fold:** a snapshot that deep-copies a dict the worker is still changing can raise `dictionary changed size`, so the state keeps a COPY of what the worker reports; and a test that assigns
+`boot_sequence._STATE[...]` leaks it, because `_reset` does not restore it (use `monkeypatch.setitem`).
