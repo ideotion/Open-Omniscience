@@ -268,7 +268,7 @@ def test_a_failing_child_is_recorded_and_its_error_text_is_scrubbed(tmp_path):
     report, _ = _run(tmp_path, phases_override=_scripted(code))
     assert report["status"] == "failed" and report["phases"][0]["exit_code"] == 3
     tail = report["phases"][0]["error_tail"]
-    assert "<redacted>" in tail and "<run>/data/osm.db" in tail and "site.py" in tail
+    assert "***redacted***" in tail and "<run>/data/osm.db" in tail and "site.py" in tail
     text = json.dumps(report)
     assert str(tmp_path) not in text and "/usr/lib" not in text
 
@@ -472,7 +472,7 @@ def test_a_second_signal_while_the_child_ignores_the_first_kills_it_at_once(tmp_
         _wait_nonempty(pidfile)
         t0 = time.monotonic()
         proc.send_signal(sg.SIGTERM)
-        time.sleep(0.5)
+        time.sleep(1.0)  # well past the 250 ms debounce, so a stall of the runner cannot merge the two
         proc.send_signal(sg.SIGTERM)
         proc.communicate(timeout=60)
     finally:
@@ -556,6 +556,25 @@ def test_a_third_signal_gives_the_default_action_so_there_is_always_a_way_out():
     )
     done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
     assert done.returncode == -15 and "two handled" in done.stdout and "survived" not in done.stdout
+
+
+def test_the_third_signal_kills_the_childs_group_first_and_a_sigquit_takes_the_sigterm_default_not_a_core():
+    code = (
+        "import os, signal, subprocess, sys\nfrom src.osm import reference_run as R\n"
+        "child = subprocess.Popen(['sleep', '120'], start_new_session=True)\n"
+        "print(child.pid, flush=True)\n"
+        "with R._terminating_signals():\n"
+        "    R._INT.pgid = child.pid\n"
+        "    h = signal.getsignal(signal.SIGQUIT)\n"
+        "    h(signal.SIGQUIT, None); R._INT.last = None\n"
+        "    h(signal.SIGQUIT, None); R._INT.last = None\n"
+        "    h(signal.SIGQUIT, None)\n"
+        "print('survived the third')\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+    assert done.returncode == -15, "a SIGQUIT must not take its core-dumping default"
+    assert "survived" not in done.stdout
+    assert _wait_dead(int(done.stdout.split()[0])), "the child's group was left alive"
 
 
 def test_signals_within_a_few_milliseconds_are_one_event_not_the_operator_insisting():
@@ -789,7 +808,7 @@ def test_the_passphrase_value_never_reaches_the_report_whatever_the_child_prints
     report, _ = _run(tmp_path, phases_override=_scripted(code))
     secret = seen.read_text(encoding="utf-8")
     assert len(secret) >= 16
-    assert secret not in json.dumps(report) and "<redacted>" in json.dumps(report)
+    assert secret not in json.dumps(report) and "***redacted***" in json.dumps(report)
     assert report["status"] == "failed"
 
 

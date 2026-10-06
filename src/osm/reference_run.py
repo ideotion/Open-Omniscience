@@ -31,7 +31,9 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   holds for available MEMORY (default 256 MiB): a 3.5 GB VM that is out of memory is a VM the
   operator cannot log into, and the ingest's own spill-to-disk path is what should be absorbing it.
 * **THE RUNNER DYING DOES NOT LEAVE THE CHILD RUNNING.** SIGHUP (a dropped SSH session), SIGTERM and
-  Ctrl-C stop the child's whole process group (a second one kills it at once, a third gives the signal its default action), delete the store and still write the report;
+  Ctrl-C stop the child's whole process group, delete the store and still write the report (signals within 250 ms of
+  each other are ONE event; a second kills the group at once; a third SIGKILLs the group and gives the runner the
+  signal's default action -- SIGTERM for a Ctrl-\\ -- so it leaves NO report and keeps the store, which ``--cleanup`` removes), delete the store and still write the report;
   ``PR_SET_PDEATHSIG`` is the backstop for a runner that is KILLED, where no handler can run. After
   EVERY child exit the group is swept with SIGKILL before the store is deleted, so a helper that
   ignored SIGTERM, or outlived a clean exit, cannot write into a store being removed.
@@ -69,6 +71,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.monitoring.secret_scrub import scrub_text
 
 SCHEMA_VERSION = 1
 MARKER = ".oo-osm-reference-run"
@@ -206,7 +210,7 @@ def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = N
     out = text
     for s in secrets_:
         if s:
-            out = out.replace(s, "<redacted>")
+            out = scrub_text(out, s)  # the shared helper: split/join, and a marker that cannot rebuild the secret
     if run_dir:
         out = out.replace(str(run_dir), "<run>")
     for path, label in roots:
@@ -676,12 +680,12 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
 
         def _handler(signum, _frame):
             now_m = time.monotonic()
+            if _INT.signal is not None and _INT.last is not None and now_m - _INT.last < SIGNAL_DEBOUNCE_S:
+                return  # the same event as the one just handled (a dropped session sends several at once)
+            _INT.last = now_m  # stored and counted BEFORE anything else runs: a handler nested here sees them
+            _INT.count += 1
             if _INT.signal is None:
                 _INT.signal = signal.Signals(signum).name
-            elif _INT.last is not None and now_m - _INT.last < SIGNAL_DEBOUNCE_S:
-                return  # the same event as the one just handled (a dropped session sends several at once)
-            _INT.last = now_m
-            _INT.count += 1
             pg = _INT.pgid
             if _INT.count >= 3:
                 # The operator is insisting and something is stuck: the child goes first (nothing keeps writing
@@ -1010,13 +1014,11 @@ def _run(
             res = run_phase(spec, env=env, data_dir=data_dir, tmp_dir=tmp_dir, log_dir=run_dir / "logs", run_dir=run_dir,
                             reserve_bytes=reserve_bytes, min_available_bytes=min_available_bytes, probe=probe,
                             sample_seconds=sample_seconds, secrets_=secrets_, roots=roots)
-            report["phases"].append(res.to_dict())
-            if res.sampler_alive and res.status == "ok":
+            stuck = res.sampler_alive and res.status == "ok"
+            if stuck:
                 res.status = "failed"
-                report["status"], report["reason"] = "failed", (
-                    f"phase {spec.name}: the sampler thread did not stop, so no further phase was started "
-                    "(a fork beside a live thread is not safe)")
-                break
+                res.reason = "the sampler thread did not stop, so no further phase was started (a fork beside a live thread is not safe)"
+            report["phases"].append(res.to_dict())
             if res.status != "ok":
                 report["status"] = res.status if res.status in ("refused-mid-run", "interrupted") else (
                     "refused" if res.status == "refused" else "failed")

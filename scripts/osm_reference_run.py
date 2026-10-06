@@ -27,6 +27,8 @@ THE REPORT holds no secret and no path outside the run's own directory (inputs a
 name); the passphrase exists only in the children's environment. Exit: 0 done, 1 a phase failed,
 2 refused (preflight, mid-run guard, or a phase's own refusal),
 3 interrupted (SIGHUP, SIGTERM or Ctrl-C: the child was stopped, the store deleted, the report written).
+A third signal (within a few seconds, more than a quarter of a second apart) kills the child's group and the runner at once: no
+report, the store kept (the 'store:' line named it at the start; ``--cleanup`` removes it); the shell shows 128 plus the signal.
 """
 
 from __future__ import annotations
@@ -94,6 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             print("refused: the prior report cannot be read as JSON")
             return 2
+    # An rlimit is inherited by every child: no crash of the runner or a child dumps a core holding the store's key.
+    with contextlib.suppress(ValueError, OSError):
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     target = args.report or Path(f"osm-reference-run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json")
     try:
         report, kept = R.run(
@@ -123,13 +130,14 @@ def main(argv: list[str] | None = None) -> int:
         if report.get("reason"):
             print(f"reason: {report['reason']}")
         if report.get("interrupted_by"):
-            print(f"note: the run finished on its own; a {report['interrupted_by']} reached the runner as it ended")
+            print(f"note: a {report['interrupted_by']} reached the runner as it ended; it is recorded in the report")
         print(f"store: {'kept at ' + str(kept) + ' (delete with --cleanup)' if kept else 'deleted' if report['store'].get('deleted') else 'none made'}")
         if report.get("report_write_error"):
             print(f"the report could not be written ({report['report_write_error']}); it follows:")
             print(json.dumps(report, indent=2, sort_keys=True, default=str))
         else:
             print(f"report: {target.name}")
+        sys.stdout.flush()  # a dead pipe fails HERE, inside the try, not at interpreter shutdown (which would exit 120)
     except OSError:
         # The failed bytes would sit in stdout's buffer and fail again at interpreter shutdown, which would
         # turn this exit code into 120: point stdout at nowhere.
