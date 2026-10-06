@@ -3278,8 +3278,9 @@
       <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
            to a click: see downloadKeywordParts / _partsSave in app-diagnostics.js. It sits DIRECTLY
            UNDER the buttons that fill it, never after the unrelated buttons below them: the
-           2026-10-06 field report ("the full run did not work, I pressed 'again'") was a finished
-           build whose Save button was 300-500 px further down than the button that was pressed. -->
+           2026-10-06 field report ("the full run did not work, I pressed 'again'") fits a finished
+           build whose Save button was 300-500 px further down (measured in Chromium) than the button
+           that was pressed. -->
       <div class="row" id="parts-bar" hidden style="margin-top:6px">
         <span id="parts-status" class="small" role="status" aria-live="polite"></span>
         <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>

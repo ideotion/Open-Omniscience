@@ -13206,22 +13206,31 @@ alone would not resume the run, because a relaunch starts offline under R117 (on
 
 ### A LONG BUILD ENDED IN SILENCE: THE SAVE BUTTON WAS 300-500 PX FROM THE BUTTON THAT WAS PRESSED (keyword-export thread, 2026-10-06)
 
-The maintainer's report (02:36 UTC): "Running the full diagnostics did not work, I had to push the 'run again' button to get those." The eight bundles he
-sent carry no error: every `/api/diagnostics/all-job` route answered 200 in every bundle's `request-latency.json`. **A bundle's route counts are a record of
-what the person did in the process BEFORE it**: five instances showed `POST /all-job` 2, `GET /all-job/volumes` 1, NO `/volumes/{name}` download, and 147-666
-more status polls than the build that made the bundle could account for (this page polls every 2 s for two minutes, then every 5 s; that schedule
-predicted the two single-run bundles, 230 polls against 229 seen and 181 against 167, and 66-283 for the five at their capture). Read that way: each had run a build to the end once (12 to 55 minutes by the polls and the journals, full and light alike), the page had split the archive
-(`/volumes` 200), nothing was downloaded, and the person pressed "All diagnostics" again one and a half to two and a half hours later; the files he sent are
-from that second run, fetched with "again". **The cause was position, reproduced in Chromium before it was fixed:** the end of the build blanked the line
-beside the button and the bar with "Save all 2 files" sat below every unrelated button of the panel (the bar was written for the keyword buttons and the
+The maintainer's report (02:36 UTC): "Running the full diagnostics did not work, I had to push the 'run again' button to get those." The ten archives he
+sent (eight machines; Asus sent three) carry no error: every `/api/diagnostics/all-job` route answered 200 in every bundle that has the route (`OOS-10`'s is one
+unsplit zip and has none). **A bundle's route counts are a record of what the person did in the process BEFORE it**: five bundles (Asus 10-03, Lenovo, NUC,
+OOS-11, OOS-12) showed `POST /all-job` 2, `GET /all-job/volumes` 1, NO `/volumes/{name}` download, and 147-666 more status polls than the build that made the
+bundle could account for (this page polls every 2 s for two minutes, then every 5 s; that schedule predicted the two single-run bundles, Asus 10-05 and OOS-7,
+230 polls against 229 seen and 181 against 167, and 66-283 for the five at their capture). Read that way: each of the five had run a build to the end once, the
+page had split the archive (`/volumes` 200), nothing was downloaded, and the person pressed "All diagnostics" again 27 minutes (Asus) or 98 to 116 minutes (the
+other four) after the split (the second POST is when the build behind the bundle began; the machines' clocks read UTC+2, as the Asus pair shows); the files he sent
+are from that second run, fetched with "again". Of the other five bundles, `OOS-10` has no all-job route (above), `OOS-8` shows POST 3 and `/volumes` 2, Asus 10-04
+POST 5, `/volumes` 5 and two part downloads (someone pressing until files came), and Asus 10-05 and OOS-7 one run each. The builds behind these ten bundles took
+9 to 48 minutes (manifest `total_wall_s`, full and light alike). **The likely cause is position, reproduced in Chromium before it was fixed** (no bundle
+records a window size or why Save was not pressed, so the sequence is inferred from the layout at the sizes tried, not witnessed): the end of the build blanked
+the line beside the button and the bar with "Save all 2 files" sat below every unrelated button of the panel (the bar was written for the keyword buttons and the
 diagnostics button only joined it), at y 641-681 of a 720 px window at 1280x720, y 790-850 of 640 at 1024x640 (off the screen), in view only at 1366x768,
 while the one button that saves at once, "All diagnostics, again", was next to the button he pressed. The design reasoning was right (a browser treats a
 download as user-started only after a click, and the build spent the click that started it, so a click saves); **the answer to a long wait has to land where the
 press was**, and an attribute-order test cannot see a pixel distance: measure the position in a real browser at the sizes people use. Fixed by moving the bar to
 sit directly under the buttons that fill it (pinned by the exact list of buttons between the first of them and the bar), scrolling it into view when the pressed
-button is still on the screen (never when the person has gone elsewhere), and handing a set that fits one click (five files; every bundle of these reports was
-two: the manifest and one part) to the browser at the end of the build, the line saying "Asked your browser", never "saved". Not verified: a headful browser's
+button is still on the screen (never when the person has gone elsewhere), and handing a set that fits one click (five files; no split set in these reports was
+larger than two: the manifest and one part) to the browser at the end of the build, outside the `try` whose answer is "could not split" so that a fault in the
+hand-over is neither called a failed split nor allowed to empty a good bar; the line says "Asked your browser", never "saved". Not verified: a headful browser's
 own "allow several downloads" prompt after a 40-minute wait (headless Chromium saved both files); "All diagnostics, again" beside the bar sends the same files
-again. Also measured in the same bundles and NOT acted on: the build holds ONE read transaction for its whole run (the WAL checkpoint record names
-`bgjob-all-diagnostics` as the oldest reader, aged 26 s to 3,171 s, with a WAL of 1.19 GB on one instance and 802 MB on another against 67 MB in the hourly
-samples), so a checkpoint cannot reclaim the log while it runs; whether that slows or kills anything is unmeasured.
+again. Also measured in the same bundles and NOT acted on here: the build runs every member on ONE pooled session for its whole run, and the WAL checkpoint
+record names `bgjob-all-diagnostics` as the oldest reader in 6 of the 10 bundles (aged 26 s to 3,172 s; in the others it is `oo-wiki-drain`, `oo-briefing-bg`
+at 1,972 s, `rollup-build` or an AnyIO worker), with a WAL of 1.19 GB on one instance and 802 MB on another after that checkpoint, against the 64 MiB resting
+limit (`journal_size_limit`). The same hourly series holds far larger WALs on other machines (at most 36.3 GB on Asus, 29.3 GB on OOS-7, 25.7 GB on OOS-8,
+23.1 GB on NUC), which this entry does not explain. Whether the build's session pins SQLite itself for the whole run is NOT established, and whether a pinned
+log slows or kills anything is unmeasured.

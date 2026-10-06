@@ -1025,15 +1025,17 @@
     }
 
     // WHERE THE ANSWER LANDS (field report 2026-10-06: «running the full diagnostics did not work, I had
-    // to push the "again" button»). A build is twelve to fifty-five minutes on the machines that
-    // reported, and when it ended the line beside the button was blanked while the Save button sat
-    // 300-500 px lower than the button that was pressed, under every unrelated button of the panel:
-    // measured in Chromium at 1280x720 and 1024x640, the button was off the screen or on its last
-    // pixels. The person saw the progress end in silence and pressed the one button that does save at
-    // once ("again"). So the bar now sits directly under the buttons that fill it (index.html), and
-    // this brings it into view when the person is still looking at the button they pressed. It does
-    // NOT move a page whose reader has gone elsewhere: a page that scrolls by itself is worse than a
-    // button to find. `near` is the pressed button.
+    // to push the "again" button»). A build took nine to forty-eight minutes on the machines that
+    // reported (the manifests of the ten bundles), and when it ended the line beside the button was
+    // blanked while the Save button sat 300-500 px lower than the button that was pressed, under every
+    // unrelated button of the panel: measured in Chromium at 1280x720 and 1024x640, the button was off
+    // the screen or on its last pixels. That fits a person who saw the progress end in silence and
+    // pressed the one button that does save at once ("again"); no bundle records a window size or why
+    // Save was not pressed, so it is the likely sequence and not a witnessed one. So the bar now sits
+    // directly under the buttons that fill it (index.html), and this brings it into view when the
+    // person is still looking at the button they pressed. It does NOT move a page whose reader has gone
+    // elsewhere: a page that scrolls by itself is worse than a button to find. `near` is the pressed
+    // button.
     function _partsShow(near) {
       const bar = $("parts-bar");
       if (!bar || bar.hidden || !near || typeof near.getBoundingClientRect !== "function") return;
@@ -1189,8 +1191,12 @@
             // API callers; the page no longer hands a person one big file.
             settled = true;
             set(t("Ready — preparing the numbered files…"));
+            let handOver = 0;   // files to hand over once the bar is set; the hand-over is outside the try
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
+              // A listing with nothing in it is the same failure the "again" button names: say so
+              // through the one catch below instead of announcing «all 0 files».
+              if (!((m && m.files) || []).length) throw new Error(t("the archive produced no volumes"));
               // A finished build replaces the bar's set like any other button, so it takes a
               // number. It does NOT take the bar from the person's own work: a KEYWORD set they
               // have begun to save (a click handing files over included) is never cut, and a button
@@ -1215,17 +1221,7 @@
                 ++_partsGen;
                 set("");
                 _partsReady(m, "diagnostics");
-                _partsShow(btn);
-                // A set that fits one click (the five files a click saves; every bundle of the
-                // 2026-10-06 reports was two: the manifest and one part) is handed to the browser
-                // now, because the person pressed «All diagnostics» to GET these files and a
-                // finished build that only offers a second button is the failure that was
-                // reported (R111: the first run works as it is). The build spent the click that
-                // started it, so a browser may ask once to allow several downloads, or refuse
-                // without telling the page: the line says «Asked your browser», never «saved», and
-                // «All diagnostics, again» beside it sends the same files again. A larger set
-                // still waits for the button, five to a click.
-                if (((m && m.files) || []).length <= _PARTS_PER_CLICK) await _partsSave(_PARTS_PER_CLICK);
+                handOver = m.files.length;
               }
             } catch (e) {
               // The split sweeps the previous archive's files BEFORE it writes the new ones, so a
@@ -1242,6 +1238,24 @@
                 if (barEl) barEl.hidden = true;
               }
               set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
+            }
+            // OUTSIDE the try above, because what it answers is «could not split»: a throw here
+            // (nothing is expected to throw) is a bug in the hand-over, not a failed split, and
+            // must neither say so nor empty a bar that holds a good set. It propagates to the
+            // button, which re-enables itself, and the page's error report carries it.
+            if (handOver > 0) {
+              _partsShow(btn);
+              // A set that fits one click (the five files a click saves; no split set in the
+              // 2026-10-06 reports was larger than two: the manifest and one part) is handed to
+              // the browser now, because the person pressed «All diagnostics» to GET these files
+              // and a finished build that only offers a second button is the failure that was
+              // reported (the maintainer's words, 2026-10-06: the full run «did not work», «again»
+              // had to be pressed; our reading of them, not a numbered ruling). The build spent
+              // the click that started it, so a browser may ask once to allow several downloads,
+              // or refuse without telling the page: the line says «Asked your browser», never
+              // «saved», and «All diagnostics, again» beside it sends the same files again. A
+              // larger set still waits for the button, five to a click.
+              if (handOver <= _PARTS_PER_CLICK) await _partsSave(_PARTS_PER_CLICK);
             }
             break;
           }

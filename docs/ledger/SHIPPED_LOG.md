@@ -10415,10 +10415,11 @@ LINE WAS UNRECORDED BY DESIGN". Stopping cleanly when memory does not recover st
 starts offline under R117, so a clean stop alone would not resume the run.
 
 - **2026-10-06 · diagnostics/first-run-hand-over (keyword-export thread; the maintainer's 02:36 UTC report).**
-"Running the full diagnostics did not work, I had to push the 'run again' button": the eight bundles carry no error; their route
-counts show a build run to the end, split (`/volumes` 200), nothing downloaded, then pressed again hours later. Reproduced in
+"Running the full diagnostics did not work, I had to push the 'run again' button": the ten bundles (eight machines) carry no error;
+in five of them (Asus 10-03, Lenovo, NUC, OOS-11, OOS-12) the route counts show a build run to the end, split (`/volumes` 200),
+nothing downloaded, then run again 27 to 116 minutes after the split. Reproduced in
 Chromium: the end of the build blanked the line beside the button and the Save button was 300-500 px lower (off screen at 1024x640).
 The parts bar now sits directly under the buttons that fill it, is scrolled into view when the pressed button is still on screen,
-and a set that fits one click (five files; every reported bundle was two) is handed to the browser by the page at the end of the
-build. Lesson: `LESSONS.md`, the entry "A LONG BUILD ENDED IN SILENCE". Open beside it: the build holds one read transaction for
-its whole 12-55 minutes, so the WAL cannot be checkpointed meanwhile (up to 1.19 GB measured).
+and a set that fits one click (five files; no split set in the reports was larger than two) is handed to the browser by the page at the end of the
+build. Lesson: `LESSONS.md`, the entry "A LONG BUILD ENDED IN SILENCE". Open beside it: the build runs on one pooled session for
+its whole 9 to 48 minutes, and the checkpoint record names it as the oldest reader in 6 of the 10 bundles (WAL 1.19 GB after one such checkpoint).

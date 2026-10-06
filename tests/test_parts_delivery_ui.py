@@ -122,7 +122,7 @@ def test_the_bar_sits_directly_under_the_buttons_that_fill_it() -> None:
     """The 2026-10-06 field report: «running the full diagnostics did not work, I had to push the
     "again" button». The Save button of a finished build sat after every unrelated button of the
     panel, 300-500 px below the one that was pressed (measured in Chromium: below the screen at
-    1024x640, on its last pixels at 1280x720), so a build of twelve to fifty-five minutes ended in
+    1024x640, on its last pixels at 1280x720), so a build of many minutes ended in
     silence. Reading the attribute order cannot prove a pixel distance, so the pin is the thing the
     distance came from: between the diagnostics button and the bar there are ONLY the buttons that
     fill the bar, and everything unrelated comes after it."""

@@ -72,7 +72,9 @@ function load(page, opts) {
     " state: () => _partsSet};",
   ].join("\n");
   const $ = (id) => page.els[id] || null;
-  const fakeWindow = {};   // no OOI18N: the tf() fallback path, which is the boot-time state too
+  // no OOI18N: the tf() fallback path, which is the boot-time state too; `opts.window` adds what a
+  // real window has (innerHeight) for the one test that needs it
+  const fakeWindow = Object.assign({}, opts.window || {});
   // setTimeout runs at once (no real waiting), but every requested delay is recorded: the 400 ms
   // stagger between downloads is what keeps a browser from dropping the concurrent ones.
   // `opts.hold` (an array) holds the timers instead of running them, so a test can change the page
@@ -891,8 +893,8 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
 
   // ---- THE FIRST RUN HANDS THE FILES OVER (field report 2026-10-06: «running the full diagnostics did not
   // work, I had to push the "again" button to get those»). A finished build used to blank the line beside
-  // the button and wait for a Save button that sat below every unrelated button of the panel; the
-  // reports' bundles were all two files (the manifest and one part).
+  // the button and wait for a Save button that sat below every unrelated button of the panel; no split
+  // set in the reports was larger than two files (the manifest and one part).
   const finishedBuild = (files) => (url) => {
     if (url.startsWith("/api/diagnostics/all-job?")) return Promise.resolve({started: true});
     if (url === "/api/diagnostics/all-job/status") return Promise.resolve({state: "done", ready: true});
@@ -904,7 +906,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     const page = makePage(); const api = load(page, {api: finishedBuild(listing(1, 1))});
     await api.runAllDiagnostics({disabled: false});
     assert.deepStrictEqual(page.clicked.map((c) => c.download), ["oo-x-manifest.zip", partName(1, 1)],
-      "the two files of the reports' bundles went out without a second press: " + page.clicked.map((c) => c.download));
+      "the two files of a reported set went out without a second press: " + page.clicked.map((c) => c.download));
     assert.ok(/^Asked your browser to save all 2 files\./.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
     assert.ok(!/ saved/.test(page.els["parts-status"].textContent.split(".")[0]), "the page asks, it does not claim a file was saved");
     assert.strictEqual(page.els["parts-bar"].hidden, false, "and the line saying so is on screen, in the bar under the buttons");
@@ -933,7 +935,9 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
   {
     // a keyword set the person is in the middle of is still never cut by a small archive
     const page = makePage(); const hold = [];
-    const api = load(page, {hold, api: finishedBuild(listing(1, 1))});
+    const archive = listing(1, 1);
+    archive.download_base = "/api/diagnostics/all-job/volumes/";   // a base of its own: its files can be told apart
+    const api = load(page, {hold, api: finishedBuild(archive)});
     api._partsOffer(listing(30, 1), "keywords");
     const saving = api.partsSaveNext();
     const build = api.runAllDiagnostics({disabled: false});
@@ -942,6 +946,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     assert.strictEqual(finished, 2, "both finished");
     assert.strictEqual(page.clicked.length, 5, "only the keyword set's five went out: the small archive did not take the click");
     assert.ok(page.clicked.every((c) => c.href.startsWith("/api/diagnostics/keywords/parts/set1/")), "all five are the keyword files");
+    assert.ok(!page.clicked.some((c) => c.href.includes("/all-job/")), "and none of them is a file of the small archive");
     assert.strictEqual(api.state().kind, "keywords");
     assert.strictEqual(page.els["all-diag-status"].textContent, READY_SENTENCE);
   }
@@ -968,6 +973,18 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     hid.els["parts-bar"].hidden = false;
     hapi._partsShow({getBoundingClientRect: () => ({top: 300, bottom: 340})});
     assert.deepStrictEqual(hs, [{block: "nearest"}], "the same call scrolls once the bar is on screen");
+    // a real browser answers with window.innerHeight, which wins over the document's clientHeight
+    // (the fallback): a button at y 600-640 is on a 700 px screen and off a 500 px one
+    const tall = (innerHeight, rect) => {
+      const pg = makePage(); const sc = [];
+      pg.els["parts-bar"].hidden = false;
+      pg.els["parts-bar"].scrollIntoView = (o) => sc.push(o);
+      pg.document.documentElement = {clientHeight: 700};
+      load(pg, {window: {innerHeight}})._partsShow({getBoundingClientRect: () => rect});
+      return sc;
+    };
+    assert.deepStrictEqual(tall(700, {top: 600, bottom: 640}), [{block: "nearest"}], "innerHeight 700: the button is on screen");
+    assert.deepStrictEqual(tall(500, {top: 600, bottom: 640}), [], "innerHeight 500 (clientHeight says 700): the window's own height decides");
     // a button the page cannot measure (a caller passing nothing) moves nothing and breaks nothing
     const page = makePage(); const scrolls = [];
     page.els["parts-bar"].scrollIntoView = (o) => scrolls.push(o);
@@ -975,6 +992,30 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     await api.runAllDiagnostics(null);
     assert.deepStrictEqual(scrolls, []);
     assert.strictEqual(page.clicked.length, 2, "and the files still went out");
+  }
+  {
+    // a listing with nothing in it is a failed split too, never «all 0 files»
+    const page = makePage();
+    const api = load(page, {api: finishedBuild({files: [], download_base: "/api/diagnostics/all-job/volumes/"})});
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.clicked.length, 0);
+    assert.strictEqual(page.els["all-diag-status"].textContent, "Could not split the archive: the archive produced no volumes");
+    assert.ok(!/all 0 files/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+  }
+  {
+    // an error in the HAND-OVER (nothing is expected to throw there) is not «could not split» and does not
+    // empty a bar that holds a good set: it reaches the button's caller, which is what the page's error
+    // report listens to, and the button is released
+    const page = makePage();
+    page.document.createElement = () => ({click() { throw new Error("click broke"); }, remove() {}});
+    const api = load(page, {api: finishedBuild(listing(1, 1))});
+    const btn = {disabled: false};
+    await assert.rejects(api.runAllDiagnostics(btn), /click broke/);
+    assert.ok(!/Could not split/.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
+    assert.strictEqual(page.els["parts-bar"].hidden, false, "the bar and its set are still there");
+    assert.strictEqual(api.state().kind, "diagnostics");
+    assert.ok(/^2 files of at most 1 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    assert.strictEqual(btn.disabled, false, "the button is released");
   }
   {
     // a failed split still says so beside the button and hands over nothing
