@@ -2571,7 +2571,7 @@ def test_an_unexaminable_file_whose_earlier_check_was_left_unfinished_keeps_that
                 "verification": {
                     FILE_CORPUS: {
                         "file": FILE_CORPUS, "process": "another-process", "state": "running", "attempts": 2,
-                        "trigger": verify.TRIGGER_DAMAGE_FOUND,
+                        "trigger": verify.TRIGGER_UNCLEAN_END,
                     }
                 },
             }
@@ -2583,7 +2583,90 @@ def test_an_unexaminable_file_whose_earlier_check_was_left_unfinished_keeps_that
     monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
     assert verify.arm_at_boot() is False and not damage.registry.verifying()
     owed = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
-    assert owed["state"] == "owed" and owed["trigger"] == verify.TRIGGER_DAMAGE_FOUND and owed["attempts"] == 2, owed
+    # the trigger is the ENTRY's own, not the plan's (a clean end with nothing else due plans "damage-found-before", which would
+    # read as a different reason if the plan's label were written)
+    assert owed["state"] == "owed" and owed["trigger"] == verify.TRIGGER_UNCLEAN_END and owed["attempts"] == 2, owed
+    assert verify.plan_boot(previous_end=CLEAN)["trigger"] != verify.TRIGGER_UNCLEAN_END
+
+
+def test_an_unexaminable_file_that_was_skipped_with_no_finding_does_not_carry_its_attempts_into_a_new_unexpected_stop(
+    tmp_path, healthy, files, monkeypatch
+):
+    """N5: a ``skipped`` entry (three unfinished starts, no finding) is neither unfinished nor owed, so a new unclean end on a
+    file that cannot be examined owes the check afresh, with no attempts spent: a mutant that always carries the attempts the
+    record holds would owe it with 3 and the next start would skip it."""
+
+    class Unexaminable(type(Path())):
+        def is_file(self, **kw):
+            raise OSError(5, "Input/output error")
+
+    (tmp_path / "database-damage.json").write_text(
+        json.dumps(
+            {
+                "schema": damage.SCHEMA,
+                "files": {},
+                "incidents": [],
+                "verification": {
+                    FILE_CORPUS: {"file": FILE_CORPUS, "process": "another-process", "state": "skipped", "attempts": MAX_VERIFY_ATTEMPTS}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    files[FILE_CORPUS] = Unexaminable(healthy)
+    _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is False
+    owed = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert owed["state"] == "owed" and owed["trigger"] == verify.TRIGGER_UNCLEAN_END and owed["attempts"] == 0, owed
+
+
+def test_the_text_of_an_os_error_that_stopped_the_examination_reaches_no_plan_record_or_log(tmp_path, healthy, files, monkeypatch, caplog):
+    """N5: the error's own text can carry a path or a value the operator never meant to put in a record; only the fact that the
+    file could not be examined is written."""
+    sentinel = "SENTINEL-9f3a1c"
+
+    class Unexaminable(type(Path())):
+        def is_file(self, **kw):
+            raise OSError(5, f"Input/output error {sentinel}")
+
+    files[FILE_CORPUS] = Unexaminable(healthy)
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    with caplog.at_level("DEBUG"):
+        plan = verify.plan_boot(previous_end=UNCLEAN)
+        assert verify.arm_at_boot() is False
+    assert sentinel not in repr(plan)
+    assert sentinel not in (tmp_path / "database-damage.json").read_text(encoding="utf-8")
+    assert sentinel not in caplog.text
+    assert sentinel not in json.dumps(damage.registry.state(detail=True), default=str)
+
+
+def test_a_hold_written_under_the_cap_keeps_its_attempts_at_a_clean_start(tmp_path, healthy, files, monkeypatch):
+    """N4: a file held on a finding because it could not be examined (attempts 2, under the cap) is planned at the next clean start
+    with the 2 its hold carries: dropping the cap term from the test means the count is the record's, and a new unexpected stop
+    alone starts it again."""
+    (tmp_path / "database-damage.json").write_text(
+        json.dumps(
+            {
+                "schema": damage.SCHEMA,
+                "files": {},
+                "incidents": [],
+                "verification": {
+                    FILE_CORPUS: {
+                        "file": FILE_CORPUS, "process": "another-process", "state": "skipped", "attempts": 2,
+                        "earlier_damaged": ["articles"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    files[FILE_CORPUS] = healthy
+    _new_process(tmp_path, monkeypatch)
+    plan = verify.plan_boot(previous_end=CLEAN)
+    assert plan["files"] == [(FILE_CORPUS, healthy, 2)], "an under-cap hold started its count at 0 at a clean start"
+    _restart(tmp_path, monkeypatch, UNCLEAN)
+    assert verify.plan_boot(previous_end=UNCLEAN)["files"] == [(FILE_CORPUS, healthy, 0)], "a new unexpected stop did not start it again"
 
 
 def test_the_virtual_table_check_tests_run_in_ci():

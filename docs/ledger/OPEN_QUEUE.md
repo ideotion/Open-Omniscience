@@ -16355,7 +16355,7 @@ maintainer as a card.
   asks the check to stop at its next look and the next start reads the file again. If a skip is ever wanted it is a button that calls
   `verify.stop()` and records the file as `unchecked` (never `ok`). (c) A file whose check was left unfinished three starts in a row is
   skipped, said in the record (`state: skipped`), and tried again only after the next unexpected stop; what the number protects is a check
-  that itself brings the process down (a boot loop that never reaches collection). (d) Only the three files damage can pause are checked
+  that itself brings the process down (a boot loop that never reaches collection). A file with an earlier finding is HELD, not merely skipped: it stays latched (`FRAME_CHECK_STOPPED`) and keeps its attempts at every clean start. (d) Only the three files damage can pause are checked
   (corpus, Wikipedia, law); the OSM lane's and the other lane files' incidents stay recorded only. (e) The trigger is the session ledger's
   `clean is False`: a stop the ledger could not classify (`None`) holds nothing, and a machine that lost power with the ledger line written
   by an earlier boot is read as the ledger reads it. (f) A clean verdict of the START-UP check releases nothing: a latch set by a corruption error stays until the
@@ -16386,10 +16386,10 @@ maintainer as a card.
   no longer in the file still counts as read; the app's own tables are never dropped at run time, so absence is a symptom, not health, and it is not yet treated as one. (N12) `connect()` chains the error of the
   candidate that got past page 1, whichever position its size has in the list. NOT DONE: arming in `_finish_unlock` before `mark_queryable()` (the milliseconds between them), "Run now" during a re-read runs an
   empty pass (the continuous loop waits and resumes), a restore swap between a stale guard's decision and its re-latch re-latches the new file with the old answer (fail-safe, rare), a key derivation per table on an
-  encrypted store is unstated, and a skipped check is never said in the UI.
+  encrypted store is unstated, and a skipped check with no earlier finding behind it is never said in the UI (a file held on a finding is: `FRAME_CHECK_STOPPED`).
   (l) BUILT, THE COORDINATOR'S CHECK OF (k)'S FOLD (2026-10-06). (F1) A file HELD at the cap on an earlier finding stays held at every clean start that follows (the hold's `skipped` entry
   was read as "no attempts", so a crashing check ran 3 times, was held for one start, and ran 3 more); only a new unexpected stop starts the count again, which makes (c) true for a held file as well
-  (a later-process test pins both). (F2) The stopped note no longer says that starting collection re-reads the file (the Wikipedia file is released by its lane's own start): it says the pause ends only
+  (a later-process test pins both; the second check dropped the "at the cap" term from the test, so a hold written under the cap, an unexaminable file at 2 attempts, keeps its 2 at a clean start rather than starting at 0). (F2) The stopped note no longer says that starting collection re-reads the file (the Wikipedia file is released by its lane's own start): it says the pause ends only
   when the reported part reads clean again and points at the note above, which says how to try again (x12). (F6) A file that could not be examined (an I/O error from `stat`) with no earlier finding but a
   check that was DUE (an unclean end, or an entry left `running` or `owed`) is written down as `owed`, so the session that could not read it ending cleanly does not cancel the check. (F7) The stopped note
   is set in the latch's own lock block, so a release that lands between two blocks cannot leave it on an unlatched file for the next latch to inherit. (F8) CI asserts a SQLite that runs the 3.44 full-text

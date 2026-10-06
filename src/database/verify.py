@@ -334,7 +334,6 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
                         "path": path,
                         "attempts": _attempts_of(last or {}) if unfinished_before else 0,
                         "owe": due_for,
-                        "reason": reason,
                     }
                 )
             continue
@@ -348,17 +347,12 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         unfinished = last is not None and (last.get("state") == "running" or (last.get("state") == "owed" and not own_owed))
         if not (unclean or unfinished or own_owed or carried):
             continue
-        # A file HELD at the cap on an earlier finding stays held at every clean start that follows: the hold writes a
-        # ``skipped`` entry that is neither unfinished nor owed, and reading it as "no attempts" would run the check
-        # another ``MAX_VERIFY_ATTEMPTS`` times (a crashing check: 3 runs, 1 held start, 3 runs, ...). A new unexpected
-        # stop is a new reason to check, so it starts the count again.
-        held_before = (
-            last is not None
-            and last.get("state") == "skipped"
-            and bool(carried)
-            and not unclean
-            and _attempts_of(last) >= damage.MAX_VERIFY_ATTEMPTS
-        )
+        # A file HELD on an earlier finding keeps the attempts its hold carries at every clean start that follows: the hold
+        # writes a ``skipped`` entry that is neither unfinished nor owed, and reading it as "no attempts" would run the check
+        # another ``MAX_VERIFY_ATTEMPTS`` times (a crashing check: 3 runs, 1 held start, 3 runs, ...). The cap below does the
+        # holding, so a hold written under it (a file that could not be examined, attempts 2) is planned with its 2. A new
+        # unexpected stop is a new reason to check, so it alone starts the count again.
+        held_before = last is not None and last.get("state") == "skipped" and bool(carried) and not unclean
         attempts = _attempts_of(last) if (last is not None and (unfinished or own_owed or held_before)) else 0
         if attempts >= damage.MAX_VERIFY_ATTEMPTS:
             skipped.append({"file": key, "path": path, "attempts": attempts, **({"tables": carried} if carried else {})})
