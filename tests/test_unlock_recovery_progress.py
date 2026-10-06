@@ -270,6 +270,17 @@ def crashed_store(dd, monkeypatch, finish_calls):
     return db, wal
 
 
+@pytest.fixture()
+def held_key(crashed_store, monkeypatch):
+    """``crashed_store`` makes ``set_passphrase`` a no-op (the engine must not really switch keys); the open-app
+    answers need the real behaviour of the in-memory key, so this gives it back: set, held, readable."""
+    from src.database import connect as connect_mod
+
+    monkeypatch.setattr(connect_mod, "_passphrase", None)
+    monkeypatch.setattr(connect_mod, "set_passphrase", lambda p: setattr(connect_mod, "_passphrase", p or None))
+    return connect_mod
+
+
 def test_the_real_unlock_shows_the_log_while_the_real_connect_runs(crashed_store, monkeypatch):
     db, wal = crashed_store
     wal_size = wal.stat().st_size
@@ -542,10 +553,12 @@ def test_the_timer_names_the_verify_phase_so_the_recovery_is_measured(dd):
     assert rec is not None and rec["seconds_per_gib"] == 40.0 and rec["wal_bytes"] == 3 * _GIB
 
 
-def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeypatch):
+def test_two_overlapping_attempts_run_one_after_the_other(held_key, monkeypatch):
     """The second attempt (a reload and a second click, a second tab) used to race the first: it
     replaced the first's recovery notice, read the log the first was still recovering and then
-    recorded a rate several times too fast. It now waits its turn and finds the log written back."""
+    recorded a rate several times too fast. It now waits its turn, and finds the app already open:
+    it does not verify a passphrase that is proven, dispose the live engine, mark the app
+    unqueryable again or start a second start-up upkeep (the PR 1306 check, S2)."""
     import threading
     import time
 
@@ -555,9 +568,11 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
 
     real = connect_mod.connect
     events: list = []
+    answers: list = []
     first_inside = threading.Event()
     release_first = threading.Event()
     n = {"connect": 0}
+    state = {"now": "locked"}
 
     def spy(*a, **k):
         n["connect"] += 1
@@ -568,14 +583,15 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
             assert release_first.wait(30), "the test never released the first attempt"
         return real(*a, **k)
 
+    def finish(**kw):
+        events.append(("finish", kw["wal_state"]["state"]))
+        state["now"] = "unlocked-encrypted"  # what the real finish leaves behind
+
     monkeypatch.setattr(connect_mod, "connect", spy)
-    monkeypatch.setattr(
-        unlock_mod,
-        "_finish_unlock",
-        lambda **kw: events.append(("finish", kw["wal_state"]["state"])),
-    )
-    t1 = threading.Thread(target=lambda: unlock(PassphraseBody(passphrase=_KEY)))
-    t2 = threading.Thread(target=lambda: unlock(PassphraseBody(passphrase=_KEY)))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", finish)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: state["now"])
+    t1 = threading.Thread(target=lambda: answers.append(unlock(PassphraseBody(passphrase=_KEY))))
+    t2 = threading.Thread(target=lambda: answers.append(unlock(PassphraseBody(passphrase=_KEY))))
     t1.start()
     try:
         assert first_inside.wait(30)
@@ -587,11 +603,120 @@ def test_two_overlapping_attempts_run_one_after_the_other(crashed_store, monkeyp
     t1.join(60)
     t2.join(60)
     assert not t1.is_alive() and not t2.is_alive()
-    assert [e[:2] for e in events] == [
-        ("connect", 1), ("finish", "present"), ("connect", 2), ("finish", "absent"),
-    ], events
-    # the second attempt found the log already written back: no recovery notice, nothing to measure
-    assert events[2][2] is False
+    # ONE verify and ONE finish: the second attempt found the app open and had nothing to prove
+    assert [e[:2] for e in events] == [("connect", 1), ("finish", "present")], events
+    assert answers == [{"unlocked": True, "state": "unlocked-encrypted"}] * 2, answers
+
+
+def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, monkeypatch):
+    """Not only a queued attempt: a request that arrives after the unlock finished (a stale tab, a
+    double click that lands late) is answered from the state, not run again."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    calls: list = []
+    connect_mod.set_passphrase(_KEY)  # an open app holds the key that opened it
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
+    assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
+    assert calls == [], calls
+
+
+def test_a_wrong_passphrase_on_an_open_app_is_refused_not_told_it_worked(held_key, monkeypatch):
+    """The short-circuit answers from the state, so it must still check WHICH key: a second tab that types a
+    misremembered passphrase after the first tab unlocked used to get 200 (THE passphrase has no recovery, so
+    'that one was right' is the one false answer that costs something later)."""
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    calls: list = []
+    connect_mod.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
+    with pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase="definitely-not-the-passphrase"))
+    assert err.value.status_code == 403 and calls == [], "a wrong key was answered, or it started work"
+
+
+def test_a_finish_that_fails_returns_the_app_to_locked_so_the_retry_is_a_real_retry(held_key, monkeypatch):
+    """A key in memory means 'a key is in memory', not 'the unlock finished'. Left after a failed finish (init_db on
+    a full drive or a damaged file), the app read as open, the retry was answered from that state with nothing run,
+    and the page waited on 'opening the database' for ever (the Opus read of the findings PR, B1)."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+    from src.database import connect as connect_mod
+
+    from sqlalchemy.exc import OperationalError
+
+    finishes: list = []
+    disposed: list = []
+    import src.database.session as session_mod
+
+    monkeypatch.setattr(session_mod, "dispose_engine", lambda: disposed.append(1))
+
+    # the failure the fix names arrives from SQLAlchemy (init_db on a full drive or a damaged file), which is
+    # NOT an OSError, and a bare RuntimeError (a thread that cannot start) is another: any exception clears the key
+    for failure in (
+        OperationalError("INSERT", {}, Exception("database or disk is full")),
+        OSError("no space left on device"),
+        RuntimeError("anything else"),
+    ):
+        finishes.clear()
+        disposed.clear()
+
+        def finish(failure=failure, **kw):
+            finishes.append(1)
+            if len(finishes) == 1:
+                raise failure
+
+        monkeypatch.setattr(unlock_mod, "_finish_unlock", finish)
+        connect_mod.set_passphrase(None)
+        assert unlock_mod.app_lock_state() == "locked"
+        with pytest.raises(type(failure)):
+            unlock(PassphraseBody(passphrase=_KEY))
+        assert connect_mod.get_passphrase() is None and unlock_mod.app_lock_state() == "locked", repr(failure)
+        assert disposed, "the pool keeps the connections init_db opened with the key; they go with it"
+        assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
+        assert len(finishes) == 2, "the retry was answered without running the finish"
+        connect_mod.set_passphrase(None)
+
+
+def test_an_upkeep_thread_that_cannot_start_does_not_send_a_usable_app_back_to_the_lock_screen(monkeypatch):
+    """``threading.Thread(...).start()`` raises ``RuntimeError`` ("can't start new thread") on the memory-starved
+    machines this work is about. The upkeep is best-effort and ``init_db`` has made the store queryable, so
+    the finish reports ready with the error instead of failing (and being locked again by its caller)."""
+    import threading
+
+    from src.api import main as main_mod
+    from src.api import startup_status
+    from src.api import unlock as unlock_mod
+    from src.database import session as session_mod
+
+    states: list = []
+    monkeypatch.setattr(main_mod, "init_db", lambda: None)
+    monkeypatch.setattr(session_mod, "dispose_engine", lambda: None)
+    monkeypatch.setattr(startup_status, "mark_queryable", lambda: None)
+    monkeypatch.setattr(startup_status, "set_startup", lambda *a, **k: states.append((a, k)))
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+
+    class Refusing:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(threading, "Thread", Refusing)
+    unlock_mod._finish_unlock(wal_state=None, verify_ms=None)  # must not raise
+    monkeypatch.undo()
+    ready = [kw for a, kw in states if a and a[0] == "ready"]
+    assert ready and "can't start new thread" in ready[-1]["error"], states
 
 
 @pytest.mark.parametrize("bad", ["12", None, True, float("nan"), float("inf"), -5, 0])

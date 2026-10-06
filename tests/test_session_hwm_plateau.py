@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gc
 import json
+import time as real_time
 import types
 
 import pytest
@@ -37,7 +38,11 @@ def rig(dd, monkeypatch):
     """A clock, memory readings and a guard state the test drives, one ``tick`` at a time."""
     session_hwm.reset_for_tests()
     state = {"now": 1000.0, "readings": dict(SHORT), "guard": dict(OFF)}
-    monkeypatch.setattr(session_hwm, "time", types.SimpleNamespace(monotonic=lambda: state["now"]))
+    monkeypatch.setattr(
+        session_hwm,
+        "time",
+        types.SimpleNamespace(monotonic=lambda: state["now"], perf_counter=real_time.perf_counter),
+    )
     monkeypatch.setattr(session_hwm, "_readings", lambda: dict(state["readings"]))
     monkeypatch.setattr(session_hwm, "_guard_view", lambda: dict(state["guard"]) if state["guard"] else None)
     monkeypatch.setattr(session_hwm, "thread_snapshot", lambda: [])

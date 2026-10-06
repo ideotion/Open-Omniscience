@@ -633,7 +633,8 @@ def include_term(body: TermBody) -> dict:
 # restore's swap, a shutdown all dispose), so a replaced store file is never read through a
 # stale handle and Windows is not left holding the old file.
 _PROBE_LOCK = _threading.Lock()
-_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> dedicated raw DBAPI connection (detached from the pool when ``_detachable``)
+# id(engine) -> dedicated raw DBAPI connection (detached from the pool when ``_detachable``)
+_PROBE_CONNS: dict[int, Any] = {}
 _PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id() against recycle)
 _PROBE_CLOSE_WAIT_S = 5.0  # how long a dispose waits for a probe read in flight before leaving it to rebuild
 
@@ -645,8 +646,11 @@ def _detachable(bind) -> bool:
     connections, so a detached one is simply a connection that is the pool's no more. A
     ``StaticPool`` or ``SingletonThreadPool`` (an in-memory test engine) owns ONE connection that
     IS the database: detaching it empties the pool's record and the next checkout opens a new,
-    empty ``:memory:`` database ("no such table"; #1289 broke three tests this way). Those keep
-    the probe pooled, as before; the app never builds one.
+    empty ``:memory:`` database ("no such table"; #1289 broke eleven tests in four files this
+    way). Those keep the probe pooled, as before; the app never builds one. The test is by pool
+    CLASS, not by database: a queue or null pool over an in-memory URL would be detached although
+    each of its connections is a different empty database. Nothing in ``src/`` builds that (every
+    engine is file-backed or not SQLite), and an unknown pool, or none, is kept pooled.
     """
     try:
         from sqlalchemy.pool import NullPool, QueuePool

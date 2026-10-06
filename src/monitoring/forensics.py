@@ -463,10 +463,12 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
 #: constant.
 UNLOCK_VERIFY_PHASE = "passphrase verify + WAL recovery + checkpoint-on-close"
 
-#: The smallest log whose unlock is read as a RATE. Below it the keyed open's own fixed cost (the key
-#: derivation alone measured 0.2 to 0.4 s here) is most of the step, so seconds per GiB would be a
-#: statement about the KDF, not about the log; it is also about the smallest log a person could
-#: watch (a recovery that ends within a second or two is gone before the sentence can be read).
+#: The smallest log whose unlock COULD be read as a rate (the floor in force is
+#: :func:`recovery_floor_bytes`: this, or one byte above the resting ceiling when that is larger).
+#: Below it the keyed open's own fixed cost (the key derivation alone measured 0.2 to 0.4 s here)
+#: is most of the step, so seconds per GiB would be a statement about the KDF, not about the log;
+#: it is also about the smallest log a person could watch (a recovery that ends within a second or
+#: two is gone before the sentence can be read).
 RECOVERY_RATE_MIN_BYTES = 64 * 1024 * 1024
 
 
@@ -491,8 +493,8 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
     """Persist the unlock path's own timing record (wal bytes before open,
     per-phase ms, total) into the sentinel file. Best-effort.
 
-    Also keeps ``last_recovery``: the most recent unlock that actually recovered a log of at
-    least ``RECOVERY_RATE_MIN_BYTES``. ``last_unlock`` is overwritten by every unlock, including
+    Also keeps ``last_recovery``: the most recent unlock that actually recovered a log at or above
+    :func:`recovery_floor_bytes`. ``last_unlock`` is overwritten by every unlock, including
     the ones with no log, so on its own it could not answer "how long did this machine take the
     last time it had a large log to recover".
 
@@ -516,7 +518,7 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
 
 def _recovery_from_record(record: dict[str, Any]) -> dict[str, Any] | None:
     """The measured recovery inside an unlock timing record, or None when the record has no log
-    of at least ``RECOVERY_RATE_MIN_BYTES`` or no verify step to time it by."""
+    at or above :func:`recovery_floor_bytes` or no verify step to time it by."""
     wal = record.get("wal_bytes_before_open")
     if not isinstance(wal, (int, float)) or isinstance(wal, bool) or wal < recovery_floor_bytes():
         return None
@@ -742,8 +744,14 @@ def _previous_peaks() -> dict[str, Any] | None:
         "at the RSS peak (at_peak: /proc/self/status, glibc mallinfo2, CPython's block "
         "count), the newest peak that read glibc's heap when the last one could not "
         "(heap_at_peak: a peak taken with memory already short skips that walk) and, "
-        "when available memory ran short, what every thread was doing "
-        "(pressure: name, CPU time and stack, the newest snapshots kept). allocator is "
+        "when available memory ran short, the moment the memory guard engaged, and every "
+        "300 s while memory stayed short or the guard stayed engaged, what every thread was "
+        "doing (pressure: name, CPU time and stack, the newest snapshots kept; a snapshot "
+        "taken while the guard was engaged carries a guard block) and, at most every 15 s while "
+        "memory was within 1.5 times the guard's line, a light snapshot of the threads that "
+        "spent the most CPU since the previous one, among the first 16 working threads found "
+        "(pressure_light; the pairing with the Python blocks gained is an inference, memory is "
+        "not measured per thread). allocator is "
         "which C allocator the session ran on and whether its malloc arenas were capped "
         "(R114), read from the environment the process started with; a record written "
         "before it was kept has none. A field that could not be measured is ABSENT "
@@ -1168,6 +1176,58 @@ def _snap_seconds(at: Any) -> float | None:
         return None
 
 
+def _render_light(snaps: Any, taken: Any = None) -> list[str]:
+    """The LIGHT snapshots taken while memory was near the memory guard's line (``session_hwm``): each
+    one's readings and the busiest threads by CPU since the previous one. The pairing of the Python
+    blocks gained with a thread is an inference and says so: memory is not measured per thread."""
+    snaps = [x for x in snaps if isinstance(x, dict)] if isinstance(snaps, list) else []
+    if not snaps:
+        if isinstance(taken, int) and taken > 0:
+            return [
+                f"  - near the memory guard's line: {taken} light snapshot(s) were taken, but "
+                "their file (session_pressure_light.json) was not found"
+            ]
+        return []
+    count = f"{len(snaps)} snapshot(s)"
+    if isinstance(taken, int) and taken > len(snaps):
+        count += f" of {taken} taken, the newest kept"
+    out = [
+        f"  - near the memory guard's line, {count}, one every 15 s at most (the threads that spent the "
+        "most CPU since the previous one, among the first 16 working threads found; memory is not "
+        "measured per thread, so which thread allocated the blocks gained is an inference):"
+    ]
+    for snap in snaps:
+        mem = snap.get("memory") or {}
+        bits = []
+        if snap.get("avail_mb") is not None:
+            bits.append(f"{snap['avail_mb']} MB available")
+        if snap.get("rss_mb") is not None:
+            bits.append(f"RSS {snap['rss_mb']} MB")
+        if mem.get("py_alloc_blocks") is not None:
+            bits.append(f"{mem['py_alloc_blocks']:,} Python blocks")
+        if isinstance(snap.get("blocks_gained"), int):
+            bits.append(f"{snap['blocks_gained']:+,} in {snap.get('over_s')} s")
+        if snap.get("took_ms") is not None:
+            bits.append(f"took {snap['took_ms']} ms")
+        out.append(f"    - {snap.get('at')}, {snap.get('why') or 'near the line'}: {', '.join(bits) or 'no reading'}")
+        unreadable = snap.get("thread_cpu")
+        if unreadable:
+            out.append(f"      - thread CPU time: {unreadable}")
+        for t in snap.get("threads") or []:
+            if not isinstance(t, dict):
+                continue
+            cpu = t.get("cpu_delta_s")
+            over = f" in {snap['over_s']} s" if cpu is not None and snap.get("over_s") is not None else ""
+            if cpu is not None:
+                note = f" (+{cpu} s of CPU{over})"
+            elif unreadable:
+                note = " (CPU time not readable here)"
+            else:
+                note = " (no earlier reading to compare)"
+            out.append(f"      - {t.get('name')}{note}: {' <- '.join(t.get('stack') or [])}")
+    return out
+
+
 def _render_pressure(snaps: Any, taken: Any = None) -> list[str]:
     """Each snapshot's readings, then the threads that were WORKING, busiest first.
 
@@ -1386,6 +1446,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
             lines += _render_allocator(peaks.get("allocator"))
             lines += _render_at_peak(peaks.get("at_peak"), peaks.get("heap_at_peak"))
             lines += _render_pressure(peaks.get("pressure"), peaks.get("pressure_taken"))
+            lines += _render_light(peaks.get("pressure_light"), peaks.get("pressure_light_taken"))
     sample = prev.get("last_collector_sample") or {}
     if sample:
         rss = sample.get("rss_mb")

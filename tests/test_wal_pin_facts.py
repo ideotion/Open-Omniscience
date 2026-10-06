@@ -216,3 +216,78 @@ def test_an_idle_data_version_probe_connection_does_not_pin_the_wal(store):
     assert busy == 0, "an idle probe connection must not make TRUNCATE busy"
     assert _wal(path) == 0
     probe.close()
+
+
+# --- what a pooled CHECKOUT pins, by what the checkout did (the Opus read of the findings PR, S2) ---------
+#
+# The pin report lists checked-out connections; it can only call them CANDIDATES. These are the measured
+# facts that say which checkouts ARE holders, on the driver's own default (legacy) transaction mode, which is
+# what the corpus pool runs, and on an engine that issues an explicit BEGIN, which is what the export's
+# read-only snapshot engine (``pool: read_snapshot``) does.
+
+_DRIVERS = ["sqlite3", "sqlcipher3"]
+
+
+def _legacy_pair(tmp_path, driver: str):
+    mod = pytest.importorskip(driver + ("" if driver == "sqlite3" else ".dbapi2"))
+    path = tmp_path / f"legacy-{driver}.db"
+
+    def conn(**kw):
+        c = mod.connect(str(path), check_same_thread=False, **kw)  # default isolation_level: legacy mode
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA wal_autocheckpoint=0")
+        c.execute("PRAGMA busy_timeout=0")
+        return c
+
+    w = conn(isolation_level=None)
+    w.execute("CREATE TABLE t(id INTEGER PRIMARY KEY, b BLOB)")
+    _burst(w)
+    return path, w, conn
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_a_legacy_mode_checkout_that_only_read_and_fetched_pins_nothing(tmp_path, driver):
+    path, w, conn = _legacy_pair(tmp_path, driver)
+    r = conn()  # a pooled checkout: held, not returned
+    try:
+        r.execute("SELECT id FROM t").fetchall()
+        _burst(w)
+        assert _truncate(w)[0] == 0, "a checkout that only read, and fetched, held the log"
+    finally:
+        r.close()
+        w.close()
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_a_checkout_with_an_uncommitted_write_pins_until_it_commits(tmp_path, driver):
+    """Legacy mode starts a transaction on the first INSERT/UPDATE/DELETE: the checkout then holds the write
+    lock, and the log cannot be reset, for as long as it has not committed."""
+    path, w, conn = _legacy_pair(tmp_path, driver)
+    r = conn()
+    try:
+        r.execute("INSERT INTO t(b) VALUES (?)", (_ROW,))  # implicit BEGIN, never committed
+        assert r.in_transaction is True
+        assert _truncate(w)[0] == 1, "an uncommitted write did not stop the checkpoint"
+        r.commit()
+        assert _truncate(w)[0] == 0
+    finally:
+        r.close()
+        w.close()
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_an_engine_that_issues_begin_holds_its_snapshot_from_the_first_read_to_the_end(tmp_path, driver):
+    """``read_snapshot``'s engine emits BEGIN itself, so ITS checkout is the holder even when every statement
+    has been fetched: the legacy-mode sentence in the pin report does not apply to that row."""
+    path, w, conn = _legacy_pair(tmp_path, driver)
+    r = conn(isolation_level=None)
+    try:
+        r.execute("BEGIN")
+        r.execute("SELECT id FROM t").fetchall()
+        _burst(w)
+        assert _truncate(w)[0] == 1, "a BEGIN-ed snapshot reader did not hold the log"
+        r.execute("COMMIT")
+        assert _truncate(w)[0] == 0
+    finally:
+        r.close()
+        w.close()

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event
-from sqlalchemy.exc import OperationalError, PendingRollbackError
+from sqlalchemy.exc import IntegrityError, OperationalError, PendingRollbackError
 
 from src.database import pool_watch
 from src.scheduler import runner, storage_guard
@@ -37,6 +37,7 @@ from src.scheduler.storage_guard import (
     StorageGuard,
     disk_reserve_bytes,
     is_disk_full,
+    is_io_error,
     override_floor_bytes,
     wal_high_bytes,
 )
@@ -265,6 +266,95 @@ def test_an_unrelated_error_is_not_a_full_drive():
     assert not g.engaged
 
 
+def test_what_the_guard_keeps_of_a_full_drive_never_carries_the_statement_or_its_values():
+    """The PR 1306 check, S1. SQLAlchemy's wrapper puts the SQL and the values bound to it after the
+    driver's message, and ``last_disk_full.detail`` is served by ``state()`` into the page's poll and
+    the bundle: a title, a URL or a note an article carried must not ride with it. The detail is the
+    driver's class and first line, whichever way the failure arrives."""
+    secret = "secret-title-from-an-article"
+    wrapped = OperationalError(
+        "INSERT INTO articles (title) VALUES (?)", (secret,), sqlite3.OperationalError("database or disk is full")
+    )
+    assert secret in str(wrapped), "the premise: the wrapper's own text DOES carry the value"
+    g = _guard()
+    assert g.note_error(wrapped, "collect pass") is True
+    d = g.state()["last_disk_full"]["detail"]
+    assert d == "collect pass: OperationalError: database or disk is full", d
+    assert secret not in d and "INSERT" not in d
+
+    # the Session's PendingRollbackError quotes the original, statement and values included
+    pend = PendingRollbackError(
+        "This Session's transaction has been rolled back due to a previous exception during flush. "
+        "Original exception was: (sqlite3.OperationalError) database or disk is full\n"
+        f"[SQL: INSERT INTO articles (title) VALUES (?)]\n[parameters: ('{secret}',)]"
+    )
+    g2 = _guard()
+    assert g2.note_error(pend, "collect pass") is True
+    d2 = g2.state()["last_disk_full"]["detail"]
+    assert d2 == "collect pass: PendingRollbackError: (sqlite3.OperationalError) database or disk is full", d2
+    assert secret not in d2 and "INSERT" not in d2
+
+    # a plain OSError has no statement; its own words are the cause an operator needs
+    g3 = _guard()
+    assert g3.note_error(OSError(errno.ENOSPC, "No space left on device"), "export") is True
+    assert "No space left on device" in g3.state()["last_disk_full"]["detail"]
+
+    # the engine's own error hook keeps the same detail, from the driver's exception
+    g4 = _guard()
+    monkey_guard = storage_guard.storage_guard
+    try:
+        storage_guard.storage_guard = g4
+        storage_guard.on_engine_error(
+            type("Ctx", (), {"original_exception": sqlite3.OperationalError("database or disk is full")})()
+        )
+    finally:
+        storage_guard.storage_guard = monkey_guard
+    assert g4.state()["last_disk_full"]["detail"] == "OperationalError: database or disk is full"
+
+
+def test_a_bound_value_that_says_disk_full_is_not_a_full_drive():
+    """The PR 1306 check, S3. ``is_disk_full`` matched on the whole text of the wrapper, statement
+    and values included: an ``IntegrityError`` on a title that read "no space left on device" latched
+    DISK, paused collection and raised a notice about a drive that had room."""
+    wrapped = IntegrityError(
+        "INSERT INTO articles (title) VALUES (?)",
+        ("no space left on device",),
+        sqlite3.IntegrityError("UNIQUE constraint failed: articles.url_hash"),
+    )
+    assert "no space left on device" in str(wrapped), "the premise: the value is in the wrapper's text"
+    assert not is_disk_full(wrapped)
+    g = _guard()
+    assert g.note_error(wrapped, "collect pass") is False
+    assert not g.engaged and g.state()["disk_full_events"] == 0
+    # and the two ways a real full drive reads are still read: the head of the text, and an errno
+    assert is_disk_full(
+        OperationalError("INSERT ...", ("x",), sqlite3.OperationalError("database or disk is full"))
+    )
+    assert is_disk_full(OSError(errno.ENOSPC, "No space left on device"))
+
+
+def test_a_query_that_echoes_a_full_drive_into_another_error_is_not_one():
+    """N1 of the findings PR's Opus read. A driver message can repeat what the query said: an FTS5
+    ``MATCH '"database or disk is full" :'`` raises ``no such column: database or disk is full``
+    (code 1), and ``'"disk i/o error":x'`` the same with the other phrase. With a code on the driver's
+    exception the code is trusted and the words are not read, through SQLAlchemy's wrapper too."""
+    for phrase, which in (("database or disk is full", is_disk_full), ("disk i/o error", is_io_error)):
+        c = sqlite3.connect(":memory:")
+        c.execute("CREATE VIRTUAL TABLE f USING fts5(a)")
+        with pytest.raises(sqlite3.OperationalError) as caught:
+            c.execute("SELECT * FROM f WHERE f MATCH ?", (f'"{phrase}" :',))
+        err = caught.value
+        assert phrase in str(err) and err.sqlite_errorcode == 1, "the premise: the words echo, the code is 1"
+        assert not which(err)
+        assert not which(OperationalError("SELECT ...", ("x",), err)), "nor through the wrapper"
+        c.close()
+    # and the real codes still classify, with or without the wrapper
+    for code, which in ((13, is_disk_full), (10, is_io_error), (10 | (1 << 8), is_io_error)):
+        err = sqlite3.OperationalError("whatever the words")
+        err.sqlite_errorcode = code
+        assert which(err) and which(OperationalError("INSERT ...", ("x",), err))
+
+
 def test_the_engine_error_hook_latches_the_guard_on_a_real_sqlite_full(tmp_path):
     """The hook in ``src/database/session.py`` closes the gap between the failed write and the
     supervisor's next sample. Driven with SQLite's own SQLITE_FULL on a throwaway engine."""
@@ -281,6 +371,25 @@ def test_the_engine_error_hook_latches_the_guard_on_a_real_sqlite_full(tmp_path)
     eng.dispose()
     assert storage_guard.storage_guard.kind() == "disk"
     assert storage_guard.storage_guard.state()["disk_full_events"] >= 1
+
+
+def test_the_engines_own_hook_keeps_the_drivers_words_and_never_the_statement_or_its_values(tmp_path):
+    """The check of the findings PR (S5 i): the ``on_engine_error`` line was pinned only by handing it
+    a bare driver exception, which the old text also rendered the same. Through a real engine, with
+    a statement and a value that say something, a full drive is recorded as the driver's first line."""
+    secret = "SECRET-TITLE-do-not-keep"
+    eng = create_engine(f"sqlite:///{tmp_path / 'h.db'}", future=True)
+    event.listen(eng, "handle_error", storage_guard.on_engine_error)
+    with eng.begin() as c:
+        c.exec_driver_sql("CREATE TABLE t(title TEXT, b BLOB)")
+        c.exec_driver_sql("PRAGMA max_page_count=8")
+    with pytest.raises(OperationalError) as caught, eng.begin() as c:
+        for _ in range(200):
+            c.exec_driver_sql("INSERT INTO t VALUES (?, ?)", (secret, b"x" * 4000))
+    eng.dispose()
+    assert secret in str(caught.value) and "INSERT" in str(caught.value), "the premise: the wrapper carries both"
+    detail = storage_guard.storage_guard.state()["last_disk_full"]["detail"]
+    assert detail == "OperationalError: database or disk is full", detail
 
 
 def test_the_error_hook_ignores_other_errors(tmp_path):
@@ -431,6 +540,22 @@ def test_a_gate_busy_skip_and_a_busy_truncate_are_logged_as_different_facts(capl
     assert "write gate stayed busy" in caplog.text and "TRUNCATE is busy" not in caplog.text
 
 
+def test_the_pin_log_line_names_each_holders_pool_so_a_snapshot_is_not_called_a_mere_candidate(caplog, monkeypatch):
+    """A read_snapshot checkout IS a snapshot (the caveat says so); the log line must carry the pool so the
+    reader can tell it from a legacy-mode checkout that only may pin."""
+    holders = [
+        {"thread": "oo-api", "age_s": 91.0, "pool": "corpus", "stack": ["src/api/x.py:1 handler"]},
+        {"thread": "oo-snap", "age_s": 40.0, "pool": "read_snapshot"},
+    ]
+    monkeypatch.setattr(storage_guard, "_pin_report", lambda d: {"holders": holders, "instrument": "attached"})
+    caplog.set_level("WARNING", logger="scheduler.storage_guard")
+    g = _guard(drain_fn=lambda: {"busy": 1, "skipped": None})
+    _feed(g, wal=2 * GIB, n=2)
+    g.drain_if_due()
+    assert "oo-api (91 s) [corpus pool] at src/api/x.py:1 handler" in caplog.text, caplog.text
+    assert "oo-snap (40 s) [read_snapshot pool]" in caplog.text, caplog.text
+
+
 def test_the_pin_report_names_at_most_the_stated_holders_with_the_stated_stack_depth(monkeypatch):
     rows = [{"ident": 100 + i, "thread": f"t{i}", "age_s": 100.0 - i} for i in range(12)]
     asked = {}
@@ -447,6 +572,27 @@ def test_the_pin_report_names_at_most_the_stated_holders_with_the_stated_stack_d
     assert len(rep["holders"]) == storage_guard.PIN_HOLDERS_MAX
     assert asked["depth"] == storage_guard.PIN_STACK_DEPTH
     assert [h["thread"] for h in rep["holders"]] == ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7"]
+
+
+def test_the_pin_report_says_which_pool_each_holder_came_from_and_scopes_its_caveat(monkeypatch):
+    """A ``read_snapshot`` checkout holds a snapshot and a corpus checkout (legacy mode) does not
+    unless it runs a statement or has an uncommitted write: the reader of the report must be able
+    to tell them apart, and the caveat must say so for each (it used to say the legacy mode applied
+    to every row)."""
+    rows = [
+        {"ident": 1, "thread": "export", "pool": "read_snapshot", "age_s": 900.0, "endpoint": "GET /x"},
+        {"ident": 2, "thread": "worker", "pool": "corpus", "age_s": 3.0, "endpoint": None},
+    ]
+    monkeypatch.setattr(pool_watch, "is_registered", lambda: True)
+    monkeypatch.setattr(pool_watch, "checked_out", lambda: rows)
+    monkeypatch.setattr(pool_watch, "stacks_for", lambda idents, *, depth=12: {})
+    rep = storage_guard._pin_report({"busy": 1})
+    assert [(h["thread"], h["pool"]) for h in rep["holders"]] == [("export", "read_snapshot"), ("worker", "corpus")]
+    caveat = rep["caveat"]
+    assert "On the corpus pool" in caveat and "legacy transaction mode" in caveat
+    assert "uncommitted" in caveat or "not committed" in caveat
+    assert "read_snapshot checkout holds its snapshot" in caveat
+    assert "not how long a statement ran" in caveat
 
 
 def test_a_disk_full_error_is_logged_even_when_the_wal_latch_is_already_engaged(caplog):
@@ -2669,3 +2815,115 @@ def test_a_failure_of_the_unsupervised_path_is_a_warning_and_a_repeat_is_not(mon
     with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
         g.poll_and_drain_unsupervised()
     assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_two_failing_paths_in_turn_are_each_news_once_not_every_time(caplog):
+    """The PR 1306 check, N5. ``log_failure_once`` kept ONE key for every path, so the drain and the
+    unsupervised poll failing in turn flipped it and each logged a traceback again on every pass; the
+    key is now per path."""
+    import logging
+
+    g = _guard()
+    drain, poll = RuntimeError("the drain broke"), ValueError("the poll broke")
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(4):
+            g.log_failure_once("the drain", drain)
+            g.log_failure_once("the unsupervised poll", poll)
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and "failed" in r.getMessage()]
+    assert [r.getMessage() for r in warned] == [
+        "storage guard: the drain failed",
+        "storage guard: the unsupervised poll failed",
+    ], "each path is news once; the repeats are DEBUG"
+    # a path that changes its failure is news again
+    g.log_failure_once("the drain", OSError("a different failure"))
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and "failed" in r.getMessage()]
+    assert len(warned) == 3
+
+
+def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch):
+    """N2 of the findings PR's Opus read: the key of a failing path was never cleared by a success of
+    that path, so a failure that came back hours after recovery was only DEBUG. The drain popped its
+    own key (and no test could fail it); the unsupervised poll and the background drain did not."""
+    import logging
+
+    def warnings():
+        return [r for r in caplog.records if r.levelno == logging.WARNING and " failed" in r.getMessage()]
+
+    # the drain itself: a failing drain, a good one, the same failure again
+    outcomes = iter([RuntimeError("busted"), {"busy": 0}, RuntimeError("busted")])
+
+    def drain():
+        o = next(outcomes)
+        if isinstance(o, Exception):
+            raise o
+        return o
+
+    g = _feed(_guard(drain_fn=drain), wal=2 * GIB, n=2)
+    assert g.engaged
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(3):
+            g.drain_if_due()
+            g._last_drain_mono = None  # the cadence is not under test
+    assert [r.getMessage() for r in warnings()] == ["storage guard: the drain failed"] * 2
+
+    # the unsupervised poll: fails, works, fails the same way
+    g2 = _guard()
+    steps = iter([ValueError("poll broke"), None, ValueError("poll broke")])
+
+    def poll():
+        s = next(steps)
+        if s is not None:
+            raise s
+
+    monkeypatch.setattr(g2, "poll", poll)
+    monkeypatch.setattr(g2, "drain_if_due", lambda: {"busy": 0})  # a drain that RAN: the path works
+    monkeypatch.setattr(storage_guard, "supervisor_running", lambda: False)
+    monkeypatch.setattr(g2, "enabled", lambda: True)
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(3):
+            g2.poll_and_drain_unsupervised()
+    assert [r.getMessage() for r in warnings()] == ["storage guard: the unsupervised poll failed"] * 2
+
+    # the background drain, the same
+    g3 = _guard()
+    steps3 = iter([KeyError("x"), None, KeyError("x")])
+
+    def due():
+        s = next(steps3)
+        if s is not None:
+            raise s
+        return {"busy": 0}  # a drain that ran
+
+    monkeypatch.setattr(g3, "drain_if_due", due)
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(3):
+            storage_guard._drain_in_background(g3, threading.Event())
+    assert [r.getMessage() for r in warnings()] == ["storage guard: the background drain failed"] * 2
+
+
+def test_a_tick_where_no_drain_was_due_does_not_clear_the_drain_paths_failure(caplog, monkeypatch):
+    """N2 of the coordinator's delta check: ``drain_if_due`` returns None when nothing was due, which proves
+    nothing about the path that failed, so clearing the key there re-armed the WARNING (with its traceback) at
+    every due tick. Only a drain that RAN clears it."""
+    import logging
+
+    g = _guard()
+    steps = iter([KeyError("x"), None, KeyError("x"), {"busy": 0}, KeyError("x")])
+
+    def due():
+        s = next(steps)
+        if isinstance(s, Exception):
+            raise s
+        return s
+
+    monkeypatch.setattr(g, "drain_if_due", due)
+    with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
+        for _ in range(5):
+            storage_guard._drain_in_background(g, threading.Event())
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and " failed" in r.getMessage()]
+    # failure (news), a tick where none was due (still the same failure), failure again (DEBUG), a drain that
+    # RAN (clears), a failure after it (news again): two WARNINGs, not four
+    assert len(warned) == 2, [r.getMessage() for r in warned]
+
