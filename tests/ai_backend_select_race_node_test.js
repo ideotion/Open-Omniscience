@@ -119,9 +119,10 @@ async function settle(h) { for (let i = 0; i < 5; i++) await h.tick(); }
     assert.strictEqual(h.sel.value, "ollama", "a load that started before the pick wrote the old value");
     h.release("/api/settings");                // the save lands
     await settle(h);
-    h.release("/api/llm/backend");             // the reload that follows the save
+    h.sel.value = "auto";                      // something else moved the select: a fresh reload must put the stored value back
+    h.release("/api/llm/backend");             // the reload that follows the save (it saw "ollama")
     await settle(h);
-    assert.strictEqual(h.sel.value, "ollama");
+    assert.strictEqual(h.sel.value, "ollama", "the reload that follows a landed save must write the stored value");
   }
   // 1b. The save has already landed when the stale load answers: only the capture-at-start covers this.
   {
@@ -170,9 +171,11 @@ async function settle(h) { for (let i = 0; i < 5; i++) await h.tick(); }
     await settle(h);
     h.release("/api/settings");                // second save lands: its reload asks and sees "vllm"
     await settle(h);
+    h.sel.value = "auto";                      // moved by something else: only a FRESH reload may write it back
     h.releaseNth("/api/llm/backend", 1);       // the SECOND reload answers first ("vllm")
     await settle(h);
-    h.releaseNth("/api/llm/backend", 0);       // the first reload answers last ("ollama")
+    assert.strictEqual(h.sel.value, "vllm", "the second reload (fresh) must write the stored value");
+    h.releaseNth("/api/llm/backend", 0);       // the first reload answers last ("ollama"): stale, must leave the select alone
     await settle(h);
     assert.strictEqual(h.sel.value, "vllm", "the first save's reload, answering last, wrote the older value");
   }

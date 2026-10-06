@@ -31,7 +31,7 @@ WHAT "TAKES EFFECT" MEANS HERE, STATED SO THE RECORD CANNOT OVERSTATE IT. For ea
 The sweep starts only from an offline loopback app: it refuses a non-loopback ``--url`` and a server
 that is online (``GET /api/system/network`` must say ``online:false``: boot the app WITHOUT
 ``OO_NO_SCHEDULER``, which skips the offline engage). That is asserted when each width's browser
-context starts, once per run of the script and not on every pick; the app being offline at the END
+context starts, once per width per script run and not on every pick; the app being offline at the END
 of a run is a separate check the operator makes. A run therefore cannot start where it could reach
 the internet, and does not claim it observed egress.
 
@@ -53,7 +53,6 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -171,7 +170,7 @@ def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = 
                 results.append(row)
                 continue
             # What the page does by itself in 400 ms (polls, timers) is measured first, so a pick is
-            # credited only with what exceeds it.
+            # credited only with what exceeds one such sample.
             s0 = page.evaluate(_STATE)
             page.wait_for_timeout(400)
             before = page.evaluate(_STATE)
@@ -209,11 +208,19 @@ def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = 
     print(f"    {where}: {len(sels)} selects, {time.time() - t_start:.1f}s", file=sys.stderr, flush=True)
 
 
+_LOOPBACK_URL = re.compile(r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?(?:/[^\s\\]*)?")
+
+
 def require_loopback(url: str) -> None:
-    """Refuse a ``url`` whose HOST (as a URL parser reads it, so ``http://127.0.0.1@other.host/`` is ``other.host``) is not loopback."""
-    host = urlparse(url).hostname or ""
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        raise SystemExit(f"refusing --url {url}: the sweep only runs against a loopback app")
+    """Refuse any ``url`` that is not ``scheme://<loopback host>[:port][/path]`` as a whole.
+
+    Parsers disagree about ``@`` and ``\\`` before the path (``http://127.0.0.1@other.host/`` is
+    ``other.host``; ``http://other.host\\@127.0.0.1/`` is ``127.0.0.1`` to Python but ``other.host`` to
+    the WHATWG parsers Playwright uses), so a url holding either, or whitespace, is refused outright and
+    the rest must match the loopback pattern in full rather than be judged by one parser's reading.
+    """
+    if any(c in url for c in "@\\") or any(c.isspace() for c in url) or not _LOOPBACK_URL.fullmatch(url):
+        raise SystemExit(f"refusing --url {url!r}: the sweep only runs against a plain loopback URL")
 
 
 def require_loopback_offline(url: str, request) -> None:
@@ -261,12 +268,16 @@ def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_
         ".filter(n => n !== 'search' && n !== 'analyze')")
     if only_tabs:
         names = [n for n in names if n in only_tabs]
+    prev: tuple[str, int] | None = None  # (theme, CSP events counted for it) of the previous theme
     for theme in themes:
         t0 = time.time()
         console.clear()
         # CSP events are kept across reloads in sessionStorage, which outlives the theme: reset them per
         # theme so one early event is counted in ITS theme's stats and not repeated in every later one.
-        page.evaluate("() => { window.__csp = []; try { sessionStorage.removeItem('__oo_csp'); } catch (e) {} }")
+        n_before = page.evaluate("() => { const n = window.__csp.length; window.__csp = [];"
+                                 " try { sessionStorage.removeItem('__oo_csp'); } catch (e) {} return n; }")
+        if prev is not None and n_before > prev[1]:  # events that landed after the previous theme's read
+            summary["themes"][prev[0]]["csp_events"] += n_before - prev[1]
         page.evaluate("t => setTheme(t)", theme)
         page.wait_for_timeout(200)
         results: list = []
@@ -313,6 +324,7 @@ def run_width(browser, url: str, wname: str, themes: list[str], out: Path, only_
             seconds=round(time.time() - t0, 1),
         )
         summary["themes"][theme] = stat
+        prev = (theme, len(csp))
         (out / f"console-{wname}-{theme}.txt").write_text(
             f"# console (error + warning) and pageerror text, width {wname}, theme {theme}\n"
             f"# CSP violation events (securitypolicyviolation): {json.dumps(csp)}\n"

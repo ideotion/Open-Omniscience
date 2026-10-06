@@ -15,10 +15,17 @@ page through a Playwright route, so "before" and "after" run the same browser, a
                      follows the first save reads the server BEFORE the second save landed. After the
                      picks settle the select must show the SECOND pick.
 
+The script refuses, before anything is done, a ``--url`` that is not a plain loopback URL (the
+shared check in ``csp_sweep.require_loopback``) and an app that is online (``GET /api/system/network``
+must say ``online:false``: boot the app WITHOUT ``OO_NO_SCHEDULER``, which skips the offline engage).
+Each result carries the sha256 of the file that was SERVED for that variant, so a later run can show
+which file it measured. It changes the backend setting during a run and puts it back in a ``finally``,
+failing loudly when the put-back is refused.
+
 Variants are ``label=path`` pairs (``git show <commit>:src/static/app-ai-tools.js > file`` makes one);
 without any, only the served file is run. The backend setting is put back to its starting value.
 
-Run:  .venv/bin/python scripts/ai_backend_race_repro.py --url http://127.0.0.1:8012 \\
+Run:  .venv/bin/python scripts/ai_backend_race_repro.py --url http://127.0.0.1:8013 \\
           --variant main=/tmp/main.js --variant picks-only=/tmp/ae85fdaf.js --variant fixed=src/static/app-ai-tools.js
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -28,6 +35,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -55,7 +63,9 @@ _DELAYS = r"""
 
 def _restore(request, url: str, value: str) -> None:
     """Put the backend setting back to what the run found (a PUT to the loopback app only)."""
-    request.put(url.rstrip("/") + "/api/settings", data={"llm_backend": value})
+    resp = request.put(url.rstrip("/") + "/api/settings", data={"llm_backend": value})
+    if not resp.ok:  # Playwright does not raise on 4xx/5xx: a failed restore must not pass for a restored setting
+        raise RuntimeError(f"could not restore llm_backend={value!r}: HTTP {resp.status}; the app's setting is CHANGED")
 
 
 def _open_models(browser, url: str, body: str | None):
@@ -81,7 +91,9 @@ def run_variant(browser, request, url: str, label: str, js: str | None) -> dict:
     sel = page.locator("#ai-backend-select")
     opts = sel.evaluate("e => [...e.options].map(o => o.value)")
     start = page.evaluate("async () => (await (await fetch('/api/llm/backend')).json()).stored_override || 'auto'")
-    out: dict = {"variant": label, "options": opts, "stored_at_start": start}
+    served = body if body is not None else page.evaluate("async () => (await (await fetch('/static/app-ai-tools.js')).text())")
+    out: dict = {"variant": label, "options": opts, "stored_at_start": start,
+                 "served_sha256": hashlib.sha256(served.encode("utf-8")).hexdigest()}
     try:
         # one pick, a load already in flight
         page.evaluate(_DELAYS, [[1], []])
