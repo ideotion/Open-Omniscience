@@ -902,10 +902,10 @@ class ImportQueueManager:
         shutil.rmtree(group.dir, ignore_errors=True)
         if not group.item_ids:
             return
-        _LOG.warning(
-            "discarding %d staged import(s) with the checkpoint group: %s",
-            len(group.item_ids), reason,
-        )
+        # The reason can carry a failed item's scrubbed text, which a log does not repeat (CodeQL's
+        # clear-text-logging query cannot tell a scrubbed string from a secret); it is on each
+        # discarded item below.
+        _LOG.warning("discarding %d staged import(s) with the checkpoint group", len(group.item_ids))
         with self._lock:
             for it in self._items:
                 if it.get("id") in group.item_ids and it.get("state") == "staged":

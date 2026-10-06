@@ -1017,7 +1017,7 @@ class VolumeBackupManager:
                 self._progress = {"phase": "done"}
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             fields = runlog.failure_fields(exc, passphrase)
-            _LOG.warning("volume verify failed (%s); the run journal carries the scrubbed text", fields["cls"])
+            _LOG.warning("volume verify failed (%s); the job's error carries the scrubbed text", fields["cls"])
             with self._lock:
                 self._state, self._error = "error", fields["msg"]
 
