@@ -6,7 +6,7 @@ redoing N article(s) one at a time" lines, each a pass that wrote into a file th
 fully read. Nothing in the app named the word: ``grep malformed src`` found one reader, the FTS health
 probe. This module is the missing sentence.
 
-WHAT IT DOES, AND ALL IT DOES.
+WHAT IT DOES.
 
 * **Notices.** A ``handle_error`` observer on the corpus engine and on every lane engine
   (:func:`attach`) asks one question of each failed statement: is the DRIVER's own exception
@@ -25,12 +25,18 @@ WHAT IT DOES, AND ALL IT DOES.
   and none stops another; any other file is recorded and NAMED, with nothing to pause. The latch is memory
   only: a restart is the operator trying again, and the first failed read puts it back.
 
-WHAT IT DOES NOT DO (and the PR says so). It does not verify, repair or salvage: that is E2 (a boot check
-after an unclean end) and E3 (a salvage copy). Until they land the latch releases only when the operator
-starts collection again (:func:`retry_for_collection_start`: the corpus's and the law file's; going online
-and the unattended start are the operator starting it), or starts the Wikipedia lane (its own start
-releases its own file), never by itself and never by a courtesy resume after a backup or a restore,
-because a damaged file that keeps being written is the harm and only a check can say it is not damaged.
+* **Verifies (E2, ``database/verify.py``).** After an unexpected stop the app reads each table of the corpus,
+  Wikipedia and law files once with ``PRAGMA quick_check(table)`` on its own read-only connection before
+  collection writes to them again, and this registry keeps the progress (collection waits while it runs:
+  :meth:`verifying`), each table's verdict (the record's ``verification`` block) and the latch a damaged table
+  sets, by the same door a corruption error uses (:meth:`_apply_incident`).
+
+WHAT IT DOES NOT DO (and the PR says so). It does not repair or salvage: that is E3 (a salvage copy). The
+latch releases only when the operator starts collection again (:func:`retry_for_collection_start`: the
+corpus's and the law file's; going online and the unattended start are the operator starting it), or starts
+the Wikipedia lane (its own start releases its own file), never by itself, never by a courtesy resume after a
+backup or a restore, and never because a later check read the tables as sound: a clean verdict says what
+this one read found, not that the earlier error was wrong.
 
 THE SCOPE FIELD. ``search-index`` is claimed when the full-text index is what the failing statement reads:
 the virtual-table corruption code (extended 267, which FTS5 raises for its own structure) or a statement
@@ -47,7 +53,8 @@ index-only incident must not soften a data one). Everything else is ``data``. Th
 record names (``search-index-rebuild`` or ``verify-then-salvage``); E1 only RECORDS the route, and E2's
 per-table check is what decides.
 
-Nothing here touches a database: an observer on a damaged file must not read it, and it never raises.
+The observer touches no database (an observer on a damaged file must not read it) and never raises; the
+reading of tables is ``database/verify.py``'s, on its own connections.
 """
 from __future__ import annotations
 
@@ -104,6 +111,17 @@ RECORD_WAIT_S = 2.0
 
 #: The one job that writes the record back after a repeat or a retry (a record job is keyed by its incident).
 _FLUSH_JOB: tuple = ("flush",)
+
+#: The check that follows an unexpected stop (``database/verify.py``) is attempted at most this many starts in a
+#: row when it does not finish (a start that began it and ended before it did: the process was killed or the
+#: machine went down mid-check). What it protects: a check that itself brings the process down must not become
+#: a boot loop that never reaches collection. A check that finishes resets the count.
+MAX_VERIFY_ATTEMPTS = 3
+
+#: The ways a per-table check ends (``database/verify.py``).
+VERDICT_OK = "ok"
+VERDICT_DAMAGED = "damaged"
+VERDICT_UNCHECKED = "unchecked"
 
 #: How much of the driver's first line and of a statement's shape a record keeps.
 _MESSAGE_KEEP = 160
@@ -355,6 +373,10 @@ class DamageRegistry:
         #: holds ONE thread, never one per failing statement. ``_pending`` counts what arrived meanwhile.
         self._jobs: dict[tuple, threading.Thread] = {}
         self._pending: dict[tuple, int] = {}
+        #: The per-table check in progress (``None`` when none): ``{"state": "pending" | "running", ...}``.
+        self._verifying: dict[str, Any] | None = None
+        #: The newest check of each file (this process's, or an earlier one's read from the record).
+        self._verification: dict[str, dict[str, Any]] = {}
 
     def _reset_for_tests(self, *, path_fn=None) -> None:
         with self._lock:
@@ -367,6 +389,8 @@ class DamageRegistry:
             self._seq = self._flushed_seq = 0
             self._jobs.clear()
             self._pending.clear()
+            self._verifying = None
+            self._verification.clear()
             self._path_fn = path_fn or record_path
 
     # -- persistence ------------------------------------------------------------------------------
@@ -427,6 +451,11 @@ class DamageRegistry:
                     first = st.get("first_at")
                     if isinstance(first, str) and first and (not cur.get("first_at") or first < cur["first_at"]):
                         cur["first_at"] = first
+            for key, ver in (raw.get("verification") or {}).items():
+                # What an EARLIER process recorded stays readable (the boot decision asks whether a check was
+                # left unfinished); a result this process already produced is newer and wins.
+                if isinstance(ver, dict) and str(key) not in self._verification:
+                    self._verification[str(key)] = dict(ver)
         except (AttributeError, TypeError, ValueError):
             self._prior_unreadable = True
 
@@ -441,6 +470,7 @@ class DamageRegistry:
             "written_at": datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds"),
             "files": {k: {kk: vv for kk, vv in v.items() if kk != "latched"} for k, v in self._files.items()},
             "incidents": [dict(i) for i in self._incidents],
+            "verification": {k: dict(v) for k, v in self._verification.items()},
         }
 
     def _flush(self, doc: dict[str, Any]) -> None:
@@ -539,21 +569,7 @@ class DamageRegistry:
             shape = shape_full[:_SHAPE_KEEP] if shape_full else None
             scope, basis = scope_of(found["code"], shape_full)
             at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
-            with self._lock:
-                st = self._files.setdefault(
-                    file_key,
-                    {"latched": False, "incidents": 0, "first_at": at, "last_at": at, "scope": scope, "retries": 0},
-                )
-                st["incidents"] += 1
-                st["last_at"] = at
-                newly = not st["latched"]
-                # ``data`` is sticky while latched: a later incident that reads only the search index must
-                # not turn "part of your data could not be read" into "your articles were not changed".
-                if newly or st.get("scope") != SCOPE_DATA:
-                    st["scope"] = scope
-                st["latched"] = True
-                known = self._known_locked(file_key, scope, shape)
-                due = self._count_repeat_locked(known, at) if known is not None else False
+            newly, known, due = self._apply_incident(file_key, scope, shape, at)
             if newly:
                 _log_latched(file_key, found["name"], scope, shape)
             if known is not None:
@@ -575,6 +591,30 @@ class DamageRegistry:
         except Exception:  # noqa: BLE001 - never raises
             _LOG.debug("database damage: could not record an incident", exc_info=True)
             return False
+
+    def _apply_incident(
+        self, file_key: str, scope: str, shape: str | None, at: str
+    ) -> tuple[bool, dict[str, Any] | None, bool]:
+        """Count one incident against ``file_key`` and latch it, under the lock: ``(newly latched, the record
+        of this very incident when this process already has one, whether its repeat is due to be written
+        back)``. The ONE place the latch is set, so a corruption error and a per-table verdict cannot
+        latch differently."""
+        with self._lock:
+            st = self._files.setdefault(
+                file_key,
+                {"latched": False, "incidents": 0, "first_at": at, "last_at": at, "scope": scope, "retries": 0},
+            )
+            st["incidents"] += 1
+            st["last_at"] = at
+            newly = not st["latched"]
+            # ``data`` is sticky while latched: a later incident that reads only the search index must
+            # not turn "part of your data could not be read" into "your articles were not changed".
+            if newly or st.get("scope") != SCOPE_DATA:
+                st["scope"] = scope
+            st["latched"] = True
+            known = self._known_locked(file_key, scope, shape)
+            due = self._count_repeat_locked(known, at) if known is not None else False
+        return newly, known, due
 
     def _single_flight(self, key: tuple, fn, *, rerun: bool = False) -> None:
         """Run ``fn`` on a daemon thread, ONE per ``key``: a call that finds its key's thread alive returns at
@@ -636,6 +676,7 @@ class DamageRegistry:
         *,
         thread_name: str,
         endpoint: str | None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         """Gather the facts of a first-of-its-kind incident (stats, the session ledger: nothing reads the
         damaged file) and write the record. Not under the registry's lock until the append. The earlier
@@ -664,6 +705,7 @@ class DamageRegistry:
             "previous_end": _previous_end(),
             "repeats": 0,
             **_sizes(path),
+            **(extra or {}),
         }
         with self._lock:
             known = self._known_locked(file_key, scope, shape)  # a record thread that ended just before may have won
@@ -716,6 +758,148 @@ class DamageRegistry:
             _LOG.debug("database damage: retry failed", exc_info=True)
         return released
 
+    # -- the per-table check (database/verify.py) --------------------------------------------------
+    def verifying(self) -> bool:
+        """Whether a check of the data files is armed or running: collection waits for it (the storage guard's
+        ``"verifying"`` kind). It follows the pause's switch, so ``OO_DAMAGE_GUARD=0`` means writing carries on."""
+        if not switch_on():
+            return False
+        with self._lock:
+            return self._verifying is not None
+
+    def writes_paused(self, file_key: str) -> bool:
+        """The writers of ``file_key`` wait: its latch is set, or a check of the data files is armed or running."""
+        return self.latched(file_key) or self.verifying()
+
+    def verification_arm(self, trigger: str) -> None:
+        """A check is going to run: from this call until :meth:`verification_end` collection waits, so an
+        operator who goes online in the seconds before the check starts does not slip a pass in first."""
+        with self._lock:
+            self._verifying = {
+                "state": "pending", "trigger": trigger, "since": self._clock(),
+                "index": 0, "total": 0, "file": None, "table": None,
+            }
+
+    def verification_begin(self, total_tables: int) -> None:
+        with self._lock:
+            if self._verifying is not None:
+                self._verifying.update(state="running", total=int(total_tables))
+
+    def verification_progress(self, file_key: str, table: str | None, index: int) -> None:
+        with self._lock:
+            if self._verifying is not None:
+                self._verifying.update(file=file_key, table=table, index=int(index))
+
+    def verification_end(self) -> None:
+        with self._lock:
+            self._verifying = None
+
+    def previous_verification(self, file_key: str) -> dict[str, Any] | None:
+        """What an EARLIER process recorded about its check of ``file_key`` (``None`` when there is none, or
+        when the newest entry is this process's own): the boot decision asks whether a check was left
+        unfinished."""
+        self._ensure_loaded()
+        with self._lock:
+            entry = self._verification.get(file_key)
+            if entry is None or entry.get("process") == self._process:
+                return None
+            return dict(entry)
+
+    def checked_by_this_process(self, file_key: str) -> bool:
+        """Whether THIS process already ran (or deliberately skipped) the check of ``file_key``: the start-up upkeep
+        can run more than once in a process (an unlock after a locked boot), and a file is read once."""
+        with self._lock:
+            entry = self._verification.get(file_key)
+            return entry is not None and entry.get("process") == self._process and entry.get("state") in ("done", "skipped")
+
+    def verification_file_started(self, file_key: str, *, path: Path | None, trigger: str, tables_total: int, attempts: int) -> None:
+        """Record that the check of ``file_key`` has begun, BEFORE its first table is read: a process that is
+        killed mid-check leaves ``state: running`` behind, which is how the next start knows."""
+        self._ensure_loaded()
+        at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+        with self._lock:
+            self._verification[file_key] = {
+                "file": file_key,
+                "file_name": path.name if path is not None else None,
+                "process": self._process,
+                "session_id": _current_session_id(),
+                "trigger": trigger,
+                "state": "running",
+                "attempts": int(attempts),
+                "started_at": at,
+                "tables_total": int(tables_total),
+            }
+        self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+
+    def verification_file_skipped(self, file_key: str, *, path: Path | None, attempts: int, reason: str) -> None:
+        """Say that the check of ``file_key`` was NOT run (an earlier check was left unfinished on every one of
+        the last ``MAX_VERIFY_ATTEMPTS`` starts): the next unexpected stop starts the count again."""
+        self._ensure_loaded()
+        at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+        with self._lock:
+            self._verification[file_key] = {
+                "file": file_key,
+                "file_name": path.name if path is not None else None,
+                "process": self._process,
+                "session_id": _current_session_id(),
+                "state": "skipped",
+                "verdict": VERDICT_UNCHECKED,
+                "reason": reason,
+                "attempts": int(attempts),
+                "finished_at": at,
+            }
+        self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+
+    def verification_file_done(self, file_key: str, result: dict[str, Any], *, path: Path | None = None) -> None:
+        """Store the finished check of ``file_key`` and, when a table was read as damaged, latch the file the same
+        way a corruption error does (:meth:`_apply_incident`). Never raises."""
+        try:
+            at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+            damaged = [t["table"] for t in result.get("tables", []) if t.get("verdict") == VERDICT_DAMAGED]
+            with self._lock:
+                entry = dict(self._verification.get(file_key) or {})
+                entry.update(result)
+                entry.update(file=file_key, process=self._process, state="done", finished_at=at, attempts=0)
+                self._verification[file_key] = entry
+            if damaged:
+                self._note_verified_damage(file_key, damaged, path=path, at=at)
+            else:
+                self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+        except Exception:  # noqa: BLE001 - a check's bookkeeping must never take the boot down
+            _LOG.debug("database damage: could not store a check's result", exc_info=True)
+
+    def _note_verified_damage(self, file_key: str, tables: list[str], *, path: Path | None, at: str) -> None:
+        """A table the per-table check read as damaged: latch the file and record one incident. The scope is
+        ``search-index`` only when EVERY damaged table is the full-text index's (its shadow tables), else
+        ``data``; the names are schema names, never row values."""
+        names = sorted(set(tables))
+        index_only = all(_SHADOW_TABLE.fullmatch(t) for t in names)
+        scope = SCOPE_SEARCH_INDEX if index_only else SCOPE_DATA
+        shown = ", ".join(names[:6]) + (" and more" if len(names) > 6 else "")
+        basis = (
+            "the per-table check found damage only in the tables of the search index: " + shown
+            if index_only
+            else "the per-table check found damage in: " + shown
+        )
+        shape = "PRAGMA quick_check(" + ", ".join(names[:6]) + ")"
+        newly, known, due = self._apply_incident(file_key, scope, shape, at)
+        if newly:
+            _log_latched(file_key, "SQLITE_CORRUPT", scope, shape)
+        if known is not None:
+            if due:
+                self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+            return
+        found = {"code": SQLITE_CORRUPT, "name": "SQLITE_CORRUPT", "message": "the per-table check reported damage"}
+        thread_name = threading.current_thread().name
+        self._single_flight(
+            ("record", file_key, scope, shape),
+            lambda: self._record_new(
+                file_key, found, shape, scope, basis, at, path,
+                thread_name=thread_name, endpoint=None,
+                extra={"found_by": "per-table check", "tables": names[:20]},
+            ),
+        )
+
     # -- what a surface shows -------------------------------------------------------------------
     def notes(self) -> list[dict[str, Any]]:
         """The sentences to show, one per latched file, as frames the page translates: ``{kind, file,
@@ -725,6 +909,17 @@ class DamageRegistry:
         on = switch_on()
         out: list[dict[str, Any]] = []
         with self._lock:
+            ver = self._verifying
+            if on and ver is not None and ver.get("state") == "running" and int(ver.get("total") or 0) > 0:
+                # Said while it runs, with its own numbers: how far through the tables the check is.
+                out.append(
+                    {
+                        "kind": "verifying",
+                        "file": ver.get("file"),
+                        "frame": FRAME_VERIFYING,
+                        "vars": {"index": int(ver.get("index") or 0), "total": int(ver.get("total") or 0)},
+                    }
+                )
             for key, st in self._files.items():
                 if not st["latched"]:
                     continue
@@ -750,6 +945,8 @@ class DamageRegistry:
             incidents = list(self._incidents)
             write_error = self._write_error
             prior_unreadable = self._prior_unreadable
+            verifying = dict(self._verifying) if self._verifying is not None else None
+            verification = {k: dict(v) for k, v in self._verification.items()}
         # ``latched`` is the files whose writers are paused; a file with no writer to pause is NAMED
         # (``recorded_only``, and a note) and nothing waits on it.
         latched = sorted(k for k, v in files.items() if v["latched"] and k in PAUSED_FILES) if switch_on() else []
@@ -765,11 +962,23 @@ class DamageRegistry:
             "write_error": write_error,
             "prior_record_unreadable": prior_unreadable,
             "record_file": RECORD_FILE,
+            "verifying": verifying,
+            "verification": verification if detail else {k: _verification_brief(v) for k, v in verification.items()},
         }
         if detail:
             out["incidents"] = incidents
             out["method"] = METHOD
         return out
+
+
+def _verification_brief(entry: dict[str, Any]) -> dict[str, Any]:
+    """A check's result without its per-table list (the polled status carries this; the bundle carries all)."""
+    tables = entry.get("tables") or []
+    return {
+        **{k: v for k, v in entry.items() if k != "tables"},
+        "damaged": [t["table"] for t in tables if t.get("verdict") == VERDICT_DAMAGED],
+        "unchecked": [t["table"] for t in tables if t.get("verdict") == VERDICT_UNCHECKED],
+    }
 
 
 def diagnostics_member(max_bytes: int) -> dict[str, Any]:
@@ -794,6 +1003,11 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             out["incidents"] = incidents
         out["incidents"] = incidents
         out["dropped_oldest_to_fit"] = total - len(incidents)
+        if _size() > budget:
+            # Still over once only the newest incident is left: the per-table lists of the checks go next (the
+            # verdict, the damaged and the unchecked names stay), and the member says it did so.
+            out["verification"] = {k: _verification_brief(v) for k, v in (out.get("verification") or {}).items()}
+            out["verification_tables_dropped_to_fit"] = True
         return out
     except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
         first = (str(exc).splitlines() or [""])[0][:160]
@@ -801,9 +1015,10 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
 
 
 #: The plain sentences. Frames the page translates (each is also a locale key, x12). None of them says
-#: the file is being checked or repaired: in E1 nothing is. None says what is still intact either: E1
-#: has not looked. They say what is true. "Collection will not write to it" holds whether the scheduler
-#: is running or stopped; "paused" would claim a state it may not be in.
+#: the file is being repaired: nothing is (E3). None says what is still intact either: a damage sentence
+#: comes from an error, and what the per-table check read is in the record, not in the sentence. They say
+#: what is true. "Collection will not write to it" holds whether the scheduler is running or stopped;
+#: "paused" would claim a state it may not be in.
 FRAME_DATA = (
     "Part of your library's data file could not be read: the database reported damage. An unexpected "
     "stop, a failing drive or a copy made while the file was changing can leave that behind. Collection "
@@ -834,6 +1049,11 @@ FRAME_RECORDED = (
     "database reported damage. It is recorded in the file database-damage.json in your data folder; the "
     "app has nothing to pause for that file, and has deleted nothing because of it."
 )
+FRAME_VERIFYING = (
+    "The app is checking your data files after an unexpected stop, before collection writes to them again: "
+    "table {index} of {total}. The check only reads, so it changes and deletes nothing, and collection starts "
+    "by itself when it ends."
+)
 FRAME_PAUSE_OFF = (
     "The database reported damage in one of your data files, and the pause for it is switched off on "
     "this machine (OO_DAMAGE_GUARD=0), so writing carries on. It is recorded in the file "
@@ -850,8 +1070,15 @@ METHOD = (
     "it back. A 'search-index' scope is a SUSPICION that rests on a virtual-table corruption code or a "
     "statement over the full-text index or its tables (a damaged index reports plain code 11 through "
     "MATCH); anything else is 'data', and 'data' stays while a file is latched. A BLIND SPOT: damage to the first page of a file, encrypted or "
-    "not, reads as code 26, the code a wrong passphrase gives, so it is not named. Nothing here "
-    "reads the damaged file, verifies it or repairs it."
+    "not, reads as code 26, the code a wrong passphrase gives, so it is not named. Noticing reads "
+    "nothing. After an unexpected stop the per-table check reads each table of the corpus, Wikipedia "
+    "and law files once with PRAGMA quick_check on its own read-only connection (smallest first when the "
+    "planner's statistics say which is smallest); a table is damaged when the check reports a problem or "
+    "raises SQLITE_CORRUPT, and unchecked, never damaged, when the file is busy, locked, locked by a "
+    "passphrase or stopped. It checks the structure of each table and its indexes, not every row's "
+    "content; the search index (a virtual table) is checked by SQLite's own integrity check for it "
+    "(SQLite 3.44 and later), which also reads the articles. "
+    "Nothing here repairs anything."
 )
 
 

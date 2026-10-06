@@ -16342,3 +16342,22 @@ maintainer as a card.
   **(i) Two release gaps:** the in-place encryption swaps each live data file with `os.replace` (`src/database/encrypt_tool.py`) and nothing
   releases a latch on a file just replaced (a start does); and the lane files' own indexes (`wiki_lane_fts`, `law_version_fts`, `osm_names`,
   `osm_addresses`) are not in the index-table list, so their incidents carry scope `data` (record only: no sentence differs).
+
+- **DAMAGED DATABASE, SLICE E2: WHAT THE CHECK AFTER AN UNEXPECTED STOP DOES NOT DO, AND THE DEFAULTS TAKEN (WAL / DISK THREAD, 2026-10-06; the
+  plan is `/mnt/project-files/wal-disk-pool/PLAN-damaged-database.md`; QUESTION 26 (check the library before collecting again, a at start-up while
+  offline / b in the background) IS UNANSWERED AND THIS BUILDS ITS RECOMMENDED DEFAULT a; not a ruling, reversible by `OO_BOOT_VERIFY=0` or one
+  branch in `src/database/verify.py`).** (a) The check is `PRAGMA quick_check(<table>)` per table: it reads the structure of each table and
+  its indexes (b-tree pages, index agreement), not every row's content (the search index, a virtual table, is checked by SQLite's own
+  integrity check for it from 3.44, which also reads the articles: measured about three times the cost of the content table's own scan).
+  A table whose pages are whole but whose rows were rewritten wrongly passes. (b) There is
+  no operator skip: the check ends by itself, and on a large store on a slow drive collection waits for it (the plan's estimate was 2 to 4
+  minutes for 14 GB; a drive many times slower is many times longer). The progress line says "table N of M" so the wait is visible; a quit
+  asks the check to stop at its next look and the next start reads the file again. If a skip is ever wanted it is a button that calls
+  `verify.stop()` and records the file as `unchecked` (never `ok`). (c) A file whose check was left unfinished three starts in a row is
+  skipped, said in the record (`state: skipped`), and tried again only after the next unexpected stop; what the number protects is a check
+  that itself brings the process down (a boot loop that never reaches collection). (d) Only the three files damage can pause are checked
+  (corpus, Wikipedia, law); the OSM lane's and the other lane files' incidents stay recorded only. (e) The trigger is the session ledger's
+  `clean is False`: a stop the ledger could not classify (`None`) holds nothing, and a machine that lost power with the ledger line written
+  by an earlier boot is read as the ledger reads it. (f) A clean verdict releases nothing: a latch set by a corruption error stays until the
+  operator starts collection again, because a check says what this read found, not that the earlier error was wrong. (g) Repair and salvage
+  are E3 and wait for question 27.

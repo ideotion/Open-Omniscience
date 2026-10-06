@@ -72,6 +72,9 @@ BUDGET_FULL: str = "storage_budget_spent"
 #: The lane's file key in ``database/damage.py`` (the lane kind), and the pause reason the status carries.
 WIKI_FILE: str = "wiki"
 DAMAGED: str = "database-damaged"
+#: The check after an unexpected stop is reading the data files (``database/verify.py``): the lane's writers
+#: wait for it and carry on when it ends.
+CHECKING: str = "database-check"
 
 #: How many buffered changes one drain takes per edition. A bound, not a tuning knob:
 #: a drain that took an unbounded buffer would hold one transaction open across an
@@ -621,7 +624,7 @@ class WikiLaneRunner:
         stream thread does not stop on the second (it keeps filling its bounded buffer: it writes nothing),
         so this is not ``_should_stop``. Read between tiers and inside each, so a latch set by one tier's
         failed read stops the next within the window and not after it."""
-        return self._should_stop() or damage.registry.latched(WIKI_FILE)
+        return self._should_stop() or damage.registry.writes_paused(WIKI_FILE)
 
     def _stream_body(self) -> None:
         resume = None
@@ -1023,12 +1026,13 @@ class WikiLaneRunner:
         while not self._should_stop():
             if max_drains is not None and done >= max_drains:
                 break
-            if damage.registry.latched(WIKI_FILE):
+            if damage.registry.writes_paused(WIKI_FILE):
                 # The database reported THIS lane's file damaged: every writer in this loop (the
                 # drain, the pageview top-up, the index, WARM and the walk windows) waits, and
                 # nothing else does (the corpus has its own latch). Released by starting the lane
-                # again; the stream thread keeps filling its bounded buffer meanwhile.
-                self.paused_reason = DAMAGED
+                # again; the stream thread keeps filling its bounded buffer meanwhile. The check after
+                # an unexpected stop pauses it the same way while it reads the files, and ends by itself.
+                self.paused_reason = DAMAGED if damage.registry.latched(WIKI_FILE) else CHECKING
                 if max_drains is not None:
                     break  # a caller asking for a tick gets the pause, not an endless wait
                 self._sleep(self._interval)

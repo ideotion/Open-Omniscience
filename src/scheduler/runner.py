@@ -1862,6 +1862,7 @@ class BackgroundScheduler:
             phase = {
                 "disk": storage_guard.PHASE_DISK,
                 "damage": storage_guard.PHASE_DAMAGE,
+                "verifying": storage_guard.PHASE_VERIFY,
             }.get(kind, storage_guard.PHASE_WAL)
             if not waited:
                 waited = True
@@ -1869,7 +1870,14 @@ class BackgroundScheduler:
                 # live countdown in the UI (honesty).
                 with self._state_lock:
                     self._next_run = None
-                if kind == "damage":
+                if kind == "verifying":
+                    # Not a limit either: the app is reading the data files after an unexpected stop, and
+                    # collection starts by itself when that ends (database/verify.py).
+                    _LOG.warning(
+                        "collection paused (database check): the app is checking the data files after an "
+                        "unexpected stop -- it resumes when the check ends"
+                    )
+                elif kind == "damage":
                     # Not a reading that clears: the latch is the database's own report of a damaged
                     # file, and only starting collection again releases it (database/damage.py).
                     _LOG.warning(
@@ -2030,6 +2038,10 @@ class BackgroundScheduler:
                 # The database reported the corpus file damaged: vacuum, cleanup and checkpoints
                 # rewrite pages of exactly the file that cannot be read in full.
                 self._note_maint_skip("database_damage")
+                return False
+            if damage.registry.verifying():
+                # The check after an unexpected stop is still reading the files: not a moment to rewrite them.
+                self._note_maint_skip("database_check")
                 return False
         except Exception:  # noqa: BLE001 - guard read must never block maintenance
             pass

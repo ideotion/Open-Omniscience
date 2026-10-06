@@ -357,13 +357,25 @@ def _run_startup_upkeep() -> None:
             except Exception:  # noqa: BLE001 - a cache warm must never affect the app
                 logger.warning("boot-time insights cache warm failed", exc_info=True)
 
+        # After an unexpected stop the app reads each table of its data files once before collection writes
+        # to them again (database/verify.py). ARMED here, before the thread exists, so collection waits from
+        # this moment and an operator who goes online in the next seconds does not start a pass first; the
+        # sequence's first step runs the check. It does nothing after a clean end.
+        from src.database import verify
+
+        verify.arm_at_boot()
+
         # The warm-up, the rollup's first build and the re-index resume run one after the other
         # in this one thread (diagnostics cause C: all three at once got the process killed).
         from src.api import boot_sequence
 
-        threading.Thread(
-            target=boot_sequence.run, args=(_warm_insights_cache,), name="oo-boot-sequence", daemon=True
-        ).start()
+        try:
+            threading.Thread(
+                target=boot_sequence.run, args=(_warm_insights_cache,), name="oo-boot-sequence", daemon=True
+            ).start()
+        except Exception:  # noqa: BLE001 - collection must never wait for a check no thread is going to run
+            verify.disarm()
+            raise
 
     # Content-first (maintainer 2026-06-13): the app BOOTS IN AIRPLANE MODE
     # (offline) every time — nothing scrapes until the operator crosses online
@@ -544,6 +556,15 @@ async def lifespan(app: FastAPI):
         get_scheduler().stop()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
+    try:
+        # The check after an unexpected stop (database/verify.py) reads on its own connections: ask it to end at its
+        # next look, so a quit mid-check does not leave a table read running past the shutdown. Its file's entry
+        # stays "running", which is how the next start knows to read it again.
+        from src.database import verify as _verify
+
+        _verify.stop()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not stop the start-up database check", exc_info=True)
     try:
         from src.scheduler.offline_maintenance import stop as _stop_offline_maintenance
 
