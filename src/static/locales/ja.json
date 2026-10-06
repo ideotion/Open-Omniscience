@@ -6837,6 +6837,7 @@
   "{n} way": "{n} ウェイ",
   "{n} ways": "{n} ウェイ",
   "{n} weather slices already held on this machine": "この端末に保存済みの気象データ：{n} 件",
+  "{n} with a newer imported verdict": "より新しいインポート済み判定のあるもの: {n} 件",
   "{n} with text · {m} to fetch": "テキストあり {n} · 取得待ち {m}",
   "{n} without a country": "国なし {n}",
   "{n} without a language": "言語なし {n}",

@@ -503,10 +503,12 @@
           + ` · ${esc(tf("{n} can be put back", {n: d.revertible}))}</div>`;
         const dec = d.declined || {};
         // A refusal with its reason, never a silent skip. Drawn only when there IS one.
-        const declined = (dec.judged_here_since || dec.was_curated_before)
+        const declined = (dec.judged_here_since || dec.imported_since || dec.was_curated_before)
           ? `<div>` + ooLabelHtml(esc(t("Left alone by a revert")),
               (dec.judged_here_since
                 ? esc(tf("{n} judged here since", {n: dec.judged_here_since})) + " " : "")
+              + (dec.imported_since
+                ? esc(tf("{n} with a newer imported verdict", {n: dec.imported_since})) + " " : "")
               + (dec.was_curated_before
                 ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : ""))
             + `</div>`

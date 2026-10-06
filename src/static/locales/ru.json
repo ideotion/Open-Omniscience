@@ -6837,6 +6837,7 @@
   "{n} way": "{n} линия",
   "{n} ways": "линий: {n}",
   "{n} weather slices already held on this machine": "Фрагментов погоды уже на этом компьютере: {n}",
+  "{n} with a newer imported verdict": "{n} с более новым импортированным вердиктом",
   "{n} with text · {m} to fetch": "с текстом: {n} · к загрузке: {m}",
   "{n} without a country": "без страны: {n}",
   "{n} without a language": "без языка: {n}",

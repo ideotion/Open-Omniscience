@@ -51,6 +51,7 @@ from src.catalog.qualification import (  # noqa: E402
 )
 from src.catalog.qualification_overlay import (  # noqa: E402
     REVERT_DECLINE_CURATED,
+    REVERT_DECLINE_IMPORTED,
     REVERT_DECLINE_JUDGED,
     apply_overlay,
     overlay_status,
@@ -325,12 +326,13 @@ def test_revert_closes_the_admission_it_is_undoing(
     assert db.query(SourceAdmissionEvent).count() == 1, "the record is append-only"
 
 
-def test_a_judging_attempt_a_merge_brought_in_does_not_make_a_revert_decline_as_judged_here(
+def test_an_imported_newer_attempt_is_not_called_judged_here_but_the_revert_still_declines(
     db: Session, overlay_file: Path
 ) -> None:
     """'Judged here since' is about THIS install: an attempt a backup merge inserted
-    (``merged_rows`` names it) is another instance's history (rule 12 = b), so the adoption is
-    still an adoption and may be put back."""
+    (``merged_rows`` names it, rule 12 = b) is another instance's history and must not be labelled as
+    a measurement made here. The revert still leaves the row alone, because it must never silently
+    discard a verdict -- under its own label, ``imported_since``."""
     from src.database.models import MergeBatch, MergedRow
 
     apply_overlay(db, now=NOW, path=overlay_file)
@@ -348,9 +350,11 @@ def test_a_judging_attempt_a_merge_brought_in_does_not_make_a_revert_decline_as_
 
     st = overlay_status(db, path=overlay_file)
     assert st["declined"][REVERT_DECLINE_JUDGED] == 0
+    assert st["declined"][REVERT_DECLINE_IMPORTED] == 1
     out = revert_overlay(db, now=NOW + timedelta(hours=1), path=overlay_file)
     assert out["declined"][REVERT_DECLINE_JUDGED] == 0
-    assert _by_domain(db, "cat.example").status == STATUS_UNQUALIFIED
+    assert out["declined"][REVERT_DECLINE_IMPORTED] == 1
+    assert _by_domain(db, "cat.example").status == STATUS_QUALIFIED, "the verdict was not discarded"
 
 
 def test_revert_refuses_a_row_this_install_judged_since_and_counts_it(
@@ -369,9 +373,11 @@ def test_revert_refuses_a_row_this_install_judged_since_and_counts_it(
 
     st = overlay_status(db, path=overlay_file)
     assert st["declined"][REVERT_DECLINE_JUDGED] == 1
+    assert st["declined"][REVERT_DECLINE_IMPORTED] == 0
 
     out = revert_overlay(db, now=NOW + timedelta(hours=1), path=overlay_file)
     assert out["declined"][REVERT_DECLINE_JUDGED] == 1
+    assert out["declined"][REVERT_DECLINE_IMPORTED] == 0
     assert _by_domain(db, "cat.example").status == STATUS_QUALIFIED
     assert "cat.example" in _collecting(db)
 

@@ -6837,6 +6837,7 @@
   "{n} way": "{n} 条路径",
   "{n} ways": "{n} 条路径",
   "{n} weather slices already held on this machine": "本机已保存的天气片段：{n} 个",
+  "{n} with a newer imported verdict": "有更新的导入判定：{n} 条",
   "{n} with text · {m} to fetch": "有文本 {n} · 待获取 {m}",
   "{n} without a country": "{n} 篇无国家",
   "{n} without a language": "{n} 篇无语言",

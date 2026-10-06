@@ -287,8 +287,9 @@ def _attempt_marks(session: Session, source_ids: list[int]) -> dict[int, dict]:
     round trip per shipped verdict.
 
     "Judged" means judged BY THIS INSTALL: a judging attempt a backup merge brought in
-    (``merged_rows`` names it) is another instance's history, not a measurement here, so it
-    does not make a revert decline with "judged here since" (rule 12 = b, as the export reads it).
+    (``merged_rows`` names it) is another instance's history, not a measurement here (rule 12 = b,
+    as the export reads it), so it is recorded apart as ``judged_any`` and never as ``judged``. The
+    revert still declines on it -- it never silently discards a verdict -- but under its own label.
     """
     from src.catalog.qualification_integrity import not_imported
     from src.database.models import SourceQualificationAttempt as A
@@ -302,21 +303,23 @@ def _attempt_marks(session: Session, source_ids: list[int]) -> dict[int, dict]:
         .all()
     )
     for sid, verdict, at, is_local in rows:
-        if verdict in JUDGING_VERDICTS and not is_local:
-            continue
         if at is not None and at.tzinfo is None:
             at = at.replace(tzinfo=UTC)
-        mark = marks.setdefault(int(sid), {"inherited": None, "judged": None, "curated": None})
+        mark = marks.setdefault(
+            int(sid), {"inherited": None, "judged": None, "judged_any": None, "curated": None}
+        )
+        keys: tuple[str, ...]
         if verdict == VERDICT_INHERITED:
-            key = "inherited"
+            keys = ("inherited",)
         elif verdict in JUDGING_VERDICTS:
-            key = "judged"
+            keys = ("judged", "judged_any") if is_local else ("judged_any",)
         elif verdict == VERDICT_CURATED:
-            key = "curated"
+            keys = ("curated",)
         else:
             continue
-        if mark[key] is None or (at is not None and at > mark[key]):
-            mark[key] = at
+        for key in keys:
+            if mark[key] is None or (at is not None and at > mark[key]):
+                mark[key] = at
     return marks
 
 
@@ -324,6 +327,9 @@ def _attempt_marks(session: Session, source_ids: list[int]) -> dict[int, dict]:
 # reason, never a silent skip: the editor shows the counts beside the revertible ones,
 # because "nothing to revert" and "three rows I will not touch" are different states.
 REVERT_DECLINE_JUDGED = "judged_here_since"
+#: A judging attempt a backup merge brought in came after the adoption. Not a measurement made here,
+#: so it is not counted as one -- but the revert still leaves the row alone, and says why.
+REVERT_DECLINE_IMPORTED = "imported_since"
 REVERT_DECLINE_CURATED = "was_curated_before"
 
 
@@ -342,7 +348,7 @@ def _adoptions(session: Session, overlay: dict[str, dict]) -> tuple[list, dict[s
     rows = session.query(Source).filter(Source.domain.in_(sorted(overlay))).all()
     marks = _attempt_marks(session, [int(r.id) for r in rows])
     revertible: list = []
-    declined = {REVERT_DECLINE_JUDGED: 0, REVERT_DECLINE_CURATED: 0}
+    declined = {REVERT_DECLINE_JUDGED: 0, REVERT_DECLINE_IMPORTED: 0, REVERT_DECLINE_CURATED: 0}
     for source in rows:
         record = overlay.get((source.domain or "").strip().lower())
         if record is None or source.status != record["status"]:
@@ -357,6 +363,13 @@ def _adoptions(session: Session, overlay: dict[str, dict]) -> tuple[list, dict[s
             # install's own, whatever it happens to agree with, and reverting it would
             # throw away a measurement rather than an adoption.
             declined[REVERT_DECLINE_JUDGED] += 1
+            continue
+        judged_any_at = mark["judged_any"]
+        if judged_any_at is not None and judged_any_at >= inherited_at:
+            # Newer judging history exists, but another instance made it. Reverting would still drop a
+            # verdict a merge brought in, so it is refused too -- under its own name, never as a
+            # measurement made here.
+            declined[REVERT_DECLINE_IMPORTED] += 1
             continue
         curated_at = mark["curated"]
         if curated_at is not None and curated_at <= inherited_at:
@@ -401,7 +414,7 @@ def overlay_status(session: Session, *, path: Path | None = None) -> dict:
         shipped[entry["status"]] += 1
 
     revertible, declined = _adoptions(session, overlay) if overlay else ([], {
-        REVERT_DECLINE_JUDGED: 0, REVERT_DECLINE_CURATED: 0,
+        REVERT_DECLINE_JUDGED: 0, REVERT_DECLINE_IMPORTED: 0, REVERT_DECLINE_CURATED: 0,
     })
 
     # THE PREVIEW. Adopting is a write, so what it would do is shown first -- and the two
