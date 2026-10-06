@@ -243,6 +243,72 @@ def test_the_gate_reads_the_live_guards_floor(monkeypatch) -> None:
     check_memory_for_encrypted_merge(available_mb=need_mb + 1000)
 
 
+def test_incoming_rows_raise_the_need_by_the_largest_grouping_step_not_their_sum() -> None:
+    base = merge_mod._ENCRYPTED_TEMP_NEED_BYTES
+    rows = {"keywords": 6_900_000, "article_links": 4_200_000, "article_source_relationships": 0}
+    per = merge_mod._ENCRYPTED_REP_BYTES_PER_ROW
+    largest = max(rows["keywords"] * per["keywords"], rows["article_links"] * per["article_links"])
+    expect = base + largest + 16 * sum(rows.values())
+    expect_mb = expect / _MB
+    check_memory_for_encrypted_merge(available_mb=expect_mb, floor_mb=0.0, incoming_rows=rows)
+    with pytest.raises(MergeError):
+        check_memory_for_encrypted_merge(available_mb=expect_mb - 1, floor_mb=0.0, incoming_rows=rows)
+    # the steps run one after another: the SUM would have asked for more than this machine has
+    summed = base + sum(rows[t] * per[t] for t in rows) + 16 * sum(rows.values())
+    assert summed > expect
+    # and the figure shown to the operator is the one the gate used
+    with pytest.raises(MergeError) as err:
+        check_memory_for_encrypted_merge(available_mb=1.0, floor_mb=0.0, incoming_rows=rows)
+    from src.backup.folder_backup import human_bytes
+
+    assert human_bytes(expect) in str(err.value)
+
+
+def test_a_table_with_no_incoming_rows_adds_nothing() -> None:
+    need_mb = merge_mod._ENCRYPTED_TEMP_NEED_BYTES / _MB
+    check_memory_for_encrypted_merge(available_mb=need_mb, floor_mb=0.0, incoming_rows={})
+    check_memory_for_encrypted_merge(
+        available_mb=need_mb, floor_mb=0.0, incoming_rows={"keywords": 0, "article_links": 0}
+    )
+
+
+def test_incoming_rows_are_counted_from_the_staged_file(tmp_path) -> None:
+    import sqlite3
+
+    staged = tmp_path / "staged.db"
+    _plain_corpus(staged, articles=3)
+    con = sqlite3.connect(staged)
+    con.execute("INSERT INTO keywords (term, normalized_term, language) VALUES ('a','a','en'), ('b','b','en')")
+    con.commit()
+    con.close()
+    got = merge_mod._incoming_group_rows(staged)
+    assert got["keywords"] == 2
+    assert set(got) <= set(merge_mod._ENCRYPTED_REP_BYTES_PER_ROW)
+    # a file that cannot be read adds nothing, and never raises
+    junk = tmp_path / "junk.db"
+    junk.write_bytes(b"this is not a database" * 100)
+    assert merge_mod._incoming_group_rows(junk) == {}
+    assert merge_mod._incoming_group_rows(tmp_path / "absent.db") == {}
+
+
+def test_merge_corpus_hands_the_incoming_counts_to_the_gate(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    seen: dict = {}
+
+    def probe(**kw):  # noqa: ANN003, ANN202
+        seen.update(kw)
+        raise MergeError("stop here")
+
+    monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", probe)
+    monkeypatch.setattr(merge_mod, "_incoming_group_rows", lambda _p: {"keywords": 7})
+    staged = tmp_path / "staged.db"
+    _plain_corpus(staged, articles=1, first=100)
+    with pytest.raises(MergeError, match="stop here"):
+        merge_corpus(staged, encrypted_working_copy, _META)
+    assert seen == {"incoming_rows": {"keywords": 7}}
+
+
 def test_an_encrypted_merge_on_a_short_machine_is_refused_before_it_writes(
     tmp_path, encrypted_working_copy, monkeypatch
 ) -> None:
@@ -255,8 +321,14 @@ def test_an_encrypted_merge_on_a_short_machine_is_refused_before_it_writes(
     with pytest.raises(MergeError, match="Not enough free memory to merge into an encrypted corpus"):
         merge_corpus(staged, encrypted_working_copy, _META)
     assert encrypted_working_copy.read_bytes() == before, "a refused merge changed nothing"
-    # the connection the refusal opened is closed: the file can be replaced or removed at once
-    encrypted_working_copy.unlink()
+    # the connection the refusal opened is closed (unlink() succeeds on an open file on Linux, so
+    # the open descriptors are read instead)
+    if sys.platform.startswith("linux"):
+        held = [
+            p for p in glob.glob("/proc/self/fd/*")
+            if os.path.exists(p) and os.path.realpath(p) == str(encrypted_working_copy.resolve())
+        ]
+        assert not held, "the refused merge left its connection open on the working copy"
 
 
 def test_a_plain_merge_runs_whatever_memory_is_reported(tmp_path, monkeypatch) -> None:
@@ -272,8 +344,11 @@ def test_a_plain_merge_runs_whatever_memory_is_reported(tmp_path, monkeypatch) -
 def test_the_refusal_sentence_is_read_back_by_the_page() -> None:
     """The page turns the server's English into a keyed frame (``ooServerText``); a reworded
     sentence would fall through unchanged in every locale, so the shape is pinned from the REAL
-    refusal against the real page code."""
+    refusal against the real page code. The translator is STUBBED to mark what it was handed: with
+    the identity function the output equals the raw sentence whether or not the pattern matched,
+    and the test could not fail."""
     import json
+    import re
     import subprocess
 
     from tests.test_clickthrough_b13_leftovers import (
@@ -286,23 +361,30 @@ def test_the_refusal_sentence_is_read_back_by_the_page() -> None:
     with pytest.raises(MergeError) as err:
         check_memory_for_encrypted_merge(available_mb=100.0, floor_mb=256.0)
     js = app_js()
-    import re
-
     size_re = re.search(r'const _OO_SIZE_RE = "[^"\n]*";', js)
     assert size_re
     prog = "\n".join([
-        "const window = {};",
+        "const OOI18N = { t: (x) => 'T:' + x,"
+        " tf: (x, v) => 'FRAME<' + x + '>' + JSON.stringify(v) };",
+        "const window = { OOI18N };",
         function_source(js, "_sizeText"),
         "const _OO_SPACE_WHAT = " + object_literal(js, "_OO_SPACE_WHAT") + ";",
         size_re.group(0),
         "const _OO_SPACE_RES = " + array_literal(js, "_OO_SPACE_RES") + ";",
         function_source(js, "ooServerText"),
-        "process.stdout.write(JSON.stringify([" + json.dumps(str(err.value)) + "].map(ooServerText)));",
+        "process.stdout.write(JSON.stringify([" + json.dumps(str(err.value)) + ", 'unrelated']"
+        ".map(ooServerText)));",
     ])
     proc = subprocess.run(["node", "-e", prog], capture_output=True, text=True, check=False)
     assert proc.returncode == 0, proc.stderr
-    [out] = json.loads(proc.stdout)
-    # the frame was recognised (placeholders filled, sizes rebuilt), not passed through raw
-    assert "{needed}" not in out and "{free}" not in out
-    assert out.startswith("Not enough free memory to merge into an encrypted corpus: needs about ")
-    assert re.search(r"100(?:\.0)?\s*MB", out), out
+    out, other = json.loads(proc.stdout)
+    assert other == "unrelated", "a sentence the page does not know comes back unchanged"
+    frame, _, rest = out.partition(">")
+    assert frame == (
+        "FRAME<Not enough free memory to merge into an encrypted corpus: needs about {needed}, "
+        "only {free} available. Close other programs and import again. Nothing was written to "
+        "your corpus."
+    ), out
+    sizes = json.loads(rest)
+    assert re.fullmatch(r"\S+\s*MB", sizes["needed"].strip("\u2068\u2069")) or "MB" in sizes["needed"]
+    assert "100" in sizes["free"] and "MB" in sizes["free"], sizes

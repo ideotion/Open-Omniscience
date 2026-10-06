@@ -734,9 +734,49 @@ _MERGE_SAMPLE_ROWS = 200
 #: WHAT THAT COSTS, measured the same day on the production engine (an encrypted working copy,
 #: ``merge_corpus`` end to end, peak RSS of the busiest step over its start, MEMORY against FILE):
 #: 20,000 articles of 8 KB +62 MB, 6,000 of 32 KB +64 MB, 300,000 of 100 B (a 200,000-id window)
-#: +41 MB. The windows are denominated in bytes, so the cost follows ``_MERGE_WINDOW_BYTES`` and
-#: not the corpus. The gate asks for twice that, plus the memory guard's own floor.
+#: +41 MB. The WINDOWED steps are denominated in bytes, so their cost follows ``_MERGE_WINDOW_BYTES``
+#: and not the corpus, and the gate asks for twice that.
 _ENCRYPTED_TEMP_NEED_BYTES = 2 * _MERGE_WINDOW_BYTES
+#: THREE STEPS ARE NOT WINDOWED AND DO GROW WITH THE CORPUS (the independent read of the first cut
+#: found them; the first measurement used corpora with small keyword and link tables and missed
+#: them): :func:`_materialise_rep` runs one whole-source ``GROUP BY`` per table, and the COALESCE
+#: terms keep any index from serving it, so each is a temp b-tree that now lives in RAM. Measured
+#: the same way on 3,000,000 incoming rows each, the whole step's peak rise under MEMORY:
+#: keywords 72 B/row, article_source_relationships 67 B/row, article_links 89 B/row on 35-character
+#: URLs and 147 B/row on 90-character ones (the sort key is the row's own text, so the cost follows
+#: its length). The figures below round UP (links for a long URL), they include the id maps the
+#: merge keeps to its end (~10 B/row, measured +72 MB over 6,900,000 keywords), and the steps run
+#: one after another, so the gate takes the LARGEST of the three, not their sum. The incoming rows
+#: are counted from the staged file, so the figure follows the backup being merged.
+_ENCRYPTED_REP_BYTES_PER_ROW = {
+    "keywords": 90,
+    "article_links": 150,
+    "article_source_relationships": 80,
+}
+
+
+def _incoming_group_rows(staged_corpus: Path) -> dict[str, int]:
+    """Rows the staged corpus holds in each table :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names.
+
+    Read through a plain read-only connection to the staged file (plaintext by design). A table the
+    artifact does not carry, or a file that cannot be read, adds nothing: a count that cannot be
+    taken is not a number to invent, and the gate then asks for what it can measure."""
+    import sqlite3
+
+    out: dict[str, int] = {}
+    try:
+        con = sqlite3.connect(f"file:{staged_corpus}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return out
+    try:
+        for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+            try:
+                out[table] = int(con.execute(f"SELECT COUNT(*) FROM {_ident(table)}").fetchone()[0])  # noqa: S608  # nosec B608 - fixed table names from this module's own map
+            except sqlite3.Error:
+                continue
+    finally:
+        con.close()
+    return out
 
 
 def _temp_store_for(con: sqlite3.Connection) -> str:
@@ -747,11 +787,15 @@ def _temp_store_for(con: sqlite3.Connection) -> str:
 
 
 def check_memory_for_encrypted_merge(
-    available_mb: float | None = None, floor_mb: float | None = None
+    available_mb: float | None = None,
+    floor_mb: float | None = None,
+    incoming_rows: dict[str, int] | None = None,
 ) -> None:
     """Refuse, before any row moves, when this machine cannot hold an encrypted merge's temp memory.
 
-    The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` plus the memory guard's own floor
+    The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` (the windowed steps), plus the largest of the
+    three whole-source grouping steps for the rows ``incoming_rows`` names, plus the id maps
+    the merge keeps (~16 B per incoming row of those tables), plus the memory guard's own floor
     (``memory_guard.avail_floor_mb``), against the memory available now. A machine that cannot
     report its available memory is never refused: an unreadable figure is not a shortage
     (the memory guard's own rule). The sentence is fixed in shape, so the page reads it back
@@ -770,7 +814,13 @@ def check_memory_for_encrypted_merge(
             floor_mb = float(memguard.memory_guard.avail_floor_mb)
         except Exception:  # noqa: BLE001 - no guard, no floor: never a fabricated one
             floor_mb = 0.0
-    need = _ENCRYPTED_TEMP_NEED_BYTES + int(max(0.0, floor_mb) * 1024 * 1024)
+    rows = incoming_rows or {}
+    grouping = max(
+        (int(rows.get(t, 0)) * per_row for t, per_row in _ENCRYPTED_REP_BYTES_PER_ROW.items()),
+        default=0,
+    )
+    maps = 16 * sum(int(rows.get(t, 0)) for t in _ENCRYPTED_REP_BYTES_PER_ROW)
+    need = _ENCRYPTED_TEMP_NEED_BYTES + grouping + maps + int(max(0.0, floor_mb) * 1024 * 1024)
     if avail * 1024 * 1024 < need:
         raise MergeError(
             "Not enough free memory to merge into an encrypted corpus: needs about "
@@ -1675,7 +1725,7 @@ def merge_corpus(
     try:
         temp_store = _temp_store_for(con)
         if temp_store == "MEMORY":
-            check_memory_for_encrypted_merge()
+            check_memory_for_encrypted_merge(incoming_rows=_incoming_group_rows(staged_corpus))
     except BaseException:
         con.close()
         raise

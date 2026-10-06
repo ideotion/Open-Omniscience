@@ -13637,10 +13637,14 @@ still right for a plain store). On an ENCRYPTED working copy it put the sorter's
 UNION, an IN-subquery no index serves) writes through the VFS, below the codec. WAL measured it with 300,000 rows, a 1 MiB cache and the spill file read through `/proc/<pid>/fd`
 during CREATE INDEX; it reproduced here, and under MEMORY the same run holds no row in any temp file. VACUUM's temporary database stayed encrypted under FILE (0 of 11 observations),
 so the rule is not "FILE is always unsafe": it is "the sorter is not the pager". An encrypted working copy now holds its temp structures in MEMORY, a plain one keeps FILE, and a merge on an
-encrypted copy asks first for `2 x _MERGE_WINDOW_BYTES` plus the memory guard's floor of available memory (`check_memory_for_encrypted_merge`; an unreadable figure never refuses).
-**What the memory costs is bounded by the window, not the corpus, and that was measured, not assumed**: the busiest step's peak RSS over its start, MEMORY against FILE, +62 MB for 20,000
-articles of 8 KB, +64 MB for 6,000 of 32 KB and +41 MB for 300,000 of 100 B (a 200,000-id window), all on one encrypted working copy end to end, against the 5 KB per row the 2026-08-06 table
-recorded WITH THE FTS TRIGGER LIVE; the merge suspends that trigger, which is why the old figure overstated this path and why the cost follows the byte-denominated window. **A
+encrypted copy asks first for what it needs plus the memory guard's floor of available memory (`check_memory_for_encrypted_merge`; an unreadable figure never refuses).
+**What the memory costs has two parts, and the first measurement found only one**: the WINDOWED steps are bounded by the byte-denominated window, not the corpus (the busiest step's peak RSS over its
+start, MEMORY against FILE: +62 MB for 20,000 articles of 8 KB, +64 MB for 6,000 of 32 KB, +41 MB for 300,000 of 100 B, on one encrypted working copy end to end; the 2026-08-06 figure of 5 KB per
+row was taken WITH THE FTS TRIGGER LIVE, which the merge suspends). THREE STEPS ARE NOT WINDOWED: `_materialise_rep` runs one whole-source `GROUP BY` each for `keywords`, `article_links` and
+`article_source_relationships`, the COALESCE terms keep an index from serving them, and each is a temp b-tree that now lives in RAM and grows with the corpus (3,000,000 incoming rows, peak
+rise: 72 B/row, 89 to 147 B/row by URL length, 67 B/row, plus ~10 B/row of id maps kept to the end). The independent read of the first cut found this; the first corpora had small keyword
+and link tables, so a measurement built from the shape the fix was written for could not have. The gate now counts the incoming rows of those tables from the staged file and asks for
+2 x window + the LARGEST of the three (they run one after another) + 16 B per incoming row + the floor. A table or file that cannot be counted adds nothing. **A
 check of the premise belongs in the suite, not in the comment**: `test_merge_encrypted_temp.py` reads this process's own temp files through `/proc/<pid>/fd` while an encrypted
 store builds an index under FILE (the control, which must leak, and goes red the day the driver stops, which is the cue to re-read the decision) and under MEMORY (which must not). **Two
 other places that look the same are not**: the other merge connections never set `temp_store` (the bundled driver's default is MEMORY, TEMP_STORE=2), and `merge_diag._probe_arm` sorts
