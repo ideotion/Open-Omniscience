@@ -65,8 +65,12 @@ USER_AGENT = (
 MAXLAG_S = 5
 
 #: How often one batch is retried on a 429, a 503 or a ``maxlag`` answer before it is counted
-#: ``refused``, and the longest single wait a ``Retry-After`` may impose.
+#: ``refused``. 5 protects the run from hammering a server that keeps saying "wait" (each retry is
+#: itself spaced by the pace gate) while still riding out a short replication lag.
 RETRY_MAX = 5
+#: The longest single wait a ``Retry-After`` may impose. 300 s protects the run from hanging for
+#: hours on a huge or hostile header value; a server that wants longer than five minutes gets the
+#: batch counted ``refused`` and the run stops short of writing an artifact.
 RETRY_CAP_S = 300.0
 
 #: A Wikidata coordinate further than this from the OSM point is recorded as a disagreement.
@@ -90,6 +94,10 @@ class GazetteerBuildError(RuntimeError):
 
 class AirplaneRefusal(GazetteerBuildError):
     """The kill switch refused the Wikidata join, and says so in as many words."""
+
+
+class TransportRefusal(GazetteerBuildError):
+    """The guarded fetch path refused the join because the operator's transport is unavailable."""
 
 
 # --------------------------------------------------------------------------- #
@@ -321,11 +329,24 @@ class GetResult:
 
 
 def _retry_after_seconds(value: object) -> float | None:
+    """Seconds from a ``Retry-After`` header: the delta-seconds form or the HTTP-date form."""
+    if value is None:
+        return None
     try:
         v = float(str(value))
     except (TypeError, ValueError):
-        return None
-    return v if v >= 0 else None
+        from email.utils import parsedate_to_datetime
+
+        try:
+            when = parsedate_to_datetime(str(value))
+        except (TypeError, ValueError):
+            return None
+        if when is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        v = (when - datetime.now(UTC)).total_seconds()
+    return max(0.0, v) if v == v else None  # a negative date is "now"; NaN is no answer
 
 
 def guarded_getter(url: str) -> GetResult:
@@ -370,6 +391,16 @@ def _kill_switch_active() -> bool:
     return bool(kill_switch_active())
 
 
+def _reraise_refusal(exc: BaseException) -> None:
+    """Turn the guarded path's refusals into the named ones; any other failure returns to be counted."""
+    from src.safety.fetcher import NetworkBlocked, TransportUnavailable
+
+    if isinstance(exc, NetworkBlocked):
+        raise AirplaneRefusal(f"network refused: {exc}") from None
+    if isinstance(exc, TransportUnavailable):
+        raise TransportRefusal(f"the operator's transport is unavailable: {exc}") from None
+
+
 def _asks_to_wait(res: GetResult) -> bool:
     if res.status in (429, 503):
         return True
@@ -388,7 +419,11 @@ def fetch_wikidata(
 ) -> tuple[dict[str, WikiItem], dict]:
     """Ask Wikidata for ``qids``, one request at a time, and parse the answers.
 
-    Refuses by name under the kill switch, before the first request and between requests. A
+    Refuses by name under the kill switch, before the first request and before every request (this
+    process's own switch: a build run from a shell cannot see another process's airplane state, so the
+    ``--online`` flag is the operator's consent). An unavailable transport or a kill-switch refusal from
+    the guarded fetch path stops the run with a named refusal; it is never counted as a batch's
+    failure. The pace gate is waited on before EVERY request, retries included. A
     ``Retry-After`` (or the ``maxlag`` answer's) is waited out, at most :data:`RETRY_CAP_S` per
     wait and :data:`RETRY_MAX` waits per batch; a batch that still fails is counted ``refused`` and
     the run goes on. The three counts add up to what was asked.
@@ -414,17 +449,20 @@ def fetch_wikidata(
         if should_stop is not None and should_stop():
             stopped = True
             break
-        if kill_switch():
-            airplane = True
-            break
-        rg.wait()
         url = f"{entities_url(batch)}&maxlag={MAXLAG_S}"
         parsed: dict[str, WikiItem] | None = None
         for attempt in range(RETRY_MAX + 1):
+            # The gate spaces EVERY request, a retry included: a retry that skipped it would leave the
+            # next batch due immediately, two requests back to back.
+            rg.wait()
+            if kill_switch():
+                airplane = True
+                break
             requests_made += 1
             try:
                 res = getter(url)
-            except Exception:  # noqa: BLE001 - one failed batch is counted, never fatal
+            except Exception as exc:  # noqa: BLE001 - one failed batch is counted, never fatal ...
+                _reraise_refusal(exc)  # ... except a refusal by the transport or the kill switch
                 break
             if res.status == 200 and res.body is not None and not _asks_to_wait(res):
                 parsed = parse_wikidata(res.body, batch)

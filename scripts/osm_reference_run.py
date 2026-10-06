@@ -66,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--min-available-mb", type=float, default=R.DEFAULT_MIN_AVAILABLE_BYTES / R.MIB)
     ap.add_argument("--floor-factor", type=float, default=R.DEFAULT_FLOOR_FACTOR)
     ap.add_argument("--min-free-gb", type=float, help="override the preflight floor")
-    ap.add_argument("--sample-seconds", type=float, default=1.0)
+    ap.add_argument("--sample-seconds", type=float, default=1.0,
+                    help=f"how often the disk and memory guards look ({R.SAMPLE_SECONDS_MIN:g} to {R.SAMPLE_SECONDS_MAX:g})")
     args = ap.parse_args(argv)
 
     if args.cleanup is not None:

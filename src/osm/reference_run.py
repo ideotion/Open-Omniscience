@@ -30,6 +30,11 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   recorded ``refused-mid-run`` with the figures, and the rest of the run is not started. The same
   holds for available MEMORY (default 256 MiB): a 3.5 GB VM that is out of memory is a VM the
   operator cannot log into, and the ingest's own spill-to-disk path is what should be absorbing it.
+* **THE RUNNER DYING DOES NOT LEAVE THE CHILD RUNNING.** SIGHUP (a dropped SSH session), SIGTERM and a
+  second Ctrl-C stop the child's whole process group, delete the store and still write the report;
+  ``PR_SET_PDEATHSIG`` is the backstop for a runner that is KILLED, where no handler can run. After
+  EVERY child exit the group is swept with SIGKILL before the store is deleted, so a helper that
+  ignored SIGTERM, or outlived a clean exit, cannot write into a store being removed.
 * **THIS TOOL WRITES NO SECRET TO DISK.** A run that deletes its store uses a random passphrase that
   lives only in the children's environment. ``--keep-store`` needs the operator's own
   ``--passphrase-file`` (a file they made, holding any passphrase), so that a separate gazetteer build
@@ -47,6 +52,7 @@ the report -- a fixture-scale run proves the instrument, never the VM.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import platform
@@ -62,6 +68,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 SCHEMA_VERSION = 1
 MARKER = ".oo-osm-reference-run"
@@ -84,7 +91,15 @@ DEFAULT_MIN_AVAILABLE_BYTES = 256 * MIB
 DEFAULT_FLOOR_FACTOR = 2.0
 #: How long a stopped child's process group gets to leave on SIGTERM (so SQLite closes its files
 #: cleanly) before SIGKILL: long enough to flush a WAL, short enough that a guard actually guards.
+#: It never extends the disk risk: inside the grace the sampler's disk read continues, and free disk
+#: below half the reserve ends the grace at once with SIGKILL (a disk writing 150 MB/s would otherwise
+#: spend the whole reserve in 14 s).
 TERMINATE_GRACE_S = 30.0
+#: The sampler's interval is kept within these bounds. Below 0.05 s the sampler's own work (a process-tree
+#: walk and a directory scan) becomes the CPU it is measuring; above 10 s a disk crossing the reserve goes
+#: unseen for long enough to fill the disk before the stop.
+SAMPLE_SECONDS_MIN = 0.05
+SAMPLE_SECONDS_MAX = 10.0
 #: The timeline keeps at most this many points; past it every second point is dropped and the stride
 #: doubles. It bounds the REPORT's size on a multi-day run, never the measured peaks (those are exact).
 TIMELINE_MAX = 600
@@ -168,37 +183,47 @@ class Probe:
 #  scrubbing: the report holds no secret and no foreign path
 # --------------------------------------------------------------------------- #
 
-_ABS_PATH = re.compile(r"(?<![\w.:/>])(?:[A-Za-z]:\\|/)(?:[^\s'\"`:;,()<>\[\]{}|]+)")
+_ABS_PATH = re.compile(r"(?<![\w.>/])(?:[A-Za-z]:\\|/(?!/))(?:[^\s'\"`:;,()<>\[\]{}|]+)")
+# ``scheme:///path`` and ``sqlite:////path``: a URL whose path is a file path (three or more slashes).
+_FILE_URL = re.compile(r"(?P<scheme>\b[A-Za-z][\w+.-]*:)/{3,}(?P<path>[^\s'\"`:;,()<>\[\]{}|]+)")
 
 
-def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = None) -> str:
+def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = None,
+          roots: tuple[tuple[str, str], ...] = ()) -> str:
     """``text`` without any of ``secrets_`` and with every absolute path reduced to its file name.
 
-    A path inside this run's own directory becomes ``<run>/...``; any other becomes just its last
-    component. The report is a document an operator pastes or attaches, so a traceback's home
-    directory and the repository's location have no business in it.
+    The run's own directory, and every known root in ``roots`` (``(path, label)`` pairs: the
+    repository, the home directory, the input and output folders), are replaced LITERALLY first, so a
+    directory name with a space in it cannot slip past the pattern. Any other absolute path becomes
+    just its last component (a path with a space in an UNKNOWN directory keeps the fragment after
+    the space: the pattern cannot know where such a path ends). The report is a document an operator
+    pastes or attaches, so a traceback's home directory and the repository's location have no
+    business in it.
     """
     out = text
     for s in secrets_:
         if s:
             out = out.replace(s, "<redacted>")
-    rd = str(run_dir) if run_dir else None
+    if run_dir:
+        out = out.replace(str(run_dir), "<run>")
+    for path, label in roots:
+        if path and len(path) > 1:
+            out = out.replace(path, label)
 
-    def _one(m: re.Match) -> str:
-        p = m.group(0)
-        if rd and (p == rd or p.startswith(rd + os.sep)):
-            return "<run>" + p[len(rd):]
+    def _base(p: str) -> str:
         return p.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1] or "<path>"
 
-    return _ABS_PATH.sub(_one, out)
+    out = _FILE_URL.sub(lambda m: m.group("scheme") + _base(m.group("path")), out)
+    return _ABS_PATH.sub(lambda m: _base(m.group(0)), out)
 
 
-def _tail(path: Path, lines: int = 12, *, secrets_: tuple[str, ...], run_dir: Path) -> str:
+def _tail(path: Path, lines: int = 12, *, secrets_: tuple[str, ...], run_dir: Path,
+          roots: tuple[tuple[str, str], ...] = ()) -> str:
     try:
         raw = path.read_text("utf-8", errors="replace")
     except OSError:
         return ""
-    return scrub("\n".join(raw.strip().splitlines()[-lines:]), secrets_=secrets_, run_dir=run_dir)
+    return scrub("\n".join(raw.strip().splitlines()[-lines:]), secrets_=secrets_, run_dir=run_dir, roots=roots)
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +250,9 @@ def preflight(
     basis = f"GUESS: {floor_factor:g} x the extract's size + the reserve (the code has no size model for osm.db or the work file)"
     if prior_report:
         try:
-            ph = next(p for p in prior_report["phases"] if p["name"] == "ingest" and p.get("peak_data_dir_bytes"))
+            # Only a phase that FINISHED measures the whole footprint: a stopped or failed one peaked early.
+            ph = next(p for p in prior_report["phases"]
+                      if p["name"] == "ingest" and p.get("status") == "ok" and p.get("peak_data_dir_bytes"))
             inp = prior_report["inputs"]["extract"]["bytes"]
             ratio = ph["peak_data_dir_bytes"] / inp * 1.25
             basis = (f"MEASURED by the prior report: its ingest peaked at {ph['peak_data_dir_bytes']} bytes for a "
@@ -233,11 +260,14 @@ def preflight(
         except (KeyError, StopIteration, ZeroDivisionError, TypeError):
             ratio = None
     factor = ratio if ratio is not None else floor_factor
-    ingest_need = int(factor * extract_bytes) + reserve_bytes
-    # The history cut is read FROM its file and written to the same store: the ingest's own measured
-    # (or guessed) footprint is the only comparable figure there is, and it is labelled as such.
-    history_need = (int(factor * extract_bytes) + reserve_bytes) if history_bytes else None
-    needed = min_free_override if min_free_override is not None else max(ingest_need, history_need or 0)
+    footprint = int(factor * extract_bytes)
+    # The history phase writes into the SAME store after the ingest, so its footprint ADDS to the
+    # ingest's (one reserve covers both). The code has no size model for it either: the figure assumed
+    # is one more ingest-sized footprint, and the basis says so.
+    history_footprint = footprint if history_bytes else 0
+    if history_bytes:
+        basis += "; the history phase is assumed to add one more ingest-sized footprint (also a guess)"
+    needed = min_free_override if min_free_override is not None else footprint + history_footprint + reserve_bytes
     return {
         "free_bytes": free_bytes,
         "needed_bytes": needed,
@@ -300,6 +330,24 @@ def _children_rss(pid: int) -> int | None:
         return None
 
 
+def _pdeathsig_preexec():
+    """A ``preexec_fn`` asking the kernel to SIGKILL the child if the runner dies (Linux; else None)."""
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        pr_set_pdeathsig, sigkill = 1, int(signal.SIGKILL)
+    except (OSError, AttributeError):  # pragma: no cover
+        return None
+
+    def _set() -> None:
+        libc.prctl(pr_set_pdeathsig, sigkill)
+
+    return _set
+
+
 def run_phase(
     spec: PhaseSpec,
     *,
@@ -312,6 +360,7 @@ def run_phase(
     probe: Probe,
     sample_seconds: float,
     secrets_: tuple[str, ...],
+    roots: tuple[tuple[str, str], ...] = (),
 ) -> PhaseResult:
     """Run one child to its end (or its refusal) and measure it. Never raises for a child's failure."""
     res = PhaseResult(spec.name)
@@ -328,87 +377,138 @@ def run_phase(
         try:
             # Its own session: the child leads a process GROUP, so a stop reaches every descendant and
             # none keeps writing to the disk this guard is protecting after the child itself is gone.
-            proc = subprocess.Popen(spec.argv, env=env, stdout=fo, stderr=fe, cwd=str(ROOT), start_new_session=True)  # noqa: S603
+            # PDEATHSIG is the backstop for the runner being KILLED (no handler runs on SIGKILL): the
+            # kernel then kills the child, which a vanished runner could otherwise leave filling the disk.
+            proc = subprocess.Popen(spec.argv, env=env, stdout=fo, stderr=fe, cwd=str(ROOT),  # noqa: S603
+                                    start_new_session=True, preexec_fn=_pdeathsig_preexec())  # noqa: PLW1509
         except OSError as exc:
             res.status, res.reason = "failed", f"the phase could not be started ({type(exc).__name__})"
             res.wall_seconds = round(time.monotonic() - t0, 3)
             res.disk_free_after_bytes = probe.free_disk(run_dir)
             return res
 
+        # ``guard`` and ``reaped`` close the pid-reuse window: the leader is reaped only under the lock,
+        # and every signal sent from the sampler takes it and refuses once the leader is reaped, so a
+        # reaped (and possibly reused) group id is never signalled from another thread.
+        guard = threading.Lock()
+        reaped = {"v": False}
+
         def _signal_group(sig: int) -> None:
-            # The child is not reaped until the main thread's wait4 returns, so its pid cannot have been
-            # reused while this runs: the group id is still ours.
+            with guard:
+                if reaped["v"]:
+                    return
+                with contextlib.suppress(OSError):
+                    os.killpg(proc.pid, sig)
+
+        def _reap() -> tuple[int, Any]:
+            """Wait for the leader WITHOUT reaping it (a zombie keeps its pid), sweep the group with
+            SIGKILL (a helper that ignored SIGTERM, or outlived a clean exit, must not keep writing into a
+            store about to be deleted), and only then reap, all under the lock."""
+            if hasattr(os, "waitid"):
+                os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOWAIT)
+                with guard:
+                    with contextlib.suppress(OSError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    _pid, st, us = os.wait4(proc.pid, 0)
+                    reaped["v"] = True
+                return st, us
+            _pid, st, us = os.wait4(proc.pid, 0)  # pragma: no cover - the VM is Linux
+            with guard:
+                reaped["v"] = True
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            return st, us
+
+        def _leader_gone() -> bool:
             try:
-                os.killpg(proc.pid, sig)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
+                return os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+            except ChildProcessError:
+                return True
+
+        def _disk_critical() -> bool:
+            try:
+                return probe.free_disk(run_dir) < reserve_bytes // 2
+            except OSError:
+                return False
 
         def _terminate(reason: str) -> None:
             refusal.append(reason)
             _signal_group(signal.SIGTERM)
             deadline = time.monotonic() + TERMINATE_GRACE_S
             while time.monotonic() < deadline and not stop.is_set():
+                if _disk_critical():
+                    break  # the grace must not spend the reserve it exists to protect
                 time.sleep(0.1)
             if not stop.is_set():
                 _signal_group(signal.SIGKILL)
 
         def _sample() -> None:
             low_mem_strikes = 0
-            while not stop.is_set():
-                rss = _children_rss(proc.pid)
-                data = dir_allocated_bytes(data_dir)
-                free = probe.free_disk(run_dir)
-                avail = probe.available_memory()
-                res.samples += 1
-                if rss is not None:
-                    res.peak_rss_bytes_sampled = max(res.peak_rss_bytes_sampled or 0, rss)
-                res.peak_data_dir_bytes = max(res.peak_data_dir_bytes, data)
-                res.disk_free_min_bytes = min(res.disk_free_min_bytes if res.disk_free_min_bytes is not None else free, free)
-                res.memory_available_min_bytes = min(
-                    res.memory_available_min_bytes if res.memory_available_min_bytes is not None else avail, avail)
-                stride["i"] += 1
-                if stride["i"] % stride["n"] == 0:
-                    res.timeline.append({"t": round(time.monotonic() - t0, 2), "rss": rss, "data_dir": data, "free": free})
-                    if len(res.timeline) > TIMELINE_MAX:
-                        res.timeline = res.timeline[::2]
-                        stride["n"] *= 2
-                if free < reserve_bytes and not refusal:
-                    _terminate(f"free disk fell to {free} bytes, below the {reserve_bytes}-byte reserve")
-                    return
-                low_mem_strikes = low_mem_strikes + 1 if avail < min_available_bytes else 0
-                if low_mem_strikes >= 3 and not refusal:
-                    _terminate(f"available memory stayed at {avail} bytes, below the {min_available_bytes}-byte minimum")
-                    return
-                stop.wait(sample_seconds)
+            try:
+                while not stop.is_set():
+                    with guard:  # never read (or signal) a pid the main thread has already reaped
+                        rss = None if reaped["v"] else _children_rss(proc.pid)
+                    data = dir_allocated_bytes(data_dir)
+                    free = probe.free_disk(run_dir)
+                    avail = probe.available_memory()
+                    res.samples += 1
+                    if rss is not None:
+                        res.peak_rss_bytes_sampled = max(res.peak_rss_bytes_sampled or 0, rss)
+                    res.peak_data_dir_bytes = max(res.peak_data_dir_bytes, data)
+                    res.disk_free_min_bytes = min(res.disk_free_min_bytes if res.disk_free_min_bytes is not None else free, free)
+                    res.memory_available_min_bytes = min(
+                        res.memory_available_min_bytes if res.memory_available_min_bytes is not None else avail, avail)
+                    stride["i"] += 1
+                    if stride["i"] % stride["n"] == 0:
+                        res.timeline.append({"t": round(time.monotonic() - t0, 2), "rss": rss, "data_dir": data, "free": free})
+                        if len(res.timeline) > TIMELINE_MAX:
+                            res.timeline = res.timeline[::2]
+                            stride["n"] *= 2
+                    if free < reserve_bytes and not refusal:
+                        _terminate(f"free disk fell to {free} bytes, below the {reserve_bytes}-byte reserve")
+                        return
+                    low_mem_strikes = low_mem_strikes + 1 if avail < min_available_bytes else 0
+                    if low_mem_strikes >= 3 and not refusal:
+                        _terminate(f"available memory stayed at {avail} bytes, below the {min_available_bytes}-byte minimum")
+                        return
+                    stop.wait(sample_seconds)
+            except Exception as exc:  # noqa: BLE001 - a dead guard must stop the run, never leave it unguarded
+                if not refusal and not stop.is_set():
+                    _terminate(f"the sampler failed ({type(exc).__name__}), so the disk and memory guards were down; "
+                               "the phase was stopped rather than left unguarded")
 
         sampler = threading.Thread(target=_sample, name=f"ref-run-sampler-{spec.name}", daemon=True)
-        sampler.start()
         status = None
         usage = None
         try:
-            if hasattr(os, "wait4"):
-                _pid, status, usage = os.wait4(proc.pid, 0)
-                proc.returncode = os.waitstatus_to_exitcode(status)
-            else:  # pragma: no cover - the VM is Linux; kept so the script still runs elsewhere
-                proc.wait()
-        except KeyboardInterrupt:
+            sampler.start()
+            status, usage = _reap()
+            proc.returncode = os.waitstatus_to_exitcode(status)
+        except KeyboardInterrupt as exc:  # Ctrl-C, or SIGHUP / SIGTERM turned into one by run()
             res.status = "interrupted"
-            res.reason = "the operator interrupted the run"
+            res.reason = f"the runner was interrupted ({exc})" if str(exc) else "the operator interrupted the run"
             _signal_group(signal.SIGTERM)
             deadline = time.monotonic() + TERMINATE_GRACE_S
-            status = None
-            while time.monotonic() < deadline:
-                pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
-                if pid:
+            try:
+                while time.monotonic() < deadline and not _leader_gone() and not _disk_critical():
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                pass  # a second interrupt: no more grace
+            _signal_group(signal.SIGKILL)
+            while True:
+                try:
+                    status, usage = _reap()
                     break
-                time.sleep(0.1)
-            else:
-                _signal_group(signal.SIGKILL)
-                _pid, status, usage = os.wait4(proc.pid, 0)
-            proc.returncode = os.waitstatus_to_exitcode(status)
+                except KeyboardInterrupt:
+                    continue  # the group is already SIGKILLed; reaping is what is left
+                except ChildProcessError:
+                    status = None  # reaped already, by the interrupted first attempt
+                    break
+            proc.returncode = os.waitstatus_to_exitcode(status) if status is not None else None
         finally:
             stop.set()
-            sampler.join(timeout=5)
+            if sampler.is_alive():
+                sampler.join(timeout=5)
 
     res.wall_seconds = round(time.monotonic() - t0, 3)
     res.exit_code = proc.returncode
@@ -434,11 +534,11 @@ def run_phase(
         if raw.startswith("{"):
             res.app_report = json.loads(raw)
         elif raw:
-            res.error_tail = scrub(raw[-600:], secrets_=secrets_, run_dir=run_dir)
+            res.error_tail = scrub(raw[-600:], secrets_=secrets_, run_dir=run_dir, roots=roots)
     except (OSError, ValueError):
         pass
     if res.status != "ok":
-        tail = _tail(err_f, secrets_=secrets_, run_dir=run_dir)
+        tail = _tail(err_f, secrets_=secrets_, run_dir=run_dir, roots=roots)
         res.error_tail = (res.error_tail + "\n" if res.error_tail else "") + tail if tail else res.error_tail
     return res
 
@@ -448,14 +548,49 @@ def run_phase(
 # --------------------------------------------------------------------------- #
 
 
-def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None):
+class _TerminatingSignal(KeyboardInterrupt):
+    """SIGHUP / SIGTERM arriving at the runner, raised in the main thread like a Ctrl-C so the one
+    interrupt path (stop the child's group, record it, delete the store, write the report) handles all three."""
+
+
+class _terminating_signals:  # noqa: N801 - a context manager used like a function
+    """While active, SIGHUP and SIGTERM stop the run cleanly instead of killing the runner outright (a
+    dropped SSH session sends SIGHUP; the default action would end Python before any ``finally`` and leave
+    the child filling the disk). Handlers are restored on exit; off the main thread it does nothing."""
+
+    def __enter__(self):
+        self._prev: dict = {}
+        if threading.current_thread() is not threading.main_thread():
+            return self
+
+        def _handler(signum, _frame):
+            raise _TerminatingSignal(signal.Signals(signum).name)
+
+        for name in ("SIGHUP", "SIGTERM"):
+            sig = getattr(signal, name, None)
+            if sig is None:
+                continue
+            try:
+                self._prev[sig] = signal.signal(sig, _handler)
+            except (ValueError, OSError):  # pragma: no cover
+                continue
+        return self
+
+    def __exit__(self, *exc):
+        for sig, prev in self._prev.items():
+            with contextlib.suppress(ValueError, OSError):  # pragma: no cover
+                signal.signal(sig, prev)
+        return False
+
+
+def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: tuple[tuple[str, str], ...] = ()):
     """``scrub`` applied to every string of a JSON-shaped value: the last line of defence for the report."""
     if isinstance(obj, str):
-        return scrub(obj, secrets_=secrets_, run_dir=run_dir)
+        return scrub(obj, secrets_=secrets_, run_dir=run_dir, roots=roots)
     if isinstance(obj, list):
-        return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir) for v in obj]
+        return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for v in obj]
     if isinstance(obj, dict):
-        return {k: _scrub_obj(v, secrets_=secrets_, run_dir=run_dir) for k, v in obj.items()}
+        return {k: _scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for k, v in obj.items()}
     return obj
 
 
@@ -565,6 +700,8 @@ def run(
     deleted; with ``keep_store`` it is the directory to hand to ``--cleanup`` later.
     ``phases_override`` exists for tests (a scripted child in place of the app's scripts).
     """
+    if not (SAMPLE_SECONDS_MIN <= sample_seconds <= SAMPLE_SECONDS_MAX):
+        raise ValueError(f"--sample-seconds must be between {SAMPLE_SECONDS_MIN:g} and {SAMPLE_SECONDS_MAX:g}")
     if keep_store and passphrase_file is None:
         raise ValueError("--keep-store needs --passphrase-file: a file you make holding any passphrase (for example "
                          "`python -c \"import secrets; print(secrets.token_urlsafe(24))\" > key`), so the later "
@@ -646,7 +783,7 @@ def run(
     (run_dir / MARKER).write_text("a throwaway store made by scripts/osm_reference_run.py; safe to delete\n", "utf-8")
     secrets_ = (passphrase,)
     env = {k: v for k, v in os.environ.items()
-           if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR")}
+           if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR", "DATABASE_URL")}
     env.update({"OO_DATA_DIR": str(data_dir), "OO_DB_PASSPHRASE": passphrase, "PYTHONUNBUFFERED": "1"})
 
     g_out = Path(gazetteer_out).resolve() if gazetteer_out else None
@@ -656,20 +793,33 @@ def run(
         extract=extract, country=country, history=Path(history) if history else None, reader=reader,
         gazetteer=gazetteer, gazetteer_out=g_out)
 
+    known: dict[str, str] = {}
+    for path, label in ((ROOT, "<repo>"), (base, "<workdir>"), (extract.parent, "<extract-dir>"),
+                        (Path(history).parent if history else None, "<history-dir>"),
+                        (g_out.parent if g_out else None, "<output-dir>"), (Path.home(), "<home>")):
+        if path is not None:
+            known.setdefault(str(path), label)
+    roots = tuple(sorted(known.items(), key=lambda kv: -len(kv[0])))
+
     try:
-        for spec in specs:
-            res = run_phase(spec, env=env, data_dir=data_dir, log_dir=run_dir / "logs", run_dir=run_dir,
-                            reserve_bytes=reserve_bytes, min_available_bytes=min_available_bytes, probe=probe,
-                            sample_seconds=sample_seconds, secrets_=secrets_)
-            report["phases"].append(res.to_dict())
-            if res.status != "ok":
-                report["status"] = res.status if res.status in ("refused-mid-run", "interrupted") else (
-                    "refused" if res.status == "refused" else "failed")
-                report["reason"] = f"phase {spec.name}: {res.reason or res.status}"
-                break
-            if spec.name == "ingest" and res.app_report:
-                report["outputs"] = {"osm_db_bytes": res.app_report.get("osm_db_bytes"),
-                                     "extract_bytes": res.app_report.get("extract_bytes")}
+        try:
+            with _terminating_signals():
+                for spec in specs:
+                    res = run_phase(spec, env=env, data_dir=data_dir, log_dir=run_dir / "logs", run_dir=run_dir,
+                                    reserve_bytes=reserve_bytes, min_available_bytes=min_available_bytes, probe=probe,
+                                    sample_seconds=sample_seconds, secrets_=secrets_, roots=roots)
+                    report["phases"].append(res.to_dict())
+                    if res.status != "ok":
+                        report["status"] = res.status if res.status in ("refused-mid-run", "interrupted") else (
+                            "refused" if res.status == "refused" else "failed")
+                        report["reason"] = f"phase {spec.name}: {res.reason or res.status}"
+                        break
+                    if spec.name == "ingest" and res.app_report:
+                        report["outputs"] = {"osm_db_bytes": res.app_report.get("osm_db_bytes"),
+                                             "extract_bytes": res.app_report.get("extract_bytes")}
+        except KeyboardInterrupt as exc:  # a SIGHUP / SIGTERM / Ctrl-C between phases
+            report["status"] = "interrupted"
+            report["reason"] = f"the runner was interrupted ({exc})" if str(exc) else "the operator interrupted the run"
         # What the app's own header read says about the lane file: the encrypted path really ran.
         try:
             from src.database.connect import is_encrypted_file
@@ -695,7 +845,7 @@ def run(
             kept_dir = None
     report["not_measured"] = not_measured(history=history is not None, gazetteer=gazetteer, kernel_peak=kernel_peak)
     report["finished_at"] = now().isoformat()
-    return _scrub_obj(report, secrets_=secrets_, run_dir=run_dir), kept_dir
+    return _scrub_obj(report, secrets_=secrets_, run_dir=run_dir, roots=roots), kept_dir
 
 
 def write_report(report: dict, path: Path) -> None:

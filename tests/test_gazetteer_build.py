@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import socket
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -366,13 +365,11 @@ def _answer(url: str) -> G.GetResult:
 def test_requests_go_one_at_a_time_ten_seconds_apart_fifty_ids_each_with_maxlag():
     from urllib.parse import parse_qs, urlparse
 
-    clock, urls, active = _Clock(), [], []
+    clock, urls = _Clock(), []
 
     def getter(url):
-        assert not active, "a second request started before the first returned"
-        active.append(1)
         urls.append((clock.now(), url))
-        active.clear()
+        clock.t += 3.0  # the request takes time: the next one still starts a full pace after THIS one began
         return _answer(url)
 
     qids = [f"Q{n}" for n in range(1, 121)]
@@ -444,7 +441,7 @@ def test_the_kill_switch_refuses_by_name_before_any_request_and_stops_a_run_in_p
 
     def switch():
         state["n"] += 1
-        return state["n"] > 3  # on for the 2nd batch's pre-check
+        return state["n"] > 3  # checks: start, batch 1, batch 2; on from the 4th (batch 3's request)
 
     def getter(url):
         called.append(url)
@@ -453,6 +450,86 @@ def test_the_kill_switch_refuses_by_name_before_any_request_and_stops_a_run_in_p
     qids = [f"Q{n}" for n in range(1, 111)]
     items, rep = G.fetch_wikidata(qids, getter=getter, gate=_gate(clock), sleep=clock.sleep, kill_switch=switch)
     assert rep["stopped_by_airplane_mode"] is True and rep["not_asked"] > 0 and len(called) < 3
+
+
+def test_a_kill_switch_engaged_during_the_pace_wait_stops_the_next_request():
+    """The check comes AFTER the gate's wait: a switch thrown while the run waits is not missed."""
+    clock, called = _Clock(), []
+
+    def getter(url):
+        called.append(url)
+        return _answer(url)
+
+    qids = [f"Q{n}" for n in range(1, 111)]
+    _items, rep = G.fetch_wikidata(qids, getter=getter, gate=_gate(clock), sleep=clock.sleep,
+                                   kill_switch=lambda: bool(clock.slept))  # true once the gate has slept
+    assert len(called) == 1 and rep["stopped_by_airplane_mode"] is True and rep["not_asked"] == 60
+
+
+def test_a_retry_goes_through_the_gate_so_the_next_batch_is_never_back_to_back():
+    clock, times, state = _Clock(), [], {"n": 0}
+
+    def getter(url):
+        times.append(clock.now())
+        state["n"] += 1
+        return G.GetResult(429, None, 10.0) if state["n"] == 1 else _answer(url)
+
+    qids = [f"Q{n}" for n in range(1, 61)]
+    _items, rep = G.fetch_wikidata(qids, getter=getter, gate=_gate(clock), sleep=clock.sleep, kill_switch=lambda: False)
+    assert rep["ok"] == 60 and len(times) == 3
+    gaps = [b - a for a, b in zip(times, times[1:], strict=False)]
+    assert all(g >= 10.0 for g in gaps), f"two requests left too close together: {gaps}"
+
+
+def test_a_refusal_by_the_transport_or_the_kill_switch_is_named_not_counted_as_a_failed_batch():
+    from src.safety.fetcher import NetworkBlocked, TransportUnavailable
+
+    for exc, expected in ((TransportUnavailable("no proxy configured"), G.TransportRefusal),
+                          (NetworkBlocked("kill switch"), G.AirplaneRefusal)):
+        clock = _Clock()
+
+        def getter(url, exc=exc):
+            raise exc
+
+        with pytest.raises(expected):
+            G.fetch_wikidata(["Q1"], getter=getter, gate=_gate(clock), sleep=clock.sleep, kill_switch=lambda: False)
+
+
+def test_retry_after_in_http_date_form_is_read():
+    from datetime import UTC, datetime, timedelta
+    from email.utils import format_datetime
+
+    soon = format_datetime(datetime.now(UTC) + timedelta(seconds=120), usegmt=True)
+    assert 100 <= G._retry_after_seconds(soon) <= 120
+    assert G._retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
+    assert G._retry_after_seconds("7") == 7.0 and G._retry_after_seconds("soon") is None
+    assert G._retry_after_seconds(None) is None
+
+
+def test_a_refused_batch_means_nothing_is_written_and_the_request_count_stays_out_of_the_artifact(osm_lane_dir, monkeypatch):
+    import contextlib
+    import io
+
+    _seed()
+    refused = {"asked": 5, "ok": 0, "missing_on_wikidata": 0, "refused": 5, "not_asked": 0, "requests_made": 6,
+               "waited_for_server": 5, "stopped": False, "stopped_by_airplane_mode": False}
+    monkeypatch.setattr(G, "fetch_wikidata", lambda qids, **kw: ({}, refused))
+    out = osm_lane_dir / "x.yml"
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = CLI.main(["--country", "ZZ", "--out", str(out), "--online", "--clearnet", "--built-date", BUILT])
+    assert rc == 2 and not out.exists(), "an artifact claiming a join over a refused one would mislead"
+
+    items = G.items_from_fixture(WD_FIXTURE)
+    first = b""
+    for requests_made in (1, 3):  # a transient 429 changes the count, never the bytes
+        ok = dict(refused, refused=0, ok=len(items), requests_made=requests_made)
+        monkeypatch.setattr(G, "fetch_wikidata", lambda qids, ok=ok, **kw: (items, ok))
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert CLI.main(["--country", "ZZ", "--out", str(out), "--online", "--clearnet", "--built-date", BUILT]) == 0
+        if requests_made == 1:
+            first = out.read_bytes()
+    assert out.read_bytes() == first and b"requests" not in first
 
 
 def test_online_under_airplane_mode_is_refused_by_name_and_the_getter_is_never_built(osm_lane_dir, monkeypatch):
@@ -625,4 +702,43 @@ def test_without_a_place_artifact_the_loader_reads_exactly_what_it_read_before(t
     got = cities.load_cities()
     assert [c.name for c in got] == ["A"] and cities.gazetteer_meta()["places"]["artifact"] is False
     cities.gazetteer_meta.cache_clear()
-    assert date.fromisoformat("2026-10-06")  # keeps the import honest
+    assert got == cities._load_file(world), "the default path is the one-file path, entry for entry"
+
+
+def test_an_osm_locality_sharing_a_world_citys_name_does_not_take_the_lookup_over(tmp_path, monkeypatch):
+    world = _write(tmp_path / "cities.yml", {"as_of": "2026-06-01", "cities": [
+        {"name": "Saint-Denis", "lat": 48.9, "lon": 2.36, "country": "fr", "population": 110_000, "qid": "Q1"}]})
+    places = _write(tmp_path / "places_gazetteer.yml", {"cities": [
+        {"name": "Saint-Denis", "lat": 45.0, "lon": 5.0, "country": "fr", "osm": "node/1", "kind": "hamlet"},
+        {"name": "Saint-Denis", "lat": 46.0, "lon": 4.0, "country": "fr", "osm": "node/2", "kind": "locality",
+         "qid": "Q9", "population": 80},
+        {"name": "Saint-Denis", "lat": 47.0, "lon": 3.0, "country": "fr", "osm": "node/3", "kind": "town"}]})
+    monkeypatch.setattr(cities, "GAZETTEER_PATH", world)
+    monkeypatch.setattr(cities, "PLACES_GAZETTEER_PATH", places)
+    got = cities.load_cities()
+    assert len(got) == 4, "no entry was dropped for sharing a name"
+    idx = cities.build_index(got)
+    assert cities.lookup(idx, "Saint-Denis", "fr").qid == "Q1"
+    assert cities.lookup(idx, "Saint-Denis").qid == "Q1"
+
+
+def test_a_place_artifact_without_a_vintage_never_borrows_the_world_files(tmp_path, monkeypatch):
+    from src.entities import places as P
+
+    world = _write(tmp_path / "cities.yml", {"as_of": "2026-06-01", "cities": []})
+    places = _write(tmp_path / "places_gazetteer.yml", {"cities": [
+        {"name": "Fixtureville", "lat": 0.1, "lon": 0.1, "country": "zz", "osm": "node/9", "kind": "village"}]})
+    monkeypatch.setattr(cities, "GAZETTEER_PATH", world)
+    monkeypatch.setattr(cities, "PLACES_GAZETTEER_PATH", places)
+    seen = {}
+
+    class _Session:
+        def get(self, model, key):
+            return None
+
+        def add(self, row):
+            seen["row"] = row
+
+    c = cities.load_cities()[0]
+    P.materialise(_Session(), c, vintage="2026-06-01")
+    assert seen["row"].gazetteer_vintage is None

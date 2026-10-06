@@ -214,7 +214,12 @@ def build_index(cities: list[City]) -> dict:
     by_name: dict[str, City] = {}
     for c in cities:
         nl = c.name.lower()
-        by_pair[(nl, c.country)] = c
+        # The most populous entry keeps a (name, country) key, last-wins only among equals (the old
+        # behaviour): an OSM hamlet that shares a world city's name and country must not take the
+        # lookup over just by being listed after it, whatever its QID.
+        cur_pair = by_pair.get((nl, c.country))
+        if cur_pair is None or (c.population or 0) >= (cur_pair.population or 0):
+            by_pair[(nl, c.country)] = c
         cur = by_name.get(nl)
         if cur is None or (c.population or 0) > (cur.population or 0):
             by_name[nl] = c

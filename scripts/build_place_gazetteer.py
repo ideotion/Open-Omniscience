@@ -24,7 +24,10 @@ HOW WIKIDATA IS JOINED is a choice you must make, because the default makes no r
                             with maxlag and a descriptive User-Agent, Retry-After honoured, through the
                             app's one guarded fetch path and your transport setting (it refuses unless
                             the transport is named by this data directory or your environment, or you pass
-                            --clearnet). It refuses by name under airplane mode.
+                            --clearnet). This script is its OWN process: it checks its own kill switch,
+                            which only this process can engage, and cannot see the airplane state of a
+                            running app (run it with the app stopped; the flag is your consent). It writes
+                            nothing if any QID was refused or the run was interrupted.
 
     python scripts/build_place_gazetteer.py --country FR --plan
     python scripts/build_place_gazetteer.py --country FR --online
@@ -131,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
                             "chosen_by": "settings or environment" if ts["explicit"] else "--clearnet"}
         try:
             items, fetch = G.fetch_wikidata(qids, getter=G.guarded_getter)
-        except G.AirplaneRefusal as exc:
+        except G.GazetteerBuildError as exc:  # airplane mode, or the transport is unavailable
             print(f"refused: {exc}")
             return 2
         out["fetch"] = fetch
@@ -143,7 +146,15 @@ def main(argv: list[str] | None = None) -> int:
             print("refused: the join was interrupted; nothing was written", file=sys.stderr)
             print(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False))
             return 2
-        wikidata = {"joined": True, "via": "wbgetentities", "requests": fetch["requests_made"], "items": len(items)}
+        if fetch["refused"]:
+            print(f"refused: {fetch['refused']} of {fetch['asked']} QIDs were refused by the server or the transport; "
+                  "an artifact that says 'joined' over a partial join would mislead, so nothing was written. "
+                  "Run it again later", file=sys.stderr)
+            print(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False))
+            return 2
+        # The request count (retries included) stays in this run's printed output: written into the
+        # artifact it would make two builds from identical answers differ by one transient 429.
+        wikidata = {"joined": True, "via": "wbgetentities", "items": len(items)}
 
     entries: list = []
     stats_all: list[dict] = []

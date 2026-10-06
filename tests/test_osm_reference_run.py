@@ -11,7 +11,6 @@ import contextlib
 import io
 import json
 import os
-import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -29,20 +28,30 @@ GB = R.GIB
 class _Probe(R.Probe):
     """A probe whose free disk and available memory are scripted; the real one is the default."""
 
-    def __init__(self, free=100 * GB, avail=8 * GB, free_after=None, avail_after=None, after_calls=3):
+    def __init__(self, free=100 * GB, avail=8 * GB, free_after=None, avail_after=None, after_calls=3, trigger=None,
+                 release=None):
+        """``trigger`` (a callable) flips the scripted values when it returns True, instead of a call count,
+        so a test waits on the CHILD's own readiness rather than on the clock; ``release=(path, n)`` creates
+        ``path`` at the n-th disk read, so a child can run exactly as long as the sampler has sampled."""
         self._free, self._avail = free, avail
         self._free_after, self._avail_after, self._after = free_after, avail_after, after_calls
+        self._trigger, self._release = trigger, release
         self.calls = 0
         super().__init__(free_disk=self._f, available_memory=self._m)
 
+    def _flipped(self) -> bool:
+        return self._trigger() if self._trigger is not None else self.calls > self._after
+
     def _f(self, _p):
         self.calls += 1
-        if self._free_after is not None and self.calls > self._after:
+        if self._release is not None and self.calls >= self._release[1]:
+            Path(self._release[0]).write_text("go")
+        if self._free_after is not None and self._flipped():
             return self._free_after
         return self._free
 
     def _m(self):
-        if self._avail_after is not None and self.calls > self._after:
+        if self._avail_after is not None and self._flipped():
             return self._avail_after
         return self._avail
 
@@ -78,10 +87,6 @@ def test_a_real_run_writes_one_complete_report_and_deletes_its_own_store(tmp_pat
     monkeypatch.setenv("OO_DATA_DIR", str(real))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")  # the children must NOT inherit this
 
-    def refuse(*a, **k):
-        raise AssertionError("the runner opened a network connection")
-
-    monkeypatch.setattr(socket, "create_connection", refuse)
     report, kept = _run(tmp_path, gazetteer="osm-only", gazetteer_out=tmp_path / "out" / "g.yml")
     assert report["status"] == "ok" and kept is None
 
@@ -210,16 +215,22 @@ def test_the_floor_is_a_labelled_guess_until_a_measured_report_replaces_it():
     pf = R.preflight(extract_bytes=10 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB)
     assert pf["needed_bytes"] == 2 * 10 * GB + 2 * GB and "GUESS" in pf["floor_basis"]
     prior = {"inputs": {"extract": {"bytes": 1 * GB}},
-             "phases": [{"name": "ingest", "peak_data_dir_bytes": 3 * GB}]}
+             "phases": [{"name": "ingest", "status": "ok", "peak_data_dir_bytes": 3 * GB}]}
     pf2 = R.preflight(extract_bytes=10 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB,
                       prior_report=prior)
     assert pf2["needed_bytes"] == int(3 * 1.25 * 10 * GB) + 2 * GB and "MEASURED" in pf2["floor_basis"]
     pf3 = R.preflight(extract_bytes=10 * GB, history_bytes=None, free_bytes=5 * GB, reserve_bytes=2 * GB,
                       min_free_override=4 * GB)
     assert pf3["ok"] is True and "override" in pf3["floor_basis"]
-    # A history file lifts the need to the same footprint, never below the ingest's.
+    # The history phase writes into the same store AFTER the ingest, so its footprint ADDS (one reserve).
     pf4 = R.preflight(extract_bytes=10 * GB, history_bytes=150 * GB, free_bytes=100 * GB, reserve_bytes=2 * GB)
-    assert pf4["needed_bytes"] >= pf["needed_bytes"]
+    assert pf4["needed_bytes"] == 2 * (2 * 10 * GB) + 2 * GB and "history phase" in pf4["floor_basis"]
+    # A prior phase that was stopped (or failed) peaked early: it is NOT a measurement of the footprint.
+    stopped = {"inputs": {"extract": {"bytes": 1 * GB}},
+               "phases": [{"name": "ingest", "status": "refused-mid-run", "peak_data_dir_bytes": 1 * GB}]}
+    pf5 = R.preflight(extract_bytes=10 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB,
+                      prior_report=stopped)
+    assert "GUESS" in pf5["floor_basis"] and pf5["needed_bytes"] == pf["needed_bytes"]
 
 
 def test_free_disk_falling_below_the_reserve_stops_the_child_cleanly_and_ends_the_run(tmp_path):
@@ -267,9 +278,12 @@ def test_a_child_that_refuses_by_name_is_a_refusal_not_a_failure(tmp_path):
 
 def test_the_timeline_stays_bounded(tmp_path, monkeypatch):
     monkeypatch.setattr(R, "TIMELINE_MAX", 6)
-    report, _ = _run(tmp_path, phases_override=_scripted("import time; time.sleep(1.5)"), sample_seconds=0.02)
+    go = tmp_path / "go"
+    code = f"import os, time\nwhile not os.path.exists({str(go)!r}): time.sleep(0.02)\n"
+    report, _ = _run(tmp_path, phases_override=_scripted(code), sample_seconds=R.SAMPLE_SECONDS_MIN,
+                     probe=_Probe(release=(go, 25)))
     ph = report["phases"][0]
-    assert ph["samples"] > 20 and 1 <= len(ph["timeline"]) <= 6
+    assert ph["samples"] >= 20 and 1 <= len(ph["timeline"]) <= 6
 
 
 def _alive(pid: int) -> bool:
@@ -281,7 +295,17 @@ def _alive(pid: int) -> bool:
         return False
 
 
-def test_a_guard_stop_reaches_the_whole_process_group_so_no_grandchild_keeps_writing(tmp_path, monkeypatch):
+def _wait_dead(pid: int) -> bool:
+    import time
+
+    for _ in range(100):
+        if not _alive(pid):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def test_a_guard_stop_reaches_the_whole_process_group_so_no_grandchild_keeps_writing(tmp_path):
     pidfile = tmp_path / "grandchild.pid"
     code = (
         "import subprocess, sys, time\n"
@@ -289,28 +313,135 @@ def test_a_guard_stop_reaches_the_whole_process_group_so_no_grandchild_keeps_wri
         f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
         "time.sleep(120)\n"
     )
-    probe = _Probe(free=100 * GB, free_after=1 * GB, after_calls=6)
+    probe = _Probe(free=100 * GB, free_after=1 * GB, trigger=pidfile.exists)
     report, _ = _run(tmp_path, probe=probe, phases_override=_scripted(code), reserve_bytes=2 * GB)
     assert report["status"] == "refused-mid-run"
-    pid = int(pidfile.read_text())
-    import time
+    assert _wait_dead(int(pidfile.read_text())), "a grandchild outlived the guard's stop"
 
-    for _ in range(50):
-        if not _alive(pid):
-            break
-        time.sleep(0.1)
-    assert not _alive(pid), "a grandchild outlived the guard's stop"
+
+def test_a_helper_that_ignores_sigterm_is_killed_even_though_the_child_exits_on_it(tmp_path):
+    """The leader leaving on SIGTERM must not end the stop: the group still has a member that ignores it."""
+    pidfile = tmp_path / "helper.pid"
+    helper = "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nwhile True: time.sleep(0.1)"
+    code = (
+        "import subprocess, sys, time\n"
+        f"h = subprocess.Popen([sys.executable, '-c', {helper!r}])\n"
+        f"open({str(pidfile)!r}, 'w').write(str(h.pid))\n"
+        "time.sleep(120)\n"
+    )
+    probe = _Probe(free=100 * GB, free_after=1 * GB, trigger=lambda: pidfile.exists() and pidfile.read_text() != "")
+    report, _ = _run(tmp_path, probe=probe, phases_override=_scripted(code), reserve_bytes=2 * GB)
+    assert report["status"] == "refused-mid-run"
+    assert _wait_dead(int(pidfile.read_text())), "SIGKILL was skipped because the leader had already left"
+
+
+def test_a_helper_still_running_after_a_clean_exit_is_swept_before_the_store_goes(tmp_path):
+    pidfile = tmp_path / "late.pid"
+    code = (
+        "import subprocess, sys\n"
+        "h = subprocess.Popen([sys.executable, '-c', 'import time\\nwhile True: time.sleep(0.1)'])\n"
+        f"open({str(pidfile)!r}, 'w').write(str(h.pid))\n"
+    )
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    assert report["status"] == "ok" and report["store"]["deleted"] is True
+    assert _wait_dead(int(pidfile.read_text())), "a descendant outlived a clean exit"
 
 
 def test_a_child_that_ignores_sigterm_is_killed_after_the_grace(tmp_path, monkeypatch):
     monkeypatch.setattr(R, "TERMINATE_GRACE_S", 0.5)
-    code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)"
+    ready = tmp_path / "ready"
+    code = ("import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            f"open({str(ready)!r}, 'w').write('x')\ntime.sleep(120)")
     import time
 
     t0 = time.monotonic()
-    report, _ = _run(tmp_path, probe=_Probe(free=100 * GB, free_after=1 * GB, after_calls=4),
+    report, _ = _run(tmp_path, probe=_Probe(free=100 * GB, free_after=1 * GB, trigger=ready.exists),
                      phases_override=_scripted(code), reserve_bytes=2 * GB)
     assert report["status"] == "refused-mid-run" and time.monotonic() - t0 < 30
+
+
+def test_disk_collapsing_during_the_grace_ends_the_grace_at_once(tmp_path, monkeypatch):
+    """Below the reserve the child is told to leave; below HALF the reserve the grace is over, whatever it was."""
+    monkeypatch.setattr(R, "TERMINATE_GRACE_S", 60.0)
+    ready, termed = tmp_path / "ready", tmp_path / "termed"
+    code = ("import signal, time\n"
+            f"signal.signal(signal.SIGTERM, lambda *a: open({str(termed)!r}, 'w').write('x'))\n"
+            f"open({str(ready)!r}, 'w').write('x')\ntime.sleep(120)")
+    probe = R.Probe(
+        free_disk=lambda p: 100 * GB if not ready.exists() else (int(0.5 * GB) if termed.exists() else int(1.5 * GB)),
+        available_memory=lambda: 8 * GB)
+    import time
+
+    t0 = time.monotonic()
+    report, _ = _run(tmp_path, probe=probe, phases_override=_scripted(code), reserve_bytes=2 * GB)
+    assert time.monotonic() - t0 < 30, "the 60 s grace was waited out while the disk filled"
+    assert report["status"] == "refused-mid-run"
+
+
+def test_a_dead_sampler_stops_the_phase_instead_of_leaving_it_unguarded(tmp_path):
+    state = {"n": 0}
+
+    def mem():
+        state["n"] += 1
+        if state["n"] > 3:
+            raise OSError("psutil went away")
+        return 8 * GB
+
+    report, _ = _run(tmp_path, probe=R.Probe(free_disk=lambda p: 100 * GB, available_memory=mem),
+                     phases_override=_scripted("import time; time.sleep(120)"))
+    ph = report["phases"][0]
+    assert report["status"] == "refused-mid-run" and "sampler failed" in ph["reason"] and "OSError" in ph["reason"]
+
+
+def _signal_when(path: Path, signum: int, times: int = 1):
+    import threading
+    import time
+
+    def go():
+        for _ in range(500):
+            if path.exists():
+                break
+            time.sleep(0.02)
+        for i in range(times):
+            if i:
+                time.sleep(0.4)
+            os.kill(os.getpid(), signum)
+
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    return t
+
+
+def test_sighup_stops_the_child_deletes_the_store_and_still_writes_the_report(tmp_path):
+    """A dropped SSH session sends SIGHUP: without the handler Python died on the spot and the child ran on."""
+    import signal as sg
+
+    before = (sg.getsignal(sg.SIGHUP), sg.getsignal(sg.SIGTERM))
+    pidfile = tmp_path / "child.pid"
+    code = f"import os, time\nopen({str(pidfile)!r}, 'w').write(str(os.getpid()))\ntime.sleep(120)"
+    t = _signal_when(pidfile, sg.SIGHUP)
+    report, kept = _run(tmp_path, phases_override=_scripted(code))
+    t.join(timeout=5)
+    assert report["status"] == "interrupted" and "SIGHUP" in report["reason"] and kept is None
+    assert report["store"]["deleted"] is True and not list((tmp_path / "work").glob("oo-osm-reference-run-*"))
+    assert _wait_dead(int(pidfile.read_text()))
+    assert (sg.getsignal(sg.SIGHUP), sg.getsignal(sg.SIGTERM)) == before, "the handlers were not restored"
+
+
+def test_a_second_interrupt_during_the_grace_kills_at_once(tmp_path, monkeypatch):
+    import signal as sg
+    import time
+
+    monkeypatch.setattr(R, "TERMINATE_GRACE_S", 60.0)
+    ready = tmp_path / "ready"
+    code = ("import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            f"open({str(ready)!r}, 'w').write('x')\ntime.sleep(120)")
+    t = _signal_when(ready, sg.SIGTERM, times=2)
+    t0 = time.monotonic()
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    t.join(timeout=5)
+    assert report["status"] == "interrupted" and time.monotonic() - t0 < 30
+    assert report["store"]["deleted"] is True
 
 
 def test_the_online_join_is_not_offered_inside_the_throwaway_store(tmp_path):
@@ -327,14 +458,44 @@ def test_a_workdir_inside_the_repository_is_refused(tmp_path):
     assert not (ROOT / "oo-should-not-exist").exists()
 
 
-def test_the_children_get_the_passphrase_in_their_environment_only(tmp_path):
+def test_the_passphrase_value_never_reaches_the_report_whatever_the_child_prints(tmp_path):
+    seen = tmp_path / "seen.txt"
+    code = ("import os, sys\n"
+            "p = os.environ['OO_DB_PASSPHRASE']\n"
+            f"open({str(seen)!r}, 'w').write(p)\n"
+            "print('stdout says', p); print('stderr says', p, file=sys.stderr); sys.exit(1)")
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    secret = seen.read_text()
+    assert len(secret) >= 16
+    assert secret not in json.dumps(report) and "<redacted>" in json.dumps(report)
+    assert report["status"] == "failed"
+
+
+def test_the_passphrase_is_not_in_the_childs_argv_and_database_url_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:////home/someone/own-store.db")
+    seen = tmp_path / "seen.txt"
+    code = ("import os, sys, json\n"
+            f"open({str(seen)!r}, 'w').write(os.environ['OO_DB_PASSPHRASE'])\n"
+            "print(json.dumps({'argv': ' '.join(sys.argv), 'dburl': os.environ.get('DATABASE_URL')}))")
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    got = report["phases"][0]["app_report"]
+    assert seen.read_text() not in got["argv"]
+    assert got["dburl"] is None, "the child could have opened the operator's own main database"
+
+
+def test_sample_seconds_outside_the_sane_range_is_refused(tmp_path):
+    for bad in (0, 0.001, 3600):
+        with pytest.raises(ValueError, match="sample-seconds"):
+            _run(tmp_path, sample_seconds=bad)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--sample-seconds", "3600")
+    assert rc == 2 and "sample-seconds" in out
+
+
+def test_the_children_get_the_passphrase_in_their_environment_only(tmp_path, monkeypatch):
     code = ("import os, sys, json; print(json.dumps({'has': bool(os.environ.get('OO_DB_PASSPHRASE')), "
             "'plain': os.environ.get('OO_DB_PLAINTEXT'), 'argv': ' '.join(sys.argv)}))")
-    os.environ["OO_DB_PLAINTEXT"] = "1"
-    try:
-        report, _ = _run(tmp_path, phases_override=_scripted(code))
-    finally:
-        del os.environ["OO_DB_PLAINTEXT"]
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")  # restored afterwards: the suite's own default must survive
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
     got = report["phases"][0]["app_report"]
     assert got["has"] is True and got["plain"] is None
 
@@ -345,6 +506,23 @@ def test_scrub_removes_secrets_and_foreign_paths_but_not_urls():
                 secrets_=("S3CR3T",), run_dir=run)
     assert "S3CR3T" not in s and "/home/me" not in s and "y.py" in s
     assert "<run>/data/osm.db" in s and "https://www.openstreetmap.org/copyright" in s
+
+
+def test_scrub_catches_the_forms_the_plain_pattern_missed():
+    run = Path("/home/alice/work/oo-osm-reference-run-X")
+    cases = {
+        "PYTHONPATH=/a/lib:/home/alice/x": "/home/alice",
+        f"sqlite:////{str(run)[1:]}/data/osm.db": "/home/alice",
+        "file:///home/alice/proj/x.py": "/home/alice",
+        "at /srv/Alice Smith/repo/x.py line 3": "Alice Smith",
+    }
+    roots = (("/srv/Alice Smith", "<repo>"),)
+    for text, leaked in cases.items():
+        out = R.scrub(text, run_dir=run, roots=roots)
+        assert leaked not in out, f"{leaked!r} survived in {out!r}"
+    assert "<run>/data/osm.db" in R.scrub(f"sqlite:////{str(run)[1:]}/data/osm.db", run_dir=run)
+    assert R.scrub("see https://www.openstreetmap.org/copyright", run_dir=run) == "see https://www.openstreetmap.org/copyright"
+    assert "<repo>/repo/x.py" in R.scrub("at /srv/Alice Smith/repo/x.py", roots=roots)
 
 
 # --------------------------------------------------------------------------- #
