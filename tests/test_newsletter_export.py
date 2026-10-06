@@ -352,7 +352,7 @@ def test_an_index_merge_that_will_not_fit_is_refused_before_anything_is_deleted(
     assert index > 0
     before = corpus.read_bytes()
     monkeypatch.setattr("src.backup.folder_backup.free_bytes", lambda _p: 2 * index - 1)
-    with pytest.raises(BackupSpaceError, match="search-index merge"):
+    with pytest.raises(BackupSpaceError, match=r"search-index merge.*no backup was written"):
         ne.drop_newsletters_encrypted(corpus, [])
     assert corpus.read_bytes() == before, "nothing was written"
 

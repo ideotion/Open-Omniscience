@@ -183,7 +183,7 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
         merge_room = 2 * _index_bytes(con)
         if merge_room:
             preflight_free_space(
-                db_path.parent, merge_room, what="search-index merge that leaves the newsletters' words out"
+                db_path.parent, merge_room, what="search-index merge that leaves the newsletters' words out (no backup was written)"
             )
         # The deleted pages are zeroed, so the path that does not rewrite the file leaves nothing.
         con.execute("PRAGMA secure_delete = ON")

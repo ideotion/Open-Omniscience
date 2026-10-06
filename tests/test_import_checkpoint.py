@@ -281,6 +281,72 @@ def test_a_failing_item_discards_the_group_and_names_what_went_with_it(tmp_path)
     assert q._group is None and not gdir.exists()
 
 
+class _FakeVolumeManager:
+    """Answers ``start_restore``/``status`` from a script: one outcome per call to ``start_restore``."""
+
+    def __init__(self, outcomes):
+        self.outcomes, self.cur, self.calls = list(outcomes), {}, []
+
+    def start_restore(self, path, _passphrase, **kw):
+        self.calls.append((path, kw))
+        self.cur = self.outcomes.pop(0)
+
+    def status(self):
+        return self.cur
+
+    def cancel(self):
+        pass
+
+
+def test_a_memory_refusal_on_the_last_item_discards_the_whole_group_and_names_each_as_not_merged(
+    tmp_path, monkeypatch
+):
+    """The pre-staging memory gate refuses item 3 of a K = 3 group: items 1 and 2 had merged into the
+    shared working copy and nothing is durable until the swap, so they go with it. Every one of the
+    three is reported as NOT merged (the two discarded, the third an error carrying the refusal), no
+    commit is recorded for any, and the discarded reason says what stopped the run, not that a copy
+    could not be trusted."""
+    refusal = (
+        "This merge needs about 6.2 GB of free memory and this machine has 1.9 GB. "
+        "Nothing was written to your corpus."
+    )
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d", "report": {"held": True}}}
+    mgr = _FakeVolumeManager(
+        [
+            {**held, "summary": {**held["summary"], "source_digest": "d1"}},
+            {**held, "summary": {**held["summary"], "source_digest": "d2"}},
+            {"state": "error", "error": refusal},
+        ]
+    )
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
+    group_dir = tmp_path / "grp"
+
+    def _new_dir():
+        group_dir.mkdir(exist_ok=True)
+        return group_dir
+
+    monkeypatch.setattr(iq, "_new_group_dir", _new_dir)
+    _no_lookahead(monkeypatch, True)
+    persisted: list[dict] = []
+    monkeypatch.setattr(ImportQueueManager, "_persist_held_report", lambda self, it, by: persisted.append(it))
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 3, k=3)
+    q._drive()
+
+    states = [it["state"] for it in q._items]
+    assert states == ["discarded", "discarded", "error"], states
+    assert refusal in q._items[2]["error"]
+    for it in q._items[:2]:
+        assert "NOT written to your corpus" in it["discarded_reason"]
+        assert "1.9 GB" in it["discarded_reason"], "what stopped the run is named"
+        assert "could not be trusted" not in it["discarded_reason"]
+    assert persisted == [], "no commit was recorded for any item of the group"
+    assert q._group is None and not group_dir.exists()
+
+
 def test_a_refused_verification_discards_the_group_rather_than_carrying_it_on(tmp_path):
     q, gdir = _with_open_group(tmp_path)
     q._after_item(

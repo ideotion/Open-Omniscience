@@ -671,10 +671,17 @@ class ImportQueueManager:
                     # must never become the live corpus. Discarding is the only safe
                     # answer, and it costs the group's other merges -- which is the
                     # durability half of the K trade, stated where it is paid.
+                    # The reason says WHAT stopped the item (its own text: a memory refusal
+                    # before staging is not a half-merged copy, and "could not be trusted"
+                    # would say it was), and that the group's earlier backups were not
+                    # written to the corpus and merge again next time. Every discarded item
+                    # of the group carries it.
                     self._discard_group(
                         f"the import of {item.get('label') or item.get('id')} "
-                        + ("was stopped" if stopped_here else "failed")
-                        + ", so the shared working copy could not be trusted"
+                        + ("was stopped" if stopped_here else f"failed ({str(exc)[:600]})")
+                        + ", so the shared working copy was thrown away and the backups merged "
+                        "into it before this one were NOT written to your corpus; "
+                        "importing them again is safe"
                     )
                 finally:
                     with self._lock:
