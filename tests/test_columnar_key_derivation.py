@@ -51,8 +51,9 @@ _VECTORS = [
 # --------------------------------------------------------------------------- #
 def test_the_lane_that_has_duckdb_runs_this_file():
     """Every test below that drives the engine imports DuckDB with ``importorskip``, and the lanes without it (the main one
-    and the portability ones) skip all of them: 20 of this file's tests are skips there. The ``columnar`` lane installs the
-    extra, so it is the one place they run, and its command lists its files by name: a lane that no longer names this file
+    and the portability ones) skip all of them: two dozen of this file's tests are skips there (24 when this was written;
+    ``pytest -rs`` in a lane without DuckDB counts them). The ``columnar`` lane installs the extra, so it is the one place
+    they run, and its command lists its files by name: a lane that no longer names this file
     turns the real-engine tests into a pass that tested nothing."""
     import yaml
 
@@ -330,6 +331,20 @@ def test_a_failed_open_falls_back_to_memory_and_logs_neither_the_passphrase_nor_
     )
 
 
+def test_a_failed_open_takes_the_key_out_whichever_case_the_engine_writes_its_hex_in(persisted, caplog):
+    """The derived key is lowercase hex as ``_derive_key`` returns it, and an engine that quotes it may write it in capitals; the
+    record is scrubbed of both. MUTATION TARGET: the capitals passed to the record's scrub in ``connect``."""
+    persisted.fail_with = lambda key: RuntimeError(f"Parser Error near ENCRYPTION_KEY '{key.upper()}'")
+    columnar._store_salt(persisted.dir / "analytics.duckdb")
+    caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
+    columnar.connect(passphrase=PASS).close()
+    (_, key), = persisted.attached
+    (failure,) = [r for r in caplog.records if "persisted open failed" in r.getMessage()]
+    written = f"{failure.getMessage()}\n{getattr(failure, 'scrubbed_traceback', '')}"
+    assert key.upper() not in written and key not in written, written
+    assert f"RuntimeError: Parser Error near ENCRYPTION_KEY '{REDACTED}'" in written
+
+
 def test_a_read_model_refresh_that_fails_logs_without_the_passphrase(persisted, monkeypatch, caplog):
     duckdb = pytest.importorskip("duckdb")
     monkeypatch.setattr(columnar, "connect", lambda passphrase=None, **k: duckdb.connect())
@@ -486,6 +501,55 @@ def test_a_real_engine_refuses_another_passphrase_and_falls_back_to_memory_witho
         assert secret not in text
 
 
+def test_a_bound_lowercase_hex_key_is_not_quoted_by_the_errors_of_an_attach_that_fails(real_engine):
+    """The derived key is not held beside the passphrase for the global nets to take out, because it is never in any text
+    they scrub, and that rests on this: an ATTACH that fails does not quote a key bound to it when the key is lowercase hex,
+    which ``_derive_key`` always returns. Measured on DuckDB 1.4.4, 1.5.5 and 1.5.6 (the lane runs the one it installs) for a
+    directory, a file that is not a database and a store made under another key."""
+    duckdb = pytest.importorskip("duckdb")
+    real_engine.mkdir(parents=True, exist_ok=True)
+    salt = bytes(range(16))
+    key, other = columnar._derive_key(PASS, salt), columnar._derive_key(PASS + "!", salt)
+    assert key != other and key == key.lower() and bytes.fromhex(key)
+    (real_engine / "a-directory").mkdir()
+    (real_engine / "not-a-database.duckdb").write_bytes(b"this is not a database" * 100)
+    other_store = real_engine / "another-key.duckdb"
+    con = columnar._attach_persisted(other_store, other)
+    con.execute("CREATE TABLE t (x INTEGER)")
+    con.execute("CHECKPOINT oo")
+    con.close()
+    for target in ("a-directory", "not-a-database.duckdb", "another-key.duckdb"):
+        with pytest.raises(duckdb.Error) as err:
+            columnar._attach_persisted(real_engine / target, key)
+        said = f"{err.value}\n{err.value!r}"
+        assert key not in said and key[:16] not in said and other not in said, f"the engine quoted the key for {target}"
+
+
+@pytest.mark.parametrize("not_hex", ["pässwörd-✓-and-some-more-text", "back\\slash-and-some-more-text"])
+def test_a_key_that_is_not_lowercase_hex_is_quoted_by_the_engine_and_the_log_takes_it_out(real_engine, monkeypatch, caplog, not_hex):
+    """The other side of the test above, which is why the derived key has to stay a lowercase-hex ``str``: a key with a
+    character outside ASCII or a backslash fails the engine's STRING-to-BLOB cast, and that error quotes the WHOLE key as it
+    is (a ``bytes`` key is quoted in escapes and an ``int`` in digits, which no scrub of a ``str`` finds). The failure's
+    record takes the whole key out, whichever shape the engine writes it in (it is handed the key by name), so a change that
+    made the key something else would still not put it in the log, and this is the case that shows it. Skipped, with the
+    reason, where the engine no longer quotes it: then there is nothing to take out."""
+    duckdb = pytest.importorskip("duckdb")
+    real_engine.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(duckdb.Error) as control:
+        columnar._attach_persisted(real_engine / "control.duckdb", not_hex)
+    if not_hex not in str(control.value):
+        pytest.skip("this DuckDB does not quote a key that fails its cast")
+    monkeypatch.setattr(columnar, "_derive_key", lambda passphrase, salt: not_hex)
+    caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
+    con = columnar.connect(passphrase=PASS)
+    assert con.execute("SELECT current_database()").fetchone() == ("memory",), "the open failed and fell back"
+    con.close()
+    (failure,) = [r for r in caplog.records if "persisted open failed" in r.getMessage()]
+    text = "\n".join(f"{r.getMessage()}\n{r.exc_text or ''}\n{getattr(r, 'scrubbed_traceback', '')}" for r in caplog.records)
+    assert not_hex not in text and PASS not in text
+    assert REDACTED in failure.getMessage(), "the engine quoted the key and the record has it taken out"
+
+
 # --------------------------------------------------------------------------- #
 # The encryption gate: the engine is what it proves
 # --------------------------------------------------------------------------- #
@@ -609,6 +673,29 @@ def test_a_gate_that_raises_logs_without_the_probes_key_and_without_the_passphra
     assert key not in written and PASS not in written
     assert f"RuntimeError: IO Error: cannot attach with ENCRYPTION_KEY '{REDACTED}' (held {REDACTED})" in written
     assert "Traceback (most recent call last)" in written, "the frames are kept"
+
+
+def test_a_gate_that_raises_takes_the_probes_key_out_in_capitals_too(tmp_path, monkeypatch, caplog):
+    """MUTATION TARGET: the capitals passed to the gate's record. The probe's key is lowercase hex, and an engine may quote it
+    in capitals."""
+    pytest.importorskip("duckdb")
+    seen: list[str] = []
+
+    class Con:
+        def execute(self, sql, params=None):
+            seen.append(params[0])
+            raise RuntimeError(f"IO Error: cannot attach with ENCRYPTION_KEY '{params[0].upper()}'")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(columnar, "_persisted_connection", Con)
+    caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
+    assert columnar.encryption_gate(tmp_path / "probe.duckdb") is False
+    (key,) = seen
+    (record,) = [r for r in caplog.records if "encryption gate raised" in r.getMessage()]
+    written = f"{record.getMessage()}\n{getattr(record, 'scrubbed_traceback', '')}"
+    assert key.upper() not in written and key not in written, written
 
 
 # --------------------------------------------------------------------------- #

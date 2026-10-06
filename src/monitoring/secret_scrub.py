@@ -191,6 +191,9 @@ def _carried(text: str) -> tuple[str, ...]:
     )
 
 
+_LOWER_HEX = frozenset("0123456789abcdef")
+
+
 def _shapes(secret: object) -> tuple[str, ...]:
     """The shapes ``secret`` takes in text the code writes, each once and none empty, WHATEVER ITS LENGTH. TWO BASES: as typed, and as an SQL string
     literal holds it (every ``'`` doubled, which is how ``PRAGMA key = '...'`` and ``ATTACH '...'`` carry it, and an engine's
@@ -198,10 +201,15 @@ def _shapes(secret: object) -> tuple[str, ...]:
     statement an engine quotes into an error is written again by ``str()`` of an exception that holds it, by the ``repr`` of that
     exception, by a dict or a list that holds the message, by the JSON body that carries the dict and by the ``repr`` of the bytes
     a library keeps the message as. A secret with no quote, no backslash, no control and no letter outside ASCII has one shape;
-    the most one has is 518 (2 + 12 + 72 + 432). A missing or empty one has none."""
+    the most one has is 518 (2 + 12 + 72 + 432). A secret that is all lowercase hex (a key derived from the passphrase, as
+    ``columnar._derive_key`` writes it) has its capitals as a third base, because an engine may quote hex in either case.
+    A missing or empty one has none."""
     if not isinstance(secret, str) or not secret:
         return ()
-    layer = list(dict.fromkeys((secret, secret.replace("'", "''"))))
+    bases = [secret, secret.replace("'", "''")]
+    if set(secret) <= _LOWER_HEX:
+        bases.append(secret.upper())
+    layer = list(dict.fromkeys(bases))
     forms = list(layer)
     for _ in range(CARRIER_DEPTH):
         layer = list(dict.fromkeys(form for text in layer for form in _carried(text)))

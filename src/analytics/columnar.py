@@ -177,8 +177,8 @@ def _persisted_config() -> dict:
 _KDF_VERSION = 2
 _KDF_NAME = "pbkdf2-hmac-sha512"
 _KDF_ITERATIONS = 256_000
-_KDF_KEY_BYTES = 32
-_KDF_SALT_BYTES = 16
+_KDF_KEY_BYTES = 32  # 256 bits: the key's size is what an exhaustive search of the cache's key has to cover
+_KDF_SALT_BYTES = 16  # 128 bits: what stops one precomputed table of derived keys from opening every install's cache
 _KDF_SIDECAR_SUFFIX = ".kdf"
 # Serialises "read the store's sidecar, or reset the store and write a new one", so two threads opening a fresh store
 # cannot each write a salt and leave a file under one key with a sidecar naming the other.
@@ -688,7 +688,16 @@ def _attach_persisted(path, encryption_key):
     quotes a window of it in the error (measured, DuckDB 1.4.4 and 1.5.5: a path holding an apostrophe ended the
     literal early, and for a short path the error quoted the first 16 to 24 characters of the key written after it),
     and a key that is not in the text cannot be quoted: the logs scrub exact matches, which a half-quoted key is not.
-    The path is escaped by :func:`_sql_text`, since the path is the one part of the statement that is not ours."""
+    The path is escaped by :func:`_sql_text`, since the path is the one part of the statement that is not ours.
+
+    WHAT A BOUND KEY DOES AND DOES NOT ESCAPE (measured on DuckDB 1.5.5 with its software backend, and measured again
+    on the version the ``columnar`` CI lane installs by ``tests/test_columnar_key_derivation.py``): a lowercase-hex
+    ``str``, which is all :func:`_derive_key` returns, is not quoted by the errors of an ATTACH that fails (a directory,
+    a file that is not a database, a store under another key). A ``str`` with a character outside ASCII or a backslash
+    fails the engine's STRING-to-BLOB cast, and that error quotes the WHOLE key as it is; a ``bytes`` key is quoted by
+    the Binder error in hexadecimal escapes and an ``int`` in digits, which no scrub of a ``str`` would find. So the key
+    stays a lowercase-hex ``str``, the failure's record takes it out by name beside the passphrase, and nothing holds it
+    for the nets that read what the process holds."""
     con = _persisted_connection()  # verified httpfs LOADed; _persisted_config (file access on)
     con.execute(f"ATTACH {_sql_text(path.as_posix())} AS oo (ENCRYPTION_KEY ?)", [encryption_key])
     con.execute("USE oo")
