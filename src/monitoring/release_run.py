@@ -87,7 +87,6 @@ from pathlib import Path
 from typing import Any
 
 from src.monitoring.secret_scrub import (
-    UNREADABLE_TEXT,
     exception_text,
     log_failure,
     scrubbed,
@@ -1147,6 +1146,10 @@ def _scrub_kept_install(fresh: Path, out_json: Path, needle: str) -> dict[str, l
     return done
 
 
+#: What the report says in place of a child's stderr that is not valid UTF-8 (a code page wrote it, or a character was cut).
+STDERR_NOT_UTF8 = "(the child's stderr is withheld: it is not valid UTF-8, so no scrub can vouch for what it holds)"
+
+
 def _child_pipe_text(raw: bytes | None) -> str | None:
     """What the child wrote to a pipe, as the UTF-8 it was told to write: ``""`` for nothing, ``None`` when the bytes are not valid
     UTF-8 -- text no scrub can vouch for (a key's letters in a code page, a cut through a character) is withheld whole, never
@@ -1186,10 +1189,12 @@ def _fresh_install_restore(
         "OO_DB_PASSPHRASE": run.params.passphrase,
         "OO_NO_SCHEDULER": "1",
         "OO_AUTOSEED": "0",
-        # The child writes UTF-8 whatever the console's code page is, and the parent reads its pipes as bytes: on Windows the
-        # child's stderr is the ANSI page with a backslash escape for a letter outside it, a form of a passphrase no carrier
+        # The child writes its PIPES as UTF-8 whatever the console's code page is, and the parent reads them as bytes: on Windows
+        # the child's stderr is the ANSI page with a backslash escape for a letter outside it, a form of a passphrase no carrier
         # of the scrub writes (a key that mixes a cp1252 letter with one outside that page reached the report half raw).
-        "PYTHONUTF8": "1",
+        # PYTHONUTF8 is NOT set: it would make the child decode its ENVIRONMENT as UTF-8, and a parent on a POSIX locale that is
+        # not UTF-8 encodes the key in that locale, so a non-ASCII key would reach the child changed (the unlock fails, and what
+        # the child prints of the changed key is a form the parent's scrub does not know).
         "PYTHONIOENCODING": "utf-8",
         "OO_RELEASE_RUN_BACKUP": str(backup_path),
         "OO_RELEASE_RUN_OUT": str(out_json),
@@ -1244,9 +1249,10 @@ def _fresh_install_restore(
             "elapsed_s": round(time.monotonic() - t0, 1),
             "returncode": proc.returncode,
             # Scrubbed BEFORE the cut: a cut through the passphrase would leave a fragment that no
-            # later replacement could find.
+            # later replacement could find. The last 4,000 characters protect the report's size (a restore's traceback can be
+            # far longer, and the whole text was read and scrubbed first).
             "stderr_tail": (
-                UNREADABLE_TEXT
+                STDERR_NOT_UTF8
                 if stderr is None
                 else scrubbed(stderr, run.params.passphrase)[-4000:]
             ),

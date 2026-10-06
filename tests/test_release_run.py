@@ -2909,17 +2909,41 @@ def test_the_child_writes_utf8_and_its_stderr_is_read_as_bytes_so_a_mixed_page_k
     """On Windows the child's stderr is the ANSI page with a backslash escape for a letter outside it, so a key that mixes a cp1252
     letter with one outside the page reached the report as raw text plus an escape, a form no carrier writes. The child is told to
     write UTF-8, its pipes are read as bytes and decoded strictly, so the key is in the one form the scrub takes out. MUTATION
-    TARGET: the two environment settings, the bytes read (``text=True`` again), the strict decode."""
+    TARGET: the pipe encoding setting, the bytes read (``text=True`` again), the strict decode."""
     _SPAWNED.clear()
+    monkeypatch.delenv("PYTHONUTF8", raising=False)
     params = _params(fast["dest"], passphrase=MIXED_KEY)
     _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=f"trace {MIXED_KEY} end")
     rep = rr.run_release_run(FakeCtx(), **params)["report"]
     kw = _SPAWNED[-1]
-    assert kw["env"]["PYTHONUTF8"] == "1" and kw["env"]["PYTHONIOENCODING"] == "utf-8", kw["env"]
+    assert kw["env"]["PYTHONIOENCODING"] == "utf-8" and "PYTHONUTF8" not in kw["env"], kw["env"]
     assert not kw.get("text") and not kw.get("universal_newlines") and not kw.get("encoding"), kw
     tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
     assert tail == "trace ***redacted*** end", tail
     assert MIXED_KEY not in json.dumps(rep) and "7x9" not in json.dumps(rep)
+
+
+def test_a_non_ascii_key_reaches_the_child_byte_for_byte(fast, monkeypatch):
+    """The child's environment is what the parent encoded: a key with letters outside ASCII reaches it unchanged only while the
+    child decodes the environment the way the parent encoded it, which UTF-8 mode (PYTHONUTF8) would change on a POSIX locale that
+    is not UTF-8. A REAL child reports the bytes it was handed. MUTATION TARGET: the child given PYTHONUTF8."""
+    monkeypatch.delenv("PYTHONUTF8", raising=False)
+    real_popen = subprocess.Popen
+    script = (
+        "import json, os\n"
+        "open(os.environ['OO_RELEASE_RUN_OUT'], 'w', encoding='utf-8').write(json.dumps("
+        "{'ok': False, 'error': 'handed ' + os.environb[b'OO_DB_PASSPHRASE'].hex()}))\n"
+    )
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=lambda argv, **kw: real_popen([sys.executable, "-c", script], **kw),
+        PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], passphrase=MIXED_KEY)))
+    ctx = FakeCtx()
+    try:
+        _REAL_RESTORE(ctx, run, fast["dest"] / "backup", label="own-backup")
+    except rr._PhaseError as err:  # the stand-in child says ok False, which is the phase's failure
+        handed = err.partial["child"]["error"]
+    assert handed == "handed " + os.fsencode(MIXED_KEY).hex(), handed
 
 
 def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):
@@ -2929,7 +2953,7 @@ def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):
     assert b"\xe9" in written
     _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=written)
     rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
-    assert rep["phase_results"]["fresh_install_restore"]["stderr_tail"] == rr.UNREADABLE_TEXT
+    assert rep["phase_results"]["fresh_install_restore"]["stderr_tail"] == rr.STDERR_NOT_UTF8
     assert "7x9" not in json.dumps(rep)
 
 

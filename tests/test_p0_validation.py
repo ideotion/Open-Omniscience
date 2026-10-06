@@ -799,7 +799,10 @@ def _caught_exception_leaks(
     handler WITH OR WITHOUT a name; and a NEW exception raised in a handler with no ``from`` clause, which carries the caught
     one as its context for the traceback a consumer prints (``from None`` drops it), except in the response builders of the
     route layer and inside a ``with scrub_and_reraise`` that names every secret (:func:`_covered_by_a_scrubbing_block`). It
-    follows no call: a helper the handler calls that reads the exception itself is not seen. With ``responses`` (the route
+    follows no call: a helper the handler calls that reads the exception itself is not seen. A slice of the exception's text INSIDE
+    the carrying argument of such a call (``scrubbed(str(exc)[:300], key)``) is a way too (:func:`_cuts_the_exception`: the cut
+    comes before the scrub, and a secret that straddles it leaves its first half); the cut belongs after the call or in
+    ``exception_text(..., limit=)``. A handler at module level is read like a function and listed as ``<module>``. With ``responses`` (the route
     layer) the exception may also be the cause of what a call of :data:`_RESPONSE_BUILDERS` is raised as: the caller's own
     response, whose TEXT is still the writer's to scrub (``detail=scrubbed(str(exc), body.passphrase)``: a typed key is held by no
     net until it is accepted, and the browser can send what a response said back to the error journal through
@@ -825,7 +828,7 @@ def _caught_exception_leaks(
     }
     # A handler at module level (an import guard, a bootstrap) is a scope of its own: it holds what it names and is read like a function.
     scopes = [
-        (getattr(n, "name", "<module>"), n)
+        (n.name if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<module>", n)
         for n in ast.walk(tree)
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
         or (isinstance(n, ast.ExceptHandler) and id(n) not in in_a_function)
@@ -1131,6 +1134,9 @@ _WAYS_THAT_LEAK = {
     # --- the name, the position and the secret are each a way of their own
     "a handler named something other than exc": _guarded(_AS_ERR, "e = str(err)"),
     "the exception as the helper's second argument": _guarded(_NAMED, "err = _exception_text(passphrase, exc)"),
+    "a cut of the exception's text inside the helper's carrying argument": _guarded(
+        _NAMED, "err = _exception_text(RuntimeError(str(exc)[:300]), passphrase)"
+    ),
     "the helper given no secret": _guarded(_NAMED, "err = _exception_text(exc)"),
     "the helper given an empty secret": _guarded(_NAMED, "err = _exception_text(exc, '')"),
     "the helper given a name that is not the secret": _guarded(_NAMED, "err = _exception_text(exc, other)"),
@@ -1262,6 +1268,10 @@ _WAYS_THAT_LEAK = {
 _WAYS_THAT_ARE_FINE = {
     "the helper, given the passphrase": (_guarded(_NAMED, "err = _exception_text(exc, passphrase)"), 1),
     "the child's helper, given the passphrase": (_guarded(_NAMED, "err = _error_text(exc, passphrase)"), 1),
+    "a slice of something else inside the scrubbing call": (
+        _guarded(_NAMED, "err = scrubbed(f'{exc} {tag[:3]}', passphrase)"),
+        1,
+    ),
     "a scrub of a text built from the exception": (
         _guarded(_NAMED, "err = scrubbed(f'{type(exc).__name__}: {exc}', passphrase)[:400]"),
         1,
@@ -1896,6 +1906,25 @@ def test_a_held_passphrase_split_across_two_lines_is_out_of_the_joined_reason(tm
     assert held not in json.dumps(out) and held not in Path(out["path"]).read_text(encoding="utf-8")
 
 
+def test_a_held_key_split_across_two_lines_is_found_when_the_typed_key_is_a_piece_of_it(tmp_path, monkeypatch):
+    """The typed key ``half`` is taken out of each line first, which turns ``left half`` into ``left ***`` and leaves the held
+    key ``left half; right half`` in neither the lines nor their join: the joined pass reads the RAW lines. MUTATION TARGET: the
+    join built from the lines after the line-by-line scrub (``left`` and ``right`` stayed in the list and in the reason)."""
+    import src.backup.stream_backup as stream_backup
+    from src.monitoring import secret_scrub as ss
+
+    _live_corpus(tmp_path, monkeypatch)
+    held = "left half; right half"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+    lines = ["volume 2 failed its checksum, left half", "right half was not read"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="half", measure_incremental=False)
+    verify = out["report"]["checks"]["p0_1_verify"]
+    shown = json.dumps([verify["reason"], verify["measurements"]["problems"]])
+    assert "left" not in shown.replace("***", "") and "right" not in shown and "half" not in shown, shown
+    assert verify["measurements"]["problems"] == [verify["reason"].removeprefix("verification failed: ")], verify
+
+
 def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception_they_write(monkeypatch):
     """Handlers that hold no secret wrote the exception by hand; the session's passphrase can be in an engine's words there too.
     MUTATION TARGET: the helper at any of the three that read an engine (the unlock check, the collector check, the last report),
@@ -1919,6 +1948,10 @@ def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception
     collector = p0._check_collector()
     assert held not in json.dumps(collector) and "RuntimeError: engine said ***redacted***" in json.dumps(collector)
 
-    monkeypatch.setattr(p0, "_report_dir", boom)
+    def boom_late(*_a, **_k):
+        raise RuntimeError("x" * 294 + held + " tail")  # the key starts where the cut at 300 falls inside it
+
+    monkeypatch.setattr(p0, "_report_dir", boom_late)
     last = p0.last_p0_validation_report()
-    assert held not in json.dumps(last) and last["error"] == "engine said ***redacted***", last
+    assert held not in json.dumps(last) and held[:6] not in last["error"], last
+    assert len(last["error"]) == 300 and last["error"].endswith("***red"), last

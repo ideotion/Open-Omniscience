@@ -13731,7 +13731,7 @@ text that holds an apostrophe and no double quote in double quotes, but the `str
 apostrophe escaped, so one key reads two ways depending on the text around it. The oracle is the writers themselves: `QQQ` + the key + `WWW` is written through every sequence of `repr` and
 `json.dumps` (ASCII or not) up to three deep, in a text with and without each kind of quote and inside the SQL statement, and the span between the markers has to be one of `_forms(key)`; a key
 with a backslash, both quotes, a control character and a non-ASCII letter passes, and removing any carrier fails it. Depth three is the margin over the two writers a text really passes through (an
-engine's message in an exception's argument, which a dict or a JSON body then carries); the cost is at most 170 shapes for one secret, found once per change of what the process holds.
+engine's message in an exception's argument, which a dict or a JSON body then carries); the cost is at most 518 shapes for one secret, found once per change of what the process holds.
 **(13) A scrub that cannot read what the process holds fails CLOSED.** `held_passphrases()` returns `None` when the session's passphrase is no text or the read fails; `scrubbed`, `traceback_text`,
 `log_failure` and the nets then write the exception's class where the writer names it and none of its words (`UNREADABLE_TEXT` where no class is known: the journal, the route details, the volume job's status). A read that gave an empty tuple on failure would write every text as
 it came. The read takes no lock: `connect.get_passphrase` takes the store's non-reentrant lock, and a record written by a thread that holds it (`set_passphrase`) would wait on itself, so the module reads the

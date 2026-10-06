@@ -446,13 +446,15 @@ def _check_backup(
     # them (a decrypt failure) carries the exception's own words: the engine scrubs it where it makes it, and
     # this is the net where the lines are copied, line by line, never the verdicts and the success sentence
     # around them (the coordinator's delta check of #1312, F2; its check of #1318, B1).
-    problems = scrubbed_value(None if vrep is None else vrep.get("problems"), passphrase)
-    # A passphrase that holds "; " (or any line break the lines were split at) can END one line and START the next, and no line
-    # holds either half whole. The lines read as one text are the check the line-by-line pass cannot make: when that text changes,
-    # the measurement is the clean text alone, so no half of the key stays in any item of the list.
-    joined = _joined_problems(problems)
-    clean_joined = scrubbed(joined, passphrase)
-    if isinstance(problems, list) and clean_joined != joined:
+    raw_problems = None if vrep is None else vrep.get("problems")
+    problems = scrubbed_value(raw_problems, passphrase)
+    # A passphrase that holds "; " can END one line and START the next (the join below is "; " only), and no line holds either
+    # half whole. The lines read as one text are the check the line-by-line pass cannot make, and it is made on the RAW lines:
+    # once an item has been scrubbed of another secret ("half" out of "left half"), the join of the scrubbed items no longer
+    # holds the key either. When the clean text differs from the join of the scrubbed items, the measurement is the clean text
+    # alone, so no half of the key stays in any item of the list.
+    clean_joined = scrubbed(_joined_problems(raw_problems), passphrase)
+    if isinstance(problems, list) and clean_joined != _joined_problems(problems):
         problems = [clean_joined]
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
@@ -479,8 +481,8 @@ def _check_backup(
             bars["p0_1_verify"],
         )
     else:
-        # The join puts two lines side by side, so the tail is scrubbed once more (a passphrase that holds "; "
-        # could end one line and start the next); the lead is the check's own words and is left alone.
+        # The join puts two lines side by side, so the tail is the join of the RAW lines scrubbed as one text (above); the lead
+        # is the check's own words and is left alone.
         probs = clean_joined
         verify_check = _verdict(
             "fail", f"verification failed: {probs}", verify_measurements, bars["p0_1_verify"]
