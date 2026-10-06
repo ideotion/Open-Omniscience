@@ -93,10 +93,11 @@ _SWAP_CHECKPOINT_S = float(os.environ.get("OO_SWAP_CHECKPOINT_S", "60") or 60)
 def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
     """Flush the live WAL into the database file. True if it completed.
 
-    Bounded on purpose. ``checkpoint_wal`` takes the single-writer gate, and that
-    gate's acquire has NO timeout -- so calling it straight would turn a restore
-    that currently fails fast into one that hangs forever behind another writer,
-    which the swap barrier above already refuses to do for exactly this reason.
+    Bounded on purpose. ``checkpoint_wal`` takes the single-writer gate. That wait is bounded
+    now (``OO_CKPT_GATE_TIMEOUT_S``, 30 s, ``0`` waits for ever), but the BACKFILL it then runs
+    is not, so calling it straight could still turn a restore that currently fails fast into one
+    that hangs behind a long checkpoint or another writer, which the swap barrier above already
+    refuses to do for exactly this reason: that is why the thread and the budget below stay.
 
     A checkpoint that cannot finish MEANS a writer is active, which is the one
     condition the swap must not run under, so the caller aborts rather than
