@@ -451,7 +451,7 @@ class WikiLaneRunner:
         self._drain_ms: deque[float] = deque(maxlen=DRAIN_RING)
         self._stage_totals_ms: dict[str, int] = {}
         #: What THIS drain thread held of the corpus's write gate, summed over drains that could be
-        #: measured (the gate keeps a thread's holds by name, src/database/writer.py ``watch``).
+        #: measured (the gate keeps a thread's holds by its ident, src/database/writer.py ``watch``).
         self._gate_totals: dict[str, int] = {"measured": 0, "grants": 0, "held_ms": 0, "longest_ms": 0}
         self._tick_parts: dict[str, int] = {}
         self._tick_totals_ms: dict[str, int] = {}

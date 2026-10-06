@@ -31,7 +31,8 @@ def test_a_watched_thread_reads_its_own_grants_and_holds_once():
     _hold(gate, 0.04)
     taken = gate.take_watched(me)
     assert taken is not None and taken["grants"] == 2
-    assert 0.06 <= taken["held_s"] < 0.5 and 0.04 <= taken["longest_s"] <= taken["held_s"]
+    # two holds of 0.02 s and 0.04 s: the total covers both and the longest is only the larger one
+    assert taken["held_s"] >= 0.06 and 0.04 <= taken["longest_s"] < taken["held_s"]
     assert gate.take_watched(me) is None, "reading stops the watch: the table does not keep dead entries"
     assert gate._watched == {}
 
@@ -53,12 +54,12 @@ def test_two_threads_with_one_name_keep_separate_figures():
     name; keyed by name they would read each other's holds."""
     gate = WriterGate()
     out: dict[str, dict | None] = {}
-    watched = threading.Barrier(2)
+    watched = threading.Barrier(2, timeout=10)  # a broken test fails rather than hangs CI
 
     def work(label: str, seconds: float, grants: int) -> None:
         me = threading.get_ident()
         gate.watch(me)
-        watched.wait()
+        watched.wait(timeout=10)
         for _ in range(grants):
             _hold(gate, seconds)
         out[label] = gate.take_watched(me)
@@ -67,8 +68,9 @@ def test_two_threads_with_one_name_keep_separate_figures():
     b = threading.Thread(target=work, args=("b", 0.01, 3), name="oo-wiki-drain")
     a.start()
     b.start()
-    a.join()
-    b.join()
+    a.join(timeout=30)
+    b.join(timeout=30)
+    assert not a.is_alive() and not b.is_alive()
     assert out["a"] is not None and out["a"]["grants"] == 1
     assert out["b"] is not None and out["b"]["grants"] == 3
 
@@ -87,18 +89,36 @@ def test_a_reentrant_hold_is_one_grant_and_one_hold():
     gate.release()
     gate.release()
     taken = gate.take_watched(me)
-    assert taken is not None and taken["grants"] == 1 and taken["held_s"] < 0.3
+    assert taken is not None and taken["grants"] == 1
+    assert taken["held_s"] >= 0.02 and taken["held_s"] == taken["longest_s"], "one outermost hold: total and longest are the same figure"
 
 
 def test_the_gate_is_free_and_the_next_waiter_woken_before_the_bookkeeping_runs():
-    """The watched bookkeeping comes AFTER the owner is cleared: even if it failed the gate is free."""
+    """The watched bookkeeping comes AFTER the owner is cleared and the next waiter woken: even when
+    it raises, a thread parked on the gate gets it. A string entry makes ``watched["held_s"] += ...``
+    raise (``None`` would read as "not watched" and nothing would be exercised); had the bookkeeping
+    run first, the exception would leave the gate owned and the parked waiter would time out."""
     gate = WriterGate()
     me = threading.get_ident()
     gate.watch(me)
     gate.acquire()
-    gate._watched[me] = None  # type: ignore[assignment]  # a corrupt entry: the bookkeeping raises
+    gate._watched[me] = "corrupt"  # type: ignore[assignment]  # the bookkeeping raises TypeError on it
+    got: list[bool] = []
+
+    def waiter() -> None:
+        ok = gate.acquire(timeout=10)
+        got.append(ok)
+        if ok:
+            gate.release()
+
+    t = threading.Thread(target=waiter, name="parked-waiter")
+    t.start()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not gate._queue:
+        time.sleep(0.005)
+    assert gate._queue, "the waiter is parked on the gate before the owner releases"
     with contextlib.suppress(TypeError):
         gate.release()
-    assert gate._owner is None and gate._holder is None and gate.stats()["held"] is False
-    assert gate.acquire(timeout=0.5) is True
-    gate.release()
+    t.join(timeout=30)
+    assert got == [True], "the next waiter was woken and took the gate although the bookkeeping raised"
+    assert gate._owner is None and gate.stats()["held"] is False

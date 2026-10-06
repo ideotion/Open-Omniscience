@@ -130,6 +130,9 @@ def test_retry_after_is_the_longest_and_a_date_form_is_absent_not_guessed():
     assert H.retry_after_of(exc("45")) == 45
     assert H.retry_after_of(exc("Wed, 21 Oct 2026 07:28:00 GMT")) is None
     assert H.retry_after_of(exc("999999999")) == H.RETRY_AFTER_MAX_S
+    # the digit-count boundary: 18 digits are a number far past the cap (capped), 19 are refused
+    assert H.retry_after_of(exc("9" * 18)) == H.RETRY_AFTER_MAX_S
+    assert H.retry_after_of(exc("9" * 19)) is None
     assert H.retry_after_of(ValueError("no response")) is None
 
 
