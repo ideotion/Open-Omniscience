@@ -264,6 +264,10 @@ def test_the_keyword_rollup_build_proceeds_when_no_window_is_open(clean_window, 
     monkeypatch.setattr(RS, "_persisted_serve_active", lambda: False)
     monkeypatch.setattr(RS, "_build_inmemory_and_swap", lambda: built.append(1))
     monkeypatch.setattr(RS, "_memory_verdict", lambda: None)
+    # the start check and the killed-build check read the host's real free memory: not what this tests
+    monkeypatch.setattr(RS, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(RS, "_last_build_verdict", lambda: None)
+    monkeypatch.setitem(RS._LAST_OUTCOME, "value", "built")
 
     RS._BUILD_LOCK.acquire()
     RS._build_and_swap()
