@@ -3401,4 +3401,14 @@ def _serve() -> None:
 
 
 if __name__ == "__main__":
+    # ``python -m src.api.main`` (and ``--ephemeral``, which relaunches itself that way) runs THIS
+    # file as ``__main__``, so a runtime ``from src.api.main import ...`` elsewhere (insights.py's
+    # ``_query_articles``) would execute it a SECOND time under its real name and die on the
+    # Prometheus ``DuplicateTimeseries``: a 500 on the graph, from a launch that otherwise looks
+    # fine. One module, two names: later imports find the running one.
+    import sys as _sys
+
+    _sys.modules.setdefault("src.api.main", _sys.modules["__main__"])
+    if "src.api" in _sys.modules:  # ``import src.api; src.api.main`` finds it too
+        _sys.modules["src.api"].main = _sys.modules["__main__"]  # type: ignore[attr-defined]
     main()
