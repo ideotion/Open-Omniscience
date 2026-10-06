@@ -30,6 +30,7 @@ the real ones and a fake cannot agree with itself):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -185,8 +186,8 @@ def _temps(dest: Path) -> list[Path]:
 #  1-2: the checkpoint's own row decides
 # --------------------------------------------------------------------------- #
 def test_a_reader_that_started_after_the_last_commit_costs_nothing(live, tmp_path, snap_calls):
-    """MUTATION TARGET. This reader leaves a non-empty ``-wal`` and ``busy=1`` but every frame is
-    already in the main file: the live file is streamed as it always was."""
+    """MUTATION TARGET. This reader leaves a non-empty ``-wal``, but the PASSIVE checkpoint moved
+    every frame into the main file: the live file is streamed as it always was."""
     live.pin()
     assert (live.db.with_name("live.db-wal")).stat().st_size > 0
     s = _backup(tmp_path)
@@ -733,6 +734,9 @@ def test_the_machine_tag_is_a_hash_never_the_raw_machine_id(monkeypatch):
     monkeypatch.setattr(sb, "Path", _Fake)
     tag = sb._machine_tag()
     assert tag and len(tag) == 16 and tag not in raw and raw not in tag
+    # a one-way digest under this app's own label, not a re-encoding of the id (hex, base64...)
+    assert tag == hashlib.sha256(f"open-omniscience-backup-owner:{raw}".encode()).hexdigest()[:16]
+    assert tag != raw.encode().hex()[:16] and tag != raw[:16]
     assert sb._machine_tag() == tag, "stable"
     monkeypatch.setattr(sb, "Path", lambda name: type("N", (), {"read_text": lambda *_a, **_k: (_ for _ in ()).throw(OSError())})())
     assert sb._machine_tag() is None
@@ -913,6 +917,68 @@ def test_an_encrypted_newsletter_excluded_copy_says_it_is_rewritten_and_earns_no
     src = sb._live_corpus_source(stage, False, notes)
     assert src.rewrites_corpus is True
     assert [n for n in notes if "re-encrypted by the copy, so its volumes are rewritten" in n], notes
+
+
+def test_a_source_that_rewrites_the_corpus_earns_the_other_members_credit_only_in_the_destination_check(
+    tmp_path, monkeypatch
+):
+    """MUTATION TARGET (``or src.rewrites_corpus`` in the destination check). A source whose copy
+    re-encrypts the corpus re-emits ALL its volumes, so the check must credit only the other members'
+    volumes (a number), where a source that does not is credited the destination's whole old set
+    (``None``: the check then counts every ``*.ooenc`` file itself)."""
+    corpus = tmp_path / "c.db"
+    con = sqlite3.connect(corpus)
+    con.execute("CREATE TABLE articles(id INTEGER PRIMARY KEY, hash TEXT UNIQUE, content TEXT)")
+    con.executemany("INSERT INTO articles(hash, content) VALUES (?, ?)", [(f"h{i:05d}", ROW) for i in range(300)])
+    con.commit()
+    con.close()
+
+    @contextmanager
+    def freeze():
+        yield None
+
+    dest = tmp_path / "dest"
+
+    def run(rewrites: bool):
+        src = CorpusSource(
+            path=corpus, member_name="corpus.db", encrypted=False, freeze=freeze, rewrites_corpus=rewrites
+        )
+        return write_stream_backup(
+            dest, "pw", corpus_source=src, side_members=_members(tmp_path), volume_size=VOL
+        )
+
+    run(False)  # a first set for the second run to reuse
+    man = load_manifest(dest)
+    others = [v for v in man["volumes"] if v["member"] not in ("corpus.db", "manifest.json")]
+    assert others, "the first run wrote no side member volume"
+    expected = sum((dest / v["name"]).stat().st_size for v in others)
+
+    seen: list[dict] = []
+    real = sb._preflight_dest
+    monkeypatch.setattr(sb, "_preflight_dest", lambda *a, **kw: (seen.append(kw), real(*a, **kw))[1])
+    run(False)
+    assert seen[-1]["credit_except_corpus"] is None, "a source that does not rewrite is credited its whole set"
+    run(True)
+    assert seen[-1]["credit_except_corpus"] == expected, seen[-1]
+
+
+def test_the_destination_check_never_credits_more_than_the_other_members_own_size(tmp_path, monkeypatch):
+    """The coordinator's nit on #1313: a member that shrank leaves old volumes the new run will not
+    reuse, so the credit after a copy is capped at the side members' size (as the snapshot check does)."""
+    seen: list[int] = []
+    monkeypatch.setattr(
+        "src.backup.artifact.preflight_free_space", lambda dest, needed, what="": seen.append(needed)
+    )
+    dest = tmp_path / "d"
+    dest.mkdir()
+    big = 10**12
+    sb._preflight_dest(dest, 100 << 20, 40 << 20, 0.1, reuse_possible=True, credit_except_corpus=big)
+    uncapped_floor = int((100 << 20) * 0.1)
+    assert seen[-1] > uncapped_floor, "an uncapped credit cancelled the whole need down to the parity floor"
+    capped = sb._volumes_need(100 << 20, 40 << 20, 0.1) - int((40 << 20) * 1.02)
+    assert seen[-1] == max(capped, uncapped_floor)
+    sb._preflight_dest(dest, 100 << 20, 40 << 20, 0.1, reuse_possible=True, credit_except_corpus=0)
+    assert seen[-1] == max(sb._volumes_need(100 << 20, 40 << 20, 0.1), uncapped_floor)
 
 
 def test_the_newsletter_excluded_copy_is_refused_for_lack_of_room_before_it_is_made(

@@ -208,9 +208,9 @@ def test_their_bytes_enter_the_volume_sizing_and_the_disk_preflight(tmp_path, st
     seen: dict = {}
     real = sb._preflight_dest
 
-    def spy(dest, corpus_bytes, side_bytes, parity_fraction, *, reuse_possible=False):
+    def spy(dest, corpus_bytes, side_bytes, parity_fraction, **kw):
         seen["side_bytes"] = side_bytes
-        return real(dest, corpus_bytes, side_bytes, parity_fraction, reuse_possible=reuse_possible)
+        return real(dest, corpus_bytes, side_bytes, parity_fraction, **kw)
 
     monkeypatch.setattr(sb, "_preflight_dest", spy)
     blob_bytes = sum(it.size for it in _blobs(tmp_path))

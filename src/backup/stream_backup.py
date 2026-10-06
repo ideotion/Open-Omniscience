@@ -1822,9 +1822,8 @@ def _preflight_snapshot(
     blobs is not asked for them again (never more than the side members' own size). A LATE copy
     (``side_written``) is taken after the side members and blobs are on the drive, so their bytes
     are not asked for again either, and ``credit`` does not apply to it: it counts those same
-    bytes. The message
-    is ``preflight_free_space``'s own shape: how much is needed, how much is free and where, and
-    what to do (free space or choose another location)."""
+    bytes. The message is ``preflight_free_space``'s own shape: how much is needed, how much is
+    free and where, and what to do (free space or choose another location)."""
     from src.backup.artifact import preflight_free_space
 
     need = _volumes_need(copy_bytes, side_bytes, parity_fraction)
@@ -1861,7 +1860,9 @@ def _preflight_dest(
     if reuse_possible:
         existing = 0
         if credit_except_corpus is not None:
-            existing = credit_except_corpus
+            # Never more than the other members' own size: a member that shrank since the last run
+            # leaves old volumes the new run will not reuse (the cap the late snapshot check has).
+            existing = min(max(0, credit_except_corpus), int(side_bytes * 1.02))
         else:
             for p in dest.glob("*.ooenc"):
                 try:
