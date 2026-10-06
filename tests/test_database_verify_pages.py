@@ -9,14 +9,16 @@ Every claim here is made against REAL encrypted files damaged the way a bad sect
 random bytes), through the real check, the real registry and the real re-read; only the answers the driver cannot be made to give
 on demand (a build without the pragma, a disk error in the middle of a pass, a million failing pages) are stood in for, and said:
 
-  * the pass runs after the generic error on an ENCRYPTED file and after nothing else (a healthy file, a wrong passphrase, a busy
-    file and an I/O error never reach it) and names the page that was overwritten;
+  * the pass runs after the generic error on an ENCRYPTED file and after nothing else (a healthy file, a wrong passphrase and a busy
+    file never reach it) and names the page that was overwritten; a disk error on a page IS answered by the pass as a row, never
+    raised (measured with a ``pread`` that returned EIO), and is counted apart from a page that failed, never filed as damage;
   * a table that did not answer STAYS unchecked: a clean pass never makes a file clean;
   * a pass that cannot be made (no such pragma in this build, a stop, a driver error) is ``unchecked`` with the reason, and the
     connection it used is closed on every path;
   * the page list is capped and the count is not; an answer the pass cannot read is damage, never a clean file;
   * the finding rides the record, the incident and the latch like a table's; the next start and a start of collection ask again, and
-    only a pass that reads ``ok`` clears it.
+    only a pass that reads ``ok`` clears it;
+  * a quit while the pass runs (it cannot be interrupted, and its thread is a daemon) gives the attempt back at the stop.
 """
 from __future__ import annotations
 
@@ -657,3 +659,194 @@ def test_the_module_declares_what_it_measured():
     doc = verify.__doc__ or ""
     assert "MEASURED 2026-10-06" in doc and "234 MB" in doc and "cipher_integrity_check" in doc
     assert verify.MAX_PAGES_LISTED == 32
+
+
+# --------------------------------------------------------------------------- #
+#  the deep delta read of E2b: an I/O error, a quit during the pass, the survivors of 18 mutants
+# --------------------------------------------------------------------------- #
+EIO_ROW = "error reading 16384 bytes from file page 40 at offset 638976"  # the driver's own row, measured with a pread that returned EIO
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        EIO_ROW,
+        "HMAC operation failed for page 3",
+        "HMAC is not enabled, unable to integrity check",
+        "database file is undefined",
+    ],
+)
+def test_a_row_that_says_the_pass_could_not_read_is_unchecked_never_damage(line):
+    """The deep read's F1: a disk error on a page is ANSWERED as a row by the pass (it does not raise), and filing it ``damaged`` made
+    an I/O error a verdict on the file (and, with the repair, a reason to replace it): not reading is not a verdict."""
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=[(line,)]))
+    assert entry["verdict"] == VERDICT_UNCHECKED, entry
+    assert entry["pages_unread"] == 1 and "pages" not in entry and "pages_total" not in entry
+    assert "could not read 1 page(s)" in entry["detail"][0] and entry["detail"][1] == line
+
+
+def test_a_page_the_pass_could_not_read_beside_a_page_that_failed_is_counted_and_never_dropped():
+    rows = [("HMAC verification failed for page 7",), (EIO_ROW,), ("HMAC operation failed for page 9",)]
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=rows))
+    assert entry["verdict"] == VERDICT_DAMAGED and entry["pages"] == [7] and entry["pages_total"] == 1, "an unread page was counted as failing"
+    assert entry["pages_unread"] == 2, "the pages that could not be read vanished from the record"
+    assert "7" in entry["detail"][0] and "2 page(s) could not be read" in entry["detail"][1] and EIO_ROW in entry["detail"][1]
+
+
+def test_a_row_the_pass_does_not_know_beside_unread_pages_is_still_damage_in_its_own_words():
+    rows = [(EIO_ROW,), ("something this app has never seen",)]
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=rows))
+    assert entry["verdict"] == VERDICT_DAMAGED and entry["pages"] == [] and entry["pages_unread"] == 1
+    assert entry["detail"][0] == "something this app has never seen"
+
+
+def test_a_pass_of_unread_pages_files_the_file_unchecked_and_latches_nothing(tmp_path, unchecked, files, monkeypatch):
+    monkeypatch.setattr(verify, "confirm_encrypted_damage", lambda path, **kw: {
+        "table": verify.PAGES_ENTRY, "verdict": VERDICT_UNCHECKED, "seconds": 0.0, "detail": [EIO_ROW], "pages_unread": 1,
+    })
+    _run(files, unchecked, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_UNCHECKED and _by_table(entry)[verify.PAGES_ENTRY]["pages_unread"] == 1
+    assert not damage.registry.latched(FILE_CORPUS), "a read the pass could not make latched the file"
+
+
+def test_the_non_hmac_rows_are_capped_in_the_record_and_counted():
+    unread = [(f"error reading 16384 bytes from file page {n} at offset {n * 16384}",) for n in range(1, 5001)]
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=unread))
+    assert entry["pages_unread"] == 5000 and len(entry["detail"]) <= verify.DETAIL_LINES
+    assert len(json.dumps(entry)) < 1024, "a drive that fails every page made the record a line per page"
+    strange = [(f"something new {n}",) for n in range(5000)]
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=strange))
+    assert entry["verdict"] == VERDICT_DAMAGED and len(entry["detail"]) == verify.DETAIL_LINES and len(json.dumps(entry)) < 1024
+
+
+@pytest.mark.parametrize(("message", "code", "verdict"), [("database disk image is malformed", 11, VERDICT_DAMAGED), ("database is locked", 5, VERDICT_UNCHECKED)])
+def test_a_pass_that_raises_takes_its_verdict_from_the_class_of_the_error_as_a_table_does(message, code, verdict):
+    """The pass's own open or statement can raise corruption (the tables are then damaged too); it must not read ``unchecked``."""
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(boom=_driver_error(message, code)))
+    assert entry["verdict"] == verdict, entry
+
+
+def test_a_pass_that_cannot_be_made_for_a_list_that_could_not_be_read_files_nothing_as_damaged(tmp_path, healthy, files, monkeypatch):
+    """The survivor M02: after an unreadable table list an ``unchecked`` pass was filed ``damaged`` with a ``(schema)`` entry and a latch."""
+    monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    monkeypatch.setattr(verify, "cipher_check_present", lambda: False)
+    _run(files, healthy, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["tables"] == [], entry
+    assert verify.SCHEMA_ENTRY not in {t["table"] for t in entry["tables"]}
+    assert "no page-authentication check" in entry["reason"]
+    assert not damage.registry.latched(FILE_CORPUS), "an unchecked pass latched the file"
+
+
+def test_a_pages_finding_beside_index_only_damage_is_data_scope_not_a_search_index_one():
+    """The survivor M01: ``(pages)`` is no table of the search index, so damage that names it is not index-only damage."""
+    reg = DamageRegistry(path_fn=lambda: Path(os.devnull))
+    reg._note_verified_damage(FILE_CORPUS, ["article_fts_data", verify.PAGES_ENTRY], path=None, at="2026-10-06T02:00:00+00:00")
+    assert reg.state(detail=True)["files"][FILE_CORPUS]["scope"] == SCOPE_DATA
+    only = DamageRegistry(path_fn=lambda: Path(os.devnull))
+    only._note_verified_damage(FILE_CORPUS, ["article_fts_data", "article_fts_idx"], path=None, at="2026-10-06T02:00:00+00:00")
+    assert only.state(detail=True)["files"][FILE_CORPUS]["scope"] == damage.SCOPE_SEARCH_INDEX, "the test cannot tell the two apart"
+
+
+def _latch_a_table_then_swap_in(files, healthy, damaged_source, monkeypatch, *, tables):
+    """A clean run (no pass owed, so no ``(pages)`` entry), then the file is replaced by one whose ``articles`` raise the generic error and
+    a table of it is latched: what a re-read of a latch finds."""
+    _run(files, healthy, monkeypatch)
+    assert verify.PAGES_ENTRY not in _by_table(damage.registry.state(detail=True)["verification"][FILE_CORPUS])
+    shutil.copy(damaged_source, healthy)
+    damage.registry._note_verified_damage(FILE_CORPUS, tables, path=healthy, at="2026-10-06T02:00:00+00:00")
+    assert damage.registry.latched(FILE_CORPUS)
+    assert damage.retry_for_collection_start("the network toggle went online") == []
+    _join_rechecks()
+
+
+def test_a_re_read_whose_table_raises_the_generic_error_asks_the_pass_and_the_pages_join_the_latch(tmp_path, healthy, unchecked, unchecked_page, files, monkeypatch):
+    """The survivor M03: the re-read asked the pass only when an earlier ``(pages)`` was owed, never for a table that raised the code."""
+    _latch_a_table_then_swap_in(files, healthy, unchecked, monkeypatch, tables=["articles"])
+    entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert _by_table(entry)[verify.PAGES_ENTRY]["pages"] == [unchecked_page], entry
+    assert damage.registry.latched(FILE_CORPUS)
+    assert damage.registry.state(detail=True)["files"][FILE_CORPUS]["check_tables"] == [verify.PAGES_ENTRY, "articles"]
+
+
+def test_a_re_read_whose_pass_could_not_be_made_still_records_that_in_the_entry(tmp_path, healthy, unchecked, files, monkeypatch):
+    """The survivor M15: an ``unchecked`` pass of a re-read was dropped, so the record said nothing of it."""
+    monkeypatch.setattr(verify, "cipher_check_present", lambda: False)
+    _latch_a_table_then_swap_in(files, healthy, unchecked, monkeypatch, tables=["articles"])
+    entry = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+    assert _by_table(entry)[verify.PAGES_ENTRY]["verdict"] == VERDICT_UNCHECKED, entry
+    assert damage.registry.latched(FILE_CORPUS), "a pass that could not be made released the latch"
+
+
+# --- a quit while the page pass runs (F2) ---------------------------------------------------------------------------
+def _blocking_pass(monkeypatch, *, entered, release, table_seen=None):
+    def slow(path, **kw):
+        if table_seen is not None:
+            table_seen.append((damage.registry.state(detail=True).get("verifying") or {}).get("table"))
+        entered.set()
+        assert release.wait(60), "the test never let the pass end"
+        return {"table": verify.PAGES_ENTRY, "verdict": VERDICT_UNCHECKED, "seconds": 0.0, "detail": ["released"]}
+
+    monkeypatch.setattr(verify, "confirm_encrypted_damage", slow)
+
+
+@pytest.mark.parametrize("list_readable", [True, False])
+def test_a_quit_during_the_pass_gives_the_attempt_back_at_the_stop_and_once(tmp_path, unchecked, files, monkeypatch, list_readable):
+    """The deep read's F2: the pass is one C call and its thread is a daemon, so nothing after the call runs at a quit; three quits in
+    the pass spent the file's three attempts, and the next start skipped the check with no finding recorded."""
+    if not list_readable:
+        monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    entered, release = threading.Event(), threading.Event()
+    seen: list = []
+    _blocking_pass(monkeypatch, entered=entered, release=release, table_seen=seen)
+    gave: list[str] = []
+    real = damage.registry.verification_file_stopped
+    monkeypatch.setattr(damage.registry, "verification_file_stopped", lambda key: (gave.append(key), real(key))[1])
+    files[FILE_CORPUS] = unchecked
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    runner = threading.Thread(target=verify.run_armed, name="the-check")
+    runner.start()
+    try:
+        assert entered.wait(60), "the pass was never reached"
+        if list_readable:
+            assert seen == [verify.PAGES_ENTRY], f"the progress line did not name the pass while it ran: {seen}"
+        before = damage.registry.state(detail=True)["verification"][FILE_CORPUS]
+        assert before["state"] == "running" and before["attempts"] == 1
+        verify.stop()  # the quit: the pass cannot end, and nothing after it will run
+        now = _record(tmp_path)["verification"][FILE_CORPUS]
+        assert now["state"] == "running" and now["attempts"] == 0, "the quit did not give the attempt back while the pass was running"
+    finally:
+        release.set()
+        runner.join(60)
+    assert not runner.is_alive()
+    assert gave == [FILE_CORPUS], f"the attempt was given back {len(gave)} times"
+    final = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert final["state"] == "running" and "verdict" not in final and final["attempts"] == 0, "the stopped pass's answer was recorded"
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_stop_after_the_pass_gives_nothing_back_twice(tmp_path, unchecked, files, monkeypatch):
+    """A stop that arrives once the pass has ended is the tables' stop, not the pass's: one give-back, not two."""
+    gave: list[str] = []
+    real = damage.registry.verification_file_stopped
+    monkeypatch.setattr(damage.registry, "verification_file_stopped", lambda key: (gave.append(key), real(key))[1])
+    real_pass = verify.confirm_encrypted_damage
+
+    def pass_then_quit(path, **kw):
+        out = real_pass(path, **kw)
+        verify._CANCEL.set()  # the quit lands right after the pass, before the run looks again
+        return out
+
+    monkeypatch.setattr(verify, "confirm_encrypted_damage", pass_then_quit)
+    _run(files, unchecked, monkeypatch)
+    assert gave == [FILE_CORPUS]
+    assert _record(tmp_path)["verification"][FILE_CORPUS]["attempts"] == 0
+
+
+def test_a_stop_while_no_pass_runs_leaves_the_pass_marker_clear():
+    verify._reset_for_tests()
+    verify.stop()
+    assert verify._PASS_FILE is None and not verify._GAVE_BACK
+    verify._reset_for_tests()

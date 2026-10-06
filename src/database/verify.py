@@ -15,8 +15,11 @@ unfinished: list the tables, smallest first when the planner's statistics say wh
 ``PRAGMA quick_check(<table>)`` on each, every one on its own read-only connection. A table is
 
 * ``damaged`` when the check reports a problem (anything but ``ok``) or raises ``SQLITE_CORRUPT``,
-* ``unchecked`` (NEVER damaged) when the file is busy or locked, a passphrase is missing or wrong, a disk
-  I/O error stopped the read, or the check was stopped. Not reading is not a verdict.
+* ``unchecked`` (NEVER damaged) when the file is busy or locked, a passphrase is missing or wrong, the driver reported a disk
+  I/O error (``SQLITE_IOERR``) that stopped the read, or the check was stopped. Not reading is not a verdict. (SQLite 3.43 and
+  later report a failed READ of a page as ``SQLITE_IOERR_CORRUPTFS``, which reaches the application as ``SQLITE_CORRUPT``: such a
+  read is filed ``damaged`` here, as SQLite itself reports it, and is listed in the open queue as a limit; only the page pass
+  below tells a read it could not make from a page that failed.)
 
 AN ENCRYPTED FILE IS ASKED A SECOND QUESTION when the first one did not answer. Measured on a 500-article store
 (367 pages of 16 KiB): of 40 single pages overwritten with random bytes, ``quick_check`` of the table filed 10 files
@@ -27,8 +30,10 @@ named the damaged page in 9 of 9 files tried, every ``unchecked`` one among them
 that code, on a file whose header is ciphertext, the file is asked once (:func:`confirm_encrypted_damage`) and the answer is
 recorded as one more entry, ``(pages)``: ``damaged`` when any page fails (the page numbers kept up to
 :data:`MAX_PAGES_LISTED`, the count always), ``ok`` when none does (the tables that did not answer STAY unchecked, so the
-file is not called clean), ``unchecked`` with the reason when the pass could not be made. Nothing else asks it: a healthy file,
-a wrong passphrase, a busy or locked file and an I/O error never reach it.
+file is not called clean), ``unchecked`` with the reason when the pass could not be made or could not read the file to the end.
+Nothing else asks it: a healthy file, a wrong passphrase and a busy or locked file never reach it (an I/O error reaches it only as
+the generic error a failing page also gives, and the pass then says what it read: a page it could not read is counted apart from a
+page that failed, and is never filed as damage).
 
 The results go into the damage record (``verification``, per file, a few hundred bytes a table), and a
 damaged table latches its file by the SAME door a corruption error does (``DamageRegistry._apply_incident``):
@@ -52,15 +57,18 @@ HMAC per page, on a read-only connection that is closed on every path, with no t
 neither sorts nor spills). MEASURED 2026-10-06 on a 234 MB store of 60,000 articles in the app's full schema at 16 KiB pages (4
 vCPU, page cache dropped before the first run): the pragma took 1.0 s on a healthy file (about 230 MB/s, 4.3 s per GB) and 1.0 s with
 356 of its 14,266 pages overwritten (all 356 named); through :func:`confirm_encrypted_damage` 1.2 to 1.3 s, the keyed open being the rest; peak resident memory 47 MB before the pass and 48 MB at its end, which is the
-process's own, so the pass holds no memory that grows with the file; nor does reading its answer: the code keeps a count and
-the :data:`MAX_PAGES_LISTED` lowest page numbers, never a row per failing page (a set of them was 65 MB at a million pages, which
-is a 16 GB file in which every page failed). The 61 per-table checks of the same file took 12.6 s (a keyed connection each, 0.17 s of key
+process's own on a healthy file. WHAT GROWS WITH THE DAMAGE, measured (a 4 GB copy, 247,877 failing pages): SQLCipher computes the
+whole check while the statement is prepared and holds one result row per failing page inside SQLite before this code reads the
+first, +25 MB resident (about 100 bytes a page; about 100 MB at a million failing pages, a 16 GB file in which every page failed;
++0 at 2,035 failing pages and +1 MB at 14,242). The code's own side is bounded: it keeps a count and the :data:`MAX_PAGES_LISTED`
+lowest page numbers, never a row per failing page (a set of them was 65 MB more at a million pages). The 61 per-table checks of the same file took 12.6 s (a keyed connection each, 0.17 s of key
 derivation apiece), so the pass adds under a tenth to a check that found a problem and runs at all only for one. The attempt budget is
 the check's own: the pass runs inside the file's entry (``running`` until it is done), so a process killed in it leaves the entry the next
 start counts as one unfinished attempt, ``MAX_VERIFY_ATTEMPTS`` of them in a row. It is NOT interruptible once begun (a single C loop answers
-no progress handler), so a stop is looked for before it starts and a pass that began is allowed to end (about a second per
-230 MB); the thread is a daemon, so a quit does not wait for it, and the app serves from the moment the boot sequence's
-thread starts: only collection waits for the check, as it already does.
+no progress handler: about a second per 230 MB, 19 s at 4 GB), so a stop is looked for before it starts. A quit does NOT let a pass that
+began end (the thread is a daemon): :func:`stop` gives the attempt back at once, the pass's answer is dropped and the next start reads
+the file again; only a kill counts. The progress line names the pass (``(pages)``) while it runs, and the app serves from the moment
+the boot sequence's thread starts: only collection waits for the check, as it already does.
 
 WHAT IT DOES NOT DO. It does not repair or salvage (E3), and it does not release a latch: a clean verdict
 says what this read found, not that an earlier error was wrong. It checks the STRUCTURE of each table and
@@ -80,13 +88,14 @@ collection. The record says which files were skipped and why. ``OO_BOOT_VERIFY=0
 from __future__ import annotations
 
 import contextlib
+import functools
 import heapq
 import logging
 import os
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +128,19 @@ _GENERIC_TEXT = "sql logic error"
 #: The answer of ``PRAGMA cipher_integrity_check`` for one failing page.
 _HMAC_ROW = re.compile(r"HMAC verification failed for page (\d+)")
 
+#: The rows of the same pragma that say the PASS could not read a page or could not run, which is not a page that failed its
+#: authentication tag: a disk error on a page ("error reading 16384 bytes from file page 40 at offset 638976", measured with a
+#: ``pread`` that returned EIO: the pass ANSWERS this as a row, it does not raise), the crypto provider failing, a build without
+#: the integrity check, and a connection with no database. Not reading is not a verdict (R100): a pass whose only rows are these
+#: is ``unchecked``, and beside a page that did fail they are counted, never dropped. Any OTHER row is still damage in its own
+#: words, because an answer this app cannot read is not a clean one.
+_COULD_NOT_READ = re.compile(
+    r"error reading \d+ bytes from file page \d+ at offset \d+"
+    r"|HMAC operation failed for page \d+"
+    r"|HMAC is not enabled, unable to integrity check"
+    r"|database file is undefined"
+)
+
 #: How many of a table's report lines, and how many characters of each, the record keeps. A check's
 #: lines name pages and index entries ("Tree 5 page 1234: ...", "row 7 missing from index ix_x"), never a
 #: value, but a table with thousands of problems is one finding, not thousands of lines.
@@ -131,6 +153,10 @@ _PROGRESS_STEPS = 100_000
 _LOCK = threading.Lock()
 _PLAN: dict[str, Any] | None = None
 _CANCEL = threading.Event()
+#: The file whose page pass is in flight (it cannot be interrupted: see :func:`stop`), and the files whose attempt a stop has already
+#: given back in this run, so that the stop and the run's own end never give it back twice. Both under ``_LOCK``.
+_PASS_FILE: str | None = None
+_GAVE_BACK: set[str] = set()
 #: Whether the thread that runs the armed check has been started (see :func:`hand_over`).
 _HANDED_OVER = False
 
@@ -372,9 +398,11 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
     """The ``(pages)`` entry of an encrypted file: ``PRAGMA cipher_integrity_check``, once, on a read-only connection that is
     closed on every path. Never raises. ``damaged`` when any page fails its authentication tag (``pages`` the first
     :data:`MAX_PAGES_LISTED` numbers, ``pages_total`` ALL of them), ``ok`` when none does, ``unchecked`` with the reason when the
-    pass could not be made: a stop was asked for before it began, this build has no such pragma, or the driver raised. A pass
-    that did not finish never reads as clean: the pragma answers all of its rows or raises, and a raise is ``unchecked``.
-    PAGE_PASS_MEASUREMENT is in the module docstring."""
+    pass could not be made: a stop was asked for before it began, this build has no such pragma, or the driver raised (the
+    exception's class decides, as for a table), or the rows it answered say it could not READ (``_COULD_NOT_READ``: a disk error
+    on a page is answered as a row, measured, never raised; ``pages_unread`` counts them, and beside a failing page they are kept
+    in the detail and the count, not dropped). A pass that did not finish never reads as clean. The measurements are in the module
+    docstring."""
     t0 = time.monotonic()
 
     def entry(verdict: str, detail: list[str], **more: Any) -> dict[str, Any]:
@@ -398,7 +426,10 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
         con = (opener or _open)(path)
         failing = 0  # one row per failing page; the numbers kept are the lowest MAX_PAGES_LISTED (a max-heap, negated)
         lowest: list[int] = []
-        other: list[str] = []
+        other: list[str] = []  # rows this app does not know: damage in their own words
+        strange = 0
+        unread: list[str] = []  # rows that say the pass could not read or run (``_COULD_NOT_READ``)
+        unreadable = 0
         answered = False
         for row in con.execute("PRAGMA cipher_integrity_check"):
             answered = True
@@ -410,8 +441,14 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
                     heapq.heappush(lowest, -number)
                 elif number < -lowest[0]:
                     heapq.heapreplace(lowest, -number)
-            elif len(other) < DETAIL_LINES:
-                other.append(line.replace("\n", " "))
+            elif _COULD_NOT_READ.search(line) is not None:
+                unreadable += 1
+                if len(unread) < DETAIL_LINES:
+                    unread.append(line.replace("\n", " "))
+            else:
+                strange += 1
+                if len(other) < DETAIL_LINES:
+                    other.append(line.replace("\n", " "))
     except Exception as exc:  # noqa: BLE001 - the verdict IS the exception's class
         verdict, reason = classify_error(exc)
         return entry(verdict, [reason])
@@ -421,16 +458,34 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
                 con.close()
     if not answered:
         return entry(VERDICT_OK, ["no page of the file failed its authentication check"])
+    unread_line = (
+        f"{unreadable} page(s) could not be read by the page check and are not counted above: {unread[0]}" if unreadable else None
+    )
+    if not failing and not strange:
+        # Every row was a "could not read" one (the pass answered at least one row): it did not get to the end of the file, which is no
+        # verdict on the file (R100). The record keeps the first lines and the count; the table that sent it here stays unchecked, so
+        # the file is not called clean either.
+        return entry(
+            VERDICT_UNCHECKED,
+            [f"the page check could not read {unreadable} page(s) and so did not check the file to the end", *unread[: DETAIL_LINES - 1]],
+            pages_unread=unreadable,
+        )
     if not failing:
         # An answer this app does not know how to read is not a clean one (the check's own rule: anything but its clean answer).
-        return entry(VERDICT_DAMAGED, other, pages=[], pages_total=0)
+        lines = [*other, *([unread_line] if unread_line else [])]
+        return entry(VERDICT_DAMAGED, lines[:DETAIL_LINES], pages=[], pages_total=0, **({"pages_unread": unreadable} if unreadable else {}))
     pages = sorted(-n for n in lowest)
     shown = ", ".join(str(n) for n in pages[:8]) + (" and more" if failing > 8 else "")
+    lines = [f"{failing} page(s) failed their authentication check (HMAC verification): {shown}"]
+    if unread_line:
+        lines.append(unread_line)
+    lines.extend(other)
     return entry(
         VERDICT_DAMAGED,
-        [f"{failing} page(s) failed their authentication check (HMAC verification): {shown}"],
+        lines[:DETAIL_LINES],
         pages=pages,
         pages_total=failing,
+        **({"pages_unread": unreadable} if unreadable else {}),
     )
 
 
@@ -441,8 +496,10 @@ def page_check(
     earlier: list[str] | tuple[str, ...] = (),
     opener: Opener | None = None,
     cancel: threading.Event | None = None,
+    before: Callable[[], None] | None = None,
 ) -> dict[str, Any] | None:
-    """The ``(pages)`` entry a check owes, or ``None`` when it owes none. Owed when a table (or the list of tables) of an
+    """The ``(pages)`` entry a check owes, or ``None`` when it owes none. ``before`` is called once, just before the pass begins (the
+    progress line names the pass while it runs, which can be a long time on a big file). Owed when a table (or the list of tables) of an
     ENCRYPTED file answered ``unchecked`` with the generic error (``sqlite_code``), or when an earlier check reported
     ``(pages)`` and this read has to answer for it. A file whose header is plaintext has no authentication tags: an earlier
     ``(pages)`` finding is about a file that no longer is, and reads ``ok``; a file that cannot be examined reads ``unchecked``."""
@@ -454,6 +511,8 @@ def page_check(
 
     encrypted = is_encrypted_file(path)
     if encrypted is True:
+        if before is not None:
+            before()
         return confirm_encrypted_damage(path, opener=opener, cancel=cancel)
     if not again:
         return None  # a plaintext file never reaches the pass by the generic error: that error is about something else
@@ -681,8 +740,40 @@ def disarm() -> None:
 
 def stop() -> None:
     """Stop the running check (the app is shutting down): the table in hand ends at the next look of the progress
-    handler, no further table is started, and the file's entry stays ``running`` so the next start reads it again."""
+    handler, no further table is started, and the file's entry stays ``running`` so the next start reads it again.
+
+    A page pass in flight is ONE call into the C library that no progress handler reaches, and the thread that waits in it is a
+    daemon, so a quit does not wait for it to end: the attempt the pass cost is given back HERE, at the stop, because nothing after
+    the call would ever run (three quits that landed in the pass would otherwise spend the file's three attempts and skip the check
+    until the next unexpected stop, with no finding recorded). A kill, which cannot say anything, still counts as the one unfinished
+    attempt it is."""
     _CANCEL.set()
+    with _LOCK:
+        key = _PASS_FILE
+    if key is not None:
+        _give_back_attempt(key)
+
+
+def _give_back_attempt(key: str) -> None:
+    """The stop of the check of ``key`` hands its attempt back, once per run (``verification_file_stopped``). Never raises."""
+    with _LOCK:
+        if key in _GAVE_BACK:
+            return
+        _GAVE_BACK.add(key)
+    damage.registry.verification_file_stopped(key)
+
+
+@contextlib.contextmanager
+def _pass_in_flight(key: str) -> Iterator[None]:
+    """Names the file whose page pass is running, so that :func:`stop` can give its attempt back while the pass cannot end."""
+    global _PASS_FILE
+    with _LOCK:
+        _PASS_FILE = key
+    try:
+        yield
+    finally:
+        with _LOCK:
+            _PASS_FILE = None
 
 
 def run_armed(*, opener: Opener | None = None) -> bool:
@@ -709,6 +800,8 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
     reg = damage.registry
     inspected = [(key, path, attempts, inspect_file(path, opener=opener)) for key, path, attempts in plan["files"]]
     reg.verification_begin(sum(len(i.get("names", ())) for _k, _p, _a, i in inspected))
+    with _LOCK:
+        _GAVE_BACK.clear()
     done = 0
     for key, path, attempts, info in inspected:
         if _CANCEL.is_set():
@@ -725,13 +818,23 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                 if verdict == VERDICT_DAMAGED
                 else []
             )
-            pages = (
-                None
-                if _CANCEL.is_set()
-                else page_check(
-                    path, [{"verdict": verdict, "sqlite_code": info.get("sqlite_code")}], earlier=earlier, opener=opener, cancel=_CANCEL
-                )
-            )
+            pages = None
+            if not _CANCEL.is_set():
+                with _pass_in_flight(key):
+                    pages = page_check(
+                        path,
+                        [{"verdict": verdict, "sqlite_code": info.get("sqlite_code")}],
+                        earlier=earlier,
+                        opener=opener,
+                        cancel=_CANCEL,
+                        before=functools.partial(reg.verification_progress, key, PAGES_ENTRY, done),
+                    )
+            if _CANCEL.is_set():
+                # Stopped in or before the pass: what it answered is not a verdict on the file (the same rule as the tables'), and the
+                # entry stays ``running`` with its attempt given back.
+                _LOG.info("database check: stopped before the %s file was finished", key)
+                _give_back_attempt(key)
+                return
             if pages is not None and pages["verdict"] == VERDICT_DAMAGED:
                 if verdict != VERDICT_DAMAGED:
                     # The list could not be read AND pages fail their authentication: damage, and "(schema)" in the record
@@ -768,15 +871,22 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
             reg.verification_progress(key, name, done)
             tables.append(check_table(path, name, opener=opener, cancel=_CANCEL))
         if not _CANCEL.is_set():
-            pages = page_check(path, tables, earlier=earlier, opener=opener, cancel=_CANCEL)
+            with _pass_in_flight(key):
+                pages = page_check(
+                    path,
+                    tables,
+                    earlier=earlier,
+                    opener=opener,
+                    cancel=_CANCEL,
+                    before=functools.partial(reg.verification_progress, key, PAGES_ENTRY, done),
+                )
             if pages is not None:
-                reg.verification_progress(key, PAGES_ENTRY, done)
                 tables.append(pages)
         if _CANCEL.is_set():
             # Stopped (the app is shutting down): what was read is not a verdict on the file, and the record keeps
-            # ``state: running`` so the next start reads it again (the attempt count bounds that).
+            # ``state: running`` so the next start reads it again (the attempt is given back: a quit is not a failure of the check).
             _LOG.info("database check: stopped before the %s file was finished", key)
-            reg.verification_file_stopped(key)
+            _give_back_attempt(key)
             return
         result = {
             "verdict": file_verdict(tables),
@@ -915,9 +1025,11 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
 
 
 def _reset_for_tests() -> None:
-    global _PLAN, _HANDED_OVER, _CHECK_PRESENT
+    global _PLAN, _HANDED_OVER, _CHECK_PRESENT, _PASS_FILE
     _CHECK_PRESENT = None
     with _LOCK:
         _PLAN = None
         _HANDED_OVER = False
+        _PASS_FILE = None
+        _GAVE_BACK.clear()
     _CANCEL.clear()
