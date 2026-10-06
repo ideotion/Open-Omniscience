@@ -114,6 +114,8 @@ def retry_after_of(exc: BaseException) -> int | None:
     # ``isdigit`` alone accepts superscripts and other Unicode digits that ``int`` rejects.
     if not (text.isascii() and text.isdigit()):
         return None
+    if len(text) > 18:  # far past the cap (and past Python's integer-from-string limit): not usable
+        return None
     try:
         return min(int(text), RETRY_AFTER_MAX_S)
     except ValueError:  # more digits than Python's integer-from-string limit: not a usable figure
@@ -337,7 +339,12 @@ def snapshot(lane: Any, *, days: int = RETENTION_DAYS) -> dict:
         "as events happened and flushed once per drain tick; walk rows carry requests, answer "
         "milliseconds, bytes, pages, the longest Retry-After and the latest detail (the bookmark, "
         "or a refusal's exception type and HTTP status); tick rows say where each tick's seconds "
-        "went; stream rows are per-tick differences of the stream's own counters."
+        "went; stream rows are per-tick differences of the stream's own counters; drain_stage rows "
+        "are WALL time per stage (feeds-wall includes its HTTP waits, so it is an upper bound on how "
+        "long the corpus was occupied, not that figure); drain_gate rows are what the drain thread "
+        "itself held of the corpus's single writer, per the gate's own accounting of that thread: "
+        "for kind held the figure is sum_ms and n counts drains, for longest it is max_ms (its "
+        "sum_ms is a sum of maxima and means nothing), and for grants it is n."
     )
     caveat = (
         f"Rows older than {RETENTION_DAYS} days are pruned. An hour with a restart in it holds the "

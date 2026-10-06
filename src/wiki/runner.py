@@ -566,7 +566,12 @@ class WikiLaneRunner:
             "p50_s": None if p50 is None else round(p50 / 1000, 2),
             "p95_s": None if p95 is None else round(p95 / 1000, 2),
             "max_s": None if not data else round(max(data) / 1000, 2),
-            "window": f"the last {DRAIN_RING} drains this process ran",
+            "window": f"the last {DRAIN_RING} drains this process ran, failed ones included",
+            "stage_totals_note": (
+                "wall time summed over every drain this process ran: hot-sets, and feeds-wall (the "
+                "feeds stage including its HTTP waits, an upper bound on how long the corpus was "
+                "occupied; the hold itself is write_gate)"
+            ),
             "stage_totals_s": {k: round(v / 1000, 1) for k, v in sorted(self._stage_totals_ms.items())},
             "write_gate": self._gate_block(),
         }
@@ -724,7 +729,7 @@ class WikiLaneRunner:
         hot_ms = 0
         ok = False
         self.drain_stage, self.drain_feed = "hot-sets", None
-        gate_name = self._watch_gate()
+        gate_ident = self._watch_gate()
         try:
             budget = self._budget()
             hot = self._hot_sets()
@@ -762,33 +767,33 @@ class WikiLaneRunner:
                 hot_ms = total_ms
             self._note_drain(
                 ok, total_ms, hot_ms, report if ok else None,
-                gate=self._take_gate(gate_name), died_in_hot_sets=died_in_hot_sets,
+                gate=self._take_gate(gate_ident), died_in_hot_sets=died_in_hot_sets,
             )
         self._last_drain_ended = self._monotonic()
         self.last_drain = report.as_dict()
         self.drains += 1
         return report
 
-    def _watch_gate(self) -> str | None:
+    def _watch_gate(self) -> int | None:
         """Ask the corpus write gate to keep this thread's holds for the drain about to run."""
         try:
             from src.database.writer import watch_holder
 
-            name = threading.current_thread().name
-            watch_holder(name)
-            return name
+            ident = threading.get_ident()
+            watch_holder(ident)
+            return ident
         except Exception:  # noqa: BLE001 - the record is not the work
             _LOG.debug("could not watch the write gate", exc_info=True)
             return None
 
-    def _take_gate(self, name: str | None) -> dict | None:
+    def _take_gate(self, ident: int | None) -> dict | None:
         """What this thread held of the write gate during the drain that just ended, or ``None``."""
-        if name is None:
+        if ident is None:
             return None
         try:
             from src.database.writer import take_watched_holder
 
-            return take_watched_holder(name)
+            return take_watched_holder(ident)
         except Exception:  # noqa: BLE001 - the record is not the work
             _LOG.debug("could not read the write gate's per-thread figures", exc_info=True)
             return None

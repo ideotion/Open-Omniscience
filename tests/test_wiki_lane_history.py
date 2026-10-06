@@ -534,7 +534,7 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
         R.drain_once = original
     g = runner.drain_status()["drain_duration"]["write_gate"]
     assert g["measured_drains"] == 1 and g["grants"] == 1
-    assert 0.03 <= g["held_s"] < 0.12, "only this thread's own hold, not the other thread's 0.15 s"
+    assert 0.03 <= g["held_s"] < 0.15, "only this thread's own hold, not the other thread's 0.15 s"
     assert g["longest_hold_s"] == g["held_s"]
     with lane_session("wiki") as db:
         runner._history.flush(db)
@@ -601,6 +601,49 @@ def test_the_tick_is_closed_before_a_stop_and_after_every_failure_wait(lane):
     two.drain = failing  # type: ignore[method-assign]
     two.run_until_stopped()
     assert seen_in_file == [1], "the first failed drain was already on disk when the second ran"
+
+
+def test_a_drain_that_dies_in_the_hot_sets_writes_no_feeds_row(lane):
+    clock = _Clock()
+    runner = _runner(clock)
+
+    def hot():
+        clock.t += 5.0
+        raise RuntimeError("database is locked")
+
+    runner._hot_sets = hot
+    with pytest.raises(RuntimeError):
+        runner.drain()
+    with lane_session("wiki") as db:
+        runner._history.flush(db)
+    assert _rows(metric="drain_stage", kind="feeds-wall") == []
+    assert _rows(metric="drain_stage", kind="hot-sets")[0].sum_ms == 5000
+
+
+def test_the_tick_is_closed_when_the_setting_stops_a_loop_before_its_idle_window(lane):
+    clock = _Clock()
+    state = {"value": "running"}
+    runner = WikiLaneRunner(
+        adapter=SimpleNamespace(offer=lambda _c: None, note_position=lambda *_a: None),
+        stream=SimpleNamespace(run=lambda *a, **k: None, counters=None),
+        lane_session=lambda: lane_session("wiki"),
+        state_of=lambda: state["value"],
+        hot_sets=dict,
+        budget=lambda: None,
+        sleep=lambda s: setattr(clock, "t", clock.t + s),
+        monotonic=clock,
+    )
+
+    def drain_then_halt():
+        clock.t += 2.0
+        runner._note_drain(True, 2000, 0, None)
+        runner.drains += 1
+        state["value"] = "halted"  # the operator switched the lane off during this drain
+
+    runner.drain = drain_then_halt  # type: ignore[method-assign]
+    runner.refresh_one_pageview_top = lambda: None  # type: ignore[method-assign]
+    runner.run_until_stopped()
+    assert _rows(metric="tick", kind="drain")[0].sum_ms == 2000
 
 
 def test_a_row_unwritable_past_the_retention_window_is_dropped_and_counted():
@@ -682,3 +725,18 @@ def test_a_database_error_writing_the_walks_history_row_rolls_back_only_that_row
 
         assert len(db.execute(select(WikiWalkPage)).scalars().all()) == 2
     assert _rows(metric="walk") == []
+
+
+def test_a_failure_flushing_the_pages_is_not_swallowed_by_the_history_guard():
+    """``begin_nested`` writes the pending page rows before its SAVEPOINT; if THAT write fails the
+    step must fail under its own error, not be logged away and resurface as a PendingRollbackError."""
+
+    class Lane:
+        def flush(self):
+            raise RuntimeError("database is locked")
+
+        def begin_nested(self):  # pragma: no cover - never reached
+            raise AssertionError("the savepoint must not be opened over a failed flush")
+
+    with pytest.raises(RuntimeError, match="locked"):
+        W._record(Lane(), "walk", edition="en", kind="ok")

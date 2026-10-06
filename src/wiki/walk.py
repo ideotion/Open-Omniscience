@@ -68,6 +68,11 @@ def _record(lane: Any, metric: str, **fields: Any) -> None:
     """``history.record`` inside its own SAVEPOINT and guarded: the history is a record of the walk,
     so a failure writing it must not roll back the page rows, the cursor or the sample the walk is
     committing beside it."""
+    # The page, cursor and sample rows are pending in this session, and ``begin_nested`` writes
+    # them before it emits the SAVEPOINT: flush FIRST, outside the guard, so a failure of THEIR
+    # write propagates under its own name instead of being swallowed here and resurfacing as a
+    # PendingRollbackError at the commit.
+    lane.flush()
     try:
         with lane.begin_nested():
             history.record(lane, metric, **fields)
