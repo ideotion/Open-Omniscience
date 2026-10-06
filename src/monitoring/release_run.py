@@ -824,7 +824,9 @@ def _pause_collection() -> dict[str, Any]:
     try:
         from src.wiki.service import lane_service_status, stop_wiki_lane
 
-        out["wiki_lane_was_streaming"] = bool((lane_service_status() or {}).get("streaming"))
+        lane = lane_service_status() or {}
+        # A live drain loop revives a dead stream, so it counts as the lane running too.
+        out["wiki_lane_was_streaming"] = bool(lane.get("streaming") or lane.get("draining"))
         if out["wiki_lane_was_streaming"]:
             stop_wiki_lane(timeout=30.0)
     except Exception as exc:  # noqa: BLE001
