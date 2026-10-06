@@ -557,8 +557,10 @@ def test_two_overlapping_attempts_run_one_after_the_other(held_key, monkeypatch)
     """The second attempt (a reload and a second click, a second tab) used to race the first: it
     replaced the first's recovery notice, read the log the first was still recovering and then
     recorded a rate several times too fast. It now waits its turn, and finds the app already open:
-    it does not verify a passphrase that is proven, dispose the live engine, mark the app
-    unqueryable again or start a second start-up upkeep (the PR 1306 check, S2)."""
+    it does not run an unlock again (no recovery notice, no engine disposal, the app is not marked
+    unqueryable again and no second start-up upkeep starts: the PR 1306 check, S2). The key it
+    brings is the held one, and the file is still asked, with one plain read connection and no notice
+    (the check of the findings fix: an open app does not prove the key in memory opened the file)."""
     import threading
     import time
 
@@ -603,29 +605,97 @@ def test_two_overlapping_attempts_run_one_after_the_other(held_key, monkeypatch)
     t1.join(60)
     t2.join(60)
     assert not t1.is_alive() and not t2.is_alive()
-    # ONE verify and ONE finish: the second attempt found the app open and had nothing to prove
-    assert [e[:2] for e in events] == [("connect", 1), ("finish", "present")], events
+    # ONE unlock (a verify under its recovery notice, and a finish): the second attempt found the app open and
+    # only READ the file with the held key, under no notice
+    assert [e[:2] for e in events] == [("connect", 1), ("finish", "present"), ("connect", 2)], events
+    assert events[0][2] is True and events[2][2] is False, "the second read ran an unlock's recovery notice"
     assert answers == [{"unlocked": True, "state": "unlocked-encrypted"}] * 2, answers
 
 
-def test_an_attempt_on_an_app_that_is_already_open_touches_nothing(held_key, monkeypatch):
+def test_an_attempt_on_an_app_that_is_already_open_only_asks_the_file_read_only(held_key, monkeypatch):
     """Not only a queued attempt: a request that arrives after the unlock finished (a stale tab, a
-    double click that lands late) is answered from the state, not run again."""
+    double click that lands late) is not run again. The held key it brings is asked of the FILE (one
+    READ-ONLY connection, closed plainly) and nothing else happens: no checkpoint, no finish, no key swap."""
     from src.api import unlock as unlock_mod
     from src.api.unlock import PassphraseBody, unlock
     from src.database import connect as connect_mod
 
     calls: list = []
-    connect_mod.set_passphrase(_KEY)  # an open app holds the key that opened it
+
+    class _Conn:
+        def close(self):
+            calls.append("close")
+
+    def read(*a, **k):
+        calls.append(("connect", k.get("key"), k.get("read_only")))
+        return _Conn()
+
+    connect_mod.set_passphrase(_KEY)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
-    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(connect_mod, "connect", read)
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: calls.append("checkpoint"))
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
-    assert calls == [], calls
+    assert calls == [("connect", _KEY, True), "close"], calls
+    assert connect_mod.get_passphrase() == _KEY
+
+
+def test_the_held_key_is_asked_of_the_real_file_too(crashed_store, held_key, finish_calls, monkeypatch):
+    """The check of the findings fix, on a REAL encrypted store (the stubs above pin the wiring only): an app
+    that reads as open holds a key that may never have opened the file (a mis-set ``OO_DB_PASSPHRASE``), and
+    the same key typed into the unlock page was answered 200 without a read. Now the file is asked: the wrong
+    held key typed again is refused, the right one answers, and neither runs a finish or replaces the key."""
+    pytest.importorskip("sqlcipher3")
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    wrong = "a wrong key from the environment"
+    held_key.set_passphrase(wrong)
+    with pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase=wrong))
+    assert err.value.status_code == 403
+    assert held_key.get_passphrase() == wrong and finish_calls == []
+    # and the right one, typed next, repairs the held key and runs the finish once (the repair path, real file)
+    assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
+    assert held_key.get_passphrase() == _KEY and len(finish_calls) == 1
+    # the right key held and typed again: the file answers, and nothing runs again
+    assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
+    assert held_key.get_passphrase() == _KEY and len(finish_calls) == 1
+
+
+def _log_and_file(db: Path) -> tuple[bytes, bytes]:
+    return db.read_bytes(), Path(str(db) + "-wal").read_bytes()
+
+
+def test_asking_the_file_about_the_held_key_leaves_the_leftover_log_in_place(crashed_store, held_key, monkeypatch):
+    """The check of the check (coordinator, #1325): with no pool open the question's connection is the LAST one on the
+    file, and the last connection to close checkpoints a leftover log into the file and deletes it, with a wrong key
+    as with the right one (``PRAGMA query_only`` does not stop that). The log a crash left is for whoever reads it
+    next, so the question is asked read-only: right key, wrong key, and the log and the file are the same bytes."""
+    pytest.importorskip("sqlcipher3")
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    db, wal = crashed_store
+    before = _log_and_file(db)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    held_key.set_passphrase("a wrong key from the environment")
+    with pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase="a wrong key from the environment"))
+    assert err.value.status_code == 403
+    assert wal.exists() and _log_and_file(db) == before, "a refused question consumed the leftover log"
+    held_key.set_passphrase(_KEY)
+    assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
+    assert wal.exists() and _log_and_file(db) == before, "an answered question consumed the leftover log"
 
 
 def test_a_wrong_passphrase_on_an_open_app_is_refused_not_told_it_worked(held_key, monkeypatch):
-    """The short-circuit answers from the state, so it must still check WHICH key: a second tab that types a
+    """The state alone does not answer, so which key it is must still be checked: a second tab that types a
     misremembered passphrase after the first tab unlocked used to get 200 (THE passphrase has no recovery, so
     'that one was right' is the one false answer that costs something later). A key that is not the held one is
     checked against the file, which refuses a wrong one (403) and starts no work."""
