@@ -13693,3 +13693,10 @@ index, anything else, or both together, as data, through the SAME `_apply_incide
 unexpected stop. So arming records every planned file as `owed` (a boot that stays locked records it too, `owe_at_locked_boot`, because it cannot arm: the key is not there), the next start
 reads an `owed` entry as an unfinished check, and `owed` is NOT an attempt: only a check that begins counts toward the cap, so a machine closed from the lock screen many times is not a machine
 whose check keeps dying (a test closes it five times and the check is still there with no attempt used).
+(9) **A DAMAGED VERDICT MUST SURVIVE A RESTART**: the latch lives in memory and the ledger reads the next start as a clean end, so without a record the finding is forgotten and collection writes on into a file
+the check read as damaged (the deep read of E2 reproduced it). The record already holds `state: done, verdict: damaged`; `plan_boot` reads that from an earlier process as a reason to read the file again
+(`damage-found-before`), at every start, until it reads clean or the file is replaced (`verification_forget`, called by the restore swap beside the latch release, so a verdict about the file that was live is
+not read as one about the new file). **What this does NOT do, and is the open decision of E3 and question 27**: the operator's start of collection (`retry_for_collection_start`, the airplane toggle going
+online included) still releases a latch the check set, as it releases one a corruption error set; for an error "the first failed read puts it back" is the safety, and a latch the check found has no failed read to
+put it back. The sentences shown say "Starting collection again tries once more", which a hold-until-repaired would make false for these latches (five strings x12). Two exits are open: a re-check at the start
+(the check IS the retry), or the latch held until a repair or replacement.

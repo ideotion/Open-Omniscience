@@ -1008,6 +1008,53 @@ def test_a_new_arming_starts_not_handed_over(tmp_path, files, healthy, monkeypat
     assert not damage.registry.verifying(), "an arming nobody took was left holding collection"
 
 
+def test_a_damaged_verdict_survives_a_restart_and_is_read_again_until_the_file_reads_clean(tmp_path, files, damaged, monkeypatch):
+    """The latch lives in memory and the ledger reads the next start as clean: without the record the finding would
+    be forgotten and collection would write on into a file the check had found damaged."""
+    path, _bad = damaged
+    files[FILE_CORPUS] = path
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True and verify.run_armed() is True
+    assert damage.registry.latched(FILE_CORPUS)
+
+    for _ in range(2):  # restart after restart, each one read as a clean end: the file is read again and latches again
+        _new_process(tmp_path, monkeypatch)
+        monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+        assert verify.arm_at_boot() is True, "the damaged verdict was forgotten at the restart"
+        assert verify._PLAN["trigger"] == verify.TRIGGER_DAMAGE_FOUND
+        assert verify.run_armed() is True
+        assert damage.registry.latched(FILE_CORPUS), "a file the check read as damaged again was not latched"
+
+    healthy_again = tmp_path / "healthy-again.db"  # the file is repaired or replaced
+    _build_store(healthy_again)
+    files[FILE_CORPUS] = healthy_again
+    _new_process(tmp_path, monkeypatch)
+    assert verify.arm_at_boot() is True and verify.run_armed() is True
+    assert not damage.registry.latched(FILE_CORPUS)
+    assert damage.registry.state(detail=True)["verification"][FILE_CORPUS]["verdict"] == VERDICT_OK
+    _new_process(tmp_path, monkeypatch)
+    assert verify.arm_at_boot() is False, "a file that reads clean is not read again at every start"
+
+
+def test_a_replaced_file_forgets_the_verdict_about_the_old_one(tmp_path, files, damaged, monkeypatch):
+    path, _bad = damaged
+    files[FILE_CORPUS] = path
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    verify.arm_at_boot()
+    verify.run_armed()
+    damage.registry.verification_forget(FILE_CORPUS)
+    assert FILE_CORPUS not in _record(tmp_path)["verification"]
+    _new_process(tmp_path, monkeypatch)
+    monkeypatch.setattr(damage, "_previous_end", lambda: CLEAN)
+    assert verify.arm_at_boot() is False
+
+
+def test_the_restore_swap_forgets_the_verdict_beside_releasing_the_latch():
+    src = (ROOT / "src" / "backup" / "merge.py").read_text(encoding="utf-8")
+    release = src.index('damage.registry.retry(reason="the corpus file was replaced"')
+    assert "damage.registry.verification_forget(damage.FILE_CORPUS)" in src[release : release + 400]
+
+
 def test_a_second_arming_changes_nothing(files, healthy, monkeypatch):
     _arm(files, healthy, monkeypatch)
     plan = verify._PLAN

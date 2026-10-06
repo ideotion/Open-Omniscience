@@ -68,6 +68,7 @@ _LOG = logging.getLogger(__name__)
 
 TRIGGER_UNCLEAN_END = "unclean-end"
 TRIGGER_UNFINISHED = "unfinished-check"
+TRIGGER_DAMAGE_FOUND = "damage-found-before"
 
 #: How many of a table's report lines, and how many characters of each, the record keeps. A check's
 #: lines name pages and index entries ("Tree 5 page 1234: ...", "row 7 missing from index ix_x"), never a
@@ -275,7 +276,9 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     """What the start-up check will do, or ``None`` when it has nothing to do.
 
     A file is checked when the previous session ended unclean (``previous_end["clean"] is False``: an UNKNOWN
-    end, ``None``, is not a reason) or an earlier process left a check of that file unfinished. A file that
+    end, ``None``, is not a reason), an earlier process left a check of that file unfinished, or an earlier
+    process's check found it DAMAGED (the latch lives in memory and the ledger reads a clean end, so without this a
+    restart would forget the finding; the file is read again at every start until it reads clean or is replaced). A file that
     does not exist is not checked (and never created: ``connect`` would create it). A file whose check has
     been left unfinished ``MAX_VERIFY_ATTEMPTS`` starts in a row is SKIPPED, and said."""
     if not switch_on():
@@ -284,6 +287,7 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     unclean = prev is not None and prev.get("clean") is False
     files: list[tuple[str, Path, int]] = []
     skipped: list[dict[str, Any]] = []
+    any_unfinished = False
     for key in damage.PAUSED_FILES:
         path = _path_of(key)
         try:
@@ -297,16 +301,24 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         # "running": a check began and the process ended before it finished. "owed": a check was due and the process
         # ended before it began (a boot that stayed locked, or a quit between arming and the first table).
         unfinished = last is not None and last.get("state") in ("running", "owed")
-        if not (unclean or unfinished):
+        damaged_before = last is not None and last.get("state") == "done" and last.get("verdict") == VERDICT_DAMAGED
+        if not (unclean or unfinished or damaged_before):
             continue
         attempts = int(last.get("attempts") or 0) if (last is not None and unfinished) else 0
         if attempts >= damage.MAX_VERIFY_ATTEMPTS:
             skipped.append({"file": key, "path": path, "attempts": attempts})
             continue
         files.append((key, path, attempts))
+        any_unfinished = any_unfinished or unfinished
     if not files and not skipped:
         return None
-    return {"trigger": TRIGGER_UNCLEAN_END if unclean else TRIGGER_UNFINISHED, "files": files, "skipped": skipped}
+    if unclean:
+        trigger = TRIGGER_UNCLEAN_END
+    elif any_unfinished:
+        trigger = TRIGGER_UNFINISHED
+    else:
+        trigger = TRIGGER_DAMAGE_FOUND
+    return {"trigger": trigger, "files": files, "skipped": skipped}
 
 
 def _owe(plan: dict[str, Any]) -> None:

@@ -16368,3 +16368,9 @@ maintainer as a card.
   the upkeep's end), so the boot's own statistics write reaches a file the check has not yet read; collection and the other lanes wait for the check, this
   write does not. It is a few small pages, the least of the writes the app makes, and holding it until the check ends would leave a large store
   without planner statistics for the length of the check; if a ruling wants it held, it becomes a step of the sequence after "verify-database".
+  (j) NOT DONE, A DECISION FOR E3 AND QUESTION 27 (the deep read's S1): a latch the check set is released, like any latch, by the operator's start of collection
+  (`retry_for_collection_start`, the airplane toggle going online included), and a latch the check found has no failed read to put it back, so collection can write on into a
+  file the check read as damaged, until the next start reads it again (a damaged verdict now survives a restart and is read at every start until the file reads clean or is
+  replaced). Two exits: (1) the start re-checks the file (collection waits with the progress line; clean releases it, damage keeps it), which keeps the sentence "Starting
+  collection again tries once more" true; (2) a check-found latch is held until a repair or a replacement, which makes that sentence false for it (the four damage notes and the
+  override refusal need their own wording, five strings x12) and leaves no exit before E3. Recommended: (1), decided with E3, because the repair's swap is the exit that matters.

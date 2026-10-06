@@ -854,6 +854,19 @@ class DamageRegistry:
             }
         self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
 
+    def verification_forget(self, file_key: str) -> None:
+        """Drop what was recorded about the check of ``file_key``: the file was REPLACED (a restore), so an earlier
+        verdict is about a file that no longer is, and must not make the next start read the new one for it. Never
+        raises."""
+        try:
+            self._ensure_loaded()
+            with self._lock:
+                gone = self._verification.pop(file_key, None)
+            if gone is not None:
+                self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+        except Exception:  # noqa: BLE001
+            _LOG.debug("database damage: could not forget a check's record", exc_info=True)
+
     def verification_file_skipped(self, file_key: str, *, path: Path | None, attempts: int, reason: str) -> None:
         """Say that the check of ``file_key`` was NOT run (an earlier check was left unfinished on every one of
         the last ``MAX_VERIFY_ATTEMPTS`` starts): the next unexpected stop starts the count again."""
