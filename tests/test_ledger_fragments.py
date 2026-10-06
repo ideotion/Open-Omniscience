@@ -32,10 +32,11 @@ def tree(tmp_path, monkeypatch):
     led = tmp_path / "docs" / "ledger"
     led.mkdir(parents=True)
     (tmp_path / "tests").mkdir()
-    (led / "LESSONS.md").write_text("# Lessons\n\n## 2026-01-01 — OLD ONE\nbody one\n\n## 2026-01-02 — OLD TWO\nbody two\n", encoding="utf-8")
-    (led / "SHIPPED_LOG.md").write_text("# Log\n\n## 2026-01-01 — first (PR #1)\nentry\n", encoding="utf-8")
+    # bytes, never write_text: Windows text mode would turn every \n into \r\n and the LF-only checks would fail
+    (led / "LESSONS.md").write_bytes("# Lessons\n\n## 2026-01-01 — OLD ONE\nbody one\n\n## 2026-01-02 — OLD TWO\nbody two\n".encode())
+    (led / "SHIPPED_LOG.md").write_bytes("# Log\n\n## 2026-01-01 — first (PR #1)\nentry\n".encode())
     inv = tmp_path / "tests" / "test_repo_invariants.py"
-    inv.write_text("_LESSONS_LINE_CEILING = 7\n", encoding="utf-8")
+    inv.write_bytes(b"_LESSONS_LINE_CEILING = 7\n")
     for mod, names in ((ledger_fold, {"LESSONS": "LESSONS.md", "SHIPPED_LOG": "SHIPPED_LOG.md"}),):
         for attr, f in names.items():
             monkeypatch.setattr(mod, attr, led / f)
@@ -54,8 +55,8 @@ def _write(path: Path, text: str) -> Path:
 
 
 def test_the_real_fragments_are_well_formed_and_within_the_size_cap():
-    """With the protocol-text test below, one of two that read the live tree: a malformed or oversize
-    fragment fails on its own PR."""
+    """One of the tests that read the live tree (this, the protocol-text pins, the ceiling-line match and the
+    command run): a malformed or oversize fragment fails on its own PR."""
     assert ledger_fold.problems() == []
 
 
@@ -99,10 +100,17 @@ def test_the_new_command_writes_a_fragment_the_checker_accepts_and_never_overwri
     capsys.readouterr()
 
 
+def _symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):  # Windows without the privilege
+        pytest.skip("this platform cannot create symlinks here")
+
+
 def test_creation_never_writes_through_a_dangling_symlink(tree):
     d = tree / "docs" / "ledger" / "lessons.d"
     d.mkdir()
-    (d / "2026-03-05-linked-lesson.md").symlink_to(tree / "elsewhere.md")
+    _symlink(d / "2026-03-05-linked-lesson.md", tree / "elsewhere.md")
     assert lessons.main(["--new", "linked-lesson", "--date", "2026-03-05"]) == 1
     assert not (tree / "elsewhere.md").exists()
 
@@ -228,6 +236,11 @@ def test_the_protocol_text_names_the_fragments_and_the_tool_that_folds_them():
     header = (ROOT / "docs" / "ledger" / "LESSONS.md").read_text(encoding="utf-8").split("- **Lessons harvested", 1)[0]
     assert "lessons.d/" in header and "NEW FILE" in header
     assert re.search(r"LESSON_FRAGMENT_MAX_LINES = \d+", (ROOT / "scripts" / "ledger_fold.py").read_text(encoding="utf-8"))
+    # the prose copies of the bound say the constant's value, so changing one without the others fails here
+    n = ledger_fold.LESSON_FRAGMENT_MAX_LINES
+    assert f"({n} lines:" in claude, "CLAUDE.md (5a)(b) states the bound"
+    assert f"`LESSON_FRAGMENT_MAX_LINES` = {n} lines" in header, "the LESSONS.md header states the bound"
+    assert f"under {n} lines" in (ROOT / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8"), "CONTRIBUTING states the bound"
 
 
 def _two_fragments(led):
@@ -318,3 +331,116 @@ def test_the_ceiling_regex_matches_the_real_line_and_a_fold_refuses_without_it(t
     before = (led / "LESSONS.md").read_bytes()
     assert ledger_fold.main(["fold"]) == 1
     assert (led / "LESSONS.md").read_bytes() == before and (led / "lessons.d" / "2026-02-01-one.md").exists()
+
+
+def test_a_fragment_that_is_only_the_start_of_an_existing_entry_is_folded_not_skipped(tree):
+    led = tree / "docs" / "ledger"
+    long_entry = "## 2026-03-01 — LONG ENTRY\nline one\nline two\n\nline four after a blank\n"
+    (led / "LESSONS.md").write_bytes((led / "LESSONS.md").read_bytes() + b"\n" + long_entry.encode())
+    prefix = "## 2026-03-01 — LONG ENTRY\nline one\nline two\n"  # a line-aligned prefix of the entry above
+    _write(led / "lessons.d" / "2026-03-02-prefix.md", prefix.replace("2026-03-01", "2026-03-02"))
+    _write(led / "lessons.d" / "2026-03-03-exact.md", "## 2026-03-03 — EXACT\nbody\n")
+    # a true prefix of an existing entry, with the SAME first line, must not be taken for "already folded"
+    _write(led / "lessons.d" / "2026-03-01-prefix-same.md", prefix)
+    before = (led / "LESSONS.md").read_bytes()
+    assert ledger_fold._already_in(before, led / "lessons.d" / "2026-03-01-prefix-same.md") is False
+    assert ledger_fold.main(["fold"]) == 1, "its title is a duplicate of the archive's, and it is named, not swallowed"
+    (led / "lessons.d" / "2026-03-01-prefix-same.md").unlink()
+    assert ledger_fold.main(["fold"]) == 0
+    assert (led / "LESSONS.md").read_bytes().count(b"line one") == 2  # the original and the folded copy
+
+
+def test_the_fold_reports_skipped_fragments_apart_from_folded_ones(tree, capsys):
+    led = tree / "docs" / "ledger"
+    _write(led / "lessons.d" / "2026-02-01-one.md", "## 2026-02-01 — ONE\na\n")
+    assert ledger_fold.main(["fold"]) == 0
+    capsys.readouterr()
+    _write(led / "lessons.d" / "2026-02-01-one.md", "## 2026-02-01 — ONE\na\n")  # the interrupted-run leftover
+    _write(led / "lessons.d" / "2026-02-02-two.md", "## 2026-02-02 — TWO\nb\n")
+    assert ledger_fold.main(["fold"]) == 0
+    out = capsys.readouterr().out
+    assert "folded 1 fragment(s) (1 already in an archive, only deleted)" in out, out
+
+
+def test_os_replace_failing_after_the_temp_write_leaves_the_archive_untouched(tree, monkeypatch):
+    led = tree / "docs" / "ledger"
+    _write(led / "lessons.d" / "2026-02-01-one.md", "## 2026-02-01 — ONE\na\n")
+    before = (led / "LESSONS.md").read_bytes()
+
+    def boom(src, dst):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(ledger_fold.os, "replace", boom)
+    with pytest.raises(OSError):
+        ledger_fold.main(["fold"])
+    assert (led / "LESSONS.md").read_bytes() == before, "the archive is whole: the write goes to a temp file first"
+    assert (led / "lessons.d" / "2026-02-01-one.md").exists()
+
+
+def test_a_failed_delete_leaves_the_ceiling_alone(tree, monkeypatch):
+    led = tree / "docs" / "ledger"
+    _write(led / "lessons.d" / "2026-02-01-one.md", "## 2026-02-01 — ONE\na\n")
+    inv = tree / "tests" / "test_repo_invariants.py"
+    before = inv.read_bytes()
+
+    def boom(path):
+        raise OSError("delete failed")
+
+    monkeypatch.setattr(ledger_fold, "_remove", boom)
+    with pytest.raises(OSError):
+        ledger_fold.main(["fold"])
+    assert inv.read_bytes() == before, "the ceiling moves last, after every delete"
+
+
+def test_a_fold_refuses_when_the_ceiling_line_is_not_there_exactly_once_or_a_file_is_missing(tree):
+    led = tree / "docs" / "ledger"
+    _two_fragments(led)
+    inv = tree / "tests" / "test_repo_invariants.py"
+    inv.write_bytes(b"_LESSONS_LINE_CEILING = 7\n_LESSONS_LINE_CEILING = 8\n")
+    before = (led / "LESSONS.md").read_bytes()
+    assert ledger_fold.main(["fold"]) == 1 and (led / "LESSONS.md").read_bytes() == before
+    inv.write_bytes(b"_LESSONS_LINE_CEILING = 7\n")
+    (led / "SHIPPED_LOG.md").unlink()
+    assert ledger_fold.main(["fold"]) == 1 and (led / "LESSONS.md").read_bytes() == before
+    assert (led / "lessons.d" / "2026-02-01-one.md").exists()
+
+
+def test_heading_date_rule_log_second_headings_and_case_insensitive_placeholders(tree):
+    led = tree / "docs" / "ledger"
+    _write(led / "lessons.d" / "2026-02-01-other-date.md", "## 2026-02-09 — WRONG DATE\nx\n")
+    _write(led / "lessons.d" / "2026-02-02-lower.md", "## 2026-02-02 — LOWER\nrefs: pr pending, and #nnnn\n")
+    _write(led / "lessons.d" / "2026-02-03-spaced.md", "## 2026-02-03 — SPACED\nrefs: PR   pending\n")
+    _write(led / "shipped_log.d" / "2026-02-04-log-two.md", "## 2026-02-04 — LOG (PR #9)\nx\n## 2026-02-05 — a second heading is fine here\ny\n")
+    text = "\n".join(ledger_fold.problems())
+    assert "other-date.md: the heading must start with the file's date" in text
+    assert "lower.md: a placeholder" in text and "spaced.md: a placeholder" in text
+    assert "log-two.md" not in text, "a shipped-log entry may carry sub-headings; only a lesson is one entry"
+
+
+def test_a_quoted_placeholder_is_prose_not_a_placeholder(tree):
+    led = tree / "docs" / "ledger"
+    _write(led / "lessons.d" / "2026-02-01-quoted.md",
+           "## 2026-02-01 — QUOTED\nA row may say `PR pending`, and `#NNNN` is the template's:\n```\nPR pending\n```\n")
+    assert ledger_fold.problems() == []
+
+
+def test_a_symlinked_fragment_is_named_and_never_followed_or_folded(tree):
+    led = tree / "docs" / "ledger"
+    outside = _write(tree / "outside" / "secret.md", "## 2026-02-01 — OUTSIDE\nnot a fragment\n")
+    (led / "lessons.d").mkdir()
+    _symlink(led / "lessons.d" / "2026-02-01-linked.md", outside)
+    assert "linked.md: a symlink" in "\n".join(ledger_fold.problems())
+    assert ledger_fold.main(["fold"]) == 1
+    assert b"OUTSIDE" not in (led / "LESSONS.md").read_bytes()
+    lines, entries = lessons.load()
+    assert not any(e.source == "2026-02-01-linked.md" for e in entries)
+
+
+def test_the_index_is_aligned_and_show_refuses_a_path(tree, capsys):
+    assert lessons.main(["--index"]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert re.match(r"L\d+ +", first) and re.match(r"L\d+ +", first).end() == 8, first  # width 7, one space
+    sub = tree / "docs" / "ledger" / "lessons.d" / "sub"
+    _write(sub / "x.md", "## 2026-02-01 — X\nb\n")
+    assert lessons.main(["--show", "sub/x.md"]) == 1, "a path is not a fragment name"
+    assert lessons.main(["--show", "..\\x.md"]) == 1

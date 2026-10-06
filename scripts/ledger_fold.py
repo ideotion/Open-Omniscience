@@ -30,7 +30,8 @@ none of the untouched ``--new`` / ``new-log`` template text, and a title no othe
 FOLD IS CRASH-SAFE AND RE-RUNNABLE: it checks everything before touching anything, writes each archive to a
 temporary file and ``os.replace``s it, deletes fragments only after BOTH archives are written, skips a fragment
 whose exact text an archive already holds (so a run interrupted after the writes never appends it twice), and
-moves the ceiling last -- and only when the number changes.
+moves the ceiling last -- and only when the number changes. "Crash-safe" means a KILLED PROCESS: there is
+no fsync, so it is not a promise about power loss.
 
 ``fold`` is for the maintainer or a release ritual, NEVER for a feature PR: it rewrites the shared files
 this convention exists to stop touching, and it is the one place the ceiling moves. Between folds the
@@ -64,17 +65,35 @@ LESSONS = LEDGER / "LESSONS.md"
 SHIPPED_LOG = LEDGER / "SHIPPED_LOG.md"
 INVARIANTS = ROOT / "tests" / "test_repo_invariants.py"
 
+# What this number protects: ONE lesson stays small enough for `lessons.py --show` to print on a screen or
+# two. It is not a budget for the archive. It is a bound on one entry, and it is not retroactive: the largest
+# lesson already in LESSONS.md is 226 lines by this tool's own count, so one old entry is over it.
 LESSON_FRAGMENT_MAX_LINES = 200
 _NAME = re.compile(r"^([0-9]{4}-[0-9]{2}-[0-9]{2})-(" + _lessons.SLUG.pattern + r")\.md$")
 _MARKER = re.compile(r"^(<<<<<<<|=======$|>>>>>>>)")
 _CEILING = re.compile(r"^(_LESSONS_LINE_CEILING = )([0-9]+)$", re.MULTILINE)
 _FENCE = re.compile(r"^\s*(```|~~~)")
-_PLACEHOLDER = re.compile(r"#NNNN|\bPR pending\b", re.IGNORECASE)
+_PLACEHOLDER = re.compile(r"#NNNN|\bPR\s+pending\b", re.IGNORECASE)
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
 LOG_TEMPLATE_BODY = "(The verbatim shipped-log entry. Put the real PR number in the heading once it exists.)"
 
 
 def _files(d: Path) -> list[Path]:
-    return sorted(f for f in d.glob("*.md") if f.is_file()) if d.is_dir() else []
+    """The regular fragment files; a symlink is never followed (``problems`` names it)."""
+    return sorted(f for f in d.glob("*.md") if f.is_file() and not f.is_symlink()) if d.is_dir() else []
+
+
+def _prose(text: str) -> str:
+    """The text with fenced blocks and `inline code` removed: a lesson may QUOTE a placeholder."""
+    keep: list[str] = []
+    in_fence = False
+    for ln in text.split("\n"):
+        if _FENCE.match(ln):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            keep.append(_INLINE_CODE.sub("", ln))
+    return "\n".join(keep)
 
 
 def _archive(path: Path) -> tuple[bytes, set[str]]:
@@ -105,7 +124,8 @@ def _fragment_problems(
     lines = text.rstrip("\n").split("\n")
     lesson = label == "lessons.d"
     if not lines[0].startswith("## "):
-        out.append(f"{where}: the first line must be a '## ' heading (one entry per file)")
+        hint = " (`python scripts/ledger_fold.py new-log SLUG` writes the form)" if not lesson else ""
+        out.append(f"{where}: the first line must be a '## ' heading (one entry per file){hint}")
     else:
         title = lines[0].strip()
         if title in seen:
@@ -136,7 +156,7 @@ def _fragment_problems(
         out.append(f"{where}: an unresolved merge-conflict marker")
     if not text.endswith("\n"):
         out.append(f"{where}: must end with a newline")
-    if _PLACEHOLDER.search(text):
+    if _PLACEHOLDER.search(_prose(text)):
         out.append(f"{where}: a placeholder ('#NNNN' or 'PR pending'); write the real PR number")
     if _lessons.TEMPLATE_BODY in text or LOG_TEMPLATE_BODY in text:
         out.append(f"{where}: the untouched template text; write the entry")
@@ -144,7 +164,17 @@ def _fragment_problems(
 
 
 def _already_in(raw: bytes, frag: Path) -> bool:
-    return b"\n" + _block(frag) in b"\n" + raw
+    """True when the archive holds this fragment as a WHOLE entry: it starts a line and is followed by the end
+    of the file or by the next entry's heading/bullet, so a fragment that is only the first lines of a longer
+    entry is not mistaken for a fold that already happened."""
+    hay, needle = b"\n" + raw, b"\n" + _block(frag)
+    at = hay.find(needle)
+    while at != -1:
+        rest = hay[at + len(needle):].lstrip(b"\n")
+        if rest == b"" or rest.startswith((b"## ", b"- **")):
+            return True
+        at = hay.find(needle, at + 1)
+    return False
 
 
 def problems() -> list[str]:
@@ -153,6 +183,9 @@ def problems() -> list[str]:
     for d, label, archive in ((LESSONS_D, "lessons.d", LESSONS), (SHIPPED_LOG_D, "shipped_log.d", SHIPPED_LOG)):
         seen: dict[str, str] = {}
         raw, archive_titles = _archive(archive)
+        if d.is_dir():
+            out += [f"{label}/{f.name}: a symlink; a fragment is a regular file (a link is never followed or folded)"
+                    for f in sorted(d.glob("*.md")) if f.is_symlink()]
         for f in _files(d):
             out += _fragment_problems(f, label, seen, raw, archive_titles)
     return out
@@ -203,6 +236,7 @@ def _fold() -> int:
               "nothing was changed", file=sys.stderr)
         return 1
     plan: list[tuple[Path, bytes, list[Path]]] = []
+    skipped = 0
     for archive, d in ((LESSONS, LESSONS_D), (SHIPPED_LOG, SHIPPED_LOG_D)):
         files = _files(d)
         raw = archive.read_bytes()
@@ -210,6 +244,7 @@ def _fold() -> int:
         for f in files:
             block = _block(f)
             if _already_in(raw, f):  # already folded by an interrupted run: delete, never append twice
+                skipped += 1
                 continue
             out += b"\n" + block
         plan.append((archive, out if out != raw else raw, files))
@@ -225,7 +260,8 @@ def _fold() -> int:
     new = _CEILING.sub(lambda m: f"{m.group(1)}{n}", src, count=1)
     if new != src:  # last, and only when the number moves
         _atomic_write(INVARIANTS, new.encode("utf-8"))
-    print(f"folded {moved} fragment(s); LESSONS.md is {n} lines and _LESSONS_LINE_CEILING says so")
+    note = f" ({skipped} already in an archive, only deleted)" if skipped else ""
+    print(f"folded {moved - skipped} fragment(s){note}; LESSONS.md is {n} lines and _LESSONS_LINE_CEILING says so")
     return 0
 
 

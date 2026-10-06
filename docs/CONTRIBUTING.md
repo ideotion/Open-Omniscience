@@ -79,8 +79,8 @@ The same convention covers the two big archives. A lesson is ONE file,
 shipped-log entry is ONE file, `docs/ledger/shipped_log.d/<date>-<slug>.md`
 (`python scripts/ledger_fold.py new-log SLUG`). Never append to `LESSONS.md` or `SHIPPED_LOG.md`
 and never edit `_LESSONS_LINE_CEILING`: every PR doing so conflicted every other one. A fragment
-starts with `## <date> — title`, has no second heading, ends with a newline and stays under 200
-lines; `python scripts/ledger_fold.py check` (and `tests/test_ledger_fragments.py`) validates it,
+starts with `## <date> — title`, ends with a newline and is UTF-8 with LF line ends; a lesson (not a
+shipped-log entry) has no second heading and stays under 200 lines (it bounds one entry's size); `python scripts/ledger_fold.py check` (and `tests/test_ledger_fragments.py`) validates it,
 refuses `#NNNN` and `PR pending` placeholders, and `lessons.py <words>` searches the fragments too.
 `ledger_fold.py fold` merges them into the archives at a release and is never for a feature PR.
 

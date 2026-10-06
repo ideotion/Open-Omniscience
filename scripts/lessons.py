@@ -105,7 +105,7 @@ def parse(text: str) -> list[Entry]:
 
 
 def fragment_files() -> list[Path]:
-    return sorted(f for f in FRAGMENTS.glob("*.md") if f.is_file()) if FRAGMENTS.is_dir() else []
+    return sorted(f for f in FRAGMENTS.glob("*.md") if f.is_file() and not f.is_symlink()) if FRAGMENTS.is_dir() else []
 
 
 def load() -> tuple[list[str], list[Entry]]:
