@@ -198,6 +198,7 @@ def status() -> dict:
         ),
         "keyword_daily_rows": rows,
         "building": _BUILD_LOCK.locked(),
+        "build_progress": build_progress(),
         # P1.10 change gate: rebuild on CHANGE (epoch / mention tail), not on a timer.
         "refresh": "change-gated",
         "change_pending": pending,
@@ -234,6 +235,7 @@ def _build_inmemory_and_swap() -> dict | None:
         return None
     r = _readings()
     ok = False
+    _progress_begin()
     try:
         rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
         with session_scope() as s:
@@ -266,6 +268,7 @@ def _build_inmemory_and_swap() -> dict | None:
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
         ok = True
     finally:
+        _progress_end()
         rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
         if not ok:  # a decline or an error: this connection is never served, so it must not leak
             with contextlib.suppress(Exception):
@@ -568,6 +571,60 @@ def _spill_setting() -> str:
 #: several times a second, so three sub-second spikes would trip the process-wide guard (and pause
 #: collection). The hook asks at most this often.
 _GUARD_POLL_EVERY_S = 1.0
+#: What the build in flight is doing, for the boot sequence's block and the rollup_serve status: the stage, the
+#: rows it has handed to DuckDB in that stage and when each last moved. Counts and times only. ``None`` while no
+#: build runs. Written by the build's own per-batch hook, read by anyone.
+_PROGRESS: dict | None = None
+_PROGRESS_LOCK = threading.Lock()
+
+
+def _progress_begin() -> None:
+    global _PROGRESS
+    now = time.time()
+    with _PROGRESS_LOCK:
+        _PROGRESS = {"started_at": now, "stage": "start", "rows_done": 0, "stage_started_at": now,
+                     "updated_at": now}
+
+
+def _progress_note(stage: str, rows_done: int) -> None:
+    now = time.time()
+    with _PROGRESS_LOCK:
+        p = _PROGRESS
+        if p is None:
+            return
+        if stage != p["stage"]:
+            # a stage begins when the previous one last moved, so its first batch is inside its own rate
+            p.update(stage=stage, stage_started_at=p["updated_at"])
+        p.update(rows_done=int(rows_done), updated_at=now)
+
+
+def _progress_end() -> None:
+    global _PROGRESS
+    with _PROGRESS_LOCK:
+        _PROGRESS = None
+
+
+def build_progress() -> dict | None:
+    """The build in flight: its stage, the rows streamed in that stage so far, rows/s over that stage (absent
+    when it cannot be measured, never ``0``: an unmeasurable rate is not a stall) and the seconds since it last
+    moved. ``None`` while no build runs."""
+    now = time.time()
+    with _PROGRESS_LOCK:
+        p = dict(_PROGRESS) if _PROGRESS is not None else None
+    if p is None:
+        return None
+    out: dict = {
+        "stage": p["stage"],
+        "rows_done": p["rows_done"],
+        "running_s": round(now - p["started_at"], 1),
+        "idle_s": round(now - p["updated_at"], 1),
+    }
+    span = p["updated_at"] - p["stage_started_at"]
+    if p["stage"] in ("mentions", "keywords") and p["rows_done"] > 0 and span > 0:
+        out["rows_per_s"] = round(p["rows_done"] / span)
+    return out
+
+
 #: When ``_memory_verdict`` last took its own reading (see there).
 _LAST_VERDICT_POLL = float("-inf")
 
@@ -580,6 +637,7 @@ def _make_on_batch():
     def _on_batch(stage: str, rows_done: int) -> None:
         from src.analytics import columnar, rollup_marker
 
+        _progress_note(stage, rows_done)
         r = _readings()
         rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
         now = time.monotonic()

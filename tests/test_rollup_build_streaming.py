@@ -880,3 +880,195 @@ def test_the_stop_hold_does_not_gate_the_persisted_refresh(serve_env, monkeypatc
     rollup_serve._STATE["stopped"] = {"reason": "mem-low", "at": 1.0, "grew_mb": 9999.0}
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)
     assert rollup_serve._stopped_build_verdict() is None
+
+
+# --------------------------------------------------------------------------- #
+# the second pass: every remaining row-by-row staging site goes through the bulk path
+# --------------------------------------------------------------------------- #
+
+def test_the_read_model_streams_by_keyset_and_equals_the_counters_at_any_batch_size(session, monkeypatch):
+    _seed(session, keywords=47, mentions_per=3)
+    sizes: list[int] = []
+    real = columnar._bulk_insert
+
+    def spy(con, table, types, rows):
+        sizes.append(len(rows))
+        return real(con, table, types, rows)
+
+    monkeypatch.setattr(columnar, "_bulk_insert", spy)
+    con = _con()
+    n = columnar.build_keyword_read_model(con, session, batch_size=10)
+    assert n == 46 and sizes == [10, 10, 10, 10, 6], "no batch handed to DuckDB is larger than the batch size"
+    raw = {r["normalized"]: (r["mentions"], r["articles"], r["kind"]) for r in columnar.top_terms_raw(con, limit=1000)}
+    con2 = _con()
+    columnar.build_keyword_read_model(con2, session)  # one batch
+    one = {r["normalized"]: (r["mentions"], r["articles"], r["kind"]) for r in columnar.top_terms_raw(con2, limit=1000)}
+    assert raw == one and len(raw) == 46
+
+
+def test_the_read_model_never_loads_the_keywords_as_orm_entities(session, monkeypatch):
+    """The shape that held 7.5 to 8.8 GB in the rollup build: a query over the ORM class, listed."""
+    import src.database.models as models
+
+    _seed(session, keywords=20, mentions_per=2)
+
+    def forbidden(*a, **kw):
+        raise AssertionError("the read model queried the ORM Keyword class")
+
+    monkeypatch.setattr(session, "query", forbidden)
+    assert columnar.build_keyword_read_model(_con(), session, batch_size=7) == 19
+    assert models.Keyword is not None
+
+
+def _add_corpus_tail(session, *, first_keyword: int, keywords: int, first_mention: int):
+    """New keywords and mentions AFTER what a first build saw (ids above its watermark)."""
+    conn = session.connection()
+    conn.execute(
+        text(
+            "INSERT INTO keywords (id, term, normalized_term, language, is_entity, entity_type, "
+            "mention_count, frequency, is_ngram, ngram_size, relevance_score) "
+            "VALUES (:id, :t, :n, 'en', 0, NULL, 2, 0, 0, 1, 0.0)"
+        ),
+        [{"id": first_keyword + i, "t": f"New {i}", "n": f"new {i}"} for i in range(keywords)],
+    )
+    rows, mid = [], first_mention
+    for i in range(keywords):
+        for _ in range(2):
+            mid += 1
+            rows.append({"id": mid, "kid": first_keyword + i, "aid": 10_000 + mid, "cnt": 1,
+                         "day": f"2026-04-{1 + (mid % 5):02d}", "ts": f"2026-04-01 00:00:{mid % 60:02d}.{mid:06d}"})
+    conn.execute(
+        text(
+            "INSERT INTO keyword_mentions (id, keyword_id, article_id, count, observed_on, created_at) "
+            "VALUES (:id, :kid, :aid, :cnt, :day, :ts)"
+        ),
+        rows,
+    )
+    session.commit()
+
+
+def test_the_incremental_refresh_stages_in_bulk_and_equals_a_full_build(session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    con = _con()
+    assert columnar.refresh_keyword_daily(con, session, corpus_epoch=1, batch_size=50)["mode"] == "full"
+    _add_corpus_tail(session, first_keyword=100, keywords=6, first_mention=30 * 4)
+    tables: list[tuple[str, int]] = []
+    real = columnar._bulk_insert
+    monkeypatch.setattr(
+        columnar, "_bulk_insert", lambda c, table, types, rows: (tables.append((table, len(rows))), real(c, table, types, rows))[1]
+    )
+    out = columnar.refresh_keyword_daily(con, session, corpus_epoch=1, batch_size=5)
+    assert out["mode"] == "incremental" and out["new_keywords"] == 6
+    staged = [(t, n) for t, n in tables if t == "keyword_daily_stage"]
+    assert staged and sum(n for _, n in staged) == 12 and max(n for _, n in staged) <= 5
+    assert ("_new_meta", 6) in tables, "the new keywords' metadata goes in through the bulk path too"
+    fresh = _con()
+    columnar.build_keyword_daily(fresh, session)
+    q = "SELECT keyword_id, day, mentions, articles_on_day FROM keyword_daily ORDER BY 1, 2"
+    assert con.execute(q).fetchall() == fresh.execute(q).fetchall()
+    qm = "SELECT keyword_id, normalized_term, term, kind, is_entity, entity_type, language FROM keyword_meta ORDER BY 1"
+    assert con.execute(qm).fetchall() == fresh.execute(qm).fetchall()
+
+
+# --------------------------------------------------------------------------- #
+# the build's progress, as the boot sequence and the diagnostics show it
+# --------------------------------------------------------------------------- #
+
+def test_build_progress_is_absent_when_no_build_runs_and_counts_only_when_one_does(monkeypatch):
+    monkeypatch.setattr(rollup_serve, "_PROGRESS", None)
+    assert rollup_serve.build_progress() is None
+    now = [100.0]
+    monkeypatch.setattr(rollup_serve.time, "time", lambda: now[0])
+    rollup_serve._progress_begin()
+    first = rollup_serve.build_progress()
+    assert first["stage"] == "start" and first["rows_done"] == 0 and "rows_per_s" not in first
+    rollup_serve._progress_note("mentions", 1_000)  # no time has passed: no rate, never 0
+    now[0] = 102.0
+    p = rollup_serve.build_progress()
+    assert p["rows_done"] == 1_000 and "rows_per_s" not in p and p["idle_s"] == 2.0
+    now[0] = 104.0
+    rollup_serve._progress_note("mentions", 5_000)
+    now[0] = 105.0
+    assert rollup_serve.build_progress()["rows_per_s"] == 1250, "5,000 rows over the 4 s the stage has run"
+    rollup_serve._progress_end()
+    assert rollup_serve.build_progress() is None
+
+
+def test_a_real_build_reports_progress_and_clears_it(serve_env, session, monkeypatch):
+    _seed(session, keywords=40, mentions_per=5)
+    seen: list[dict] = []
+    real = rollup_serve._progress_note
+
+    def spy(stage, rows):
+        real(stage, rows)
+        seen.append(rollup_serve.build_progress())
+
+    monkeypatch.setattr(rollup_serve, "_progress_note", spy)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert {p["stage"] for p in seen} == {"mentions", "aggregate", "keywords"}
+    assert rollup_serve.build_progress() is None, "nothing is reported once the build has ended"
+    assert rollup_serve.status()["build_progress"] is None
+
+
+def test_the_boot_snapshot_shows_the_running_rollup_steps_progress(monkeypatch):
+    from src.api import boot_sequence as bs
+
+    bs._reset()
+    with bs._LOCK:
+        bs._STEPS["rollup"].update(state="running", started_at=time.time() - 5)
+        bs._SEQUENCE["started_at"] = time.time() - 9
+    monkeypatch.setattr(rollup_serve, "build_progress", lambda: {"stage": "mentions", "rows_done": 12, "idle_s": 1.0, "running_s": 4.0})
+    rows = {r["step"]: r for r in bs.snapshot()["steps"]}
+    assert rows["rollup"]["progress"]["rows_done"] == 12 and "progress" not in rows["warm-cache"]
+    monkeypatch.setattr(rollup_serve, "build_progress", lambda: None)
+    assert "progress" not in {r["step"]: r for r in bs.snapshot()["steps"]}["rollup"]
+    bs._reset()
+
+
+def test_the_slow_step_watch_warns_once_then_only_when_progress_has_stopped(monkeypatch, caplog):
+    import logging
+    import threading
+
+    from src.api import boot_sequence as bs
+
+    monkeypatch.setattr(bs, "SLOW_STEP_S", 0.05)
+    state = {"idle": 0.0}
+    monkeypatch.setattr(
+        rollup_serve, "build_progress",
+        lambda: {"stage": "keywords", "rows_done": 7_000, "rows_per_s": 500, "idle_s": state["idle"], "running_s": 9.0},
+    )
+    with caplog.at_level(logging.WARNING, logger=bs._LOG.name):
+        watch = bs._SlowWatch("rollup", "the re-index")
+        watch.start()
+        threading.Event().wait(0.4)  # several intervals; the build keeps moving (idle_s stays 0)
+        moving = [r.getMessage() for r in caplog.records]
+        state["idle"] = 999.0  # ... and now it has not moved for longer than the limit
+        threading.Event().wait(0.3)
+        watch.cancel()
+    assert len(moving) == 1 and "still running" in moving[0] and "7,000 rows at 500 rows/s" in moving[0]
+    stuck = [r.getMessage() for r in caplog.records if "no progress" in r.getMessage()]
+    assert stuck and "999 s" in stuck[0] and "the re-index waiting behind it" in stuck[0]
+    after = len(caplog.records)
+    threading.Event().wait(0.3)
+    assert len(caplog.records) == after, "a cancelled watch is silent"
+
+
+def test_a_stop_with_no_total_is_held_on_what_was_observed(serve_env, monkeypatch):
+    """N14: without a total (no change token) there is nothing to project over: the hold is the observed growth."""
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_boot_order_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 4096.0)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(
+        rollup_serve, "_build_inmemory_and_swap",
+        lambda: {"reason": "mem-low", "at": time.time(), "stage": "mentions", "rows_done": 1_000_000,
+                 "mentions_total": None, "rss_mb": 1500.0, "begin_rss_mb": 500.0, "epoch": None},
+    )
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    held = rollup_serve._STATE["stopped"]
+    assert held["observed_grew_mb"] == 1000.0 and held["grew_mb"] == 1000.0
