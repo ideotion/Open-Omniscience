@@ -495,9 +495,10 @@ def _full_history_with_three_tails(hist, monkeypatch, names):
 )
 def test_the_heaviest_member_fits_its_budget_with_three_previous_tails_and_cuts_nothing(hist, monkeypatch, names):
     """The budget must not cut the 48 hours the member exists to show, nor the tails that say how the
-    last sessions died. Measured here (raw JSON): about 158 KB for the history alone, about 212 KB with
-    the three tails, about 241 KB with long logger names; ``MEMBER_BUDGET_BYTES`` is sized above the
-    last of these, and this test is the check that it stays so."""
+    last sessions died. Measured here (raw JSON, 25 loggers): about 140 KB for the history alone, about
+    189 KB with the three tails, about 246 KB with 58-character logger names; ``MEMBER_BUDGET_BYTES`` is
+    sized above the last of these (a real row is heavier than the fixture's and a logger name has no
+    length ceiling, so it is not a maximum), and this test is the check that it stays above them."""
     m = _full_history_with_three_tails(hist, monkeypatch, names)
     size = len(json.dumps(m, separators=(",", ":")))
     assert "dropped_oldest_rows" not in m, (size, m.get("dropped_oldest_rows"))
@@ -676,7 +677,7 @@ def test_the_previous_sessions_tail_is_its_last_thirty_minutes(hist, monkeypatch
 
 
 # --------------------------------------------------------------------------- #
-#  The Opus read of the first version (2026-10-06): each test names the finding it pins
+#  The independent read of the first version (2026-10-06): each test names the finding it pins
 # --------------------------------------------------------------------------- #
 def _restart(now: float) -> None:
     """What a new process does: nothing in memory, the file on disk, ``start`` again."""
@@ -1320,14 +1321,38 @@ def test_a_clock_that_keeps_flapping_starts_a_new_history_at_most_once_per_inter
 
 
 def test_a_big_step_after_the_interval_starts_a_new_history_again(hist):
+    """S1 of the delta check. The step at the fourth tick comes too soon after the first rebase to start a
+    history, so it is recorded once and held open; when the interval has passed the history starts, and
+    that is the SAME step ending its hold: it is neither recorded nor counted a second time (it used to
+    add a record of size 0 or -5 and a count, and spend a second of the 20 slots)."""
     t0 = HOUR0 + 100_000
     v.tick(now=float(t0), mono=5000.0)
-    v.tick(now=float(t0 - 7200), mono=5005.0)  # a new history
+    v.tick(now=float(t0 - 7200), mono=5005.0)  # a new history: step 1
     v.tick(now=float(t0 + 100), mono=5010.0)
-    v.tick(now=float(t0 - 7200), mono=5020.0)  # too soon: held
-    v.tick(now=float(t0 - 7200), mono=5005.0 + v.REBASE_MIN_GAP_S)  # the interval has passed: a new history
-    steps = _member()["clock_steps"]
-    assert ["kept_open" in s for s in steps] == [False, True, False]
+    v.tick(now=float(t0 - 7200), mono=5020.0)  # too soon: held, step 2
+    v.tick(now=float(t0 - 7200), mono=5005.0 + v.REBASE_MIN_GAP_S)  # the interval has passed: the history starts
+    m = _member()
+    steps = m["clock_steps"]
+    assert [s["back_s"] for s in steps] == [7200, 7300]
+    assert m["clock_stepped_back"] == 2
+    assert "kept_open" not in steps[0] and steps[1]["kept_open"] is True
+    assert steps[1]["new_history_at"] == v._iso(t0 - 7200) and "new_history_at" not in steps[0]
+    assert (t0 - 7200) // 300 * 300 in [r[COL["t"]] for r in m["fine"]]  # and the history did start there
+
+
+def test_a_real_second_step_after_a_held_one_is_still_recorded(hist):
+    """S1. Only the end of a hold is not a step: a clock that goes back AGAIN, from its own last reading,
+    is, whatever the hold before it did."""
+    t0 = HOUR0 + 100_000
+    v.tick(now=float(t0), mono=5000.0)
+    v.tick(now=float(t0 - 7200), mono=5005.0)  # step 1, a new history
+    v.tick(now=float(t0 + 100), mono=5010.0)
+    v.tick(now=float(t0 - 7200), mono=5020.0)  # step 2, held
+    v.tick(now=float(t0 - 20_000), mono=5005.0 + v.REBASE_MIN_GAP_S)  # step 3: 12,800 s further back
+    m = _member()
+    assert [s["back_s"] for s in m["clock_steps"]] == [7200, 7300, 12_800]
+    assert m["clock_stepped_back"] == 3
+    assert "new_history_at" not in m["clock_steps"][1]  # the history that began there is step 3's
 
 
 def test_a_platform_with_no_thread_clock_still_records_and_reports_its_cpu_cost_as_null(hist, monkeypatch):
@@ -1361,8 +1386,8 @@ def test_a_file_of_another_layout_is_not_trusted(hist):
     assert m["fine"] == [] and "previous_sessions" not in m
 
 
-def _tail(n: int) -> dict:
-    return {"last_flush_at": "2026-10-06T00:00:00Z", "minutes": [{"t": i, "n": 12, "rss_max": 1234} for i in range(n)]}
+def _tail(n: int, flushed: str = "2026-10-06T00:00:00Z") -> dict:
+    return {"last_flush_at": flushed, "minutes": [{"t": i, "n": 12, "rss_max": 1234} for i in range(n)]}
 
 
 def _enc(value) -> int:
@@ -1398,11 +1423,28 @@ def test_the_earlier_tails_are_the_last_table_cut_and_the_shortest_tail_goes_fir
     assert "over_budget_bytes" in one
 
 
+def test_the_oldest_of_two_equally_short_tails_goes_first():
+    """N6 of the delta check. On a tie the oldest session's tail is the one cut: the newest says the most
+    about how the app last died. (Tails of 30, 20 and 30 rows cannot tell the oldest from the newest.)"""
+    old, mid, new = (f"2026-10-06T0{h}:00:00Z" for h in (1, 2, 3))
+
+    def member() -> dict:
+        return {
+            "fine": [[1000, 60, 1234]], "coarse": [[0, 600, 1234]], "logs": [], "minutes": [],
+            "previous_sessions": [_tail(20, old), _tail(30, mid), _tail(20, new)],
+        }
+
+    two = member()
+    two["previous_sessions"] = two["previous_sessions"][1:]  # the 20-row tail of the OLD session gone
+    tight = v._fit(member(), _enc(two) + 300)
+    assert [t["last_flush_at"] for t in tight["previous_sessions"]] == [mid, new]
+
+
 # --------------------------------------------------------------------------- #
-#  The Opus read of the second head (2026-10-06): each test names the finding it pins
+#  The independent read of the second head (2026-10-06): each test names the finding it pins
 # --------------------------------------------------------------------------- #
 def test_a_finalizer_that_logs_while_the_state_is_written_fails_neither_the_flush_nor_the_member(hist, monkeypatch):
-    """Opus 2. The counts were walked in Python under the re-entrant lock, so a line logged from inside
+    """Read 2. The counts were walked in Python under the re-entrant lock, so a line logged from inside
     the walk (a finalizer, as in B1) added a key to the dictionary being iterated: 'dictionary changed
     size', a failed flush or a member with ``available: false``. The copy is C-level and the walk is
     over the copy."""
@@ -1430,7 +1472,7 @@ def test_a_finalizer_that_logs_while_the_state_is_written_fails_neither_the_flus
 
 
 def test_the_lines_of_a_boot_that_ends_before_its_first_tick_are_dated_and_kept(hist, monkeypatch):
-    """Opus 4. A start closes a restored hour that is over and sets the open hour to none; a session that
+    """Read 4. A start closes a restored hour that is over and sets the open hour to none; a session that
     ended before its first tick then wrote ``open_logs_t: 0``, and the next start dropped its counts: the
     failing boots of a crash loop were exactly the ones that recorded nothing."""
     later = HOUR0 + 5 * 3600
@@ -1446,7 +1488,7 @@ def test_the_lines_of_a_boot_that_ends_before_its_first_tick_are_dated_and_kept(
 @pytest.mark.parametrize(
     ("figures", "memory_snapshots", "earlier", "now", "expect"),
     [
-        ([], None, None, 0.0, "CPU figure"),  # nothing running: an idle process, not "the first minute"
+        ([], None, None, 0.0, "an idle process"),  # every thread waiting: not "the first minute"
         ([("a", 5.0)], None, "none", 0.0, "first reading of this session"),
         ([("a", 6.0)], None, "old", 400.0, "more than 150 s old"),  # a held minute, or memory was short
         ([("b", 6.0)], None, "other", 60.0, "new or waiting"),  # every thread with a figure is new
@@ -1454,7 +1496,7 @@ def test_the_lines_of_a_boot_that_ends_before_its_first_tick_are_dated_and_kept(
     ids=["idle", "first", "stale", "new-threads"],
 )
 def test_a_minute_with_no_comparison_says_which_of_four_facts_it_is(threads, figures, memory_snapshots, earlier, now, expect):
-    """Opus 3. An idle app and a clock hold both read 'the first minute, or the first after memory was
+    """Read 3. An idle app and a clock hold both read 'the first minute, or the first after memory was
     short', a cause that did not happen, every minute of an idle night."""
     if earlier in ("old", "other"):
         threads["snap"] = [_t(1, 5.0, "a")]
@@ -1466,8 +1508,21 @@ def test_a_minute_with_no_comparison_says_which_of_four_facts_it_is(threads, fig
     assert rows is None and expect in why
 
 
+def test_a_platform_that_gives_a_working_thread_no_cpu_figure_does_not_say_idle(threads):
+    """S3 of the delta check. A platform with no per-thread CPU time (macOS: psutil's thread ids are not the
+    ones threading reports) leaves a BUSY thread without a figure; calling that 'idle' would say, every
+    minute of a busy session, a cause that did not happen. Only threads that were all waiting (or the
+    sampler itself) are an idle process."""
+    threads["snap"] = [{"tid": 1, "name": "oo-w", "stack": ["x.py:1 f"]}, _t(2, None)]  # one working, no figure
+    rows, why = v._busiest(None, now=0.0)
+    assert rows is None and "no per-thread CPU figure" in why and "1 thread(s)" in why and "idle" not in why
+    threads["snap"] = [_t(1, None), {"tid": 2, "name": "sampler", "stack": ["x.py:1 f"], "sampler": True}]
+    rows, why = v._busiest(None, now=0.0)
+    assert rows is None and "an idle process" in why and "platform" not in why
+
+
 def test_a_gap_next_to_a_recorded_clock_step_says_so_and_a_plain_gap_does_not(hist):
-    """Opus 6. A rebase and the clock's return forward read as time the process was down."""
+    """Read 6. A rebase and the clock's return forward read as time the process was down."""
     _ticks(hist, HOUR0 + 7200, 300, rss=1.0)
     _ticks(hist, HOUR0, 300, rss=1.0)  # the clock steps two hours back: a recorded step
     _ticks(hist, HOUR0 + 7500, 300, rss=1.0)  # ...and the correction forward, which is not recorded
@@ -1483,17 +1538,19 @@ def test_a_gap_next_to_a_recorded_clock_step_says_so_and_a_plain_gap_does_not(hi
 
 
 def test_a_hold_a_rebase_and_a_small_step_straight_after_are_three_steps(hist):
-    """Opus nit 2. A rebase left the hold flag set, so the small step that followed was not counted."""
+    """Read nit 2. A rebase left the hold flag set, so the small step that followed was not counted."""
     t = HOUR0 + 100_000
     v.tick(now=float(t), mono=100.0)
     v.tick(now=float(t - 300), mono=105.0)  # small: held, step 1
     v.tick(now=float(t - 8000), mono=500.0)  # big, and the interval has passed: a new history, step 2
     v.tick(now=float(t - 8400), mono=505.0)  # small, straight after: step 3
-    assert _member()["clock_stepped_back"] == 3
+    m = _member()
+    assert m["clock_stepped_back"] == 3
+    assert [s["back_s"] for s in m["clock_steps"]] == [300, 7700, 400]
 
 
 def test_the_clock_steps_survive_a_restart_and_are_trimmed_to_their_limit(hist):
-    """Opus 7 (M36, M18)."""
+    """Read 7 (M36, M18)."""
     t = HOUR0 + 100_000
     for k in range(v.CLOCK_STEPS_KEEP + 5):  # held steps: forward 1,000 s, then back 400 s (past a bucket edge)
         v.tick(now=float(t + 1000 * k), mono=5000.0 + k)
@@ -1507,7 +1564,7 @@ def test_the_clock_steps_survive_a_restart_and_are_trimmed_to_their_limit(hist):
 
 
 def test_a_rebase_dates_the_lines_after_the_step_into_the_new_hour(hist):
-    """Opus 7 (M31). The log hour was kept open across a rebase, so the lines after the step were counted
+    """Read 7 (M31). The log hour was kept open across a rebase, so the lines after the step were counted
     into an hour two hours ahead, which stayed open until the clock caught up."""
     t = HOUR0 + 7200
     v.tick(now=float(t), mono=100.0)
@@ -1520,7 +1577,7 @@ def test_a_rebase_dates_the_lines_after_the_step_into_the_new_hour(hist):
 
 
 def test_the_name_cap_counts_real_names_after_a_restart_not_the_overflow_bucket(hist):
-    """Opus 7 (M9)."""
+    """Read 7 (M9)."""
     _ticks(hist, HOUR0, 30, rss=1.0)
     for i in range(v._LOG_NAMES_CAP + 3):
         _emit(f"n{i}", logging.WARNING)
@@ -1530,7 +1587,7 @@ def test_the_name_cap_counts_real_names_after_a_restart_not_the_overflow_bucket(
 
 
 def test_a_restored_hour_exactly_one_hour_behind_the_clock_is_closed_at_start(hist):
-    """Opus 7 (M11): the hour is over as soon as the clock is in the next one."""
+    """Read 7 (M11): the hour is over as soon as the clock is in the next one."""
     _ticks(hist, HOUR0, 30, rss=1.0)
     _emit("src.old", logging.WARNING, 3)
     _restart(float(HOUR0 + 3600 + 30))
@@ -1547,7 +1604,7 @@ def test_a_restored_hour_exactly_one_hour_behind_the_clock_is_closed_at_start(hi
     ],
 )
 def test_one_wrong_typed_field_costs_that_field_and_never_the_history(hist, field, value):
-    """Opus nit 4. One bad field in an otherwise valid file discarded the 14 days and the next flush wrote
+    """Read nit 4. One bad field in an otherwise valid file discarded the 14 days and the next flush wrote
     the empty history over them."""
     _ticks(hist, HOUR0, 900, rss=77.0)
     _emit("src.x", logging.WARNING, 2)
@@ -1564,9 +1621,60 @@ def test_one_wrong_typed_field_costs_that_field_and_never_the_history(hist, fiel
 
 
 def test_the_notes_a_cut_adds_are_part_of_what_the_budget_measures():
-    """Opus nit 3. ``dropped_oldest_rows`` and ``dropped_why`` were added after the size check, so the
+    """Read nit 3. ``dropped_oldest_rows`` and ``dropped_why`` were added after the size check, so the
     member could weigh up to 118 bytes more than the number it said it was held to."""
     for budget in range(2000, 2600, 7):
         member = {"fine": [[1000 + i, 60, 1234, 5678] for i in range(400)], "coarse": [], "logs": [], "minutes": []}
         out = v._fit(member, budget)
         assert _enc(out) <= budget or "over_budget_bytes" in out, budget
+
+
+def test_a_row_with_a_cell_of_the_wrong_type_costs_that_row_and_never_the_history(hist):
+    """N5 of the delta check. A string where a number belongs (a hand-edited file, another build) used to
+    end in ``int(...)`` at start or in ``_gaps``: the start emptied the whole history, and a fine row
+    with a text ``t`` failed the member with the value echoed into the zip."""
+    _ticks(hist, HOUR0, 4300, rss=1.0)  # fourteen closed buckets, one closed hour, an open bucket
+    v.flush()
+    doc = json.loads(v._path().read_text(encoding="utf-8"))
+    assert len(doc["fine"]) == 14 and len(doc["coarse"]) == 1 and doc["open_fine"]
+    doc["fine"][0][0] = "x"  # a text t
+    doc["fine"][1][2] = "oops"  # a text cell
+    doc["fine"][3][4] = float("nan")  # not a number the history can fold
+    doc["fine"][5][5] = True  # a boolean is not a reading
+    doc["fine"][6][1] = True  # nor a tick count
+    doc["coarse"][0][3] = [1]  # a list where a number belongs
+    doc["open_fine"][0] = "y"
+    v._path().write_text(json.dumps(doc), encoding="utf-8")
+    v.reset_for_tests()
+    v.start(now=float(HOUR0 + 9000))
+    m = _member()
+    assert m["available"] is True and "error" not in m
+    kept = [HOUR0 + 300 * k for k in range(14) if k not in (0, 1, 3, 5, 6)]
+    assert [r[COL["t"]] for r in m["fine"]] == kept  # nine rows, not none
+    assert len(m["session_starts"]) == 2  # the rest of the history was read
+    assert isinstance(m["gaps"], list)  # ``_gaps`` ran over the rows: a text t used to raise there
+
+
+def test_the_members_own_failure_names_the_type_and_the_systems_reason_never_the_message(hist, monkeypatch):
+    """N7 of the delta check. One rule for what a failure leaves in the zip, in the member and in the
+    counters: a message can name a path or carry text a user typed."""
+    def boom():
+        raise RuntimeError("/home/someone/secret-passphrase-file.db")
+
+    monkeypatch.setattr(v, "_state_doc", boom)
+    assert _member() == {"available": False, "error": "RuntimeError"}
+
+    def full_disk():
+        raise OSError(28, "No space left on device", "/home/someone/data/vitals.json")
+
+    monkeypatch.setattr(v, "_state_doc", full_disk)
+    assert _member() == {"available": False, "error": "OSError: No space left on device"}
+
+    def long_reason():
+        raise OSError(5, "x" * 500)
+
+    monkeypatch.setattr(v, "_state_doc", long_reason)
+    error = _member()["error"]
+    assert len(error) == 120 and error.startswith("OSError: xxx")  # cut, and the counters use the same rule
+    v._note_error("tick", OSError(5, "y" * 500))
+    assert len(v._ERRORS["last_tick_error"]["error"]) == 120

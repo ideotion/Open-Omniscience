@@ -13217,11 +13217,11 @@ with the handler's lock held, so a main lock held across anything slow (the minu
 thread, and a main lock taken inside `emit` against a thread that logs while holding it is a deadlock. The thread sample is therefore taken after the lock is
 released, and two tests pin both halves (a thread holding the main lock cannot stop an `emit`; the sample runs with the lock free). (3) **A budget written before
 the data existed was wrong, twice**: 160 KB would have cut the 48 hours the member exists to show, and the 200 KB that replaced it was sized before the previous sessions' tails existed
-(158 KB at the full retention with 25 busy loggers, 189 KB with the three tails, 245 KB with 55-character logger names), so it is 260 KB and the test builds the heaviest member the
+(140 KB at the full retention with 25 loggers, 189 KB with the three tails, 246 KB with 58-character logger names), so it is 260 KB, 6 per cent above a fixture that is not a maximum (a real row is heavier and a logger name has no length ceiling), and the test builds the heaviest member the
 recorder can make. Measure the heaviest document, not the one the first test happens to build, before a number is fixed. (4) **An open accumulator
 restored from a stored, ROUNDED row needs its weight** (the tick count): without it the mean across a restart quietly becomes a mean of means, and the open bucket is
 kept apart from the closed rows in the file so a tick is counted once (both are mutants the suite now kills).
-(5) **A "leaf" lock inside a logging handler is RE-ENTRANT or it is a deadlock** (the Opus read reproduced it): CPython runs the cyclic collector and Python-level signal handlers
+(5) **A "leaf" lock inside a logging handler is RE-ENTRANT or it is a deadlock** (the independent read reproduced it): CPython runs the cyclic collector and Python-level signal handlers
 between any two bytecodes, so a finalizer that logs (SQLAlchemy's pool does, asyncio's "Task exception was never retrieved" does) or a SIGHUP handler that logs re-enters
 `emit` on the thread already inside it; a plain `Lock` makes that thread wait for itself while it holds the handler's own lock, and every other thread that logs waits
 behind it. The standard library's handler locks are `RLock`s for this reason, and the test re-enters `emit` from inside `emit` with its own lock of the module's kind, so a
@@ -13242,7 +13242,7 @@ tick is not** (a step back of 600 s is held and of 601 s starts a new history, w
 two hours, so a new history starts at most once every five minutes by the monotonic clock and the steps between are held and marked `kept_open`. **An instrument's own clock can be
 missing**: `time.thread_time()` raises where the platform has no per-thread clock, and read before the readings it failed every tick, so the recorder recorded nothing; its cost
 reports CPU as `null` (never 0) and keeps recording.
-(11) **The second Opus read found the four defects the delta introduced, each by running the failure and not by reading the diff**: (a) a "fix" that walked the counts in Python
+(11) **The second independent read found the four defects the delta introduced, each by running the failure and not by reading the diff**: (a) a "fix" that walked the counts in Python
 under the re-entrant lock (`sorted(... _HOUR_LOGS.items())`) re-opened what the RLock closed, because a finalizer that logs then adds a key to the dictionary being iterated and
 the flush or the member fails ("dictionary changed size"): take a C-level `dict(...)` copy under the lock and walk the copy; (b) a start that closed a restored hour and set the
 open hour to none made a session that ended before its first tick write `open_logs_t: 0`, so the next start dropped the lines of its boot, which in a crash loop are the lines
@@ -13253,4 +13253,4 @@ as down time: say the size from the clock's own last reading, and mark a gap tha
 the budget code was also wrong in a way only a heavier fixture shows**: the notes a cut adds (`dropped_*`) were added after the size check, so a member said it was held to N
 bytes and weighed up to 118 more; measure with the notes in. **A test that takes the constant as its own parameter cannot fail when the constant moves**: the hold edge is
 pinned with the literals 600 and 601 (and `v.CLOCK_HOLD_S == 600`), at two phases of the bucket.
-
+(12) **The coordinator's own delta check found four more by running the control flow, not by reading the diff**: (a) the END of a hold is not a second step: a big clock step that was held open (it came too soon after the last rebase) and rebased later was recorded again with a size of 0 or -5 and counted twice, because the rebase measured the step from the clock's last reading, which was already on the stepped clock; the test that covered it passed because it asserted the `kept_open` FLAGS and never the sizes or the count: assert the values a record exists to carry, and put the end of a hold on the record the hold made (`new_history_at`); (b) a reason that says "an idle process" must be true where the platform gives a working thread no CPU figure (macOS), or every minute of a busy session reads as idle: say idle only when every thread was waiting; (c) one bad cell inside a stored row emptied the whole history at start (`int("x")` inside the try that resets everything): check every cell and drop that row alone; (d) a comment that calls a number "the heaviest it can be" describes the test's FIXTURE: say "sized above the fixture" where the input has no ceiling (a logger name has none), and keep ONE rule for what a failure leaves in a zip (its type and the system's reason, never its message, which can name a path).

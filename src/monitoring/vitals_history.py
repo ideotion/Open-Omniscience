@@ -53,6 +53,7 @@ import atexit
 import contextlib
 import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -145,16 +146,19 @@ CLOCK_HOLD_S = 2 * FINE_S
 REBASE_MIN_GAP_S = FINE_S
 #: After a failed write the next try is this soon, not on every five-second tick.
 FLUSH_RETRY_S = 60.0
-#: What the member may weigh, raw JSON: the heaviest it can be without cutting anything. Measured
-#: (``test_the_heaviest_member_fits_its_budget...``): the full retention with 25 busy loggers is
-#: 158 KB, with the three previous sessions' tails 189 KB, and with 55-character logger names
-#: (the longer names a deep package gives) 245 KB; 260 KB leaves 6 per cent above that. A smaller
-#: number cuts the 48 hours or the tails the member exists to show. What the number protects is
-#: the zip's size, not the 4 MB part (R119): at 4,000,000 bytes a part holds fifteen of these
-#: members raw and about seventy zipped (at the first measure's ratio, 4.6 to 1: 36 KB zipped for
-#: 166 KB raw; the test's constant rows zip 25 to 1 and say nothing), so the budget is there so
-#: that one history, growing with the number of loggers, cannot take the room the other members'
-#: newest records need in a typical zip of about 1.2 MB raw (PLAN 4).
+#: What the member may weigh, raw JSON. Measured on the test's fixture
+#: (``test_the_heaviest_member_fits_its_budget...``: 25 loggers, readings of four or five digits,
+#: frames of about 40 characters): 140 KB for the full retention, 189 KB with the three previous
+#: sessions' tails, 246 KB with 58-character logger names (the longer names a deep package gives);
+#: 260 KB is 6 per cent above that. It is sized above the fixture and is not a maximum: a logger
+#: name has no length ceiling and a real row is heavier than the fixture's, and a member that does
+#: pass it drops the oldest log hours first and says so (``dropped_oldest_rows``). A smaller number
+#: cuts the 48 hours or the tails the member exists to show. What the number protects is the room
+#: the other members need in the zip (the plan's new-member budgets add to 1,324 KB raw, PLAN 4), not
+#: the 4 MB part (R119):
+#: at 4,000,000 bytes a part holds fifteen of these members raw and about seventy zipped (at the
+#: first measure's ratio, 4.6 to 1: 36 KB zipped for 166 KB raw; the test's constant rows zip 25 to
+#: 1 and say nothing), so one history, growing with the number of loggers, cannot crowd them out.
 MEMBER_BUDGET_BYTES = 260_000
 
 #: Which record carries the minutes before a kill. Set once the owner of that record has
@@ -189,7 +193,7 @@ _LOCK = threading.RLock()
 # takes this one, for a dictionary update, and nothing else is ever done while holding it. The
 # order, where both are needed, is ``_LOCK`` then ``_LOG_LOCK``, never the other way.
 #
-# RE-ENTRANT ON PURPOSE (Opus read of the first version, B1): CPython runs the cyclic collector
+# RE-ENTRANT ON PURPOSE (independent read of the first version, B1): CPython runs the cyclic collector
 # and Python-level signal handlers between any two bytecodes, so a finalizer that logs (SQLAlchemy's
 # pool does, and asyncio's "Task exception was never retrieved") or a SIGHUP handler that logs can
 # re-enter ``emit`` on the thread that is inside it. A plain lock would make that thread wait for
@@ -209,6 +213,9 @@ _SESSIONS: list[dict[str, Any]] = []
 _PREVIOUS: list[dict[str, Any]] = []
 _CLOCK_BACK = 0
 _CLOCK_HOLD = False
+#: The step the running hold recorded: a later rebase that is only that hold ending says when the
+#: new history began on this record, instead of recording the same step a second time.
+_HOLD_STEP: dict[str, Any] | None = None
 _CLOCK_STEPS: list[dict[str, Any]] = []
 _LAST_REBASE = float("-inf")  # monotonic time of the last big step that started a new history
 _LAST_WALL: float | None = None  # the wall clock at the last tick: what a step back is measured from
@@ -517,12 +524,14 @@ def _busiest(avail_mb: float | None, now: float | None = None) -> tuple[list[dic
     after: dict[int, tuple[float, float]] = {}
     alive: set[int] = set()
     scored: list[tuple[float, float, dict[str, Any]]] = []
-    compared = figures = 0
+    compared = figures = working = 0
     for entry in snap:
         tid, cpu = entry.get("tid"), entry.get("cpu_s")
         if tid is None:
             continue
         alive.add(tid)
+        if not entry.get("waiting") and not entry.get("sampler"):
+            working += 1  # a thread ``thread_snapshot`` meant to read a CPU figure for
         if cpu is None:
             continue
         figures += 1
@@ -542,6 +551,14 @@ def _busiest(avail_mb: float | None, now: float | None = None) -> tuple[list[dic
         # four different facts, each with its own reason: a reader of an idle night must not be told
         # that memory was short
         if not figures:
+            if working:
+                # a platform that cannot read a thread's CPU time (macOS: psutil's thread ids are not
+                # the ones ``threading`` reports) gives no figure to a busy thread either; calling it
+                # "idle" would say, every minute of a busy session, a cause that did not happen
+                return None, (
+                    f"the platform gave no per-thread CPU figure for the {working} thread(s) that were "
+                    "not waiting, so no thread can be named"
+                )
             return None, "every thread was waiting at this reading, so none had a CPU figure to compare (an idle process)"
         if not before:
             return None, "the first reading of this session: there is nothing yet to take a difference from"
@@ -618,9 +635,14 @@ def _rebase_clock(wall: float, last_wall: float) -> tuple[int, _Acc] | None:
     everything that is open as it stands, start again at the clock's time, and record the step.
     Rows stay in the order they were written, so a reader meets the step where it happened and
     ``clock_steps`` says how far back it went (from the clock's last reading, ``last_wall``).
-    Called under ``_LOCK``; returns the minute it closed, for the caller to turn into a row after
-    the lock is released."""
+    A rebase that follows a hold (the step was too soon after the last rebase to start a history,
+    so it was recorded and held open) is that hold ending, not a second step: the clock has gone on
+    from where it stepped, so it is not behind its own last reading, and the record the hold made
+    says when the new history began (``new_history_at``) instead of a second record with a size
+    of nothing. Called under ``_LOCK``; returns the minute it closed, for the caller to turn into
+    a row after the lock is released."""
     global _FINE_T, _COARSE_ACC, _COARSE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK, _CLOCK_HOLD
+    global _HOLD_STEP
     _close_fine()
     if _COARSE_ACC is not None:
         _COARSE.append(_COARSE_ACC.row(_COARSE_T))
@@ -631,10 +653,14 @@ def _rebase_clock(wall: float, last_wall: float) -> tuple[int, _Acc] | None:
     if _HOUR_LOGS_T:
         _close_hour_logs()
     _FINE_T = _COARSE_T = _MIN_T = _HOUR_LOGS_T = 0
+    if last_wall > wall:
+        _CLOCK_BACK += 1
+        _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(last_wall), "back_s": int(last_wall - wall)})
+        _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
+    elif _HOLD_STEP is not None:
+        _HOLD_STEP["new_history_at"] = _iso(wall)
     _CLOCK_HOLD = False  # a hold that was running ended here; a small step right after is a new one
-    _CLOCK_BACK += 1
-    _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(last_wall), "back_s": int(last_wall - wall)})
-    _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
+    _HOLD_STEP = None
     return finished
 
 
@@ -645,7 +671,7 @@ def tick(now: float | None = None, mono: float | None = None) -> None:
     before it and the minute's thread sample after it. ``now`` is the wall clock and ``mono`` the
     monotonic one, both injected by the tests."""
     global _FINE_ACC, _FINE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK, _CLOCK_HOLD, _LAST_REBASE
-    global _LAST_WALL
+    global _LAST_WALL, _HOLD_STEP
     try:
         if not _STARTED:
             return
@@ -674,9 +700,11 @@ def tick(now: float | None = None, mono: float | None = None) -> None:
                             step["kept_open"] = True
                         _CLOCK_STEPS.append(step)
                         _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
+                        _HOLD_STEP = step
                     fine_t = _FINE_T
             else:
                 _CLOCK_HOLD = False
+                _HOLD_STEP = None
             if _FINE_ACC is not None and fine_t != _FINE_T:
                 _close_fine()
             if _FINE_ACC is None:
@@ -720,15 +748,21 @@ def _thread_cpu() -> float | None:
         return None
 
 
+def _reason(exc: BaseException) -> str:
+    """What a failure may leave in the zip: its type and, for an operating-system error, the
+    system's own reason ("No space left on device"), cut to 120 characters. Never its message,
+    which can name a path or carry text a user typed."""
+    reason = type(exc).__name__
+    if isinstance(exc, OSError) and exc.strerror:
+        reason += f": {exc.strerror}"
+    return reason[:120]
+
+
 def _note_error(what: str, exc: BaseException) -> None:
-    """Count a failure of the recorder's own work and keep the last one's type and, for an
-    operating-system error, its reason (never its message, which names a path)."""
+    """Count a failure of the recorder's own work and keep the last one's reason (``_reason``)."""
     with contextlib.suppress(Exception):
-        reason = type(exc).__name__
-        if isinstance(exc, OSError) and exc.strerror:
-            reason += f": {exc.strerror}"
         _ERRORS[f"{what}_failures"] = _ERRORS.get(f"{what}_failures", 0) + 1
-        _ERRORS[f"last_{what}_error"] = {"at": _iso(time.time()), "error": reason[:120]}
+        _ERRORS[f"last_{what}_error"] = {"at": _iso(time.time()), "error": _reason(exc)}
 
 
 def _note_cost(what: str, started_wall: float, started_cpu: float | None) -> None:
@@ -874,14 +908,25 @@ def _whole(raw: Any) -> int:
         return 0
 
 
+def _number(raw: Any) -> bool:
+    return isinstance(raw, int | float) and not isinstance(raw, bool) and math.isfinite(raw)
+
+
 def _row(raw: Any) -> list[Any] | None:
-    """One stored row of this build's layout, or ``None``."""
-    return raw if isinstance(raw, list) and len(raw) == len(COLUMNS) else None
+    """One stored row of this build's layout, or ``None``: the right length, a whole ``t`` and
+    ``n``, every other cell a finite number or null. A cell of another type (a hand-edited file,
+    another build) would end in ``int(...)`` at start or in ``_gaps`` and take the history with
+    it, so the row that carries it is dropped alone."""
+    if not isinstance(raw, list) or len(raw) != len(COLUMNS):
+        return None
+    if not all(isinstance(x, int) and not isinstance(x, bool) for x in raw[:2]):
+        return None
+    return raw if all(x is None or _number(x) for x in raw[2:]) else None
 
 
 def _rows(raw: Any) -> list[list[Any]]:
     """The stored rows that have the layout this build writes; anything else is dropped."""
-    return [r for r in _list(raw) if isinstance(r, list) and len(r) == len(COLUMNS)]
+    return [r for r in map(_row, _list(raw)) if r is not None]
 
 
 def _counts_from_triples(raw: Any) -> dict[tuple[str, str], int]:
@@ -1037,14 +1082,16 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "reading has no earlier figure and is not named that minute; `busiest` is `null` with "
                 "`busiest_why` when the threads could not be compared, and the reason says which: "
                 "memory was short (session_pressure.json records the threads then), every thread was "
-                "waiting at the reading (an idle process), the earlier reading was too old, or it is "
-                "the first reading of the session); "
+                "waiting at the reading (an idle process), the platform gave no per-thread CPU figure "
+                "to the threads that were working, the earlier reading was too old, or it is the "
+                "first reading of the session); "
                 "`logs` counts the lines that reached the root logger per hour by logger and level "
                 "(c critical, e error, w warning, i info, d debug), the loggers past the eight "
                 "busiest summed in `other`; rows are in the order they were written and "
                 "`clock_steps` says where the clock stepped back and by how much from its own last reading "
                 "(`kept_open`: a step too soon after the last one to start a new history, held in the open "
-                "bucket; a held step also lengthens one minute row, whose `n` says by how much); a gap "
+                "bucket until the interval passes, when `new_history_at` says where the new history "
+                "began; a held step also lengthens one minute row, whose `n` says by how much); a gap "
                 "marked `clock_step` is next to a recorded step and may be the clock's correction forward "
                 "(forward steps are not recorded) and not down time; `previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
@@ -1062,7 +1109,8 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "for the interpreter, which under busy threads is most of it and is the machine's "
                 "load, not the recorder's work (`null` where the platform has no per-thread clock). `errors` counts this session's failed ticks and failed "
                 "writes of the recorder itself, counted over the whole session and never reset, with the "
-                "last one's type (no message, which can name a path)."
+                "last one's type and, for an operating-system error, the system's reason (no message, "
+                "which can name a path)."
             ),
             "columns": list(COLUMNS),
             "bucket_s": {"fine": FINE_S, "coarse": COARSE_S, "minutes": MINUTE_S},
@@ -1101,7 +1149,7 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             member["previous_sessions"] = previous
         return _fit(member, max_bytes)
     except Exception as exc:  # noqa: BLE001 - a member that fails says so
-        return {"available": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        return {"available": False, "error": _reason(exc)}
 
 
 def _fit(member: dict[str, Any], max_bytes: int) -> dict[str, Any]:
@@ -1154,7 +1202,7 @@ def _fit(member: dict[str, Any], max_bytes: int) -> dict[str, Any]:
 def reset_for_tests() -> None:
     """Forget the in-memory state and detach the log counter. Test-only."""
     global _STARTED, _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS, _PREVIOUS, _CLOCK_BACK
-    global _CLOCK_HOLD, _CLOCK_STEPS, _LAST_REBASE, _LAST_WALL
+    global _CLOCK_HOLD, _CLOCK_STEPS, _LAST_REBASE, _LAST_WALL, _HOLD_STEP
     global _LAST_FLUSH, _LAST_FLUSH_AT, _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T
     global _MIN_ACC, _MIN_T, _HOUR_LOGS, _HOUR_LOGS_T, _SLOW, _LAST_SLOW, _LAST_CPU, _HANDLER
     global _PROC, _COST, TAIL_IN
@@ -1166,6 +1214,7 @@ def reset_for_tests() -> None:
         _PREVIOUS = []
         _CLOCK_BACK = 0
         _CLOCK_HOLD = False
+        _HOLD_STEP = None
         _CLOCK_STEPS = []
         _LAST_REBASE = float("-inf")
         _LAST_WALL = None
