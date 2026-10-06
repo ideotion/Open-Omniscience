@@ -3655,9 +3655,11 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         # Both keys: a cursor left in the working copy would resume a pass in flight past the carried
         # articles. (No `suppress(sqlite3.OperationalError)`: sqlcipher3 raises its own class, so it
         # would suppress nothing there and everything on a plaintext file, a full disk included.)
+        # `main.` is explicit: an unqualified name falls through to an ATTACHED schema, so a working
+        # copy without the table would otherwise delete from the INCOMING backup's own table.
         if _local_has_table(con, "derived_meta"):
             con.execute(
-                "DELETE FROM derived_meta WHERE key IN (?, ?)", (DONE_KEY, CURSOR_KEY)
+                "DELETE FROM main.derived_meta WHERE key IN (?, ?)", (DONE_KEY, CURSOR_KEY)
             )
     # The ORM's own storage form for a DateTime column -- naive UTC, space-separated,
     # microseconds -- so a carried row's timestamp is indistinguishable in shape from one

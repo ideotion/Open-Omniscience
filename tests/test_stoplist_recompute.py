@@ -261,6 +261,19 @@ def test_the_fingerprint_is_recorded_last_and_a_resume_reaches_the_same_end_stat
     _assert_final(_tops(env), before, w)
 
 
+def test_an_old_format_cursor_row_is_not_resumed(env):
+    """A cursor row written before the walk key existed held the bare fingerprint (no plan part); it
+    parses as no cursor, so the walk starts from the top rather than from a position that was made
+    for a different walk."""
+    from src.database.models import DerivedMeta
+
+    fp = sr.current_fingerprint()
+    with env.session() as s:
+        s.add(DerivedMeta(key=sr.CURSOR_KEY, value=f"{fp}:7:7", updated_at=datetime.now(UTC)))
+    with env.session() as s:
+        assert sr._cursor_get(s, f"{fp}.0123456789abcdef") == (0, 0)
+
+
 def test_a_cursor_made_under_another_list_is_not_resumed(env):
     with env.session() as s:
         _cursor = sr._cursor_set
@@ -786,8 +799,8 @@ def test_a_pass_stopped_on_a_list_that_added_a_word_is_accounted_for_when_the_li
 
 def test_a_swap_of_one_word_for_another_after_a_stopped_pass_leaves_no_hidden_word_in_a_top(env, monkeypatch):
     """(c) L2 adds w2 and its pass rewrites A's top to w3 and stops. L3 swaps w2 for w3: w3 is hidden
-    now and w2 visible. The shortcut alone calls A unaffected (w2 outranks w3); the restored walk of
-    w2 recomputes it."""
+    now and w2 visible: A's stored top (w3) is a hidden word, and the pass must walk w2 as a restored
+    keyword and put w2 back as the top."""
     with env.session() as s:
         w2, w3, w4, f = (_keyword(s, t) for t in ("hid2", "hid3", "hid4", "ff"))
         _article(s, "A", {w2: 5, w3: 3, f: 1})

@@ -24,12 +24,12 @@ run on an existing corpus has no baseline and walks every hidden word (see below
 fingerprint is written AFTER the last chunk: a kill, a restart or a failure leaves it unwritten and
 the next window resumes from the stored cursor.
 
-WHAT IT TOUCHES. Only articles whose top set held a hidden word. The top set is the keywords that
-reached the highest count, so a hidden word can sit in it as a NON-lowest member of a tie, which the
-stored representative id cannot show; the test therefore reads the article's own mentions (the
-per-article covering index, no join to the wide article row) and asks whether a hidden word reached
-the highest count. An article whose stored columns already equal the recomputed ones is counted and
-not written (its record is wide, so a write rewrites many pages). An article whose columns are NULL
+WHAT IT TOUCHES. Only articles that hold a hidden word (a mention of a keyword the walk reaches). The
+top set is the keywords that reached the highest count, so a hidden word can sit in it as a NON-lowest
+member of a tie, which the stored representative id cannot show; each reached article's own mentions
+are therefore read (the per-article covering index, no join to the wide article row) and the top is
+recomputed from them without the hidden words. An article whose stored columns already equal the
+recomputed ones is counted and not written (its record is wide, so a write rewrites many pages). An article whose columns are NULL
 ("never computed") is left for the index to fill, except where a word taken off the list is
 concerned (below). Each affected article is handled once, when its walk reaches its LOWEST walked
 keyword.
@@ -98,8 +98,10 @@ if TYPE_CHECKING:
 
 _LOG = logging.getLogger("analytics.stoplist_recompute")
 
-#: The resume point: ``<fingerprint>:<hidden keyword id>:<last article id>`` in ``derived_meta``.
-#: It carries the fingerprint it was made under, so a cursor from an older list is never resumed.
+#: The resume point: ``<fingerprint>.<plan>:<hidden keyword id>:<last article id>`` in ``derived_meta``
+#: (``<plan>`` is ``_run``'s walk key: a hash of the baseline and the words taken off). It carries the
+#: list and the plan it was made under, so a cursor from an older list, or from a smaller walk, is never
+#: resumed.
 CURSOR_KEY = "stoplist_recompute_cursor"
 #: The fingerprint of the last FINISHED run, in the database beside the data it describes (written in
 #: the transaction that deletes the last cursor), so a restored or moved database cannot read as
@@ -239,14 +241,14 @@ def state_stamp() -> object:
 # ------------------------------------------------------------------------------------- cursor
 
 
-def _cursor_get(session: Any, fp: str) -> tuple[int, int]:
+def _cursor_get(session: Any, walk_key: str) -> tuple[int, int]:
     from src.database.models import DerivedMeta
 
     try:
         raw = session.query(DerivedMeta.value).filter(DerivedMeta.key == CURSOR_KEY).scalar()
         if raw:
             got_fp, kid, aid = str(raw).split(":")
-            if got_fp == fp:
+            if got_fp == walk_key:
                 return int(kid), int(aid)
     except Exception:  # noqa: BLE001 - a lost cursor costs a re-scan, never a wrong value
         pass
@@ -264,8 +266,8 @@ def _meta_set(session: Any, key: str, value: str) -> None:
         row.updated_at = datetime.now(UTC)
 
 
-def _cursor_set(session: Any, fp: str, kid: int, aid: int) -> None:
-    _meta_set(session, CURSOR_KEY, f"{fp}:{int(kid)}:{int(aid)}")
+def _cursor_set(session: Any, walk_key: str, kid: int, aid: int) -> None:
+    _meta_set(session, CURSOR_KEY, f"{walk_key}:{int(kid)}:{int(aid)}")
 
 
 def _done_get(session: Any) -> str | None:
