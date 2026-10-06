@@ -268,7 +268,7 @@ def preflight(
             ratio = peak / inp * 1.25
             basis = (f"MEASURED by the prior report: its ingest peaked at {peak} bytes (the larger of the data directory's "
                      f"size and the disk's loss) for a {inp}-byte extract, x1.25 margin, + the reserve")
-        except (KeyError, StopIteration, ZeroDivisionError, TypeError):
+        except (KeyError, StopIteration, ZeroDivisionError, TypeError, ValueError):
             ratio = None
     factor = ratio if ratio is not None else floor_factor
     footprint = int(factor * extract_bytes)
@@ -328,6 +328,8 @@ class PhaseResult:
     #: True when a process of the child's group was STILL alive after the SIGKILL sweep and the wait: the
     #: store is then never deleted under it.
     group_survived: bool = False
+    #: True when the sampler thread did not stop within its join timeout: no further phase is started.
+    sampler_alive: bool = False
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
@@ -335,14 +337,14 @@ class PhaseResult:
 
 def _phase_status(*, refusal: str | None, returncode: int | None, signalled: bool) -> str:
     """How a finished phase is classed. A guard's stop keeps its own class and reason (a signal on top of
-    it is recorded as ``interrupted_by``, never allowed to rewrite what the guard did); a signal makes the
-    phase ``interrupted`` only if the child did not finish cleanly on its own."""
+    it is recorded as ``interrupted_by``, never allowed to rewrite what the guard did). ``signalled`` means
+    the runner TOLD the child to stop: whatever it then exited with, the phase did not run to its own end."""
     if refusal:
         return "refused-mid-run"
-    if returncode == 0:
-        return "ok"
     if signalled:
         return "interrupted"
+    if returncode == 0:
+        return "ok"
     return "refused" if returncode == 2 else "failed"  # the app's own scripts exit 2 when they refuse by name
 
 
@@ -401,9 +403,17 @@ class _Interrupts:
     signal: str | None = None
     count: int = 0
     pgid: int | None = None
+    #: True once the handler has actually signalled a live child's group (the child was told to stop).
+    sent: bool = False
+    #: When the last signal that COUNTED arrived: signals within ``SIGNAL_DEBOUNCE_S`` of it are one event.
+    last: float | None = None
 
 
 _INT = _Interrupts()
+
+#: A dropped session sends a hangup, then another from the shell, then the kernel's own, within milliseconds:
+#: signals that close together are ONE event, so the machine's own repeats never count as an operator insisting.
+SIGNAL_DEBOUNCE_S = 0.25
 
 
 def _pdeathsig_preexec():
@@ -570,12 +580,15 @@ def run_phase(
         status = None
         usage = None
         sig_during = None
+        told_to_stop = False
+        _INT.sent = False
         try:
             _INT.pgid = proc.pid
             sampler.start()
             status, usage = _reap()
             proc.returncode = os.waitstatus_to_exitcode(status)
             sig_during = _INT.signal
+            told_to_stop = _INT.sent or terminating["v"]
             # killpg only SENDS the signal: wait until no member of the group is still alive, so nothing can
             # write into the store the caller deletes next. A member that will not go is reported, and the
             # store is kept.
@@ -587,6 +600,7 @@ def run_phase(
                 # It wakes at once (``stop`` is set) unless it is inside one directory scan: wait that out,
                 # so the next phase's Popen never forks while a sampler thread is alive.
                 sampler.join(timeout=60)
+            res.sampler_alive = sampler.is_alive()
             if not reaped["v"]:
                 with guard:
                     with contextlib.suppress(OSError):
@@ -607,13 +621,17 @@ def run_phase(
     res.disk_free_after_bytes = probe.free_disk(run_dir)
     if res.disk_free_before_bytes is not None and res.disk_free_min_bytes is not None:
         res.disk_used_peak_bytes = max(0, res.disk_free_before_bytes - min(res.disk_free_min_bytes, res.disk_free_after_bytes))
+    # A child that exits 0 after the runner TOLD it to stop is not a finished phase (it may have trapped the
+    # signal and left early): only a signal that reached the runner as the child ended leaves the outcome alone.
     res.status = _phase_status(refusal=refusal[0] if refusal else None, returncode=proc.returncode,
-                               signalled=sig_during is not None)
+                               signalled=sig_during is not None and told_to_stop)
     if refusal:
         res.reason = refusal[0]
     if sig_during is not None:
         if res.status == "interrupted":
-            res.reason = f"the runner was interrupted ({sig_during})"
+            res.reason = (f"the runner was interrupted ({sig_during})"
+                          + ("; the child exited 0 after being told to stop, which is not a completed phase"
+                             if proc.returncode == 0 else ""))
         else:
             res.interrupted_by = sig_during
     if res.group_survived:
@@ -652,22 +670,32 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
 
     def __enter__(self):
         self._prev: dict = {}
-        _INT.signal, _INT.count, _INT.pgid = None, 0, None
+        _INT.signal, _INT.count, _INT.pgid, _INT.sent, _INT.last = None, 0, None, False, None
         if threading.current_thread() is not threading.main_thread():
             return self
 
         def _handler(signum, _frame):
-            _INT.count += 1
+            now_m = time.monotonic()
             if _INT.signal is None:
                 _INT.signal = signal.Signals(signum).name
-            if _INT.count >= 3:
-                # The operator is insisting and something is stuck: give the signal its default action, so
-                # there is always a way out that is not kill -9.
-                signal.signal(signum, signal.SIG_DFL)
-                os.kill(os.getpid(), signum)
-                return
+            elif _INT.last is not None and now_m - _INT.last < SIGNAL_DEBOUNCE_S:
+                return  # the same event as the one just handled (a dropped session sends several at once)
+            _INT.last = now_m
+            _INT.count += 1
             pg = _INT.pgid
+            if _INT.count >= 3:
+                # The operator is insisting and something is stuck: the child goes first (nothing keeps writing
+                # into a store nobody will delete), then the runner takes the DEFAULT action, so there is always
+                # a way out that is not kill -9. SIGQUIT would dump a core holding the passphrase: SIGTERM instead.
+                if pg is not None:
+                    with contextlib.suppress(OSError):
+                        os.killpg(pg, signal.SIGKILL)
+                final = signal.SIGTERM if signum == getattr(signal, "SIGQUIT", None) else signum
+                signal.signal(final, signal.SIG_DFL)
+                os.kill(os.getpid(), final)
+                os._exit(128 + int(final))  # only reached where the signal was not delivered (a runner that is PID 1)
             if pg is not None:
+                _INT.sent = True
                 with contextlib.suppress(OSError):
                     os.killpg(pg, signal.SIGTERM if _INT.count == 1 else signal.SIGKILL)
 
@@ -949,8 +977,15 @@ def _run(
     run_dir = base / f"oo-osm-reference-run-{stamp}-{secrets.token_hex(3)}"
     data_dir = run_dir / "data"
     tmp_dir = run_dir / "tmp"
-    run_dir.mkdir(mode=0o700)
+    try:
+        run_dir.mkdir(mode=0o700)
+    except OSError as exc:  # an unwritable workdir is a named refusal with a report, not a traceback
+        report["status"] = "refused"
+        report["reason"] = f"the throwaway store cannot be made in the work directory ({type(exc).__name__})"
+        report["not_measured"] = ["everything: no store could be made, so no phase started"]
+        return _finish(None, None)
     # From here ANYTHING that goes wrong still ends in the deletion step and a written report.
+    specs: list[PhaseSpec] = []
     try:
         data_dir.mkdir()
         tmp_dir.mkdir()
@@ -976,6 +1011,12 @@ def _run(
                             reserve_bytes=reserve_bytes, min_available_bytes=min_available_bytes, probe=probe,
                             sample_seconds=sample_seconds, secrets_=secrets_, roots=roots)
             report["phases"].append(res.to_dict())
+            if res.sampler_alive and res.status == "ok":
+                res.status = "failed"
+                report["status"], report["reason"] = "failed", (
+                    f"phase {spec.name}: the sampler thread did not stop, so no further phase was started "
+                    "(a fork beside a live thread is not safe)")
+                break
             if res.status != "ok":
                 report["status"] = res.status if res.status in ("refused-mid-run", "interrupted") else (
                     "refused" if res.status == "refused" else "failed")
@@ -1000,12 +1041,21 @@ def _run(
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
     except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
-        report["status"] = "failed"
-        report["reason"] = f"the runner itself failed: {type(exc).__name__}: {exc}"
+        note = f"the runner itself failed: {type(exc).__name__}: {exc}"
+        if report["status"] == "ok":
+            report["status"], report["reason"] = "failed", note
+        else:  # what happened first (a signal, a guard's stop) stays the status; this is added to it
+            report["reason"] = f"{report.get('reason') or report['status']}; then {note}"
     finally:
         # THE THIRD STEP: the throwaway store goes, and the report says so. A kept store is left on purpose --
         # and so is one a child's group still held when the sweep ended: nothing is deleted under a live writer.
         survived = any(p.get("group_survived") for p in report["phases"])
+        done_ok = {p["name"] for p in report["phases"] if p.get("status") == "ok"}
+        unfinished = [sp.name for sp in specs if sp.name not in done_ok]
+        report["not_measured"] = not_measured(history=history is not None, gazetteer=gazetteer, kernel_peak=kernel_peak)
+        if report["status"] != "ok":
+            report["not_measured"] += [f"phase {n}: did not run to completion (the run ended {report['status']})"
+                                       for n in unfinished]
         if keep_store:
             report["store"] = {"kept": True, "note": "left for a separate gazetteer build; delete it with --cleanup"}
             kept_dir: Path | None = run_dir
@@ -1018,8 +1068,9 @@ def _run(
             gone = _delete_store(run_dir, probe)
             report["store"] = {"kept": not gone.get("deleted"), **gone}
             kept_dir = None if gone.get("deleted") else run_dir
-    if _INT.signal is not None and report["status"] == "ok":
-        # Every phase finished on its own: the outcome stays what it was, and the signal is recorded beside it.
+    if _INT.signal is not None and report["status"] != "interrupted":
+        # What the run did stays its status (a finished run is ok, a guard's stop is refused-mid-run); the signal
+        # that reached the runner is recorded beside it, never lost.
         report["interrupted_by"] = _INT.signal
     return _finish(run_dir, kept_dir)
 

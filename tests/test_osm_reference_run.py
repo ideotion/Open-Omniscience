@@ -549,13 +549,28 @@ def test_a_third_signal_gives_the_default_action_so_there_is_always_a_way_out():
         "import signal\nfrom src.osm import reference_run as R\n"
         "with R._terminating_signals():\n"
         "    h = signal.getsignal(signal.SIGTERM)\n"
-        "    h(signal.SIGTERM, None)\n    h(signal.SIGTERM, None)\n"
+        "    h(signal.SIGTERM, None); R._INT.last = None\n    h(signal.SIGTERM, None); R._INT.last = None\n"
         "    print('two handled', flush=True)\n"
         "    h(signal.SIGTERM, None)\n"
         "print('survived the third')\n"
     )
     done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
     assert done.returncode == -15 and "two handled" in done.stdout and "survived" not in done.stdout
+
+
+def test_signals_within_a_few_milliseconds_are_one_event_not_the_operator_insisting():
+    """A dropped session sends SIGHUP twice or thrice at once: that must not escalate (SIGKILL, then the default
+    action) and take the report and the store's deletion with it."""
+    import signal as sg
+
+    with R._terminating_signals():
+        h = sg.getsignal(sg.SIGHUP)
+        for _ in range(5):
+            h(sg.SIGHUP, None)
+        assert R._INT.count == 1 and R._INT.signal == "SIGHUP"
+        R._INT.last = None
+        h(sg.SIGTERM, None)  # a later one, past the debounce, counts
+        assert R._INT.count == 2
 
 
 def test_a_sighup_ignored_by_nohup_is_left_ignored_but_sigterm_still_stops_the_run(tmp_path):
@@ -581,8 +596,8 @@ def test_a_sighup_ignored_by_nohup_is_left_ignored_but_sigterm_still_stops_the_r
     assert report["status"] == "interrupted" and "SIGTERM" in report["reason"]
 
 
-def test_a_signal_that_arrives_as_a_finished_child_exits_cleanly_keeps_the_real_outcome(tmp_path):
-    """The child leaves 0 on SIGTERM: the phase and the run are ``ok``, the signal is recorded BESIDE it."""
+def test_a_child_that_exits_0_after_being_told_to_stop_is_not_a_finished_phase(tmp_path):
+    """It may have trapped the SIGTERM and left early: ``ok`` would size the next floor from a cut-short ingest."""
     import signal as sg
 
     pidfile = tmp_path / "child.pid"
@@ -596,8 +611,22 @@ def test_a_signal_that_arrives_as_a_finished_child_exits_cleanly_keeps_the_real_
     finally:
         proc.kill()
     report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "interrupted" and report["phases"][0]["status"] == "interrupted"
+    assert "told to stop" in report["phases"][0]["reason"]
+
+
+def test_a_signal_that_reaches_the_runner_after_every_phase_finished_keeps_the_real_outcome(tmp_path, monkeypatch):
+    real = R.run_phase
+
+    def _then_signal(spec, **kw):
+        res = real(spec, **kw)
+        R._INT.signal = "SIGTERM"  # arrived as the child was already finished: nothing was told to stop
+        return res
+
+    monkeypatch.setattr(R, "run_phase", _then_signal)
+    report, _ = _run(tmp_path, phases_override=_scripted("print(1)"))
     assert report["status"] == "ok" and report["interrupted_by"] == "SIGTERM"
-    assert report["phases"][0]["status"] == "ok" and report["phases"][0]["interrupted_by"] == "SIGTERM"
+    assert report["phases"][0]["status"] == "ok"
 
 
 def test_sigtstp_is_ignored_for_the_run_and_every_handler_comes_back_after_it():
@@ -613,7 +642,8 @@ def test_sigtstp_is_ignored_for_the_run_and_every_handler_comes_back_after_it():
 def test_the_phase_status_never_lets_a_signal_rewrite_what_a_guard_or_the_child_did():
     f = R._phase_status
     assert f(refusal="reserve", returncode=-15, signalled=True) == "refused-mid-run"
-    assert f(refusal=None, returncode=0, signalled=True) == "ok"
+    assert f(refusal=None, returncode=0, signalled=True) == "interrupted", "told to stop: not a finished phase"
+    assert f(refusal=None, returncode=0, signalled=False) == "ok"
     assert f(refusal=None, returncode=-15, signalled=True) == "interrupted"
     assert f(refusal=None, returncode=1, signalled=False) == "failed"
     assert f(refusal=None, returncode=2, signalled=False) == "refused"
@@ -621,6 +651,29 @@ def test_the_phase_status_never_lets_a_signal_rewrite_what_a_guard_or_the_child_
 
 def test_the_whole_group_is_gone_before_the_store_is_deleted(tmp_path, monkeypatch):
     """killpg only SENDS: the runner waits for the group to be gone, so no writer is left in the store."""
+    code = "print(1)"
+    asked = {"n": 0}
+    real_alive = R._group_alive
+
+    def _alive_twice(pgid):
+        asked["n"] += 1
+        return True if asked["n"] <= 2 else real_alive(pgid)  # a member that takes a moment to die
+
+    seen = {}
+    real_delete = R._delete_store
+
+    def _checked(run_dir, probe):
+        seen["asked_before_deletion"] = asked["n"]
+        return real_delete(run_dir, probe)
+
+    monkeypatch.setattr(R, "_group_alive", _alive_twice)
+    monkeypatch.setattr(R, "_delete_store", _checked)
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    assert report["status"] == "ok" and report["store"]["deleted"] is True
+    assert seen["asked_before_deletion"] >= 3, "the deletion did not wait for the group"
+
+
+def test_a_helper_still_alive_at_the_sweep_is_dead_before_the_store_is_deleted(tmp_path, monkeypatch):
     pidfile = tmp_path / "helper.pid"
     code = (
         "import subprocess, sys\n"
@@ -631,13 +684,12 @@ def test_the_whole_group_is_gone_before_the_store_is_deleted(tmp_path, monkeypat
     real = R._delete_store
 
     def _checked(run_dir, probe):
-        seen["helper_alive_at_deletion"] = _alive(_pid(pidfile))
+        seen["alive"] = _alive(_pid(pidfile))
         return real(run_dir, probe)
 
     monkeypatch.setattr(R, "_delete_store", _checked)
     report, _ = _run(tmp_path, phases_override=_scripted(code))
-    assert report["status"] == "ok" and report["store"]["deleted"] is True
-    assert seen["helper_alive_at_deletion"] is False
+    assert report["status"] == "ok" and seen["alive"] is False
 
 
 def test_a_member_that_survives_the_sweep_keeps_the_store_and_the_report_says_so(tmp_path, monkeypatch):
@@ -887,7 +939,10 @@ def test_the_exit_code_survives_a_closed_terminal(tmp_path, monkeypatch):
         raise OSError(5, "Input/output error")
 
     monkeypatch.setattr("builtins.print", _dead)
+    redirected = []
+    monkeypatch.setattr(os, "dup2", lambda *a: redirected.append(a))  # the real one would clobber pytest's capture
     assert CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")]) == 3
+    assert redirected, "stdout was not pointed at nowhere, so its failed buffer would turn the exit code into 120"
 
 
 def test_a_report_that_cannot_be_written_is_printed_instead_of_lost(tmp_path):
@@ -907,3 +962,46 @@ def test_a_report_directory_that_cannot_be_made_is_refused_before_anything_runs(
                    "--workdir", str(tmp_path / "w"))
     assert rc == 2 and "report's directory" in out
     assert not list((tmp_path / "w").glob("oo-osm-reference-run-*"))
+
+
+def test_a_bad_value_in_a_prior_report_falls_back_to_the_guess():
+    prior = {"inputs": {"extract": {"bytes": "not-a-number"}},
+             "phases": [{"name": "ingest", "status": "ok", "peak_data_dir_bytes": "lots"}]}
+    pf = R.preflight(extract_bytes=10 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB, prior_report=prior)
+    assert "GUESS" in pf["floor_basis"]
+
+
+def test_a_workdir_that_cannot_be_used_is_a_named_refusal(tmp_path):
+    ext = _extract(tmp_path)
+    blocker = tmp_path / "a-file"
+    blocker.write_text("x", encoding="utf-8")
+    rc, out = _cli("--extract", str(ext), "--country", "ZZ", "--workdir", str(blocker / "w"))
+    assert rc == 2 and "refused" in out
+
+
+def test_a_store_that_cannot_be_made_is_a_refused_run_with_a_report(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    monkeypatch.setattr(R.secrets, "token_hex", lambda n: "aaaaaa")
+    fixed = datetime(2026, 10, 6, 12, 0, 0, tzinfo=UTC)
+    work = tmp_path / "work"
+    (work / "oo-osm-reference-run-20261006T120000Z-aaaaaa").mkdir(parents=True)  # the name is taken
+    rep = tmp_path / "r.json"
+    report, kept = _run(tmp_path, now=lambda: fixed, report_path=rep, phases_override=_scripted("print(1)"))
+    assert report["status"] == "refused" and "cannot be made" in report["reason"] and kept is None and rep.is_file()
+
+
+def test_the_runner_failing_after_a_phase_keeps_the_phase_it_measured(tmp_path, monkeypatch):
+    real = R.run_phase
+    seen = {"n": 0}
+
+    def _second_raises(spec, **kw):
+        seen["n"] += 1
+        if seen["n"] == 2:
+            raise RuntimeError("a bug")
+        return real(spec, **kw)
+
+    monkeypatch.setattr(R, "run_phase", _second_raises)
+    report, _ = _run(tmp_path, phases_override=_scripted("print(1)", "one") + _scripted("print(2)", "two"))
+    assert report["status"] == "failed" and [p["name"] for p in report["phases"]] == ["one"]
+    assert any("phase two" in n for n in report["not_measured"])

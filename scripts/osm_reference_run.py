@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -105,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
             on_start=lambda d: print(f"store: {d} (if this run is killed, delete it with --cleanup)", flush=True),
             report_path=None if args.plan else target,
         )
-    except (FileNotFoundError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         print(f"refused: {exc}")
         return 2
 
@@ -116,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     # The exit code is settled BEFORE anything is printed: a closed terminal (a dropped session) makes print
     # raise OSError, and that must not turn "interrupted" (3) into a traceback and a 1.
     code = {"ok": 0, "failed": 1, "interrupted": 3}.get(report["status"], 2)
-    with contextlib.suppress(OSError):
+    try:
         phases = ", ".join(f"{p['name']}={p['status']} {p['wall_seconds']}s" for p in report["phases"]) or "none started"
         print(f"status: {report['status']}  ({phases})")
         if report.get("reason"):
@@ -129,6 +130,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(report, indent=2, sort_keys=True, default=str))
         else:
             print(f"report: {target.name}")
+    except OSError:
+        # The failed bytes would sit in stdout's buffer and fail again at interpreter shutdown, which would
+        # turn this exit code into 120: point stdout at nowhere.
+        with contextlib.suppress(OSError, ValueError):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     return code
 
 
