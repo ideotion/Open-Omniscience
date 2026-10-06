@@ -5277,6 +5277,7 @@
   "Volume": "الحجم",
   "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "الحجم والتوقيت أعداد دقيقة؛ متوسط النبرة من VADER (معجم إنجليزي، غير موثوق لغير الإنجليزية). لا ترتيب ولا حكم — تغطية، لا مصداقية.",
   "Volume backup": "النسخ الاحتياطي بالوحدات",
+  "Volume backup (it first makes a temporary copy of your data)": "النسخ الاحتياطي بالوحدات (ينشئ أولًا نسخة مؤقتة من بياناتك)",
   "WAL before first open": "WAL قبل الفتح الأول",
   "Waiting": "في الانتظار",
   "Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.": "في انتظار اتصال: {why}. يعيد المحاولة من تلقاء نفسه ولا يلجأ أبدًا إلى اتصال مباشر.",

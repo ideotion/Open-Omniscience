@@ -5277,6 +5277,7 @@
   "Volume": "मात्रा",
   "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "मात्रा और समय सटीक गणनाएँ हैं; औसत स्वर VADER है (अंग्रेज़ी-शब्दकोश, ग़ैर-अंग्रेज़ी के लिए अविश्वसनीय)। कोई क्रम नहीं और कोई निर्णय नहीं — कवरेज, विश्वसनीयता नहीं।",
   "Volume backup": "वॉल्यूम बैकअप",
+  "Volume backup (it first makes a temporary copy of your data)": "वॉल्यूम बैकअप (यह पहले आपके डेटा की एक अस्थायी प्रति बनाता है)",
   "WAL before first open": "पहली बार खोलने से पहले WAL",
   "Waiting": "प्रतीक्षा में",
   "Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.": "कनेक्शन की प्रतीक्षा: {why}। यह अपने आप फिर कोशिश करता है और कभी सीधे कनेक्शन पर नहीं जाता।",

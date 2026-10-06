@@ -5277,6 +5277,7 @@
   "Volume": "件数",
   "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "件数と時期は正確な集計です。平均トーンは VADER（英語辞書ベース、英語以外では信頼できません）。順位付けも判定もありません——報道量であって、信頼性ではありません。",
   "Volume backup": "ボリュームバックアップ",
+  "Volume backup (it first makes a temporary copy of your data)": "ボリュームバックアップ（最初にデータの一時コピーを作成します）",
   "WAL before first open": "最初のオープン前の WAL",
   "Waiting": "待機中",
   "Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.": "接続を待っています：{why}。自動で再試行し、直接接続に切り替えることは決してありません。",

@@ -5277,6 +5277,7 @@
   "Volume": "Volumen",
   "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "El volumen y el momento son recuentos exactos; el tono medio es VADER (léxico inglés, poco fiable para textos no ingleses). Sin clasificación ni veredicto: cobertura, no credibilidad.",
   "Volume backup": "Copia por volúmenes",
+  "Volume backup (it first makes a temporary copy of your data)": "Copia por volúmenes (primero crea una copia temporal de tus datos)",
   "WAL before first open": "WAL antes de la primera apertura",
   "Waiting": "En espera",
   "Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.": "Esperando una conexión: {why}. Reintenta por sí solo y nunca recurre a una conexión directa.",

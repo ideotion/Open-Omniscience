@@ -5277,6 +5277,7 @@
   "Volume": "পরিমাণ",
   "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "পরিমাণ ও সময় সঠিক গণনা; গড় স্বর VADER (ইংরেজি-অভিধান, অ-ইংরেজির জন্য অনির্ভরযোগ্য)। কোনো ক্রমবিন্যাস নেই, কোনো রায় নেই — কভারেজ, বিশ্বাসযোগ্যতা নয়।",
   "Volume backup": "ভলিউম ব্যাকআপ",
+  "Volume backup (it first makes a temporary copy of your data)": "ভলিউম ব্যাকআপ (এটি প্রথমে আপনার ডেটার একটি অস্থায়ী অনুলিপি তৈরি করে)",
   "WAL before first open": "প্রথম খোলার আগে WAL",
   "Waiting": "অপেক্ষমাণ",
   "Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.": "সংযোগের অপেক্ষায়: {why}। এটি নিজে থেকেই আবার চেষ্টা করে এবং কখনও সরাসরি সংযোগে ফিরে যায় না।",

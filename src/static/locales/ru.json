@@ -5277,6 +5277,7 @@
   "Volume": "Объём",
   "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "Объём и сроки — точные подсчёты; средний тон — VADER (английский лексикон, ненадёжен для неанглоязычных текстов). Никакого рейтинга и никакого вердикта — освещение, а не достоверность.",
   "Volume backup": "Резервная копия по томам",
+  "Volume backup (it first makes a temporary copy of your data)": "Резервная копия по томам (сначала создаётся временная копия ваших данных)",
   "WAL before first open": "WAL перед первым открытием",
   "Waiting": "Ожидает",
   "Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.": "Ожидание соединения: {why}. Он сам повторяет попытки и никогда не переходит на прямое соединение.",

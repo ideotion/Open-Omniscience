@@ -1853,6 +1853,8 @@
     // stays English on purpose: it is also the log line and the API's answer.
     const _OO_SPACE_WHAT = {
       "backup": "Backup", "restore": "Restore", "volume backup": "Volume backup",
+      "volume backup (it first makes a temporary copy of your data)":
+        "Volume backup (it first makes a temporary copy of your data)",
       "restore staging": "Unpacking the backup to restore it",
     };
     const _OO_SIZE_RE = "([0-9]+(?:\\.[0-9]+)?) (B|KB|MB|GB|TB)";
