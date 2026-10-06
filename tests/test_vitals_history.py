@@ -525,10 +525,29 @@ def test_the_fast_readings_are_in_the_units_the_columns_say(monkeypatch):
     own = psutil.Process().memory_info().rss / (1024 * 1024)
     assert 0.5 * own < got["rss"] < 2.0 * own  # megabytes, not kilobytes or bytes
     assert 0 < got["avail"] <= psutil.virtual_memory().total / (1024 * 1024)
-    assert got["threads"] >= 1 and got["swap"] >= 0
+    assert "threads" not in got and "swap" not in got  # read once a minute, with the slow group
+    slow = v._count_readings()
+    assert slow["threads"] >= 1 and slow["swap"] >= 0
     import sys
 
     assert abs(got["blocks"] * 1000 - sys.getallocatedblocks()) < 200_000  # thousands of blocks
+
+
+def test_the_count_readings_are_the_kernels_numbers_in_megabytes_and_threads(monkeypatch):
+    import psutil
+
+    v.reset_for_tests()
+
+    class _Swap:
+        used = 7 * 1024 * 1024
+
+    class _Proc:
+        def num_threads(self):
+            return 23
+
+    monkeypatch.setattr(psutil, "swap_memory", lambda: _Swap())
+    monkeypatch.setattr(v, "_process", lambda: _Proc())
+    assert v._count_readings() == {"threads": 23.0, "swap": 7.0}  # swap in megabytes, threads as a count
 
 
 def test_without_psutil_the_history_keeps_what_needs_none(monkeypatch):
@@ -537,8 +556,11 @@ def test_without_psutil_the_history_keeps_what_needs_none(monkeypatch):
     v.reset_for_tests()
     monkeypatch.setitem(sys.modules, "psutil", None)  # an import of it now raises ImportError
     got = v._fast_readings()
-    assert "rss" not in got and "avail" not in got and "swap" not in got  # absent, never zero
-    assert got["threads"] >= 1 and "blocks" in got
+    assert "rss" not in got and "avail" not in got  # absent, never zero
+    assert "blocks" in got
+    counts = v._count_readings()
+    assert "swap" not in counts  # absent, never zero
+    assert counts["threads"] == float(threading.active_count())  # Python's own count stands in
 
 
 def test_the_slow_readings_are_sizes_in_megabytes_and_the_lowest_free_space(monkeypatch, tmp_path):
@@ -554,8 +576,11 @@ def test_the_slow_readings_are_sizes_in_megabytes_and_the_lowest_free_space(monk
         free = 5 * 1024 * 1024 * 1024
 
     monkeypatch.setattr(v.shutil, "disk_usage", lambda _p: _Usage())
+    monkeypatch.setattr(v, "_count_readings", lambda: {"threads": 41.0, "swap": 12.5})
     got = v._slow_readings(1000.0)
-    assert got == {"drive_free": 5120.0, "db": 3.0, "wal": 7.0, "columnar": 11.0}
+    assert got == {
+        "threads": 41.0, "swap": 12.5, "drive_free": 5120.0, "db": 3.0, "wal": 7.0, "columnar": 11.0,
+    }
 
 
 def test_a_file_that_is_not_there_is_absent_not_zero(monkeypatch, tmp_path):

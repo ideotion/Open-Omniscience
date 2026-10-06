@@ -13209,7 +13209,10 @@ alone would not resume the run, because a relaunch starts offline under R117 (on
 The vitals history (`src/monitoring/vitals_history.py`, R119) rides the 5-second liveness tick. (1) **The first measurement, 190 ms a tick, was the liveness thread
 queueing for the GIL behind three busy Python threads**; the same tick costs 0.11 ms of CPU on an idle machine and 3.3 ms of CPU under them (`time.thread_time()`
 beside the wall clock: what it takes beside what it waits). An instrument's cost is quoted under load and in CPU, or a fast machine hides it and a busy one
-frightens. (2) **A handler that counts log records takes a LEAF lock of its own, never the lock the recorder holds while it folds rows**: `logging` calls `emit`
+frightens. **The wall figure was then quoted as CPU in a status message ("0.16 s a tick", read off the wrong column of the benchmark's output), and the coordinator
+reasonably took it for 3% of a core**; a number carried from a benchmark into a sentence is re-read against the column it came from. What the 3.3 ms was made of, measured
+piece by piece in thread CPU: five psutil reads of `/proc` at 0.4-0.9 ms each under load and 0.01-0.04 ms idle (a GIL hand-off per read, not work), so the thread count and
+the swap, 1.4 ms between them and neither moving in seconds, moved to the once-a-minute group: 0.98 ms a tick under load, 0.047 ms idle. (2) **A handler that counts log records takes a LEAF lock of its own, never the lock the recorder holds while it folds rows**: `logging` calls `emit`
 with the handler's lock held, so a main lock held across anything slow (the minute's thread walk, 0.3-0.6 s under a GIL-holding burst) stalls every logging
 thread, and a main lock taken inside `emit` against a thread that logs while holding it is a deadlock. The thread sample is therefore taken after the lock is
 released, and two tests pin both halves (a thread holding the main lock cannot stop an `emit`; the sample runs with the lock free). (3) **A budget written before

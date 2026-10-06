@@ -16,7 +16,8 @@ WHAT IT KEEPS (all of it counts, sizes and times; no article, no address, no ter
 - ``fine``: 5-minute buckets for 48 hours; ``coarse``: hourly buckets for 14 days. Each bucket
   is one row of numbers (``COLUMNS`` names them): how many 5-second ticks it holds, then the
   min / mean / max of the process's resident memory and of the machine's available memory, the
-  peak of swap in use, of the thread count and of Python's allocated blocks, the lowest free
+  peak of Python's allocated blocks, of swap in use and of the thread count (these two are read
+  once a minute, the memory readings every five seconds), the lowest free
   space on the data drive and the largest size of the database, its write-ahead log and the
   columnar file.
 - ``minutes``: the last 60 minutes, one row a minute, with the three busiest threads of that
@@ -311,16 +312,45 @@ def _stat_mb(path: Path) -> float | None:
         return None
 
 
+def _process() -> Any:
+    """The psutil handle of this process, made once; ``None`` where psutil is not installed."""
+    global _PROC
+    if _PROC is None:
+        import psutil
+
+        _PROC = psutil.Process()
+    return _PROC
+
+
+def _count_readings() -> dict[str, float]:
+    """The thread count and the swap in use. Each is a read of the kernel's own files, and
+    under a busy interpreter each read costs a GIL hand-off (measured: 0.5 and 0.9 ms of the
+    thread's CPU, of a 2.6 ms tick, with three busy threads; 0.012 and 0.043 ms idle). Neither
+    moves in five seconds the way memory does, and ``session_hwm`` already reads swap every five
+    seconds into its own marks, so they are read with the slow group, once a minute."""
+    out: dict[str, float] = {}
+    try:
+        out["threads"] = float(_process().num_threads())
+    except Exception:  # noqa: BLE001 - no psutil, or the read failed: Python's own count
+        out["threads"] = float(threading.active_count())
+    with contextlib.suppress(Exception):  # an optional reading: absent when it fails
+        import psutil
+
+        out["swap"] = psutil.swap_memory().used / (1024 * 1024)
+    return out
+
+
 def _slow_readings(now: float) -> dict[str, float]:
-    """The readings that cost a system call each: the data drive's free space and the sizes of
-    the database, its write-ahead log and the columnar file. Taken every ``SLOW_S``; between
-    two readings the last one is repeated, which is correct for a size and honest for a
-    minimum (it can only miss a dip shorter than the interval)."""
+    """The readings that cost a system call each and that move slowly: the data drive's free
+    space, the sizes of the database, its write-ahead log and the columnar file, the thread count
+    and the swap in use. Taken every ``SLOW_S``; between two readings the last one is repeated,
+    which is correct for a size and honest for a minimum (it can only miss a dip shorter than
+    the interval)."""
     global _LAST_SLOW, _SLOW
     if now - _LAST_SLOW < SLOW_S:
         return _SLOW
     _LAST_SLOW = now
-    out: dict[str, float] = {}
+    out: dict[str, float] = _count_readings()
     base = data_dir()
     with contextlib.suppress(OSError):
         out["drive_free"] = shutil.disk_usage(base).free / (1024 * 1024)
@@ -337,30 +367,21 @@ def _slow_readings(now: float) -> dict[str, float]:
 
 
 def _fast_readings() -> dict[str, float]:
-    """RSS, available memory, swap in use, thread count and Python's allocated blocks. A
-    reading that cannot be taken is absent. psutil is an optional extra: without it the
-    history holds only the readings that need none."""
-    global _PROC
+    """RSS, available memory and Python's allocated blocks: what moves in seconds. A reading
+    that cannot be taken is absent. psutil is an optional extra: without it the history holds
+    only the readings that need none."""
     out: dict[str, float] = {}
     counter = getattr(sys, "getallocatedblocks", None)
     if counter is not None:
         out["blocks"] = counter() / 1000.0
     try:
         import psutil
-    except Exception:  # noqa: BLE001
-        out["threads"] = float(threading.active_count())
+    except Exception:  # noqa: BLE001 - psutil is an optional extra; the reading above stays
         return out
-    try:
-        if _PROC is None:
-            _PROC = psutil.Process()
-        out["rss"] = _PROC.memory_info().rss / (1024 * 1024)
-        out["threads"] = float(_PROC.num_threads())
-    except Exception:  # noqa: BLE001
-        out.setdefault("threads", float(threading.active_count()))
-    with contextlib.suppress(Exception):  # an optional reading: absent when it fails
-        out["avail"] = psutil.virtual_memory().available / (1024 * 1024)
+    with contextlib.suppress(Exception):  # each reading on its own: one failing leaves the other
+        out["rss"] = _process().memory_info().rss / (1024 * 1024)
     with contextlib.suppress(Exception):
-        out["swap"] = psutil.swap_memory().used / (1024 * 1024)
+        out["avail"] = psutil.virtual_memory().available / (1024 * 1024)
     return out
 
 
