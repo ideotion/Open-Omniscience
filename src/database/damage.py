@@ -1187,13 +1187,17 @@ class DamageRegistry:
         ``ok`` is left; and when the list itself could not be read nothing is cleared."""
         if not earlier:
             return []
-        from src.database.verify import SCHEMA_ENTRY
+        from src.database.verify import PAGES_ENTRY, SCHEMA_ENTRY
 
         if not listed:
             left = set(earlier)
         else:
             everything = SCHEMA_ENTRY in earlier
             left = {t["table"] for t in tables if t.get("verdict") != VERDICT_OK and (everything or t["table"] in earlier)}
+            if PAGES_ENTRY in earlier and not any(t.get("table") == PAGES_ENTRY and t.get("verdict") == VERDICT_OK for t in tables):
+                # ``(pages)`` is no table of the list, so "no longer in the file" cannot clear it: only the page pass
+                # reading ``ok`` does, and an answer that did not include the pass leaves the finding where it was.
+                left.add(PAGES_ENTRY)
         return sorted(left - damaged)
 
     def _note_verified_damage(
@@ -1230,7 +1234,13 @@ class DamageRegistry:
                 if index_only
                 else "an earlier per-table check found damage in: " + shown
             ) + "; it has not read clean since"
-        shape = "PRAGMA quick_check(" + ", ".join(all_names[:6]) + ")"
+        from src.database.verify import PAGES_ENTRY
+
+        named = [n for n in all_names if n != PAGES_ENTRY]
+        shape = "; ".join(
+            ([f"PRAGMA quick_check({', '.join(named[:6])})"] if named else [])
+            + (["PRAGMA cipher_integrity_check"] if PAGES_ENTRY in all_names else [])
+        )
         newly, known, due = self._apply_incident(
             file_key, scope, shape, at, check_tables=tuple(all_names), stopped_after=stopped_after
         )
