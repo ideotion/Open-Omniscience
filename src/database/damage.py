@@ -1098,9 +1098,10 @@ METHOD = (
     "and law files once with PRAGMA quick_check on its own read-only connection (smallest first when the "
     "planner's statistics say which is smallest); a table is damaged when the check reports a problem or "
     "raises SQLITE_CORRUPT, and unchecked, never damaged, when the file is busy, locked, locked by a "
-    "passphrase or stopped. It checks the structure of each table and its indexes, not every row's "
-    "content; the search index (a virtual table) is checked by SQLite's own integrity check for it "
-    "(SQLite 3.44 and later), which also reads the articles. "
+    "passphrase or stopped. It checks the structure of each table and its indexes (that the pages are "
+    "well formed and the records readable), not that an index agrees with its table and not every "
+    "row's content; the search index (a virtual table) is checked by SQLite's own integrity check for "
+    "its inverted index (SQLite 3.44 and later), which does not compare it with the articles. "
     "Nothing here repairs anything."
 )
 

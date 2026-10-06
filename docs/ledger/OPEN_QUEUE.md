@@ -16347,8 +16347,9 @@ maintainer as a card.
   plan is `/mnt/project-files/wal-disk-pool/PLAN-damaged-database.md`; QUESTION 26 (check the library before collecting again, a at start-up while
   offline / b in the background) IS UNANSWERED AND THIS BUILDS ITS RECOMMENDED DEFAULT a; not a ruling, reversible by `OO_BOOT_VERIFY=0` or one
   branch in `src/database/verify.py`).** (a) The check is `PRAGMA quick_check(<table>)` per table: it reads the structure of each table and
-  its indexes (b-tree pages, index agreement), not every row's content (the search index, a virtual table, is checked by SQLite's own
-  integrity check for it from 3.44, which also reads the articles: measured about three times the cost of the content table's own scan).
+  its indexes (that the pages of each b-tree are well formed and its records readable), NOT that an index agrees with its table and not every row's
+  content (the search index, a virtual table, is checked by SQLite's own integrity check of its inverted index from 3.44, which does not compare it
+  with the articles: measured about three times the cost of the content table's own scan, the index's own pages).
   A table whose pages are whole but whose rows were rewritten wrongly passes. (b) There is
   no operator skip: the check ends by itself, and on a large store on a slow drive collection waits for it (the plan's estimate was 2 to 4
   minutes for 14 GB; a drive many times slower is many times longer). The progress line says "table N of M" so the wait is visible; a quit

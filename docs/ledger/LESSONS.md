@@ -13681,10 +13681,13 @@ all of it, and a per-file `writes_paused("law")` branch there was dead code (its
 uses `writes_paused(WIKI_FILE)`. `"damage"` is named before `"verifying"`, a storage limit before both, and "Resume anyway" is refused with its own sentence for the check as for damage. (6)
 **The progress sentence carries the server's counts** (`table {index} of {total}`), is drawn in a line of its own and never under the damage hover (it is the app reading its files, not a
 report of damage: the hover's first sentence would have been false there), and says nothing until the run has counted its tables. The damage hover's old sentence "does not check or repair
-anything yet" became false with this slice and was reworded in all twelve locales (a locale key IS the English string, so rewording re-keys it). (7) `quick_check` reads structure (b-tree
-pages, index agreement), not row content. **`quick_check(<virtual table>)` runs the module's own integrity check from SQLite 3.44** (measured on a 100 MB store with the app's external-content
-`article_fts`: 0.65 s against 0.20 s for `articles` alone, so the index costs about three times the table it indexes because it reads the content too, and it reports damage with the words "malformed inverted index
-for FTS5 table"); a build older than 3.44 reads nothing for it and the shadow tables are all there is. Damage found only in `article_fts` and its shadow tables is filed as the search
+anything yet" became false with this slice and was reworded in all twelve locales (a locale key IS the English string, so rewording re-keys it). (7) `quick_check` reads structure (that the pages of each b-tree are well formed and its records readable), **not that an index agrees with its table, and not row content** (SQLite's own words, and a changed
+article text still answers `ok`). **`quick_check(<virtual table>)` asks the module to check itself from SQLite 3.44**: FTS5's integrity check of its inverted index, which does NOT compare the index with the
+articles (measured on the app's external-content `article_fts`: after an article's text was changed behind the index, the check still answered `ok`; 0.65 s against 0.20 s for `articles` alone on a 100 MB store, so the
+index's own pages are the cost, not a read of the content). It reports damage with the words "malformed inverted index for FTS5 table"; a build older than 3.44 reads nothing for it and the shadow tables are all there is.
+**FTS5 answers an error that stopped ITS check as a ROW, not an exception** (measured on 3.45.1: "unable to validate the inverted index for FTS5 table main.article_fts: out of memory"), so a non-`ok` answer is read
+before it is believed: when every line is that wrapper around an out-of-memory, I/O, full, interrupted, locked or cannot-open text, the table is `unchecked` with the reason, never `damaged` (a corruption text in the
+same place stays damage). Damage found only in `article_fts` and its shadow tables is filed as the search
 index, anything else, or both together, as data, through the SAME `_apply_incident` a corruption error uses, so the two doors cannot latch differently.
 (8) **A DUE CHECK IS WRITTEN DOWN BEFORE IT RUNS (`state: owed`)**: the ledger writes a session that closed before the check began as a CLEAN end, and the next start reads that and forgets the earlier
 unexpected stop. So arming records every planned file as `owed` (a boot that stays locked records it too, `owe_at_locked_boot`, because it cannot arm: the key is not there), the next start

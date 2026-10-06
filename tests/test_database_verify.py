@@ -606,6 +606,73 @@ def test_damage_only_in_the_search_index_tables_is_scoped_as_the_search_index(tm
     assert damage.registry.latched(FILE_CORPUS)
 
 
+class _FakeConn:
+    """A connection whose ``quick_check`` answers the given rows (what FTS5 does when its own check cannot run)."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def execute(self, sql):
+        rows = self._rows
+
+        class _Cur:
+            def fetchall(self_inner):
+                return [(r,) for r in rows]
+
+        return _Cur()
+
+    def set_progress_handler(self, *a):
+        pass
+
+    def close(self):
+        pass
+
+
+@pytest.mark.parametrize(
+    "answer,verdict",
+    [
+        (["unable to validate the inverted index for FTS5 table main.article_fts: out of memory"], VERDICT_UNCHECKED),
+        (["unable to validate the inverted index for FTS5 table main.article_fts: disk I/O error"], VERDICT_UNCHECKED),
+        (["unable to validate the inverted index for FTS5 table main.article_fts: database or disk is full"], VERDICT_UNCHECKED),
+        (["unable to validate the inverted index for FTS5 table main.article_fts: database disk image is malformed"], VERDICT_DAMAGED),
+        (["malformed inverted index for FTS5 table main.article_fts"], VERDICT_DAMAGED),
+        (
+            [
+                "unable to validate the inverted index for FTS5 table main.article_fts: out of memory",
+                "Tree 7 page 7: btreeInitPage() returns error code 11",
+            ],
+            VERDICT_DAMAGED,
+        ),
+        (["row 12 missing from index ix_x"], VERDICT_DAMAGED),
+    ],
+)
+def test_an_error_fts5_reports_as_a_row_is_not_damage_unless_it_is_corruption(answer, verdict):
+    """FTS5 answers an error that stopped its own check as a ROW. Not reading is not a verdict (measured on 3.45.1)."""
+    out = verify.check_table(Path("unused.db"), "article_fts", opener=lambda _p: _FakeConn(answer))
+    assert out["verdict"] == verdict, out
+    if verdict == VERDICT_UNCHECKED:
+        assert out["detail"] == ["the read ran out of memory"] or "disk" in out["detail"][0], out
+
+
+def test_the_fts5_integrity_check_does_not_compare_the_index_with_the_articles(tmp_path):
+    """The claim the docs make, measured here so it cannot drift: a changed article text behind an external-content
+    index still answers ``ok``, which is why the check says it does not verify content."""
+    if sqlite3.sqlite_version_info < (3, 44):
+        pytest.skip("quick_check on a virtual table runs the module's check from SQLite 3.44")
+    path = tmp_path / "ext.db"
+    con = sqlite3.connect(path)
+    con.executescript(
+        "CREATE TABLE a(id INTEGER PRIMARY KEY, t TEXT);"
+        "CREATE VIRTUAL TABLE f USING fts5(t, content='a', content_rowid='id');"
+    )
+    con.executemany("INSERT INTO a(t) VALUES (?)", [(f"word{i} body",) for i in range(300)])
+    con.execute("INSERT INTO f(f) VALUES('rebuild')")
+    con.execute("UPDATE a SET t = 'changed completely' WHERE id = 5")
+    con.commit()
+    con.close()
+    assert verify.check_table(path, "f")["verdict"] == VERDICT_OK
+
+
 def test_damage_in_the_data_and_in_the_index_together_is_data(tmp_path, files, monkeypatch):
     path = tmp_path / "corpus.db"
     _build_store(path, fts=True)

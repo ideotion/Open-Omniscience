@@ -37,10 +37,12 @@ that made the check due. ``owed`` is read as an unfinished check and is not an a
 
 WHAT IT DOES NOT DO. It does not repair or salvage (E3), and it does not release a latch: a clean verdict
 says what this read found, not that an earlier error was wrong. It checks the STRUCTURE of each table and
-its indexes (``quick_check``), not every row's content. The search index is a virtual table, and from SQLite
-3.44 ``quick_check(<virtual table>)`` runs that module's own integrity check (FTS5's, which reads the content
-table too: measured 0.65 s against 0.20 s for the content table alone on a 100 MB store), so the index is
-checked with its shadow tables; on an older SQLite that call reads nothing and the shadow tables are all there
+its indexes (``quick_check``): that the pages of each b-tree are well formed and its records readable. It does NOT
+check that an index agrees with its table, or every row's content. The search index is a virtual table, and from
+SQLite 3.44 ``quick_check(<virtual table>)`` asks that module to check itself (FTS5's own integrity check of its
+inverted index; it does not compare the index with the articles: with the app's external-content ``article_fts`` a
+changed article text still answers ``ok``; measured 0.65 s against 0.20 s for the content table alone on a 100 MB
+store), so the index is checked with its shadow tables; on an older SQLite that call reads nothing and the shadow tables are all there
 is. It is not run beside collection on a big store on purpose: ``quick_check`` holds a read snapshot for the
 whole of a table, which is what pins the log.
 
@@ -113,6 +115,35 @@ def _open(path: Path):
 
 def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
+
+
+#: FTS5 reports an error that stopped ITS check as a ROW, "unable to validate the inverted index for FTS5 table X:
+#: <the error's own text>" (measured on SQLite 3.45.1: an allocation failure comes back as a result, not an exception),
+#: so a row naming one of these is a read that could not finish, never damage.
+_WRAPPED_FTS = "unable to validate the inverted index"
+_NOT_DAMAGE_TEXT = (
+    ("out of memory", "the read ran out of memory"),
+    ("disk i/o error", "a disk I/O error stopped the read"),
+    ("database or disk is full", "the disk was full"),
+    ("interrupted", "the check was stopped"),
+    ("database is locked", "the file was locked"),
+    ("database table is locked", "the file was locked"),
+    ("unable to open database file", "the file could not be opened"),
+)
+
+
+def _unread_reason(lines: list[str]) -> str | None:
+    """The reason, when EVERY answer line is FTS5 saying its own check could not run (see ``_WRAPPED_FTS``)."""
+    reasons: list[str] = []
+    for ln in lines:
+        low = ln.lower()
+        if _WRAPPED_FTS not in low:
+            return None
+        why = next((r for needle, r in _NOT_DAMAGE_TEXT if needle in low.split(":")[-1]), None)
+        if why is None:
+            return None
+        reasons.append(why)
+    return reasons[0] if reasons else None
 
 
 _SQLITE_REASONS = {
@@ -201,6 +232,9 @@ def check_table(path: Path, table: str, *, opener: Opener | None = None, cancel:
         lines = [str(r[0]) for r in con.execute(f"PRAGMA quick_check({_ident(table)})").fetchall()]
         if lines == ["ok"]:
             verdict = VERDICT_OK
+        elif (unread := _unread_reason(lines)) is not None:
+            verdict = VERDICT_UNCHECKED
+            detail = [unread[:DETAIL_CHARS]]
         else:
             verdict = VERDICT_DAMAGED
             detail = [ln.replace("\n", " ")[:DETAIL_CHARS] for ln in lines[:DETAIL_LINES]]
