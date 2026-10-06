@@ -115,6 +115,18 @@ def _window(bar_hours: float) -> dict[str, Any]:
     }
 
 
+def _memory_budget() -> dict[str, Any]:
+    """The memory tier this process was resolved to, beside what the machine reads now
+    (``memory_budget.reading_vs_now``); a reading that fails says so and never raises."""
+    try:
+        from src.config.memory_budget import reading_vs_now
+
+        return reading_vs_now()
+    except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
+        _LOG.debug("memory-budget reading unavailable", exc_info=True)
+        return {"error": type(exc).__name__}
+
+
 def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
     """Engage cycles and paused time over the window.
 
@@ -128,6 +140,12 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
     launched since the update runs with ``MALLOC_ARENA_MAX=2``, and one that has not been
     relaunched since does not. It is a property of the process, not a reading over the
     window, and it never changes ``measured``.
+
+    ``memory_budget`` says the same of the memory tier: the reading this process's budget was
+    resolved from, beside the one the machine gives now (the budget is resolved once, so a
+    machine whose memory changes keeps the tier of its start). The tier decides the pool,
+    the caches and whether the in-memory rollup runs, so it is read with the engagements
+    above. Also a property of the process, and also never a change to ``measured``.
     """
     from src.monitoring.session_hwm import allocator_setting
 
@@ -141,6 +159,7 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
             "measured": False,
             "reason": f"memory-guard state unavailable: {exc}",
             "allocator": allocator_setting(),
+            "memory_budget": _memory_budget(),
         }
 
     engagements = state.get("engagements")
@@ -156,6 +175,7 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
             "engaged_now and is not folded into total_engaged_s"
         ),
         "allocator": allocator_setting(),
+        "memory_budget": _memory_budget(),
     }
     if state.get("enabled") and state.get("readings_available") is False:
         out["measured"] = False

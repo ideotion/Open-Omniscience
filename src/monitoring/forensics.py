@@ -753,9 +753,11 @@ def _previous_peaks() -> dict[str, Any] | None:
         "(pressure_light; the pairing with the Python blocks gained is an inference, memory is "
         "not measured per thread). allocator is "
         "which C allocator the session ran on and whether its malloc arenas were capped "
-        "(R114), read from the environment the process started with; a record written "
-        "before it was kept has none. A field that could not be measured is ABSENT "
-        "rather than zero."
+        "(R114), read from the environment the process started with; memory_budget is "
+        "the memory tier the session was resolved to (tier, RAM total, logical CPUs, whether the "
+        "in-memory rollup is on by default, and when: resolved once per process); a record "
+        "written before either was kept has none. A field that could not be measured is "
+        "ABSENT rather than zero."
     )
     return out
 
@@ -1137,6 +1139,43 @@ def _render_allocator(alloc: Any) -> list[str]:
     return [f"  - C allocator ({alloc.get('allocator') or 'not read'}): {alloc['note']}"]
 
 
+def _render_memory_budget(reading: Any) -> list[str]:
+    """The memory tier the session was resolved to, as one line beside the peaks it bounds:
+    the pool and the page caches (unless the operator set them), DuckDB's limit and whether
+    the in-memory keyword rollup runs by default were all decided from it, once, at start. The
+    line states the tier's default and not an operator's own ``OO_COLUMNAR_SERVE`` choice, which
+    only the session ledger records (``rollup_serve_mode``), and says so. A record written
+    before it was kept has none,
+    and one whose reading failed says so rather than leaving a hole."""
+    if not isinstance(reading, dict):
+        return []
+    if reading.get("error"):
+        return [f"  - memory tier: not read ({reading['error']})"]
+    tier = reading.get("tier")
+    if not tier:
+        return []
+    total = reading.get("total_ram_mb")
+    seen = f"{total:,.1f} MiB read" if isinstance(total, (int, float)) else "RAM not readable"
+    nominal = reading.get("nominal_ram_mb")
+    if isinstance(nominal, (int, float)) and isinstance(total, (int, float)) and abs(nominal - total) >= 0.05:
+        seen += f", a nominal {nominal:,.0f} MiB machine"
+    cores = reading.get("cores")
+    if isinstance(cores, int):
+        seen += f", {cores} logical CPU{'' if cores == 1 else 's'}"
+    when = f"; resolved at {reading['resolved_at']}" if reading.get("resolved_at") else ""
+    serve = reading.get("columnar_serve_default")
+    rollup = (
+        "this tier leaves the in-memory keyword rollup on by default" if serve is True
+        else "this tier leaves the in-memory keyword rollup off by default" if serve is False
+        else "whether this tier leaves the in-memory keyword rollup on by default is not recorded"
+    )
+    return [
+        f"  - memory tier ({tier}; {seen}{when}): {rollup} (an operator's own OO_COLUMNAR_SERVE "
+        "choice is in chronology.json, not here); resolved once, when the process started, so a "
+        "total that moved afterwards is not in it"
+    ]
+
+
 def _render_at_peak(comp: Any, heap_peak: Any = None) -> list[str]:
     """The composition at the RSS peak and, when that peak could not read the C heap,
     the newest earlier peak that did, on its own line with its own size and time: the
@@ -1444,6 +1483,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
             if peaks.get("last_ts"):
                 lines.append(f"  - last recorded at: {peaks['last_ts']}")
             lines += _render_allocator(peaks.get("allocator"))
+            lines += _render_memory_budget(peaks.get("memory_budget"))
             lines += _render_at_peak(peaks.get("at_peak"), peaks.get("heap_at_peak"))
             lines += _render_pressure(peaks.get("pressure"), peaks.get("pressure_taken"))
             lines += _render_light(peaks.get("pressure_light"), peaks.get("pressure_light_taken"))

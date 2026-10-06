@@ -447,6 +447,74 @@ def test_the_passphrase_is_out_of_every_exception_text_a_p0_report_writes_down(t
     assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
 
 
+def test_the_passphrase_is_out_of_the_failure_lines_the_engine_hands_back_as_data(tmp_path, monkeypatch):
+    """The fifth way a message reaches a report, and the only one with no handler of this module in it:
+    ``verify_stream_backup`` returns its failure lines as ``problems`` (a decrypt failure's line carries the
+    exception's own words), and the verify check copies them into its measurements and its reason, which the P0
+    file the debug bundle carries and, in a release run, the run's state hold. Every message the engine raises
+    there is a literal today; this is the net where the lines are copied (the coordinator's delta check of
+    #1312, F2). MUTATION TARGET: the scrub of ``problems``."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    secret = "p0-problem-line-passphrase-5k2"
+    lines = [f"member data.db failed to decrypt: could not reach {secret} on the drive", "volume 2 failed its checksum"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    clean = ["member data.db failed to decrypt: could not reach ***redacted*** on the drive", "volume 2 failed its checksum"]
+    assert verify["verdict"] == "fail"
+    assert verify["reason"] == "verification failed: " + "; ".join(clean), verify["reason"]
+    assert verify["measurements"]["problems"] == clean
+    assert secret not in json.dumps(out)
+    assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
+    assert secret in lines[0], "the engine's own list is read, never edited"
+
+
+@pytest.mark.parametrize("secret", ["pass", "fail"])
+def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verify_verdict_and_its_lead_alone(
+        tmp_path, monkeypatch, secret):
+    """The scrub is on the engine's lines and on nothing around them: the verdict is ``fail`` and the check's own
+    words lead its reason whatever the passphrase is (the run puts no minimum on its length). MUTATION TARGET: a
+    scrub of the check's reason, or of the whole report, in place of the lines. Only ``fail`` breaks under it
+    (the lead's own ``fail`` would become the marker); ``pass`` pins the line's own replacement for a verdict
+    word, and the next test pins the verdicts a whole-report scrub would turn into the marker."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    line = f"member data.db failed to decrypt: {secret}"
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": [line]})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["verdict"] == "fail" and verify["measurements"]["ok"] is False
+    assert verify["reason"] == "verification failed: " + line.replace(secret, "***redacted***"), verify["reason"]
+
+
+def test_the_passphrase_is_out_of_the_reason_when_joining_two_lines_would_rebuild_it(tmp_path, monkeypatch):
+    """The reason joins the engine's lines with ``"; "``: a passphrase that holds ``"; "`` and whose halves end
+    one line and start the next is in neither line and in the joined text (the coordinator's check of #1318,
+    N5). The lines stay as the engine made them, and the lead stays the check's own words. MUTATION TARGET: the
+    scrub of the joined tail."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    secret = "left half; right half"
+    lines = ["volume 2 failed its checksum, left half", "right half was not read"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
+    assert verify["measurements"]["problems"] == lines
+    assert secret not in json.dumps(out)
+    assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
+
+
 def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verdicts_and_the_success_texts_alone(
         tmp_path, monkeypatch):
     """Why the scrub is on the caught texts and not on the finished report: a report holds verdicts
@@ -490,68 +558,117 @@ def _writes_a_traceback(call: ast.Call) -> bool:
     )
 
 
-def _caught_exception_leaks(source: str) -> tuple[list[str], list[str], int]:
-    """Read ``source`` the way the guard below does: ``(holders, offenders, routed)`` -- the functions given a
-    ``passphrase`` (any parameter kind, ``async`` or not), the places inside their ``except`` handlers where
-    the caught exception reaches a text some way other than ``_exception_text(exc, passphrase)``, and how many
-    calls of that helper the handlers make (a walk that routes nothing has found nothing to guard).
+#: The names the secret goes by where the release run holds it: the parameter or local a helper is given it as
+#: (``passphrase``; ``secret`` and ``needle`` in ``release_run.py``'s helpers) and, as an attribute, the one the run's
+#: parameters carry (``run.params.passphrase``).
+_SECRET_NAMES = frozenset({"passphrase", "secret", "needle"})
 
-    A way is: the handler's own name used anywhere but as the helper's first argument (an f-string, ``str()``,
-    ``.args``, a copy under another name, a call that is handed it, ``raise ... from exc``, which carries it on
-    as the cause), and, in a handler WITH OR WITHOUT a name, a call that writes the traceback
-    (:func:`_writes_a_traceback`). It follows no call: a helper the handler calls that reads the exception
-    itself is not seen."""
+#: The calls that write a caught exception as a text with the secret taken out of it: name -> (the index of the
+#: argument that carries what is written, the index of the secret). A handler may use the exception only inside the
+#: first, and only when the second IS the secret.
+_SCRUBBING_CALLS = {
+    "_exception_text": (0, 1),  # p0_validation: "Name: message", scrubbed, from the exception itself
+    "_error_text": (0, 1),  # release_run_fresh_restore: the same, for the restore child
+    "_scrub_value": (0, 1),  # release_run: ``secret_scrub.scrub_value`` over a text built from the exception
+    "scrub_value": (0, 1),
+    "_log_phase_failure": (1, 3),  # release_run: logs the whole chain, with the secret out of it
+}
+
+#: What a caught exception may be asked for without writing its message: a phase error's two fields that are data
+#: (its status and what the phase measured before it failed), and, in the walk, its class (``type(exc)``).
+_PLAIN_FIELDS = frozenset({"status", "partial"})
+
+
+def _is_the_secret(node: ast.AST) -> bool:
+    """Whether ``node`` IS the secret as the run holds it: a name it goes by or an attribute called ``passphrase``
+    (``run.params.passphrase``) -- not a constant (``""`` scrubs nothing), not a call, not any other name."""
+    return (isinstance(node, ast.Name) and node.id in _SECRET_NAMES) or (
+        isinstance(node, ast.Attribute) and node.attr == "passphrase"
+    )
+
+
+def _holds_the_secret(fn: ast.AST) -> bool:
+    """Whether the function takes a parameter (any kind), reads a name or reads an attribute that is the secret.
+    The attribute is how ``release_run.py`` holds it (``run.params.passphrase``), which no parameter list shows."""
+    return any(
+        (isinstance(n, ast.arg) and n.arg in _SECRET_NAMES)
+        or (isinstance(n, ast.Name) and n.id in _SECRET_NAMES)
+        or (isinstance(n, ast.Attribute) and n.attr == "passphrase")
+        for n in ast.walk(fn)
+    )
+
+
+def _caught_exception_leaks(source: str) -> tuple[list[str], list[str], int]:
+    """Read ``source`` the way the guard below does: ``(holders, offenders, routed)`` -- the functions that hold the
+    secret (:func:`_holds_the_secret`; ``async`` or not), the places inside their ``except`` handlers where the caught
+    exception reaches a text some way other than a call of :data:`_SCRUBBING_CALLS` that is given the secret, and how
+    many such calls the handlers make (a walk that routes nothing has found nothing to guard).
+
+    A way is: the handler's own name used anywhere but inside the carrying argument of such a call (an f-string,
+    ``str()``, ``.args``, a copy under another name, a call that is handed it, that call's other arguments,
+    ``raise ... from exc``, which carries it on as the cause), except its class (``type(exc)``) and a phase error's
+    ``status`` and ``partial``; such a call given no second argument, an empty one or one that is not the secret
+    routes nothing, so the exception inside it is a way too; and, in a handler WITH OR WITHOUT a name, a call that
+    writes the traceback (:func:`_writes_a_traceback`). It follows no call: a helper the handler calls that reads the
+    exception itself is not seen."""
     tree = ast.parse(source)
     holders: list[str] = []
     offenders: dict[int, str] = {}
     routed: set[int] = set()
     for fn in ast.walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if "passphrase" not in {a.arg for a in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}:
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or not _holds_the_secret(fn):
             continue
         holders.append(fn.name)
         for handler in (n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)):
-            through = {
-                id(call.args[0])
-                for call in ast.walk(handler)
-                if isinstance(call, ast.Call)
-                and isinstance(call.func, ast.Name)
-                and call.func.id == "_exception_text"
-                and call.args
-            }
-            routed |= {
-                id(call)
-                for call in ast.walk(handler)
-                if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_exception_text"
-            }
+            allowed: set[int] = set()
+            for node in ast.walk(handler):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    spec = _SCRUBBING_CALLS.get(node.func.id)
+                    if spec and len(node.args) > max(spec) and _is_the_secret(node.args[spec[1]]):
+                        routed.add(id(node))
+                        allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
+                    elif node.func.id == "type" and len(node.args) == 1:
+                        allowed.add(id(node.args[0]))
+                elif isinstance(node, ast.Attribute) and node.attr in _PLAIN_FIELDS:
+                    allowed.add(id(node.value))
             for node in ast.walk(handler):
                 named = handler.name and isinstance(node, ast.Name) and node.id == handler.name
-                if (named and id(node) not in through) or (isinstance(node, ast.Call) and _writes_a_traceback(node)):
+                if (named and id(node) not in allowed) or (isinstance(node, ast.Call) and _writes_a_traceback(node)):
                     offenders.setdefault(id(node), f"{fn.name}, line {node.lineno}")
     return holders, sorted(offenders.values()), len(routed)
 
 
-def test_no_check_that_holds_the_passphrase_writes_a_caught_exception_any_way_but_through_exception_text():
-    """The four sites above are the ones there are; the next ``except ... as exc`` that puts ``{exc}`` into a
-    report is how the next leak is made, and no test of the four would see it. Every handler inside a
-    function that is given the passphrase may use the caught exception only as the argument of
-    ``_exception_text``, and may ask for no traceback (``exc_info=``, ``.exception()``, the ``traceback``
-    module, ``sys.exc_info()``), because the text such a call writes carries the message too. (The two
-    instrumentation reads, ``_check_unlock`` and ``_check_collector``, are not given the passphrase, so they
-    are not held to this.) It reads this module's syntax and follows no call, so a helper that reads the
-    exception for itself is not seen; the cases below it pin what is."""
-    import inspect
+#: The modules that hold the passphrase, with what the walk must find in each so that a rename or a restructure
+#: cannot leave it looking at nothing: the functions it must read as holding the secret, and the fewest calls of a
+#: scrubbing helper its handlers make today.
+_GUARDED_MODULES = {
+    "p0_validation": ({"_check_backup", "_check_restore"}, 4),
+    "release_run": ({"_run_phase", "_fresh_install_restore"}, 4),
+    "release_run_fresh_restore": ({"main"}, 1),
+}
 
-    holders, offenders, routed = _caught_exception_leaks(inspect.getsource(p0))
-    assert {"_check_backup", "_check_restore"} <= set(holders), (
-        f"the walk found {holders}: a rename must not leave it looking at nothing"
+
+@pytest.mark.parametrize("module", sorted(_GUARDED_MODULES))
+def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way_but_through_a_scrub(module):
+    """The sites there are today are pinned by behaviour tests; the next ``except ... as exc`` that puts ``{exc}``
+    into a report is how the next leak is made, and no test of the existing ones would see it. Every handler inside
+    a function that holds the passphrase (takes it, reads it into a local, or reads it off the run's parameters) may
+    use the caught exception only inside a call that scrubs it with the secret (``_exception_text``, the child's
+    ``_error_text``, ``scrub_value``, ``_log_phase_failure``), or ask for its class or a phase error's ``status`` and
+    ``partial``, and may ask for no traceback (``exc_info=``, ``.exception()``, the ``traceback`` module,
+    ``sys.exc_info()``), because the text such a call writes carries the message too. It reads the syntax of
+    ``p0_validation.py``, ``release_run.py`` and ``release_run_fresh_restore.py`` and follows no call; what stays
+    outside it is listed in ``LESSONS.md`` (the entry about a net going where the text is made) and the cases below
+    pin what it sees. (``_check_unlock`` and ``_check_collector`` hold no secret, so they are not held to this.)"""
+    must_hold, least_routed = _GUARDED_MODULES[module]
+    path = Path(p0.__file__).with_name(f"{module}.py")
+    holders, offenders, routed = _caught_exception_leaks(path.read_text(encoding="utf-8"))
+    assert must_hold <= set(holders), f"{module}: the walk found {holders}; a rename must not leave it looking at nothing"
+    assert routed >= least_routed, (
+        f"{module}: the walk saw {routed} calls of a scrubbing helper in the handlers and the module makes "
+        f"{least_routed}: a restructure must not leave it looking at nothing"
     )
-    assert routed >= 4, (
-        f"the walk saw {routed} calls of _exception_text in the handlers and the module makes four: "
-        "a restructure must not leave it looking at nothing"
-    )
-    assert not offenders, f"a caught exception reaches a report without going through _exception_text: {offenders}"
+    assert not offenders, f"{module}: a caught exception reaches a text without going through a scrub: {offenders}"
 
 
 def _guarded(clause: str, body: str, head: str = "def check(ctx, passphrase):") -> str:
@@ -562,6 +679,7 @@ def _guarded(clause: str, body: str, head: str = "def check(ctx, passphrase):") 
 
 _NAMED = "except Exception as exc:"
 _UNNAMED = "except Exception:"
+_AS_ERR = "except Exception as err:"
 
 #: Each way a caught exception can reach a text, as the function the guard must flag.
 _WAYS_THAT_LEAK = {
@@ -585,22 +703,64 @@ _WAYS_THAT_LEAK = {
         "def check(ctx, passphrase):\n    def inner():\n        try:\n            go()\n"
         "        except Exception as exc:\n            return str(exc)\n    return inner()\n"
     ),
+    # --- the name, the position and the secret are each a way of their own
+    "a handler named something other than exc": _guarded(_AS_ERR, "e = str(err)"),
+    "the exception as the helper's second argument": _guarded(_NAMED, "err = _exception_text(passphrase, exc)"),
+    "the helper given no secret": _guarded(_NAMED, "err = _exception_text(exc)"),
+    "the helper given an empty secret": _guarded(_NAMED, "err = _exception_text(exc, '')"),
+    "the helper given a name that is not the secret": _guarded(_NAMED, "err = _exception_text(exc, other)"),
+    "the secret in another position than the one the helper reads it at": _guarded(
+        _NAMED, "err = _exception_text(exc, other, passphrase)"
+    ),
+    "a scrub given a name that is not the secret": _guarded(_NAMED, "err = _scrub_value(str(exc), other)"),
+    "a scrub given another field of the run": _guarded(_NAMED, "err = _scrub_value(str(exc), run.params.dest_dir)"),
+    "the exception again beside a scrub": _guarded(_NAMED, "err = _scrub_value(str(exc), passphrase) + str(exc)"),
+    "the message after the class name": _guarded(_NAMED, "err = f'{type(exc).__name__}: {exc}'"),
+    "the logging helper, the exception in another place": _guarded(
+        _NAMED, "_log_phase_failure(name, other, exc, passphrase)"
+    ),
+    "a field of the exception that is not plain": _guarded(_NAMED, "err = exc.message"),
+    # --- a function that holds the secret by another route than a parameter named passphrase
+    "a secret read off the run's parameters": (
+        "def check(run):\n    key = run.params.passphrase\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = str(exc)\n"
+    ),
+    "a secret read into a local": (
+        "def check(ctx):\n    passphrase = ctx.get()\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = str(exc)\n"
+    ),
+    "a parameter named secret": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, secret):"),
+    "a parameter named needle": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, needle):"),
 }
 
-#: What the guard must leave alone, as the function it is asked about.
+#: What the guard must leave alone, as the function it is asked about and the calls it must count as routed.
 _WAYS_THAT_ARE_FINE = {
-    "the helper, given the passphrase": _guarded(_NAMED, "err = _exception_text(exc, passphrase)"),
-    "a log call that asks for no traceback": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=False)"),
-    "a log call whose exc_info is None": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=None)"),
-    "a handler that only returns": _guarded(_UNNAMED, "return None"),
+    "the helper, given the passphrase": (_guarded(_NAMED, "err = _exception_text(exc, passphrase)"), 1),
+    "the child's helper, given the passphrase": (_guarded(_NAMED, "err = _error_text(exc, passphrase)"), 1),
+    "a scrub of a text built from the exception": (
+        _guarded(_NAMED, "err = _scrub_value(f'{type(exc).__name__}: {exc}', passphrase)[:400]"),
+        1,
+    ),
+    "a scrub given the secret off the run's parameters": (
+        "def check(run):\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = scrub_value(str(exc), run.params.passphrase)\n",
+        1,
+    ),
+    "the logging helper, given the secret": (_guarded(_NAMED, "_log_phase_failure(name, exc, why, passphrase)"), 1),
+    "only the exception's class": (_guarded(_NAMED, "_LOG.warning('x (%s)', type(exc).__name__)"), 0),
+    "a phase error's status and partial": (_guarded(_NAMED, "end(exc.status, result=exc.partial)"), 0),
+    "a log call that asks for no traceback": (_guarded(_UNNAMED, "_LOG.warning('x', exc_info=False)"), 0),
+    "a log call whose exc_info is None": (_guarded(_UNNAMED, "_LOG.warning('x', exc_info=None)"), 0),
+    "a handler that only returns": (_guarded(_UNNAMED, "return None"), 0),
 }
 
 
 @pytest.mark.parametrize("way", sorted(_WAYS_THAT_LEAK))
 def test_the_guard_on_caught_exception_texts_flags_each_way_one_can_reach_a_text(way):
     """Negative space for the guard itself: a walk that cannot see ``exc_info=True``, an unnamed handler, an
-    ``async`` function or a positional-only ``passphrase`` passes the real module and sees nothing.
-    MUTATION TARGET: any one of the walk's rules, or its choice of function kinds and parameter kinds."""
+    ``async`` function, a handler named anything but ``exc``, an empty secret or a secret read off an object passes
+    the real modules and sees nothing. MUTATION TARGET: any one of the walk's rules, its choice of function kinds and
+    parameter kinds, its table of scrubbing calls or the position it reads the exception and the secret at."""
     holders, offenders, _ = _caught_exception_leaks(_WAYS_THAT_LEAK[way])
     assert holders, f"{way}: the function was not read as one that holds the passphrase"
     assert offenders, f"{way}: the guard did not flag it"
@@ -608,9 +768,10 @@ def test_the_guard_on_caught_exception_texts_flags_each_way_one_can_reach_a_text
 
 @pytest.mark.parametrize("way", sorted(_WAYS_THAT_ARE_FINE))
 def test_the_guard_on_caught_exception_texts_leaves_the_allowed_forms_alone(way):
-    holders, offenders, routed = _caught_exception_leaks(_WAYS_THAT_ARE_FINE[way])
+    source, expected_routed = _WAYS_THAT_ARE_FINE[way]
+    holders, offenders, routed = _caught_exception_leaks(source)
     assert holders == ["check"] and offenders == [], (holders, offenders)
-    assert routed == (1 if way.startswith("the helper") else 0), routed
+    assert routed == expected_routed, routed
 
 
 def test_the_guard_on_caught_exception_texts_does_not_read_a_function_that_is_not_given_the_passphrase():
