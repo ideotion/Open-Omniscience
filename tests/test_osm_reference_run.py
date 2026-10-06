@@ -60,7 +60,7 @@ class _Probe(R.Probe):
 
 @pytest.fixture(autouse=True)
 def _core_limit(monkeypatch):
-    """The CLI sets RLIMIT_CORE to 0 in the process that runs it; here that process is pytest, so the real call is
+    """The CLI sets RLIMIT_CORE to 1 in the process that runs it; here that process is pytest, so the real call is
     replaced by a recorder (and what it was asked for is asserted in one test)."""
     import resource
 
@@ -1109,7 +1109,21 @@ def test_the_command_switches_core_dumps_off_before_the_run_reads_the_passphrase
 
     monkeypatch.setattr(R, "run", _run_stub)
     _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
-    assert at_run and (resource.RLIMIT_CORE, (0, 0)) in at_run[0]
+    assert at_run and (resource.RLIMIT_CORE, (1, 1)) in at_run[0]  # 1, not 0: a piped core handler ignores every other value
+
+
+def test_a_command_that_cannot_limit_core_dumps_refuses_before_reading_the_passphrase(tmp_path, monkeypatch, capsys):
+    import resource
+
+    def _hard_zero(which, limits):
+        raise ValueError("current limit exceeds maximum limit")  # what a hard limit of 0 answers to (1, 1)
+
+    ran: list = []
+    monkeypatch.setattr(resource, "setrlimit", _hard_zero)
+    monkeypatch.setattr(R, "run", lambda **kw: ran.append(kw) or ({}, None))
+    code = CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")])
+    assert code == 2 and not ran  # R.run (which reads the passphrase file) was never reached
+    assert "core dumps cannot be limited" in capsys.readouterr().out
 
 
 def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):

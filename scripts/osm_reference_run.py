@@ -96,12 +96,21 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             print("refused: the prior report cannot be read as JSON")
             return 2
-    # An rlimit is inherited by every child: no crash of the runner or a child writes a core FILE holding the store's
-    # key (a core piped to a handler by the system's core_pattern is that handler's policy, not this limit's).
-    with contextlib.suppress(ImportError, ValueError, OSError):  # ImportError: no `resource` module (Windows)
-        import resource
+    # An rlimit is inherited by every child. The value is 1, not 0: a core piped to a handler by core_pattern ignores
+    # RLIMIT_CORE except for exactly 1, which aborts that dump (measured on this kernel; 0 let a full dump through, and
+    # apport keeps its report whatever the limit). A crash of the runner or a child must not leave a dump holding the key.
+    # With the hard limit already 0 this cannot be set (a limit is only lowered), so the run is refused before the
+    # passphrase is read, rather than carrying on with a dump it cannot prevent.
+    if not args.plan:
+        try:
+            import resource
 
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+            resource.setrlimit(resource.RLIMIT_CORE, (1, 1))
+        except (ImportError, ValueError, OSError):  # ImportError: no `resource` module (Windows)
+            print("refused: core dumps cannot be limited here (the hard core limit is already 0, or this system has no such "
+                  "limit), so a crash could leave a dump holding the store's key; start the command from a shell whose "
+                  "hard core limit is unlimited (ulimit -Hc unlimited), or as another user")
+            return 2
     target = args.report or Path(f"osm-reference-run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json")
     try:
         report, kept = R.run(
