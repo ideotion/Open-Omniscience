@@ -7,11 +7,12 @@ WHY THIS EXISTS (docs/design/SCALING_DERIVED_LAYER_1000X.md, D3). The disposable
 columnar rollup (``src/analytics/columnar.py``) keeps a per-day keyword rollup fresh by
 merging only the NEW mention tail (``id > last_mention_id``) on most passes -- fast,
 because it never re-scans the multi-GB mention table. That incremental merge is correct
-ONLY for APPEND. But ``index_article`` is delete-then-reinsert: every re-index of an
-existing article DELETES its mentions and RE-INSERTS them with fresh higher ids, and
-``prune_orphan_keywords`` DELETES rows. An id-watermark merge would then keep the OLD
-contribution in the rollup AND re-add the reinserted higher-id rows = a fabricated
-(doubled) number.
+ONLY for APPEND. But ``index_article`` REWRITES an existing article's mentions (since
+2026-10-06 only the difference: rows that changed are updated in place under their old
+id, gone ones deleted, new ones inserted; before that every row was
+deleted and re-inserted), and ``prune_orphan_keywords`` DELETES rows. An id-watermark
+merge would then keep the OLD contribution of a changed or removed row in the rollup
+(and, for re-inserted higher-id rows, add them ON TOP = a fabricated, doubled number).
 
 THE GUARD. Those non-append mutators bump a monotonic *corpus epoch*; a rollup records
 the epoch it was BUILT at, and :func:`src.analytics.columnar.refresh_keyword_daily`

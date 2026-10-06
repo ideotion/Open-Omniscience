@@ -892,8 +892,16 @@ def _accumulate(run: dict, st: dict, *, commit_batch: int | None, idle: bool) ->
         v = st.get(k)
         if v is not None:
             run[k] = float(run.get(k, 0.0)) + float(v)
-    for k in ("articles", "mentions_written"):
+    for k in ("articles", "mentions_written", "mentions_kept", "mentions_updated",
+              "mentions_removed", "mentions_added"):
         run[k] = int(run.get(k, 0)) + int(st.get(k, 0) or 0)
+    # The seconds inside index_article by part, summed at full precision like the rest.
+    split = st.get("apply_split")
+    if isinstance(split, dict):
+        acc_split = dict(run.get("apply_split") or {})
+        for name, secs in split.items():
+            acc_split[str(name)] = float(acc_split.get(str(name), 0.0)) + float(secs or 0.0)
+        run["apply_split"] = acc_split
     # WHICH SETTINGS PRODUCED THESE SECONDS. Without this the split is uninterpretable
     # across a run that went online half-way through: the same apply_s means different
     # things at commit batch 1 and at 200, and that comparison is the whole point of
@@ -938,6 +946,10 @@ def _drain_metrics(run: dict) -> dict | None:
     }
     out["articles"] = int(run.get("articles", 0))
     out["mentions_written"] = int(run.get("mentions_written", 0))
+    for k in ("mentions_kept", "mentions_updated", "mentions_removed", "mentions_added"):
+        out[k] = int(run.get(k, 0))
+    if run.get("apply_split"):
+        out["apply_split"] = {k: round(float(v), 3) for k, v in run["apply_split"].items()}
     out["exclusive_articles"] = int(run.get("exclusive_articles", 0))
     out["shared_articles"] = int(run.get("shared_articles", 0))
     out["commit_batch_seen"] = list(run.get("commit_batch_seen") or [])
@@ -1040,7 +1052,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         return not exclusive_window_open()
 
     # ONE corpus-epoch bump per RUN, at the START and again at the END (F3). Every
-    # article this drain touches is delete-then-reinserted, so a rollup built before
+    # article this drain touches has its mention rows rewritten (changed rows updated in
+    # place, gone ones deleted, new ones inserted; unchanged ones left alone), so a rollup built before
     # the run must be invalidated (the start bump) and so must one snapshotted while
     # it ran (the end bump) -- the second is not a nicety: bumping per batch used to
     # close that window by accident, and a start-only bump would silently stop
@@ -1210,7 +1223,12 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     out["counter_reconcile"]["left_by_an_earlier_run"] = True
             except Exception:  # noqa: BLE001 - never let it mask what ended the run
                 _LOG.warning("deferred-counter reconcile failed", exc_info=True)
-        if out["articles_reindexed"]:
+        # Every run that walked a batch ends with its bump, including a RESUMED one whose
+        # articles were all already finished by the run that was killed before it could bump:
+        # the start bump above already happened, the rows changed in place since a rollup was
+        # built from the middle of that run are only invalidated by an epoch change, and an
+        # extra bump is only ever an extra (correct) full rebuild.
+        if batches:
             _bump("reindex-resume:end")
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
     # never sees it -- without this, a partial run would report stopped:false and read as

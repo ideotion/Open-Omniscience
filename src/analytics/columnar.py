@@ -912,9 +912,10 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     single-writer gate (``src/database/writer.py``) serialises every commit in real
     wall-clock order, so ``created_at`` is a genuinely monotonic, reuse-immune ordering
     key (unlike ``id``). Any row committed AT OR BEFORE ``scan_bound`` is eligible; a
-    concurrent delete-then-reinsert ALWAYS produces a fresh row whose ``created_at`` is
-    STRICTLY AFTER ``scan_bound`` (the reinsert happens during, never before, the scan
-    started) -- so it is excluded from THIS build regardless of which id it lands on,
+    concurrent rewrite ALWAYS produces a row whose ``created_at`` is STRICTLY AFTER
+    ``scan_bound`` (a re-inserted row, and since 2026-10-06 a row CHANGED IN PLACE, which
+    is stamped now; an UNCHANGED row is not touched at all) -- so it is excluded from THIS
+    build regardless of which id it lands on,
     closing both the double-count and the id-reuse-drop directions BY CONSTRUCTION, not
     by luck. A NULL ``created_at`` (a pre-migration or otherwise unset row) is included,
     never silently excluded on a data gap -- originally by treating it as maximally old
@@ -1243,8 +1244,10 @@ def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
 # docs/design/SCALING_DERIVED_LAYER_1000X.md). Keeps the rollup fresh WITHOUT a full
 # rebuild every pass, while a re-index can never make it double-count.
 #
-# THE TRAP (grounded in this repo): ``index_article`` does delete-then-reinsert of an
-# article's mentions (store.py). So an id-watermark MERGE-ADD (tail = ``id > last_mention_id``)
+# THE TRAP (grounded in this repo): ``index_article`` REWRITES an article's mentions (store.py;
+# since 2026-10-06 only the difference -- a changed row is updated in place under its OLD id, a
+# gone one deleted, a new one inserted -- where it used to delete and re-insert
+# every row). So an id-watermark MERGE-ADD (tail = ``id > last_mention_id``)
 # is correct ONLY for APPEND — a brand-new article's mentions carry strictly higher ids the
 # tail captures once. EVERY path that re-runs ``index_article`` over an EXISTING article
 # (reindex_all_batch / reindex_articles / reindex_imported_articles [restore] / clean-up-

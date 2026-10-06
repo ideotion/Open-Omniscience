@@ -13578,3 +13578,12 @@ statement and its values into the status payload; `is_io_error` had been fixed f
 in a lesson is measured, not remembered**: "three through the endpoint, eight directly" was corrected to two and nine by putting the detach-everything probe back and
 running the four files (11 failures: 1 through `GET /api/articles`, 1 through `GET /api/articles/export` and 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
 each logs a traceback every pass: key it per path. (5) A reading taken for a caller that does not wait has an age bound, or an hours-old figure classifies a new incident.
+
+### A RE-INDEX THAT REWRITES ROWS IT HAS NOT CHANGED (keyword thread, re-index drain, 2026-10-06)
+
+(1) **Read the field rate before the sandbox rate**: Lenovo's own bundle (`keyword_write_cost.write_rate`) gave 7,673 articles an hour (2.1 a second, 80 mentions each) for the drain, a plaintext
+4-core sandbox gave 38 a second, and the 18x between them was the random writes of ten indexes through the codec on a 41 GB file, not the Python (SQL was 9.5 s of 31.7 s apply here, the mention DELETE and INSERT 7.9 s of it). (2) **`index_article`
+now writes the difference** (`_write_mention_diff`): an unchanged mention row keeps its id and `created_at`, a changed one is updated in place under its old id and stamped now, a gone one is deleted, a new one inserted; on a pass where every row was unchanged the mention SQL fell from 9.5 s to 1.1 s and the
+rate from 38 to 56 articles a second here. (3) **"Unchanged" is every stored column but identity and write time, read off the table definition** (`_MENTION_PAYLOAD`), and the test pins the set, so a column added later is compared by default instead of silently ignored. (4) **Every reader that keys on a mention's id or `created_at` is
+protected by the corpus epoch, not by the rows being new**: the rollup's incremental tail (`id > last_mention_id`) and full build (`created_at <= scan_bound`), `serve_gate.change_token` (epoch + MAX(id)) and the write-rate diagnostic (rows by `created_at`, which now counts only rows really written); the drain bumps the epoch at its start and, since this change, at the end of every run that walked a
+batch, so a resumed run whose articles were all finished before the kill still ends with its bump. (5) **SQLite hands a freed rowid back**: a new row can take the id a deleted max row just freed, so a test may not claim a new row has a higher id; the epoch guard, not id order, is what makes that safe.

@@ -22,8 +22,9 @@ import time
 from array import array
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
+from typing import cast
 
-from sqlalchemy import insert, text
+from sqlalchemy import Table, bindparam, delete, insert, select, text, update
 from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
@@ -166,6 +167,101 @@ def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str,
             if held is None or kw.id < held.id:
                 out[kw.normalized_term] = kw
     return out
+
+
+# --------------------------------------------------------------------------- #
+# WRITE ONLY WHAT CHANGED (the re-index drain, 2026-10-06; docs/audit/15, Lenovo's bundle).
+#
+# ``index_article`` used to delete every mention row of the article and insert them all
+# again. A re-index with the current engine writes mostly the SAME rows back, and on a
+# 41 GB encrypted store each row is ten index entries moved through the page codec: the
+# drain measured 2.1 articles/s (7,673 an hour) against 38/s on a plaintext sandbox.
+# Now the article's rows are read once, compared with the rows the pass produces, and
+# only the difference is written. The end state is the SAME set of (keyword, article)
+# rows with the same payload as delete-then-insert; an unchanged row keeps its id and
+# its created_at, a changed row keeps its id and is stamped now, a gone row is deleted,
+# a new one inserted (so a brand-new article, which has no old rows, takes exactly the
+# old insert).
+#
+# THE COMPARED COLUMNS are every stored column of the row except its identity (id,
+# keyword_id, article_id) and its write time (created_at). They are read off the table
+# definition, so a column added later is compared by default instead of silently ignored;
+# tests/test_mention_diff_write.py pins the set so adding one is a decision, not an accident.
+_MT = cast(Table, KeywordMention.__table__)  # the write table; Core statements below, one reference to the model
+_MENTION_IDENTITY = ("id", "keyword_id", "article_id", "created_at")
+_MENTION_PAYLOAD: tuple[str, ...] = tuple(
+    c.name for c in _MT.columns if c.name not in _MENTION_IDENTITY
+)
+
+#: Variables per statement stay far under SQLite's limit of 32,766 (older builds 999).
+_MENTION_ID_CHUNK = 500
+
+
+def _read_mention_rows(session: Session, article_id: int) -> dict[int, tuple[int, dict]] | None:
+    """The article's stored mention rows as ``{keyword_id: (row id, payload)}``, or ``None``
+    when two rows share a keyword (the unique index forbids it; if a file somehow holds
+    that, the caller takes the old delete-then-insert path rather than guess which to keep).
+    """
+    cols = [_MT.c[name] for name in _MENTION_PAYLOAD]
+    out: dict[int, tuple[int, dict]] = {}
+    for row in session.execute(
+        select(_MT.c.id, _MT.c.keyword_id, *cols).where(_MT.c.article_id == article_id)
+    ):
+        if row[1] in out:
+            return None
+        out[row[1]] = (row[0], dict(zip(_MENTION_PAYLOAD, row[2:], strict=True)))
+    return out
+
+
+def _write_mention_diff(
+    session: Session,
+    article_id: int,
+    old_rows: dict[int, tuple[int, dict]] | None,
+    new_rows: list[dict],
+    *,
+    now: datetime,
+) -> dict[str, int]:
+    """Make the article's mention rows equal ``new_rows``, writing only the difference.
+
+    Returns ``{"kept", "updated", "removed", "added"}`` row counts. Runs inside the
+    caller's transaction (it never commits), so an article's deletes, updates and inserts
+    land together or not at all.
+    """
+    new_by_kw: dict[int, dict] = {}
+    duplicate = False
+    for row in new_rows:
+        if row["keyword_id"] in new_by_kw:
+            duplicate = True
+            break
+        new_by_kw[row["keyword_id"]] = row
+    if old_rows is None or duplicate:
+        # The legacy shape: replace the whole set (what every pass did before this).
+        removed = 0
+        if old_rows is None or old_rows:
+            removed = getattr(session.execute(delete(_MT).where(_MT.c.article_id == article_id)), "rowcount", 0)
+        if new_rows:
+            session.execute(insert(_MT), new_rows)
+        return {"kept": 0, "updated": 0, "removed": int(removed or 0), "added": len(new_rows)}
+
+    kept = 0
+    updates: list[dict] = []
+    inserts: list[dict] = []
+    for kid, row in new_by_kw.items():
+        held = old_rows.get(kid)
+        if held is None:
+            inserts.append(row)
+        elif all(held[1][c] == row[c] for c in _MENTION_PAYLOAD):
+            kept += 1
+        else:
+            updates.append({"_rid": held[0], **{c: row[c] for c in _MENTION_PAYLOAD}, "created_at": now})
+    gone = [rid for kid, (rid, _p) in old_rows.items() if kid not in new_by_kw]
+    for i in range(0, len(gone), _MENTION_ID_CHUNK):
+        session.execute(delete(_MT).where(_MT.c.id.in_(gone[i : i + _MENTION_ID_CHUNK])))
+    if updates:
+        session.execute(update(_MT).where(_MT.c.id == bindparam("_rid")), updates)
+    if inserts:
+        session.execute(insert(_MT), inserts)
+    return {"kept": kept, "updated": len(updates), "removed": len(gone), "added": len(inserts)}
 
 
 def _get_or_create_keyword(
@@ -413,8 +509,17 @@ def index_article(
     precomputed_sentiment: tuple[float | None, str | None] | None = None,
     precomputed_www: dict | None = None,
     maintain_counters: bool = True,
+    timings: dict | None = None,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
+
+    ``timings`` is an optional OUT-parameter (default ``None``: nothing is measured):
+    the seconds this call spent reading the article's old mention rows, writing the
+    mention difference, on the when/where/who store and on the counter deltas, ADDED to
+    whatever the dict already holds, so a drain can sum a window across articles. The
+    tally gains ``mentions_kept`` / ``mentions_updated`` / ``mentions_removed`` /
+    ``mentions_added`` (see ``_write_mention_diff``); ``mentions`` keeps meaning "rows
+    the article now has".
 
     ``scope`` (keyword-engine Phase 1.2): ``"full"`` (default) recomputes keywords +
     when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword
@@ -498,17 +603,23 @@ def index_article(
     # R22: when the caller is NOT maintaining counters this read is pure waste -- it
     # feeds _apply_keyword_counter_deltas and nothing else, so a deferred drain skips a
     # whole indexed scan of keyword_mentions per article on top of the updates.
+    #
+    # The same read serves the diff write below (which rows to keep, update, remove), so
+    # the rows are read ONCE for both, whether or not the counters are maintained.
+    _t_read = time.monotonic() if timings is not None else 0.0
+    old_rows = _read_mention_rows(session, article.id)
     old_contrib: dict[int, int] = {}
     if maintain_counters:
-        for kid, cnt in (
-            session.query(KeywordMention.keyword_id, KeywordMention.count)
-            .filter_by(article_id=article.id)
-            .all()
-        ):
-            old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
-
-    # Idempotent re-index: drop this article's existing mentions first.
-    session.query(KeywordMention).filter_by(article_id=article.id).delete()
+        if old_rows is None:  # two rows for one keyword: sum them, as the old read did
+            for kid, cnt in session.execute(
+                select(_MT.c.keyword_id, _MT.c.count).where(_MT.c.article_id == article.id)
+            ):
+                old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
+        else:
+            for kid, (_rid, payload) in old_rows.items():
+                old_contrib[kid] = int(payload["count"] or 0)
+    if timings is not None:
+        timings["mentions_read_s"] = timings.get("mentions_read_s", 0.0) + time.monotonic() - _t_read
 
     # Source self-names are boilerplate, not content (maintainer-ruled rule,
     # NOT a stoplist — see _self_name_forms; re-indexing applies it
@@ -576,12 +687,14 @@ def index_article(
         new_contrib[kw.id] = new_contrib.get(kw.id, 0) + int(t.count)
         written += 1
 
-    if mention_rows:
-        # An ORM-enabled bulk INSERT (SQLAlchemy 2.0) -- the write-gate's
-        # do_orm_execute listener already covers this exact pattern (it fires
-        # for session.execute(insert()/update()/delete()), the same hook that
-        # already protects index_article's KeywordMention bulk .delete() above).
-        session.execute(insert(KeywordMention), mention_rows)
+    # Idempotent re-index: the article's rows become exactly ``mention_rows`` -- by writing
+    # only the difference (_write_mention_diff), through ORM-enabled bulk statements the
+    # write-gate's do_orm_execute listener already covers (it fires for
+    # session.execute(insert()/update()/delete())).
+    _t_write = time.monotonic() if timings is not None else 0.0
+    diff = _write_mention_diff(session, article.id, old_rows, mention_rows, now=mentions_created_at)
+    if timings is not None:
+        timings["mentions_write_s"] = timings.get("mentions_write_s", 0.0) + time.monotonic() - _t_write
 
     # THE ARTICLE'S OWN TOP KEYWORD (rulings 23/38/39). Pure arithmetic over the map we
     # just built -- no query, no second pass, and no chance of disagreeing with the
@@ -624,8 +737,11 @@ def index_article(
     # envelope reads Keyword.last_reconciled_at, which this skip does not touch, so
     # without that marker a corpus reconciled an hour ago would report `exact` over
     # counters that are drifting right now. reindex_articles owns opening it.
+    _t_cnt = time.monotonic() if timings is not None else 0.0
     if maintain_counters:
         _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
+    if timings is not None:
+        timings["counters_s"] = timings.get("counters_s", 0.0) + time.monotonic() - _t_cnt
 
     # When x Where x Who at ingest (T12, CONFIRMED GO): persist the deduced
     # dates/places/entities WITH the keyword pass — one hook, so every path
@@ -679,12 +795,15 @@ def index_article(
             _pw = precomputed_www or {}
             if "__www_error__" in _pw:
                 _pw = {}
+            _t_www = time.monotonic() if timings is not None else 0.0
             with session.begin_nested():
                 www["dates"] = _store_dates(session, article, precomputed=_pw.get("dates"))
                 www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
                 www["entities_stored"] = _store_ents(
                     session, article, precomputed=_pw.get("entities")
                 )
+            if timings is not None:
+                timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
         # A transient 'database is locked' here must NOT be swallowed: doing so
         # leaves the session in a failed-flush state, so the line-below commit
@@ -725,6 +844,10 @@ def index_article(
     return {
         "article_id": article.id,
         "mentions": written,
+        "mentions_kept": diff["kept"],
+        "mentions_updated": diff["updated"],
+        "mentions_removed": diff["removed"],
+        "mentions_added": diff["added"],
         "entities": sum(1 for t in terms if t.kind != "term"),
         "self_name_suppressed": self_suppressed,
         **www,
@@ -941,6 +1064,13 @@ def reindex_articles(
     # the job reports. A real measurement of the same work, never the article rate
     # multiplied by an assumed average per article.
     mentions_written = 0
+    # What the mention rewrite did, in rows, banked only when a commit lands (like
+    # ``mentions_written``): rows left alone, updated in place, deleted, inserted. Together
+    # they say how much of a re-index was real change and how much was rewriting the same
+    # row, which is what decides whether the diff write earns its keep on a given corpus.
+    mention_diff = {"kept": 0, "updated": 0, "removed": 0, "added": 0}
+    # Seconds inside index_article by part (index_article's ``timings`` out-parameter).
+    _split: dict[str, float] = {}
     commit_batch = max(1, commit_batch)
 
     # R22 -- counters deferred for an EXCLUSIVE drain, disclosed as estimated meanwhile.
@@ -978,8 +1108,10 @@ def reindex_articles(
                 exc_info=True,
             )
 
-    # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
-    # rather than incrementally merge (the D3 double-count guard). This is ALSO the
+    # Re-index rewrites an article's mentions (the difference only, see _write_mention_diff:
+    # changed rows are updated in place, gone ones deleted, new ones inserted), so the
+    # disposable columnar rollup must FULL-rebuild rather than incrementally merge (the D3
+    # double-count guard). This is ALSO the
     # restore-merge path: reindex_imported_articles re-indexes the merged articles against
     # the live DB after the atomic swap, so bumping here covers restore too. Best-effort.
     if article_ids and bump_epoch:
@@ -1035,6 +1167,7 @@ def reindex_articles(
                 precomputed_sentiment=sentiment,
                 precomputed_www=www,
                 maintain_counters=not _deferring,
+                timings=_split,
             ),
             session=session,
             label=f"reindex_articles[{article.id}]",
@@ -1043,6 +1176,8 @@ def reindex_articles(
         # per-article cannot count its articles twice. A rate is worth having only if
         # its numerator is what actually reached the database.
         mentions_written += int((res or {}).get("mentions", 0) or 0)
+        for _k in mention_diff:
+            mention_diff[_k] += int((res or {}).get(f"mentions_{_k}", 0) or 0)
 
     def _redo_committed(items: list[tuple[Article, ArticleDerivatives | None]]) -> None:
         """One-at-a-time, COMMITTED redo after a batch-commit failure -- mirrors
@@ -1084,6 +1219,7 @@ def reindex_articles(
 
         pending: list[tuple[Article, ArticleDerivatives | None]] = []
         staged_mentions = 0  # this batch's mentions, banked only if the commit lands
+        staged_diff = dict.fromkeys(mention_diff, 0)  # likewise, mutated in place
 
         def _flush() -> None:
             nonlocal reindexed, _apply_commit_s, mentions_written, staged_mentions
@@ -1095,12 +1231,15 @@ def reindex_articles(
                 _apply_commit_s += time.monotonic() - _t_c
                 reindexed += len(pending)
                 mentions_written += staged_mentions
+                for _k, _v in staged_diff.items():
+                    mention_diff[_k] += _v
             except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
                 session.rollback()
                 # The rollback un-wrote every staged mention; _redo_committed counts
                 # what it re-writes, so banking them here too would double-count.
                 _redo_committed(list(pending))
             staged_mentions = 0
+            staged_diff.update(dict.fromkeys(staged_diff, 0))
             pending.clear()
             _report()
 
@@ -1121,9 +1260,12 @@ def reindex_articles(
                     precomputed_sentiment=sentiment,
                     precomputed_www=www,
                     maintain_counters=not _deferring,
+                    timings=_split,
                 )
                 pending.append((art, deriv))
                 staged_mentions += int((_res or {}).get("mentions", 0) or 0)
+                for _k in staged_diff:
+                    staged_diff[_k] += int((_res or {}).get(f"mentions_{_k}", 0) or 0)
                 _apply_index_s += time.monotonic() - _t_i
             except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
                 # A rollback here drops THIS article's partial work AND every
@@ -1133,6 +1275,7 @@ def reindex_articles(
                 # proven fallback, rather than silently losing them.
                 session.rollback()
                 staged_mentions = 0  # rolled away with the batch
+                staged_diff.update(dict.fromkeys(staged_diff, 0))
                 redo = list(pending)
                 pending.clear()
                 _redo_committed(redo)
@@ -1282,6 +1425,17 @@ def reindex_articles(
             # the reason this out-parameter exists: callers assert the return shape
             # exactly, and a measurement is not part of the contract.
             "mentions_written": mentions_written,
+            # Of those rows, how many were left alone (`kept`), changed in place
+            # (`updated`), deleted (`removed`) and inserted (`added`): only the last three
+            # touched the file. `mentions_kept` over `mentions_written` is the share of the
+            # rewrite the diff write saved.
+            "mentions_kept": mention_diff["kept"],
+            "mentions_updated": mention_diff["updated"],
+            "mentions_removed": mention_diff["removed"],
+            "mentions_added": mention_diff["added"],
+            # Seconds inside index_article by part. They do not sum to apply_index_s:
+            # extraction already done elsewhere, keyword lookups and the stamp are the rest.
+            "apply_split": {k: round(v, 3) for k, v in _split.items()},
         })
 
     return {"reindexed": reindexed, "failed": failed}
