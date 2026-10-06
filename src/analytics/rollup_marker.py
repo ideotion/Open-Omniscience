@@ -34,6 +34,7 @@ import atexit
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -65,11 +66,29 @@ def _path() -> Path:
     return data_dir() / _FILENAME
 
 
+#: Held for every write and for the exit clear. CPython runs ``atexit`` callbacks BEFORE it stops daemon
+#: threads, so a build thread could otherwise write the marker back after the exit hook had removed it
+#: (reproduced: 3 of 20 runs of a stand-in left the file behind after a normal exit).
+_WRITE_LOCK = threading.Lock()
+_closed = False
+
+
 def _write(record: dict) -> None:
-    path = _path()
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    with _WRITE_LOCK:
+        if _closed:
+            return  # the process is exiting normally: nothing may put the marker back
+        path = _path()
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, path)
+
+
+def _exit_clear() -> None:
+    """The ``atexit`` hook: stop all later writes, then remove the record."""
+    global _closed
+    with _WRITE_LOCK:
+        _closed = True
+    clear()
 
 
 def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | None) -> None:
@@ -79,7 +98,7 @@ def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | Non
     _last_stage = "start"
     if not _exit_hook_registered:
         _exit_hook_registered = True
-        atexit.register(clear)
+        atexit.register(_exit_clear)
     try:
         _write({
             "format": FORMAT,

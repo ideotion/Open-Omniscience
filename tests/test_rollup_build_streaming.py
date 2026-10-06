@@ -289,6 +289,19 @@ class _Guard:
         self.n = 0
 
 
+@pytest.fixture(autouse=True)
+def _no_real_exit_hooks(monkeypatch):
+    """A real ``begin`` registers an ``atexit`` hook: keep the pytest process free of them, and put the
+    marker module's exit flag and the serve's spill bookkeeping back as found."""
+    import types
+
+    monkeypatch.setattr(rollup_marker, "atexit", types.SimpleNamespace(register=lambda *a, **k: None))
+    monkeypatch.setattr(rollup_marker, "_closed", False)
+    monkeypatch.setattr(rollup_marker, "_exit_hook_registered", False)
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    monkeypatch.setitem(rollup_serve._STATE, "spill", None)
+
+
 @pytest.fixture()
 def serve_env(session, monkeypatch, tmp_path):
     """The in-memory build pointed at the seeded corpus, a temp data dir, a plaintext corpus."""
@@ -516,7 +529,7 @@ def test_an_encrypted_corpus_gets_no_temporary_directory(monkeypatch, tmp_path):
     assert con.execute("SELECT current_setting('temp_directory')").fetchone()[0] == ""
 
 
-def test_a_plaintext_corpus_offloads_under_the_data_dir_and_the_next_start_sweeps_dead_processes(
+def test_a_plaintext_corpus_offloads_under_the_data_dir_and_the_next_build_sweeps_dead_processes(
     monkeypatch, tmp_path
 ):
     psutil = pytest.importorskip("psutil")
@@ -526,15 +539,56 @@ def test_a_plaintext_corpus_offloads_under_the_data_dir_and_the_next_start_sweep
     dead = 4_000_000
     while psutil.pid_exists(dead):
         dead += 1
-    (root / str(dead)).mkdir(parents=True)
-    (root / str(dead) / "duckdb_temp_storage-1.tmp").write_bytes(b"x")
+    (root / f"{dead}-ab12cd34").mkdir(parents=True)
+    (root / f"{dead}-ab12cd34" / "duckdb_temp_storage-1.tmp").write_bytes(b"x")
+    (root / str(dead)).mkdir()  # the older single-folder name is swept too
     (root / "not-a-pid").mkdir()
     chosen = rollup_serve._spill_setting()
-    assert chosen == str(root / str(os.getpid()))
-    assert not (root / str(dead)).exists(), "the folder of a process that is gone is swept"
+    assert os.path.dirname(chosen) == str(root) and os.path.basename(chosen).startswith(f"{os.getpid()}-")
+    assert not (root / f"{dead}-ab12cd34").exists(), "the folder of a process that is gone is swept"
+    assert not (root / str(dead)).exists()
     assert (root / "not-a-pid").exists(), "only pid-named folders are ever touched"
     con = columnar.connect(passphrase=None, spill=chosen)
     assert con.execute("SELECT current_setting('temp_directory')").fetchone()[0].rstrip("/\\") == chosen
+
+
+def test_every_connection_gets_its_own_folder_and_a_live_one_is_never_emptied(monkeypatch, tmp_path):
+    """D1: a rebuild stages while the previous rollup still serves. Sharing (or recreating) one folder broke
+    the serving connection's queries (IOException) and, in testing, crashed the process."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: False)
+    first = rollup_serve._spill_setting()
+    (tmp_path / "duckdb_tmp" / os.path.basename(first) / "duckdb_temp_storage-1.tmp").write_bytes(b"a live spill")
+    second = rollup_serve._spill_setting()
+    third = rollup_serve._spill_setting()
+    assert len({first, second, third}) == 3
+    assert (tmp_path / "duckdb_tmp" / os.path.basename(first) / "duckdb_temp_storage-1.tmp").read_bytes() == b"a live spill"
+
+
+def test_the_folder_of_a_first_ever_build_survives_the_second_builds_sweep(monkeypatch, tmp_path):
+    """The once-only sweep of this pid's folders must be marked done even when there was nothing to sweep."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: False)
+    first = rollup_serve._spill_setting()  # creates duckdb_tmp itself
+    rollup_serve._spill_setting()
+    assert os.path.isdir(first)
+
+
+def test_a_declined_build_removes_its_folder_and_a_swap_removes_the_retired_ones(serve_env, session, tmp_path):
+    _seed(session, keywords=40, mentions_per=5)
+    root = tmp_path / "duckdb_tmp"
+    serve_env.engage_on = 1
+    assert rollup_serve._build_inmemory_and_swap()["reason"] == "mem-low"
+    assert list(root.iterdir()) == [], "a declined build's folder is gone with its connection"
+    serve_env.engage_on = 10**9
+    serve_env.n = 0
+    assert rollup_serve._build_inmemory_and_swap() is None
+    first = rollup_serve._STATE["spill"]
+    assert first and os.path.isdir(first), "the serving connection's folder stays while it serves"
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["spill"] != first and os.path.isdir(rollup_serve._STATE["spill"])
+    assert not os.path.exists(first), "the retired connection's folder goes after the swap"
+    assert len(list(root.iterdir())) == 1
 
 
 def test_a_connection_without_a_spill_choice_keeps_duckdbs_own_default():
@@ -665,34 +719,92 @@ def test_the_guard_is_asked_at_most_once_per_interval_not_once_per_batch(serve_e
 
 
 def test_a_normal_quit_during_a_build_clears_the_marker_through_atexit(marker_dir, monkeypatch):
-    import atexit
+    import types
 
     registered = []
-    monkeypatch.setattr(atexit, "register", lambda fn, *a, **k: registered.append(fn))
-    monkeypatch.setattr(rollup_marker, "_exit_hook_registered", False)
+    monkeypatch.setattr(rollup_marker, "atexit", types.SimpleNamespace(register=lambda fn, *a, **k: registered.append(fn)))
     rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
-    assert registered == [rollup_marker.clear], "the hook is the marker's own clear"
+    assert registered == [rollup_marker._exit_clear], "the hook is the marker's own exit clear"
     rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
     assert len(registered) == 1, "registered once"
     registered[0]()
     assert rollup_marker.read() is None
 
 
-def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pid_starts_empty(monkeypatch, tmp_path):
+def test_a_build_thread_cannot_put_the_marker_back_after_the_exit_clear(marker_dir):
+    """CPython runs atexit hooks before it stops daemon threads: a write that arrives after the clear (a
+    progress refresh, or a build that begins during shutdown) must be dropped, not leave a false 'kill'."""
+    rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
+    rollup_marker._exit_clear()
+    assert rollup_marker.read() is None
+    rollup_marker.progress("keywords", 9, rss_mb=900.0, avail_mb=1000.0)  # a stage change: would write
+    rollup_marker.begin(rss_mb=500.0, avail_mb=2000.0, limit_mb=740.0)
+    assert rollup_marker.read() is None, "nothing may write the marker once the process is exiting"
+
+
+def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pids_leftovers_go_once(monkeypatch, tmp_path):
     psutil = pytest.importorskip("psutil")
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     root = tmp_path / "duckdb_tmp"
     dead = 4_000_000
     while psutil.pid_exists(dead):
         dead += 1
-    (root / str(dead)).mkdir(parents=True)
-    (root / str(dead) / "duckdb_temp_storage-1.tmp").write_bytes(b"left by a plaintext-era build")
+    (root / f"{dead}-ab12cd34").mkdir(parents=True)
+    (root / f"{dead}-ab12cd34" / "duckdb_temp_storage-1.tmp").write_bytes(b"left by a plaintext-era build")
+    stale_same_pid = root / f"{os.getpid()}-00000000"  # an earlier process that had this very pid (a container)
+    stale_same_pid.mkdir()
+    (stale_same_pid / "stale.tmp").write_bytes(b"from an earlier process with this pid")
     monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: True)
     assert rollup_serve._spill_setting() == ""
-    assert not (root / str(dead)).exists(), "what a plaintext build left must not outlive the encryption"
+    assert not (root / f"{dead}-ab12cd34").exists(), "what a plaintext build left must not outlive the encryption"
+    assert not stale_same_pid.exists(), "before this process has made a folder, its pid's folders are a dead process's"
     monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: False)
-    mine = root / str(os.getpid())
-    mine.mkdir()
-    (mine / "stale.tmp").write_bytes(b"from an earlier process with this pid")
-    assert rollup_serve._spill_setting() == str(mine)
-    assert list(mine.iterdir()) == [], "a folder this process did not create is a dead process's"
+    mine = rollup_serve._spill_setting()
+    assert os.path.isdir(mine) and list(os.scandir(mine)) == []
+    assert os.path.isdir(rollup_serve._spill_setting()) and os.path.isdir(mine), "once made, this pid's are live"
+
+
+def test_a_limit_hold_is_released_when_the_corpus_epoch_changes(serve_env, monkeypatch):
+    """D2: the limit never grows inside a process, so without this a corpus that shrank (a prune, a
+    restore of a smaller backup, a re-index) would keep the rollup off until the next restart."""
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
+    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 740.0, "epoch": 4}
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 4)
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 5)
+    assert rollup_serve._stopped_build_verdict() is None
+    assert rollup_serve._STATE["stopped"] is None, "released for good, not just for this check"
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: None)  # unreadable: no release
+    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": 1.0, "duckdb_limit_mb": 740.0, "epoch": 4}
+    assert rollup_serve._stopped_build_verdict() is not None
+
+
+def test_a_guard_stop_in_the_mentions_stage_is_held_on_the_projected_total(serve_env, session, monkeypatch):
+    """D3: a build the guard stops when memory is already gone has only shown the LOWER bound of what it needs."""
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_boot_order_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(
+        rollup_serve, "_build_inmemory_and_swap",
+        lambda: {"reason": "mem-low", "at": time.time(), "stage": "mentions", "rows_done": 1_000_000,
+                 "mentions_total": 4_000_000, "rss_mb": 1500.0, "begin_rss_mb": 500.0, "epoch": 3},
+    )
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    held = rollup_serve._STATE["stopped"]
+    assert held["observed_grew_mb"] == 1000.0 and held["grew_mb"] == 4000.0 and held["epoch"] == 3
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 3)
+    monkeypatch.setattr(rollup_serve, "_guard_floor_mb", lambda: 256.0)
+    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 500.0, "avail_mb": 2000.0})
+    assert rollup_serve._stopped_build_verdict()["needs_available_mb"] == 4256.0, "2,000 MB is what it failed with"
+
+
+def test_the_stop_hold_does_not_gate_the_persisted_refresh(serve_env, monkeypatch):
+    rollup_serve._STATE["stopped"] = {"reason": "mem-low", "at": 1.0, "grew_mb": 9999.0}
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)
+    assert rollup_serve._stopped_build_verdict() is None

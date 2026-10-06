@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 import pytest
 
@@ -41,12 +40,14 @@ def _host_memory_is_not_under_test(monkeypatch):
     monkeypatch.setattr(rollup_serve, "_last_build_verdict", lambda: None)
     monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
     monkeypatch.setitem(rollup_serve._STATE, "stopped", None)
-    # An earlier test that went through a serve may have kicked a real background build, which holds the
-    # build lock until it ends (seen once in a full run: the next test found it held and never built).
-    # Wait for it, bounded so a lock that is genuinely stuck fails here instead of hanging the run.
-    deadline = time.monotonic() + 60.0
-    while rollup_serve._BUILD_LOCK.locked() and time.monotonic() < deadline:
-        time.sleep(0.05)
+    # Drain any in-flight build, as tests/test_rollup_serve.py does (commit 4a40cc64): ANY earlier test
+    # that runs a windowed query starts a REAL background build on a daemon thread, which holds the build
+    # lock until it ends; the next test here then found the lock held and never built (seen in two full runs;
+    # a lock-watch plugin logged 'rollup-build' alive after test_attention_producers, test_observatory,
+    # test_rollup_serve, ...). Waiting out a build this test did not start is not slack: the build ends by
+    # itself, and a lock that is genuinely stuck fails here, loudly, rather than hanging the run.
+    assert rollup_serve._BUILD_LOCK.acquire(timeout=60), "a background rollup build never released its lock"
+    rollup_serve._BUILD_LOCK.release()
 
 
 @pytest.fixture

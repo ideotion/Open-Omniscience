@@ -38,9 +38,12 @@ In-memory only (never a plaintext file). The canonical SQLCipher store is always
 source of truth. THE ONE EXCEPTION IS DUCKDB'S OWN OFFLOAD, and it is decided by the corpus: with
 an ENCRYPTED corpus the engine is given no temporary directory, so a build that outgrows its memory
 limit is declined instead of writing derived counts to disk; with a plaintext corpus (nothing on
-that disk is secret) it may offload into ``<data dir>/duckdb_tmp/<pid>``; the folders of processes that
-are gone are swept at the next build (in either mode, so a corpus encrypted later does not keep what an
-earlier, plaintext build left). The OTHER in-memory stores (the map, the benchmarks) still use DuckDB's own
+that disk is secret) it may offload into ``<data dir>/duckdb_tmp/<pid>-<id>``, ONE FOLDER PER CONNECTION
+(a rebuild stages while the previous rollup is still serving, and two live connections must never share
+or empty one folder: DuckDB then fails the serving connection's queries, and in testing crashed the
+process), removed when that connection is retired; the folders of processes that are gone are swept at
+the next build (in either mode, so a corpus encrypted later does not keep what an earlier, plaintext
+build left). The OTHER in-memory stores (the map, the benchmarks) still use DuckDB's own
 default for the offload directory: that is recorded in OPEN_QUEUE.md, not changed here.
 
 THE BUILD NEVER TAKES MORE MEMORY THAN THE MACHINE HAS (diagnostics of 2026-10-06: eight 4.81 GiB
@@ -61,6 +64,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 
 from sqlalchemy.orm import Session
 
@@ -94,6 +98,9 @@ _STATE: dict = {
     # What stopped the last build PART-WAY (None once a build has finished): the reason and the numbers
     # the retry rule compares the machine against.
     "stopped": None,
+    # The offload folder of the connection in "con" (None when it has none): removed when that
+    # connection is replaced.
+    "spill": None,
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
@@ -216,8 +223,10 @@ def _build_inmemory_and_swap() -> dict | None:
     from src.database.session import session_scope
 
     # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
-    con = columnar.connect(passphrase=None, spill=_spill_setting())
+    spill = _spill_setting()
+    con = columnar.connect(passphrase=None, spill=spill)
     if con is None:
+        _remove_spill(spill)
         return None
     r = _readings()
     ok = False
@@ -228,6 +237,7 @@ def _build_inmemory_and_swap() -> dict | None:
             # recorded token compare "changed" next check -> one extra rebuild, never a
             # silently-missed one).
             token = serve_gate.change_token(s)
+            total_hint = _mentions_total(s)
             skip: dict | None
             try:
                 columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
@@ -242,7 +252,10 @@ def _build_inmemory_and_swap() -> dict | None:
             else:
                 skip = None
             if skip is not None:
-                skip["begin_rss_mb"] = r["rss_mb"]
+                skip.update({
+                    "begin_rss_mb": r["rss_mb"], "mentions_total": total_hint,
+                    "epoch": token[0] if token else None,
+                })
                 return skip
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
@@ -252,6 +265,7 @@ def _build_inmemory_and_swap() -> dict | None:
         if not ok:  # a decline or an error: this connection is never served, so it must not leak
             with contextlib.suppress(Exception):
                 con.close()
+            _remove_spill(spill)  # after the close: DuckDB holds its files open until then
     with _LOCK:
         old = _STATE["con"]
         _STATE["con"] = con
@@ -261,13 +275,27 @@ def _build_inmemory_and_swap() -> dict | None:
         _STATE["bind"] = built_bind
         _STATE["token"] = token
         _STATE["pending"] = False
+        old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
             try:
                 old.close()  # safe: serves hold _LOCK, so none is mid-query here
             except Exception:  # noqa: BLE001
                 pass
+        _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
     return None
+
+
+def _mentions_total(session) -> int | None:
+    """The newest mention id: a cheap (index-only) stand-in for how many mentions the build will stream,
+    used to project what a stopped build would have taken in total."""
+    try:
+        from sqlalchemy import text
+
+        v = session.execute(text("SELECT MAX(id) FROM keyword_mentions")).scalar()
+        return int(v) if v is not None else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _refresh_persisted_build() -> None:
@@ -399,6 +427,19 @@ def _affordability_verdict() -> dict | None:
         return None
 
 
+def _current_epoch() -> int | None:
+    """The corpus epoch now (the first element of the serve gate's change token), or None if unreadable."""
+    try:
+        from src.analytics import serve_gate
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            tok = serve_gate.change_token(s)
+        return int(tok[0]) if tok else None
+    except Exception:  # noqa: BLE001 - unreadable -> no release (the hold stays as it was)
+        return None
+
+
 def _last_build_verdict() -> dict | None:
     """Decline while the machine does not have what a KILLED earlier build held (see rollup_marker)."""
     try:
@@ -421,9 +462,16 @@ def _stopped_build_verdict() -> dict | None:
     stopped is retried when the machine has what that build had grown by, plus the guard's floor."""
     with _LOCK:
         st = _STATE.get("stopped")
-    if not st:
+    if not st or _persisted_serve_active():
         return None
     try:
+        # A corpus that has been re-indexed, pruned or restored is a different corpus (the epoch moves for
+        # exactly those); what stopped the last build says nothing about it, so the hold is released.
+        now_epoch = _current_epoch()
+        if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
+            with _LOCK:
+                _STATE["stopped"] = None
+            return None
         if st.get("reason") == "duckdb-limit":
             limit = _duckdb_limit_mb()
             if limit > float(st.get("duckdb_limit_mb") or 0):
@@ -453,40 +501,61 @@ def _corpus_encrypted() -> bool:
         return True
 
 
-def _sweep_spill_folders(root, keep: int) -> None:
-    """Remove the offload folders of processes that are gone (and nothing else)."""
+#: Set once this process has swept the folders a PREVIOUS process with the same pid left behind (a container
+#: restarts as pid 1 every time). After that, this pid's folders are live connections' and are never swept.
+_OWN_SPILL_SWEPT = False
+
+
+def _sweep_spill_folders(root) -> None:
+    """Remove the offload folders of processes that are gone (and nothing else): the folders are named
+    ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any."""
     import shutil
 
+    global _OWN_SPILL_SWEPT
     try:
         import psutil
     except ImportError:
         return  # no way to tell a live process from a dead one: leave them
+    mine = os.getpid()
     for child in root.iterdir():
-        if child.is_dir() and child.name.isdigit() and int(child.name) != keep \
-                and not psutil.pid_exists(int(child.name)):
+        head = child.name.split("-", 1)[0]
+        if not (child.is_dir() and head.isdigit()):
+            continue
+        pid = int(head)
+        if pid == mine:
+            if not _OWN_SPILL_SWEPT:
+                shutil.rmtree(child, ignore_errors=True)
+        elif not psutil.pid_exists(pid):
             shutil.rmtree(child, ignore_errors=True)
+    _OWN_SPILL_SWEPT = True
+
+
+def _remove_spill(path: str | None) -> None:
+    """Remove ONE connection's offload folder, after that connection is closed."""
+    if path:
+        import shutil
+
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def _spill_setting() -> str:
-    """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else
-    a fresh per-process folder under the data directory. The folders of processes that are gone are swept
-    in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must not stay."""
+    """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else a NEW
+    folder under the data directory for this connection alone. The folders of processes that are gone are
+    swept in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must
+    not stay."""
     encrypted = _corpus_encrypted()
     try:
-        import shutil
-
         from src.paths import data_dir
 
+        global _OWN_SPILL_SWEPT
         root = data_dir() / "duckdb_tmp"
         if root.is_dir():
-            _sweep_spill_folders(root, os.getpid())
+            _sweep_spill_folders(root)
+        _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
         if encrypted:
             return ""
         root.mkdir(parents=True, exist_ok=True)
-        mine = root / str(os.getpid())
-        # A pid is reused (every container restarts as pid 1): what is in a folder this process did not
-        # create is a dead process's, so it starts empty.
-        shutil.rmtree(mine, ignore_errors=True)
+        mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
         mine.mkdir()
         return str(mine)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
@@ -583,7 +652,9 @@ def build_now_and_wait() -> str:
     keeps falling back to live queries and retries on its next check, exactly as for the background
     kick) or ``failed``. When a build a serve kicked was already running, this waits for it
     instead of starting a second and reports THAT build's outcome, so a boot step never shows
-    ``done`` for a build that declined or failed."""
+    ``done`` for a build that declined or failed. That wait is real (the call blocks on the lock until the
+    running build ends), and the one caller, ``boot_sequence._rollup_first_build``, acts on the outcome it
+    returns; nothing relies on a rollup existing merely because this returned."""
     if not _BUILD_LOCK.acquire(blocking=False):
         with _BUILD_LOCK:  # the running build releases it in its own finally
             return _LAST_OUTCOME["value"]
@@ -634,15 +705,22 @@ def _build_and_swap() -> str:
         else:
             stopped = _build_inmemory_and_swap()
             if stopped is not None:
-                grew = None
+                grew = observed = None
                 if isinstance(stopped.get("rss_mb"), (int, float)) and isinstance(
                     stopped.get("begin_rss_mb"), (int, float)
                 ):
-                    grew = round(max(0.0, stopped["rss_mb"] - stopped["begin_rss_mb"]), 1)
+                    observed = grew = round(max(0.0, stopped["rss_mb"] - stopped["begin_rss_mb"]), 1)
+                    # A guard stop happens when memory is ALREADY nearly gone, so what was held at the stop is
+                    # the lower bound of what the build needs: project it over the mentions still to stream.
+                    done, total = stopped.get("rows_done"), stopped.get("mentions_total")
+                    if stopped.get("stage") == "mentions" and isinstance(done, int) and done > 0 \
+                            and isinstance(total, int) and total > done:
+                        grew = round(observed * total / done, 1)
                 with _LOCK:
                     _STATE["last_skip"] = stopped
                     _STATE["stopped"] = {
                         "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
+                        "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
                         "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
                     }
                 _LOG.warning(
