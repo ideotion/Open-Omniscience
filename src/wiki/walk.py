@@ -57,9 +57,27 @@ from typing import Any
 from sqlalchemy import select
 
 from src.safety.fetcher import NetworkBlocked, TransportUnavailable
+from src.wiki import history
+from src.wiki.history import retry_after_of
 from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST
 
 _LOG = logging.getLogger("wiki.walk")
+
+
+def _record(lane: Any, metric: str, **fields: Any) -> None:
+    """``history.record`` inside its own SAVEPOINT and guarded: the history is a record of the walk,
+    so a failure writing it must not roll back the page rows, the cursor or the sample the walk is
+    committing beside it."""
+    # The page, cursor and sample rows are pending in this session, and ``begin_nested`` writes
+    # them before it emits the SAVEPOINT: flush FIRST, outside the guard, so a failure of THEIR
+    # write propagates under its own name instead of being swallowed here and resurfacing as a
+    # PendingRollbackError at the commit.
+    lane.flush()
+    try:
+        with lane.begin_nested():
+            history.record(lane, metric, **fields)
+    except Exception:  # noqa: BLE001 - the record is not the work
+        _LOG.warning("could not record the walk's history row", exc_info=True)
 
 #: The whole walk waits: the operator's airplane switch is on. Same token the lane's
 #: other surfaces use for it, so one translation says it everywhere.
@@ -420,15 +438,21 @@ class WikiWalker:
                 edition, continue_params=state["continue"], limit=self._batch
             )
         except Exception as exc:  # noqa: BLE001 - classified, never swallowed
-            return self._refused(edition, state, refusal_token(exc), refusal_detail(exc))
+            return self._refused(
+                edition, state, refusal_token(exc), refusal_detail(exc),
+                busy_ms=max(0, int((self._monotonic() - started) * 1000)),
+                retry_after_s=retry_after_of(exc),
+            )
         busy_ms = max(0, int((self._monotonic() - started) * 1000))
         self._note_request()
         if result.get("error"):
             code = str(result["error"])
             token = WAIT_SERVICE_BUSY if code in _BUSY_CODES else WAIT_REFUSED
-            return self._refused(edition, state, token, code)
+            return self._refused(edition, state, token, code, busy_ms=busy_ms)
         if result.get("malformed"):
-            return self._refused(edition, state, WAIT_MALFORMED, str(result["malformed"]))
+            return self._refused(
+                edition, state, WAIT_MALFORMED, str(result["malformed"]), busy_ms=busy_ms
+            )
         return self._store(edition, state, result, busy_ms)
 
     def _note_request(self) -> None:
@@ -506,6 +530,13 @@ class WikiWalker:
             else:
                 cursor.continue_json = json.dumps(result.get("continue"), sort_keys=True)
             self._sample(lane, at, pages=len(pages), size=size, busy_ms=busy_ms)
+            # THE LANE'S OWN HISTORY, per edition per hour (src/wiki/history.py): answer time,
+            # bytes, pages and the bookmark, in the same transaction as the page rows.
+            _record(
+                lane, "walk", edition=edition, kind="ok", ms=busy_ms, bytes_=size,
+                pages=len(pages), at=at,
+                detail=None if completed else json.dumps(result.get("continue"), sort_keys=True),
+            )
         state["continue"] = None if completed else result.get("continue")
         state["complete"] = completed
         state["failures"] = 0
@@ -541,7 +572,10 @@ class WikiWalker:
         row.response_bytes = int(row.response_bytes or 0) + size
         row.busy_ms = int(row.busy_ms or 0) + busy_ms
 
-    def _refused(self, edition: str, state: dict, token: str, detail: Any) -> dict:
+    def _refused(
+        self, edition: str, state: dict, token: str, detail: Any, *,
+        busy_ms: int = 0, retry_after_s: int | None = None,
+    ) -> dict:
         """Name a refusal. A global one holds the walk; an edition's is written on its bookmark."""
         from src.wiki.lane_models import WikiWalkCursor
 
@@ -562,6 +596,12 @@ class WikiWalker:
             row.last_error = token
             row.last_error_at = at
             row.updated_at = at
+            # Every refusal counted per edition per hour by its kind, with the longest
+            # Retry-After: the cursor row keeps only the LAST one.
+            _record(
+                lane, "walk", edition=edition, kind=token, ms=busy_ms,
+                retry_after_s=retry_after_s, detail=str(detail), at=at,
+            )
         return {"refused": token}
 
     # -- for a status surface ------------------------------------------------- #

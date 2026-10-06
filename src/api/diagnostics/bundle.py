@@ -921,6 +921,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # S4 (2026-09-07): the soak window -- the durable readings composed with the
         # window each one actually covers, so a multi-day run can be read after it ends.
         ("soak-window.json", lambda: soak_window_report(db=db)),
+        # 2026-10-06: the Wikipedia lane's own hourly history (a LAZY import inside the
+        # function, so the route slice registers at its pinned position, not here).
+        ("wiki-lane-history.json", lambda: _wiki_lane_history_member()),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
         # The 0.4 release acceptance run's last report (2026-09-18; read-only, never runs
@@ -1330,6 +1333,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/windows-locks": "windows-locks.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
+    "/wiki-lane-history": "wiki-lane-history.json",  # 2026-10-06: the lane's own hourly history
     "/soak-window": "soak-window.json",  # S4 (2026-09-07): the multi-day soak reading
     "/write-gate": "write-gate.json",  # S2.6 (2026-09-02): who holds the gate / a connection
     "/stall-forensics": "stall-forensics.json",
@@ -1472,6 +1476,13 @@ def _diagnostics_coverage_report() -> dict:
         }
     except Exception as exc:  # noqa: BLE001 - a coverage-recompute glitch must not sink the run
         return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+def _wiki_lane_history_member() -> dict:
+    """The Wikipedia lane's hourly history as a bundle member (read-only; never raises)."""
+    from src.wiki.service import lane_history
+
+    return lane_history()
 
 
 def _chronology_member() -> dict:
