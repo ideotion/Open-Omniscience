@@ -316,12 +316,18 @@ def build_now_and_wait() -> str:
 
     Returns what happened: ``built``, ``declined`` (memory, an import's exclusive window: the serve
     keeps falling back to live queries and retries on its next check, exactly as for the background
-    kick), ``failed``, or ``waited`` when a build a serve kicked was already running and this
-    waited for that one instead of starting a second."""
+    kick) or ``failed``. When a build a serve kicked was already running, this waits for it
+    instead of starting a second and reports THAT build's outcome, so a boot step never shows
+    ``done`` for a build that declined or failed."""
     if not _BUILD_LOCK.acquire(blocking=False):
         with _BUILD_LOCK:  # the running build releases it in its own finally
-            return "waited"
-    return _build_and_swap() or "built"  # releases _BUILD_LOCK
+            return _LAST_OUTCOME["value"]
+    return _build_and_swap()  # releases _BUILD_LOCK
+
+
+# The outcome of the build that last released _BUILD_LOCK. It is written while the lock is still
+# held, so a thread that waited on the lock reads the outcome of the build it waited for.
+_LAST_OUTCOME: dict = {"value": "built"}
 
 
 def _build_and_swap() -> str:
@@ -336,6 +342,7 @@ def _build_and_swap() -> str:
     answer.
 
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
+    outcome = "failed"
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
         # `last_skip` always names the condition that actually stopped this build rather
@@ -352,16 +359,20 @@ def _build_and_swap() -> str:
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
             )
-            return "declined"
+            outcome = "declined"
+            return outcome
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:
             _build_inmemory_and_swap()
-        return "built"
+        outcome = "built"
+        return outcome
     except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
         _LOG.warning("rollup serve: background build failed", exc_info=True)
-        return "failed"
+        outcome = "failed"
+        return outcome
     finally:
+        _LAST_OUTCOME["value"] = outcome
         _BUILD_LOCK.release()
 
 

@@ -19,6 +19,16 @@ import pytest
 from src.api import boot_sequence as bs
 
 
+@pytest.fixture(autouse=True)
+def _boot_state_restored():
+    """Several tests here set the module's state directly (a step "running", a pending re-index);
+    put it back to a fresh boot afterwards so no later test, in this file or another, inherits it."""
+    yield
+    with bs._LOCK:
+        bs._STATE.update({"warm": "pending", "reindex_pending": None})
+    bs._reset()
+
+
 @pytest.fixture
 def seq(monkeypatch):
     """The sequence with fake steps; ``log`` records ('start'|'end', step) in order."""
@@ -192,16 +202,32 @@ def test_build_now_and_wait_waits_for_a_build_already_running_instead_of_startin
     from src.analytics import rollup_serve
 
     started: list[int] = []
+    got: list[str] = []
     monkeypatch.setattr(rollup_serve, "_build_and_swap", lambda: started.append(1))
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     done = threading.Event()
-    t = threading.Thread(target=lambda: (rollup_serve.build_now_and_wait(), done.set()))
+    t = threading.Thread(target=lambda: (got.append(rollup_serve.build_now_and_wait()), done.set()))
     t.start()
     assert not done.wait(0.2), "it returned while a build still held the lock"
+    rollup_serve._LAST_OUTCOME["value"] = "declined"  # what the running build records before it releases
     rollup_serve._BUILD_LOCK.release()
     assert done.wait(5)
     t.join(5)
     assert started == [], "a second build was started beside the running one"
+    assert got == ["declined"], "the waiter reported its own success instead of the build it waited for"
+
+
+def test_a_build_that_declined_or_failed_is_reported_to_the_step_that_waited_for_it(monkeypatch):
+    """The boot step must not read ``done`` for a build a serve kicked that then declined or failed."""
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: {"reason": "exclusive"})
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    assert rollup_serve._LAST_OUTCOME["value"] == "declined"
+    assert rollup_serve.build_now_and_wait() == "declined"  # the next caller starts its own build
 
 
 def test_the_sequence_does_not_ask_the_rollup_for_a_build_when_serving_is_off(monkeypatch):
