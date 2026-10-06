@@ -732,3 +732,40 @@ def test_carried_timestamps_are_stored_in_the_orms_own_format(backup, tmp_path, 
             assert not bad, f"{table}.{col} holds a second timestamp format: {bad[:3]}"
     finally:
         con.close()
+
+
+def _put_done(path: Path, fingerprint: str) -> None:
+    con = sqlite3.connect(path)
+    try:
+        con.execute("INSERT OR REPLACE INTO derived_meta (key, value, updated_at) VALUES (?, ?, ?)",
+                    ("stoplist_recompute_done", fingerprint, "2026-10-06 00:00:00"))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _done(path: Path):
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute("SELECT value FROM derived_meta WHERE key = 'stoplist_recompute_done'").fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
+
+
+def test_a_carry_forgets_the_finished_stoplist_run_so_the_next_window_walks_without_the_shortcut(
+    backup, tmp_path, monkeypatch
+):
+    """R111 step T3: carried tops come from the incoming mentions with no stoplist filter, so after a
+    merge that carried articles the live corpus must no longer read as 'finished under this list'
+    (the next window walks every hidden word without the shortcut, once)."""
+    target = tmp_path / "t.db"
+    _schema(target)
+    _put_done(target, "finished-before")
+    carried = _restore(backup, target, tmp_path / "carry.db", carry=True, monkeypatch=monkeypatch)
+    assert carried["counts"]["_derived_carry"]["carried"]["articles"] > 0, "the scenario must carry"
+    assert _done(tmp_path / "carry.db") is None
+    # nothing carried, nothing forgotten: the switch off leaves the record where it was
+    off = _restore(backup, target, tmp_path / "off.db", carry=False, monkeypatch=monkeypatch)
+    assert "carried" not in off["counts"]["_derived_carry"]
+    assert _done(tmp_path / "off.db") == "finished-before"

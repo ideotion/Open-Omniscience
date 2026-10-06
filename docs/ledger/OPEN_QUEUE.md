@@ -16419,11 +16419,11 @@ wrong without it); (3) the finished fingerprint is also written to `derived_meta
 restore, a merge swap, a moved database, a missing or unusable state file) the baseline is UNKNOWN and every hidden word is walked without the shortcut. **Known and left:** a word taken off the list
 since a LOST baseline can stay missing from tops until its articles are re-indexed (the lost list cannot be known); the pass runs inside the maintenance window and holds the scheduler's run lock for
 up to its 30 s soft budget (a "Collect now" in that window answers busy), and the gate is acquired without a timeout, like the other maintenance writers; the keyword fold (`keyword_fold.py`) now
-computes the stored top without the shipped list's words, once per job. **NOT DONE, a deliberate gap with its fix named:** the backup merge's carry plan (`src/backup/merge.py`, the UPDATEs after the
-`_refuse` calls in `_plan_derived_carry`, written by `_carry_derived_rows`) computes `top_keyword_*` over the incoming mention rows with NO hidden filter, so a carried article can arrive with a
-hidden word in its top, and the finished fingerprint in the live database does not change, so nothing repairs it. The fix is a `temp.carry_hidden(new)` table of the local ids of the shipped list's
-words and a `NOT IN` on the three statements; it is new logic in a module other threads are changing and wants its own read, so it is a follow-up for whoever lands it with merge.py, or a one-line
-reset of `derived_meta.stoplist_recompute_done` after a merge (the next window then walks the whole corpus without the shortcut, once).
+computes the stored top without the shipped list's words, once per job. **Merge carry, the one-line version DONE and the fuller fix left:** the backup merge's carry plan (`src/backup/merge.py`, the UPDATEs after the `_refuse` calls in `_plan_derived_carry`, written
+by `_carry_derived_rows`) computes `top_keyword_*` over the incoming mention rows with NO hidden filter, so a carried article can arrive with a hidden word in its top. `_carry_derived_rows` now
+deletes `derived_meta.stoplist_recompute_done` from the working copy whenever it carried articles (the working copy becomes the live corpus at the swap, so it is atomic with the tops), and the next
+maintenance window walks every hidden word without the shortcut, once (a test fails without the line). THE FULLER FIX, left: a `temp.carry_hidden(new)` table of the local ids of the shipped list's
+words and a `NOT IN` on the three statements, so a carried top never holds a hidden word; it is new logic in a module other threads are changing and wants its own read.
 
 **T2 still open:** bulletin coverage, stories and articles (through the export thread, the sole pusher of the bulletin code), `supergroup_rising`/`supergroup_stats`, `source_topics`, the AI keywords. **Left on
 purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage
