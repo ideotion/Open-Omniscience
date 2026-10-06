@@ -93,10 +93,11 @@ this section were still open.
   keeps the last C-heap reading taken before the final peak (#1194); collection workers read
   their source through their own session (#1184).
 - The launcher caps glibc's malloc arenas at two (`MALLOC_ARENA_MAX=2`, R114, #1304): the app's many threads
-  leave the memory they free held in their own arenas, and the first reading taken inside a crash found
-  nearly 30% of its anonymous memory in that state. An instance has it from its first launch through
-  the launcher after an update, an operator's own value is kept, and the diagnostics say which
-  instances run with it.
+  leave memory they free held by glibc's heap, and the first reading taken inside a crash found
+  28.8% of its anonymous memory (988.7 of 3,437.3 MB) in that state. An instance has it from its
+  first launch through the launcher after an update, an operator's own value is kept, and the
+  diagnostics say which instances run with it, reading the setting the way glibc does (the first of
+  two entries, a plain number, not under a preloaded malloc or a `GLIBC_TUNABLES` arena limit).
 - The 0.4 release run (Settings → Advanced → Diagnostics) no longer records a restore that failed as
   measured (#1312): a restore its engine refused, or that died, now reads `error` with its own words,
   a resumed run retakes it and asks for the passphrase again, and the passphrase is kept out of what a

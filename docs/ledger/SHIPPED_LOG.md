@@ -10424,5 +10424,26 @@ child's own words, rows A and I read `error`, rows E and K say the restored inst
 resume retakes it and owes the passphrase as a first run does (a state file an earlier build wrote keeps no restore
 this rule would not count). The passphrase is taken out of what the child says, and out of the run journal and import
 reports a kept fresh install leaves on the drive (`src/monitoring/secret_scrub.py`). Row A's evidence paragraph in the
-0.4 gate records the five reports' figures and what stays inferred. Lesson: `LESSONS.md`, the entry "A PHASE'S STATUS
-WAS THE RUNNER'S, NOT THE CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED".
+0.4 gate records the five reports' figures and what stays inferred. On its first push CodeQL raised three high
+clear-text alerts that were the scrubber's own name (`without_secret`) and a test fixture's (`SECRET`), not a passphrase
+reaching a file; they became `scrub_value` and `NEEDLE`, and the next head read "No new alerts". Main's own red (the
+blocking ruff lane, the style ratchet at 439 against a ceiling of 436, three French strings) is ported from PR #1311
+byte for byte so this PR's tests run in CI. Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
+CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "CODEQL READS NAMES: A HELPER THAT TAKES A
+SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE" and "THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF".
+
+- **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the Opus read of R114 / #1304).** #1304
+was merged before its Opus read ended. The read ran glibc 2.39 itself with crafted environments (children started through
+`execve`, arenas counted with `malloc_info` after 16 allocating threads) and found that the allocator setting each session
+records could say the opposite of what the allocator did: a variable named twice read as its LAST value where glibc and
+`os.environ` take the first (8 then 1 gives 8 arenas, the reading said capped at 1, and the test pinned that order), and
+`strip()` plus `isdigit()` claimed caps glibc never applied (`"4 "`, `" 4 "`, `"08"` and a 23-digit number each leave 17
+arenas; `"010"` is octal). The reading now takes the first entry, counts only a plain decimal number (blanks and tabs may
+lead; anything else reads `effective: None`, not known), says not known when `GLIBC_TUNABLES` names `glibc.malloc.arena_max`
+(it outranks the variable in either order), says not capped under a preloaded jemalloc, tcmalloc or mimalloc, treats an
+empty `/proc/self/environ` as an `env -i` start rather than falling back to `os.environ`, and names `arena_cap` only for a cap
+the process runs with. The soak window's memory-guard block carries the setting when the guard's own state cannot be read, the
+launcher's comment and the changelog no longer say freed memory stays in its own thread's arena, and the launcher tests pin
+that an install file that unsets or empties the variable, or a caller that passes it empty, still gets the default. A test
+starts a child with the variable named twice and counts the arenas glibc kept. Lesson: `LESSONS.md`, the entry "A READING OF
+ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE".

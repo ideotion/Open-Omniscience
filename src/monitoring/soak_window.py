@@ -129,15 +129,19 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
     relaunched since does not. It is a property of the process, not a reading over the
     window, and it never changes ``measured``.
     """
+    from src.monitoring.session_hwm import allocator_setting
+
     try:
         from src.scheduler import memguard
 
         state = memguard.memory_guard.state()
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
         _LOG.debug("memory-guard state unavailable", exc_info=True)
-        return {"measured": False, "reason": f"memory-guard state unavailable: {exc}"}
-
-    from src.monitoring.session_hwm import allocator_setting
+        return {
+            "measured": False,
+            "reason": f"memory-guard state unavailable: {exc}",
+            "allocator": allocator_setting(),
+        }
 
     engagements = state.get("engagements")
     engaged_s = state.get("total_engaged_s")

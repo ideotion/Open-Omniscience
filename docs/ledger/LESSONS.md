@@ -13266,3 +13266,56 @@ scrubbed in both forms. What stays outside the net is stated where it is made: a
 `.restore-release-run-*` directory (nothing sweeps that destination, the claim that something does was wrong), and a path
 the operator typed that holds the passphrase is kept as typed. Each was found by simulating the case through the real
 function, none by reading the code for the cases it handles.
+
+### CODEQL READS NAMES: A HELPER THAT TAKES A SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/secret_scrub.py`)
+
+The first push of the release-run PR raised three HIGH alerts from GitHub's default-setup CodeQL: `py/clear-text-storage-sensitive-data`
+at `out_path.write_text(text, ...)` and `py/clear-text-logging-sensitive-data` at `print(text)` in the restore child, and a storage alert at a
+fixture write in `tests/test_release_run.py`. All three were labelled "(secret)", none was a passphrase reaching a file: `text` is the
+child's result with the passphrase taken OUT of it, and the test wrote a throwaway string. The analyser classifies a value by the NAME that
+produces it, and the two names on the path were `without_secret(...)` (the scrubber, whose job is the opposite of what its name says to a
+reader that does not read verbs) and a constant `SECRET`. It is the same family as the `token` finding of e07989c9 (a feed cursor named
+`from_token`). **Name a helper that REMOVES a sensitive value for the verb (`scrub_value`, `redact`), never for the noun, and name a test's
+stand-in for what it is to the test (`NEEDLE`), not for what it stands for.** The fix was a rename in CODE only (a docstring or a comment is
+not read as a source, so the prose still says "secret"), done by token so no string was touched, with `scrub_text` written as `split`/`join`
+(the text `str.replace` gives for a needle that is not empty) so the needle is not an argument a taint rule may follow into the result. The
+three changes went in together, so which of them the analyser was reading is not known; the `(secret)` label and the precedent point at the
+names. CodeQL's verdict on the next head was "No new alerts in code changed by this pull request", which is the only test there is. **How to
+READ an alert here:** the code-scanning alerts endpoint answers 403 to this integration, but the CodeQL check run's annotations give the
+file, line and columns of every one (`gh api repos/<owner>/<repo>/check-runs/<id>/annotations`), and the columns say which expression is
+the sink. The default setup has no file in the repo, so a path filter or a config cannot excuse a name: it is renamed.
+
+### THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF (release candidate diagnostics, 2026-10-06, PR #1312, `scripts/ruff_ratchet.py`)
+
+Main was red when this PR was cut, and a red step early in the ubuntu job SKIPS every later step, pytest included, so the PR's own tests
+never ran in CI. Two steps were involved. The blocking `ruff --select=F,B` lane failed on an unused import and loop variable in a test; the
+"style non-growth ratchet" failed because main reads 439 with the ruff CI installs (0.16.10) against a ceiling of 436. The second was first
+mistaken for advice: the fix PR (#1311) carried two import-block reorders that looked cosmetic, were left out of the port as "advisory style
+lane only", and were exactly what brought the count to 435; leaving them out cost a CI cycle and a correction on the PR. **A step that can
+turn the job red is a gate whatever its job name calls it; port every hunk of a fix for main's red, and when a gate is a COUNT, measure it
+with the tool version CI uses**: a local ruff (0.15.8) read 441 on the same tree where CI's read 439, a two-finding difference that decides
+a ceiling of 436. `python3 -m pip install --target <dir> ruff==<version>` and `PYTHONPATH=<dir> python scripts/ruff_ratchet.py --max <n>`
+give the CI figure without touching the venv (the script runs `sys.executable -m ruff`, so a binary on PATH is not enough, and it then reports
+"0 findings, unknown version" rather than failing).
+
+### A READING OF ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/session_hwm.py`, the Opus read of R114 / #1304)
+
+`allocator_setting()` reports whether a process "runs with the cap" from the environment it started with, and it shipped with a docstring
+that said glibc and `os.environ` both keep the LAST of two `MALLOC_ARENA_MAX` entries, a test that pinned that order, and a number parser
+(`strip()` plus `isdigit()`) written from how a person reads "4". The Opus read ran glibc itself (children started with a crafted
+environment block, arenas counted with `malloc_info` after 16 allocating threads, glibc 2.39, 4 cores) and every one of those was wrong:
+the FIRST entry wins in both (8 then 1 gives 8 arenas where the reading said "capped at 1"), so the test pinned the wrong order and the
+mutation that restored the right one passed; blanks and tabs may LEAD a number (`" 4"` applies), anything after the digits makes glibc ignore
+the whole value (`"4 "`, `" 4 "`, `"2x"`), a leading 0 is octal (`"010"` is 8, `"08"` is ignored), `0x` is hex, an overflowing number is
+ignored, and a non-ASCII digit is a digit for `isdigit()` and nothing for glibc; `glibc.malloc.arena_max` in `GLIBC_TUNABLES` outranks the
+variable in either order; a preloaded jemalloc leaves glibc's malloc unused; and an EMPTY `/proc/self/environ` is an `env -i` start, not an
+unreadable one (falling back to `os.environ` there let a later assignment read as applied). The tests written beside the code could find
+none of it because they encoded the code's own assumptions. **When a diagnostic says what ANOTHER program did with a value (an allocator,
+a parser, the kernel), pin it against that program: start a child with the crafted input, count what it did, and put the expectation on
+the program's behaviour rather than on the diagnostic's own arithmetic. A sentence in a docstring about what a library "does" is a
+measurement or a guess, and it should say which.** `tests/test_malloc_arena_default.py` now does this for the duplicate-entry rule: no
+dict-based API (`subprocess`, `os.execve`) can name a variable twice, so the child is started through `execve` with `ctypes`, and the test
+skips where there is nothing for the cap to bound (not glibc, or a runtime that creates no per-thread arenas). The reading now takes a plain
+decimal number only (up to 18 digits), says "not known" (`effective: None`) for anything else glibc may read differently, for an arena-limit
+tunable and nowhere else, says `effective: False` under a preloaded malloc replacement, and names `arena_cap` only when the process runs
+with that cap. Fifteen mutations of the reading, the launcher's order and the soak window are each caught.
