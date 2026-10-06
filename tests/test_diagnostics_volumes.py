@@ -743,14 +743,15 @@ def _fake_disk(monkeypatch, *, free: int, total: int = 100 * 2**30):
     monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(total, total - free, free))
 
 
-@pytest.mark.parametrize("earlier", ["none", "set", "files"])
+@pytest.mark.parametrize("earlier", ["none", "set", "files", "refused", "unknown", "strays"])
 def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
     _diag_dir, monkeypatch, earlier
 ):
     """R115 follow-up S2: the keyword path preflighted; this one ran into a full disk after the
     sweep and answered with a raw operating-system error. The text says only what is true of what
-    was on the drive: a set whose sidecar loads, files whose sidecar is refused or corrupt (the
-    case the first wording called "no earlier set"), or nothing."""
+    was on the drive: a set whose sidecar loads, files whose sidecar is corrupt, files whose sidecar
+    another version wrote and this one refuses, a folder that could not be listed, a folder holding
+    only strays (``.DS_Store``, ``Thumbs.db``, a folder: not a set), or nothing."""
     from fastapi import HTTPException
 
     from src.api import diagnostics as d
@@ -762,10 +763,18 @@ def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
         old = None
         _build_bundle(_diag_dir).rename(_diag_dir / "oo-all-diagnostics-20261001-090000.zip")
     vol_dir = d._all_diagnostics_volumes_dir()
-    if earlier == "files":
+    if earlier in ("files", "refused", "unknown", "strays"):
         vol_dir.mkdir(parents=True, exist_ok=True)
+    if earlier == "files":
         (vol_dir / dv.MANIFEST_NAME).write_text("{this is not json", encoding="utf-8")
         (vol_dir / "oo-diagnostics-20260930-070500-part-01.zip").write_bytes(b"PK")
+    elif earlier == "refused":
+        (vol_dir / dv.MANIFEST_NAME).write_text(json.dumps({"kind": "oo-diagnostics-volumes-1"}), encoding="utf-8")
+        (vol_dir / "oo-diagnostics-20260930-070500-part-01.zip").write_bytes(b"PK")
+    elif earlier == "strays":
+        (vol_dir / ".DS_Store").write_bytes(b"\x00")
+        (vol_dir / "Thumbs.db").write_bytes(b"\x00")
+        (vol_dir / "a-folder").mkdir()
     before = sorted(p.name for p in vol_dir.iterdir())
     _fake_disk(monkeypatch, free=1 * 2**20)
 
@@ -773,23 +782,42 @@ def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
         raise AssertionError("no room: nothing may be written")
 
     monkeypatch.setattr(dv, "write_volume_set", _must_not_run)
-    with pytest.raises(HTTPException) as exc:
-        d.all_diagnostics_volumes()
+    with monkeypatch.context() as unlistable:
+        if earlier == "unknown":
+            real_iterdir = type(vol_dir).iterdir
+
+            def _refused(self):
+                if self == vol_dir:
+                    raise PermissionError("the folder cannot be listed")
+                return real_iterdir(self)
+
+            unlistable.setattr(type(vol_dir), "iterdir", _refused)
+        with pytest.raises(HTTPException) as exc:
+            d.all_diagnostics_volumes()
     assert exc.value.status_code == 507
     assert "MiB" in exc.value.detail and "free" in exc.value.detail
+    detail = exc.value.detail
     if with_a_previous_set:
-        assert "The earlier set of files was not touched" in exc.value.detail
-        assert "no earlier set" not in exc.value.detail
+        assert "The earlier set of files was not touched" in detail
+        assert "no earlier set" not in detail
     elif earlier == "files":
-        assert "Files of an earlier set are in the folder, though their list could not be read" in exc.value.detail
-        assert "were not touched" in exc.value.detail
-        assert "no earlier set" not in exc.value.detail and "none was written" not in exc.value.detail
+        assert "Files of an earlier set are in the folder, though their list could not be read" in detail
+        assert "were not touched" in detail
+        assert "no earlier set" not in detail and "none was written" not in detail
+    elif earlier == "refused":
+        assert "list was written by another version and this one does not read it" in detail
+        assert "could not be read" not in detail, "it WAS read, and refused: not the corrupt-sidecar sentence"
+        assert "no earlier set" not in detail and "none was written" not in detail
+    elif earlier == "unknown":
+        assert "Whether an earlier set of files is in the folder could not be read" in detail
+        assert "no earlier set" not in detail and "none was written" not in detail, "nothing is known of the folder"
     else:
-        # nothing is claimed about files that were never there, and nothing about "the server": the
-        # sweep of a killed build's leftovers runs before this check, so "nothing was changed" would
-        # not be true in every case
-        assert "There was no earlier set of files, and none was written" in exc.value.detail
-        assert "not touched" not in exc.value.detail and "Nothing on the server" not in exc.value.detail
+        # nothing is claimed about files that were never there (strays are not a set), and nothing about
+        # "the server": the sweep of a killed build's leftovers runs before this check, so "nothing was
+        # changed" would not be true in every case
+        assert "There was no earlier set of files, and none was written" in detail
+        assert "not touched" not in detail and "Nothing on the server" not in detail
+        assert "Files of an earlier set" not in detail, "a stray file is not an earlier set"
     assert sorted(p.name for p in vol_dir.iterdir()) == before
     assert not list(_diag_dir.glob("volumes-build-*"))
     if old is not None:

@@ -1402,22 +1402,45 @@ def _run_nondb_member_bounded(fn, budget_s: float):
     return box.get("value")
 
 
+def _python_inner(text: str) -> str:
+    """``text`` as ``repr`` writes it between single quotes: the backslash doubled, the controls escaped,
+    and each apostrophe as a backslash and an apostrophe.
+
+    ``repr`` picks its quote by what the text holds (double quotes when there is an apostrophe and no
+    double quote, and then the apostrophes are plain), so the same key reads two ways depending on the
+    text around it: a carrier that is itself repr'd (an exception's ``repr``, the ``str`` of a
+    multi-argument exception, a dict or a list holding the message) writes a text that holds BOTH kinds
+    of quote single-quoted, with every apostrophe escaped. ``repr`` of the key alone shows the plain form,
+    which is the raw string or the quote-doubled one; this is the other."""
+    return repr(text + "'\"")[1:-4]  # both kinds present: single-quoted, the apostrophes escaped
+
+
 def _passphrase_forms(secret: str) -> list[str]:
     """Every form ``secret`` is written in where this code or its drivers put it into text.
 
-    The raw string; the string with its single quotes doubled, which is how ``PRAGMA key`` and
-    ``ATTACH ... KEY`` carry it (``src/database/connect.py``: ``_sql_literal_escape``) and so how an
-    engine's "near ..." text and SQLAlchemy's ``[SQL: ...]`` show it; Python's ``repr`` form (the
-    ``[parameters: ...]`` line); and the two inner forms JSON writes it in (escaped ASCII or not).
-    Each of the last three is taken of both of the first two. A passphrase with no quote, no
-    backslash and no character outside ASCII has one form."""
-    forms: list[str] = []
-    for base in (secret, secret.replace("'", "''")):
-        forms.append(base)
-        forms.append(repr(base)[1:-1])
-        forms.append(json.dumps(base)[1:-1])
-        forms.append(json.dumps(base, ensure_ascii=False)[1:-1])
-    return list(dict.fromkeys(f for f in forms if f))
+    TWO BASES: the raw string, and the string with its single quotes doubled, which is how
+    ``PRAGMA key`` and ``ATTACH ... KEY`` carry it (``src/database/connect.py``:
+    ``_sql_literal_escape``) and so how an engine's "near ..." text and SQLAlchemy's ``[SQL: ...]``
+    show it. FOUR CARRIERS of a base: Python's ``repr`` as it writes the key alone (apostrophes
+    plain, controls as ``\\x07``), ``repr`` with the apostrophes escaped (what ``[parameters: ...]`` and
+    an exception's ``repr`` show when the text around the key holds both kinds of quote), and the
+    two inner forms JSON writes it in (escaped ASCII or not). The carriers are applied TWICE, because
+    the text this code makes passes through at most two of them: an engine's words held in an
+    exception's arguments (one carrier), which the exception's ``repr``, a dict or a JSON body then
+    carries again (the second). A passphrase with no quote, no backslash, no control and no character
+    outside ASCII has one form. Three deep (JSON inside a ``repr`` inside JSON) is not covered, and
+    no producer in this code makes one."""
+
+    def carried(text: str) -> list[str]:
+        return [
+            repr(text)[1:-1], _python_inner(text),
+            json.dumps(text)[1:-1], json.dumps(text, ensure_ascii=False)[1:-1],
+        ]
+
+    bases = [secret, secret.replace("'", "''")]
+    once = [form for base in bases for form in carried(base)]
+    twice = [form for form in once for form in carried(form)]
+    return list(dict.fromkeys(f for f in (*bases, *once, *twice) if f))
 
 
 def _without_the_passphrase(text: str) -> str | None:
@@ -1467,7 +1490,7 @@ def _all_diag_err_str(exc: Exception) -> str:
         return f"<{type(exc).__name__}: unrenderable>"
     clean = _without_the_passphrase(text)
     if clean is None:
-        return f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
+        return f"<{type(exc).__name__}: text withheld, it could not be made free of the passphrase>"
     return clean[:300]
 
 
@@ -2942,15 +2965,50 @@ _VOLUME_BUILD_PREFIX = "volumes-build-"
 
 
 #: What the room refusal says about what was on the drive, by what the caller found (see
-#: ``_check_room_for_volumes``).
+#: ``_earlier_set``). Each sentence is true of its state and of no other: that a set's files were not
+#: touched, that files whose list could not be read or is of a kind this version does not read were
+#: not touched either, that the folder could not be listed, or that there was nothing and nothing
+#: was written.
 _EARLIER_SET_TEXT = {
     "set": "The earlier set of files was not touched. ",
     "files": (
         "Files of an earlier set are in the folder, though their list could not be read, and they "
         "were not touched. "
     ),
+    "refused": (
+        "An earlier set of files is in the folder, though its list was written by another version "
+        "and this one does not read it, and they were not touched. "
+    ),
+    "unknown": "Whether an earlier set of files is in the folder could not be read, and nothing in it was touched. ",
     "none": "There was no earlier set of files, and none was written. ",
 }
+
+
+def _earlier_set(out: pathlib.Path) -> tuple[str, dict | None]:
+    """What the volumes folder holds, as ``(state, manifest)``; never raises.
+
+    ``"set"`` (its sidecar loaded: the manifest is returned), ``"refused"`` (a sidecar is there and is
+    of a kind this version does not read), ``"files"`` (files of ours with no sidecar that can be read:
+    left by a killed publish, or a sidecar that is corrupt or refused by the drive), ``"unknown"`` (the
+    folder could not be listed, so nothing is known of it) or ``"none"``. Only what is OURS counts as
+    files: a numbered volume, the sidecar or the readme. A stray ``.DS_Store``, ``Thumbs.db`` or folder
+    is not an earlier set and must not make the refusal claim one."""
+    from src.api import diagnostics_volumes as dvol
+
+    try:
+        return "set", dvol.load_manifest(out)
+    except dvol.VolumeError:
+        if (out / dvol.MANIFEST_NAME).exists():
+            return "refused", None
+    except Exception:  # noqa: BLE001 - a sidecar that cannot be read is a state of the folder, not a failure
+        pass
+    try:
+        if not out.is_dir():
+            return "none", None
+        ours = any(p.name.endswith(".zip") or p.name in (dvol.MANIFEST_NAME, dvol.README_NAME) for p in out.iterdir())
+    except OSError:
+        return "unknown", None
+    return ("files" if ours else "none"), None
 
 
 def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, earlier: str) -> None:
@@ -2965,11 +3023,10 @@ def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, earlier: 
     keyword export writes gigabytes. The share would refuse the split on a 2 TB drive with 15 GiB
     free, and the diagnostics are for the machines that are nearly full. Without a check at all the
     split ran into a full disk after sweeping the old set and reported a raw operating-system error.
-    ``earlier`` says what was on the drive before: ``"set"`` (a set whose sidecar loaded), ``"files"``
-    (files in the folder with no sidecar that can be read: left by a killed publish, or a sidecar
-    that was refused or corrupt) or ``"none"``. The text says only what is true of each: that a set's
-    files were not touched, that files whose list could not be read were not touched either, or that
-    there was nothing and nothing was written. It says nothing about what the sweep of a killed
+    ``earlier`` says what was on the drive before, in the states ``_earlier_set`` names. The text says
+    only what is true of each: that a set's files were not touched, that files whose list could not be
+    read (or that another version wrote) were not touched either, that the folder could not be listed,
+    or that there was nothing and nothing was written. It says nothing about what the sweep of a killed
     build's leftovers removed before this ran: they are not a set."""
     from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR, room_for
     from src.api import diagnostics_volumes as dvol
@@ -2991,9 +3048,9 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
     """The volume set for ``src``, built only if it is not already the current one.
 
     Idempotent on the SOURCE ARCHIVE NAME: a second click re-serves the set instead of
-    re-splitting, and an archive newer than the set replaces it. The stale set is
-    removed rather than left to accumulate volumes of two different bundles in one
-    directory, where an operator collecting files by glob would mix them.
+    re-splitting, and an archive newer than the set replaces it. A stale set is never left to
+    accumulate volumes of two different bundles in one directory, where an operator collecting files
+    by glob would mix them: it is replaced whole, and its files go at the moment the new set is moved in.
 
     THE NEW SET IS BUILT BESIDE THE OLD ONE AND MOVED IN WHOLE (``publish_volume_set``): the
     previous files used to be deleted first and the new ones written into the live folder, so a
@@ -3011,26 +3068,22 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
         # use by this process), on the path that re-serves a set as well as on the one that builds.
         for left in out.parent.glob(_VOLUME_BUILD_PREFIX + "*"):
             shutil.rmtree(left, ignore_errors=True)
-        earlier = "none"
-        with contextlib.suppress(OSError):
-            if out.is_dir() and any(out.iterdir()):
-                earlier = "files"
-        with contextlib.suppress(Exception):
-            current = dvol.load_manifest(out)
-            earlier = "set"
-            # Whatever a killed publish or a refused removal left beside this set (files the sidecar
-            # does not name) goes now, whether the set is the current one or about to be replaced: it
-            # is never served, it is a set's worth of disk, and clearing it can be what lets the next
-            # build fit.
-            dvol.retire_unnamed(out, current)
-            # The cap is part of what makes it "the current set": one built under another cap
-            # (OO_DIAG_VOLUME_MAX_MB changed, or the 9 MiB default this replaced) is rebuilt.
-            if (
-                current.get("source") == src.name
-                and current.get("volume_max_bytes") == dvol.volume_max_bytes()
-                and dvol.verify_volume_set(out)["ok"]
-            ):
-                return current
+        earlier, current = _earlier_set(out)
+        if current is not None:
+            with contextlib.suppress(Exception):
+                # Whatever a killed publish or a refused removal left beside this set (files the sidecar
+                # does not name) goes now, whether the set is the current one or about to be replaced: it
+                # is never served, it is a set's worth of disk, and clearing it can be what lets the next
+                # build fit.
+                dvol.retire_unnamed(out, current)
+                # The cap is part of what makes it "the current set": one built under another cap
+                # (OO_DIAG_VOLUME_MAX_MB changed, or the 9 MiB default this replaced) is rebuilt.
+                if (
+                    current.get("source") == src.name
+                    and current.get("volume_max_bytes") == dvol.volume_max_bytes()
+                    and dvol.verify_volume_set(out)["ok"]
+                ):
+                    return current
         _check_room_for_volumes(src, out.parent, earlier=earlier)
         build = pathlib.Path(tempfile.mkdtemp(prefix=_VOLUME_BUILD_PREFIX, dir=out.parent))
         try:

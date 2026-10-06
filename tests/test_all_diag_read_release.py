@@ -34,7 +34,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import QueuePool
 
 from src.api.diagnostics import bundle as _bundle
-from src.database.maintenance import StatementTimeout
+from src.database.maintenance import _DEADLINE_KEY, StatementTimeout
 
 
 class _Base(DeclarativeBase):
@@ -189,7 +189,10 @@ def _pin_how_then_probe(db, eng, path, seen, how):
         if how == "timeout":
             raise StatementTimeout("the member was aborted at its deadline")
         if how == "partial":
-            time.sleep(0.15)
+            # the deadline has elapsed when the member returns, by the one marker deadline_expired reads:
+            # not by sleeping past a tight one, which on a loaded machine could fire inside the member's
+            # own read and turn "partial" into "skipped" (or "error" into "skipped") by timing alone
+            db.info[_DEADLINE_KEY] = time.monotonic() - 1.0
         return {"pinned": True}
 
     def probe():
@@ -211,7 +214,7 @@ def test_a_member_that_failed_or_overran_still_releases_at_its_boundary(wal_db, 
     what the next member sees: the log free to checkpoint and no pooled connection held."""
     path, build = wal_db
     eng = build(explicit_begin=True)
-    monkeypatch.setattr(_bundle, "_all_diag_db_member_deadline_s", lambda: 0.05)
+    monkeypatch.setattr(_bundle, "_all_diag_db_member_deadline_s", lambda: 120.0)  # never the cause of an ending here
     seen: dict = {}
     with Session(eng) as db:
         results, manifest = _run(_pin_how_then_probe(db, eng, path, seen, how), db)
@@ -227,7 +230,7 @@ def test_the_release_after_a_failing_member_is_what_frees_the_log(wal_db, monkey
     ending leaves the member's snapshot standing, so the checkpoint is blocked."""
     path, build = wal_db
     eng = build(explicit_begin=True)
-    monkeypatch.setattr(_bundle, "_all_diag_db_member_deadline_s", lambda: 0.05)
+    monkeypatch.setattr(_bundle, "_all_diag_db_member_deadline_s", lambda: 120.0)  # never the cause of an ending here
     monkeypatch.setattr(_bundle, "_release_read_between_members", lambda db: "declined")
     seen: dict = {}
     with Session(eng) as db:

@@ -741,22 +741,56 @@ def test_a_fold_that_fails_costs_the_bundle_nothing_and_says_so(tiny_members, mo
     assert "previous_run" not in journal
 
 
-_KEY = "p4ss'phrase\\with"   # an apostrophe and a backslash; the manifest clips to ASCII, which would rewrite a letter outside it
+_KEY = "p4ss'ph\"rase\\w\u00e9th"   # both kinds of quote, a backslash and a letter outside ASCII: the eight written forms all differ
+
+
+def _written_forms(secret):
+    """The eight forms an engine and the drivers write ``secret`` in, built from THEIR helpers (not from
+    the scrub under test): the raw and the quote-doubled string, each as a statement carries it, as
+    ``repr`` shows a parameter, and as JSON writes it (escaped ASCII or not)."""
+    from src.database import connect as _connect
+
+    doubled = _connect._sql_literal_escape(secret)
+    return [
+        secret, doubled,
+        repr((secret,))[2:-3], repr((doubled,))[2:-3],
+        json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1],
+        json.dumps(doubled)[1:-1], json.dumps(doubled, ensure_ascii=False)[1:-1],
+    ]
+
+
+def _engine_failure(secret):
+    """An engine's failure line with the key in every place it can be."""
+    from src.database import connect as _connect
+
+    doubled = _connect._sql_literal_escape(secret)
+    return (
+        f"near '{doubled}': syntax error [SQL: PRAGMA key = '{doubled}'] "
+        f"[parameters: {(secret,)!r}] [parameters: {(doubled,)!r}] "
+        f"{json.dumps({'k': secret})} {json.dumps({'k': secret}, ensure_ascii=False)} "
+        f"{json.dumps({'k': doubled})} {json.dumps({'k': doubled}, ensure_ascii=False)}"
+    )
 
 
 def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_passphrase(tiny_members, monkeypatch):
-    """Coordinator's check of the second error-text fold: the manifest's ``previous_runs_error`` and
-    the block a failed fold leaves are made from an exception's words, like every member's, and an
-    engine's words can carry the statement it failed on (here in two of the forms it is written in)."""
+    """Coordinator's check of the second and fourth error-text folds: the manifest's
+    ``previous_runs_error`` and the block a failed fold leaves are made from an exception's words, like
+    every member's, and an engine's words can carry the statement it failed on, in every form the key is
+    written in (a statement, a parameter list, a JSON body; raw and quote-doubled)."""
     from src.database import connect as _connect
 
     monkeypatch.setattr(_connect, "_passphrase", _KEY)
-    forms = (_KEY, _KEY.replace("'", "''"))
+    # the manifest clips what it did not write to ASCII, which writes a letter outside it as an escape: the
+    # clipped form of each is looked for too, so a key left in the text cannot hide behind that rewrite
+    forms = _written_forms(_KEY)
+    assert len(set(forms)) == len(forms), "every form differs, so each is a different place the key could remain"
+    forms = forms + [_diag_bundle._ascii_clip(f, 10**6) for f in forms]
+    failure = _engine_failure(_KEY)
     _dead_run_journal(tiny_members, "20260930-070500", unfinished="x.json")
     real_read = _diag_bundle._read_previous_run_journals
 
     def _read_boom(out_dir, own):
-        raise PermissionError(f"denied: PRAGMA key = '{forms[1]}'")
+        raise PermissionError(f"denied: {failure}")
 
     monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", _read_boom)
     res = d._all_diagnostics_worker(_Ctx())
@@ -764,10 +798,11 @@ def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_pa
         read_text = json.loads(z.read("manifest.json"))["run"]["previous_runs_error"]
     # parsed, not searched in the encoded file: JSON writes a backslash and a letter outside ASCII
     # differently, so a search of the raw bytes would pass for a text that still carries the key
-    assert read_text.startswith("PermissionError: denied") and all(f not in read_text for f in forms)
+    assert read_text.startswith("PermissionError: denied") and "syntax error" in read_text
+    assert all(f not in read_text for f in forms), read_text
 
     def _fold_boom(previous):
-        raise RuntimeError(f"fold broke [SQL: PRAGMA key = '{forms[1]}']")
+        raise RuntimeError(f"fold broke {failure}")
 
     monkeypatch.setattr(_diag_bundle, "_read_previous_run_journals", real_read)
     _dead_run_journal(tiny_members, "20260930-080500", unfinished="x.json")
@@ -775,7 +810,8 @@ def test_the_two_failure_texts_of_the_left_over_read_and_fold_never_carry_the_pa
     res = d._all_diagnostics_worker(_Ctx())
     with zipfile.ZipFile(res["path"]) as z:
         fold_text = json.loads(z.read("manifest.json"))["run"]["previous_runs_error"]
-    assert fold_text.startswith("RuntimeError: fold broke") and all(f not in fold_text for f in forms)
+    assert fold_text.startswith("RuntimeError: fold broke") and "syntax error" in fold_text
+    assert all(f not in fold_text for f in forms), fold_text
 
 
 # --------------------------------------------------------------------------- #

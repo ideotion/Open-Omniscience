@@ -111,6 +111,7 @@ def test_a_scrub_that_cannot_run_withholds_the_text_instead_of_keeping_it(monkey
     monkeypatch.setattr(scrub, "scrub_text", _fails)
     out = _bundle._all_diag_err_str(RuntimeError(f"context {SECRET}"))
     assert SECRET not in out and "withheld" in out and "RuntimeError" in out
+    assert "could not be made free of the passphrase" in out, "true when the scrub could not run, and when a form was left"
 
 
 def test_an_install_with_no_passphrase_keeps_its_error_text_whole():
@@ -131,27 +132,35 @@ def test_an_exception_that_cannot_render_still_yields_a_marker(monkeypatch):
 #  The forms (coordinator's check of the second fold: the raw string alone is not enough)
 # --------------------------------------------------------------------------- #
 #: An apostrophe, a backslash and a letter outside ASCII; a lone apostrophe; one character; a
-#: newline; a double quote with an apostrophe (repr picks the other quote style for those).
-TRICKY = ["it's a back\\slash \u00e9", "'", "a", "line one\nline two", "say \"hi\" it's me"]
+#: newline; a double quote with an apostrophe (repr picks the other quote style for those); control
+#: characters ``repr`` writes as ``\x07`` and JSON as ``\u0007``.
+TRICKY = ["it's a back\\slash \u00e9", "'", "a", "line one\nline two", "say \"hi\" it's me", "bell\x07 esc\x1b it's"]
 
 
 def _forms_of(secret: str) -> list[str]:
-    """The forms the real code and the real drivers write ``secret`` in, built from THEIR helpers
+    """The eight forms the real code and the real drivers write ``secret`` in, built from THEIR helpers
     (not from the function under test): ``connect._sql_literal_escape`` for the statements,
-    ``repr`` of a parameter tuple for ``[parameters: ...]``, ``json.dumps`` for a JSON body."""
+    ``repr`` of a parameter tuple for ``[parameters: ...]``, ``json.dumps`` for a JSON body; each of
+    the last three of both the raw and the quote-doubled string."""
     doubled = _connect._sql_literal_escape(secret)
     return [
-        secret, doubled, repr((secret,))[2:-3], json.dumps(secret)[1:-1],
-        json.dumps(secret, ensure_ascii=False)[1:-1], json.dumps(doubled)[1:-1],
+        secret, doubled,
+        repr((secret,))[2:-3], repr((doubled,))[2:-3],
+        json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1],
+        json.dumps(doubled)[1:-1], json.dumps(doubled, ensure_ascii=False)[1:-1],
     ]
 
 
 def _engine_text(secret: str) -> str:
-    """What an engine's failure line looks like with the key in it, in each place it can be."""
+    """What an engine's failure line looks like with the key in it, in each place it can be: the raw
+    and the quote-doubled string, each as a statement carries it, as ``repr`` shows a parameter and as
+    JSON writes it (escaped ASCII or not)."""
     doubled = _connect._sql_literal_escape(secret)
     return (
         f"near '{doubled}': syntax error [SQL: PRAGMA key = '{doubled}'] "
-        f"[parameters: {(secret,)!r}] {json.dumps({'k': secret})} {json.dumps({'k': secret}, ensure_ascii=False)}"
+        f"[parameters: {(secret,)!r}] [parameters: {(doubled,)!r}] "
+        f"{json.dumps({'k': secret})} {json.dumps({'k': secret}, ensure_ascii=False)} "
+        f"{json.dumps({'k': doubled})} {json.dumps({'k': doubled}, ensure_ascii=False)}"
     )
 
 
@@ -195,14 +204,83 @@ def test_a_form_that_a_marker_rebuilds_withholds_the_text(monkeypatch):
     monkeypatch.setattr(scrub, "scrub_text", lambda text, needle: text)  # removes nothing
     out = _bundle._all_diag_err_str(RuntimeError(f"context {SECRET}"))
     assert SECRET not in out and "withheld" in out
+    assert "could not be made free of the passphrase" in out, "a form that was found again is not 'could not be checked'"
 
 
-def test_the_forms_are_listed_longest_first_and_without_duplicates_or_empties():
+def test_the_forms_are_listed_without_duplicates_or_empties_and_a_plain_key_has_one():
     forms = _bundle._passphrase_forms("it's")
     assert len(forms) == len(set(forms)) and "" not in forms
-    assert "it's" in forms and "it''s" in forms
+    assert {"it's", "it''s", "it\\'s", "it\\'\\'s"} <= set(forms), "raw, doubled, and each as repr writes it with both quote kinds in the text"
     assert _bundle._passphrase_forms("plain") == ["plain"], "a passphrase with nothing to escape has one form"
     assert _bundle._passphrase_forms("") == []
+
+
+def test_every_form_is_scrubbed_longest_first_over_both_secrets(monkeypatch):
+    """One ordering for the held passphrase and the environment's: a form that is a piece of another
+    must not go first, or it leaves the other's tail behind."""
+    import src.monitoring.secret_scrub as scrub
+
+    seen: list[str] = []
+    real = scrub.scrub_text
+    monkeypatch.setattr(scrub, "scrub_text", lambda text, needle: seen.append(needle) or real(text, needle))
+    monkeypatch.setattr(_connect, "_passphrase", "it's")
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "it's 2")
+    assert _bundle._without_the_passphrase("nothing here") == "nothing here"
+    lengths = [len(n) for n in seen]
+    assert len(seen) > 8 and lengths == sorted(lengths, reverse=True), seen
+
+
+#: The carriers an engine's words pass through before they reach a record: the exception's own text, its
+#: ``repr``, the ``str`` of one with two arguments, a dict or a list holding it, JSON, JSON again inside a
+#: JSON body, and a ``repr`` or JSON around the other. Each is built from the standard library, not from
+#: the function under test, and DECODED again to look for the key: a search of the written text can pass
+#: for a text that still carries it (the same trap as the encoded file).
+def _decode_exception_repr(carried: str):
+    import ast
+
+    inner = carried[len("RuntimeError("):-1]
+    return ast.literal_eval(inner)
+
+
+CARRIERS = {
+    "text": (lambda t: t, lambda c: c),
+    "repr-of-exception": (lambda t: repr(RuntimeError(t)), _decode_exception_repr),
+    "str-of-two-args": (lambda t: str(RuntimeError("engine said", t)), lambda c: __import__("ast").literal_eval(c)[1]),
+    "dict": (lambda t: str({"detail": t}), lambda c: __import__("ast").literal_eval(c)["detail"]),
+    "list": (lambda t: str([t, 1]), lambda c: __import__("ast").literal_eval(c)[0]),
+    "repr-of-repr": (lambda t: repr(repr(t)), lambda c: __import__("ast").literal_eval(__import__("ast").literal_eval(c))),
+    "json": (lambda t: json.dumps({"detail": t}), lambda c: json.loads(c)["detail"]),
+    "json-ascii-off": (lambda t: json.dumps({"detail": t}, ensure_ascii=False), lambda c: json.loads(c)["detail"]),
+    "json-in-json": (
+        lambda t: json.dumps({"body": json.dumps({"detail": t})}),
+        lambda c: json.loads(json.loads(c)["body"])["detail"],
+    ),
+    "json-in-repr": (lambda t: repr(json.dumps({"detail": t})), lambda c: json.loads(__import__("ast").literal_eval(c))["detail"]),
+    "repr-in-json": (lambda t: json.dumps({"detail": repr(t)}), lambda c: __import__("ast").literal_eval(json.loads(c)["detail"])),
+}
+
+#: Long enough that the quote marks around a literal are not part of the key.
+CARRIED = ["it's a back\\slash \u00e9", "say \"hi\" it's me", "line one\nline two", "p4ss'phrase", "bell\x07 esc\x1b it's"]
+
+
+@pytest.mark.parametrize("secret", CARRIED)
+@pytest.mark.parametrize("carrier", sorted(CARRIERS))
+def test_the_key_is_taken_out_through_every_carrier_that_holds_both_kinds_of_quote(monkeypatch, secret, carrier):
+    """Coordinator's check of the third fold: a quote-doubled key inside a text that is itself repr'd or
+    JSON-encoded, where the text holds both quote kinds (so ``repr`` writes each apostrophe as a
+    backslash and an apostrophe), and a JSON body inside another."""
+    monkeypatch.setattr(_connect, "_passphrase", secret)
+    doubled = _connect._sql_literal_escape(secret)
+    text = (
+        f"near '{doubled}': syntax error [SQL: PRAGMA key = '{doubled}'] raw {secret} "
+        "and a \"quoted\" word and it's here"
+    )
+    wrap, unwrap = CARRIERS[carrier]
+    out = _bundle._without_the_passphrase(wrap(text))
+    assert out is not None, "the scrub ran: the text is changed, not withheld"
+    decoded = unwrap(out)
+    assert secret not in decoded and doubled not in decoded, f"{carrier}: {decoded!r}"
+    assert "syntax error" in decoded, "the text itself is kept"
 
 
 # --------------------------------------------------------------------------- #
@@ -334,7 +412,7 @@ def test_the_journal_read_failures_are_scrubbed(monkeypatch, tmp_path):
         raise PermissionError(f"denied {SECRET}")
 
     mine = tmp_path / "own.journal.jsonl"
-    (tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl").write_text("{}\n")
+    (tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl").write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(type(tmp_path), "stat", boom)
     got = _bundle._read_previous_run_journals(tmp_path, mine)
     assert SECRET not in json.dumps(got, default=str)
@@ -345,7 +423,7 @@ def test_a_journal_that_cannot_be_opened_is_named_with_a_scrubbed_reason(monkeyp
     import builtins
 
     monkeypatch.setattr(_connect, "_passphrase", SECRET)
-    (tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl").write_text("{}\n")
+    (tmp_path / "oo-all-diagnostics-20260930-070500.zip.journal.jsonl").write_text("{}\n", encoding="utf-8")
     real_open = builtins.open
 
     def refusing(path, *args, **kwargs):
@@ -357,4 +435,3 @@ def test_a_journal_that_cannot_be_opened_is_named_with_a_scrubbed_reason(monkeyp
     got = _bundle._read_previous_run_journals(tmp_path, tmp_path / "own.journal.jsonl")
     assert got["carried"] and got["carried"][0]["read_error"].startswith("PermissionError: denied ")
     assert SECRET not in json.dumps(got, default=str)
-
