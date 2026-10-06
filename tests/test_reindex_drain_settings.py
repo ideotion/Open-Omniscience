@@ -393,7 +393,7 @@ def test_a_run_killed_inside_the_sweep_has_already_bumped(drain, monkeypatch):
 
 
 def test_the_closing_bump_lands_even_when_the_run_is_cancelled(drain):
-    """A cancel still leaves every finished article delete-then-reinserted, so a rollup
+    """A cancel still leaves every finished article's changed rows rewritten, so a rollup
     snapshotted mid-run must be invalidated whatever ended the run."""
     state, rec = drain
 
@@ -657,3 +657,27 @@ def test_an_earlier_marker_is_left_alone_by_a_run_that_did_not_end_cleanly(drain
 
     assert rec["finishes"] == []
     assert "counter_reconcile" not in out
+
+
+def test_the_persisted_rollup_is_still_off_so_a_lost_end_bump_is_still_bounded():
+    """TRIPWIRE for the comment above the end bump in ``_reindex_resume_worker`` ("THE REMAINING
+    BOUND"). A lost bump (a hard kill, or a failed ``_bump``) is bounded by the serving layers' one
+    hour backstop only while the rollup is served from memory. The persisted store merges just the
+    tail while the epoch is unchanged, so with it ON a lost bump is unbounded. It is off while the
+    httpfs sha256 pins are blank. If this fails, the pins were filled: read that comment and add
+    the persisted "bump owed" marker it names before the persisted serve goes live."""
+    from pathlib import Path
+
+    import yaml
+
+    path = Path(__file__).resolve().parents[1] / "configs" / "external_artifacts.yml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    entries = data.get("artifacts", data) if isinstance(data, dict) else data
+    entry = next(e for e in entries if isinstance(e, dict) and e.get("id") == "duckdb-httpfs-extension")
+    pins = entry["binaries"]
+    filled = {k: v["sha256"] for k, v in pins.items() if v.get("sha256")}
+    assert not filled, (
+        "the httpfs pins are filled for " + ", ".join(sorted(filled))
+        + ": the persisted rollup can go live, and a lost end bump is then unbounded. "
+        "See 'THE REMAINING BOUND' in _reindex_resume_worker (src/api/backup_v2.py)."
+    )

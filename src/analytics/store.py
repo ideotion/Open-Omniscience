@@ -2767,7 +2767,11 @@ def _skip_error(exc: BaseException) -> dict:
     (``pass_journal.phase.__exit__``'s ``f"{type(e).__name__}: {e}"`` convention, so the
     bundle has one exception-string shape, not two), truncated like every other
     exception string this module records into a report dict."""
-    return {"skipped": f"{type(exc).__name__}: {exc}"[:200]}
+    from src.monitoring.engine_text import engine_text
+
+    # The engine's words can carry the statement it failed on, and this record reaches the
+    # diagnostics bundle: the passphrase is taken out of the whole text before it is cut.
+    return {"skipped": f"{type(exc).__name__}: {engine_text(exc)}"[:200]}
 
 
 def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:

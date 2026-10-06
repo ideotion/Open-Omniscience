@@ -6226,7 +6226,10 @@ def reindex_backlog() -> dict:
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         _LOG.warning("could not read the re-index backlog", exc_info=True)
-        return {"available": False, "reason": str(exc)}
+        from src.monitoring.engine_text import engine_text
+
+        # the reason is copied into a drain's result and from there into diagnostics
+        return {"available": False, "reason": engine_text(exc)}
     owed = [int(r[2]) - int(r[3]) for r in rows]
     certified = [int(r[3]) for r in rows]
     batches = [

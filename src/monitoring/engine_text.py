@@ -13,6 +13,11 @@ The passphrase is taken out of the WHOLE text and any cut is made afterwards (a 
 the passphrase would leave the part it kept, which a scrub of the cut text cannot see). It fails
 CLOSED: when the text could not be checked, a marker naming the exception class stands in for it.
 Exact match through :func:`src.monitoring.secret_scrub.scrub_text`, the shared helper.
+
+WHAT IT DOES NOT COVER: a key handed to ``connect(key=...)`` in a restore or a backup, which is
+not held in this process and so is not a needle here. Only :func:`engine_text` is meant to be
+called from outside: the private reader below answers ``None`` when it could not check, and a
+caller that wrote ``without(text) or text`` would fail OPEN.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from __future__ import annotations
 import os
 
 
-def without_the_passphrase(text: str) -> str | None:
+def _without_the_passphrase(text: str) -> str | None:
     """``text`` with the passphrase this process holds, and the one in its environment, taken out;
     ``None`` when that could not be done (the caller then withholds the text)."""
     try:
@@ -40,7 +45,7 @@ def engine_text(exc: BaseException, limit: int | None = None) -> str:
         text = str(exc)
     except Exception:  # noqa: BLE001
         return f"<{type(exc).__name__}: unrenderable>"
-    clean = without_the_passphrase(text)
+    clean = _without_the_passphrase(text)
     if clean is None:
         return f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
     return clean if limit is None else clean[:limit]
