@@ -109,7 +109,7 @@ def materialise(session, city, *, vintage: str | None) -> str:
         row.admin_path_json = "[]"
     row.lat, row.lon = city.lat, city.lon
     row.population = city.population
-    row.gazetteer_vintage = vintage
+    row.gazetteer_vintage = city.vintage or vintage
     row.as_of = datetime.now(UTC)
     session.add(row)
     return row.id
