@@ -193,8 +193,8 @@ def not_imported(attempt_entity):
     A correlated probe, served by ``ix_merged_rows_lookup`` (table, row id): one index lookup per
     attempt, where ``id NOT IN (SELECT row_id ...)`` rebuilds the whole imported list for every
     repaired row of an export. Used by every reader that must tell this install's own judgements from
-    an imported history (rule 12 = b): the repaired-row check below, the export's basis and the
-    provenance page."""
+    an imported history (rule 12 = b): the repaired-row check below, the export's basis, the
+    provenance page and the overlay editor's attempt marks."""
     from sqlalchemy import exists
 
     from src.database.models import MergedRow

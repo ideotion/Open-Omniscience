@@ -319,6 +319,48 @@ def test_a_file_that_is_not_an_export_is_refused_with_the_cores_own_words(client
     assert "verdicts" in r.json()["detail"], r.text
 
 
+def test_a_yaml_upload_with_an_impossible_date_is_a_400_not_a_500(client) -> None:
+    """The YAML reader recognises 2026-13-45 as a date and the calendar refuses it with a
+    ValueError, which used to escape the reader as a 500 on an upload anybody can make."""
+    body = b"verdicts:\n  - domain: a.example\n    status: qualified\n    basis: measured\n    qualified_at: 2026-13-45\n"
+    r = client.post(ENDPOINT, files=[("files", ("export.yml", body, "text/yaml"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "month must be in 1..12" in r.json()["detail"]
+
+
+def test_an_upload_nested_too_deeply_is_a_400_not_a_500(client) -> None:
+    """A hundred thousand opening brackets raised RecursionError out of the JSON reader."""
+    for name, body in (("deep.json", b"[" * 100_000), ("deep-object.json", b'{"a":' * 100_000)):
+        r = client.post(ENDPOINT, files=[("files", (name, body, "application/json"))],
+                        data={"include_this_instance": "false"})
+        assert r.status_code == 400, (name, r.text)
+        assert "nested too deeply" in r.json()["detail"]
+    # the same inside a bundle's export member
+    r = client.post(ENDPOINT, files=[("files", (
+        "deep.zip", _bundle({BUNDLE_MEMBER: b"[" * 100_000}), "application/zip"))],
+        data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "nested too deeply" in r.json()["detail"]
+
+
+def test_a_bundle_with_a_corrupt_compressed_stream_is_a_400_not_a_500(client) -> None:
+    """The archive's headers are intact and the compressed bytes are not: zlib.error escaped the
+    reader (only BadZipFile was caught)."""
+    buf = io.BytesIO()
+    rows = [_row(f"d{i}.example", "qualified") for i in range(2000)]
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(BUNDLE_MEMBER, json.dumps({"verdicts": rows}))
+    damaged = bytearray(buf.getvalue())
+    start = 30 + len(BUNDLE_MEMBER)  # the local header, then the compressed stream
+    for i in range(start + 4, start + 40):
+        damaged[i] ^= 0xFF
+    r = client.post(ENDPOINT, files=[("files", ("damaged.zip", bytes(damaged), "application/zip"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "not a readable zip archive" in r.json()["detail"]
+
+
 def test_a_zip_without_the_member_is_refused_by_name(client) -> None:
     """NEGATIVE SPACE: the failure that would hurt is merging NOTHING and calling it a
     success -- the operator would ship an overlay believing an instance contributed."""

@@ -52,6 +52,7 @@ import io
 import json
 import re
 import zipfile
+import zlib
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
@@ -138,6 +139,8 @@ REFUSE_MEMBER_TOO_BIG = (
     "Refusing to decompress it."
 )
 REFUSE_BAD_ZIP = "{file}: not a readable zip archive ({error})."
+# What a nesting deeper than the readers can follow is called, in the refusals above.
+_TOO_DEEP = "nested too deeply to read"
 REFUSE_MEMBER_NOT_JSON = "{file}: {member} is not valid JSON ({error})."
 # The three the diagnostics route makes itself, before or around this core: they live
 # here with the rest so every merge refusal is one list, keyed once.
@@ -194,7 +197,7 @@ def repair_record_flags_of_export_bytes(data: bytes) -> dict:
             payload = json.loads(text)
         except ValueError:
             payload = yaml.safe_load(text)
-    except (UnicodeDecodeError, yaml.YAMLError):
+    except (UnicodeDecodeError, yaml.YAMLError, ValueError, RecursionError):
         return {}
     return repair_record_flags(payload.get("basis")) if isinstance(payload, dict) else {}
 
@@ -207,7 +210,7 @@ def repair_record_flags_of_bundle_bytes(data: bytes) -> dict:
             if BUNDLE_MEMBER not in z.namelist():
                 return {}
             return repair_record_flags_of_export_bytes(z.read(BUNDLE_MEMBER))
-    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError):
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, OSError, KeyError, RuntimeError):
         return {}
 
 
@@ -231,6 +234,8 @@ def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
         raw = json.loads(text)
     except json.JSONDecodeError as json_exc:
         return _rows_from_export_yaml(text, origin, json_exc)
+    except RecursionError as exc:
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_TOO_DEEP) from exc
     return rows_from_payload(raw, origin)
 
 
@@ -248,6 +253,10 @@ def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeErro
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(json_exc)) from exc
+    except ValueError as exc:  # a date the YAML reader recognised but the calendar does not have
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(exc)) from exc
+    except RecursionError as exc:
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_TOO_DEEP) from exc
     rows = rows_from_payload(raw, origin)
     if any(isinstance(r, dict) and "basis" not in r for r in rows):
         raise MergeInputError(REFUSE_OVERLAY, file=origin)
@@ -292,10 +301,16 @@ def rows_from_bundle_bytes(
                     size=declared, limit=max_member_bytes,
                 )
             raw_bytes = z.read(BUNDLE_MEMBER)
-    except zipfile.BadZipFile as exc:
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, RuntimeError) as exc:
+        # a damaged compressed stream (zlib.error / EOFError), a compression this reader does not
+        # have (NotImplementedError) and an encrypted member (RuntimeError) are all "not readable"
         raise MergeInputError(REFUSE_BAD_ZIP, file=origin, error=str(exc)) from exc
     try:
         raw = json.loads(raw_bytes)
+    except RecursionError as exc:
+        raise MergeInputError(
+            REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=_TOO_DEEP
+        ) from exc
     except json.JSONDecodeError as exc:
         raise MergeInputError(
             REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=str(exc)
