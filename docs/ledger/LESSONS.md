@@ -13700,9 +13700,18 @@ not read as one about the new file). **A start of collection must not release a 
 no failed read to put it back, so `retry` holds a latch with `check_tables` and `verify.recheck` re-reads exactly those tables on a thread of its own (the latch held, a progress line of its own, one re-read per file at a time, none
 while the start-up check still reads); the file is released only when every table reads `ok`, a table that could not be read keeps it, and the answers are merged into the file's record with the rule that **an answer that could not be
 read never replaces a finding of damage** (otherwise a busy file, or a stop in the last table, makes the next start forget it). A re-read's answer for a file that was REPLACED in the meantime is dropped (the release ends the claim on
-the file), and a restore or salvage swap releases outright (`file_replaced=True`) and forgets the verdict. The sentences "Starting collection again tries once more" stay true.
+the file), and a restore or salvage swap releases outright (`file_replaced=True`) and forgets the verdict. The sentences that said "starting collection again tries once more, and it stops again at the first failed read" were true only
+of a latch a failed read set; for a latch the check set a start re-reads and the pause holds unless the tables read clean, so the three damage sentences (library, search index, the hover) now say both.
 (10) **Three small rules the deep read forced**: a quit during the check gives the attempt back (`verification_file_stopped`: the entry stays `running` so the next start reads the file again, but quitting three
 times must not skip a check that nothing ever failed); a stop before a file is begun spends no attempt on it; a result for a file that was REPLACED while it was read is dropped (the entry `verification_forget`
-removed is not `running`), so a verdict about the old file cannot latch the new one; and **an error `connect()` chains must be the FIRST candidate's** (the page size that opened the path last), because the
-last candidate is the undeclared default size and fails with code 26 whatever the file's state: a schema page damaged under the right key read as "the passphrase did not open the file". A record whose
+removed is not `running`), so a verdict about the old file cannot latch the new one; and **an error `connect()` chains must be the one from the candidate that got past page 1** (any code but 26, the HMAC check every wrong size and wrong passphrase fails on; else the first), because the
+last candidate is the undeclared default size and fails with code 26 whatever the file's state, and the first is the right size only when it is cached for the path: a schema page damaged under the right key read as
+"the passphrase did not open the file". A record whose
 `attempts` is not a number counts as none instead of aborting the whole plan.
+(11) **A RECORD THAT STANDS IN FOR AN EARLIER ONE MUST BE READ AS THAT ONE**: a boot that starts locked writes its `owed` entry over the earlier process's (carrying its attempts and trigger), and the unlock, in the SAME
+process, plans again; `previous_verification` returned nothing for any entry of this process, so the plan could not see the state the owed entry was copied from, and a damaged verdict, an unfinished check and the
+attempt cap were all erased on the default (encrypted) install, which boots locked every time (the deep delta read found it by combining a locked boot, an unlock AND a clean previous end; the tests had combined two of the
+three). `previous_verification` now returns this process's own `owed` entry, and four tests run the combinations. **A re-read's claim needs an identity and a count**: it carries a token (every method that settles it presents
+its own, because the first read's ending waits on the record before it gives its claim back and must not give back a second claim) and the incident count it was made at (a clean answer about the tables a check
+reported says nothing about a read that FAILED after the claim began, so the latch holds and stops being the check's). **And a "(schema)" the check could not read is not an answer about the tables**: it means no table was
+read, so when the list reads later every table of it is read, and the schema answers clean only beside them.

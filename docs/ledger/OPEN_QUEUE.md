@@ -16378,3 +16378,12 @@ maintainer as a card.
   releases its latch outright (`retry(..., file_replaced=True)`) and forgets the verdict. With `OO_BOOT_VERIFY=0` or no file to read the start releases as before. NOT DONE: the re-read covers the
   tables the check reported, not the whole file (a restart reads the whole file again after an unexpected stop or an earlier damaged verdict); a latch a failed READ set (E1) is still released by
   the start directly, and the first failed read puts it back.
+  (k) BUILT, THE DEEP DELTA READ'S FOLD OF (j) (2026-10-06). (B1) A boot that starts LOCKED writes this process's `owed` entry over the earlier process's, and the unlock in the same process plans from it:
+  `previous_verification` now returns this process's own `owed` entry as the earlier state it was copied from, so a damaged verdict, an unfinished check and the attempt count survive the default (encrypted)
+  install's boot (before, the unlock read "nothing recorded" and the cap never tripped). (S1, N1) The re-read's claim carries a token and the incident count it was made at: a failed read that lands while it runs
+  keeps the latch (it stops being the check's, and the next start releases it the E1 way), and the four methods that settle a claim act only on their own token. (S2) The set of tables is stored in the same lock
+  block as the latch. (S3) A `(schema)` the check could not read means no table was read: when the list reads now every table of it is read, and the schema answers clean only beside them. STATED LIMIT: a table
+  no longer in the file still counts as read; the app's own tables are never dropped at run time, so absence is a symptom, not health, and it is not yet treated as one. (N12) `connect()` chains the error of the
+  candidate that got past page 1, whichever position its size has in the list. NOT DONE: arming in `_finish_unlock` before `mark_queryable()` (the milliseconds between them), "Run now" during a re-read runs an
+  empty pass (the continuous loop waits and resumes), a restore swap between a stale guard's decision and its re-latch re-latches the new file with the old answer (fail-safe, rare), a key derivation per table on an
+  encrypted store is unstated, and a skipped check is never said in the UI.

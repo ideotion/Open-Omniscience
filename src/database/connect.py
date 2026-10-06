@@ -347,6 +347,7 @@ def _connect(
         winning_candidate: int | None = None
         last_error: list = []
         first_error: list = []
+        past_page_one: list = []
         for candidate in candidates:
             conn = _try_open_encrypted(
                 p, use_key, check_same_thread, timeout, candidate, last_error=last_error, read_only=read_only
@@ -354,15 +355,21 @@ def _connect(
             if conn is not None:
                 winning_candidate = candidate
                 break
-            if not first_error and last_error:
-                first_error = list(last_error)
+            if last_error:
+                if not first_error:
+                    first_error = list(last_error)
+                if not past_page_one and getattr(last_error[0], "sqlite_errorcode", None) not in (None, 26):
+                    past_page_one = list(last_error)
         if conn is None:
-            # Chained from the FIRST candidate's error, which is the page size that opened this path last time when
-            # there is one: the LAST candidate is the undeclared default size, whose failure is always code 26
-            # (the HMAC check), so a damaged schema page under the right key and size read as a wrong passphrase.
+            # Chained from the error of the candidate that got PAST page 1 (any code but 26, the HMAC check every wrong
+            # page size and every wrong passphrase fails on), else the first candidate's: the LAST candidate is the
+            # undeclared default size, whose failure is always code 26, so a damaged schema page under the right key and
+            # size read as a wrong passphrase. The first candidate is the right size only when it is cached for the path;
+            # a file nothing opened yet in this process reaches its size later in the list.
+            cause = (past_page_one or first_error or [None])[0]
             raise WrongPassphraseError(
                 f"the passphrase does not open {p.name} (or the file is damaged)"
-            ) from (first_error[0] if first_error else None)
+            ) from cause
         if cipher_page_size is None:
             with _lock:
                 _last_good_page_size[str(p.resolve())] = winning_candidate

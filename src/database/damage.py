@@ -373,6 +373,7 @@ class DamageRegistry:
         #: Tells this process's incidents from an earlier process's in the record (the session id can be
         #: unknown, and two unknowns must not read as the same incident).
         self._process = uuid.uuid4().hex[:12]
+        self._claims = 0  # the next re-read claim's token
         self._loaded = False
         self._prior_unreadable = False
         self._incidents: deque[dict[str, Any]] = deque(maxlen=INCIDENTS_KEEP)
@@ -605,12 +606,14 @@ class DamageRegistry:
             return False
 
     def _apply_incident(
-        self, file_key: str, scope: str, shape: str | None, at: str
+        self, file_key: str, scope: str, shape: str | None, at: str, *, check_tables: tuple[str, ...] = ()
     ) -> tuple[bool, dict[str, Any] | None, bool]:
         """Count one incident against ``file_key`` and latch it, under the lock: ``(newly latched, the record
         of this very incident when this process already has one, whether its repeat is due to be written
         back)``. The ONE place the latch is set, so a corruption error and a per-table verdict cannot
-        latch differently."""
+        latch differently. ``check_tables`` (the tables a per-table check read as damaged) is stored in the SAME
+        lock block as the latch: a start that landed between the two used to read a latched file with no set as
+        an E1 latch and release it unread (the deep delta read's S2)."""
         with self._lock:
             st = self._files.setdefault(
                 file_key,
@@ -624,6 +627,9 @@ class DamageRegistry:
             if newly or st.get("scope") != SCOPE_DATA:
                 st["scope"] = scope
             st["latched"] = True
+            if check_tables:
+                # What a start of collection re-reads before it releases this latch (see :meth:`retry`).
+                st["check_tables"] = sorted(set(st.get("check_tables") or ()) | set(check_tables))
             known = self._known_locked(file_key, scope, shape)
             due = self._count_repeat_locked(known, at) if known is not None else False
         return newly, known, due
@@ -762,6 +768,7 @@ class DamageRegistry:
         running, or the start-up check still reading, keeps the latch and starts nothing."""
         released: list[str] = []
         recheck: dict[str, list[str]] = {}
+        claims: dict[str, int] = {}
         try:
             self._ensure_loaded()
             with self._lock:
@@ -771,7 +778,13 @@ class DamageRegistry:
                     tables = st.get("check_tables")
                     if tables and not file_replaced:
                         if not st.get("rechecking"):
-                            st["rechecking"] = {"index": 0, "total": 0}  # claimed here, under the lock: one re-read at a time
+                            # Claimed here, under the lock: one re-read at a time. The claim carries a TOKEN (every
+                            # method that settles it must present its own, so a second claim's state is never popped by
+                            # the first read's ending) and the incident count it was made at (a failed read that
+                            # lands while the re-read runs is not answered by the re-read's clean result).
+                            self._claims += 1
+                            st["rechecking"] = {"index": 0, "total": 0, "token": self._claims, "incidents": st["incidents"]}
+                            claims[key] = self._claims
                             st["retries"] += 1
                             recheck[key] = list(tables)
                         continue
@@ -781,7 +794,7 @@ class DamageRegistry:
                     st.pop("rechecking", None)
                     released.append(key)
             if recheck:
-                released.extend(self._start_recheck(recheck, reason))
+                released.extend(self._start_recheck(recheck, reason, claims))
             if released:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
                 _LOG.warning(
@@ -794,14 +807,14 @@ class DamageRegistry:
             _LOG.debug("database damage: retry failed", exc_info=True)
         return released
 
-    def _start_recheck(self, recheck: dict[str, list[str]], reason: str) -> list[str]:
+    def _start_recheck(self, recheck: dict[str, list[str]], reason: str, claims: dict[str, int]) -> list[str]:
         """Hand the claimed re-reads to ``verify.recheck`` and settle the ones it did not take: a file with nothing to
         read (the check is switched off, the file is gone) is released as a plain retry would; any other refusal keeps
         the latch. Returns the files released."""
         try:
             from src.database import verify
 
-            outcome = verify.recheck(recheck, reason=reason)
+            outcome = verify.recheck(recheck, reason=reason, claims=claims)
         except Exception:  # noqa: BLE001 - a latch that cannot be re-read stays
             _LOG.warning("database damage: could not start the re-read of the reported tables", exc_info=True)
             outcome = {}
@@ -813,35 +826,45 @@ class DamageRegistry:
                 st = self._files.get(key)
                 if st is None:
                     continue
-                st.pop("rechecking", None)
+                if self._claim_is(st, claims.get(key)):
+                    st.pop("rechecking", None)
                 if outcome.get(key) == "nothing-to-read" and st["latched"]:
                     st["latched"] = False
                     st.pop("check_tables", None)
                     released.append(key)
         return released
 
-    def recheck_total(self, file_key: str, total: int) -> None:
+    @staticmethod
+    def _claim_is(st: dict[str, Any], token: int | None) -> bool:
+        """Whether ``st`` carries a re-read claim and it is the one ``token`` names (``None`` names whatever claim is
+        there: the callers that have none, tests among them)."""
+        rc = st.get("rechecking")
+        return rc is not None and (token is None or rc.get("token") == token)
+
+    def recheck_total(self, file_key: str, total: int, token: int | None = None) -> None:
         """How many tables the re-read of ``file_key`` will read (the progress line's denominator)."""
         with self._lock:
             st = self._files.get(file_key)
-            if st is not None and st.get("rechecking") is not None:
-                st["rechecking"] = {"index": 0, "total": int(total)}
+            if st is not None and self._claim_is(st, token):
+                st["rechecking"] = {**st["rechecking"], "index": 0, "total": int(total)}
 
-    def recheck_progress(self, file_key: str, index: int) -> None:
+    def recheck_progress(self, file_key: str, index: int, token: int | None = None) -> None:
         with self._lock:
             st = self._files.get(file_key)
-            if st is not None and st.get("rechecking") is not None:
+            if st is not None and self._claim_is(st, token):
                 st["rechecking"] = {**st["rechecking"], "index": int(index)}
 
-    def recheck_abandoned(self, file_key: str) -> None:
+    def recheck_abandoned(self, file_key: str, token: int | None = None) -> None:
         """The re-read of ``file_key`` ended without an answer (stopped, or it raised): the latch stays as it was.
-        Idempotent, and always called when a re-read ends."""
+        Idempotent, and always called when a re-read ends; it settles ONLY the claim it was started under."""
         with self._lock:
             st = self._files.get(file_key)
-            if st is not None:
+            if st is not None and self._claim_is(st, token):
                 st.pop("rechecking", None)
 
-    def recheck_finished(self, file_key: str, tables: list[dict[str, Any]], *, path: Path | None) -> bool:
+    def recheck_finished(
+        self, file_key: str, tables: list[dict[str, Any]], *, path: Path | None, token: int | None = None
+    ) -> bool:
         """The re-read of the tables the check reported ended with ``tables`` (one answer each). Merges the answers
         into the file's check record and decides the latch: it is released when no table is left that was reported
         damaged and has not since read clean (``ok``); a table that reads damaged again, or could not be read,
@@ -856,11 +879,12 @@ class DamageRegistry:
             released = False
             with self._lock:
                 st = self._files.get(file_key)
-                if st is None or not st["latched"] or not st.get("check_tables") or st.get("rechecking") is None:
-                    # Released or replaced while it was read (a release ends the claim): the answer is about a file
-                    # that no longer is.
+                if st is None or not st["latched"] or not st.get("check_tables") or not self._claim_is(st, token):
+                    # Released or replaced while it was read (a release ends the claim), or settled under another
+                    # claim: the answer is about a file that no longer is, or is not this read's to give.
                     _LOG.info("database damage: a re-read's result for the %s file is stale and was dropped", file_key)
                     return False
+                grew = int(st["incidents"]) > int(st["rechecking"].get("incidents") or 0)
                 st.pop("rechecking", None)
                 left = sorted((set(st["check_tables"]) - ok_names) | set(damaged))
                 held = self._verification.get(file_key)
@@ -880,6 +904,11 @@ class DamageRegistry:
                     held["rechecked_at"] = at
                 if left:
                     st["check_tables"] = left
+                elif grew:
+                    # A read FAILED while this re-read ran (E1's observer counted it). A clean answer about the
+                    # reported tables says nothing about that one, so the latch holds and stops being a check's: the
+                    # next start releases it the E1 way, and the first failed read after that pauses it again.
+                    st.pop("check_tables", None)
                 else:
                     st["latched"] = False
                     st.pop("check_tables", None)
@@ -937,11 +966,14 @@ class DamageRegistry:
     def previous_verification(self, file_key: str) -> dict[str, Any] | None:
         """What an EARLIER process recorded about its check of ``file_key`` (``None`` when there is none, or
         when the newest entry is this process's own): the boot decision asks whether a check was left
-        unfinished."""
+        unfinished. ONE exception: this process's own ``owed`` entry. A boot that starts LOCKED writes it over
+        the earlier process's entry (``verification_file_owed`` carries that entry's attempts and trigger), and the
+        unlock, in the same process, plans from it: reading it as "nothing recorded" erased an earlier damaged
+        verdict and an unfinished check, and the attempt cap never tripped (the deep delta read's B1)."""
         self._ensure_loaded()
         with self._lock:
             entry = self._verification.get(file_key)
-            if entry is None or entry.get("process") == self._process:
+            if entry is None or (entry.get("process") == self._process and entry.get("state") != "owed"):
                 return None
             return dict(entry)
 
@@ -1078,12 +1110,7 @@ class DamageRegistry:
             else "the per-table check found damage in: " + shown
         )
         shape = "PRAGMA quick_check(" + ", ".join(names[:6]) + ")"
-        newly, known, due = self._apply_incident(file_key, scope, shape, at)
-        with self._lock:
-            st = self._files.get(file_key)
-            if st is not None:
-                # What a start of collection re-reads before it releases this latch (see :meth:`retry`).
-                st["check_tables"] = sorted(set(st.get("check_tables") or ()) | set(names))
+        newly, known, due = self._apply_incident(file_key, scope, shape, at, check_tables=tuple(names))
         if newly:
             _log_latched(file_key, "SQLITE_CORRUPT", scope, shape)
         if known is not None:
@@ -1234,15 +1261,17 @@ FRAME_DATA = (
     "Part of your library's data file could not be read: the database reported damage. An unexpected "
     "stop, a failing drive or a copy made while the file was changing can leave that behind. Collection "
     "will not write to it while this stands, so as not to make it worse. The app has deleted nothing "
-    "because of it. Starting collection again tries once more, and it stops again at the first failed "
-    "read."
+    "because of it. Starting collection again tries once more: where the start-up check found the damage, "
+    "the tables it named are read again and the pause ends only when they read clean; otherwise collection "
+    "stops again at the first failed read."
 )
 FRAME_SEARCH_INDEX = (
     "The database reported damage while reading your library, most likely in its search index (not "
     "confirmed). An unexpected stop or a failing drive can leave that behind. Collection will not write "
     "to the library file while this stands, so as not to make it worse. The app has deleted nothing "
-    "because of it. Starting collection again tries once more, and it stops again at the first failed "
-    "read."
+    "because of it. Starting collection again tries once more: where the start-up check found the damage, "
+    "the tables it named are read again and the pause ends only when they read clean; otherwise collection "
+    "stops again at the first failed read."
 )
 FRAME_WIKI = (
     "Part of the Wikipedia file could not be read: the database reported damage. The Wikipedia lane's "
