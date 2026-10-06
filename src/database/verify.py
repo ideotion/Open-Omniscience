@@ -31,6 +31,9 @@ that code, on a file whose header is ciphertext, the file is asked once (:func:`
 recorded as one more entry, ``(pages)``: ``damaged`` when any page fails (the page numbers kept up to
 :data:`MAX_PAGES_LISTED`, the count always), ``ok`` when none does (the tables that did not answer STAY unchecked, so the
 file is not called clean), ``unchecked`` with the reason when the pass could not be made or could not read the file to the end.
+A main file LONGER THAN 4 GiB is not given to it (:data:`PAGE_PASS_LIMIT_BYTES`: past that point the pass reads the wrong bytes, measured on a
+healthy 4.52 GB file as a failure for every page from the first past 4 GiB), so such a file's pass is ``unchecked`` with that reason and
+its unanswered tables stay unchecked.
 Nothing else asks it: a healthy file, a wrong passphrase and a busy or locked file never reach it (an I/O error reaches it only as
 the generic error a failing page also gives, and the pass then says what it read: a page it could not read is counted apart from a
 page that failed, and is never filed as damage).
@@ -131,15 +134,28 @@ _HMAC_ROW = re.compile(r"HMAC verification failed for page (\d+)")
 #: The rows of the same pragma that say the PASS could not read a page or could not run, which is not a page that failed its
 #: authentication tag: a disk error on a page ("error reading 16384 bytes from file page 40 at offset 638976", measured with a
 #: ``pread`` that returned EIO: the pass ANSWERS this as a row, it does not raise), the crypto provider failing, a build without
-#: the integrity check, and a connection with no database. Not reading is not a verdict (R100): a pass whose only rows are these
+#: the integrity check, and a connection with no database. THE OFFSET CAN BE NEGATIVE: SQLCipher prints it through a 32-bit
+#: ``%d``, so a page at 2 GiB or later prints a negative number (measured on a 3 GiB store with EIO at page 140000: "error reading
+#: 16384 bytes from file page 140000 at offset -2001223680"), and a pattern that wanted digits only filed that row as a row nobody
+#: knows, which is damage (the coordinator's check of E2). Not reading is not a verdict (R100): a pass whose only rows are these
 #: is ``unchecked``, and beside a page that did fail they are counted, never dropped. Any OTHER row is still damage in its own
 #: words, because an answer this app cannot read is not a clean one.
 _COULD_NOT_READ = re.compile(
-    r"error reading \d+ bytes from file page \d+ at offset \d+"
+    r"error reading \d+ bytes from file page \d+ at offset -?\d+"
     r"|HMAC operation failed for page \d+"
     r"|HMAC is not enabled, unable to integrity check"
     r"|database file is undefined"
 )
+
+#: A main file larger than this is NOT given to the page pass. WHAT IT PROTECTS: the verdict. MEASURED (the coordinator's check of
+#: E2b): on a HEALTHY 4.52 GB store of 16 KiB pages, ``quick_check`` answered ``ok`` and every byte read fine through the codec, yet
+#: ``PRAGMA cipher_integrity_check`` answered 13,934 "HMAC verification failed" rows, one for every page from 262,145 on (the first
+#: page that starts at 2^32); a ``pread`` shim saw no read at or past 4 GiB, so the pass's offsets wrap and it checks the wrong bytes.
+#: The pass builds every row before it returns the first (+28 MB at 260,000 rows, about 113 bytes a false row, about 250 MB on a
+#: 40 GB corpus), so filtering the rows afterwards still reads the whole file and holds them: the file is skipped, ``unchecked``
+#: with the reason, and the table that sent it here stays unchecked, so the file is not called clean either. A page that starts at
+#: 2^32 or later exists exactly when the file is longer than 2^32 bytes (page sizes are powers of two).
+PAGE_PASS_LIMIT_BYTES = 1 << 32
 
 #: How many of a table's report lines, and how many characters of each, the record keeps. A check's
 #: lines name pages and index entries ("Tree 5 page 1234: ...", "row 7 missing from index ix_x"), never a
@@ -394,6 +410,25 @@ def cipher_check_present() -> bool:
     return _CHECK_PRESENT
 
 
+class _Kept:
+    """The first ``limit`` lines of one kind of row and the count of ALL of them: a cap may shrink what is printed, never what is
+    counted (the maintainer's ruling of 2026-09-11). WHAT THE LIMIT PROTECTS: the Python-side list the record is cut from (the
+    engine holds every row of the pass already, so keeping another copy of the unknown ones in a pass where every row is unknown
+    would double it); it is pinned by ``test_the_kept_lines_are_bounded_and_the_count_is_not``."""
+
+    __slots__ = ("count", "limit", "lines")
+
+    def __init__(self, limit: int) -> None:
+        self.count = 0
+        self.limit = limit
+        self.lines: list[str] = []
+
+    def add(self, line: str) -> None:
+        self.count += 1
+        if len(self.lines) < self.limit:
+            self.lines.append(line)
+
+
 def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
     """The ``(pages)`` entry of an encrypted file: ``PRAGMA cipher_integrity_check``, once, on a read-only connection that is
     closed on every path. Never raises. ``damaged`` when any page fails its authentication tag (``pages`` the first
@@ -401,8 +436,9 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
     pass could not be made: a stop was asked for before it began, this build has no such pragma, or the driver raised (the
     exception's class decides, as for a table), or the rows it answered say it could not READ (``_COULD_NOT_READ``: a disk error
     on a page is answered as a row, measured, never raised; ``pages_unread`` counts them, and beside a failing page they are kept
-    in the detail and the count, not dropped). A pass that did not finish never reads as clean. The measurements are in the module
-    docstring."""
+    in the detail and the count, not dropped; the unknown rows are counted as ``strange_rows``: a cap shrinks what is printed, never
+    what is counted), or the file is longer than :data:`PAGE_PASS_LIMIT_BYTES` (``skipped = "file-over-4-gib"``, the pass is not run).
+    A pass that did not finish never reads as clean. The measurements are in the module docstring."""
     t0 = time.monotonic()
 
     def entry(verdict: str, detail: list[str], **more: Any) -> dict[str, Any]:
@@ -421,15 +457,26 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
             VERDICT_UNCHECKED,
             ["this build of SQLCipher has no page-authentication check (PRAGMA cipher_integrity_check), so the pages were not checked"],
         )
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0  # a file that cannot be examined: the pass below says what it could not open
+    if size > PAGE_PASS_LIMIT_BYTES:
+        return entry(
+            VERDICT_UNCHECKED,
+            [
+                f"the file is {size} bytes, past 4 GiB, where the page check of this SQLCipher reads the wrong bytes (measured on a healthy file: "
+                "a failure for every page from the first one past 4 GiB), so the pages were not checked"
+            ],
+            skipped="file-over-4-gib",
+        )
     con = None
     try:
         con = (opener or _open)(path)
         failing = 0  # one row per failing page; the numbers kept are the lowest MAX_PAGES_LISTED (a max-heap, negated)
         lowest: list[int] = []
-        other: list[str] = []  # rows this app does not know: damage in their own words
-        strange = 0
-        unread: list[str] = []  # rows that say the pass could not read or run (``_COULD_NOT_READ``)
-        unreadable = 0
+        other = _Kept(DETAIL_LINES)  # rows this app does not know: damage in their own words
+        unread = _Kept(DETAIL_LINES)  # rows that say the pass could not read or run (``_COULD_NOT_READ``)
         answered = False
         for row in con.execute("PRAGMA cipher_integrity_check"):
             answered = True
@@ -442,13 +489,9 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
                 elif number < -lowest[0]:
                     heapq.heapreplace(lowest, -number)
             elif _COULD_NOT_READ.search(line) is not None:
-                unreadable += 1
-                if len(unread) < DETAIL_LINES:
-                    unread.append(line.replace("\n", " "))
+                unread.add(line.replace("\n", " "))
             else:
-                strange += 1
-                if len(other) < DETAIL_LINES:
-                    other.append(line.replace("\n", " "))
+                other.add(line.replace("\n", " "))
     except Exception as exc:  # noqa: BLE001 - the verdict IS the exception's class
         verdict, reason = classify_error(exc)
         return entry(verdict, [reason])
@@ -458,35 +501,35 @@ def confirm_encrypted_damage(path: Path, *, opener: Opener | None = None, cancel
                 con.close()
     if not answered:
         return entry(VERDICT_OK, ["no page of the file failed its authentication check"])
+    unreadable, strange = unread.count, other.count
     unread_line = (
-        f"{unreadable} page(s) could not be read by the page check and are not counted above: {unread[0]}" if unreadable else None
+        f"{unreadable} page(s) could not be read by the page check and are not counted above: {unread.lines[0]}" if unreadable else None
     )
+    counts: dict[str, int] = {}  # what was COUNTED stays in the record whatever the detail shows
+    if unreadable:
+        counts["pages_unread"] = unreadable
+    if strange:
+        counts["strange_rows"] = strange
     if not failing and not strange:
         # Every row was a "could not read" one (the pass answered at least one row): it did not get to the end of the file, which is no
         # verdict on the file (R100). The record keeps the first lines and the count; the table that sent it here stays unchecked, so
         # the file is not called clean either.
         return entry(
             VERDICT_UNCHECKED,
-            [f"the page check could not read {unreadable} page(s) and so did not check the file to the end", *unread[: DETAIL_LINES - 1]],
-            pages_unread=unreadable,
+            [f"the page check could not read {unreadable} page(s) and so did not check the file to the end", *unread.lines[: DETAIL_LINES - 1]],
+            **counts,
         )
     if not failing:
         # An answer this app does not know how to read is not a clean one (the check's own rule: anything but its clean answer).
-        lines = [*other, *([unread_line] if unread_line else [])]
-        return entry(VERDICT_DAMAGED, lines[:DETAIL_LINES], pages=[], pages_total=0, **({"pages_unread": unreadable} if unreadable else {}))
+        lines = [*other.lines, *([unread_line] if unread_line else [])]
+        return entry(VERDICT_DAMAGED, lines[:DETAIL_LINES], pages=[], pages_total=0, **counts)
     pages = sorted(-n for n in lowest)
     shown = ", ".join(str(n) for n in pages[:8]) + (" and more" if failing > 8 else "")
     lines = [f"{failing} page(s) failed their authentication check (HMAC verification): {shown}"]
     if unread_line:
         lines.append(unread_line)
-    lines.extend(other)
-    return entry(
-        VERDICT_DAMAGED,
-        lines[:DETAIL_LINES],
-        pages=pages,
-        pages_total=failing,
-        **({"pages_unread": unreadable} if unreadable else {}),
-    )
+    lines.extend(other.lines)
+    return entry(VERDICT_DAMAGED, lines[:DETAIL_LINES], pages=pages, pages_total=failing, **counts)
 
 
 def page_check(
@@ -822,6 +865,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                 else []
             )
             pages = None
+            unread_kept = 0
             if not _CANCEL.is_set():
                 with _pass_in_flight(key):
                     pages = page_check(
@@ -854,6 +898,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                 schema_tables = [*schema_tables, pages]
             elif pages is not None and verdict != VERDICT_DAMAGED:
                 reason = f"{reason}; {PAGES_ENTRY}: {pages['detail'][0]}"
+                unread_kept = int(pages.get("pages_unread") or 0)  # a NUMBER in the record, not only words inside the reason
             result = {
                 "verdict": verdict,
                 "tables": schema_tables,
@@ -861,6 +906,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                 "listed": False,  # the table list could not be read: no table was, and no earlier finding is cleared
                 "reason": None if verdict == VERDICT_DAMAGED else reason,
                 "seconds": round(time.monotonic() - t0, 2),
+                **({"pages_unread": unread_kept} if unread_kept else {}),
             }
             reg.verification_file_done(key, result, path=path)
             continue

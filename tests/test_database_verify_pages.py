@@ -665,12 +665,16 @@ def test_the_module_declares_what_it_measured():
 #  the deep delta read of E2b: an I/O error, a quit during the pass, the survivors of 18 mutants
 # --------------------------------------------------------------------------- #
 EIO_ROW = "error reading 16384 bytes from file page 40 at offset 638976"  # the driver's own row, measured with a pread that returned EIO
+#: The same row for a page at 2 GiB or later: SQLCipher prints the offset through a 32-bit ``%d``, so it is NEGATIVE (measured on a 3 GiB store
+#: with EIO at page 140000; the coordinator's check of E2).
+EIO_ROW_PAST_2_GIB = "error reading 16384 bytes from file page 140000 at offset -2001223680"
 
 
 @pytest.mark.parametrize(
     "line",
     [
         EIO_ROW,
+        EIO_ROW_PAST_2_GIB,
         "HMAC operation failed for page 3",
         "HMAC is not enabled, unable to integrity check",
         "database file is undefined",
@@ -691,6 +695,13 @@ def test_a_page_the_pass_could_not_read_beside_a_page_that_failed_is_counted_and
     assert entry["verdict"] == VERDICT_DAMAGED and entry["pages"] == [7] and entry["pages_total"] == 1, "an unread page was counted as failing"
     assert entry["pages_unread"] == 2, "the pages that could not be read vanished from the record"
     assert "7" in entry["detail"][0] and "2 page(s) could not be read" in entry["detail"][1] and EIO_ROW in entry["detail"][1]
+
+
+def test_a_read_error_past_2_gib_beside_a_failing_page_is_unread_not_unknown():
+    rows = [("HMAC verification failed for page 7",), (EIO_ROW_PAST_2_GIB,)]
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=rows))
+    assert entry["pages_unread"] == 1 and "strange_rows" not in entry, "a negative offset made the row an unknown one, which is damage"
+    assert entry["pages"] == [7]
 
 
 def test_a_row_the_pass_does_not_know_beside_unread_pages_is_still_damage_in_its_own_words():
@@ -718,6 +729,66 @@ def test_the_non_hmac_rows_are_capped_in_the_record_and_counted():
     strange = [(f"something new {n}",) for n in range(5000)]
     entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=strange))
     assert entry["verdict"] == VERDICT_DAMAGED and len(entry["detail"]) == verify.DETAIL_LINES and len(json.dumps(entry)) < 1024
+    assert entry["strange_rows"] == 5000, "the cut shrank what is printed AND what is counted"
+
+
+def test_unknown_rows_beside_a_failing_page_and_unread_pages_are_counted_though_the_detail_is_cut():
+    """The coordinator's check of E2, item 3: ``lines[:DETAIL_LINES]`` dropped the unknown rows that sit beside a failing page once the unread
+    line was present, and nothing counted them (the maintainer's ruling of 2026-09-11: a cap may shrink what is printed, never what is counted)."""
+    rows = [("HMAC verification failed for page 7",), (EIO_ROW,), (EIO_ROW_PAST_2_GIB,)] + [(f"something new {n}",) for n in range(5)]
+    entry = verify.confirm_encrypted_damage(Path("x.db"), opener=lambda p: _Rows(rows=rows))
+    assert entry["verdict"] == VERDICT_DAMAGED and entry["pages"] == [7] and entry["pages_total"] == 1
+    assert entry["pages_unread"] == 2 and entry["strange_rows"] == 5, entry
+    assert len(entry["detail"]) == verify.DETAIL_LINES and "something new 0" in entry["detail"][2]
+
+
+def test_the_kept_lines_are_bounded_and_the_count_is_not():
+    kept = verify._Kept(3)
+    for n in range(10_000):
+        kept.add(f"row {n}")
+    assert kept.count == 10_000 and kept.lines == ["row 0", "row 1", "row 2"]
+
+
+def test_a_file_longer_than_4_gib_is_not_given_to_the_page_pass_and_one_of_exactly_4_gib_is(tmp_path):
+    """The coordinator's check of E2b: past 4 GiB the pass's offsets wrap (measured on a healthy 4.52 GB store: a failure for every page from
+    the first one that starts at 2^32), so the pass is skipped, ``unchecked`` with the reason, and the file is neither called damaged nor
+    clean. The boundary is a page that STARTS at 2^32: a file of exactly 2^32 bytes ends there and is still checked."""
+    big = tmp_path / "big.db"
+    try:
+        with open(big, "wb") as f:
+            f.truncate(verify.PAGE_PASS_LIMIT_BYTES + 1)  # sparse: no disk is used
+    except OSError:
+        pytest.skip("this filesystem cannot make a sparse file of 4 GiB")
+    opened: list[Path] = []
+
+    def opener(path):
+        opened.append(path)
+        return _Rows(rows=[])
+
+    entry = verify.confirm_encrypted_damage(big, opener=opener)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["skipped"] == "file-over-4-gib" and "4 GiB" in entry["detail"][0], entry
+    assert opened == [], "the pass was run on a file past 4 GiB"
+    with open(big, "r+b") as f:
+        f.truncate(verify.PAGE_PASS_LIMIT_BYTES)
+    entry = verify.confirm_encrypted_damage(big, opener=opener)
+    assert opened == [big] and entry["verdict"] == VERDICT_OK, entry
+
+
+def test_a_file_past_4_gib_whose_table_list_cannot_be_read_stays_unchecked_and_says_why_and_a_pass_that_could_not_read_keeps_its_number(
+    tmp_path, healthy, files, monkeypatch
+):
+    """The coordinator's check of E2, item 3, the unchecked error branch: ``pages_unread`` was only words inside ``reason`` there."""
+    monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    monkeypatch.setattr(
+        verify,
+        "confirm_encrypted_damage",
+        lambda path, **kw: {"table": verify.PAGES_ENTRY, "verdict": VERDICT_UNCHECKED, "seconds": 0.0, "detail": [EIO_ROW], "pages_unread": 2},
+    )
+    _run(files, healthy, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["tables"] == []
+    assert entry["pages_unread"] == 2, "the count of pages the drive could not give was kept only as text"
+    assert not damage.registry.latched(FILE_CORPUS)
 
 
 @pytest.mark.parametrize(("message", "code", "verdict"), [("database disk image is malformed", 11, VERDICT_DAMAGED), ("database is locked", 5, VERDICT_UNCHECKED)])
