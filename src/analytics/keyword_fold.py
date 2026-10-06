@@ -301,7 +301,17 @@ def fold_page(
             ).filter(KeywordMention.article_id.in_(chunk)):
                 c = contrib[int(aid)]
                 c[int(kid)] = c.get(int(kid), 0) + int(cnt or 0)
-        before = {a: top_keyword_of(contrib[a]) for a in aids}
+        # The stored top is made WITHOUT the shipped stoplist's words (R111 step T3,
+        # src.analytics.stoplist_recompute): the fold recomputes it the same way, or a page of
+        # moved mentions would write a hidden word back into the columns the pass cleaned.
+        from src.analytics.stoplist_recompute import hidden_keyword_ids
+
+        hidden = frozenset(hidden_keyword_ids(session))
+
+        def _top(c: dict[int, int]) -> tuple[int | None, int | None, int | None]:
+            return top_keyword_of({k: v for k, v in c.items() if k not in hidden})
+
+        before = {a: _top(contrib[a]) for a in aids}
 
         plain: dict[int, list[int]] = {}
         folds: list[dict[str, Any]] = []
@@ -349,7 +359,7 @@ def fold_page(
             kw.mention_count = max(0, (kw.mention_count or 0) + d_men[kw.id])
             kw.article_count = max(0, (kw.article_count or 0) + d_art[kw.id])
         for aid in aids:
-            after = top_keyword_of(contrib[aid])
+            after = _top(contrib[aid])
             if after != before[aid]:
                 session.query(Article).filter(Article.id == aid).update(
                     {

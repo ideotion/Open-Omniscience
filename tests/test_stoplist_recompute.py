@@ -434,3 +434,92 @@ def test_an_article_met_again_in_the_walk_is_not_read_again(env, monkeypatch):
     monkeypatch.setattr(sr, "SEEN_CAP", 0)  # remembers nothing: every meeting reads
     assert sr.maybe_recompute_top_keywords()["complete"] is True
     assert reads["n"] > reads_with, "without the memory every meeting read the article again"
+
+
+# ----------------------------------------------------------------- the folds of the one read
+
+
+def test_a_resume_between_two_adjacent_articles_of_one_hidden_word_skips_neither(env, monkeypatch):
+    """The cursor names the LAST article handled: a resume starts strictly after it, and a stop that
+    lands between two neighbours of the same hidden word must lose neither."""
+    with env.session() as s:
+        h1, a = _keyword(s, "hid1"), _keyword(s, "aa")
+        for i in range(6):
+            _article(s, f"adj{i}", {h1: 5, a: 2})
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)  # one (keyword, article) pair a chunk
+    calls = {"n": 0}
+
+    def stop_after_two_chunks():
+        calls["n"] += 1
+        return calls["n"] > 2  # two chunks pass; the third check stops
+
+    first = sr.maybe_recompute_top_keywords(should_stop=stop_after_two_chunks)
+    assert first["complete"] is False and first["chunks"] == 2
+    second = sr.maybe_recompute_top_keywords()
+    assert second["complete"] is True and second["resumed_at"] is not None
+    assert {v[:3] for v in _tops(env).values()} == {(a, 2, 1)}, "a neighbour was skipped at the cursor"
+
+
+def test_a_batch_boundary_in_the_mention_read_drops_no_article(env, monkeypatch):
+    w = _world(env)
+    before = _tops(env)
+    monkeypatch.setattr(sr, "_IN_CHUNK", 2)  # every read and write batch holds two articles
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    _assert_final(_tops(env), before, w)
+
+
+def test_a_budget_shorter_than_one_chunk_still_makes_progress(env, monkeypatch):
+    """A pass that stopped on its budget before its first chunk would record itself without moving
+    and the offline timer would loop on it: the budget is read only once a chunk has run."""
+    _world(env)
+    for name in ("START_CHUNK", "MIN_CHUNK", "MAX_CHUNK"):
+        monkeypatch.setattr(sr, name, 1)
+    out = sr.maybe_recompute_top_keywords(budget_s=1e-9)
+    assert out["stopped_by"] == "budget" and out["chunks"] == 1 and out["scanned"] >= 1
+    with env.session() as s:
+        assert s.get(DerivedMeta, sr.CURSOR_KEY) is not None
+
+
+def test_the_window_timed_is_the_one_held_and_the_longest_is_recorded(env):
+    _world(env)
+    out = sr.maybe_recompute_top_keywords()
+    assert 0 < out["max_window_s"] <= out["write_window_s"] + 1e-6
+    assert out["fingerprint"] == sr.current_fingerprint(), "a pass names the list it ran on"
+    assert sr.read_state()["last_pass"]["fingerprint"] == sr.current_fingerprint()
+
+
+def test_a_word_taken_off_the_list_gets_back_into_the_stored_tops(env):
+    """The word the last finished run hid and the list no longer holds: the tops made without it are
+    recomputed with it, including the articles that never held another hidden word."""
+    w = _world(env)
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    assert sr.read_state()["words"] == ["hid1", "hid2"]
+    before = _tops(env)
+    assert before["lone_top"][:3] == (w["a"], 2, 1)  # made without hid1
+
+    env.set_words(["hid2"])  # hid1 leaves the list
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True and out["restored_keywords"] == 1
+
+    after = _tops(env)
+    with env.session() as s:
+        mentions: dict[int, dict[int, int]] = {}
+        for aid, kid, c in s.execute(select(_MT.c.article_id, _MT.c.keyword_id, _MT.c.count)):
+            mentions.setdefault(aid, {})[kid] = c
+        by_hash = {a.hash: a.id for a in s.query(Article)}
+    for h, aid in by_hash.items():
+        visible = {k: c for k, c in mentions[aid].items() if k != w["h2"]}
+        assert after[h][:3] == top_keyword_of(visible), h
+    assert after["lone_top"][:3] == (w["h1"], 5, 1)
+    assert after["only_hidden"][:3] == (w["h1"], 2, 1), "the NULL a hidden-only article was left with"
+    assert {v[3] for v in after.values()} == {_STAMP}, "updated_at is never stamped by this pass"
+    assert sr.read_state()["words"] == ["hid2"]
+
+
+def test_a_list_that_only_grew_restores_nothing(env):
+    _world(env)
+    assert sr.maybe_recompute_top_keywords()["complete"] is True
+    env.set_words(["hid1", "hid2", "other"])
+    out = sr.maybe_recompute_top_keywords()
+    assert out["complete"] is True and out["restored_keywords"] == 0

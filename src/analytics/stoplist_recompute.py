@@ -29,16 +29,28 @@ stored representative id cannot show; the test therefore reads the article's own
 per-article covering index, no join to the wide article row) and asks whether a hidden word reached
 the highest count. An article whose stored columns already equal the recomputed ones is counted and
 not written (its record is wide, so a write rewrites many pages). An article whose columns are NULL
-("never computed") is left for the index to fill. Each affected article is handled once, when its
+("never computed") is left for the index to fill, except where a word taken off the list is concerned (below). Each affected article is handled once, when its
 walk reaches its LOWEST hidden keyword.
+
+A WORD TAKEN OFF THE LIST. A word the previous finished run hid and the shipped list no longer
+holds (a ring exemption, a retired entry) is walked too, as a RESTORED keyword: its articles' stored
+tops were made without it, so each reached article is recomputed from its mentions and compared with
+what is stored, with no shortcut (an unhidden word may now top an article that never held a hidden
+one). The previous list is the sorted word list recorded with the fingerprint.
 
 WHAT EACH NUMBER PROTECTS. Nothing here caps the work; every number says how it shares the machine.
 A chunk reads, decides and writes in ONE short transaction under the write window, and no read
 transaction spans two chunks (a long read pins the write-ahead log, which the crash read measured at
 about 1,500 s). The chunk size is not a constant: it moves so the write window is held about
-:data:`TARGET_HOLD_S` seconds, the longest another writer waits behind one chunk, between
-:data:`MIN_CHUNK` (a chunk that still makes progress when each row is slow) and :data:`MAX_CHUNK` (one
-chunk's mention reads and updated pages, so the log grows by a bounded amount per commit). The pass
+:data:`TARGET_HOLD_S` seconds, the time another writer waits behind one chunk (aimed at, not guaranteed:
+the controller reacts after the fact, and 0.32 to 0.36 s was the longest measured), between
+:data:`MIN_CHUNK` (a chunk that still makes progress when each row is slow) and :data:`MAX_CHUNK` (the
+most mention rows one chunk reads and the most article records it can rewrite). The write-ahead log a
+chunk adds is MEASURED, not derived: 4.6 to 4.9 MiB over a whole 200,000-article pass and 19.7 MiB when
+every one of 50,000 articles with 12 KB bodies was rewritten (a three-column update rewrites the
+whole record, overflow pages included, when its size changes); rows wider than that are bounded by
+the time target alone. The window timed is the one other writers wait behind, from the gate
+being HELD to the commit, so waiting for the gate never shrinks a chunk. The pass
 stops at a chunk boundary when the storage guard (a pinned log or a full drive) or the memory guard
 is engaged, on a stop request, or at its soft budget, and resumes at its cursor.
 """
@@ -69,6 +81,9 @@ CURSOR_KEY = "stoplist_recompute_cursor"
 TARGET_HOLD_S = 0.25
 MIN_CHUNK = 25
 MAX_CHUNK = 2000
+#: The first chunk: small enough that a slow store holds the window briefly before anything is
+#: measured; the controller doubles it each chunk under half the target (about six chunks, measured, to
+#: reach 1,600 on the 200,000-article store).
 START_CHUNK = 200
 #: Articles remembered as reached within one pass. It protects the pass's resident memory (measured
 #: about 63 bytes an id as a Python set of ints: 2 million ids took 125 MiB, so this cap is about
@@ -196,12 +211,13 @@ def _cursor_set(session: Any, fp: str, kid: int, aid: int) -> None:
 # ---------------------------------------------------------------------------------- the pass
 
 
-def hidden_keyword_ids(session: Any) -> list[int]:
-    """Ids of the keyword rows whose normalized term is on the shipped list, ascending."""
+def hidden_keyword_ids(session: Any, words: Any = None) -> list[int]:
+    """Ids of the keyword rows whose normalized term is on the shipped list (or on ``words``),
+    ascending."""
     from src.analytics.extract import global_stopwords
     from src.database.models import Keyword
 
-    words = sorted(global_stopwords())
+    words = sorted(global_stopwords() if words is None else words)
     ids: list[int] = []
     for i in range(0, len(words), _IN_CHUNK):
         batch = words[i : i + _IN_CHUNK]
@@ -243,6 +259,7 @@ def _one_chunk(
     n: int,
     hidden: frozenset[int],
     seen: set[int] | None = None,
+    restored: frozenset[int] = frozenset(),
 ) -> dict:
     """Read, decide and write one chunk inside the caller's transaction (the write window is
     already held). The chunk covers up to ``n`` mention rows of the hidden keywords from
@@ -253,6 +270,10 @@ def _one_chunk(
     first at its LOWEST hidden keyword, so a later meeting needs no read at all. It only saves reads;
     after a resume it starts empty and the lowest-keyword test below still keeps each article to one
     handling.
+
+    ``restored`` holds the keywords a previous finished run hid and the list no longer holds: an
+    article reached through one is recomputed from its mentions and compared with what is stored,
+    with no shortcut.
 
     Returns the new position ``(pos, after)`` and the counts."""
     from sqlalchemy import bindparam, select
@@ -304,20 +325,24 @@ def _one_chunk(
         for aid, k, c in session.execute(
             select(KM.article_id, KM.keyword_id, KM.count).where(KM.article_id.in_(batch))
         ):
-            contrib[int(aid)][int(k)] = int(c)
+            contrib[int(aid)][int(k)] = contrib[int(aid)].get(int(k), 0) + int(c)
     new_of: dict[int, tuple[int | None, int | None, int | None]] = {}
+    via_restored: set[int] = set()
     for kid, aid in found:
         cont = contrib.get(aid, {})
-        held = [k for k in cont if k in hidden]
-        if not held or min(held) != kid:
-            out["handled_later"] += 1  # its lowest hidden keyword is another one
+        walked = [k for k in cont if k in hidden or k in restored]
+        if not walked or min(walked) != kid:
+            out["handled_later"] += 1  # its lowest walked keyword is another one
             continue
         visible = {k: c for k, c in cont.items() if k not in hidden}
-        top_hidden = max((cont[k] for k in held), default=0)
-        top_visible = max((c for c in visible.values() if c > 0), default=0)
-        if top_hidden <= 0 or top_hidden < top_visible:
-            out["top_unaffected"] += 1
-            continue
+        if any(k in restored for k in walked):  # only a restored word defeats the shortcut
+            via_restored.add(aid)
+        else:
+            top_hidden = max((cont[k] for k in walked), default=0)
+            top_visible = max((c for c in visible.values() if c > 0), default=0)
+            if top_hidden <= 0 or top_hidden < top_visible:
+                out["top_unaffected"] += 1
+                continue
         new_of[aid] = top_keyword_of(visible)
     if not new_of:
         return out
@@ -337,7 +362,10 @@ def _one_chunk(
     changes = []
     for aid, new in new_of.items():
         old = stored.get(aid)
-        if old is None or old[1] is None:
+        if old is None or (old[1] is None and aid not in via_restored):
+            # (An article reached through a restored word is filled even when its columns are
+            # NULL: an article with only hidden words was written NULL by an earlier pass, which
+            # is indistinguishable from "never computed", and the value is a function of its mentions.)
             out["never_computed"] += 1  # NULL = never computed: the index fills it forward
         elif tuple(old) == new:
             out["already_clean"] += 1
@@ -410,37 +438,48 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
         "to_none": 0,
         "chunks": 0,
         "write_window_s": 0.0,
+        "max_window_s": 0.0,
         "complete": False,
         "stopped_by": None,
     }
+    from src.analytics.extract import global_stopwords
+
+    taken_off = set(read_state().get("words") or ()) - set(global_stopwords())
     with session_scope() as session:  # a short read of its own; nothing spans two chunks
         require_mentions_view(session)
-        ids = hidden_keyword_ids(session)
+        hidden_ids = hidden_keyword_ids(session)
+        restored_ids = hidden_keyword_ids(session, taken_off) if taken_off else []
+        ids = sorted(set(hidden_ids) | set(restored_ids))
         kid0, after0 = _cursor_get(session, fp)
-    tally["hidden_keywords"] = len(ids)
+    tally["hidden_keywords"] = len(hidden_ids)
+    tally["restored_keywords"] = len(set(restored_ids) - set(hidden_ids))
     tally["resumed_at"] = [kid0, after0] if (kid0 or after0) else None
-    hidden = frozenset(ids)
+    hidden = frozenset(hidden_ids)
+    restored = frozenset(restored_ids) - hidden
     n = START_CHUNK
     seen: set[int] = set()
     pos = bisect.bisect_left(ids, kid0)
     after = after0 if pos < len(ids) and ids[pos] == kid0 else 0
     while pos < len(ids):
         reason = "stop" if stop() else _guard_reason()
-        if reason is None and budget > 0 and time.monotonic() - t0 > budget:
+        # The budget is checked once a chunk has run: a budget shorter than one chunk must still
+        # make progress, or every pass would record itself and the offline timer would loop on it.
+        if reason is None and tally["chunks"] > 0 and budget > 0 and time.monotonic() - t0 > budget:
             reason = "budget"
         if reason:
             tally["stopped_by"] = reason
             _finish(tally, fp)
             return tally
-        held0 = time.monotonic()
         with session_scope() as session:
             hold_write_window(session)
-            got = _one_chunk(session, ids, pos, after, n, hidden, seen)
+            held0 = time.monotonic()  # the window others wait behind: gate held to commit
+            got = _one_chunk(session, ids, pos, after, n, hidden, seen, restored)
             pos, after = got["pos"], got["after"]
             _cursor_set(session, fp, ids[pos] if pos < len(ids) else ids[-1] + 1, after)
         held = time.monotonic() - held0
         tally["chunks"] += 1
         tally["write_window_s"] = round(tally["write_window_s"] + held, 3)
+        tally["max_window_s"] = round(max(tally["max_window_s"], held), 3)
         for key in ("scanned", "updated", "already_clean", "never_computed",
                     "top_unaffected", "handled_later", "to_none"):
             tally[key] += got[key]
@@ -459,16 +498,19 @@ def _run(fp: str, stop: Callable[[], bool], budget: float) -> dict:
 def _finish(tally: dict, fp: str) -> None:
     """Record the pass; the fingerprint only when the walk is complete."""
     state = read_state()
-    last = {k: v for k, v in tally.items() if k != "fingerprint"}
+    last = dict(tally)  # carries the fingerprint the pass ran on: a stopped pass names its list
     doc = {**state, "last_pass": last, "list_size": None}
     try:
         from src.analytics.extract import global_stopwords
 
-        doc["list_size"] = len(global_stopwords())
+        words = global_stopwords()
+        doc["list_size"] = len(words)
     except Exception:  # noqa: BLE001
-        pass
+        words = None
     if tally.get("complete"):
         doc["fingerprint"] = fp
         doc["completed_at"] = tally["at"]
+        if words is not None:
+            doc["words"] = sorted(words)  # the list this run finished: the next one finds what left it
     _write_state(doc)
     _LOG.info("stoplist recompute: %s", last)

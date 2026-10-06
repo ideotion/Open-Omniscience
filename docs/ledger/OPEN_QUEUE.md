@@ -16393,13 +16393,24 @@ length or built-in switch, which are read-time settings). The Home cache records
 marker repair's throttle (a cache written before the field refreshes once). The stored `top_keyword_*` columns are recomputed by one resumable job in the off-peak window and its offline timer, only for
 articles whose top set held a hidden word (a hidden NON-lowest member of a tie included), written to those three columns only (`updated_at` is written back as itself, no mention row moves, no epoch
 bump: nothing but the Articles list reads these columns, grep-checked). The fingerprint is recorded after the last chunk, never before. **Measured** (synthetic stores, local disk, 12 KB article bodies, 2,555 hidden words, an independent recompute over every article after each run: 0 mismatches in all of them).
-**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten:** plaintext 6.4 s, longest write window 0.27 s, peak log 4.9 MiB, 267 MiB resident; the SAME store as an
-ENCRYPTED copy (SQLCipher, the app's own `reencrypt_plain_to`, opened through the app's own connection factory, unlocked with a passphrase): 7.3 s, longest window 0.29 s, peak log 4.6 MiB, 202 MiB
-resident (about 14 % slower; same shape; the chunk-size controller held every window near its 0.25 s target on both). **Worst case (50,000 articles, each holding about 22 hidden mentions and a hidden
-top word, so every article is rewritten), plaintext only:** 14.0 s (about 28 s per 100,000 articles touched), longest window 0.21 s, peak log 19.7 MiB. **The in-pass memory (`SEEN_CAP`, 500,000
-ids):** a Python set of ints costs about 63 bytes an id (2 million ids took 125 MiB resident, so the cap is about 31 MiB, under 1 % of the 4 GiB tier); it protects memory only: on the worst-case
-store a cap one fifth of the corpus took 67 s and no memory at all took 86 s against 14 s, with the same answer, so a cap below the corpus costs time and never correctness, and a corpus under
-500,000 articles never meets it. The in-pass memory is not yet derived from the memory tier (`memory_budget.resolved_reading()`; the tier PR has not landed); derive it there if that PR lands.
+**200,000 articles, 7.3 M mentions, a mid-frequency list, 1,958 articles rewritten.** Plaintext: 6.0 to 11.2 s over four runs; the same store as an ENCRYPTED copy (SQLCipher, the app's own
+`reencrypt_plain_to`, opened through the app's own connection factory with a passphrase): 7.3 and 10.6 s. The run-to-run spread (the page cache's state) is larger than any difference between the two
+stores, so no encrypted penalty is claimed. The last runs time the window the way the pass now records it, `max_window_s` = from the write gate HELD to the COMMIT: plaintext 0.36 s, encrypted
+0.32 s (the controller aims at 0.25 s and reacts after the fact, so one chunk can overshoot; the chunk body alone, which the earlier runs reported, was 0.26 and 0.31 s). Peak log 4.2 MiB
+plaintext, 4.5 MiB encrypted over the whole pass; the largest process size seen, 266 and 202 MiB, is the MEASURING process (it holds a 200,000-row snapshot of its own for the check), not the
+pass's own memory. **Worst case (50,000 articles, each holding about 22 hidden mentions and a hidden top word, so every article is rewritten), plaintext only:** 14.0 s (about 28 s per 100,000
+articles touched), longest chunk body 0.21 s, peak log 19.7 MiB (a three-column update rewrites the whole record, overflow pages included, so the log a chunk adds grows with the width of the
+article rows; rows wider than 12 KB are bounded by the time target alone). **The selection plans, the same on both stores, no temp b-tree on either** (the code has no GROUP BY or DISTINCT,
+and its one ORDER BY is answered by the index): the walk `SEARCH keyword_mentions USING COVERING INDEX ix_mention_keyword_article (keyword_id=? AND article_id>?)`, the per-article mention read
+`COVERING INDEX ix_mention_article_count (article_id=?)`, the article read `INTEGER PRIMARY KEY (rowid=?)` (the three top columns and the id only, never the content), the keyword lookup
+`COVERING INDEX idx_keyword_normalized_term`. **The in-pass memory (`SEEN_CAP`, 500,000 ids):** a Python set of ints costs about 63 bytes an id (2 million ids took 125 MiB resident, so the cap is
+about 31 MiB, under 1 % of the 4 GiB tier; the figure at 500,000 is that measurement scaled, not a run of its own); it protects memory only: on the worst-case store a cap one fifth of the corpus
+took 67 s and no memory at all took 86 s against 14 s, with the same answer, so a cap below the corpus costs time and never correctness, and a corpus under 500,000 articles never meets it. A
+bitmap sized to the highest article id would remove the cap (about 170 KB at 1.3 M articles) and is the obvious next step if a corpus outgrows it. The in-pass memory is not derived from the
+memory tier (`memory_budget.resolved_reading()`; the tier PR has not landed). **Two readers of the one read, folded:** a word TAKEN OFF the list is walked as a restored keyword and the articles
+it reaches are recomputed with it (the sorted list a finished run saw is kept in `data/stoplist_recompute.json`); and the keyword fold (`keyword_fold.py`) now computes the stored top without
+the shipped list's words, the way this pass does, so a page of folded mentions cannot write a hidden word back. **Known and left:** the pass runs inside the maintenance window and holds the
+scheduler's run lock for up to its 30 s soft budget (a "Collect now" in that window answers busy), and the gate is acquired without a timeout, like the other maintenance writers.
 
 **T2 still open:** bulletin coverage, stories and articles (through the export thread, the sole pusher of the bulletin code), `supergroup_rising`/`supergroup_stats`, `source_topics`, the AI keywords. **Left on
 purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage
