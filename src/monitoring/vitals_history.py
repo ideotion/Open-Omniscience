@@ -66,7 +66,10 @@ from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
 
-SCHEMA = "oo-vitals-1"
+#: The layout of the file and of the member. 2: the open log hour is stored as raw (logger, level,
+#: count) triples and the previous sessions' tails and the clock steps are stored (an older file
+#: of this build's development is read as no history, never half-trusted).
+SCHEMA = "oo-vitals-2"
 _FILE = "vitals_history.json"
 
 #: Five-minute buckets for 48 hours; hourly buckets for 14 days; one row a minute for the last
@@ -104,11 +107,17 @@ SLOW_S = 60.0
 #: minute row stays a few hundred bytes (60 of them are in the member).
 BUSIEST_THREADS = 3
 #: Rows of a previous session's tail kept (the minutes before it stopped), and how many sessions'
-#: tails: a crash loop restarts every few minutes, and the tail that matters is the first one, the
+#: tails: a crash loop restarts every few minutes, and the tail that matters is the one of the
 #: session that ran long enough to say how it died, which one short session after another would
-#: otherwise push out.
+#: otherwise push out. A tail of fewer than ``PREVIOUS_TAIL_MIN`` minutes is the short kind: the
+#: file is written at the session's first tick and then every ``FLUSH_S`` (five minutes), so a
+#: session that dies before its second write leaves no minute at all (and inherits the tails it
+#: found), and one that lives a little longer leaves four or fewer, which says too little to push
+#: out one that ran for five or more. A short tail is the first to be evicted, never the last
+#: written.
 PREVIOUS_TAIL_KEEP = 30
 PREVIOUS_SESSIONS_KEEP = 3
+PREVIOUS_TAIL_MIN = 5
 #: Session starts kept (a month of daily restarts, or a crash loop's last half hour), gaps listed
 #: (the member lists where rows stop; the newest fifty are the ones an investigation reads) and
 #: clock steps recorded: each is one short row, bounded so a clock that keeps stepping cannot
@@ -116,16 +125,37 @@ PREVIOUS_SESSIONS_KEEP = 3
 SESSIONS_KEEP = 30
 GAPS_KEEP = 50
 CLOCK_STEPS_KEEP = 20
-#: A clock that steps back by up to this much (two five-minute buckets, the same line the gaps
-#: use, and more than a network time correction ever steps) is held in the open bucket; a bigger step closes everything that is open and starts again,
-#: so a step never piles an hour of ticks into one row.
+#: A clock whose time is behind the open five-minute bucket's START by up to this much (two
+#: buckets, the line the gaps use, and more than a network time correction ever steps) is held:
+#: its ticks stay in the open bucket and nothing is reordered. A bigger step closes everything
+#: that is open and starts again, so one step never piles hours of ticks into one row. The edge
+#: is exact from the bucket's start, which is bucket-aligned, and it does not depend on which
+#: second of the bucket the last tick fell in; measured from the LAST TICK it is a step of 600 to
+#: 895 s (the last tick may be up to 295 s into its bucket), and ``back_s`` says the real size.
+#: What it protects: the open bucket holds at most (CLOCK_HOLD_S + 2 * FINE_S) / 5 = 240 ticks
+#: (a full bucket is 60), and a minute row that spans a hold up to about 190.
 CLOCK_HOLD_S = 2 * FINE_S
+#: A clock that keeps stepping (a broken time source flapping, a machine that wakes wrong again and
+#: again) would close the open buckets on every tick that follows a step and push the 48 hours the
+#: member exists to show out of the table within a couple of hours. So a big step starts a new
+#: history at most this often (the monotonic clock, which a step cannot move); a bigger step that
+#: comes sooner is held like a small one, marked ``kept_open`` in ``clock_steps``, and starts its
+#: new history at the first tick after the interval. One bucket holds at most this many extra
+#: seconds of ticks for that.
+REBASE_MIN_GAP_S = FINE_S
 #: After a failed write the next try is this soon, not on every five-second tick.
 FLUSH_RETRY_S = 60.0
-#: What the member may weigh, raw JSON. It protects the one zip, not the user's upload: the full
-#: retention with 25 busy loggers measures about 166 KB raw (about 36 KB zipped) against the 4 MB
-#: a part may weigh, and a smaller number would cut the 48 hours the member exists to show.
-MEMBER_BUDGET_BYTES = 200_000
+#: What the member may weigh, raw JSON: the heaviest it can be without cutting anything. Measured
+#: (``test_the_heaviest_member_fits_its_budget...``): the full retention with 25 busy loggers is
+#: 158 KB, with the three previous sessions' tails 189 KB, and with 55-character logger names
+#: (the longer names a deep package gives) 245 KB; 260 KB leaves 6 per cent above that. A smaller
+#: number cuts the 48 hours or the tails the member exists to show. What the number protects is
+#: the zip's size, not the 4 MB part (R119): at 4,000,000 bytes a part holds fifteen of these
+#: members raw and about seventy zipped (at the first measure's ratio, 4.6 to 1: 36 KB zipped for
+#: 166 KB raw; the test's constant rows zip 25 to 1 and say nothing), so the budget is there so
+#: that one history, growing with the number of loggers, cannot take the room the other members'
+#: newest records need in a typical zip of about 1.2 MB raw (PLAN 4).
+MEMBER_BUDGET_BYTES = 260_000
 
 #: Which record carries the minutes before a kill. Set once the owner of that record has
 #: confirmed it; until then the member says the 5-minute history is the only record.
@@ -164,8 +194,11 @@ _LOCK = threading.RLock()
 # pool does, and asyncio's "Task exception was never retrieved") or a SIGHUP handler that logs can
 # re-enter ``emit`` on the thread that is inside it. A plain lock would make that thread wait for
 # itself while holding the handler's own lock, and every later thread that logs would wait behind
-# it. The critical section is dictionary updates that are consistent at every bytecode boundary,
-# so the nested call just counts one more line.
+# it. The critical section is dictionary updates, each consistent at every bytecode boundary, so
+# the nested call is counted. (A nested line of the SAME logger and level can cost one count: the
+# collector runs between the read and the store of ``_HOUR_LOGS[key] = _HOUR_LOGS.get(key, 0) + 1``,
+# which takes an asyncio error inside an asyncio error; one line lost per such event is the
+# price of never waiting for itself.)
 _LOG_LOCK = threading.RLock()
 _STARTED = False
 _FINE: list[list[Any]] = []
@@ -177,6 +210,8 @@ _PREVIOUS: list[dict[str, Any]] = []
 _CLOCK_BACK = 0
 _CLOCK_HOLD = False
 _CLOCK_STEPS: list[dict[str, Any]] = []
+_LAST_REBASE = float("-inf")  # monotonic time of the last big step that started a new history
+_LAST_WALL: float | None = None  # the wall clock at the last tick: what a step back is measured from
 _LAST_FLUSH = float("-inf")
 _LAST_FLUSH_AT: str | None = None
 
@@ -197,7 +232,7 @@ _LAST_CPU: dict[int, tuple[float, float]] = {}
 _BASELINE_MAX_AGE_S = 2 * MINUTE_S + 30
 _PROC: Any = None
 _HANDLER: _CountHandler | None = None
-_COST: dict[str, float] = {}
+_COST: dict[str, float | None] = {}
 #: Failures of the recorder's own work this session, counted and named by type, so a failing disk
 #: shows in the vitals themselves and not only in a debug log nobody reads. Messages carry no path.
 _ERRORS: dict[str, Any] = {}
@@ -482,7 +517,7 @@ def _busiest(avail_mb: float | None, now: float | None = None) -> tuple[list[dic
     after: dict[int, tuple[float, float]] = {}
     alive: set[int] = set()
     scored: list[tuple[float, float, dict[str, Any]]] = []
-    compared = 0
+    compared = figures = 0
     for entry in snap:
         tid, cpu = entry.get("tid"), entry.get("cpu_s")
         if tid is None:
@@ -490,6 +525,7 @@ def _busiest(avail_mb: float | None, now: float | None = None) -> tuple[list[dic
         alive.add(tid)
         if cpu is None:
             continue
+        figures += 1
         after[tid] = (cpu, now)
         was = before.get(tid)
         if was is None or now - was[1] > _BASELINE_MAX_AGE_S:
@@ -503,7 +539,18 @@ def _busiest(avail_mb: float | None, now: float | None = None) -> tuple[list[dic
             after[tid] = was  # still there, only not read this time
     _LAST_CPU = after
     if not compared:
-        return None, "no thread had an earlier reading to take a difference from (the first minute, or the first after memory was short)"
+        # four different facts, each with its own reason: a reader of an idle night must not be told
+        # that memory was short
+        if not figures:
+            return None, "every thread was waiting at this reading, so none had a CPU figure to compare (an idle process)"
+        if not before:
+            return None, "the first reading of this session: there is nothing yet to take a difference from"
+        if any(now - was[1] > _BASELINE_MAX_AGE_S for was in before.values()):
+            return None, (
+                f"the earlier readings were more than {_BASELINE_MAX_AGE_S} s old (memory was short, "
+                "or the minute stayed open while the clock stood still)"
+            )
+        return None, "no thread with a CPU figure had one at the earlier reading too (each was new or waiting then)"
     scored.sort(key=lambda s: -s[0])
     return [
         {
@@ -565,15 +612,15 @@ def _minute_row(t: int, acc: _Acc, avail_mb: float | None) -> dict[str, Any]:
     return row
 
 
-def _rebase_clock(wall: float) -> tuple[int, _Acc] | None:
+def _rebase_clock(wall: float, last_wall: float) -> tuple[int, _Acc] | None:
     """The clock is further behind the open buckets than a hold can bound (a file written while
     the clock was ahead, a manual step back, a machine that woke with a wrong time): close
     everything that is open as it stands, start again at the clock's time, and record the step.
     Rows stay in the order they were written, so a reader meets the step where it happened and
-    ``clock_steps`` says how far back it went. Called under ``_LOCK``; returns the minute it
-    closed, for the caller to turn into a row after the lock is released."""
-    global _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK
-    was = _FINE_T
+    ``clock_steps`` says how far back it went (from the clock's last reading, ``last_wall``).
+    Called under ``_LOCK``; returns the minute it closed, for the caller to turn into a row after
+    the lock is released."""
+    global _FINE_T, _COARSE_ACC, _COARSE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK, _CLOCK_HOLD
     _close_fine()
     if _COARSE_ACC is not None:
         _COARSE.append(_COARSE_ACC.row(_COARSE_T))
@@ -584,38 +631,48 @@ def _rebase_clock(wall: float) -> tuple[int, _Acc] | None:
     if _HOUR_LOGS_T:
         _close_hour_logs()
     _FINE_T = _COARSE_T = _MIN_T = _HOUR_LOGS_T = 0
+    _CLOCK_HOLD = False  # a hold that was running ended here; a small step right after is a new one
     _CLOCK_BACK += 1
-    _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(was), "back_s": int(was - wall)})
+    _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(last_wall), "back_s": int(last_wall - wall)})
     _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
     return finished
 
 
-def tick(now: float | None = None) -> None:
+def tick(now: float | None = None, mono: float | None = None) -> None:
     """Fold one reading into the history. Called by the session ledger's liveness thread every
     5 seconds, after the high-water marks. Best-effort: never raises, and flushes to disk at
     most every ``FLUSH_S``. Nothing slow runs under the history's lock: the readings are taken
-    before it and the minute's thread sample after it."""
-    global _FINE_ACC, _FINE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK, _CLOCK_HOLD
+    before it and the minute's thread sample after it. ``now`` is the wall clock and ``mono`` the
+    monotonic one, both injected by the tests."""
+    global _FINE_ACC, _FINE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK, _CLOCK_HOLD, _LAST_REBASE
+    global _LAST_WALL
     try:
         if not _STARTED:
             return
-        started_wall, started_cpu = time.perf_counter(), time.thread_time()
+        started_wall, started_cpu = time.perf_counter(), _thread_cpu()
         wall = time.time() if now is None else now
+        mono = time.monotonic() if mono is None else mono
         sample = _fast_readings()
-        sample.update(_slow_readings(time.monotonic()))
+        sample.update(_slow_readings(mono))
         finished: tuple[int, _Acc] | None = None
         with _LOCK:
             fine_t = int(wall // FINE_S) * FINE_S
+            last_wall = float(_FINE_T) if _LAST_WALL is None else _LAST_WALL  # the bucket's start, before this session's first tick
             if _FINE_ACC is not None and fine_t < _FINE_T:
-                if _FINE_T - fine_t > CLOCK_HOLD_S:
-                    finished = _rebase_clock(wall)
+                big = _FINE_T - fine_t > CLOCK_HOLD_S
+                if big and mono - _LAST_REBASE >= REBASE_MIN_GAP_S:
+                    _LAST_REBASE = mono
+                    finished = _rebase_clock(wall, last_wall)
                 else:
-                    # a small step back: stay in the open bucket, never reorder; one step, however
-                    # many ticks it lasts
+                    # a small step back (or a big one that follows another too soon): stay in the
+                    # open bucket, never reorder; one step, however many ticks it lasts
                     if not _CLOCK_HOLD:
                         _CLOCK_HOLD = True
                         _CLOCK_BACK += 1
-                        _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(_FINE_T), "back_s": int(_FINE_T - wall)})
+                        step = {"at": _iso(wall), "was": _iso(last_wall), "back_s": int(last_wall - wall)}
+                        if big:
+                            step["kept_open"] = True
+                        _CLOCK_STEPS.append(step)
                         _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
                     fine_t = _FINE_T
             else:
@@ -632,6 +689,7 @@ def tick(now: float | None = None) -> None:
             if _MIN_ACC is None:
                 _MIN_ACC, _MIN_T = _Acc(), max(minute_t, _MIN_T)
             _MIN_ACC.add(sample)
+            _LAST_WALL = wall
             hour_t = int(wall // COARSE_S) * COARSE_S
             if _HOUR_LOGS_T and hour_t > _HOUR_LOGS_T:
                 _close_hour_logs()
@@ -644,11 +702,22 @@ def tick(now: float | None = None) -> None:
                 _trim(_MINUTES, MINUTE_KEEP)
         _ensure_handler()
         _note_cost("tick", started_wall, started_cpu)
-        if time.monotonic() - _LAST_FLUSH >= FLUSH_S:
+        if mono - _LAST_FLUSH >= FLUSH_S:
             flush()
     except Exception as exc:  # noqa: BLE001 - a recorder never raises into its caller
         _note_error("tick", exc)
         _LOG.debug("vitals history tick failed", exc_info=True)
+
+
+def _thread_cpu() -> float | None:
+    """This thread's CPU seconds, or ``None`` where the platform has no per-thread clock
+    (``time.thread_time`` raises there): the cost then reports its wall time only, and the
+    recorder keeps recording instead of failing every tick on a clock it only wanted for its
+    own cost."""
+    try:
+        return time.thread_time()
+    except Exception:  # noqa: BLE001 - OSError or AttributeError, by platform
+        return None
 
 
 def _note_error(what: str, exc: BaseException) -> None:
@@ -662,16 +731,18 @@ def _note_error(what: str, exc: BaseException) -> None:
         _ERRORS[f"last_{what}_error"] = {"at": _iso(time.time()), "error": reason[:120]}
 
 
-def _note_cost(what: str, started_wall: float, started_cpu: float) -> None:
+def _note_cost(what: str, started_wall: float, started_cpu: float | None) -> None:
     """What a tick or a flush cost: this thread's CPU time and the wall time, kept apart because
     under busy Python threads the wall time is mostly waiting for the interpreter lock (measured:
     a tick is about 1 ms of CPU and about 50 ms of wall with three busy threads), and a reader
     taking the wall figure for work would blame the recorder for the machine's load."""
-    cpu = round((time.thread_time() - started_cpu) * 1000, 2)
+    ended_cpu = _thread_cpu()
+    cpu = None if started_cpu is None or ended_cpu is None else round((ended_cpu - started_cpu) * 1000, 2)
     wall = round((time.perf_counter() - started_wall) * 1000, 2)
-    _COST[f"{what}_cpu_ms_last"], _COST[f"{what}_wall_ms_last"] = cpu, wall
-    _COST[f"{what}_cpu_ms_max"] = max(_COST.get(f"{what}_cpu_ms_max", 0.0), cpu)
-    _COST[f"{what}_wall_ms_max"] = max(_COST.get(f"{what}_wall_ms_max", 0.0), wall)
+    _COST[f"{what}_cpu_ms_last"], _COST[f"{what}_wall_ms_last"] = cpu, wall  # cpu: null, never 0, when unread
+    if cpu is not None:
+        _COST[f"{what}_cpu_ms_max"] = max(_COST.get(f"{what}_cpu_ms_max") or 0.0, cpu)
+    _COST[f"{what}_wall_ms_max"] = max(_COST.get(f"{what}_wall_ms_max") or 0.0, wall)
 
 
 def _ensure_handler() -> None:
@@ -694,14 +765,20 @@ def _state_doc() -> dict[str, Any]:
     cannot make the same counts appear twice."""
     with _LOCK:
         with _LOG_LOCK:
-            open_counts = sorted([name, letter, n] for (name, letter), n in _HOUR_LOGS.items())
+            counts = dict(_HOUR_LOGS)  # a C-level copy: no bytecode runs inside it, so nothing can re-enter ``emit``
+        # walked outside the leaf lock: a finalizer that logs while this runs adds a key to the live
+        # dictionary, never to the copy (iterating the live one under the re-entrant lock raised
+        # "dictionary changed size" and failed the flush or the member)
+        open_counts = sorted([name, letter, n] for (name, letter), n in counts.items())
         return {
             "fine": [list(r) for r in _FINE],
             "open_fine": _FINE_ACC.row(_FINE_T) if _FINE_ACC is not None else None,
             "coarse": [list(r) for r in _COARSE],
             "open_coarse": _COARSE_ACC.row(_COARSE_T) if _COARSE_ACC is not None else None,
             "logs": [dict(r) for r in _LOGS],
-            "open_logs_t": _HOUR_LOGS_T if open_counts else 0,
+            # dated when written, never 0 for counts that exist: a session that ends before its first
+            # tick still has the lines of its boot, and a 0 here made the next start drop them
+            "open_logs_t": (_HOUR_LOGS_T or int(time.time() // COARSE_S) * COARSE_S) if open_counts else 0,
             "open_logs_counts": open_counts,
             "minutes": [dict(r) for r in _MINUTES],
             "previous_sessions": [dict(p) for p in _PREVIOUS],
@@ -714,24 +791,26 @@ def _state_doc() -> dict[str, Any]:
 def _view_from_doc(doc: dict[str, Any]) -> dict[str, Any]:
     """The tables a reader sees: each open bucket appended to its table, and the open hour's row
     made of the closed five-minute buckets plus the open one."""
-    fine = list(doc.get("fine") or [])
-    open_fine = doc.get("open_fine")
+    fine = _rows(doc.get("fine"))
+    open_fine = _row(doc.get("open_fine"))
     if open_fine:
         fine.append(open_fine)
-    coarse = list(doc.get("coarse") or [])
+    coarse = _rows(doc.get("coarse"))
     pending: dict[int, _Acc] = {}
-    if doc.get("open_coarse"):
-        pending[int(doc["open_coarse"][0])] = _from_row(doc["open_coarse"])
+    open_coarse = _row(doc.get("open_coarse"))
+    if open_coarse:
+        pending[int(open_coarse[0])] = _from_row(open_coarse)
     if open_fine:
         hour = int(open_fine[0]) - int(open_fine[0]) % COARSE_S
         pending.setdefault(hour, _Acc()).merge(_from_row(open_fine))
     for hour in sorted(pending):
         coarse.append(pending[hour].row(hour))
-    logs = list(doc.get("logs") or [])
+    logs = _dicts(doc.get("logs"))
     open_counts = _counts_from_triples(doc.get("open_logs_counts"))
-    if open_counts and doc.get("open_logs_t"):
-        logs.append({**_logs_row(int(doc["open_logs_t"]), open_counts), "open": True})
-    return {"fine": fine, "coarse": coarse, "logs": logs, "minutes": list(doc.get("minutes") or [])}
+    open_t = _whole(doc.get("open_logs_t"))
+    if open_counts and open_t:
+        logs.append({**_logs_row(open_t, open_counts), "open": True})
+    return {"fine": fine, "coarse": coarse, "logs": logs, "minutes": _dicts(doc.get("minutes"))}
 
 
 def flush() -> None:
@@ -742,7 +821,7 @@ def flush() -> None:
     try:
         if not _STARTED:
             return
-        started_wall, started_cpu = time.perf_counter(), time.thread_time()
+        started_wall, started_cpu = time.perf_counter(), _thread_cpu()
         try:
             doc = _state_doc()
             doc.update({"schema": SCHEMA, "saved_at": _iso(time.time())})
@@ -775,16 +854,41 @@ def _load() -> dict[str, Any] | None:
     return got
 
 
+def _list(raw: Any) -> list[Any]:
+    """``raw`` if it is a list, else an empty one: a field of the wrong type in an otherwise valid
+    file (hand-edited, or written by another build) costs that field, never the whole history."""
+    return raw if isinstance(raw, list) else []
+
+
+def _dicts(raw: Any) -> list[dict[str, Any]]:
+    return [x for x in _list(raw) if isinstance(x, dict)]
+
+
+def _whole(raw: Any) -> int:
+    """An integer field of the file, or 0."""
+    if isinstance(raw, bool):
+        return 0
+    try:
+        return int(raw or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _row(raw: Any) -> list[Any] | None:
+    """One stored row of this build's layout, or ``None``."""
+    return raw if isinstance(raw, list) and len(raw) == len(COLUMNS) else None
+
+
 def _rows(raw: Any) -> list[list[Any]]:
     """The stored rows that have the layout this build writes; anything else is dropped."""
-    return [r for r in (raw or []) if isinstance(r, list) and len(r) == len(COLUMNS)]
+    return [r for r in _list(raw) if isinstance(r, list) and len(r) == len(COLUMNS)]
 
 
 def _counts_from_triples(raw: Any) -> dict[tuple[str, str], int]:
     """The (logger, level) -> count table a stored list of [logger, level, count] describes;
     anything that is not that shape is dropped."""
     out: dict[tuple[str, str], int] = {}
-    for item in raw or []:
+    for item in _list(raw):
         if (
             isinstance(item, list) and len(item) == 3 and isinstance(item[0], str)
             and item[1] in ("c", "e", "w", "i", "d") and isinstance(item[2], int) and item[2] > 0
@@ -804,7 +908,7 @@ def start(now: float | None = None) -> None:
     the tests."""
     global _STARTED, _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS, _PREVIOUS, _LAST_FLUSH_AT
     global _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T, _HOUR_LOGS, _HOUR_LOGS_T, _CLOCK_BACK
-    global _CLOCK_STEPS
+    global _CLOCK_STEPS, _LAST_WALL
     wall = time.time() if now is None else now
     with _LOCK:
         if _STARTED:
@@ -813,10 +917,10 @@ def start(now: float | None = None) -> None:
             prev = _load()
             if prev is not None:
                 _FINE, _COARSE = _rows(prev.get("fine")), _rows(prev.get("coarse"))
-                _LOGS = [r for r in prev.get("logs", []) if isinstance(r, dict)]
-                _SESSIONS = [s for s in prev.get("session_starts", []) if isinstance(s, dict)]
-                _CLOCK_BACK = int(prev.get("clock_stepped_back") or 0)
-                _CLOCK_STEPS = [c for c in prev.get("clock_steps", []) if isinstance(c, dict)][-CLOCK_STEPS_KEEP:]
+                _LOGS = _dicts(prev.get("logs"))
+                _SESSIONS = _dicts(prev.get("session_starts"))
+                _CLOCK_BACK = _whole(prev.get("clock_stepped_back"))
+                _CLOCK_STEPS = _dicts(prev.get("clock_steps"))[-CLOCK_STEPS_KEEP:]
                 open_fine = _rows([prev.get("open_fine")])
                 if open_fine:
                     _FINE_ACC, _FINE_T = _from_row(open_fine[0]), int(open_fine[0][0])
@@ -824,25 +928,30 @@ def start(now: float | None = None) -> None:
                 if open_coarse:
                     _COARSE_ACC, _COARSE_T = _from_row(open_coarse[0]), int(open_coarse[0][0])
                 restored = _counts_from_triples(prev.get("open_logs_counts"))
-                if restored and prev.get("open_logs_t"):
+                if restored and _whole(prev.get("open_logs_t")):
                     with _LOG_LOCK:
                         _HOUR_LOGS = restored
                         _HOUR_LOG_NAMES.update(name for name, _ in restored if name != _OVERFLOW)
-                    _HOUR_LOGS_T = int(prev["open_logs_t"])
+                    _HOUR_LOGS_T = _whole(prev.get("open_logs_t"))
                     if int(wall // COARSE_S) * COARSE_S != _HOUR_LOGS_T:
                         _close_hour_logs()
                         _HOUR_LOGS_T = 0
-                minutes = [m for m in prev.get("minutes", []) if isinstance(m, dict)]
-                carried = [
-                    {"last_flush_at": p.get("last_flush_at"), "minutes": [m for m in p.get("minutes", []) if isinstance(m, dict)]}
-                    for p in prev.get("previous_sessions", []) if isinstance(p, dict)
+                minutes = _dicts(prev.get("minutes"))
+                carried: list[dict[str, Any]] = [
+                    {"last_flush_at": p.get("last_flush_at"), "minutes": _dicts(p.get("minutes"))}
+                    for p in _dicts(prev.get("previous_sessions"))
                 ]
                 if minutes:
-                    # a session that wrote no minute of its own (it was killed within its first
-                    # minute) leaves the tails it inherited as they were, so a crash loop does not
-                    # push out the tail of the session that ran long enough to say how it died
+                    # a session that wrote no minute of its own (it died before its second write,
+                    # five minutes in) leaves the tails it inherited as they were; one that wrote a
+                    # few adds its tail, and a SHORT tail is the first to go when there are more
+                    # than ``PREVIOUS_SESSIONS_KEEP``, so a crash loop does not push out the tail
+                    # of the session that ran long enough to say how it died
                     carried.append({"last_flush_at": prev.get("saved_at"), "minutes": minutes[-PREVIOUS_TAIL_KEEP:]})
-                _PREVIOUS = carried[-PREVIOUS_SESSIONS_KEEP:]
+                while len(carried) > PREVIOUS_SESSIONS_KEEP:
+                    short = [i for i, p in enumerate(carried) if len(p["minutes"]) < PREVIOUS_TAIL_MIN]
+                    del carried[short[0] if short else 0]
+                _PREVIOUS = carried
                 _LAST_FLUSH_AT = prev.get("saved_at")
         except Exception:  # noqa: BLE001 - a damaged file starts a fresh history
             _LOG.debug("vitals history: could not read the previous file", exc_info=True)
@@ -854,6 +963,7 @@ def start(now: float | None = None) -> None:
                 _HOUR_LOGS = {}
                 _HOUR_LOG_NAMES.clear()
         _MINUTES = []
+        _LAST_WALL = None
         _SESSIONS.append({"t": int(wall), "pid": os.getpid()})
         _trim(_SESSIONS, SESSIONS_KEEP)
         _STARTED = True
@@ -862,14 +972,21 @@ def start(now: float | None = None) -> None:
     atexit.register(flush)
 
 
-def _gaps(fine: list[list[Any]]) -> list[dict[str, Any]]:
+def _gaps(fine: list[list[Any]], steps: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Where the five-minute rows stop for longer than two buckets: the process was down, the
-    machine asleep, or the file was written by an older build. Newest ``GAPS_KEEP``."""
+    machine asleep, or the file was written by an older build. Newest ``GAPS_KEEP``. A gap that
+    has a recorded clock step inside it or at its edge says so (``clock_step``): it may be the
+    clock's correction forward and not time the process was down (a forward step is not recorded,
+    so a gap without the mark can still be one)."""
     out: list[dict[str, Any]] = []
     times = [int(r[0]) for r in fine]
+    stamps = [str(x) for st in steps or [] for x in (st.get("at"), st.get("was")) if x]
     for before, after in zip(times, times[1:], strict=False):
         if after - before > 2 * FINE_S:
-            out.append({"from": _iso(before + FINE_S), "to": _iso(after), "seconds": after - before - FINE_S})
+            gap = {"from": _iso(before + FINE_S), "to": _iso(after), "seconds": after - before - FINE_S}
+            if any(_iso(before) <= stamp <= _iso(after + FINE_S) for stamp in stamps):
+                gap["clock_step"] = True
+            out.append(gap)
     return out[-GAPS_KEEP:]
 
 
@@ -891,7 +1008,7 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             last_flush_at = doc.get("saved_at")
             cost = {}
             errors = {}
-        previous = [p for p in doc.get("previous_sessions") or [] if isinstance(p, dict) and p.get("minutes")]
+        previous = [p for p in _dicts(doc.get("previous_sessions")) if p.get("minutes")]
         view = _view_from_doc(doc)
         flush_age: int | None = None
         if last_flush_at:
@@ -918,13 +1035,20 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "minute (`cpu_s` is the CPU a thread spent between two of its own readings, `over_s` "
                 "apart, with its innermost two frames; a thread that was waiting at the previous "
                 "reading has no earlier figure and is not named that minute; `busiest` is `null` with "
-                "`busiest_why` when the threads could not be compared: memory was short, because "
-                "session_pressure.json records the threads then, or it is the first minute); "
+                "`busiest_why` when the threads could not be compared, and the reason says which: "
+                "memory was short (session_pressure.json records the threads then), every thread was "
+                "waiting at the reading (an idle process), the earlier reading was too old, or it is "
+                "the first reading of the session); "
                 "`logs` counts the lines that reached the root logger per hour by logger and level "
                 "(c critical, e error, w warning, i info, d debug), the loggers past the eight "
                 "busiest summed in `other`; rows are in the order they were written and "
-                "`clock_steps` says where the clock stepped back; `previous_sessions` holds the last "
-                "minutes of the sessions before this one (newest last)."
+                "`clock_steps` says where the clock stepped back and by how much from its own last reading "
+                "(`kept_open`: a step too soon after the last one to start a new history, held in the open "
+                "bucket; a held step also lengthens one minute row, whose `n` says by how much); a gap "
+                "marked `clock_step` is next to a recorded step and may be the clock's correction forward "
+                "(forward steps are not recorded) and not down time; `previous_sessions` holds the last "
+                "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
+                "hour that was open at the last write."
             ),
             "caveat": (
                 "A kill loses the ticks since the last flush (up to five minutes), so the minutes "
@@ -936,8 +1060,9 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             "cost_note": (
                 "`cpu` is the CPU time of the thread that took the reading; `wall` includes waiting "
                 "for the interpreter, which under busy threads is most of it and is the machine's "
-                "load, not the recorder's work. `errors` counts this session's failed ticks and failed "
-                "writes of the recorder itself, with the last one's type (no message, which can name a path)."
+                "load, not the recorder's work (`null` where the platform has no per-thread clock). `errors` counts this session's failed ticks and failed "
+                "writes of the recorder itself, counted over the whole session and never reset, with the "
+                "last one's type (no message, which can name a path)."
             ),
             "columns": list(COLUMNS),
             "bucket_s": {"fine": FINE_S, "coarse": COARSE_S, "minutes": MINUTE_S},
@@ -957,8 +1082,8 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "why": "no finer record of the minutes before a kill is built yet; this history is the only record",
             },
             "now": _iso(time.time()),
-            "clock_stepped_back": int(doc.get("clock_stepped_back") or 0),
-            "clock_steps": [c for c in doc.get("clock_steps") or [] if isinstance(c, dict)],
+            "clock_stepped_back": _whole(doc.get("clock_stepped_back")),
+            "clock_steps": _dicts(doc.get("clock_steps")),
             "cost": cost,
             "errors": errors,
             "fine": view["fine"],
@@ -967,10 +1092,10 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             "minutes": view["minutes"],
             "session_starts": [
                 {"at": _iso(s["t"]), "pid": s.get("pid")}
-                for s in (doc.get("session_starts") or [])
-                if isinstance(s, dict) and isinstance(s.get("t"), int | float)
+                for s in _dicts(doc.get("session_starts"))
+                if isinstance(s.get("t"), int | float)
             ],
-            "gaps": _gaps(view["fine"]),
+            "gaps": _gaps(view["fine"], _dicts(doc.get("clock_steps"))),
         }
         if previous:
             member["previous_sessions"] = previous
@@ -984,37 +1109,52 @@ def _fit(member: dict[str, Any], max_bytes: int) -> dict[str, Any]:
     was dropped. The newest rows are the ones an investigation needs. A budget too small for one
     row of every table cannot be met, and the member says so instead of claiming it was."""
     dropped: dict[str, int] = {}
-    tables = ("fine", "coarse", "logs", "minutes", "previous_sessions")
+    tables = ("fine", "coarse", "logs", "minutes")
 
     def encoded(value: Any) -> int:
         return len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
 
+    def say() -> None:
+        member["dropped_oldest_rows"] = dict(dropped)
+        member["dropped_why"] = (
+            f"the member is held to {max_bytes} bytes; the newest rows are kept"
+            + ("; of the earlier sessions' tails the shortest went first" if "previous_sessions" in dropped else "")
+        )
+
     total = encoded(member)
     while total > max_bytes:
         sizes = {k: encoded(member.get(k) or []) for k in tables if len(member.get(k) or []) > 1}
-        if not sizes:
+        if sizes:
+            name = max(sizes, key=lambda k: sizes[k])
+            rows = member[name]
+            cut = max(1, len(rows) // 10)
+            member[name] = rows[cut:]
+        elif len(member.get("previous_sessions") or []) > 1:
+            # the earlier sessions' tails are what says how the last crash happened and they are
+            # small: they are cut only when every other table is down to its newest row, and then
+            # the shortest tail goes first (the one that says the least)
+            name, cut = "previous_sessions", 1
+            tails = member[name]
+            shortest = min(range(len(tails)), key=lambda i: (len(tails[i].get("minutes") or []), i))
+            member[name] = tails[:shortest] + tails[shortest + 1:]
+        else:
             break
-        name = max(sizes, key=lambda k: sizes[k])
-        rows = member[name]
-        cut = max(1, len(rows) // 10)
-        member[name] = rows[cut:]
         dropped[name] = dropped.get(name, 0) + cut
+        say()  # the notes weigh something too: measured with them in, not added after the check
         total = encoded(member)
-    if dropped:
-        member["dropped_oldest_rows"] = dropped
-        member["dropped_why"] = f"the member is held to {max_bytes} bytes; the newest rows are kept"
     if total > max_bytes:
-        member["over_budget_bytes"] = total
+        member["over_budget_bytes"] = 0
         member["dropped_why"] = (
             f"the member could not be held to {max_bytes} bytes: every table is down to its newest row"
         )
+        member["over_budget_bytes"] = encoded(member)
     return member
 
 
 def reset_for_tests() -> None:
     """Forget the in-memory state and detach the log counter. Test-only."""
     global _STARTED, _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS, _PREVIOUS, _CLOCK_BACK
-    global _CLOCK_HOLD, _CLOCK_STEPS
+    global _CLOCK_HOLD, _CLOCK_STEPS, _LAST_REBASE, _LAST_WALL
     global _LAST_FLUSH, _LAST_FLUSH_AT, _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T
     global _MIN_ACC, _MIN_T, _HOUR_LOGS, _HOUR_LOGS_T, _SLOW, _LAST_SLOW, _LAST_CPU, _HANDLER
     global _PROC, _COST, TAIL_IN
@@ -1027,6 +1167,8 @@ def reset_for_tests() -> None:
         _CLOCK_BACK = 0
         _CLOCK_HOLD = False
         _CLOCK_STEPS = []
+        _LAST_REBASE = float("-inf")
+        _LAST_WALL = None
         _LAST_FLUSH, _LAST_FLUSH_AT = float("-inf"), None
         _FINE_ACC = _COARSE_ACC = _MIN_ACC = None
         _FINE_T = _COARSE_T = _MIN_T = _HOUR_LOGS_T = 0

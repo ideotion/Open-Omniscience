@@ -372,11 +372,12 @@ def test_a_minute_row_names_the_busiest_threads_and_their_cpu_between_snapshots(
     finally:
         v.reset_for_tests()
     # nothing to take a difference against yet: null with the reason, never [] standing for "none was busy"
-    assert minutes[0]["busiest"] is None and "earlier reading" in minutes[0]["busiest_why"]
+    assert minutes[0]["busiest"] is None and "first reading of this session" in minutes[0]["busiest_why"]
     second = minutes[1]["busiest"]
     assert "busiest_why" not in minutes[1]
     assert [b["thread"] for b in second] == ["oo-b", "oo-a"]  # the waiting thread is not "busy"
-    assert second[0]["cpu_s"] == 40.0 and second[1]["cpu_s"] == 2.0 and second[0]["over_s"] == 0
+    assert second[0]["cpu_s"] == 40.0 and second[1]["cpu_s"] == 2.0
+    assert isinstance(second[0]["over_s"], int) and second[0]["over_s"] >= 0  # the real gap between two calls: a machine's speed
     assert second[0]["frames"] == ["q.py:7 q"] and second[1]["frames"] == ["x.py:9 f", "y.py:2 g"]
 
 
@@ -396,8 +397,8 @@ def test_the_thread_sample_is_skipped_while_memory_is_short(monkeypatch, tmp_pat
     rows, why = v._busiest(300.0)  # below the line: session_pressure.json already records the threads
     assert rows is None and "session_pressure.json" in why
     assert calls == []
-    rows, why = v._busiest(2000.0)  # above it: the sample is taken (and has no earlier reading to compare)
-    assert rows is None and "earlier reading" in why
+    rows, why = v._busiest(2000.0)  # above it: the sample is taken (here no thread has a CPU figure at all)
+    assert rows is None and "CPU figure" in why
     assert calls == [1]
 
 
@@ -449,26 +450,62 @@ def test_a_budget_too_small_for_one_row_still_serves_the_newest_row_of_each_tabl
     assert "over_budget_bytes" not in _member()
 
 
-def test_the_default_member_for_a_full_history_fits_its_budget(hist, monkeypatch):
-    """The whole retention, with a busy logger set: the budget must not cut the 48 hours the member
-    exists to show (measured 166 KB raw against a 200 KB budget)."""
+_BUSY_THREADS = [
+    {
+        "thread": f"oo-worker-{i}", "cpu_s": 33.3, "over_s": 60,
+        "frames": ["src/ingest/fetch_pipeline.py:812 fetch_one", "src/ingest/rss_reader.py:410 parse_entry"],
+    }
+    for i in range(3)
+]
+
+
+def _full_history_with_three_tails(hist, monkeypatch, names):
+    """The whole retention (48 h of five-minute rows, 14 d of hourly rows, 60 minutes, 7 d of log
+    counts for ``names``) AND the tails of the three sessions before this one, each of the
+    ``PREVIOUS_TAIL_KEEP`` minutes a tail holds, every minute naming its three busiest threads: the
+    heaviest member the recorder can build, and the one the budget is sized against."""
     hist["fast"] = {"rss": 1234.0, "avail": 2345.0, "swap": 120.0, "threads": 48.0, "blocks": 23456.0}
     hist["slow"] = {"drive_free": 20000.0, "db": 1700.0, "wal": 180.0, "columnar": 90.0}
-    monkeypatch.setattr(
-        v, "_busiest",
-        lambda _a: ([{"thread": f"oo-worker-{i}", "cpu_s": 33.3, "over_s": 60, "frames": ["src/ingest/fetch_pipeline.py:812 fetch_one", "src/ingest/rss_reader.py:410 parse_entry"]} for i in range(3)], None),
-    )
-    names = [f"src.module{i:02d}.sub" for i in range(25)]
+    monkeypatch.setattr(v, "_busiest", lambda _a: ([dict(t) for t in _BUSY_THREADS], None))
+    last = 0
     for k in range(v.COARSE_KEEP * 12 + 30):
         if k % 12 == 0:
             for n in names:
                 _emit(n, logging.WARNING, 3)
                 _emit(n, logging.ERROR)
-        v.tick(now=float(HOUR0 + v.FINE_S * k))
-    m = _member()
-    assert "dropped_oldest_rows" not in m, m.get("dropped_oldest_rows")
-    assert len(json.dumps(m, separators=(",", ":"))) <= v.MEMBER_BUDGET_BYTES
+        last = HOUR0 + v.FINE_S * k
+        v.tick(now=float(last))
+    for session in range(v.PREVIOUS_SESSIONS_KEEP + 1):  # three that ended, and this one
+        base = last + 10_000 * (session + 1)
+        for k in range(v.PREVIOUS_TAIL_KEEP + 5):
+            v.tick(now=float(base + 60 * k))
+        if session < v.PREVIOUS_SESSIONS_KEEP:
+            _restart(float(base + 60 * (v.PREVIOUS_TAIL_KEEP + 6)))
+    return _member()
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        [f"src.module{i:02d}.sub" for i in range(25)],
+        # longer, deeper logger names: the same member with about 2.5 times the log table
+        [f"src.ingest.collectors.regional_feed_reader.module{i:02d}.parser" for i in range(25)],
+    ],
+    ids=["typical-names", "long-names"],
+)
+def test_the_heaviest_member_fits_its_budget_with_three_previous_tails_and_cuts_nothing(hist, monkeypatch, names):
+    """The budget must not cut the 48 hours the member exists to show, nor the tails that say how the
+    last sessions died. Measured here (raw JSON): about 158 KB for the history alone, about 212 KB with
+    the three tails, about 241 KB with long logger names; ``MEMBER_BUDGET_BYTES`` is sized above the
+    last of these, and this test is the check that it stays so."""
+    m = _full_history_with_three_tails(hist, monkeypatch, names)
+    size = len(json.dumps(m, separators=(",", ":")))
+    assert "dropped_oldest_rows" not in m, (size, m.get("dropped_oldest_rows"))
+    assert size <= v.MEMBER_BUDGET_BYTES, size
     assert len(m["fine"]) >= v.FINE_KEEP - 1 and len(m["coarse"]) >= v.COARSE_KEEP - 1
+    tails = m["previous_sessions"]
+    assert len(tails) == v.PREVIOUS_SESSIONS_KEEP
+    assert all(len(t["minutes"]) == v.PREVIOUS_TAIL_KEEP for t in tails)
 
 
 def test_a_failing_reading_never_raises_into_the_tick_and_the_member_still_serves(hist, monkeypatch):
@@ -782,16 +819,60 @@ def test_short_sessions_do_not_push_out_the_tail_of_the_one_that_ran_long(hist):
         v.tick(now=float(HOUR0 + 4000 + 100 * k))
     tails = _member()["previous_sessions"]
     assert len(tails) == 1 and tails[0]["minutes"][-1]["t"] == a_end
+    assert all(p["minutes"] for p in v._PREVIOUS)  # a session that wrote no minute adds no tail, not even an empty one
 
 
 def test_the_tails_of_the_last_three_sessions_that_wrote_minutes_are_kept(hist):
     ends = []
     for k in range(5):
-        _run_minutes(hist, HOUR0 + 10_000 * k, 5)
+        _run_minutes(hist, HOUR0 + 10_000 * k, v.PREVIOUS_TAIL_MIN + 4)  # long enough to be a tail worth keeping
         ends.append(v._MINUTES[-1]["t"])
         _restart(float(HOUR0 + 10_000 * k + 5000))
     tails = _member()["previous_sessions"]
     assert [t["minutes"][-1]["t"] for t in tails] == ends[-v.PREVIOUS_SESSIONS_KEEP:]
+
+
+def _ends_of_tails() -> list[int]:
+    return [t["minutes"][-1]["t"] for t in _member()["previous_sessions"]]
+
+
+def _session(box, start: int, rows: int) -> int:
+    """A session that leaves ``rows`` minute rows in the file, ended by a restart; the time its last row is at."""
+    _run_minutes(box, start, rows + 1)  # the last minute is still open at the end
+    end = v._MINUTES[-1]["t"]
+    assert len(v._MINUTES) == rows
+    _restart(float(start + 60 * (rows + 3)))
+    return end
+
+
+def test_a_tail_of_four_minutes_is_short_and_one_of_five_is_not(hist):
+    """N1. The file is written at a session's first tick and then every five minutes, so a session needs
+    about five minutes to leave a tail worth keeping over one that ran long: the line is five rows."""
+    assert v.PREVIOUS_TAIL_MIN == 5
+    long1, long2, long3 = (_session(hist, HOUR0 + 10_000 * k, 30) for k in range(3))
+    assert _ends_of_tails() == [long1, long2, long3]
+    _session(hist, HOUR0 + 40_000, v.PREVIOUS_TAIL_MIN - 1)  # four rows: short, evicted at once
+    assert _ends_of_tails() == [long1, long2, long3]
+    five = _session(hist, HOUR0 + 50_000, v.PREVIOUS_TAIL_MIN)  # five rows: not short, the oldest long one goes
+    assert _ends_of_tails() == [long2, long3, five]
+
+
+def test_a_crash_loop_of_short_sessions_keeps_the_tail_of_the_session_that_ran_long(hist):
+    """N1. Each of these sessions lived long enough to write a few minutes (three rows) and not five."""
+    long_end = _session(hist, HOUR0, 30)
+    shorts = [_session(hist, HOUR0 + 10_000 * (k + 1), 3) for k in range(6)]
+    assert _ends_of_tails() == [long_end, shorts[-2], shorts[-1]]  # the newest two short ones, never the long one's place
+
+
+def test_short_tails_are_evicted_oldest_first_and_a_long_one_only_when_none_is_short(hist):
+    short1 = _session(hist, HOUR0, 2)
+    long1 = _session(hist, HOUR0 + 10_000, 30)
+    short2 = _session(hist, HOUR0 + 20_000, 2)
+    assert _ends_of_tails() == [short1, long1, short2]
+    short3 = _session(hist, HOUR0 + 30_000, 2)  # four tails: the OLDEST short one goes
+    assert _ends_of_tails() == [long1, short2, short3]
+    long2 = _session(hist, HOUR0 + 40_000, 30)  # the oldest of the two short ones goes
+    assert _ends_of_tails() == [long1, short3, long2]
 
 
 # --- which threads were busy (S3) --------------------------------------------------------------------
@@ -912,7 +993,8 @@ def test_a_held_clock_step_counts_one_step_however_many_ticks_it_lasts(hist):
         v.tick(now=float(HOUR0 + 300 + 5 * k))
     m = _member()
     assert m["clock_stepped_back"] == 1 and len(m["clock_steps"]) == 1
-    assert m["clock_steps"][0] == {"at": v._iso(HOUR0 + 300), "was": v._iso(HOUR0 + 600), "back_s": 300}
+    # measured from the clock's own last reading (the last tick, 895 s), not from the bucket's start
+    assert m["clock_steps"][0] == {"at": v._iso(HOUR0 + 300), "was": v._iso(HOUR0 + 895), "back_s": 595}
     times = [r[COL["t"]] for r in m["fine"]]
     assert times == sorted(times) and len(times) == len(set(times))
     v.tick(now=float(HOUR0 + 1200))  # the clock catches up, and a second step back is a second step
@@ -931,7 +1013,7 @@ def test_a_big_clock_step_back_closes_what_is_open_instead_of_piling_an_hour_int
     assert [r[COL["t"]] for r in m["fine"]] == [HOUR0 + 7200, HOUR0]  # in the order written, at the clock's time
     assert [r[COL["t"]] for r in m["coarse"]] == [HOUR0 + 7200, HOUR0]
     assert m["clock_stepped_back"] == 1
-    assert m["clock_steps"] == [{"at": v._iso(HOUR0), "was": v._iso(HOUR0 + 7200), "back_s": 7200}]
+    assert m["clock_steps"] == [{"at": v._iso(HOUR0), "was": v._iso(HOUR0 + 7495), "back_s": 7495}]
     assert all(r["n"] == 12 for r in m["minutes"]) and len(m["minutes"]) == 9  # a minute holds 12 ticks, always
     closed = [r for r in m["logs"] if r["t"] == HOUR0 + 7200]
     assert closed and "open" not in closed[0] and closed[0]["lines"] == 5  # that hour closed, with its lines
@@ -1173,3 +1255,318 @@ def test_the_slow_group_rides_the_tick_once_a_minute(monkeypatch, tmp_path):
         v.reset_for_tests()
     assert len(reads) == 2  # at 1000 s and at 1060 s of the monotonic clock
     assert row[COL["db_max"]] == 4 and row[COL["drive_free_min"]] == 9 and row[COL["threads_max"]] is not None
+
+
+# --------------------------------------------------------------------------- #
+#  The coordinator's check of the second head (2026-10-06)
+# --------------------------------------------------------------------------- #
+def _fine_times() -> list[int]:
+    return [r[COL["t"]] for r in _member()["fine"]]
+
+
+@pytest.mark.parametrize("phase", [0, 295])
+@pytest.mark.parametrize(("back", "rebased"), [(600, False), (601, True)])
+def test_the_hold_edge_is_exact_and_does_not_depend_on_where_in_the_bucket_the_last_tick_fell(hist, phase, back, rebased):
+    """S2. A step back that leaves the clock 600 s behind the open bucket's start is held, and one
+    second more starts a new history; the bucket's start is bucket-aligned, so the second at which the
+    last tick fell (the first or the last tick of the bucket) changes nothing, and ``back_s`` says the
+    real step from the last tick. The literals are the point: a constant moved to 900 or 3,600 s fails."""
+    assert v.CLOCK_HOLD_S == 600
+    t0 = HOUR0 + 3600  # the open bucket's start
+    v.tick(now=float(t0 + phase), mono=1000.0)
+    v.tick(now=float(t0 - back), mono=1005.0)
+    m = _member()
+    (step,) = m["clock_steps"]
+    assert step["back_s"] == back + phase and step["was"] == v._iso(t0 + phase) and "kept_open" not in step
+    if rebased:
+        assert _fine_times() == [t0, t0 - 900]  # closed, and a new bucket at the clock's own time
+        assert [r[COL["n"]] for r in m["fine"]] == [1, 1]
+    else:
+        assert _fine_times() == [t0] and m["fine"][0][COL["n"]] == 2  # both ticks in the one open bucket
+
+
+def test_the_worst_held_step_pins_at_most_the_ticks_the_constant_says(hist):
+    """S2. The last tick at the end of its bucket and a step to the edge: the open bucket holds its own
+    60 ticks and every tick until the clock is past the bucket again, which is the bound the constant
+    states ((CLOCK_HOLD_S + 2 * FINE_S) / 5) and not the 180 an earlier comment claimed."""
+    t0 = HOUR0 + 3600
+    for t in range(t0, t0 + 300, 5):
+        v.tick(now=float(t))
+    for t in range(t0 - 600, t0 + 300, 5):
+        v.tick(now=float(t))
+    (row,) = _member()["fine"]
+    assert row[COL["n"]] == (v.CLOCK_HOLD_S + 2 * v.FINE_S) // 5 == 240
+
+
+def test_a_clock_that_keeps_flapping_starts_a_new_history_at_most_once_per_interval(hist):
+    """S2. Every second tick lands two hours behind the one before; with a rebase on each, the fine table
+    gained a row per tick and pushed the 48 hours out within a couple of hours."""
+    ahead, behind = HOUR0 + 100_000, HOUR0 + 100_000 - 7200
+    mono = 5000.0
+    for _ in range(100):  # 200 ticks, 1,000 s of the monotonic clock
+        v.tick(now=float(ahead), mono=mono)
+        mono += 5
+        v.tick(now=float(behind), mono=mono)
+        mono += 5
+    m = _member()
+    allowed = int(1000 // v.REBASE_MIN_GAP_S) + 1
+    assert len(m["fine"]) <= 2 * allowed + 2, len(m["fine"])  # not 200
+    steps = m["clock_steps"]
+    assert len(steps) <= v.CLOCK_STEPS_KEEP
+    assert sum(1 for s in steps if "kept_open" not in s) <= allowed
+    assert any(s.get("kept_open") is True for s in steps)
+    # the rows are still in the order they were written and none holds more than a bucket plus the hold
+    assert all(r[COL["n"]] <= (v.CLOCK_HOLD_S + v.FINE_S) // 5 * 2 for r in m["fine"])
+
+
+def test_a_big_step_after_the_interval_starts_a_new_history_again(hist):
+    t0 = HOUR0 + 100_000
+    v.tick(now=float(t0), mono=5000.0)
+    v.tick(now=float(t0 - 7200), mono=5005.0)  # a new history
+    v.tick(now=float(t0 + 100), mono=5010.0)
+    v.tick(now=float(t0 - 7200), mono=5020.0)  # too soon: held
+    v.tick(now=float(t0 - 7200), mono=5005.0 + v.REBASE_MIN_GAP_S)  # the interval has passed: a new history
+    steps = _member()["clock_steps"]
+    assert ["kept_open" in s for s in steps] == [False, True, False]
+
+
+def test_a_platform_with_no_thread_clock_still_records_and_reports_its_cpu_cost_as_null(hist, monkeypatch):
+    """S4. ``time.thread_time`` raises where the platform has no per-thread clock; it used to fail every
+    tick before the reading was taken, so the recorder recorded nothing at all."""
+    def no_clock():
+        raise OSError("no per-thread CPU clock")
+
+    monkeypatch.setattr(time, "thread_time", no_clock)
+    _ticks(hist, HOUR0, 600, rss=5.0)
+    v.flush()
+    m = _member()
+    assert m["errors"] == {} and [r[COL["n"]] for r in m["fine"]] == [60, 60]
+    cost = m["cost"]
+    assert cost["tick_cpu_ms_last"] is None and "tick_cpu_ms_max" not in cost
+    assert cost["flush_cpu_ms_last"] is None and cost["tick_wall_ms_last"] >= 0
+
+
+def test_a_file_of_another_layout_is_not_trusted(hist):
+    """N3. The layout changed in development (raw log triples, tails, clock steps); a file of the first
+    layout is read as no history, and the member names the layout it writes."""
+    _ticks(hist, HOUR0, 600, rss=1.0)
+    v.flush()
+    doc = json.loads(v._path().read_text(encoding="utf-8"))
+    assert doc["schema"] == v.SCHEMA == _member()["schema"] != "oo-vitals-1"
+    doc["schema"] = "oo-vitals-1"
+    v._path().write_text(json.dumps(doc), encoding="utf-8")
+    v.reset_for_tests()
+    v.start(now=float(HOUR0 + 7200))
+    m = _member()
+    assert m["fine"] == [] and "previous_sessions" not in m
+
+
+def _tail(n: int) -> dict:
+    return {"last_flush_at": "2026-10-06T00:00:00Z", "minutes": [{"t": i, "n": 12, "rss_max": 1234} for i in range(n)]}
+
+
+def _enc(value) -> int:
+    return len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+
+
+def test_the_earlier_tails_are_the_last_table_cut_and_the_shortest_tail_goes_first():
+    """S1. The tails say how the last sessions died and they are small: the history's tables give up rows
+    first, and only a member whose every other table is down to its newest row gives up a tail."""
+    def member() -> dict:
+        return {
+            "fine": [[1000 + i, 60, 1234] for i in range(80)],
+            "coarse": [[i, 600, 1234] for i in range(10)],
+            "logs": [], "minutes": [],
+            "previous_sessions": [_tail(30), _tail(20), _tail(30)],
+        }
+
+    full = _enc(member())
+    cut_fine = v._fit(member(), full - 200)
+    assert set(cut_fine["dropped_oldest_rows"]) <= {"fine", "coarse"}
+    assert [len(t["minutes"]) for t in cut_fine["previous_sessions"]] == [30, 20, 30]  # no tail went
+    floor = member()
+    floor["fine"], floor["coarse"] = floor["fine"][-1:], floor["coarse"][-1:]
+    # two long tails and the notes that say what was cut (about 200 bytes), and not the 20-row tail (about 700)
+    only_long_ones = _enc({**floor, "previous_sessions": [_tail(30), _tail(30)]}) + 300
+    tight = v._fit(member(), only_long_ones)
+    assert len(tight["fine"]) == 1 and len(tight["coarse"]) == 1
+    assert [len(t["minutes"]) for t in tight["previous_sessions"]] == [30, 30]  # the 20-row one went, not the oldest
+    assert tight["dropped_oldest_rows"]["previous_sessions"] == 1 and "shortest went first" in tight["dropped_why"]
+    assert "over_budget_bytes" not in tight
+    one = v._fit(member(), 10)  # nothing fits: every table to its newest row, and the newest tail stays
+    assert len(one["previous_sessions"]) == 1 and one["previous_sessions"][0]["minutes"] == _tail(30)["minutes"]
+    assert "over_budget_bytes" in one
+
+
+# --------------------------------------------------------------------------- #
+#  The Opus read of the second head (2026-10-06): each test names the finding it pins
+# --------------------------------------------------------------------------- #
+def test_a_finalizer_that_logs_while_the_state_is_written_fails_neither_the_flush_nor_the_member(hist, monkeypatch):
+    """Opus 2. The counts were walked in Python under the re-entrant lock, so a line logged from inside
+    the walk (a finalizer, as in B1) added a key to the dictionary being iterated: 'dictionary changed
+    size', a failed flush or a member with ``available: false``. The copy is C-level and the walk is
+    over the copy."""
+    _ticks(hist, HOUR0, 30, rss=1.0)
+    for i in range(5):
+        _emit(f"src.l{i}", logging.WARNING)
+    real_sorted = sorted
+    fired: list[int] = []
+
+    def sorted_with_a_late_log(iterable, **kw):
+        def walk():
+            for i, item in enumerate(iterable):
+                if i == 2:
+                    fired.append(1)
+                    _emit("src.logged.from.the.walk", logging.ERROR)  # a NEW key, while the walk is under way
+                yield item
+        return real_sorted(walk(), **kw)
+
+    monkeypatch.setattr(v, "sorted", sorted_with_a_late_log, raising=False)
+    doc = v._state_doc()
+    assert fired and len(doc["open_logs_counts"]) == 5  # the document is the copy; the late line is in the next one
+    assert v._HOUR_LOGS[("src.logged.from.the.walk", "e")] == 1
+    fired.clear()
+    assert _member()["available"] is True and v._ERRORS.get("flush_failures") is None
+
+
+def test_the_lines_of_a_boot_that_ends_before_its_first_tick_are_dated_and_kept(hist, monkeypatch):
+    """Opus 4. A start closes a restored hour that is over and sets the open hour to none; a session that
+    ended before its first tick then wrote ``open_logs_t: 0``, and the next start dropped its counts: the
+    failing boots of a crash loop were exactly the ones that recorded nothing."""
+    later = HOUR0 + 5 * 3600
+    monkeypatch.setattr(time, "time", lambda: float(later + 7))
+    _emit("src.boot", logging.ERROR, 7)  # logged by the fixture's session, which never ticks
+    assert v._HOUR_LOGS_T == 0
+    _restart(float(later + 20))  # flushed (dated now) and started again in the same hour
+    assert v._HOUR_LOGS[("src.boot", "e")] == 7 and later == v._HOUR_LOGS_T
+    m = _member()
+    assert [(r["t"], r["lines"]) for r in m["logs"]] == [(later, 7)]
+
+
+@pytest.mark.parametrize(
+    ("figures", "memory_snapshots", "earlier", "now", "expect"),
+    [
+        ([], None, None, 0.0, "CPU figure"),  # nothing running: an idle process, not "the first minute"
+        ([("a", 5.0)], None, "none", 0.0, "first reading of this session"),
+        ([("a", 6.0)], None, "old", 400.0, "more than 150 s old"),  # a held minute, or memory was short
+        ([("b", 6.0)], None, "other", 60.0, "new or waiting"),  # every thread with a figure is new
+    ],
+    ids=["idle", "first", "stale", "new-threads"],
+)
+def test_a_minute_with_no_comparison_says_which_of_four_facts_it_is(threads, figures, memory_snapshots, earlier, now, expect):
+    """Opus 3. An idle app and a clock hold both read 'the first minute, or the first after memory was
+    short', a cause that did not happen, every minute of an idle night."""
+    if earlier in ("old", "other"):
+        threads["snap"] = [_t(1, 5.0, "a")]
+        v._busiest(None, now=0.0)
+    threads["snap"] = [{**_t(i + 1, cpu, name)} for i, (name, cpu) in enumerate(figures)] if figures else [_t(1, None)]
+    if earlier == "other":
+        threads["snap"] = [_t(9, 6.0, "b")]
+    rows, why = v._busiest(None, now=now)
+    assert rows is None and expect in why
+
+
+def test_a_gap_next_to_a_recorded_clock_step_says_so_and_a_plain_gap_does_not(hist):
+    """Opus 6. A rebase and the clock's return forward read as time the process was down."""
+    _ticks(hist, HOUR0 + 7200, 300, rss=1.0)
+    _ticks(hist, HOUR0, 300, rss=1.0)  # the clock steps two hours back: a recorded step
+    _ticks(hist, HOUR0 + 7500, 300, rss=1.0)  # ...and the correction forward, which is not recorded
+    gaps = _member()["gaps"]
+    assert gaps and gaps[-1].get("clock_step") is True
+    v.reset_for_tests()
+    v._path().unlink(missing_ok=True)  # a history of its own: nothing recorded a step
+    v.start()
+    _ticks(hist, HOUR0, 300, rss=1.0)
+    _ticks(hist, HOUR0 + 3000, 300, rss=1.0)  # a plain stop, no step
+    (gap,) = _member()["gaps"]
+    assert "clock_step" not in gap and gap["seconds"] > 0
+
+
+def test_a_hold_a_rebase_and_a_small_step_straight_after_are_three_steps(hist):
+    """Opus nit 2. A rebase left the hold flag set, so the small step that followed was not counted."""
+    t = HOUR0 + 100_000
+    v.tick(now=float(t), mono=100.0)
+    v.tick(now=float(t - 300), mono=105.0)  # small: held, step 1
+    v.tick(now=float(t - 8000), mono=500.0)  # big, and the interval has passed: a new history, step 2
+    v.tick(now=float(t - 8400), mono=505.0)  # small, straight after: step 3
+    assert _member()["clock_stepped_back"] == 3
+
+
+def test_the_clock_steps_survive_a_restart_and_are_trimmed_to_their_limit(hist):
+    """Opus 7 (M36, M18)."""
+    t = HOUR0 + 100_000
+    for k in range(v.CLOCK_STEPS_KEEP + 5):  # held steps: forward 1,000 s, then back 400 s (past a bucket edge)
+        v.tick(now=float(t + 1000 * k), mono=5000.0 + k)
+        v.tick(now=float(t + 1000 * k - 400), mono=5000.0 + k + 0.5)
+    m = _member()
+    assert m["clock_stepped_back"] == v.CLOCK_STEPS_KEEP + 5 and len(m["clock_steps"]) == v.CLOCK_STEPS_KEEP
+    before = m["clock_steps"]
+    _restart(float(t + 10 ** 6))
+    again = _member()
+    assert again["clock_steps"] == before and again["clock_stepped_back"] == m["clock_stepped_back"]
+
+
+def test_a_rebase_dates_the_lines_after_the_step_into_the_new_hour(hist):
+    """Opus 7 (M31). The log hour was kept open across a rebase, so the lines after the step were counted
+    into an hour two hours ahead, which stayed open until the clock caught up."""
+    t = HOUR0 + 7200
+    v.tick(now=float(t), mono=100.0)
+    _emit("src.before", logging.WARNING, 5)
+    v.tick(now=float(HOUR0 + 60), mono=1000.0)  # two hours back: a new history
+    _emit("src.after", logging.WARNING, 4)
+    rows = {r["t"]: r for r in _member()["logs"]}
+    assert rows[t]["lines"] == 5 and "open" not in rows[t]  # closed at the step, with only its own lines
+    assert rows[HOUR0]["by"] == {"src.after": "w4"} and rows[HOUR0]["open"] is True
+
+
+def test_the_name_cap_counts_real_names_after_a_restart_not_the_overflow_bucket(hist):
+    """Opus 7 (M9)."""
+    _ticks(hist, HOUR0, 30, rss=1.0)
+    for i in range(v._LOG_NAMES_CAP + 3):
+        _emit(f"n{i}", logging.WARNING)
+    assert (v._OVERFLOW, "w") in v._HOUR_LOGS
+    _restart(float(HOUR0 + 100))
+    assert v._OVERFLOW not in v._HOUR_LOG_NAMES and len(v._HOUR_LOG_NAMES) == v._LOG_NAMES_CAP
+
+
+def test_a_restored_hour_exactly_one_hour_behind_the_clock_is_closed_at_start(hist):
+    """Opus 7 (M11): the hour is over as soon as the clock is in the next one."""
+    _ticks(hist, HOUR0, 30, rss=1.0)
+    _emit("src.old", logging.WARNING, 3)
+    _restart(float(HOUR0 + 3600 + 30))
+    assert v._HOUR_LOGS == {} and [r["t"] for r in v._LOGS] == [HOUR0]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("previous_sessions", None), ("previous_sessions", 5), ("previous_sessions", [{"minutes": None}]),
+        ("clock_steps", None), ("clock_steps", 3), ("open_logs_counts", 7), ("open_logs_t", "soon"),
+        ("open_logs_t", [1]), ("minutes", None), ("logs", None), ("session_starts", None),
+        ("clock_stepped_back", "x"), ("open_fine", 5), ("open_coarse", "x"), ("coarse", 4),
+    ],
+)
+def test_one_wrong_typed_field_costs_that_field_and_never_the_history(hist, field, value):
+    """Opus nit 4. One bad field in an otherwise valid file discarded the 14 days and the next flush wrote
+    the empty history over them."""
+    _ticks(hist, HOUR0, 900, rss=77.0)
+    _emit("src.x", logging.WARNING, 2)
+    v.flush()
+    doc = json.loads(v._path().read_text(encoding="utf-8"))
+    doc[field] = value
+    v._path().write_text(json.dumps(doc), encoding="utf-8")
+    kept = len(doc["fine"])
+    v.reset_for_tests()
+    assert _member()["recording"] is False  # the reader that does not record shows it too
+    v.start(now=float(HOUR0 + 1000))
+    m = _member()
+    assert m["available"] is True and len(m["fine"]) >= kept and m["fine"][0][COL["rss_max"]] == 77
+
+
+def test_the_notes_a_cut_adds_are_part_of_what_the_budget_measures():
+    """Opus nit 3. ``dropped_oldest_rows`` and ``dropped_why`` were added after the size check, so the
+    member could weigh up to 118 bytes more than the number it said it was held to."""
+    for budget in range(2000, 2600, 7):
+        member = {"fine": [[1000 + i, 60, 1234, 5678] for i in range(400)], "coarse": [], "logs": [], "minutes": []}
+        out = v._fit(member, budget)
+        assert _enc(out) <= budget or "over_budget_bytes" in out, budget
