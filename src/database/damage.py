@@ -76,8 +76,8 @@ SQLITE_CORRUPT_VTAB = 267  # extended: what FTS5 raises for its own structure
 FILE_CORPUS = "corpus"
 FILE_WIKI = "wiki"
 FILE_LAW = "law"
-#: The file starting collection again does NOT release: the Wikipedia lane has its own start. Every other
-#: latched file (the corpus, the law file, a file that is only recorded) is released by it.
+#: The file starting collection again does NOT release: the Wikipedia lane has its own start. The corpus and the
+#: law file are released by it (a file that is only recorded has no writer to pause, so a start never names it).
 NOT_RELEASED_BY_COLLECTION = (FILE_WIKI,)
 #: The files that have a writer this module pauses (the corpus's passes, the Wikipedia lane's loop, the law
 #: step). Any other file's incident is recorded and named, and nothing waits on it.
@@ -878,11 +878,11 @@ registry = DamageRegistry()
 def retry_for_collection_start(reason: str) -> list[str]:
     """The ONE call every way of starting collection makes (``POST /api/scheduler/start`` and
     ``/run-now``, the airplane toggle going online, the unattended start): the operator is trying again,
-    so every latched file is released except the Wikipedia lane's, which its own start releases. The
-    first failed read puts the pause back. Returns the files released. Never raises.
+    so the corpus's and the law file's latches are released, and the Wikipedia lane's is not (its own start
+    releases it). The first failed read puts the pause back. Returns the files released. Never raises.
 
-    ``files`` names the files collection pauses, so a file that is only RECORDED (it has no writer to pause)
-    is never "released" by a start that did not pause it."""
+    The ``files`` it hands ``registry.retry`` are the files collection pauses, so a file that is only RECORDED (it
+    has no writer to pause) is never "released" by a start that did not pause it."""
     return registry.retry(
         reason=reason, files=tuple(f for f in PAUSED_FILES if f not in NOT_RELEASED_BY_COLLECTION)
     )

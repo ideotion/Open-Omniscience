@@ -453,7 +453,7 @@ def test_a_real_match_on_a_damaged_index_is_filed_as_the_search_index_with_its_r
 
 
 def test_a_search_over_damaged_article_pages_is_filed_as_data_not_as_the_search_index(tmp_path, registry):
-    """MEASURED (the Opus read of 31e44b9d): with ARTICLE pages overwritten and every index page whole, the
+    """MEASURED (the deep read of 31e44b9d): with ARTICLE pages overwritten and every index page whole, the
     app's own gated Search statement raises 11, and filing that as the search index would tell the operator
     the wrong part is damaged and route it to the one repair that would not help."""
     from src.database import fts
@@ -909,7 +909,7 @@ def _idle_runner(ran: list, on_index=None):
 
 def test_a_latch_set_by_one_tier_stops_the_next_tier_in_the_same_window(registry):
     """The latch used to be read only at the top of the drain loop, so WARM and the walk kept writing for
-    the rest of the window after the index window's read failed (the Opus read, N5)."""
+    the rest of the window after the index window's read failed (the deep read, N5)."""
     ran: list = []
     _idle_runner(ran, on_index=lambda: _note(registry, "wiki")).idle(10.0)
     assert ran == ["index"], ran
@@ -991,7 +991,7 @@ def test_going_online_releases_what_starting_collection_releases_and_starts_the_
 ):
     """The airplane button IS the operator starting collection (R117): it releases the corpus's and the law
     file's latch, and ALSO starts the Wikipedia lane, whose own start releases the Wikipedia file's (measured
-    by the Opus read: after airplane off and on nothing stayed latched). With the lane's setting off, the
+    by the deep read: after airplane off and on nothing stayed latched). With the lane's setting off, the
     lane does not start and its file stays latched. The real ``start_wiki_lane`` runs here, not a stub."""
     import src.scheduler.runner as runner
     import src.wiki.service as wiki_service
@@ -1085,7 +1085,7 @@ def test_the_law_housekeeping_step_waits_on_its_own_file(registry, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-#  what the Opus read of E1 found: behaviour that the first cut only asserted as source text
+#  what the deep read of E1 found: behaviour that the first cut only asserted as source text
 # --------------------------------------------------------------------------- #
 GIB = 1 << 30
 
@@ -1497,7 +1497,7 @@ def _stuck_path(tmp_path, entered: threading.Event, release: threading.Event):
 
 
 def test_a_write_that_hangs_holds_one_record_thread_not_one_per_failing_statement(tmp_path, monkeypatch):
-    """Measured by the Opus read: 50 repeats of one incident left 50 live record threads, each failing
+    """Measured by the deep read: 50 repeats of one incident left 50 live record threads, each failing
     statement waiting the full bound."""
     monkeypatch.setattr(damage, "RECORD_WAIT_S", 0.05)
     reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
