@@ -817,30 +817,39 @@ def test_the_state_carries_the_damage_notes_phase_and_reason(registry):
 # --------------------------------------------------------------------------- #
 #  the Wikipedia lane's loop stops on its own file's latch, and only that
 # --------------------------------------------------------------------------- #
+def _bare_runner(**kw):
+    """The REAL lane runner, built through its own constructor with every moving part injected as a stub: a
+    ``__new__`` shell without the constructor stops matching the day the runner gains an attribute, and these
+    tests then fail on a missing name, not on what they test."""
+    from src.wiki import runner as wr
+
+    args = dict(
+        adapter=object(),
+        stream=object(),
+        lane_session=lambda: None,
+        state_of=lambda: "running",
+        hot_sets=dict,
+        budget=lambda: None,
+        drain_interval_s=0.0,
+        sleep=lambda seconds: None,
+    )
+    args.update(kw)
+    return wr.WikiLaneRunner(**args)
+
+
 class _FakeRunner:
-    """Just enough of the lane runner for ``run_until_stopped``'s loop."""
+    """The lane runner with only what ``run_until_stopped``'s loop calls replaced."""
 
     def __init__(self):
         from src.wiki import runner as wr
 
         self.wr = wr
-        self.runner = wr.WikiLaneRunner.__new__(wr.WikiLaneRunner)
+        self.runner = _bare_runner(sleep=self._sleep)
         r = self.runner
-        r._stop = __import__("threading").Event()
-        r._interval = 0.0
-        r.drains = 0
-        r.consecutive_failures = 0
-        r.last_error = None
-        r.paused_reason = None
         r._sleeps = 0
-        r._monotonic = __import__("time").monotonic
-        r._drain_since = None
-        r._last_drain_ended = None
-        r.drain_stage = None
-        r.drain_feed = None
         self.drained = 0
         r._should_stop = lambda: False
-        r._sleep = self._sleep
+        r.revive_stream = lambda: None
         r.drain = self._drain
         r.refresh_one_pageview_top = lambda: None
         r.idle = lambda seconds: None
@@ -871,7 +880,6 @@ def test_a_corpus_latch_does_not_stop_the_wiki_loop(registry):
 
 def _idle_runner(ran: list, on_index=None):
     """A lane runner with three fake tiers, enough for ``idle`` (the windows the drain loop gives them)."""
-    from src.wiki import runner as wr
 
     class _Report:
         def as_dict(self):
@@ -897,13 +905,8 @@ def _idle_runner(ran: list, on_index=None):
         def is_on(self):
             return True
 
-    r = wr.WikiLaneRunner.__new__(wr.WikiLaneRunner)
-    r._stop = threading.Event()
-    r._monotonic = __import__("time").monotonic
+    r = _bare_runner(indexer=_Indexer(), warm=_Warm(), walker=_Walker())
     r._should_stop = lambda: False
-    r._sleep = lambda seconds: None
-    r._indexer, r._warm, r._walker = _Indexer(), _Warm(), _Walker()
-    r.last_index = r.last_warm = r.last_walk = None
     return r
 
 
