@@ -742,3 +742,44 @@ def test_a_place_artifact_without_a_vintage_never_borrows_the_world_files(tmp_pa
     c = cities.load_cities()[0]
     P.materialise(_Session(), c, vintage="2026-06-01")
     assert seen["row"].gazetteer_vintage is None
+
+
+def test_the_run_stops_asking_after_consecutive_refused_batches():
+    clock, calls = _Clock(), []
+
+    def getter(url):
+        calls.append(url)
+        return G.GetResult(404, None)  # not a request to wait out: the batch is refused at once
+
+    qids = [f"Q{n}" for n in range(1, 501)]
+    _items, rep = G.fetch_wikidata(qids, getter=getter, gate=_gate(clock), sleep=clock.sleep, kill_switch=lambda: False)
+    assert len(calls) == G.CONSECUTIVE_REFUSED_MAX and rep["gave_up_after_refusals"] is True
+    assert rep["refused"] == 50 * G.CONSECUTIVE_REFUSED_MAX and rep["not_asked"] == 500 - rep["refused"]
+    assert rep["asked"] == rep["ok"] + rep["refused"] + rep["missing_on_wikidata"] + rep["not_asked"]
+
+
+def test_a_stop_during_the_pace_wait_sends_no_request():
+    clock, called = _Clock(), []
+    stop = {"v": False}
+
+    def sleeper(s):
+        clock.sleep(s)
+        stop["v"] = True  # the operator cancels while the gate waits
+
+    from src.analytics.ring_loader import RateGate
+
+    gate = RateGate(clock=clock.now, sleep=sleeper)
+    qids = [f"Q{n}" for n in range(1, 111)]
+    _items, rep = G.fetch_wikidata(qids, getter=lambda u: (called.append(u), _answer(u))[1], gate=gate,
+                                   sleep=clock.sleep, kill_switch=lambda: False, should_stop=lambda: stop["v"])
+    assert len(called) == 1 and rep["stopped"] is True and rep["not_asked"] > 0
+
+
+def test_a_corrupt_place_artifact_never_takes_the_world_files_coverage_with_it(tmp_path, monkeypatch):
+    world = _write(tmp_path / "cities.yml", {"as_of": "2026-06-01", "cities": [
+        {"name": "A", "lat": 1.0, "lon": 1.0, "country": "zz"}]})
+    places = tmp_path / "places_gazetteer.yml"
+    places.write_text("cities: [unclosed\n  - : :\n", encoding="utf-8")
+    monkeypatch.setattr(cities, "GAZETTEER_PATH", world)
+    monkeypatch.setattr(cities, "PLACES_GAZETTEER_PATH", places)
+    assert [c.name for c in cities.load_cities()] == ["A"]

@@ -25,7 +25,8 @@ gazetteer build can read it separately (``--gazetteer osm-only`` runs the OSM-on
 
 THE REPORT holds no secret and no path outside the run's own directory (inputs appear by file
 name); the passphrase exists only in the children's environment. Exit: 0 done, 1 a phase failed,
-2 refused (preflight, mid-run guard, or a phase's own refusal).
+2 refused (preflight, mid-run guard, or a phase's own refusal),
+3 interrupted (SIGHUP, SIGTERM or Ctrl-C: the child was stopped, the store deleted, the report written).
 """
 
 from __future__ import annotations
@@ -91,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             print("refused: the prior report cannot be read as JSON")
             return 2
+    target = args.report or Path(f"osm-reference-run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json")
     try:
         report, kept = R.run(
             extract=args.extract, country=args.country, history=args.history, workdir=args.workdir, reader=args.reader,
@@ -99,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
             floor_factor=args.floor_factor,
             min_free_override=int(args.min_free_gb * R.GIB) if args.min_free_gb is not None else None,
             prior_report=prior, sample_seconds=args.sample_seconds, plan_only=args.plan,
+            on_start=lambda d: print(f"store: {d} (if this run is killed, delete it with --cleanup)", flush=True),
+            report_path=None if args.plan else target,
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"refused: {exc}")
@@ -108,15 +112,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"preflight": report["preflight"], "inputs": report["inputs"], "host": report["host"],
                           "guards": report["guards"]}, indent=2, sort_keys=True))
         return 0 if report["preflight"]["ok"] else 2
-    target = args.report or Path(f"osm-reference-run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json")
-    R.write_report(report, target)
     phases = ", ".join(f"{p['name']}={p['status']} {p['wall_seconds']}s" for p in report["phases"]) or "none started"
     print(f"status: {report['status']}  ({phases})")
     if report.get("reason"):
         print(f"reason: {report['reason']}")
     print(f"store: {'kept at ' + str(kept) + ' (delete with --cleanup)' if kept else 'deleted' if report['store'].get('deleted') else 'none made'}")
     print(f"report: {target.name}")
-    return {"ok": 0, "failed": 1}.get(report["status"], 2)
+    return {"ok": 0, "failed": 1, "interrupted": 3}.get(report["status"], 2)
 
 
 if __name__ == "__main__":

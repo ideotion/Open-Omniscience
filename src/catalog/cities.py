@@ -22,12 +22,15 @@ vintage of the file that held it (:attr:`City.vintage`).
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
+
+_LOG = logging.getLogger(__name__)
 
 _CONF = Path(__file__).resolve().parents[2] / "configs"
 GAZETTEER_PATH = _CONF / "cities.yml"  # generated (full)
@@ -91,7 +94,13 @@ def _load_file(p: Path) -> list[City]:
     """One gazetteer file's entries, each stamped with its source and its file's vintage."""
     if not p.exists():
         return []
-    data = yaml.safe_load(p.read_text("utf-8")) or {}
+    try:
+        data = yaml.safe_load(p.read_text("utf-8")) or {}
+    except (yaml.YAMLError, UnicodeDecodeError, OSError):
+        if p == PLACES_GAZETTEER_PATH:  # a damaged artifact must not take the world file's coverage with it
+            _LOG.warning("%s is unreadable; reading the world gazetteer alone", p.name, exc_info=True)
+            return []
+        raise
     if not isinstance(data, dict):
         return []
     raw_vintage = data.get("as_of")

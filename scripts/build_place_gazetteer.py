@@ -142,6 +142,11 @@ def main(argv: list[str] | None = None) -> int:
             print("refused: airplane mode was engaged during the join; nothing was written", file=sys.stderr)
             print(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False))
             return 2
+        if fetch.get("gave_up_after_refusals"):
+            print("refused: the server (or the transport) refused the first batches in a row, so the run stopped "
+                  "asking; nothing was written", file=sys.stderr)
+            print(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False))
+            return 2
         if fetch["not_asked"]:
             print("refused: the join was interrupted; nothing was written", file=sys.stderr)
             print(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False))

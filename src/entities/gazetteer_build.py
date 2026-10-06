@@ -73,6 +73,11 @@ RETRY_MAX = 5
 #: batch counted ``refused`` and the run stops short of writing an artifact.
 RETRY_CAP_S = 300.0
 
+#: After this many batches in a row that the server (or a dead proxy) refused, the run stops asking: a paced
+#: run of refusals costs hours at 10 s a request and ends in nothing written, and the operator should hear
+#: about a dead transport after a minute, not after the whole run. The rest is counted ``not_asked``.
+CONSECUTIVE_REFUSED_MAX = 3
+
 #: A Wikidata coordinate further than this from the OSM point is recorded as a disagreement.
 COORD_CHECK_KM = 25.0
 
@@ -443,8 +448,8 @@ def fetch_wikidata(
     items: dict[str, WikiItem] = {}
     ok = missing = refused = waited_for_server = 0
     requests_made = 0
-    stopped = airplane = False
-    done = 0
+    stopped = airplane = gave_up = False
+    refused_in_a_row = done = 0
     for batch in todo:
         if should_stop is not None and should_stop():
             stopped = True
@@ -455,6 +460,9 @@ def fetch_wikidata(
             # The gate spaces EVERY request, a retry included: a retry that skipped it would leave the
             # next batch due immediately, two requests back to back.
             rg.wait()
+            if should_stop is not None and should_stop():  # the gate's wait ends early on a stop
+                stopped = True
+                break
             if kill_switch():
                 airplane = True
                 break
@@ -484,7 +492,12 @@ def fetch_wikidata(
         done += len(batch)
         if parsed is None:
             refused += len(batch)
+            refused_in_a_row += 1
+            if refused_in_a_row >= CONSECUTIVE_REFUSED_MAX:
+                gave_up = True  # the rest stays `not_asked`: the run stops asking a server that keeps refusing
+                break
             continue
+        refused_in_a_row = 0
         items.update(parsed)
         ok += sum(1 for p in parsed.values() if p.status == "ok")
         missing += sum(1 for p in parsed.values() if p.status == "missing")
@@ -499,6 +512,7 @@ def fetch_wikidata(
         "waited_for_server": waited_for_server,
         "stopped": stopped,
         "stopped_by_airplane_mode": airplane,
+        "gave_up_after_refusals": gave_up,
     }
 
 

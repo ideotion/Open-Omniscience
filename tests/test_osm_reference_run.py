@@ -21,6 +21,8 @@ from scripts import osm_reference_run as CLI
 from src.osm import reference_run as R
 from tests._osm_lane_helpers import FIXTURE, HAVE_OSMIUM, ROOT
 
+pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the reference run is Linux-only")
+
 HISTORY = ROOT / "tests" / "fixtures" / "osm" / "synthetic-history.osm.pbf"
 GB = R.GIB
 
@@ -45,7 +47,7 @@ class _Probe(R.Probe):
     def _f(self, _p):
         self.calls += 1
         if self._release is not None and self.calls >= self._release[1]:
-            Path(self._release[0]).write_text("go")
+            Path(self._release[0]).write_text("go", encoding="utf-8")
         if self._free_after is not None and self._flipped():
             return self._free_after
         return self._free
@@ -83,7 +85,7 @@ def test_a_real_run_writes_one_complete_report_and_deletes_its_own_store(tmp_pat
     # The caller's own data directory must never be opened: point OO_DATA_DIR at a sentinel.
     real = tmp_path / "users_real_store"
     real.mkdir()
-    (real / "sentinel").write_text("x")
+    (real / "sentinel").write_text("x", encoding="utf-8")
     monkeypatch.setenv("OO_DATA_DIR", str(real))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")  # the children must NOT inherit this
 
@@ -166,7 +168,7 @@ def test_keep_store_without_the_operators_passphrase_file_is_refused_and_writes_
         _run(tmp_path, keep_store=True)
     assert not (tmp_path / "work").exists() or not list((tmp_path / "work").glob("oo-osm-reference-run-*"))
     empty = tmp_path / "empty.key"
-    empty.write_text("\n")
+    empty.write_text("\n", encoding="utf-8")
     with pytest.raises(ValueError, match="empty"):
         _run(tmp_path, keep_store=True, passphrase_file=empty)
     assert not list((tmp_path / "work").glob("oo-osm-reference-run-*"))
@@ -175,10 +177,10 @@ def test_keep_store_without_the_operators_passphrase_file_is_refused_and_writes_
 def test_cleanup_refuses_a_directory_without_the_runners_marker(tmp_path):
     victim = tmp_path / "someone_elses_folder"
     victim.mkdir()
-    (victim / "precious.txt").write_text("keep me")
+    (victim / "precious.txt").write_text("keep me", encoding="utf-8")
     rec = R.cleanup(victim)
     assert rec["deleted"] is False and "marker" in rec["refused"]
-    assert (victim / "precious.txt").read_text() == "keep me"
+    assert (victim / "precious.txt").read_text(encoding="utf-8") == "keep me"
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         assert CLI.main(["--cleanup", str(victim)]) == 2
@@ -305,6 +307,15 @@ def _wait_dead(pid: int) -> bool:
     return False
 
 
+def _nonempty(path: Path) -> bool:
+    """A pid file exists the moment ``open(..., 'w')`` runs and holds its number a moment later."""
+    return path.exists() and path.read_text(encoding="utf-8").strip() != ""
+
+
+def _pid(path: Path) -> int:
+    return int(path.read_text(encoding="utf-8").strip())
+
+
 def test_a_guard_stop_reaches_the_whole_process_group_so_no_grandchild_keeps_writing(tmp_path):
     pidfile = tmp_path / "grandchild.pid"
     code = (
@@ -313,26 +324,26 @@ def test_a_guard_stop_reaches_the_whole_process_group_so_no_grandchild_keeps_wri
         f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
         "time.sleep(120)\n"
     )
-    probe = _Probe(free=100 * GB, free_after=1 * GB, trigger=pidfile.exists)
+    probe = _Probe(free=100 * GB, free_after=1 * GB, trigger=lambda: _nonempty(pidfile))
     report, _ = _run(tmp_path, probe=probe, phases_override=_scripted(code), reserve_bytes=2 * GB)
     assert report["status"] == "refused-mid-run"
-    assert _wait_dead(int(pidfile.read_text())), "a grandchild outlived the guard's stop"
+    assert _wait_dead(_pid(pidfile)), "a grandchild outlived the guard's stop"
 
 
 def test_a_helper_that_ignores_sigterm_is_killed_even_though_the_child_exits_on_it(tmp_path):
-    """The leader leaving on SIGTERM must not end the stop: the group still has a member that ignores it."""
+    """The leader leaving on SIGTERM must not end the stop: the group still has a member that ignores it.
+
+    The helper writes its OWN pid file only after it ignores SIGTERM, and the guard fires only then, so the
+    SIGTERM can never kill it by default action and the test cannot pass without the SIGKILL sweep."""
     pidfile = tmp_path / "helper.pid"
-    helper = "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nwhile True: time.sleep(0.1)"
-    code = (
-        "import subprocess, sys, time\n"
-        f"h = subprocess.Popen([sys.executable, '-c', {helper!r}])\n"
-        f"open({str(pidfile)!r}, 'w').write(str(h.pid))\n"
-        "time.sleep(120)\n"
-    )
-    probe = _Probe(free=100 * GB, free_after=1 * GB, trigger=lambda: pidfile.exists() and pidfile.read_text() != "")
+    helper = ("import os, signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+              f"open({str(pidfile)!r}, 'w').write(str(os.getpid()))\nwhile True: time.sleep(0.1)")
+    code = ("import subprocess, sys, time\n"
+            f"subprocess.Popen([sys.executable, '-c', {helper!r}])\ntime.sleep(120)\n")
+    probe = _Probe(free=100 * GB, free_after=1 * GB, trigger=lambda: _nonempty(pidfile))
     report, _ = _run(tmp_path, probe=probe, phases_override=_scripted(code), reserve_bytes=2 * GB)
     assert report["status"] == "refused-mid-run"
-    assert _wait_dead(int(pidfile.read_text())), "SIGKILL was skipped because the leader had already left"
+    assert _wait_dead(_pid(pidfile)), "SIGKILL was skipped because the leader had already left"
 
 
 def test_a_helper_still_running_after_a_clean_exit_is_swept_before_the_store_goes(tmp_path):
@@ -344,7 +355,7 @@ def test_a_helper_still_running_after_a_clean_exit_is_swept_before_the_store_goe
     )
     report, _ = _run(tmp_path, phases_override=_scripted(code))
     assert report["status"] == "ok" and report["store"]["deleted"] is True
-    assert _wait_dead(int(pidfile.read_text())), "a descendant outlived a clean exit"
+    assert _wait_dead(_pid(pidfile)), "a descendant outlived a clean exit"
 
 
 def test_a_child_that_ignores_sigterm_is_killed_after_the_grace(tmp_path, monkeypatch):
@@ -355,7 +366,7 @@ def test_a_child_that_ignores_sigterm_is_killed_after_the_grace(tmp_path, monkey
     import time
 
     t0 = time.monotonic()
-    report, _ = _run(tmp_path, probe=_Probe(free=100 * GB, free_after=1 * GB, trigger=ready.exists),
+    report, _ = _run(tmp_path, probe=_Probe(free=100 * GB, free_after=1 * GB, trigger=lambda: _nonempty(ready)),
                      phases_override=_scripted(code), reserve_bytes=2 * GB)
     assert report["status"] == "refused-mid-run" and time.monotonic() - t0 < 30
 
@@ -368,7 +379,7 @@ def test_disk_collapsing_during_the_grace_ends_the_grace_at_once(tmp_path, monke
             f"signal.signal(signal.SIGTERM, lambda *a: open({str(termed)!r}, 'w').write('x'))\n"
             f"open({str(ready)!r}, 'w').write('x')\ntime.sleep(120)")
     probe = R.Probe(
-        free_disk=lambda p: 100 * GB if not ready.exists() else (int(0.5 * GB) if termed.exists() else int(1.5 * GB)),
+        free_disk=lambda p: 100 * GB if not _nonempty(ready) else (int(0.5 * GB) if _nonempty(termed) else int(1.5 * GB)),
         available_memory=lambda: 8 * GB)
     import time
 
@@ -393,55 +404,128 @@ def test_a_dead_sampler_stops_the_phase_instead_of_leaving_it_unguarded(tmp_path
     assert report["status"] == "refused-mid-run" and "sampler failed" in ph["reason"] and "OSError" in ph["reason"]
 
 
-def _signal_when(path: Path, signum: int, times: int = 1):
-    import threading
+# --------------------------------------------------------------------------- #
+#  the runner itself being signalled or killed: each in its OWN subprocess, so a regression that drops the
+#  handler fails the test instead of killing the pytest process
+# --------------------------------------------------------------------------- #
+
+_RUNNER = """
+import json, sys
+from pathlib import Path
+from src.osm import reference_run as R
+cfg = json.loads(sys.argv[1])
+specs = [R.PhaseSpec("child", [sys.executable, "-c", cfg["code"]])]
+report, _ = R.run(extract=Path(cfg["extract"]), country="ZZ", workdir=Path(cfg["work"]), phases_override=specs,
+                  sample_seconds=0.1, report_path=Path(cfg["report"]))
+print(report["status"])
+"""
+
+
+def _spawn_runner(tmp_path: Path, code: str) -> subprocess.Popen:
+    cfg = {"code": code, "extract": str(_extract(tmp_path)), "work": str(tmp_path / "work"),
+           "report": str(tmp_path / "report.json")}
+    return subprocess.Popen([sys.executable, "-c", _RUNNER, json.dumps(cfg)], cwd=str(ROOT), text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+
+
+def _wait_nonempty(path: Path, timeout: float = 60.0) -> None:
     import time
 
-    def go():
-        for _ in range(500):
-            if path.exists():
-                break
-            time.sleep(0.02)
-        for i in range(times):
-            if i:
-                time.sleep(0.4)
-            os.kill(os.getpid(), signum)
+    t0 = time.monotonic()
+    while not _nonempty(path):
+        assert time.monotonic() - t0 < timeout, f"{path.name} never appeared"
+        time.sleep(0.05)
 
-    t = threading.Thread(target=go, daemon=True)
-    t.start()
-    return t
+
+_CHILD = "import os, time\nopen({pf!r}, 'w').write(str(os.getpid()))\ntime.sleep(120)"
+_STUBBORN = ("import os, signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+             "open({pf!r}, 'w').write(str(os.getpid()))\ntime.sleep(120)")
 
 
 def test_sighup_stops_the_child_deletes_the_store_and_still_writes_the_report(tmp_path):
     """A dropped SSH session sends SIGHUP: without the handler Python died on the spot and the child ran on."""
     import signal as sg
 
-    before = (sg.getsignal(sg.SIGHUP), sg.getsignal(sg.SIGTERM))
     pidfile = tmp_path / "child.pid"
-    code = f"import os, time\nopen({str(pidfile)!r}, 'w').write(str(os.getpid()))\ntime.sleep(120)"
-    t = _signal_when(pidfile, sg.SIGHUP)
-    report, kept = _run(tmp_path, phases_override=_scripted(code))
-    t.join(timeout=5)
-    assert report["status"] == "interrupted" and "SIGHUP" in report["reason"] and kept is None
+    proc = _spawn_runner(tmp_path, _CHILD.format(pf=str(pidfile)))
+    try:
+        _wait_nonempty(pidfile)
+        proc.send_signal(sg.SIGHUP)
+        out, err = proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    assert proc.returncode == 0, err
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "interrupted" and "SIGHUP" in report["reason"]
+    assert report["phases"][0]["status"] == "interrupted"
     assert report["store"]["deleted"] is True and not list((tmp_path / "work").glob("oo-osm-reference-run-*"))
-    assert _wait_dead(int(pidfile.read_text()))
-    assert (sg.getsignal(sg.SIGHUP), sg.getsignal(sg.SIGTERM)) == before, "the handlers were not restored"
+    assert _wait_dead(_pid(pidfile))
 
 
-def test_a_second_interrupt_during_the_grace_kills_at_once(tmp_path, monkeypatch):
+def test_a_second_signal_while_the_child_ignores_the_first_kills_it_at_once(tmp_path):
     import signal as sg
     import time
 
-    monkeypatch.setattr(R, "TERMINATE_GRACE_S", 60.0)
-    ready = tmp_path / "ready"
-    code = ("import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            f"open({str(ready)!r}, 'w').write('x')\ntime.sleep(120)")
-    t = _signal_when(ready, sg.SIGTERM, times=2)
-    t0 = time.monotonic()
-    report, _ = _run(tmp_path, phases_override=_scripted(code))
-    t.join(timeout=5)
-    assert report["status"] == "interrupted" and time.monotonic() - t0 < 30
+    pidfile = tmp_path / "child.pid"
+    proc = _spawn_runner(tmp_path, _STUBBORN.format(pf=str(pidfile)))
+    try:
+        _wait_nonempty(pidfile)
+        t0 = time.monotonic()
+        proc.send_signal(sg.SIGTERM)
+        time.sleep(0.5)
+        proc.send_signal(sg.SIGTERM)
+        proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    assert time.monotonic() - t0 < R.TERMINATE_GRACE_S - 5, "the second signal did not cut the grace short"
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "interrupted" and report["store"]["deleted"] is True
+    assert _wait_dead(_pid(pidfile)), "the child was abandoned alive"
+
+
+def test_a_killed_runner_does_not_leave_the_child_running(tmp_path):
+    """SIGKILL cannot be handled: the kernel's parent-death signal is the only thing that stops the child."""
+    pidfile = tmp_path / "child.pid"
+    proc = _spawn_runner(tmp_path, _CHILD.format(pf=str(pidfile)))
+    try:
+        _wait_nonempty(pidfile)
+        proc.kill()
+        proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    child = _pid(pidfile)
+    try:
+        assert _wait_dead(child), "the child outlived a SIGKILLed runner"
+    finally:
+        for left in (tmp_path / "work").glob("oo-osm-reference-run-*"):  # the killed runner could not delete its store
+            R.cleanup(left)
+
+
+def test_a_signal_between_phases_stops_the_run_before_the_next_one(tmp_path, monkeypatch):
+    """The handler sets a flag and the loop reads it: no phase starts after the signal."""
+    import signal as sg
+
+    seen = {}
+
+    def _phase_then_signal(spec, **kw):
+        res = R.PhaseResult(spec.name)
+        os.kill(os.getpid(), sg.SIGTERM)  # arrives with no child alive: only the flag changes
+        seen["signal"] = R._INT.signal
+        return res
+
+    monkeypatch.setattr(R, "run_phase", _phase_then_signal)
+    specs = _scripted("print(1)", "first") + _scripted("print(2)", "second")
+    report, _ = _run(tmp_path, phases_override=specs)
+    assert seen["signal"] == "SIGTERM" and report["status"] == "interrupted"
+    assert [p["name"] for p in report["phases"]] == ["first"], "a phase started after the signal"
     assert report["store"]["deleted"] is True
+    assert sg.getsignal(sg.SIGTERM) == sg.SIG_DFL or callable(sg.getsignal(sg.SIGTERM))
+
+
+def test_the_reference_run_refuses_a_system_that_is_not_linux(tmp_path, monkeypatch):
+    monkeypatch.setattr(R.sys, "platform", "win32")
+    with pytest.raises(ValueError, match="Linux"):
+        _run(tmp_path)
 
 
 def test_the_online_join_is_not_offered_inside_the_throwaway_store(tmp_path):
@@ -465,22 +549,47 @@ def test_the_passphrase_value_never_reaches_the_report_whatever_the_child_prints
             f"open({str(seen)!r}, 'w').write(p)\n"
             "print('stdout says', p); print('stderr says', p, file=sys.stderr); sys.exit(1)")
     report, _ = _run(tmp_path, phases_override=_scripted(code))
-    secret = seen.read_text()
+    secret = seen.read_text(encoding="utf-8")
     assert len(secret) >= 16
     assert secret not in json.dumps(report) and "<redacted>" in json.dumps(report)
     assert report["status"] == "failed"
 
 
-def test_the_passphrase_is_not_in_the_childs_argv_and_database_url_is_dropped(tmp_path, monkeypatch):
+def test_no_phase_the_runner_builds_carries_a_passphrase_in_its_argv():
+    for gaz in ("off", "osm-only"):
+        phases = R.build_phases(extract=Path("e.osm.pbf"), country="ZZ", history=Path("h.osm.pbf"), reader=None,
+                                gazetteer=gaz, gazetteer_out=Path("g.yml"))
+        for ph in phases:
+            joined = " ".join(ph.argv).lower()
+            assert "passphrase" not in joined and "oo_db" not in joined, ph.name
+
+
+def test_database_url_is_dropped_from_the_childs_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:////home/someone/own-store.db")
-    seen = tmp_path / "seen.txt"
-    code = ("import os, sys, json\n"
-            f"open({str(seen)!r}, 'w').write(os.environ['OO_DB_PASSPHRASE'])\n"
-            "print(json.dumps({'argv': ' '.join(sys.argv), 'dburl': os.environ.get('DATABASE_URL')}))")
+    code = "import os, json\nprint(json.dumps({'dburl': os.environ.get('DATABASE_URL'), 'tmp': os.environ.get('TMPDIR')}))"
     report, _ = _run(tmp_path, phases_override=_scripted(code))
     got = report["phases"][0]["app_report"]
-    assert seen.read_text() not in got["argv"]
     assert got["dburl"] is None, "the child could have opened the operator's own main database"
+    assert got["tmp"] == "<run>/tmp", "temp and spill files stay on the filesystem the guard reads"
+
+
+def test_a_path_inside_a_childs_json_report_is_scrubbed(tmp_path):
+    code = "import json\nprint(json.dumps({'where': '/home/alice/secret/place/osm.db', '/srv/keyed/path.txt': 1}))"
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    text = json.dumps(report)
+    assert "/home/alice" not in text and "/srv/keyed" not in text and "osm.db" in text
+
+
+def test_the_childs_logs_are_owner_only(tmp_path):
+    code = "print('x')"
+    pf = tmp_path / "op.key"
+    pf.write_text("op-passphrase-0123456789\n", encoding="utf-8")
+    _report, kept = _run(tmp_path, phases_override=_scripted(code), keep_store=True, passphrase_file=pf)
+    try:
+        for f in (kept / "logs").glob("*"):
+            assert (f.stat().st_mode & 0o077) == 0, f.name
+    finally:
+        R.cleanup(kept)
 
 
 def test_sample_seconds_outside_the_sane_range_is_refused(tmp_path):
