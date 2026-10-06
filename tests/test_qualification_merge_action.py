@@ -326,7 +326,7 @@ def test_a_yaml_upload_with_an_impossible_date_is_a_400_not_a_500(client) -> Non
     r = client.post(ENDPOINT, files=[("files", ("export.yml", body, "text/yaml"))],
                     data={"include_this_instance": "false"})
     assert r.status_code == 400, r.text
-    assert "not on the calendar" in r.json()["detail"]
+    assert "cannot be read" in r.json()["detail"]
     # fixed words, never the library's message: a YAML tag's ValueError carries the upload's text
     body = b"verdicts: !!int secretPASSPHRASE\n"
     r = client.post(ENDPOINT, files=[("files", ("export.yml", body, "text/yaml"))],
@@ -377,6 +377,12 @@ def test_other_malformed_uploads_are_a_400_not_a_500(client) -> None:
         damaged[i] ^= 0xFF
         r = post("d.zip", bytes(damaged), "application/zip")
         assert r.status_code in (200, 400), (i, r.status_code, r.text[:200])
+    # a local header that names the member differently from the directory: the library's message
+    # prints that name, which is the upload's own text and must not come back in the refusal
+    renamed = bytearray(good)
+    renamed[30:30 + len(BUNDLE_MEMBER)] = b"secretPASSPHRASE".ljust(len(BUNDLE_MEMBER), b"x")
+    r = post("renamed.zip", bytes(renamed), "application/zip")
+    assert r.status_code == 400 and "secretPASSPHRASE" not in r.text, r.text
     rows = {"verdicts": [3, "x", None, _row("a.example", "qualified")]}
     r = post("rows.json", json.dumps(rows).encode(), "application/json")
     assert r.status_code == 200, r.text

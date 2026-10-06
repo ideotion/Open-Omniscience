@@ -142,7 +142,7 @@ REFUSE_BAD_ZIP = "{file}: not a readable zip archive ({error})."
 # What a nesting deeper than the readers can follow is called, in the refusals above.
 _TOO_DEEP = "nested too deeply to read"
 # Fixed words, never the library's own message: a ValueError's text can carry the upload's content back.
-_BAD_DATE = "a date in it is not on the calendar"
+_BAD_VALUE = "a value in it cannot be read"
 _BAD_NUMBER = "a number in it is too long to read"
 _BAD_TEXT = "it is not readable text"
 _BAD_ARCHIVE = "the archive is damaged"
@@ -261,7 +261,7 @@ def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeErro
     except yaml.YAMLError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(json_exc)) from exc
     except ValueError as exc:  # a date the YAML reader recognised but the calendar does not have
-        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_BAD_DATE) from exc
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_BAD_VALUE) from exc
     except RecursionError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_TOO_DEEP) from exc
     rows = rows_from_payload(raw, origin)
@@ -311,7 +311,7 @@ def rows_from_bundle_bytes(
     except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, RuntimeError) as exc:
         # a damaged compressed stream (zlib.error / EOFError), a compression this reader does not
         # have (NotImplementedError) and an encrypted member (RuntimeError) are all "not readable"
-        raise MergeInputError(REFUSE_BAD_ZIP, file=origin, error=str(exc)) from exc
+        raise MergeInputError(REFUSE_BAD_ZIP, file=origin, error=_BAD_ARCHIVE) from exc
     except MergeInputError:  # a ValueError itself: the refusals above are already the answer
         raise
     except ValueError as exc:  # a damaged directory (negative seek, an unreadable member name)
