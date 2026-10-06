@@ -2909,25 +2909,25 @@ def test_the_child_writes_utf8_and_its_stderr_is_read_as_bytes_so_a_mixed_page_k
     """On Windows the child's stderr is the ANSI page with a backslash escape for a letter outside it, so a key that mixes a cp1252
     letter with one outside the page reached the report as raw text plus an escape, a form no carrier writes. The child is told to
     write UTF-8, its pipes are read as bytes and decoded strictly, so the key is in the one form the scrub takes out. MUTATION
-    TARGET: the pipe encoding setting, the bytes read (``text=True`` again), the strict decode."""
+    TARGET: the pipe encoding setting, the child's UTF-8 mode (the parent's, not a fixed one), the bytes read (``text=True`` again), the strict decode."""
     _SPAWNED.clear()
-    monkeypatch.delenv("PYTHONUTF8", raising=False)
     params = _params(fast["dest"], passphrase=MIXED_KEY)
     _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=f"trace {MIXED_KEY} end")
     rep = rr.run_release_run(FakeCtx(), **params)["report"]
     kw = _SPAWNED[-1]
-    assert kw["env"]["PYTHONIOENCODING"] == "utf-8" and "PYTHONUTF8" not in kw["env"], kw["env"]
+    assert kw["env"]["PYTHONIOENCODING"] == "utf-8", kw["env"]
+    assert kw["env"]["PYTHONUTF8"] == str(int(sys.flags.utf8_mode)), "the child decodes its environment as the parent encoded it"
     assert not kw.get("text") and not kw.get("universal_newlines") and not kw.get("encoding"), kw
     tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
     assert tail == "trace ***redacted*** end", tail
     assert MIXED_KEY not in json.dumps(rep) and "7x9" not in json.dumps(rep)
 
 
+@pytest.mark.skipif(not hasattr(os, "environb"), reason="the child reads its environment as bytes, which only POSIX has")
 def test_a_non_ascii_key_reaches_the_child_byte_for_byte(fast, monkeypatch):
-    """The child's environment is what the parent encoded: a key with letters outside ASCII reaches it unchanged only while the
-    child decodes the environment the way the parent encoded it, which UTF-8 mode (PYTHONUTF8) would change on a POSIX locale that
-    is not UTF-8. A REAL child reports the bytes it was handed. MUTATION TARGET: the child given PYTHONUTF8."""
-    monkeypatch.delenv("PYTHONUTF8", raising=False)
+    """A REAL child reports the bytes of the key it was handed, and they are ``os.fsencode(key)``, unchanged. Whether the child
+    DECODES them the way the parent encoded them is the mode it is given, pinned by the test above (``PYTHONUTF8`` is the
+    parent's own). MUTATION TARGET: a handover that re-encodes or changes the key."""
     real_popen = subprocess.Popen
     script = (
         "import json, os\n"
@@ -2946,6 +2946,25 @@ def test_a_non_ascii_key_reaches_the_child_byte_for_byte(fast, monkeypatch):
     assert handed == "handed " + os.fsencode(MIXED_KEY).hex(), handed
 
 
+def test_a_key_the_locale_cannot_hand_to_the_child_is_recorded_by_class_alone(fast, monkeypatch):
+    """On a POSIX locale whose charset cannot encode a letter of the key, starting the child raises a ``UnicodeEncodeError`` whose
+    text names that letter and its offset, a form of the key no scrub knows, and the phase writes the error's text into the
+    report. The class is recorded with a fixed reason. MUTATION TARGET: the handler that lets the error through."""
+
+    def cannot_encode(*a, **k):
+        raise UnicodeEncodeError("ascii", MIXED_KEY, 1, 2, "ordinal not in range(128)")
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=cannot_encode, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(rr, "_fresh_install_restore", _REAL_RESTORE)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "error" and "UnicodeEncodeError" in phase["detail"], phase
+    shown = json.dumps(rep)
+    assert "xe9" not in shown and "position" not in shown and "u00e9" not in shown and "\\u0416" not in shown, shown
+    assert not list(fast["dest"].glob(".restore-release-run-*")), "the directory made for the child is taken away"
+
+
 def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):
     """The key as a code page wrote it (cp1252 for the letter, an escape for the other) is not UTF-8: the tail is withheld whole,
     never decoded with replacement characters around a form the scrub does not know. MUTATION TARGET: a lenient decode."""
@@ -2953,7 +2972,8 @@ def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):
     assert b"\xe9" in written
     _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=written)
     rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
-    assert rep["phase_results"]["fresh_install_restore"]["stderr_tail"] == rr.STDERR_NOT_UTF8
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert tail == rr.STDERR_NOT_UTF8 and "UTF-8" in tail, tail
     assert "7x9" not in json.dumps(rep)
 
 

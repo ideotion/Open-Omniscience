@@ -454,7 +454,7 @@ def _check_backup(
     # holds the key either. When the clean text differs from the join of the scrubbed items, the measurement is the clean text
     # alone, so no half of the key stays in any item of the list.
     clean_joined = scrubbed(_joined_problems(raw_problems), passphrase)
-    if isinstance(problems, list) and clean_joined != _joined_problems(problems):
+    if isinstance(problems, list) and problems and clean_joined != _joined_problems(problems):
         problems = [clean_joined]
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
@@ -483,7 +483,7 @@ def _check_backup(
     else:
         # The join puts two lines side by side, so the tail is the join of the RAW lines scrubbed as one text (above); the lead
         # is the check's own words and is left alone.
-        probs = clean_joined
+        probs = clean_joined if raw_problems else "unknown"  # no lines: the check's own word, which no key is a piece of
         verify_check = _verdict(
             "fail", f"verification failed: {probs}", verify_measurements, bars["p0_1_verify"]
         )

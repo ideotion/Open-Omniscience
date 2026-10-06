@@ -1955,3 +1955,22 @@ def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception
     last = p0.last_p0_validation_report()
     assert held not in json.dumps(last) and held[:6] not in last["error"], last
     assert len(last["error"]) == 300 and last["error"].endswith("***red"), last
+
+
+def test_a_handler_at_module_level_is_listed_as_module_not_by_its_as_name():
+    """The label of a scope is the function's name, and ``<module>`` for a handler outside any function (its ``as`` name is a
+    variable, not a place). MUTATION TARGET: the label of a module-level scope."""
+    holders, offenders, _ = _caught_exception_leaks("try:\n    go()\nexcept Exception as exc:\n    err = str(exc)\n", every=True)
+    assert holders == [] and len(offenders) == 1 and offenders[0].startswith("<module>, line "), offenders
+
+
+def test_a_failed_verify_with_no_lines_says_unknown_even_when_the_key_is_a_piece_of_that_word(tmp_path, monkeypatch):
+    """No lines is the check's own word, ``unknown``, which no key is a piece of (a typed key ``nkno`` turned it into
+    ``u***redacted***wn``). MUTATION TARGET: the replacement of an empty list, the reason built from the join of nothing."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": []})
+    out = p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="nkno", measure_incremental=False)
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["reason"] == "verification failed: unknown" and verify["measurements"]["problems"] == [], verify

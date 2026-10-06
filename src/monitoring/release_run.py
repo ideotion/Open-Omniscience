@@ -1192,9 +1192,11 @@ def _fresh_install_restore(
         # The child writes its PIPES as UTF-8 whatever the console's code page is, and the parent reads them as bytes: on Windows
         # the child's stderr is the ANSI page with a backslash escape for a letter outside it, a form of a passphrase no carrier
         # of the scrub writes (a key that mixes a cp1252 letter with one outside that page reached the report half raw).
-        # PYTHONUTF8 is NOT set: it would make the child decode its ENVIRONMENT as UTF-8, and a parent on a POSIX locale that is
-        # not UTF-8 encodes the key in that locale, so a non-ASCII key would reach the child changed (the unlock fails, and what
+        # PYTHONUTF8 follows the PARENT's UTF-8 mode, never a fixed value: the child decodes its ENVIRONMENT the way the parent
+        # encoded it, and a parent on a POSIX locale that is not UTF-8 (or one started with ``-X utf8`` on such a locale) encodes
+        # the key in that charset, so a child in the other mode would receive a non-ASCII key changed (the unlock fails, and what
         # the child prints of the changed key is a form the parent's scrub does not know).
+        "PYTHONUTF8": str(int(sys.flags.utf8_mode)),
         "PYTHONIOENCODING": "utf-8",
         "OO_RELEASE_RUN_BACKUP": str(backup_path),
         "OO_RELEASE_RUN_OUT": str(out_json),
@@ -1211,6 +1213,14 @@ def _fresh_install_restore(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+    except UnicodeError as exc:
+        # The key has a character this process's locale cannot hand to a child (``os.fsencode`` of the environment): the error's
+        # own text names that character and its offset, a form of the key no scrub knows, so only the class is recorded.
+        with contextlib.suppress(OSError):
+            fresh.rmdir()
+        raise RuntimeError(
+            f"{type(exc).__name__}: the passphrase has a character this process's locale cannot hand to the restore child"
+        ) from None
     except BaseException:
         # No child ran, so nothing wrote into the directory just made: take it away, kept install or
         # not (an empty one is nothing to look at later), rather than leave it in a destination nothing
