@@ -272,39 +272,86 @@ def test_a_table_with_no_incoming_rows_adds_nothing() -> None:
     )
 
 
-def test_incoming_rows_are_counted_from_the_staged_file(tmp_path) -> None:
+def _staged_with_keywords(path: Path, keywords: int) -> None:
+    """A plain staged corpus holding ``keywords`` keyword rows, built where a SQLAlchemy URL can
+    name it and then moved to ``path`` (a ``?`` or ``#`` would be read as URL syntax there)."""
     import sqlite3
 
-    staged = tmp_path / "staged.db"
-    _plain_corpus(staged, articles=3)
-    con = sqlite3.connect(staged)
-    con.execute("INSERT INTO keywords (term, normalized_term, language) VALUES ('a','a','en'), ('b','b','en')")
-    con.commit()
-    con.close()
-    got = merge_mod._incoming_group_rows(staged)
-    assert got["keywords"] == 2
-    assert set(got) <= set(merge_mod._ENCRYPTED_REP_BYTES_PER_ROW)
-    # a file that cannot be read adds nothing, and never raises
-    junk = tmp_path / "junk.db"
-    junk.write_bytes(b"this is not a database" * 100)
-    assert merge_mod._incoming_group_rows(junk) == {}
-    assert merge_mod._incoming_group_rows(tmp_path / "absent.db") == {}
-
-
-def test_a_staged_path_with_uri_characters_is_still_counted(tmp_path) -> None:
-    import sqlite3
-
-    odd = tmp_path / "data?x#frag%41 dir"
-    odd.mkdir()
-    built = tmp_path / "built.db"  # built where a SQLAlchemy URL can name it, then moved
+    built = path.parent.parent / f"built-{path.parent.name.encode().hex()[:8]}.db"
     _plain_corpus(built, articles=1)
     con = sqlite3.connect(built)
-    con.execute("INSERT INTO keywords (term, normalized_term, language) VALUES ('a','a','en')")
+    for i in range(keywords):
+        con.execute(
+            "INSERT INTO keywords (term, normalized_term, language) VALUES (?, ?, 'en')",
+            (f"k{i}", f"k{i}"),
+        )
     con.commit()
     con.close()
-    staged = odd / "staged.db"
-    shutil.move(str(built), str(staged))
-    got = merge_mod._incoming_group_rows(staged)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(built), str(path))
+
+
+def _open_plain() -> object:
+    import sqlite3
+
+    con = sqlite3.connect(":memory:")
+    con.isolation_level = None
+    return con
+
+
+def test_incoming_rows_are_counted_through_the_merges_own_attach(tmp_path) -> None:
+    staged = tmp_path / "d" / "staged.db"
+    _staged_with_keywords(staged, 2)
+    con = _open_plain()
+    got = merge_mod._incoming_group_rows(con, staged)
+    assert got["keywords"] == 2
+    assert set(got) <= set(merge_mod._ENCRYPTED_REP_BYTES_PER_ROW)
+    # the throwaway alias is gone again, so the merge's own attach of the same file still works
+    assert "cnt" not in [r[1] for r in con.execute("PRAGMA database_list")]
+    from src.database.connect import attach
+
+    attach(con, staged, "inc")
+
+
+def test_incoming_rows_are_counted_on_an_encrypted_connection_too(
+    tmp_path, encrypted_working_copy
+) -> None:
+    staged = tmp_path / "d" / "staged.db"
+    _staged_with_keywords(staged, 3)
+    con = connect_mod.connect(encrypted_working_copy, check_same_thread=False)
+    try:
+        con.isolation_level = None
+        assert merge_mod._incoming_group_rows(con, staged)["keywords"] == 3
+    finally:
+        con.close()
+
+
+def test_a_missing_table_counts_as_nothing_but_any_other_failure_refuses(tmp_path) -> None:
+    import sqlite3
+
+    # a table the artifact does not carry: a measured zero
+    bare = tmp_path / "bare.db"
+    c = sqlite3.connect(bare)
+    c.execute("CREATE TABLE unrelated (x)")
+    c.commit()
+    c.close()
+    assert merge_mod._incoming_group_rows(_open_plain(), bare) == {}
+    # a file that cannot be read is a refusal that writes nothing, never a smaller need
+    junk = tmp_path / "junk.db"
+    junk.write_bytes(b"this is not a database" * 100)
+    with pytest.raises(MergeError, match="Could not read the incoming file's row counts") as err:
+        merge_mod._incoming_group_rows(_open_plain(), junk)
+    assert "Nothing was written to your corpus." in str(err.value)
+
+
+@pytest.mark.parametrize(
+    "dirname",
+    ["data#frag%41 dir"] + ([] if sys.platform == "win32" else ["data?x#frag%41 dir"]),
+)
+def test_a_staged_path_with_uri_characters_is_still_counted(tmp_path, dirname) -> None:
+    staged = tmp_path / dirname / "staged.db"
+    _staged_with_keywords(staged, 1)
+    got = merge_mod._incoming_group_rows(_open_plain(), staged)
     assert got.get("keywords") == 1, "a path with ? # or % must not drop the count to nothing"
 
 
@@ -318,7 +365,7 @@ def test_merge_corpus_hands_the_incoming_counts_to_the_gate(
         raise MergeError("stop here")
 
     monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", probe)
-    monkeypatch.setattr(merge_mod, "_incoming_group_rows", lambda _p: {"keywords": 7})
+    monkeypatch.setattr(merge_mod, "_incoming_group_rows", lambda _con, _p: {"keywords": 7})
     staged = tmp_path / "staged.db"
     _plain_corpus(staged, articles=1, first=100)
     with pytest.raises(MergeError, match="stop here"):
@@ -332,20 +379,27 @@ def test_an_encrypted_merge_on_a_short_machine_is_refused_before_it_writes(
     import src.database.maintenance as maintenance
 
     monkeypatch.setattr(maintenance, "_available_mb_now", lambda: 10.0)
+    opened: list = []
+    real_connect = connect_mod.connect
+
+    def recording(*a, **kw):  # noqa: ANN002, ANN003, ANN202
+        con = real_connect(*a, **kw)
+        opened.append(con)
+        return con
+
+    monkeypatch.setattr(connect_mod, "connect", recording)
     staged = tmp_path / "staged.db"
     _plain_corpus(staged, articles=2, first=100)
     before = encrypted_working_copy.read_bytes()
     with pytest.raises(MergeError, match="Not enough free memory to merge into an encrypted corpus"):
         merge_corpus(staged, encrypted_working_copy, _META)
     assert encrypted_working_copy.read_bytes() == before, "a refused merge changed nothing"
-    # the connection the refusal opened is closed (unlink() succeeds on an open file on Linux, so
-    # the open descriptors are read instead)
-    if sys.platform.startswith("linux"):
-        held = [
-            p for p in glob.glob("/proc/self/fd/*")
-            if os.path.exists(p) and os.path.realpath(p) == str(encrypted_working_copy.resolve())
-        ]
-        assert not held, "the refused merge left its connection open on the working copy"
+    # the connection the refusal opened is closed: recorded by a spy, so it does not depend on
+    # garbage-collection timing or on /proc
+    assert opened, "the merge opened no connection"
+    for con in opened:
+        with pytest.raises(Exception):  # noqa: B017 - any driver's "closed" error
+            con.execute("SELECT 1")
 
 
 def test_a_plain_merge_runs_whatever_memory_is_reported(tmp_path, monkeypatch) -> None:

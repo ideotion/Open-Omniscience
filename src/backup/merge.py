@@ -755,29 +755,41 @@ _ENCRYPTED_REP_BYTES_PER_ROW = {
 }
 
 
-def _incoming_group_rows(staged_corpus: Path) -> dict[str, int]:
+def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> dict[str, int]:
     """Rows the staged corpus holds in each table :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names.
 
-    Read through a plain read-only connection to the staged file (plaintext by design). The URI is
-    built with ``as_uri`` so a ``?``, ``#`` or ``%`` in the data directory's path is percent-encoded
-    rather than read as URI syntax (which would open nothing and silently drop the count). A table the
-    artifact does not carry, or a file that cannot be read, adds nothing: a count that cannot be
-    taken is not a number to invent, and the gate then asks for what it can measure."""
-    import sqlite3
+    Counted through the merge's OWN connection and its own ``attach`` (the one the merge uses a
+    moment later), under a throwaway alias that is detached again, so the count opens the file by
+    exactly the path the merge will -- no second spelling of it, and no URI to build (a ``?``,
+    ``#`` or ``%`` in the path, a Windows share or an extended-length Windows path each breaks a URI
+    differently).
+    A table the artifact does not carry counts as nothing: that is a measured zero. ANY other
+    failure is a refusal, never a smaller need: a count that cannot be taken is not a reason to
+    ask for less memory, and a file that cannot be read would fail the merge a moment later anyway."""
+    from src.database.connect import attach
 
     out: dict[str, int] = {}
     try:
-        con = sqlite3.connect(Path(staged_corpus).resolve().as_uri() + "?mode=ro", uri=True)
-    except sqlite3.Error:
-        return out
-    try:
-        for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+        attach(con, staged_corpus, "cnt")
+        try:
+            for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+                try:
+                    out[table] = int(
+                        con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 - fixed table names from this module's own map
+                    )
+                except Exception as exc:  # noqa: BLE001 - told apart below, never swallowed
+                    if "no such table" not in str(exc).lower():
+                        raise
+        finally:
             try:
-                out[table] = int(con.execute(f"SELECT COUNT(*) FROM {_ident(table)}").fetchone()[0])  # noqa: S608  # nosec B608 - fixed table names from this module's own map
-            except sqlite3.Error:
-                continue
-    finally:
-        con.close()
+                con.execute('DETACH DATABASE "cnt"')
+            except Exception:  # noqa: BLE001 - a failed attach has nothing to detach
+                pass
+    except Exception as exc:  # noqa: BLE001 - one plain refusal for every unreadable-file shape
+        raise MergeError(
+            "Could not read the incoming file's row counts to size the memory this merge needs "
+            f"({type(exc).__name__}). Nothing was written to your corpus."
+        ) from None
     return out
 
 
@@ -1727,7 +1739,9 @@ def merge_corpus(
     try:
         temp_store = _temp_store_for(con)
         if temp_store == "MEMORY":
-            check_memory_for_encrypted_merge(incoming_rows=_incoming_group_rows(staged_corpus))
+            check_memory_for_encrypted_merge(
+                incoming_rows=_incoming_group_rows(con, staged_corpus)
+            )
     except BaseException:
         con.close()
         raise

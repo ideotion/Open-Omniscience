@@ -13644,7 +13644,7 @@ row was taken WITH THE FTS TRIGGER LIVE, which the merge suspends). THREE STEPS 
 `article_source_relationships`, the COALESCE terms keep an index from serving them, and each is a temp b-tree that now lives in RAM and grows with the corpus (3,000,000 incoming rows, peak
 rise: 72 B/row, 89 to 147 B/row by URL length, 67 B/row, plus ~10 B/row of id maps kept to the end, which the gate rounds up to 16). The independent read of the first cut found this; the first corpora had small keyword
 and link tables, so a measurement built from the shape the fix was written for could not have. The gate now counts the incoming rows of those tables from the staged file and asks for
-2 x window + the LARGEST of the three (they run one after another) + 16 B per incoming row + the floor. A table or file that cannot be counted adds nothing. **A
+2 x window + the LARGEST of the three (they run one after another) + 16 B per incoming row + the floor. The count goes through the merge's own `attach` (no URI: a `?`, `#` or `%` in the path, or a Windows share, breaks one); a table the artifact lacks counts as zero and ANY other failure refuses, because a count that cannot be taken is not a reason to ask for less. **A
 check of the premise belongs in the suite, not in the comment**: `test_merge_encrypted_temp.py` reads this process's own temp files through `/proc/<pid>/fd` while an encrypted
 store builds an index under FILE (the control, which must leak, and goes red the day the driver stops, which is the cue to re-read the decision) and under MEMORY (which must not). **Two
 other places that look the same are not**: the other merge connections never set `temp_store` (the bundled driver's default is MEMORY, TEMP_STORE=2), and `merge_diag._probe_arm` sorts
