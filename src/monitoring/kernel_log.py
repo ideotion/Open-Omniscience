@@ -74,6 +74,35 @@ _TIMEOUT_S = 5.0
 # `journalctl -k -b 0` returns rc=0 with exactly these two lines).
 _BANNERS = ("No journal files were found", "-- No entries --", "-- no entries --")
 
+# What journalctl prints, on stderr and with exit code ZERO, when this user may not read the
+# system journal: "Hint: You are currently not seeing messages from other users and the system."
+# followed by two indented lines. It is journalctl talking, not the kernel, and it is the ONE
+# sentence that separates "the log was read and holds nothing" from "the log was never visible to
+# this user". The userspace reader (exit_evidence) already keyed on it; this reader counted it as
+# a kernel line, so the same unreadable journal made the kernel witness say "the kernel log was
+# read ... rules out an OOM kill" beside the other witness's "this user cannot read the system
+# journal" on 10 of 10 field pairs (diagnostics 2026-09-30, rank 4). ONE constant, used by both.
+HINT_NO_ACCESS = "not seeing messages from other users and the system"
+
+# What journalctl prints, with exit code ZERO, when it found no journal file this user can open.
+NO_JOURNAL_FILES = "No journal files were found"
+
+
+def journal_notice(text: str) -> str | None:
+    """What journalctl said ABOUT the journal rather than from it, or None.
+
+    ``"no-access"``: this user may not read the system journal (the hint above), so whatever else
+    came back is not the system's. ``"no-files"``: there is no journal file this user can open
+    (none exist, or none are readable). Both mean the journal was NOT observed. ONE classifier for
+    both journal readers (this module's and ``exit_evidence``'s), because two readers that each
+    decide for themselves what counts as unreadable are how one journal came to be called
+    'read' by one witness and 'unreadable' by the other."""
+    if HINT_NO_ACCESS in text:
+        return "no-access"
+    if NO_JOURNAL_FILES in text:
+        return "no-files"
+    return None
+
 
 def _run(cmd: list[str]) -> tuple[int, str]:
     """Run a read-only command with a hard timeout. Never raises.
@@ -97,15 +126,31 @@ def _run(cmd: list[str]) -> tuple[int, str]:
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
+def _is_journal_header(stripped: str) -> bool:
+    """journalctl's own separator lines -- ``-- Logs begin at ... --`` and ``-- Journal begins at
+    ... --`` (older systemd prints one first), ``-- Boot <id> --``, ``-- Reboot --`` -- which no
+    kernel message looks like (a message does not begin ``-- `` and end `` --``)."""
+    return stripped.startswith("-- ") and stripped.endswith(" --")
+
+
 def _kernel_lines(text: str) -> list[str]:
     """The real kernel lines in a journalctl read, banners excluded.
 
     A genuine `journalctl -k` read of any real Linux boot yields hundreds of lines, so
     ZERO of them means the kernel log was not observed — whatever the exit code was."""
     out: list[str] = []
+    in_hint = False
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped or any(b in stripped for b in _BANNERS):
+        if stripped.startswith("Hint:"):
+            # journalctl's own notice, then its continuation lines (indented): none is a kernel
+            # line, and counting one made an unreadable journal look like a log that was read.
+            in_hint = True
+            continue
+        if in_hint and line[:1] in (" ", "\t"):
+            continue
+        in_hint = False
+        if not stripped or any(b in stripped for b in _BANNERS) or _is_journal_header(stripped):
             continue
         out.append(stripped)
     return out
@@ -231,6 +276,8 @@ def read_kernel_evidence(
     reasons: list[str] = []
     read_labels: list[str] = []
     read_any = False
+    restricted = False
+    no_files = False
 
     # An OOM kill does NOT reboot the machine, so the evidence usually sits in THIS
     # boot's log. Check it first, bounded by when the previous session started.
@@ -253,6 +300,20 @@ def read_kernel_evidence(
             reasons.append(f"{label}: journalctl exited {rc}")
             continue
         kernel_lines = _kernel_lines(text)
+        notice = journal_notice(text)
+        if notice == "no-access":
+            # journalctl says it is hiding the system's messages from this user, so nothing that
+            # came back with that sentence is the kernel's -- the same rule the userspace reader
+            # applies to the same text, whatever else the output held.
+            restricted = True
+            reasons.append(
+                f"{label}: this user cannot read the system journal, so journalctl showed "
+                "only its own notice, and no kernel line it printed with that notice is the "
+                "kernel's log"
+            )
+            continue
+        if notice == "no-files":
+            no_files = True
         if not kernel_lines:
             # rc was 0 and there is still nothing to read: journalctl said "No journal
             # files were found" (or the boot has no kernel entries at all). Treating
@@ -292,7 +353,11 @@ def read_kernel_evidence(
         note = _journal_storage_note()
         if note:
             out["storage_note"] = note
-        if not _in_journal_group():
+        # A permission gap is named only where the evidence is of one: journalctl's own notice, or
+        # a non-zero exit from a user outside the journal groups. "No journal files were found" is
+        # a different cause (nothing there, or nothing this user can open) and blaming group
+        # membership for it sends the operator to fix the wrong thing.
+        if restricted or (not no_files and not _in_journal_group()):
             out["permission_note"] = (
                 "this user is in neither 'adm' nor 'systemd-journal', so other boots' "
                 "kernel messages are hidden from it — that is a permission gap, not an "
@@ -304,9 +369,10 @@ def read_kernel_evidence(
     scope = f" for {' and '.join(read_labels)} only" if reasons else ""
     out["reason"] = (
         f"the kernel log was read{scope} and contains no line naming this app's previous "
-        "session. That rules out an OOM kill and a native fault RECORDED BY THE "
-        "KERNEL; it does not establish a clean end — a host reset or a signal leaves "
-        "no kernel line about us."
+        "session. That rules out an OOM kill by the kernel's own killer and a native fault "
+        "RECORDED BY THE KERNEL; it does not establish a clean end — a host reset, a "
+        "user-space memory killer (systemd-oomd, earlyoom) or a signal leaves no kernel "
+        "line about us."
     )
     if reasons:
         out["reason"] += (
@@ -323,7 +389,10 @@ def _in_journal_group() -> bool:
     try:
         import grp
 
-        names = {grp.getgrgid(g).gr_name for g in os.getgroups()}
+        if os.geteuid() == 0:
+            return True  # root reads the journal; its supplementary group list is often empty
+        gids = {*os.getgroups(), os.getegid()}  # the primary group is not in getgroups() everywhere
+        names = {grp.getgrgid(g).gr_name for g in gids}
     except Exception:  # noqa: BLE001 - not POSIX, or an unresolvable gid
         return False
     return bool(names & {"adm", "systemd-journal", "root", "wheel"})
