@@ -15,8 +15,10 @@ Three hard rules, all enforced in code (maintainer ruling 2026-06-19):
 
 1. **Encrypted under the SAME passphrase, or in-memory — never plaintext on disk.**
    The persisted file at ``data_dir()/analytics.duckdb`` is opened with DuckDB's AES
-   ``ENCRYPTION_KEY`` derived deterministically from the ONE corpus passphrase (no
-   second secret for the user to manage — :func:`_derive_key`). A persisted file is
+   ``ENCRYPTION_KEY`` stretched from the ONE corpus passphrase and the store's own salt (no
+   second secret for the user to manage — :func:`_derive_key`; the salt is the sidecar
+   ``analytics.duckdb.kdf``), passed to ``ATTACH`` as a bound parameter and never written into the
+   statement's text (:func:`_attach_persisted`). A persisted file is
    used ONLY after :func:`encryption_gate` empirically proves it is really encrypted. If
    a SECURE crypto backend is not available offline (see below), the engine falls back
    to **DuckDB in-memory** and writes NO file — never a plaintext derived store.
@@ -84,12 +86,16 @@ from __future__ import annotations
 
 import atexit
 import hashlib
+import json
 import logging
 import os
+import secrets
 import shutil
 import tempfile
 import threading
 from pathlib import Path
+
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -164,15 +170,92 @@ def _persisted_config() -> dict:
     }
 
 
-def _derive_key(passphrase: str) -> str:
-    """A DuckDB ENCRYPTION_KEY derived from the ONE corpus passphrase.
+# The cache's key is stretched from the passphrase the way SQLCipher stretches the corpus's: PBKDF2-HMAC-SHA512 with
+# 256,000 rounds, which is SQLCipher 4's OWN default count (``tests/test_columnar_key_derivation.py`` reads it back from a
+# live connection). The number is the point: the same passphrase opens both files, so a cache file keyed any more cheaply
+# than the corpus is the cheapest offline attack on the one passphrase that opens everything (it was one SHA-256).
+_KDF_VERSION = 2
+_KDF_NAME = "pbkdf2-hmac-sha512"
+_KDF_ITERATIONS = 256_000
+_KDF_KEY_BYTES = 32
+_KDF_SALT_BYTES = 16
+_KDF_SIDECAR_SUFFIX = ".kdf"
+# Serialises "read the store's sidecar, or reset the store and write a new one", so two threads opening a fresh store
+# cannot each write a salt and leave a file under one key with a sidecar naming the other.
+_SIDECAR_LOCK = threading.Lock()
+
+
+def _derive_key(passphrase: str, salt: bytes) -> str:
+    """A DuckDB ENCRYPTION_KEY stretched from the ONE corpus passphrase and this store's own salt.
 
     NOT a second key surface: there is no second secret for the user to manage — the
     derived store rides the same passphrase as the canonical SQLCipher store. A hex
     digest avoids any SQL-literal-escaping hazard in the ``ENCRYPTION_KEY`` clause. The
-    store is a disposable cache; this protects the same at-rest threat model.
+    store is a disposable cache; this protects the same at-rest threat model, at the same
+    work factor as the corpus (see the constants above).
     """
-    return hashlib.sha256(("oo-columnar-v1:" + passphrase).encode("utf-8")).hexdigest()
+    return hashlib.pbkdf2_hmac(
+        "sha512", passphrase.encode("utf-8"), salt, _KDF_ITERATIONS, dklen=_KDF_KEY_BYTES
+    ).hex()
+
+
+def _kdf_sidecar_path(store: Path) -> Path:
+    return store.with_name(store.name + _KDF_SIDECAR_SUFFIX)
+
+
+def _read_kdf_salt(sidecar: Path) -> bytes | None:
+    """The salt a store's sidecar records, or None when the sidecar is absent or is not a v2 record of THIS derivation
+    (a different version, KDF or round count, a salt of another length, or text that does not parse)."""
+    try:
+        record = json.loads(sidecar.read_text(encoding="utf-8"))
+        salt = bytes.fromhex(record["salt"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if (
+        record.get("v") != _KDF_VERSION
+        or record.get("kdf") != _KDF_NAME
+        or record.get("iterations") != _KDF_ITERATIONS
+        or len(salt) != _KDF_SALT_BYTES
+    ):
+        return None
+    return salt
+
+
+def _write_kdf_sidecar(sidecar: Path, salt: bytes) -> None:
+    """Write the sidecar atomically (a sibling temp, fsynced, then ``os.replace``) and readable by its owner alone where
+    the system has file modes. The salt is not a secret; a half-written record is the thing to avoid."""
+    record = {"v": _KDF_VERSION, "kdf": _KDF_NAME, "iterations": _KDF_ITERATIONS, "salt": salt.hex()}
+    tmp = sidecar.with_name(sidecar.name + ".tmp")
+    tmp.unlink(missing_ok=True)  # a leftover of a crashed write must not keep its own mode
+    try:
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as fh:
+            json.dump(record, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, sidecar)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _store_salt(path: Path) -> bytes:
+    """The salt this store's key is derived from; a store without a valid one is reset and given a new salt.
+
+    A persisted file whose sidecar is absent or is not a valid v2 record cannot be opened: its key is not derivable (an
+    older build keyed it with one unsalted SHA-256, and a lost sidecar loses the salt). The store is a DISPOSABLE cache,
+    so it is removed and rebuilt under a fresh salt, never migrated (the canonical SQLCipher store is the truth). The
+    store goes before the new sidecar is written, so a crash between the two leaves no store and no sidecar, which is a
+    fresh start, and never a store under a salt that is gone."""
+    sidecar = _kdf_sidecar_path(path)
+    with _SIDECAR_LOCK:
+        salt = _read_kdf_salt(sidecar)
+        if salt is not None:
+            return salt
+        for stale in (path, path.with_name(path.name + ".wal")):
+            stale.unlink(missing_ok=True)
+        salt = os.urandom(_KDF_SALT_BYTES)
+        _write_kdf_sidecar(sidecar, salt)
+        return salt
 
 
 # --------------------------------------------------------------------------- #
@@ -428,7 +511,13 @@ def secure_crypto_reason() -> str | None:
     return _LAST_CRYPTO_ERROR
 
 
-def encryption_gate(path: str | Path, passphrase: str) -> bool:
+def _sql_text(value: str) -> str:
+    """``value`` as a SQL string literal: in single quotes, each quote inside it doubled. A data directory can hold an
+    apostrophe (``/home/o'brien``), and an unescaped one ends the literal early, so the statement does not parse."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def encryption_gate(path: str | Path) -> bool:
     """Empirically PROVE a persisted DuckDB store is really encrypted (Slice 4 gate).
 
     The three checks the acceptance criteria require, run on a throwaway file at
@@ -436,18 +525,23 @@ def encryption_gate(path: str | Path, passphrase: str) -> bool:
     key FAILS, (c) opening WITH the key returns the sentinel. Returns True only if all
     three hold; cleans up the probe file. Any DuckDB error -> False (degrade loudly to
     in-memory, never assume encryption).
+
+    The probe's key is a RANDOM one made for the call: what the gate proves is that the ENGINE encrypts, which holds
+    whatever key it is given, and a probe keyed from the passphrase would put a derivation (and a text that could carry
+    its result) into a check that has no use for either. It attaches the way the real store does (the key bound as a
+    parameter, the path escaped by :func:`_sql_text`), so that what the gate proves is the statement the store uses.
     """
     if not duckdb_available():
         return False
 
     p = Path(path)
-    key = _derive_key(passphrase)
+    key = secrets.token_hex(_KDF_KEY_BYTES)
     try:
         if p.exists():
             p.unlink()
         con = _persisted_connection()  # verified httpfs LOADed (encrypted ATTACH needs it)
         try:
-            con.execute(f"ATTACH '{p.as_posix()}' AS g (ENCRYPTION_KEY '{key}')")
+            con.execute(f"ATTACH {_sql_text(p.as_posix())} AS g (ENCRYPTION_KEY ?)", [key])
             con.execute("CREATE TABLE g.probe (s VARCHAR)")
             con.execute("INSERT INTO g.probe VALUES (?)", [_SENTINEL])
             con.execute("CHECKPOINT g")
@@ -460,7 +554,7 @@ def encryption_gate(path: str | Path, passphrase: str) -> bool:
         #     not no-crypto -- a meaningful encryption proof)
         try:
             c2 = _persisted_connection()
-            c2.execute(f"ATTACH '{p.as_posix()}' AS x")
+            c2.execute(f"ATTACH {_sql_text(p.as_posix())} AS x")
             c2.execute("SELECT * FROM x.probe").fetchall()
             c2.close()
             return False  # opened without a key -> NOT encrypted
@@ -469,7 +563,7 @@ def encryption_gate(path: str | Path, passphrase: str) -> bool:
         # (c) opening with the key must return the sentinel
         c3 = _persisted_connection()
         try:
-            c3.execute(f"ATTACH '{p.as_posix()}' AS y (ENCRYPTION_KEY '{key}')")
+            c3.execute(f"ATTACH {_sql_text(p.as_posix())} AS y (ENCRYPTION_KEY ?)", [key])
             got = c3.execute("SELECT s FROM y.probe").fetchone()
         finally:
             c3.close()
@@ -539,11 +633,13 @@ def connect(passphrase: str | None = None, *, spill=None):
     if passphrase and secure_crypto_available():
         store_dir = _store_dir()
         path = store_dir / _STORE_FILENAME
+        encryption_key = ""  # derived below; named so that a failure's text is scrubbed of it as well as of the passphrase
         try:
             store_dir.mkdir(parents=True, exist_ok=True)
             # Prove encryption on a throwaway probe before trusting the real file.
-            if encryption_gate(store_dir / ".oo_columnar_probe.duckdb", passphrase):
-                con = _attach_persisted(path, passphrase)
+            if encryption_gate(store_dir / ".oo_columnar_probe.duckdb"):
+                encryption_key = _derive_key(passphrase, _store_salt(path))
+                con = _attach_persisted(path, encryption_key)
                 marker = read_store_meta(con)
                 if marker is None:
                     ensure_store_meta(con)  # a fresh store: adopt the current marker
@@ -552,18 +648,24 @@ def connect(passphrase: str | None = None, *, spill=None):
                     # (the store is a disposable cache; the canonical store is the truth).
                     con.close()
                     path.unlink(missing_ok=True)
-                    con = _attach_persisted(path, passphrase)
+                    con = _attach_persisted(path, encryption_key)
                     ensure_store_meta(con)
                     _LOG.info("columnar engine: rebuilt persisted store (was %s)", marker)
                 _LOG.info("columnar engine: persisted encrypted store at %s", path)
                 return con
             _LOG.warning("columnar engine: encryption gate failed; using in-memory store")
-        except Exception:  # noqa: BLE001 - any failure -> drop the disposable file, in-memory
+        except Exception as exc:  # noqa: BLE001 - any failure -> drop the disposable file, in-memory
             try:
                 path.unlink(missing_ok=True)
             except OSError:
                 pass
-            _LOG.warning("columnar engine: persisted open failed; in-memory", exc_info=True)
+            # The engine quotes a window of a statement it cannot parse, and the key is not in the statement (it is bound,
+            # see _attach_persisted); this is the net beneath that, for any other text the engine makes: the record is
+            # written with the passphrase and the key taken out of the failure's line and of its traceback.
+            log_failure(
+                _LOG, "columnar engine: persisted open failed; in-memory", exc, passphrase, encryption_key,
+                level=logging.WARNING,
+            )
 
     # In-memory fallback — rebuilt lazily on use; writes NO file (never plaintext).
     con = duckdb.connect(database=":memory:", config=_offline_config(spill))
@@ -572,13 +674,19 @@ def connect(passphrase: str | None = None, *, spill=None):
     return con
 
 
-def _attach_persisted(path, passphrase):
+def _attach_persisted(path, encryption_key):
     """Open a persisted encrypted DuckDB store with the VERIFIED secure backend loaded (the
     absolute-path httpfs LOAD via :func:`_persisted_connection`), then ATTACH the encrypted
-    file under the passphrase-derived key with the default authenticated GCM cipher (NEVER a
-    CTR downgrade)."""
+    file under the passphrase-derived key (:func:`_derive_key`, given as ``encryption_key``) with the default
+    authenticated GCM cipher (NEVER a CTR downgrade).
+
+    The key is a BOUND PARAMETER, never part of the statement's text. When the engine cannot parse a statement it
+    quotes a window of it in the error (measured, DuckDB 1.4.4 and 1.5.5: a path holding an apostrophe ended the
+    literal early, and for a short path the error quoted the first 16 to 24 characters of the key written after it),
+    and a key that is not in the text cannot be quoted: the logs scrub exact matches, which a half-quoted key is not.
+    The path is escaped by :func:`_sql_text`, since the path is the one part of the statement that is not ours."""
     con = _persisted_connection()  # verified httpfs LOADed; _persisted_config (file access on)
-    con.execute(f"ATTACH '{path.as_posix()}' AS oo (ENCRYPTION_KEY '{_derive_key(passphrase)}')")
+    con.execute(f"ATTACH {_sql_text(path.as_posix())} AS oo (ENCRYPTION_KEY ?)", [encryption_key])
     con.execute("USE oo")
     return con
 
@@ -1486,8 +1594,8 @@ def refresh_persisted_read_model(session, passphrase: str | None = None) -> dict
             return {"skipped": "unavailable"}
         rows = build_keyword_read_model(con, session)
         return {"persisted": True, "keyword_agg_rows": rows}
-    except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
-        _LOG.warning("columnar read-model refresh failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background accelerator must never break a pass
+        log_failure(_LOG, "columnar read-model refresh failed", exc, passphrase, level=logging.WARNING)
         return {"skipped": "error"}
     finally:
         if con is not None:

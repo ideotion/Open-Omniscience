@@ -156,6 +156,14 @@ this section were still open.
   that names the class of the failure, with the key out of its words. The server's own log of the exception after the
   handler has answered, and the log files and the console beside the journal, stay outside and are recorded in the open
   queue with the change that closes them.
+- The columnar cache's encryption key is stretched like the corpus's (#MMMM): PBKDF2-HMAC-SHA512 at 256,000 rounds (SQLCipher's
+  own count, which a test reads back from a live connection) over the passphrase and a random per-store salt kept in
+  `analytics.duckdb.kdf`, where it had been one SHA-256 of the passphrase (the CodeQL alert `py/weak-sensitive-data-hashing`). A
+  store without a valid sidecar is removed and rebuilt, never opened. The key is bound to the `ATTACH` as a parameter instead of
+  being written into the statement, whose text the engine quotes when it cannot parse it (measured: a path with an apostrophe
+  made it quote the first 16 to 24 characters of the key), and the path's quotes are doubled. No shipped build opens the persisted
+  store yet (its secure backend is not bundled), so nothing a user holds changes; the sidecar goes with the cache on a crypto-erase
+  and an uninstall, and a test now fails on any fast hash of a passphrase-like name under `src/` or `scripts/`.
 
 ### Interface and translations
 

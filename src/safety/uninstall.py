@@ -69,7 +69,7 @@ def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "
 # overwritten. The old code capped EVERY file at the first 4 MiB, so most of a large
 # corpus survived (audit OO-02).
 PAGE1 = 4096; CHUNK = 8 * 1024 * 1024
-_ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", ".oo_columnar_probe.duckdb")
+_ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.duckdb.kdf", ".oo_columnar_probe.duckdb")
 _SIDE = ("-wal", "-shm", "-journal")
 def header_only(name):
     return name in _ENC or any(name == b + s for b in _ENC for s in _SIDE)
@@ -125,7 +125,7 @@ if wd and os.path.isdir(wd):
 sd = plan.get("wipe_store_dir")
 if sd and os.path.isdir(sd):
     sd_wiped = 0
-    for nm in ("analytics.duckdb", ".oo_columnar_probe.duckdb"):
+    for nm in ("analytics.duckdb", "analytics.duckdb.kdf", ".oo_columnar_probe.duckdb"):
         fp = os.path.join(sd, nm)
         if os.path.exists(fp):
             overwrite(fp, True)

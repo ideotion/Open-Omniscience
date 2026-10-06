@@ -598,17 +598,19 @@ def _writes_a_traceback(
     )
 
 
-#: The names the secret goes by where the release run, the volume job and the import queue hold it, each with WHICH secret
-#: it is: the parameter or local a helper is given it as (``passphrase``; ``secret`` and ``needle`` in
+#: The names the secret goes by where the release run, the volume job, the import queue and the columnar store hold it, each
+#: with WHICH secret it is: the parameter or local a helper is given it as (``passphrase``; ``secret`` and ``needle`` in
 #: ``release_run.py``'s helpers, the same passphrase under another name; ``corpus_passphrase``, the restore job's second
-#: one; ``password``, the mailbox password a request types, which no net holds either). A function that holds two secrets has to
-#: name both in a call that scrubs for it ...
+#: one; ``password``, the mailbox password a request types, which no net holds either; ``encryption_key``, the columnar store's
+#: key once it is stretched from the passphrase, which is NOT the passphrase and which an ATTACH that fails can quote). A function
+#: that holds two secrets has to name both in a call that scrubs for it ...
 _SECRET_NAMES = {
     "passphrase": "passphrase",
     "secret": "passphrase",
     "needle": "passphrase",
     "corpus_passphrase": "corpus_passphrase",
     "password": "password",
+    "encryption_key": "encryption_key",
 }
 
 #: ... and, as an attribute (or ``getattr(obj, "passphrase")``), the one the run's parameters carry
@@ -970,6 +972,7 @@ _GUARDED_MODULES = {
     "api/diagnostics/p0": ({"p0_validation_start"}, 1, True, {}),
     "api/diagnostics/release_run": ({"release_run_start", "release_run_resume"}, 2, True, {}),
     "api/ingestion": ({"ingest_email_endpoint", "_mailbox_pull_worker"}, 2, True, {}),
+    "analytics/columnar": ({"connect", "refresh_persisted_read_model"}, 2, False, {}),
 }
 
 
@@ -1031,11 +1034,6 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
 #: unseen. The walk reads the names in :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`: a module that calls the
 #: passphrase something else is not seen.
 _NOT_GUARDED = {
-    "analytics/columnar.py": (
-        "NOT BUILT. Three log records written with exc_info inside functions that take the passphrase (connect, "
-        "encryption_gate, refresh_persisted_read_model): an engine error can quote the statement that carried the key. "
-        "They sit with the columnar store's key handling, which the key-derivation change in docs/ledger/OPEN_QUEUE.md reads."
-    ),
     "llm/vllm_lifecycle.py": (
         "Not a passphrase: `needle` there is the search term failure_excerpt looks for in a server's log; nothing it "
         "handles is a secret."

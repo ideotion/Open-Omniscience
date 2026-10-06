@@ -57,7 +57,8 @@ _ALLOWED_PASSES = (1, 3, 8)
 _MAIN_DB = "open_omniscience.db"
 _CUSTODY_DB = "custody_log.db"
 _ANCHORS_DB = "anchors.db"
-_DUCK_FILES = ("analytics.duckdb", ".oo_columnar_probe.duckdb")
+# The cache, the sidecar that holds the salt its key is stretched with (``columnar._KDF_SIDECAR_SUFFIX``) and the gate's probe.
+_DUCK_FILES = ("analytics.duckdb", "analytics.duckdb.kdf", ".oo_columnar_probe.duckdb")
 _KEY_FILES = ("custody_ed25519.pem", "custody_ml_dsa_65.key")
 _DB_SIDECARS = ("-wal", "-shm", "-journal")
 
@@ -251,8 +252,10 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         if s and overwritten:
             keys_destroyed.append(name)
 
-    # 3) DuckDB cache header (its key has no per-file salt -> defence-in-depth; the real
-    #    protection is clearing the passphrase in step 5 + the free-space scrub).
+    # 3) DuckDB cache header and its key-derivation sidecar (the cache's key is stretched from the passphrase and the
+    #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
+    #    the cache is a derived copy, so this is defence-in-depth beside step 1 and the passphrase clearing in
+    #    step 5 + the free-space scrub).
     store_dir: Path = paths["store_dir"]
     for name in _DUCK_FILES:
         _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)

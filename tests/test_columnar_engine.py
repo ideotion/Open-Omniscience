@@ -71,7 +71,7 @@ def test_gate_returns_false_when_secure_crypto_unavailable_and_cleans_up(store_d
     if columnar.secure_crypto_available():
         pytest.skip("secure crypto present -> the gate is exercised positively elsewhere")
     probe = store_dir / "probe.duckdb"
-    assert columnar.encryption_gate(probe, "passphrase") is False  # no secure backend
+    assert columnar.encryption_gate(probe) is False  # no secure backend
     assert not probe.exists()  # cleaned up, no plaintext residue
 
 
@@ -89,4 +89,4 @@ def test_status_is_honest_never_claims_unproven_encryption(store_dir):
 def test_encryption_gate_proves_real_encryption(store_dir):
     # Runs only where a secure backend is present (e.g. httpfs locally installed): the
     # three acceptance checks must all hold.
-    assert columnar.encryption_gate(store_dir / "g.duckdb", "a strong passphrase") is True
+    assert columnar.encryption_gate(store_dir / "g.duckdb") is True

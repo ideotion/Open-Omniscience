@@ -307,15 +307,22 @@ def test_ci_encrypted_persisted_round_trip(tmp_path, monkeypatch):
     assert columnar._verified_httpfs_path() is not None
     assert columnar.secure_crypto_available() is True
     # the empirical encryption gate: sentinel-absent / no-key-fails / key-opens
-    assert columnar.encryption_gate(tmp_path / "probe.duckdb", "s3-ci-passphrase") is True
+    assert columnar.encryption_gate(tmp_path / "probe.duckdb") is True
     # a real persisted store opens encrypted and reports it honestly
     monkeypatch.setenv("OO_COLUMNAR_DIR", str(tmp_path))
     st = columnar.status(passphrase="s3-ci-passphrase")
     assert st["mode"] == "persisted" and st["encrypted"] is True
     con = columnar.connect(passphrase="s3-ci-passphrase")
     assert con is not None
+    # the PERSISTED store (the in-memory fallback also returns a connection, so this is what says the real engine took the
+    # statement: the key bound as a parameter, under the key stretched from the passphrase and the sidecar's salt)
+    assert con.execute("SELECT current_database()").fetchone() == ("oo",)
     con.close()
+    # a second open reads the same store: the sidecar gives the same salt, so the same key
+    again = columnar.connect(passphrase="s3-ci-passphrase")
+    assert again.execute("SELECT current_database()").fetchone() == ("oo",)
+    again.close()
     # the on-disk store is ciphertext (the sentinel from the gate probe is never present raw)
     store = tmp_path / columnar._STORE_FILENAME
-    if store.exists():
-        assert columnar._SENTINEL.encode() not in store.read_bytes()
+    assert store.exists() and (tmp_path / (columnar._STORE_FILENAME + columnar._KDF_SIDECAR_SUFFIX)).exists()
+    assert columnar._SENTINEL.encode() not in store.read_bytes()

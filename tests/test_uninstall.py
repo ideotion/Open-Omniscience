@@ -174,6 +174,9 @@ def test_watcher_wipes_columnar_store_override(tmp_path):
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
     store = tmp_path / "columnar-cache"; store.mkdir()
     (store / "analytics.duckdb").write_bytes(b"D" * 8192)
+    # The sidecar holds the salt the cache's key is stretched with: it goes with the cache.
+    (store / "analytics.duckdb.kdf").write_text(
+        json.dumps({"v": 2, "kdf": "pbkdf2-hmac-sha512", "iterations": 256000, "salt": "00" * 16}), encoding="utf-8")
     (store / "other_unrelated_file.txt").write_text("keep me", encoding="utf-8")
     audit = tmp_path / "audit.log"
     payload = {
@@ -186,6 +189,7 @@ def test_watcher_wipes_columnar_store_override(tmp_path):
     assert not data.exists()
     assert store.exists(), "an externally-configured store dir must not be rmtree'd wholesale"
     assert not (store / "analytics.duckdb").exists()
+    assert not (store / "analytics.duckdb.kdf").exists(), "the key-derivation sidecar must go with the cache"
     assert (store / "other_unrelated_file.txt").exists(), "unrelated files must survive"
     assert "columnar store" in audit.read_text(encoding="utf-8")
 
