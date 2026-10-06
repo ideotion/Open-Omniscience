@@ -793,7 +793,7 @@ def test_a_record_of_this_version_whose_count_is_not_a_number_is_not_a_reason_to
     so failed the build at every start)."""
     from src import __version__
 
-    ai._marker_path().write_text('{"schema": 1, "version": %s, "attempts": %s}' % (json.dumps(__version__), attempts), encoding="utf-8")
+    ai._marker_path().write_text(f'{{"schema": 1, "version": {json.dumps(__version__)}, "attempts": {attempts}}}', encoding="utf-8")
     assert ai._unfinished_starts() == 0
     assert ai.build_missing(eng)["outcome"] == "built"
 

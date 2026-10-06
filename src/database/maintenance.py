@@ -2118,7 +2118,8 @@ def vacuum_preflight(engine: Engine) -> dict:
     """
     import shutil
 
-    from src.database import article_indexes as _memory  # the one reader of the memory guard, shared with the index build
+    # the one reader of the memory guard, shared with the index build
+    from src.database import article_indexes as _memory
 
     if engine.url.get_backend_name() != "sqlite":
         return {"checked": False, "sufficient": None,
