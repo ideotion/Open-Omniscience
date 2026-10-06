@@ -4630,6 +4630,8 @@
   "The authors are the page's editors — credited through its history.": "লেখকেরা হলেন পাতার সম্পাদকেরা — যাঁদের কৃতিত্ব তার ইতিহাসের মাধ্যমে দেওয়া হয়।",
   "The backoff ladder runs 1 → 2 → 4 → capped, resetting on a qualified verdict. Shorter means a fixed site is noticed sooner.": "ব্যাকঅফ সিঁড়ি চলে 1 → 2 → 4 → সর্বোচ্চ সীমা, যোগ্য রায়ে আবার শুরু হয়। ছোট মানে ঠিক করা সাইট আগে চোখে পড়ে।",
   "The backup is written, but its summary file could not be:": "ব্যাকআপ লেখা হয়েছে, কিন্তু তার সারসংক্ষেপ ফাইলটি লেখা যায়নি:",
+  "The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.": "নিউজলেটার ছাড়া ব্যাকআপ বন্ধ করা হয়েছে: আপনার সংগ্রহের পরিষ্কার কপি তৈরি করা যায়নি ({reason})। কোনো নতুন ব্যাকআপ লেখা হয়নি, আপনার আগের ব্যাকআপগুলো অক্ষত আছে, এবং এর বদলে নিউজলেটারসহ ব্যাকআপ তৈরি করা হয়নি।",
+  "The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.": "নিউজলেটার ছাড়া ব্যাকআপ বন্ধ করা হয়েছে: আপনার সংগ্রহের পরিষ্কার কপি তৈরির জন্য যথেষ্ট খালি জায়গা নেই। কোনো নতুন ব্যাকআপ লেখা হয়নি, আপনার আগের ব্যাকআপগুলো অক্ষত আছে, এবং এর বদলে নিউজলেটারসহ ব্যাকআপ তৈরি করা হয়নি। জায়গা খালি করে আবার চেষ্টা করুন।",
   "The briefing could not be read just now": "এই মুহূর্তে ব্রিফিং পড়া যায়নি",
   "The briefing is recomputed after a pass so Home opens instantly.": "একটি পর্বের পরে ব্রিফিং আবার গণনা হয় যাতে হোম সঙ্গে সঙ্গে খোলে।",
   "The bundle could not be written:": "প্যাকেজ লেখা যায়নি:",

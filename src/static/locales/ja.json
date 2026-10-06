@@ -4630,6 +4630,8 @@
   "The authors are the page's editors — credited through its history.": "著者はそのページの編集者です — 履歴を通じてクレジットされます。",
   "The backoff ladder runs 1 → 2 → 4 → capped, resetting on a qualified verdict. Shorter means a fixed site is noticed sooner.": "待機の段階は 1 → 2 → 4 → 上限と進み、適格の判定でリセットされます。短くすると、修正されたサイトに早く気づけます。",
   "The backup is written, but its summary file could not be:": "バックアップは書き込まれましたが、その要約ファイルは書き込めませんでした:",
+  "The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.": "ニュースレターを除いたバックアップを中止しました。コーパスのクリーンなコピーを作成できませんでした({reason})。新しいバックアップは書き込まれておらず、以前のバックアップはそのままで、代わりにニュースレターを含むバックアップも作成していません。",
+  "The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.": "ニュースレターを除いたバックアップを中止しました。コーパスのクリーンなコピーを作成するための空き容量が足りません。新しいバックアップは書き込まれておらず、以前のバックアップはそのままで、代わりにニュースレターを含むバックアップも作成していません。空き容量を確保してもう一度お試しください。",
   "The briefing could not be read just now": "現在、ブリーフィングを読み取れませんでした",
   "The briefing is recomputed after a pass so Home opens instantly.": "ホームがすぐに開くよう、回のあとにブリーフィングを再計算します。",
   "The bundle could not be written:": "パッケージを書き出せませんでした：",

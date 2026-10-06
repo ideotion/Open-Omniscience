@@ -7,8 +7,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 file there would be plaintext), so the encrypted copy is rewritten with ``sqlcipher_export`` into a
 fresh keyed file instead. Every rule that rewrite carries has a test here that fails without it:
 the key is bound and never in SQL text, an exception, a log line or a note; every cipher setting is
-copied and read back through the production open path; any failure takes the secure-delete path and
-leaves no partial file; the search index forgets the deleted words (measured: neither VACUUM nor the
+copied and read back through the production open path; any failure STOPS the newsletter-free backup
+(``NewsletterFilterRefused``), leaves no partial file and never falls back to a backup with the newsletters; the search index forgets the deleted words (measured: neither VACUUM nor the
 export removes them).
 """
 
@@ -185,20 +185,6 @@ def test_no_deleted_word_survives_in_the_decrypted_copy(corpus, tmp_path):
     assert _MARK not in _clear_text(corpus, tmp_path)
 
 
-def test_no_deleted_word_reaches_a_restore_on_the_secure_delete_path_either(corpus, tmp_path, monkeypatch):
-    """What a restore READS (a decrypting export sees live rows and the index only). The file's own
-    unused space is not read here and is not guaranteed clean on this path: see ``NOTE_DELETE``."""
-    def refuse(*_a, **_k):
-        raise RuntimeError("no room")
-
-    monkeypatch.setattr(ne, "_export_to", refuse)
-    notes: list[str] = []
-    ne.drop_newsletters_encrypted(corpus, notes)
-    assert notes and "secure delete" in notes[0]
-    assert _MARK not in _clear_text(corpus, tmp_path)
-    assert _search_after_restore(corpus, tmp_path, "keepword1") == [(201,)]
-
-
 # ---------------------------------------------------------------------------------------------- #
 #  condition 1: the key is bound, and appears in no statement text, exception, log line or note
 # ---------------------------------------------------------------------------------------------- #
@@ -216,11 +202,18 @@ def test_a_failure_that_quotes_the_key_reaches_no_log_note_or_exception(corpus, 
 
     monkeypatch.setattr(ne, "_export_to", leaky)
     notes: list[str] = []
-    with caplog.at_level(logging.DEBUG):
-        ne.drop_newsletters_encrypted(corpus, notes)  # no exception: the other path ran
-    assert _KEY not in caplog.text and _KEY not in " ".join(notes)
-    assert "RuntimeError" in notes[0], "the note names the class so the path that ran is visible"
+    with caplog.at_level(logging.DEBUG), pytest.raises(ne.NewsletterFilterRefused) as hit:
+        ne.drop_newsletters_encrypted(corpus, notes)
+    import traceback
+
+    # what any writer can print of the failure: its text, and its traceback (which would follow a
+    # chained exception, so the chain is suppressed)
+    shown = str(hit.value) + " " + " ".join(notes) + " " + "".join(traceback.format_exception(hit.value))
+    assert _KEY not in caplog.text and _KEY not in shown
+    assert "RuntimeError" in str(hit.value), "the notice names the class"
+    assert hit.value.__cause__ is None and hit.value.__suppress_context__, "the driver's text is not chained"
     assert caplog.text, "the failure was logged at all"
+    assert not any(r.exc_info for r in caplog.records), "a traceback was logged"
 
 
 # ---------------------------------------------------------------------------------------------- #
@@ -283,7 +276,7 @@ def test_a_plaintext_header_is_refused_rather_than_exported_without_its_salt(cor
 
 
 # ---------------------------------------------------------------------------------------------- #
-#  condition 3: any failure takes the secure-delete path, leaves no partial file, and says so
+#  condition 3: any failure STOPS the backup, leaves no partial file, and says why in fixed words
 # ---------------------------------------------------------------------------------------------- #
 def test_a_stale_fresh_file_from_a_crashed_run_does_not_stop_the_rewrite(corpus, tmp_path):
     (tmp_path / "corpus.db.sqlcipher.fresh").write_bytes(b"left by a crash, not a database")
@@ -293,7 +286,7 @@ def test_a_stale_fresh_file_from_a_crashed_run_does_not_stop_the_rewrite(corpus,
     assert not list(tmp_path.glob("*.fresh*"))
 
 
-def test_a_failed_export_leaves_the_filtered_copy_and_no_partial_file(corpus, tmp_path, monkeypatch):
+def test_a_failed_export_stops_the_backup_and_leaves_no_partial_file(corpus, tmp_path, monkeypatch):
     def half_written(_con, out, _key, _settings):
         out.write_bytes(b"half a file")
         Path(str(out) + "-journal").write_bytes(b"x")
@@ -301,22 +294,29 @@ def test_a_failed_export_leaves_the_filtered_copy_and_no_partial_file(corpus, tm
 
     monkeypatch.setattr(ne, "_export_to", half_written)
     notes: list[str] = []
-    assert ne.drop_newsletters_encrypted(corpus, notes) == 3
-    assert len(notes) == 1 and notes[0].startswith("newsletters excluded by secure delete") and "OSError" in notes[0]
+    with pytest.raises(ne.NewsletterFilterRefused) as hit:
+        ne.drop_newsletters_encrypted(corpus, notes)
+    assert str(hit.value) == ne.MESSAGE_OTHER.format(reason="OSError") and not hit.value.space
+    assert notes == [], "no line says a rewrite ran"
     assert not list(tmp_path.glob("*.fresh*")), "a partial file was left"
-    assert _rows(corpus, "SELECT id FROM articles ORDER BY id") == [(200,), (201,), (202,)]
 
 
-def test_a_read_back_that_refuses_leaves_the_copy_as_it_was(corpus, tmp_path, monkeypatch):
+def test_a_read_back_that_refuses_stops_the_backup_in_words(corpus, tmp_path, monkeypatch):
     def refuse(*_a, **_k):
         raise ne._ExportRefused("differs")
 
     monkeypatch.setattr(ne, "_read_back", refuse)
-    notes: list[str] = []
-    ne.drop_newsletters_encrypted(corpus, notes)
-    assert "secure delete" in notes[0] and "differs" in notes[0], "a refusal is named in words"
+    with pytest.raises(ne.NewsletterFilterRefused) as hit:
+        ne.drop_newsletters_encrypted(corpus, [])
+    assert str(hit.value) == ne.MESSAGE_OTHER.format(reason="differs"), "a refusal is named in words"
     assert not list(tmp_path.glob("*.fresh*"))
-    assert _rows(corpus, "SELECT COUNT(*) FROM articles") == [(3,)], "the refused file did not replace the copy"
+
+
+def test_the_two_notices_are_one_fixed_sentence_each_with_one_slot():
+    assert "{" not in ne.MESSAGE_SPACE
+    assert ne.MESSAGE_OTHER.count("{") == 1 and "{reason}" in ne.MESSAGE_OTHER
+    for m in (ne.MESSAGE_SPACE, ne.MESSAGE_OTHER):
+        assert "was not made instead" in m and "earlier backups are untouched" in m
 
 
 def test_the_deleting_runs_with_secure_delete_on(corpus, statements):
@@ -358,7 +358,7 @@ def test_an_index_merge_that_will_not_fit_is_refused_before_anything_is_deleted(
     assert corpus.read_bytes() == before, "nothing was written"
 
 
-def test_a_drive_with_room_for_the_merge_but_not_the_rewrite_takes_the_secure_delete_path(
+def test_a_drive_with_room_for_the_merge_but_not_the_rewrite_stops_the_backup_in_words(
     corpus, tmp_path, monkeypatch
 ):
     calls: list[int] = []
@@ -368,112 +368,59 @@ def test_a_drive_with_room_for_the_merge_but_not_the_rewrite_takes_the_secure_de
         return 10**12 if len(calls) == 1 else 0  # the merge's room, then none for the rewrite
 
     monkeypatch.setattr("src.backup.folder_backup.free_bytes", room)
-    notes: list[str] = []
-    assert ne.drop_newsletters_encrypted(corpus, notes) == 3
-    assert len(notes) == 1 and "not enough free space for the rewrite" in notes[0], notes
+    with pytest.raises(ne.NewsletterFilterRefused) as hit:
+        ne.drop_newsletters_encrypted(corpus, [])
+    assert str(hit.value) == ne.MESSAGE_SPACE and hit.value.space
     assert not list(tmp_path.glob("*.fresh*"))
-    assert _MARK not in _clear_text(corpus, tmp_path)
-
-
-def _plain_twin(path: Path) -> None:
-    """A small corpus with 20 newsletter articles and 10 others. Built with ``secure_delete`` ON, so
-    that the only bytes the deletes could leave behind are the ones the deletes themselves free: a
-    page that splits while the pragma is off keeps a stale copy of the cells it moved in its free
-    space (the root page of ``articles``, once it becomes an interior page), which ``secure_delete``
-    cannot reach afterwards and which differs from one SQLite build to the next."""
-    from sqlcipher3 import dbapi2 as sqlcipher
-
-    con = sqlcipher.connect(str(path))
-    con.execute("PRAGMA secure_delete = ON")
-    con.executescript(
-        """
-        CREATE TABLE sources (id INTEGER PRIMARY KEY, domain TEXT);
-        CREATE TABLE articles (id INTEGER PRIMARY KEY, source_id INTEGER, title TEXT, content TEXT);
-        CREATE VIRTUAL TABLE article_fts USING fts5(title, content, content='articles', content_rowid='id');
-        CREATE TRIGGER article_fts_ai AFTER INSERT ON articles BEGIN
-          INSERT INTO article_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-        END;
-        CREATE TRIGGER article_fts_ad AFTER DELETE ON articles BEGIN
-          INSERT INTO article_fts(article_fts, rowid, title, content)
-          VALUES ('delete', old.id, old.title, old.content);
-        END;
-        """
-    )
-    con.execute("INSERT INTO sources VALUES (1, ?)", (_NEWSLETTER_DOMAINS[0],))
-    con.execute("INSERT INTO sources VALUES (2, 'news.example')")
-    for i in range(20):
-        con.execute(
-            "INSERT INTO articles VALUES (?, 1, ?, ?)", (i, f"nl{i}", f"{_MARK.decode()}{i} " * 400)
-        )
-    for i in range(10):
-        con.execute("INSERT INTO articles VALUES (?, 2, ?, ?)", (1000 + i, f"keep{i}", f"ordinary words {i} " * 50))
-    con.commit()
-    con.close()
-
-
-@pytest.mark.parametrize("secure", [True, False])
-def test_secure_delete_is_what_leaves_no_text_in_the_pages_the_deletes_free(tmp_path, secure):
-    """The encrypted copy's free pages cannot be read from here (no ``sqlite_dbpage`` in the driver
-    build, and a decrypting export copies live rows only), so the same statements run on a plaintext
-    twin and its RAW bytes are read. The twin is opened by the SQLCipher driver WITHOUT a key, which
-    is the engine the encrypted copy is opened by: the stdlib ``sqlite3`` is whatever SQLite the
-    platform's Python was linked with. The twin is BUILT with the pragma on (see ``_plain_twin``): a
-    page that split while it was off kept a stale copy of its cells, which failed this test on macOS
-    CI and is also why the secure-delete fallback is the weaker path (``NOTE_DELETE``). The
-    control (``secure`` False) must still hold the words, or the check sees nothing; the module's own
-    use of the pragma is pinned by its statement order."""
-    from sqlcipher3 import dbapi2 as sqlcipher
-
-    from src.backup.artifact import _drop_newsletter_rows
-
-    path = tmp_path / "twin.db"
-    _plain_twin(path)
-    con = sqlcipher.connect(str(path))
-    con.execute(f"PRAGMA secure_delete = {'ON' if secure else 'OFF'}")
-    assert _drop_newsletter_rows(con, vacuum=False) == 20
-    con.close()
-    assert (_MARK in path.read_bytes()) is (not secure)
 
 
 # ---------------------------------------------------------------------------------------------- #
-#  the wiring in stream_backup, and condition 4 (the space check counts the copy AND its rewrite)
+#  the stop reaches the backup as a stop: no fallback to a backup with the newsletters, no leftovers
 # ---------------------------------------------------------------------------------------------- #
-def test_stream_backup_sends_an_encrypted_copy_to_the_rewrite_and_a_plain_one_to_vacuum(
-    corpus, tmp_path, monkeypatch
-):
-    import sqlite3
-
+def test_the_stream_backup_filter_lets_the_refusal_through(corpus, monkeypatch):
     from src.backup import stream_backup as sb
 
-    notes: list[str] = []
-    assert sb._drop_newsletters_in_file(corpus, notes) == 3
-    assert notes == [ne.NOTE_EXPORT]
+    monkeypatch.setattr(ne, "_export_to", lambda *a, **k: (_ for _ in ()).throw(OSError("full")))
+    with pytest.raises(ne.NewsletterFilterRefused):
+        sb._drop_newsletters_in_file(corpus, [])
 
-    plain = tmp_path / "plain.db"
-    con = sqlite3.connect(plain)
-    con.executescript(
-        "CREATE TABLE sources (id INTEGER PRIMARY KEY, domain TEXT);"
-        "CREATE TABLE articles (id INTEGER PRIMARY KEY, source_id INTEGER);"
+
+def test_a_stopped_newsletter_free_backup_writes_nothing_and_never_falls_back(tmp_path, monkeypatch):
+    from src.backup import stream_backup as sb
+
+    def stopped(*_a, **_k):
+        raise ne.NewsletterFilterRefused("OSError", space=False)
+
+    monkeypatch.setattr(sb, "_live_corpus_source", stopped)
+    dest = tmp_path / "dest"
+    with pytest.raises(ne.NewsletterFilterRefused):
+        sb.write_stream_backup(dest, "pw", include_newsletters=False, side_members=[])
+    left = sorted(p.name for p in dest.iterdir()) if dest.exists() else []
+    assert not [n for n in left if n.startswith(".bak-build-")], left
+    assert not [n for n in left if n.endswith((".oov", ".vol")) or "volume" in n.lower()], left
+
+
+def test_nothing_on_the_backup_path_catches_the_refusal_and_goes_on(monkeypatch):
+    """The call site has no handler around it: an ``except`` that swallowed the refusal would turn
+    the stopped backup into a full one (or an empty one)."""
+    import ast
+
+    src = (Path(__file__).resolve().parent.parent / "src" / "backup" / "stream_backup.py").read_text(
+        encoding="utf-8"
     )
-    con.execute("INSERT INTO sources VALUES (1, ?)", (_NEWSLETTER_DOMAINS[0],))
-    con.execute("INSERT INTO articles VALUES (1, 1)")
-    con.commit()
-    con.close()
-    notes = []
-    assert sb._drop_newsletters_in_file(plain, notes) == 1 and notes == []
-
-
-@pytest.mark.parametrize("side", [0, 40 * 2**20, 10 * 2**30])
-@pytest.mark.parametrize("credit", [0, 10**12])
-def test_the_space_check_asks_for_the_copy_and_its_rewrite_at_the_least(side, credit, monkeypatch):
-    """The rewrite sits beside the copy before the volumes exist, so the bound must reach two copies.
-    It does today because the volume set is sized from the copy plus parity; this keeps it so. The
-    search-index merge is NOT in this bound (it is asked on the copy, above)."""
-    from src.backup import artifact as art
-    from src.backup import stream_backup as sb
-
-    seen: list[int] = []
-    monkeypatch.setattr(art, "preflight_free_space", lambda _d, needed, what="": seen.append(needed))
-    copy = 50 * 2**30
-    sb._preflight_snapshot(Path("."), copy, side, 0.1, credit=credit)
-    assert seen and seen[0] >= 2 * copy, seen
+    tree = ast.parse(src)
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+    calls = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_drop_newsletters_in_file"
+    ]
+    assert calls, "the call is gone -- re-point this test"
+    for call in calls:
+        node = call
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, ast.Try):
+                assert not node.handlers, "a handler wraps the newsletter filter"

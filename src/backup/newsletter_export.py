@@ -12,16 +12,17 @@ THE RULES THIS FILE HOLDS, each pinned by a test that fails without it:
   * The key never enters SQL text or an exception. It is bound (``ATTACH DATABASE ? AS x KEY ?``) on
     the raw driver connection, and nothing on this path raises or records the text of what the driver
     said: a failure is reported by its class (or, for this module's own refusals, by their fixed
-    text), and the text that is logged is run through ``secret_scrub.scrub_text`` first.
+    text), and only the CLASS of a failure is logged.
   * Every cipher setting of the source is copied, not only the page size, and the result is read back
     through the production open path before it replaces the copy. A setting the export cannot carry
     over (a plaintext header, which needs a salt of its own) refuses the export instead.
-  * Any failure takes the other path: the rows are already deleted with ``secure_delete`` on and the
-    index merged, so the copy is left as that and the partial file is removed. The note says which
-    path ran, and that this path is the weaker one: ``secure_delete`` zeroes what the deletes free,
-    but it cannot reach stale bytes already sitting in a page's free space from an earlier split
+  * Any failure STOPS the newsletter-free backup (``NewsletterFilterRefused``): the copy is thrown
+    away, the partial file is removed, earlier backups are untouched, and it never falls back to a
+    backup with the newsletters in it. The other way out, leaving the filtered copy as it is, was
+    dropped (question 37, option a): ``secure_delete`` zeroes what the deletes free but
+    cannot reach stale bytes already sitting in a page's free space from an earlier split
     (measured: the root page of ``articles``, once it turned into an interior page, kept a copy of
-    the first rows it held), so only the rewrite guarantees that no deleted text is in the copy.
+    the first rows it held), so only the rewrite guarantees that no deleted text is in the backup.
 """
 
 from __future__ import annotations
@@ -32,8 +33,6 @@ import os
 import re
 from pathlib import Path
 from typing import Any
-
-from src.monitoring.secret_scrub import scrub_text
 
 __all__ = ["drop_newsletters_encrypted"]
 
@@ -53,11 +52,30 @@ _ALIAS = "nlout"
 _SIDE_FILES = ("-wal", "-shm", "-journal")
 
 NOTE_EXPORT = "newsletters excluded by rewriting the survivors into a fresh encrypted file"
-NOTE_DELETE = (
-    "newsletters excluded by secure delete (the rewrite into a fresh file did not complete: {why}); "
-    "fragments of the excluded newsletters can remain in this backup's unused space, encrypted with it "
-    "(a restore does not bring them back); a backup made when the rewrite can run has none"
+
+_NO_SPACE = "there is not enough free space for the rewrite"
+#: The two sentences the page shows for a stopped backup, keyed in the 12 locales through
+#: ``ooServerText`` (``src/static/app-core.js``); the second carries the reason, which is this
+#: module's own fixed text or an exception CLASS, never what the driver said.
+MESSAGE_SPACE = (
+    "The backup without newsletters was stopped: there is not enough free space to make the clean copy "
+    "of your corpus. No new backup was written, your earlier backups are untouched, and a backup with "
+    "the newsletters was not made instead. Free up space and try again."
 )
+MESSAGE_OTHER = (
+    "The backup without newsletters was stopped: the clean copy of your corpus could not be made "
+    "({reason}). No new backup was written, your earlier backups are untouched, and a backup with the "
+    "newsletters was not made instead."
+)
+
+
+class NewsletterFilterRefused(RuntimeError):
+    """The clean copy could not be made, so the newsletter-free backup stops. The message is one of
+    the two fixed sentences above and carries nothing the driver said."""
+
+    def __init__(self, reason: str, *, space: bool) -> None:
+        self.reason, self.space = reason, space
+        super().__init__(MESSAGE_SPACE if space else MESSAGE_OTHER.format(reason=reason))
 
 
 class _ExportRefused(Exception):
@@ -167,14 +185,10 @@ def _read_back(out: Path, key: str, settings: dict[str, Any], shape: dict[str, A
         check.close()
 
 
-def _failure_text(exc: BaseException, key: str) -> str:
-    """The class of ``exc`` and its message with the key taken out, for the log. Never the chain."""
-    return f"{type(exc).__name__}: {scrub_text(str(exc), key)}"
-
-
 def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) -> int:
     """Remove the imported-newsletter articles from the encrypted copy at ``db_path``, in place.
-    Returns how many articles were dropped; ``notes`` receives one line saying which path ran."""
+    Returns how many articles were dropped; ``notes`` receives the line saying the rewrite ran. Any
+    failure raises :class:`NewsletterFilterRefused`: the copy is not left as a filtered file."""
     from src.backup.artifact import _drop_newsletter_rows, preflight_free_space
     from src.backup.folder_backup import free_bytes
     from src.database.connect import connect, get_passphrase
@@ -182,7 +196,6 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
     key = get_passphrase()
     con = connect(db_path, check_same_thread=False)
     out = db_path.with_name(db_path.name + ".fresh")
-    exported = False
     try:
         # The deletes and the index merge run in ONE transaction with secure_delete on, so the rollback
         # journal holds every page they free before it is zeroed (the deleted articles' pages as well
@@ -198,39 +211,36 @@ def drop_newsletters_encrypted(db_path: Path, notes: list[str] | None = None) ->
             merge_room,
             what="newsletter filter and search-index merge (no backup was written)",
         )
-        # The pages the deletes free are zeroed; stale bytes older than this run are not (see the note).
+        # On: the disk bound below was measured with it on. The copy is rewritten, never kept as it is.
         con.execute("PRAGMA secure_delete = ON")
         dropped = _drop_newsletter_rows(con, vacuum=False)
         if not dropped:
             return 0
-        why = ""
         try:
             if not key:
                 raise _ExportRefused("no passphrase is held")
             settings = _read_settings(con)
             shape = _shape(con)
             if free_bytes(db_path.parent) < db_path.stat().st_size:  # the rewrite is never larger than the copy
-                raise _ExportRefused("there is not enough free space for the rewrite")
+                raise _ExportRefused(_NO_SPACE)
             _remove(out)
             _export_to(con, out, key, settings)
             con.close()
             con = None
             _read_back(out, key, settings, shape)
-            exported = True
-        except Exception as exc:  # noqa: BLE001 - any failure takes the secure-delete path
-            why = str(exc) if isinstance(exc, _ExportRefused) else type(exc).__name__
-            log.warning(
-                "newsletter export did not complete, the copy keeps the secure-delete path: %s",
-                _failure_text(exc, key or ""),
-            )
+        except Exception as exc:  # noqa: BLE001 - any failure stops the backup, in words
+            refused = isinstance(exc, _ExportRefused)
+            reason = str(exc) if refused else type(exc).__name__
+            # The class only: what the driver said can quote the key, and a log is a sink.
+            log.warning("newsletter export did not complete (%s); the backup is stopped", type(exc).__name__)
             _remove(out)
-        if exported:
-            os.replace(out, db_path)
-            for suffix in _SIDE_FILES:
-                with contextlib.suppress(OSError):
-                    Path(str(db_path) + suffix).unlink(missing_ok=True)
+            raise NewsletterFilterRefused(reason, space=refused and reason == _NO_SPACE) from None
+        os.replace(out, db_path)
+        for suffix in _SIDE_FILES:
+            with contextlib.suppress(OSError):
+                Path(str(db_path) + suffix).unlink(missing_ok=True)
         if notes is not None:
-            notes.append(NOTE_EXPORT if exported else NOTE_DELETE.format(why=why))
+            notes.append(NOTE_EXPORT)
         return dropped
     finally:
         if con is not None:

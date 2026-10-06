@@ -201,6 +201,24 @@ def test_the_page_reads_the_servers_real_free_space_sentences(tmp_path):
     assert other == "volume 3 failed its checksum", "an unknown sentence comes back unchanged"
 
 
+def test_the_page_reads_the_stopped_newsletter_free_backup_notices():
+    from src.backup import newsletter_export as ne
+
+    space, other_reason, unknown = _run_server_text([
+        ne.MESSAGE_SPACE,
+        ne.MESSAGE_OTHER.format(reason="OSError"),
+        "The backup without newsletters was stopped for another reason.",
+    ])
+    assert space == ne.MESSAGE_SPACE, "the English page keeps the sentence"
+    assert other_reason.startswith("The backup without newsletters was stopped: the clean copy"), other_reason
+    assert "⁨OSError⁩" in other_reason, "the reason is isolated for right-to-left pages"
+    assert "{reason}" not in other_reason
+    assert unknown == "The backup without newsletters was stopped for another reason."
+    from src.backup.newsletter_export import MESSAGE_OTHER, MESSAGE_SPACE
+
+    _keyed_everywhere(MESSAGE_SPACE, MESSAGE_OTHER)
+
+
 # --- Y10: statistics areas and the non-ISO picker note ------------------------- #
 
 
