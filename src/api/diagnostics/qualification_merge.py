@@ -80,6 +80,8 @@ def source_qualification_merge(
         merge,
         refusal_payload,
         render,
+        repair_record_flags,
+        repair_record_flags_of_export_bytes,
         rows_from_bundle_bytes,
         rows_from_export_bytes,
     )
@@ -122,17 +124,22 @@ def source_qualification_merge(
             # same refusal in the operator's language (re-walk S-6).
             return refuse(exc.i18n, **exc.vars)
         exports.append(rows)
-        inputs.append({
+        entry = {
             "name": name,
             "route": "all-diagnostics bundle" if is_zip else "export json",
             "verdicts": len(rows),
-        })
+        }
+        if not is_zip:
+            entry.update(repair_record_flags_of_export_bytes(raw))
+        inputs.append(entry)
 
     if include_this_instance:
-        own = build_overlay_export(db)["verdicts"]
+        own_export = build_overlay_export(db)
+        own = own_export["verdicts"]
         exports.append(own)
         inputs.append({
             "name": "this instance", "route": "measured here", "verdicts": len(own),
+            **repair_record_flags(own_export.get("basis")),
         })
 
     if not exports:

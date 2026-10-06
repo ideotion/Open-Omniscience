@@ -397,6 +397,26 @@ def test_the_overlay_file_carries_the_warning_when_the_repair_record_was_unreada
     assert yaml.safe_load(text)["verdicts"] is not None, "still a valid overlay file"
 
 
+def test_known_limit_a_newer_attempt_of_any_origin_makes_a_repaired_row_measured(db, monkeypatch):
+    """KNOWN LIMIT (OPEN_QUEUE, the 0.4 gate): the export cannot tell an attempt this install made
+    from one a later import brought in, so ANY judging attempt newer than the one the repair followed
+    reads `measured` -- an imported one included. This pins today's behaviour so that closing the gap
+    (it needs the attempt's origin recorded, a decision under rule 12 = b) is a visible change here,
+    not a silent one. When it is closed, flip the expected basis and delete this note."""
+    import src.catalog.qualification_integrity as qi
+
+    s = _withdrawn_row(db)
+    monkeypatch.setattr(qi, "repaired_rows", lambda: (_repair_record(s), []))
+    assert [(v["domain"], v["basis"]) for v in build_overlay_export(db, now=NOW + timedelta(days=6))["verdicts"]] \
+        == [(s.domain, "inherited")]
+    # a second restore adds a newer judging attempt (an import writes the same rows a local pass does)
+    _attempt(db, s, STATUS_DISQUALIFIED, at=NOW + timedelta(days=20), criteria_version=CRITERIA_VERSION)
+    db.commit()
+    export = build_overlay_export(db, now=NOW + timedelta(days=21))
+    assert [(v["domain"], v["basis"]) for v in export["verdicts"]] == [(s.domain, "measured")]
+    assert export["basis"]["repaired_exported_as_inherited"] == 0
+
+
 def test_the_provenance_basis_reads_a_repaired_row_as_the_export_does(db, monkeypatch):
     """GET /api/sources/{id}/provenance must not call an imported verdict `measured` either."""
     import src.catalog.qualification_integrity as qi

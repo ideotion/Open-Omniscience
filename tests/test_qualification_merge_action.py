@@ -153,6 +153,44 @@ def test_a_single_instance_gets_a_merged_overlay_with_no_uploads_at_all(client) 
     assert inputs[0]["verdicts"] == 1
 
 
+def test_an_unreadable_repair_record_reaches_the_merge_report(client, monkeypatch) -> None:
+    """The warning used to stop at the YAML file: the merge fed this instance in as verdict rows
+    only, so the rows an unreadable repair run withdrew counted as measured corroboration with
+    nothing said. It now travels in the report's inputs, for this instance and for an uploaded
+    export JSON that carries it."""
+    import src.catalog.qualification_integrity as qi
+
+    ok = client.post(ENDPOINT, data={"include_this_instance": "true"}).json()
+    assert "repair_record_unreadable" not in ok["report"]["inputs"][0]
+
+    monkeypatch.setattr(qi, "repaired_rows", lambda: ({}, ["2026-09-30T00:00:00+00:00"]))
+    flagged = json.dumps({
+        "verdicts": [_row("other.example", "qualified")],
+        "basis": {"repair_record_unreadable": True, "repair_runs_unreadable": ["2026-10-01T00:00:00+00:00"]},
+    }).encode("utf-8")
+    r = client.post(
+        ENDPOINT, files=[("files", ("other.json", flagged, "application/json"))],
+        data={"include_this_instance": "true"})
+    assert r.status_code == 200, r.text
+    by_route = {i["route"]: i for i in r.json()["report"]["inputs"]}
+    assert by_route["measured here"]["repair_record_unreadable"] is True
+    assert by_route["measured here"]["repair_runs_unreadable"] == ["2026-09-30T00:00:00+00:00"]
+    assert by_route["export json"]["repair_runs_unreadable"] == ["2026-10-01T00:00:00+00:00"]
+    # nothing is refused or changed: the merge still runs, the warning is beside it
+    assert r.json()["merged_verdicts"] == 2
+
+
+def test_the_merge_panel_shows_the_unreadable_repair_record_warning() -> None:
+    """The panel must write the warning from the report's inputs, in a translated string."""
+    js = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    assert "repair_record_unreadable" in js
+    key = "The record of the boot repair could not be read in full for: {names}."
+    assert key in js
+    for lang in ("en", "fr", "ar", "zh"):
+        loc = json.loads((ROOT / f"src/static/locales/{lang}.json").read_text(encoding="utf-8"))
+        assert any(k.startswith(key) for k in loc), lang
+
+
 def test_an_uploaded_export_merges_beside_this_instances_own_verdicts(client) -> None:
     r = client.post(
         ENDPOINT,

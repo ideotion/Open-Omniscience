@@ -679,6 +679,15 @@
         `<div class="muted">${(rep.inputs || []).map((i) =>
           `${esc(i.route === "measured here" ? t("this instance") : i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
       ];
+      // An input whose boot-repair record could not be read in full: the sources that repair
+      // withdrew cannot be named, so they count above as measured corroboration (informed consent:
+      // the warning is on the page, beside the numbers, never behind a toggle).
+      const unreadable = (rep.inputs || []).filter((i) => i.repair_record_unreadable);
+      if (unreadable.length) {
+        lines.push(`<div class="card-caveat">${esc(tf(
+          "The record of the boot repair could not be read in full for: {names}. Sources it withdrew may be counted here as measured, although an imported history decided them.",
+          {names: unreadable.map((i) => (i.route === "measured here" ? t("this instance") : i.name)).join(", ")}))}</div>`);
+      }
       if (conflicts) {
         // A disagreement between instances is a FINDING. Named, listed, and left at
         // whatever the existing file said -- never resolved on the operator's behalf.

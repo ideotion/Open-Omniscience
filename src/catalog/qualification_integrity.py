@@ -156,7 +156,8 @@ def repaired_rows() -> tuple[dict[str, str | None], list[str]]:
     ``judged_at`` is the date of the imported attempt the repair followed. A row in this mapping
     carries a verdict taken from an imported history, not one this install measured, so the
     qualification export labels it ``inherited`` only while its newest judging attempt is still that
-    one (a later local judgement, in either direction, makes it this install's own). A run record
+    one (any later judging attempt makes it ``measured``: a local judgement in either direction, and
+    equally a newer imported one, which the export cannot yet tell apart -- a KNOWN LIMIT, pinned). A run record
     that cannot be read is skipped (its domains are unknown) and its id is returned, so the caller
     can say that the list is incomplete.
     """

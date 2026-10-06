@@ -4777,6 +4777,7 @@
   "The ranges are NOT equal in width, so read one bar against another but not the shape as a distribution. Counts only, never a score — a long article is not better and a short one is not click-bait.": "範囲は等幅ではありません。バー同士を比べ、全体の形を分布として読まないでください。計数のみで評価ではありません — 長い記事が優れているわけでも、短い記事が釣りタイトルなわけでもありません。",
   "The raw-count guard beneath the rate. A rate cannot tell 1-in-1,992 from 600-in-1,200, and on the field corpus every 'failing' verdict was the former.": "率の下にある生の件数による歯止めです。率では 1,992 件中 1 件と 1,200 件中 600 件を区別できず、実地コーパスで「不良」とされた判定はすべて前者でした。",
   "The readable Markdown rendering of the newest sitting: each source passage with every model's answer underneath it. This is the file to read, and the file to send to someone else.": "直近の実施分を読みやすい Markdown で表したものです。各原文の下に、各モデルの回答が並びます。読むためのファイルであり、他の人に送るためのファイルです。",
+  "The record of the boot repair could not be read in full for: {names}. Sources it withdrew may be counted here as measured, although an imported history decided them.": "次の起動時修復の記録を最後まで読み取れませんでした：{names}。修復が取り下げたソースは、判定が取り込んだ履歴によるものでも、ここでは測定済みとして数えられる場合があります。",
   "The report of the last completed fold: what it counted, the largest folds, and the language pass.": "最後に完了した統合のレポート：数えた内容、最大の統合、言語の処理。",
   "The report of the last completed search re-index: articles checked and re-indexed, by script.": "最後に完了した検索再インデックスのレポート：確認した記事と再インデックスした記事（文字体系別）。",
   "The rest of the corpus's share": "コーパスの残りの割合",
