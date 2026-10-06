@@ -85,7 +85,7 @@ def test_ux_start_then_poll_re_throws_an_unrelated_masked_job():
 def test_stream_backup_always_emits_the_corpus_member():
     # the invariant the frontend fix relies on: a volumes job that reaches state:"done" genuinely
     # wrote the corpus, because write_stream_backup unconditionally emits the role="corpus" member.
-    assert '_emit_member(st, MemberFile(src.member_name, "corpus", src.path))' in _STREAM, (
+    assert '_emit_member(st, MemberFile(src.member_name, "corpus", corpus_path))' in _STREAM, (
         "the unconditional corpus-member emission was moved/removed — the done⇒corpus invariant broke"
     )
 

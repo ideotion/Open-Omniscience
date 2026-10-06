@@ -26,6 +26,12 @@ WHAT IT DOES, in order, printing ONE json object at the end (and writing the sam
 The parent deletes this directory afterwards unless asked to keep it. Nothing here
 touches the operator's live corpus -- it cannot: this process's engine points at the
 fresh directory by construction.
+
+The passphrase it is handed is taken out of every string in the result before either write
+(``_result_text``). The rest of what this process leaves in a KEPT install -- the app's own run
+journal and its import reports, which record the backup's name and the words of a failure -- is
+written by code that knows nothing of the passphrase, so the parent scrubs those files once this
+process has exited (``release_run._scrub_kept_install``).
 """
 
 from __future__ import annotations
@@ -85,6 +91,28 @@ def _restore(backup: Path, passphrase: str) -> dict:
     }
 
 
+def _error_text(exc: BaseException, passphrase: str) -> str:
+    """The failure as the parent will read and record it: the exception's class and message, the passphrase
+    taken out of them BEFORE the cut to 600 characters (a cut through it would leave a fragment no later
+    replacement could find). Exact match only. No exception on this path is known to carry the passphrase
+    in its message; this is the net beneath that, not a replacement for it."""
+    from src.monitoring.secret_scrub import scrub_text
+
+    return scrub_text(f"{type(exc).__name__}: {exc}", passphrase)[:600]
+
+
+def _result_text(result: dict, passphrase: str) -> str:
+    """The result as it is written to ``OO_RELEASE_RUN_OUT`` and printed: every string in it scrubbed of
+    the passphrase, not only ``error``. ``keep_fresh_install`` leaves that file beside the kept install,
+    and the parent scrubs what it READS; the journal and reports the app writes while this process runs
+    are cleaned by the parent after it exits. The round trip through JSON first turns whatever
+    ``default=str`` would have stringified into a string the scrub can see."""
+    from src.monitoring.secret_scrub import scrub_value
+
+    plain = json.loads(json.dumps(result, default=str))
+    return json.dumps(scrub_value(plain, passphrase))
+
+
 def main() -> int:
     from src.monitoring.p0_validation import _RssSampler
 
@@ -120,9 +148,9 @@ def main() -> int:
         result["ok"] = True
     except Exception as exc:  # noqa: BLE001 - the parent reads the failure; never a bare traceback only
         result["ok"] = False
-        result["error"] = f"{type(exc).__name__}: {exc}"[:600]
+        result["error"] = _error_text(exc, passphrase)
     result["elapsed_s"] = round(time.monotonic() - t0, 1)
-    text = json.dumps(result, default=str)
+    text = _result_text(result, passphrase)
     with contextlib.suppress(OSError):
         out_path.write_text(text, encoding="utf-8")
     print(text)

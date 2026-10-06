@@ -93,10 +93,27 @@ this section were still open.
   keeps the last C-heap reading taken before the final peak (#1194); collection workers read
   their source through their own session (#1184).
 - The launcher caps glibc's malloc arenas at two (`MALLOC_ARENA_MAX=2`, R114, #1304): the app's many threads
-  leave the memory they free held in their own arenas, and the first reading taken inside a crash found
-  nearly 30% of its anonymous memory in that state. An instance has it from its first launch through
-  the launcher after an update, an operator's own value is kept, and the diagnostics say which
-  instances run with it.
+  leave memory they free held by glibc's heap, and the first reading taken inside a crash found
+  28.8% of its anonymous memory (988.7 of 3,437.3 MB) in that state. An instance has it from its
+  first launch through the launcher after an update, an operator's own value is kept, and the
+  diagnostics say which instances run with it, reading the setting the way glibc does (the first of
+  two entries, a plain number, not under a malloc replacement the process actually loaded, and not
+  under a `GLIBC_TUNABLES` arena limit, whichever copy of that variable glibc reads). The
+  cap is the server's alone: the launcher gives it to that one command, so the browser it opens does
+  not inherit it, and the Ollama and vLLM processes the server starts leave the launcher's default
+  out (a value the operator chose still reaches them).
+- The 0.4 release run (Settings → Advanced → Diagnostics) no longer records a restore that failed as
+  measured (#1312): a restore its engine refused, or that died, now reads `error` with its own words,
+  a resumed run retakes it and asks for the passphrase again, and the passphrase is kept out of what a
+  kept fresh install leaves on the drive (and out of every form a half-written file holds it in), and
+  out of the exception texts the P0 check writes into its report, which the debug bundle carries. Every
+  restore attempt has a directory of its own, so a second run in the same server never restores into
+  an earlier kept install, and the restore's output is read while it runs, so a child that says more
+  than a pipe holds is no longer left blocked until the run is cancelled.
+- The search-timing logs (`search_timing.jsonl`, `search_timing_browse.jsonl` in the data folder) no longer repeat
+  their explanatory text on every line (#1312): a line is the measurement only, a fifth to a tenth of what it was (a
+  browse line about 195 bytes, not about 1,940), and the report carries the words each measurement was made under (what each
+  phase covers, where the clock starts and stops) once per kind, as `record_method` and `record_caveat`.
 
 ### Interface and translations
 
