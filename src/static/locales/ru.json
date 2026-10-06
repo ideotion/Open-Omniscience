@@ -6437,6 +6437,7 @@
   "the name of the signature scheme, ed25519": "название схемы подписи, ed25519",
   "the newest held version": "самая новая имеющаяся версия",
   "the next one rejoins the line on {when}": "следующий вернётся в очередь {when}",
+  "the passphrase has a character that cannot be written as UTF-8": "в парольной фразе есть символ, который нельзя записать в UTF-8",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "период охватывает {days} дн.; свыше {max} линза «те же дни в прошлые годы» перестаёт быть линзой — она становится целым прошлым годом, который корпус уже показывает в другом месте",
   "the period's concepts resolved to no plain keywords": "понятия периода не сопоставились ни с одним простым ключевым словом",
   "the published default": "опубликованное значение по умолчанию",

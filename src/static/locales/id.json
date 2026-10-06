@@ -6437,6 +6437,7 @@
   "the name of the signature scheme, ed25519": "nama skema tanda tangan, ed25519",
   "the newest held version": "versi terbaru yang dimiliki",
   "the next one rejoins the line on {when}": "yang berikutnya kembali ke antrean pada {when}",
+  "the passphrase has a character that cannot be written as UTF-8": "frasa sandi memuat karakter yang tidak dapat ditulis dalam UTF-8",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "periode ini mencakup {days} hari; lewat dari {max}, lensa 'hari yang sama pada tahun-tahun sebelumnya' tidak lagi menjadi lensa — ia menjadi satu tahun penuh sebelumnya, yang sudah ditampilkan korpus di tempat lain",
   "the period's concepts resolved to no plain keywords": "konsep pada periode ini tidak memetakan ke kata kunci sederhana mana pun",
   "the published default": "bawaan yang dipublikasikan",

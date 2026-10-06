@@ -6437,6 +6437,7 @@
   "the name of the signature scheme, ed25519": "署名方式の名前（ed25519）",
   "the newest held version": "保持している最新の版",
   "the next one rejoins the line on {when}": "次の 1 件は {when} にキューに戻ります",
+  "the passphrase has a character that cannot be written as UTF-8": "パスフレーズに UTF-8 で書き表せない文字が含まれています",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "期間は {days} 日にわたります。{max} 日を超えると「過去の年の同じ日」というレンズはレンズでなくなり、過去の丸一年になります。それはコーパスがすでに別の場所で示しています",
   "the period's concepts resolved to no plain keywords": "この期間の概念は、いずれの単純なキーワードにも対応しませんでした",
   "the published default": "公開既定値",

@@ -6437,6 +6437,7 @@
   "the name of the signature scheme, ed25519": "हस्ताक्षर पद्धति का नाम, ed25519",
   "the newest held version": "सबसे नया उपलब्ध संस्करण",
   "the next one rejoins the line on {when}": "अगला {when} को कतार में लौटेगा",
+  "the passphrase has a character that cannot be written as UTF-8": "पासफ़्रेज़ में एक ऐसा अक्षर है जिसे UTF-8 में नहीं लिखा जा सकता",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "अवधि {days} दिनों की है; {max} के बाद 'पिछले वर्षों के यही दिन' वाला लेंस लेंस नहीं रहता — यह पिछले वर्ष का पूरा साल बन जाता है, जिसे कोष पहले से कहीं और दिखाता है",
   "the period's concepts resolved to no plain keywords": "इस अवधि की अवधारणाएँ किसी सामान्य मुख्य शब्द से मेल नहीं खाईं",
   "the published default": "प्रकाशित डिफ़ॉल्ट",
