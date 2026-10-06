@@ -332,7 +332,15 @@ def test_the_kernel_clock_id_is_the_one_the_c_library_returns_and_a_gone_thread_
     gone = t.native_id
     done.set()
     t.join(5)
+    # ``join`` returns when Python is done with the thread, not when the kernel has reaped its task: until it has,
+    # the kernel still answers for that id (a failure under load), and a long run can hand the id to a NEW thread.
+    # Wait for each id to leave /proc; an id that is still listed has a thread behind it, so there is nothing gone to ask about.
+    deadline = real_time.monotonic() + 5.0
     for tid in (gone, 2**22 - 1):
+        while os.path.exists(f"/proc/self/task/{tid}") and real_time.monotonic() < deadline:
+            real_time.sleep(0.01)
+        if os.path.exists(f"/proc/self/task/{tid}"):
+            pytest.skip(f"thread id {tid} is still listed or was reused by another thread")
         with pytest.raises(OSError):
             real_time.clock_gettime(session_hwm._linux_thread_clock(tid))
 
