@@ -29,13 +29,17 @@ after an unclean end) and E3 (a salvage copy). Until they land the latch release
 collection again (:meth:`DamageRegistry.retry`), never by itself, because a damaged file that keeps being
 written is the harm and only a check can say it is not damaged.
 
-THE SCOPE FIELD. ``search-index`` is claimed only on EVIDENCE that the full-text index and not the table
-itself is what the database could not read: the virtual-table corruption code (extended 267, which FTS5
-raises for its own structure) or a statement that reads an index shadow table directly. A statement that
-merely NAMES the index is not evidence, because an external-content FTS5 table reads the ``articles`` table
-through it (the gotcha ``fts._decide_fts_rebuild`` documents). Everything else is ``data``, and the record
-says which basis it rested on. The scope picks the route the record names (``search-index-rebuild`` or
-``verify-then-salvage``); E1 only RECORDS the route.
+THE SCOPE FIELD. ``search-index`` is claimed when the full-text index is what the failing statement reads:
+the virtual-table corruption code (extended 267, which FTS5 raises for its own structure) or a statement
+over ``article_fts`` or one of its shadow tables. MEASURED: damaged index pages read through ``MATCH`` raise
+plain code 11, never 267, so the statement is the only evidence there is, and it is a SUSPICION: an
+external-content FTS5 table reads the ``articles`` table through the index (the gotcha
+``fts._decide_fts_rebuild`` documents), and a trigger that writes the index fails inside a statement that
+names only ``articles``. So the record says which basis it used, the sentence never says the articles are
+intact (E1 has not looked), and ``data`` is sticky while a file is latched (the worst scope wins: a later
+index-only incident must not soften a data one). Everything else is ``data``. The scope picks the route the
+record names (``search-index-rebuild`` or ``verify-then-salvage``); E1 only RECORDS the route, and E2's
+per-table check is what decides.
 
 Nothing here touches a database: an observer on a damaged file must not read it, and it never raises.
 """
@@ -48,6 +52,7 @@ import os
 import re
 import threading
 import time
+import uuid
 import weakref
 from collections import deque
 from datetime import UTC, datetime
@@ -63,9 +68,14 @@ SQLITE_CORRUPT = 11  # primary code; every extended code shares its low byte
 SQLITE_CORRUPT_VTAB = 267  # extended: what FTS5 raises for its own structure
 
 FILE_CORPUS = "corpus"
-#: The files COLLECTION writes: starting collection again releases these (the Wikipedia lane has its own
-#: start, and an OSM import is a job the operator starts).
-COLLECTION_FILES = (FILE_CORPUS, "law")
+FILE_WIKI = "wiki"
+FILE_LAW = "law"
+#: The file starting collection again does NOT release: the Wikipedia lane has its own start. Every other
+#: latched file (the corpus, the law file, a file that is only recorded) is released by it.
+NOT_RELEASED_BY_COLLECTION = (FILE_WIKI,)
+#: The files that have a writer this module pauses (the corpus's passes, the Wikipedia lane's loop, the law
+#: step). Any other file's incident is recorded and named, and nothing waits on it.
+PAUSED_FILES = (FILE_CORPUS, FILE_WIKI, FILE_LAW)
 
 SCOPE_DATA = "data"
 SCOPE_SEARCH_INDEX = "search-index"
@@ -80,15 +90,21 @@ INCIDENTS_KEEP = 20
 #: statement or two, so a repeat is rare; the bound is for the case where something else keeps reading.
 FLUSH_EVERY_S = 60.0
 
+#: How long the failing statement's thread waits for the record to be gathered and written (see
+#: :meth:`DamageRegistry.note`). What it protects: a thread that may hold the write gate, on a drive that
+#: may be the failing one. The record still lands when the drive answers; this is how long a hung one can
+#: delay a statement that has already failed.
+RECORD_WAIT_S = 2.0
+
 #: How much of the driver's first line and of a statement's shape a record keeps.
 _MESSAGE_KEEP = 160
 _SHAPE_KEEP = 240
 
 _DBAPI_MODULES = ("sqlite3", "sqlcipher3")
 
-#: The full-text index's own tables, read DIRECTLY. A statement over these is evidence about the index;
-#: one over ``article_fts`` itself is not (see the module docstring).
-_SHADOW_TABLE = re.compile(r"\barticle_fts_(?:data|idx|docsize|config|content)\b", re.IGNORECASE)
+#: The full-text index (``article_fts``) and its shadow tables. A statement over these is the evidence that
+#: the index is what could not be read (a suspicion, not proof: see the module docstring).
+_SHADOW_TABLE = re.compile(r"\barticle_fts(?:_(?:data|idx|docsize|config|content))?\b", re.IGNORECASE)
 
 _STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
 _NUMBER = re.compile(r"(?<![\w\"])-?\d+(?:\.\d+)?(?![\w\"])")
@@ -107,15 +123,17 @@ def switch_on() -> bool:
 
 def driver_error(exc: BaseException | None) -> BaseException | None:
     """The DRIVER's own exception (sqlite3 or sqlcipher3) behind ``exc``: SQLAlchemy's ``.orig``, then
-    ``__cause__`` and ``__context__``. SQLAlchemy's wrapper is never read, for its text carries the
-    statement and every value bound to it."""
+    ``__cause__`` (``raise ... from``). Not ``__context__``: that is merely the exception being handled
+    when another was raised, and a ``TypeError`` raised inside the ``except`` of an earlier corrupt error
+    is not corruption. SQLAlchemy's wrapper is never read, for its text carries the statement and every
+    value bound to it."""
     seen: set[int] = set()
     cur = exc
     while cur is not None and id(cur) not in seen:
         seen.add(id(cur))
         if type(cur).__module__.split(".")[0] in _DBAPI_MODULES:
             return cur
-        cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
+        cur = getattr(cur, "orig", None) or cur.__cause__
     return None
 
 
@@ -132,6 +150,11 @@ def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
     if driver is None:
         return None
     first = (str(driver).splitlines() or [""])[0].strip()
+    low = first.lower()
+    if low.startswith("malformed database schema") and " - no such " in low:
+        # SQLite gives this SQLITE_CORRUPT text when a connection lacks a function, module or collation
+        # the schema needs: a missing capability of the connection, not a damaged file.
+        return None
     code = getattr(driver, "sqlite_errorcode", None)
     if isinstance(code, int):
         if (code & 0xFF) != SQLITE_CORRUPT:
@@ -142,7 +165,6 @@ def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
             "name": name if isinstance(name, str) else "SQLITE_CORRUPT",
             "message": first[:_MESSAGE_KEEP],
         }
-    low = first.lower()
     if low.startswith("database disk image is malformed") or low.startswith("malformed database schema"):
         return {"code": None, "name": None, "message": first[:_MESSAGE_KEEP]}
     return None
@@ -171,7 +193,10 @@ def scope_of(code: int | None, shape: str | None) -> tuple[str, str]:
     if code == SQLITE_CORRUPT_VTAB:
         return SCOPE_SEARCH_INDEX, "the driver reported corruption in a virtual table (extended code 267)"
     if shape and _SHADOW_TABLE.search(shape):
-        return SCOPE_SEARCH_INDEX, "the failing statement reads an index table directly"
+        return SCOPE_SEARCH_INDEX, (
+            "the failing statement reads the search index (a damaged index reports plain code 11 through "
+            "MATCH, so this is a suspicion: the per-table check of E2 decides)"
+        )
     return SCOPE_DATA, "nothing shows the damage is limited to the search index"
 
 
@@ -260,11 +285,11 @@ def _current_session_id() -> str | None:
 
 
 def _endpoint() -> str | None:
-    """The route the failing request is serving, when it is one (the pool watcher's own label)."""
+    """The route TEMPLATE the failing request is serving, when it is one (the pool watcher's own label)."""
     try:
         from src.database import pool_watch
 
-        return pool_watch._endpoint_label()
+        return pool_watch.endpoint_template()  # the template only: a raw path may carry an id or a file name
     except Exception:  # noqa: BLE001
         return None
 
@@ -288,13 +313,18 @@ class DamageRegistry:
         self._mono = mono
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()  # one writer of the record at a time; never held with _lock
+        self._load_lock = threading.Lock()  # one reader of the record file; never held with _lock
+        #: Tells this process's incidents from an earlier process's in the record (the session id can be
+        #: unknown, and two unknowns must not read as the same incident).
+        self._process = uuid.uuid4().hex[:12]
         self._loaded = False
         self._prior_unreadable = False
         self._incidents: deque[dict[str, Any]] = deque(maxlen=INCIDENTS_KEEP)
         self._files: dict[str, dict[str, Any]] = {}
-        self._dirty = False
         self._last_flush_mono: float | None = None
         self._write_error: str | None = None
+        self._seq = 0  # numbers the documents handed to ``_flush`` so an older one never overwrites a newer
+        self._flushed_seq = 0
 
     def _reset_for_tests(self, *, path_fn=None) -> None:
         with self._lock:
@@ -302,31 +332,49 @@ class DamageRegistry:
             self._prior_unreadable = False
             self._incidents.clear()
             self._files.clear()
-            self._dirty = False
             self._last_flush_mono = None
             self._write_error = None
+            self._seq = self._flushed_seq = 0
             self._path_fn = path_fn or record_path
 
     # -- persistence ------------------------------------------------------------------------------
-    def _load_locked(self) -> None:
-        """Pick up the record an earlier session wrote, once. A record that cannot be read is said so
-        (``prior_record_unreadable``) and replaced by the next incident, never a reason to fail."""
+    def _ensure_loaded(self) -> None:
+        """Pick up the record an earlier session wrote, once per process. The FILE is read outside the
+        registry's lock (``latched`` is read on every unit of collection work and must never queue behind
+        a slow drive); only the merge of what was read happens under it. A record that cannot be read is
+        said so (``prior_record_unreadable``) and replaced by the next incident, never a reason to fail."""
         if self._loaded:
             return
-        self._loaded = True
-        try:
-            raw = json.loads(Path(self._path_fn()).read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return
-        except (OSError, ValueError):
+        with self._load_lock:
+            if self._loaded:
+                return
+            raw: Any = None
+            unreadable = False
+            try:
+                raw = json.loads(Path(self._path_fn()).read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError):
+                unreadable = True
+            with self._lock:
+                self._merge_loaded_locked(raw, unreadable)
+                self._loaded = True
+
+    def _merge_loaded_locked(self, raw: Any, unreadable: bool) -> None:
+        if unreadable:
             self._prior_unreadable = True
             return
+        if raw is None:
+            return
         try:
+            earlier = list(self._incidents)  # an incident noted while the file was being read stays newest
+            self._incidents.clear()
             for inc in raw.get("incidents", [])[-INCIDENTS_KEEP:]:
                 if isinstance(inc, dict):
                     self._incidents.append(inc)
+            self._incidents.extend(earlier)
             for key, st in (raw.get("files") or {}).items():
-                if isinstance(st, dict):
+                if isinstance(st, dict) and str(key) not in self._files:
                     # The history carries over; the LATCH does not (a new session is a retry).
                     self._files[str(key)] = {
                         "latched": False,
@@ -343,8 +391,10 @@ class DamageRegistry:
         """The record as it stands. Caller holds the lock; the WRITE happens outside it (:meth:`_flush`),
         because ``corpus_latched`` is read on every unit of collection work and must never queue behind
         a slow drive."""
+        self._seq += 1
         return {
             "schema": SCHEMA,
+            "write_seq": self._seq,
             "written_at": datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds"),
             "files": {k: {kk: vv for kk, vv in v.items() if kk != "latched"} for k, v in self._files.items()},
             "incidents": [dict(i) for i in self._incidents],
@@ -354,12 +404,15 @@ class DamageRegistry:
         """Atomic: write a sibling and rename. A drive that cannot take it is said in ``write_error``;
         the in-memory latch holds regardless. Never called with the registry lock held."""
         with self._io_lock:
+            if doc.get("write_seq", 0) <= self._flushed_seq:
+                return  # a newer snapshot already landed (two threads raced): never write an older one over it
             path = Path(self._path_fn())
             tmp = path.with_name(path.name + ".tmp")
             error: str | None = None
             try:
                 tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
                 os.replace(tmp, path)
+                self._flushed_seq = doc.get("write_seq", 0)
             except OSError as exc:
                 first = (str(exc).splitlines() or [""])[0][:120]
                 error = f"{type(exc).__name__}: {first}"
@@ -368,7 +421,6 @@ class DamageRegistry:
         with self._lock:
             self._write_error = error
             if error is None:
-                self._dirty = False
                 self._last_flush_mono = self._mono()
 
     # -- noticing ----------------------------------------------------------------------------------
@@ -380,22 +432,29 @@ class DamageRegistry:
             if not is_corruption(exc):
                 return
             statement = getattr(context, "statement", None)
-            if statement and re.search(r"\battach\s+database\b", str(statement), re.IGNORECASE):
-                # An ATTACHed file is not this engine's file; the error cannot say which of the two it
-                # came from, and a latch on the wrong one would pause the right file for nothing.
+            if statement and re.match(r"\s*attach\b", str(statement), re.IGNORECASE):
+                # An ATTACHed file is not this engine's file (the DATABASE keyword is optional in SQLite,
+                # so the statement is matched on its first word); the error cannot say which of the two it
+                # came from, and a latch on the wrong one would pause the right file for nothing. What
+                # this does NOT cover: a later statement over an attached schema (``INSERT INTO main.x
+                # SELECT * FROM other.y``) reads like the engine's own. No engine-level ATTACH exists
+                # today (every ATTACH in the app is on a raw driver connection, which has no such
+                # listener); whoever adds one must attach through this seam's knowledge.
                 return
             self.note(file_key, exc, statement=statement, path=_engine_path(context))
         except Exception:  # noqa: BLE001 - an observer never replaces the real error
             pass
 
-    def _known_locked(self, file_key: str, scope: str, shape: str | None, sid: str | None) -> dict[str, Any] | None:
-        """The record of this very incident in this session, if one exists. Caller holds the lock."""
+    def _known_locked(self, file_key: str, scope: str, shape: str | None) -> dict[str, Any] | None:
+        """The record of this very incident in this PROCESS, if one exists. Caller holds the lock. (The
+        process token, not the session id: an unknown id would make an earlier process's incident read as
+        this one's repeat.)"""
         for inc in reversed(self._incidents):
             if (
                 inc.get("file") == file_key
                 and inc.get("scope") == scope
                 and inc.get("statement_shape") == shape
-                and inc.get("session_id") == sid
+                and inc.get("process") == self._process
             ):
                 return inc
         return None
@@ -404,7 +463,6 @@ class DamageRegistry:
         """Count a repeat; the record to write when one is due (at most once per ``FLUSH_EVERY_S``)."""
         known["repeats"] = int(known.get("repeats") or 0) + 1
         known["last_at"] = at
-        self._dirty = True
         if self._last_flush_mono is None or (self._mono() - self._last_flush_mono) >= FLUSH_EVERY_S:
             return self._doc_locked()
         return None
@@ -419,79 +477,119 @@ class DamageRegistry:
     ) -> bool:
         """Record one corruption error against ``file_key`` and latch it. ``path`` is the file the
         failing engine is over (the key's usual file when it is not given). Returns whether the error
-        was corruption. Never raises."""
+        was corruption. Never raises.
+
+        The LATCH is set first, in memory, under the lock and nothing else: it is what stops the writers.
+        The record (stats, the session ledger, the write of the JSON) is gathered and written on a short-
+        lived thread this call waits for at most :data:`RECORD_WAIT_S`, because the failing statement's own
+        thread may hold the write gate and the drive may be the failing one."""
         try:
             found = corruption_of(exc)
             if found is None:
                 return False
+            self._ensure_loaded()  # once per process: the one file read, outside the lock
             shape = statement_shape(statement)
             scope, basis = scope_of(found["code"], shape)
             at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
-            sid = _current_session_id()
             with self._lock:
-                self._load_locked()
                 st = self._files.setdefault(
                     file_key,
                     {"latched": False, "incidents": 0, "first_at": at, "last_at": at, "scope": scope, "retries": 0},
                 )
                 st["incidents"] += 1
                 st["last_at"] = at
-                st["scope"] = scope
                 newly = not st["latched"]
+                # ``data`` is sticky while latched: a later incident that reads only the search index must
+                # not turn "part of your data could not be read" into "your articles were not changed".
+                if newly or st.get("scope") != SCOPE_DATA:
+                    st["scope"] = scope
                 st["latched"] = True
-                known = self._known_locked(file_key, scope, shape, sid)
+                known = self._known_locked(file_key, scope, shape)
                 due = self._count_repeat_locked(known, at) if known is not None else None
+            if newly:
+                _log_latched(file_key, found["name"], scope, shape)
             if known is not None:
                 if due is not None:
-                    self._flush(due)
+                    self._bounded(lambda: self._flush(due))
                 return True
-            # The first of its kind this session: gather the facts OUTSIDE the lock (they stat files and
-            # read the session ledger), then record.
-            if path is None:
-                path, name = _file_paths(file_key)
-            else:
-                name = path.name
-            record: dict[str, Any] = {
-                "at": at,
-                "last_at": at,
-                "file": file_key,
-                "file_name": name,
-                "scope": scope,
-                "scope_basis": basis,
-                "route": route_for(scope),
-                "code": found["code"],
-                "code_name": found["name"],
-                "message": found["message"],
-                "statement_shape": shape,
-                "thread": threading.current_thread().name,
-                "endpoint": _endpoint(),
-                "session_id": sid,
-                "previous_end": _previous_end(),
-                "repeats": 0,
-                **_sizes(path),
-            }
-            with self._lock:
-                known = self._known_locked(file_key, scope, shape, sid)  # another thread may have won
-                if known is not None:
-                    doc = self._count_repeat_locked(known, at)
-                else:
-                    self._incidents.append(record)
-                    doc = self._doc_locked()
-            if doc is not None:
-                self._flush(doc)
-            if newly:
-                _LOG.error(
-                    "database damage: the database reported %s on the %s file (%s scope); its writers "
-                    "are paused until they are started again. Statement shape: %s",
-                    found["name"] or "a malformed database image",
-                    file_key,
-                    scope,
-                    shape,
+            # The first of its kind in this process. What belongs to the CALLING thread is taken here (a
+            # context variable does not follow into another thread); the rest is gathered and written
+            # off it.
+            thread_name = threading.current_thread().name
+            endpoint = _endpoint()
+            self._bounded(
+                lambda: self._record_new(
+                    file_key, found, shape, scope, basis, at, path, thread_name=thread_name, endpoint=endpoint
                 )
+            )
             return True
         except Exception:  # noqa: BLE001 - never raises
             _LOG.debug("database damage: could not record an incident", exc_info=True)
             return False
+
+    def _bounded(self, fn) -> None:
+        """Run ``fn`` on a daemon thread and wait for it at most :data:`RECORD_WAIT_S`: a drive that
+        hangs delays the failing statement by that long and no more, and the record still lands when the
+        drive answers."""
+
+        def _run() -> None:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                _LOG.debug("database damage: could not record an incident", exc_info=True)
+
+        t = threading.Thread(target=_run, name="oo-damage-record", daemon=True)
+        t.start()
+        t.join(RECORD_WAIT_S)
+
+    def _record_new(
+        self,
+        file_key: str,
+        found: dict[str, Any],
+        shape: str | None,
+        scope: str,
+        basis: str,
+        at: str,
+        path: Path | None,
+        *,
+        thread_name: str,
+        endpoint: str | None,
+    ) -> None:
+        """Gather the facts of a first-of-its-kind incident (stats, the session ledger: nothing reads the
+        damaged file) and write the record. Not under the registry's lock until the append."""
+        if path is None:
+            path, name = _file_paths(file_key)
+        else:
+            name = path.name
+        record: dict[str, Any] = {
+            "at": at,
+            "last_at": at,
+            "file": file_key,
+            "file_name": name,
+            "scope": scope,
+            "scope_basis": basis,
+            "route": route_for(scope),
+            "code": found["code"],
+            "code_name": found["name"],
+            "message": found["message"],
+            "statement_shape": shape,
+            "thread": thread_name,
+            "endpoint": endpoint,
+            "session_id": _current_session_id(),
+            "process": self._process,
+            "previous_end": _previous_end(),
+            "repeats": 0,
+            **_sizes(path),
+        }
+        with self._lock:
+            known = self._known_locked(file_key, scope, shape)  # another thread may have won
+            if known is not None:
+                doc = self._count_repeat_locked(known, at)
+            else:
+                self._incidents.append(record)
+                doc = self._doc_locked()
+        if doc is not None:
+            self._flush(doc)
 
     # -- the latch --------------------------------------------------------------------------------
     def latched(self, file_key: str) -> bool:
@@ -505,24 +603,25 @@ class DamageRegistry:
     def corpus_latched(self) -> bool:
         return self.latched(FILE_CORPUS)
 
-    def retry(self, *, reason: str, files: tuple[str, ...] | None = None) -> list[str]:
-        """The operator tries again: release the latch of ``files`` (every file's when ``None``). The
-        record stays. Returns the files released. Never raises."""
+    def retry(
+        self, *, reason: str, files: tuple[str, ...] | None = None, except_files: tuple[str, ...] = ()
+    ) -> list[str]:
+        """The operator tries again: release the latch of ``files`` (every file's when ``None``) except
+        ``except_files``. The record stays. Returns the files released. Never raises."""
         released: list[str] = []
         try:
             doc = None
+            self._ensure_loaded()
             with self._lock:
-                self._load_locked()
                 for key, st in self._files.items():
-                    if st["latched"] and (files is None or key in files):
+                    if st["latched"] and (files is None or key in files) and key not in except_files:
                         st["latched"] = False
                         st["retries"] += 1
                         released.append(key)
                 if released:
-                    self._dirty = True
                     doc = self._doc_locked()
             if doc is not None:
-                self._flush(doc)
+                self._bounded(lambda: self._flush(doc))
             if released:
                 _LOG.warning(
                     "database damage: the %s file's writers are released (%s); the first failed read "
@@ -537,36 +636,45 @@ class DamageRegistry:
     # -- what a surface shows -------------------------------------------------------------------
     def notes(self) -> list[dict[str, Any]]:
         """The sentences to show, one per latched file, as frames the page translates: ``{kind, file,
-        frame, vars}``. No numbers: a size would be a claim about a file this module did not read."""
-        if not switch_on():
-            return []
+        frame, vars}``. No numbers: a size would be a claim about a file this module did not read. With
+        the pause switched off (``OO_DAMAGE_GUARD=0``) the damage is still NAMED, and the frame says the
+        pause is off, so a silent switch never reads as a healthy file."""
+        on = switch_on()
         out: list[dict[str, Any]] = []
         with self._lock:
             for key, st in self._files.items():
                 if not st["latched"]:
                     continue
-                if key == FILE_CORPUS:
+                if not on:
+                    frame = FRAME_PAUSE_OFF
+                elif key == FILE_CORPUS:
                     frame = FRAME_SEARCH_INDEX if st.get("scope") == SCOPE_SEARCH_INDEX else FRAME_DATA
-                elif key == "wiki":
+                elif key == FILE_WIKI:
                     frame = FRAME_WIKI
+                elif key == FILE_LAW:
+                    frame = FRAME_LAW
                 else:
-                    continue  # a lane with no writer this module pauses has no pause to announce
+                    frame = FRAME_RECORDED  # a file with no writer this module pauses: said, not paused
                 out.append({"kind": "damage", "file": key, "frame": frame, "vars": {}})
         return out
 
     def state(self, *, detail: bool = False) -> dict[str, Any]:
         """The honest state: which files are latched, the counts, and the newest incident. ``detail``
         adds the whole record (the diagnostics route's reading; the polled status carries the brief)."""
+        self._ensure_loaded()
         with self._lock:
-            self._load_locked()
             files = {k: dict(v) for k, v in self._files.items()}
             incidents = list(self._incidents)
             write_error = self._write_error
             prior_unreadable = self._prior_unreadable
-        latched = sorted(k for k, v in files.items() if v["latched"]) if switch_on() else []
+        # ``latched`` is the files whose writers are paused; a file with no writer to pause is NAMED
+        # (``recorded_only``, and a note) and nothing waits on it.
+        latched = sorted(k for k, v in files.items() if v["latched"] and k in PAUSED_FILES) if switch_on() else []
+        recorded_only = sorted(k for k, v in files.items() if v["latched"] and k not in PAUSED_FILES)
         out: dict[str, Any] = {
             "enabled": switch_on(),
             "latched": latched,
+            "recorded_only": recorded_only,
             "files": files,
             "incident_count": sum(int(v.get("incidents") or 0) for v in files.values()),
             "last_incident": incidents[-1] if incidents else None,
@@ -610,38 +718,83 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
 
 
 #: The plain sentences. Frames the page translates (each is also a locale key, x12). None of them says
-#: the file is being checked or repaired: in E1 nothing is. They say what is true.
+#: the file is being checked or repaired: in E1 nothing is. None says what is still intact either: E1
+#: has not looked. They say what is true. "Collection will not write to it" holds whether the scheduler
+#: is running or stopped; "paused" would claim a state it may not be in.
 FRAME_DATA = (
     "Part of your library's data file could not be read: the database reported damage. An unexpected "
     "stop, a failing drive or a copy made while the file was changing can leave that behind. Collection "
-    "is paused so it does not make it worse; nothing was deleted, and what is still readable stays "
-    "readable. Starting collection again tries once more, and it pauses again at the first failed read."
+    "will not write to it while this stands, so as not to make it worse, and nothing was deleted. "
+    "Starting collection again tries once more, and it stops again at the first failed read."
 )
 FRAME_SEARCH_INDEX = (
     "Part of your library's search index could not be read: the database reported damage. An unexpected "
-    "stop or a failing drive can leave that behind. Collection is paused so it does not make it worse; "
-    "your articles were not changed. Starting collection again tries once more, and it pauses again at "
-    "the first failed read."
+    "stop or a failing drive can leave that behind. Collection will not write to it while this stands, "
+    "so as not to make it worse, and nothing was deleted. Starting collection again tries once "
+    "more, and it stops again at the first failed read."
 )
 FRAME_WIKI = (
     "Part of the Wikipedia file could not be read: the database reported damage. The Wikipedia lane is "
     "paused so it does not make it worse; nothing was deleted, and collection of your other sources "
     "goes on. Turning Wikipedia fetching off and on again tries once more."
 )
+FRAME_LAW = (
+    "Part of the file that tracks laws could not be read: the database reported damage. Law tracking is "
+    "paused so it does not make it worse; nothing was deleted, and collection of your other sources "
+    "goes on. Starting collection again tries once more."
+)
+FRAME_RECORDED = (
+    "Part of one of your other data files (not your library and not Wikipedia) could not be read: the "
+    "database reported damage. It is recorded in the file database-damage.json in your data folder; "
+    "the app has nothing to pause for that file, and nothing was deleted."
+)
+FRAME_PAUSE_OFF = (
+    "The database reported damage in one of your data files, and the pause for it is switched off on "
+    "this machine (OO_DAMAGE_GUARD=0), so writing carries on. It is recorded in the file "
+    "database-damage.json in your data folder."
+)
 
 METHOD = (
     "A failed database statement counts only when the DRIVER's own error is SQLITE_CORRUPT (code 11 and "
     "its extended codes); a wrong passphrase (code 26) never does, and SQLAlchemy's wrapper text, which "
     "carries the statement's values, is never read. One record per distinct file, scope and statement "
-    "shape per session, repeats counted. The record keeps the statement's shape with every value "
+    "shape per process, repeats counted. The record keeps the statement's shape with every value "
     "removed, never a row. The pause is per file and lives in memory: starting collection again "
-    "releases it and the first failed read puts it back. A 'search-index' scope rests on a "
-    "virtual-table corruption code or a statement over an index table; anything else is 'data'. "
-    "Nothing here reads the damaged file, verifies it or repairs it."
+    "releases it (the Wikipedia lane's own start releases that file's) and the first failed read puts "
+    "it back. A 'search-index' scope is a SUSPICION that rests on a virtual-table corruption code or a "
+    "statement over the full-text index or its tables (a damaged index reports plain code 11 through "
+    "MATCH); anything else is 'data', and 'data' stays while a file is latched. A BLIND SPOT: damage to the first page of a file that is not "
+    "encrypted reads as code 26, the code a wrong passphrase gives, so it is not named. Nothing here "
+    "reads the damaged file, verifies it or repairs it."
 )
+
+
+def _log_latched(file_key: str, name: str | None, scope: str, shape: str | None) -> None:
+    """The one ERROR line of a latch; what it says about the writers follows the switch."""
+    if switch_on():
+        consequence = "its writers are paused until they are started again"
+    else:
+        consequence = "OO_DAMAGE_GUARD=0 switches the pause off, so its writers carry on"
+    _LOG.error(
+        "database damage: the database reported %s on the %s file (%s scope); %s. Statement shape: %s",
+        name or "a malformed database image",
+        file_key,
+        scope,
+        consequence,
+        shape,
+    )
+
 
 # Process-wide singleton (no thread, no I/O until the first incident or a state read).
 registry = DamageRegistry()
+
+
+def retry_for_collection_start(reason: str) -> list[str]:
+    """The ONE call every way of starting collection makes (``POST /api/scheduler/start`` and
+    ``/run-now``, the airplane toggle going online, the unattended start): the operator is trying again,
+    so every latched file is released except the Wikipedia lane's, which its own start releases. The
+    first failed read puts the pause back. Returns the files released. Never raises."""
+    return registry.retry(reason=reason, except_files=NOT_RELEASED_BY_COLLECTION)
 
 
 #: engine -> (file key, listener): what :func:`attach` registered, so a test (or a status read) can

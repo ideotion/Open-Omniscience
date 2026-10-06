@@ -400,7 +400,7 @@ def scheduler_start() -> dict:
     storage_guard.storage_guard.reset(reason="operator started collection")
     # And the database-damage latch (database/damage.py): a RETRY too. The record of the incident
     # stays, and the first failed read puts the pause back.
-    damage.registry.retry(reason="operator started collection", files=damage.COLLECTION_FILES)
+    damage.retry_for_collection_start("operator started collection")
     started = get_scheduler().start()
     _resume_wiki_lane()
     return {"started": started, **_status_payload()}
@@ -428,7 +428,7 @@ def scheduler_run_now() -> dict:
     # A user-triggered run releases a paused-low-memory latch (see /start).
     memguard.memory_guard.reset(reason="operator ran collection now")
     storage_guard.storage_guard.reset(reason="operator ran collection now")
-    damage.registry.retry(reason="operator ran collection now", files=damage.COLLECTION_FILES)
+    damage.retry_for_collection_start("operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""
     started = get_scheduler().run_now()
     _resume_wiki_lane()

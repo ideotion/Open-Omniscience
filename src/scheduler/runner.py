@@ -1534,6 +1534,7 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
             # The law lane's FILE was reported damaged: its writer waits, the other steps do not
             # (database/damage.py -- the latch is per file).
             out[kind] = {"skipped": "database-damaged"}
+            _activity(f"lane:{kind}", out[kind], settings)  # said, not silent
             continue
         try:
             out[kind] = step(session, fetcher, settings)

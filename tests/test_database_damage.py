@@ -21,6 +21,8 @@ import os
 import random
 import re
 import sqlite3
+import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,7 @@ from src.database.damage import (
     scope_of,
     statement_shape,
 )
+from src.scheduler import runner
 from src.scheduler import storage_guard as sg
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,7 +73,12 @@ def _leaf_pages(path: Path, table: str) -> list[int]:
     try:
         return [p for p, t in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name=?", (table,)) if t == "leaf"]
     except sqlite3.OperationalError:
-        pytest.skip("this SQLite has no dbstat virtual table")
+        reason = "this SQLite build has no dbstat virtual table (SQLITE_ENABLE_DBSTAT_VTAB)"
+        if os.getenv("CI") and sys.platform.startswith("linux"):
+            # the Linux lane is where the real damaged-page tests are meant to run: a silent skip
+            # there would leave the whole file asserting nothing
+            pytest.fail(reason + " -- the Linux CI lane must run the damaged-page tests")
+        pytest.skip(reason)
     finally:
         con.close()
 
@@ -226,8 +234,41 @@ def test_a_driver_without_error_codes_is_matched_on_its_own_first_line_only():
 def test_every_extended_code_of_sqlite_corrupt_counts():
     for extended in (11, 267, 523, 779):  # CORRUPT, _VTAB, _SEQUENCE, _INDEX
         assert is_corruption(_fake_driver_error("database disk image is malformed", code=extended)), extended
-    for other in (10, 14, 26, 13):  # IOERR, CANTOPEN, NOTADB, FULL
+    # ERROR, BUSY, LOCKED, INTERRUPT, IOERR, FULL, CANTOPEN, NOTADB: a transient or another failure is not damage
+    for other in (1, 5, 6, 9, 10, 13, 14, 26):
         assert not is_corruption(_fake_driver_error("x", code=other)), other
+        assert not is_corruption(_fake_driver_error("database disk image is malformed", code=other)), other
+
+
+def test_a_missing_capability_in_the_schema_is_not_corruption_even_with_its_corrupt_wording():
+    """SQLite words a connection that lacks a function, module or collation the schema needs as
+    "malformed database schema (x) - no such ...": a missing capability, not a damaged file."""
+    msg = "malformed database schema (ix_articles_norm) - no such function: fts_norm"
+    assert not is_corruption(_fake_driver_error(msg))
+    assert not is_corruption(_fake_driver_error(msg, code=11))
+    assert is_corruption(_fake_driver_error("malformed database schema (ix_x) - near \"x\": syntax error", code=11))
+
+
+def test_a_closed_connection_and_a_busy_database_are_never_corruption(tmp_path, registry):
+    path = tmp_path / "busy.db"
+    _build_store(path, rows=20)
+    con = sqlite3.connect(path)
+    con.close()
+    with pytest.raises(sqlite3.ProgrammingError) as closed:
+        con.execute("SELECT 1")
+    assert not is_corruption(closed.value)
+    holder = sqlite3.connect(path, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")
+    try:
+        eng = create_engine(f"sqlite:///{path}", connect_args={"timeout": 0.05})
+        damage.attach(eng, FILE_CORPUS)
+        with pytest.raises(Exception) as busy, eng.begin() as conn:  # noqa: B017 - the engine's own error type
+            conn.execute(text("INSERT INTO articles (title, content) VALUES ('x', 'y')"))
+        assert "locked" in str(busy.value).lower()
+        assert not is_corruption(busy.value) and not registry.latched(FILE_CORPUS)
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
 
 
 def test_the_statement_shape_keeps_no_value():
@@ -241,31 +282,30 @@ def test_the_statement_shape_keeps_no_value():
     assert len(statement_shape("SELECT " + "x, " * 500)) <= 240
 
 
-def test_scope_is_search_index_only_on_evidence_and_the_record_says_which():
+def test_scope_is_search_index_when_the_statement_reads_the_index_and_the_record_says_which():
     scope, basis = scope_of(267, "SELECT 1")
     assert scope == SCOPE_SEARCH_INDEX and "267" in basis
-    scope, basis = scope_of(11, "SELECT block FROM article_fts_data WHERE id = ?")
-    assert scope == SCOPE_SEARCH_INDEX and "index table directly" in basis
-    # naming the index is NOT evidence: an external-content FTS5 table reads ``articles`` through it
+    # MEASURED: a damaged index read through MATCH raises plain 11, so the statement is the evidence
     for shape in (
+        "SELECT block FROM article_fts_data WHERE id = ?",
         "SELECT rowid FROM article_fts WHERE article_fts MATCH ?",
-        "SELECT a.id FROM articles a JOIN article_fts f ON f.rowid = a.id",
-        "INSERT INTO articles (title) VALUES (?)",
-        None,
+        "SELECT 1 FROM article_fts_docsize",
+        "INSERT INTO article_fts(article_fts) VALUES (?)",
     ):
+        scope, basis = scope_of(11, shape)
+        assert scope == SCOPE_SEARCH_INDEX and "search index" in basis and "suspicion" in basis, shape
+    for shape in ("INSERT INTO articles (title) VALUES (?)", "SELECT count(*) FROM keyword_mentions", None):
         scope, basis = scope_of(11, shape)
         assert scope == SCOPE_DATA and "nothing shows" in basis, shape
     assert damage.route_for(SCOPE_SEARCH_INDEX) == ROUTE_REBUILD_INDEX
     assert damage.route_for(SCOPE_DATA) == ROUTE_VERIFY_THEN_SALVAGE
 
 
-def test_measured_on_a_real_fts5_index_damage_reads_as_plain_corrupt_through_the_virtual_table(tmp_path):
-    """MEASURED 2026-10-06 (SQLite 3.45.1): overwriting leaf pages of ``article_fts_data`` makes a direct
-    read of the shadow table raise code 11, and a MATCH over the virtual table ALSO raises plain 11, not
-    267. So a statement naming the index proves nothing (see the scope test above): E1 can only SUSPECT
-    the search index from a shadow-table read or code 267, and says which basis it used; E2's per-table
-    check is what decides."""
-    path = tmp_path / "fts.db"
+_FTS_WORDS = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"]
+
+
+def _build_fts_store(path: Path) -> None:
+    """A corpus-shaped file with an external-content FTS5 index over ``articles`` (skips without FTS5)."""
     con = sqlite3.connect(path)
     try:
         con.execute("CREATE VIRTUAL TABLE probe USING fts5(x)")
@@ -278,14 +318,25 @@ def test_measured_on_a_real_fts5_index_damage_reads_as_plain_corrupt_through_the
         "CREATE VIRTUAL TABLE article_fts USING fts5(title, content, content='articles', content_rowid='id')"
     )
     rng = random.Random(3)
-    words = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"]
     con.executemany(
         "INSERT INTO articles (title, content) VALUES (?, ?)",
-        [(f"t{i}", " ".join(rng.choice(words) + str(rng.randint(0, 3000)) for _ in range(120))) for i in range(6000)],
+        [
+            (f"t{i}", " ".join(rng.choice(_FTS_WORDS) + str(rng.randint(0, 3000)) for _ in range(120)))
+            for i in range(6000)
+        ],
     )
     con.execute("INSERT INTO article_fts(article_fts) VALUES ('rebuild')")
     con.commit()
     con.close()
+
+
+def test_measured_on_a_real_fts5_index_damage_reads_as_plain_corrupt_through_the_virtual_table(tmp_path):
+    """MEASURED 2026-10-06 (SQLite 3.45.1): overwriting leaf pages of ``article_fts_data`` makes a direct
+    read of the shadow table raise code 11, and a MATCH over the virtual table ALSO raises plain 11, not
+    267. So the code cannot say "the index" and the STATEMENT is the evidence E1 has (a suspicion, with its
+    basis recorded); E2's per-table check is what decides."""
+    path = tmp_path / "fts.db"
+    _build_fts_store(path)
     leaves = _leaf_pages(path, "article_fts_data")
     _overwrite(path, sorted(random.Random(5).sample(leaves, 3)))
 
@@ -296,13 +347,46 @@ def test_measured_on_a_real_fts5_index_damage_reads_as_plain_corrupt_through_the
     assert is_corruption(direct.value)
     assert scope_of(corruption_of(direct.value)["code"], statement_shape("SELECT sum(length(block)) FROM article_fts_data"))[0] == SCOPE_SEARCH_INDEX
     codes = set()
-    for w in words:
+    for w in _FTS_WORDS:
         for n in range(0, 3001, 7):
             try:
                 con.execute("SELECT rowid FROM article_fts WHERE article_fts MATCH ?", (f"{w}{n}",)).fetchall()
             except sqlite3.DatabaseError as exc:
                 codes.add(getattr(exc, "sqlite_errorcode", None))
     assert codes and all(c & 0xFF == 11 for c in codes), codes
+
+
+def test_a_real_match_on_a_damaged_index_is_filed_as_the_search_index_with_its_rebuild_route(tmp_path, registry):
+    """The coordinator's condition: damage that the driver reports as plain 11 through a MATCH is routed
+    to the index's own path, because the failing statement names the index."""
+    path = tmp_path / "fts.db"
+    _build_fts_store(path)
+    leaves = _leaf_pages(path, "article_fts_data")
+    _overwrite(path, sorted(random.Random(5).sample(leaves, 3)))
+    eng = _engine(path)
+    failed = None
+    with eng.connect() as conn:
+        for w in _FTS_WORDS:
+            for n in range(0, 3001, 7):
+                try:
+                    conn.execute(
+                        text("SELECT rowid FROM article_fts WHERE article_fts MATCH :q"), {"q": f"{w}{n}"}
+                    ).fetchall()
+                except Exception as exc:  # noqa: BLE001
+                    failed = exc
+                    break
+            if failed:
+                break
+    assert failed is not None, "the index damage no longer shows up through MATCH"
+    assert registry.latched(FILE_CORPUS)
+    inc = registry.state(detail=True)["incidents"][0]
+    assert inc["code"] & 0xFF == 11 and inc["code"] != damage.SQLITE_CORRUPT_VTAB, "measured: plain 11"
+    assert inc["scope"] == SCOPE_SEARCH_INDEX and inc["route"] == ROUTE_REBUILD_INDEX
+    assert "article_fts" in inc["statement_shape"] and "suspicion" in inc["scope_basis"]
+    assert registry.notes()[0]["frame"] == damage.FRAME_SEARCH_INDEX
+    # the data scope still wins afterwards: a later incident on the table itself is the worse news
+    _note(registry, FILE_CORPUS, statement="SELECT sum(length(content)) FROM articles")
+    assert registry.notes()[0]["frame"] == damage.FRAME_DATA
 
 
 # --------------------------------------------------------------------------- #
@@ -488,14 +572,16 @@ def test_retry_releases_the_named_files_only_and_keeps_the_record(tmp_path):
     _note(reg, FILE_CORPUS)
     _note(reg, "wiki")
     _note(reg, "law")
-    assert reg.retry(reason="test", files=damage.COLLECTION_FILES) == [FILE_CORPUS, "law"] or set(
-        reg.state()["latched"]
-    ) == {"wiki"}
+    # what starting collection does: everything but the Wikipedia lane's file
+    assert sorted(reg.retry(reason="test", except_files=damage.NOT_RELEASED_BY_COLLECTION)) == [FILE_CORPUS, "law"]
     assert reg.latched("wiki") and not reg.latched(FILE_CORPUS) and not reg.latched("law")
     assert reg.state()["incident_count"] == 3, "a retry must not erase what happened"
     assert reg.state()["files"][FILE_CORPUS]["retries"] == 1
     assert reg.retry(reason="test", files=("wiki",)) == ["wiki"]
     assert reg.retry(reason="test") == []  # nothing left to release
+    # a named file that is also excepted stays latched (the exception wins)
+    _note(reg, "wiki")
+    assert reg.retry(reason="test", files=("wiki",), except_files=("wiki",)) == [] and reg.latched("wiki")
 
 
 def test_the_pause_has_its_own_switch_and_the_record_does_not(tmp_path, monkeypatch):
@@ -503,12 +589,19 @@ def test_the_pause_has_its_own_switch_and_the_record_does_not(tmp_path, monkeypa
     _note(reg)
     assert reg.latched(FILE_CORPUS)
     monkeypatch.setenv("OO_DAMAGE_GUARD", "0")
-    assert not reg.latched(FILE_CORPUS) and reg.notes() == []
+    assert not reg.latched(FILE_CORPUS)
+    # the damage is still NAMED, and the sentence says the pause is off: a silent switch must never
+    # read as a healthy file
+    [note] = reg.notes()
+    assert note["file"] == FILE_CORPUS and note["frame"] == damage.FRAME_PAUSE_OFF
+    assert "OO_DAMAGE_GUARD=0" in damage.FRAME_PAUSE_OFF and "carries on" in damage.FRAME_PAUSE_OFF
     assert reg.state()["enabled"] is False and reg.state()["incident_count"] == 1
+    assert reg.state()["latched"] == [], "a paused file is one the writers stop for; this one they do not"
     # it is NOT the storage guard's switch
     monkeypatch.delenv("OO_DAMAGE_GUARD")
     monkeypatch.setenv("OO_STORAGE_GUARD", "0")
     assert reg.latched(FILE_CORPUS)
+    assert reg.notes()[0]["frame"] == damage.FRAME_DATA
 
 
 def test_the_sentences_are_plain_and_name_what_is_true(registry):
@@ -519,15 +612,32 @@ def test_the_sentences_are_plain_and_name_what_is_true(registry):
     _note(registry, FILE_CORPUS, statement="SELECT block FROM article_fts_data")
     assert registry.notes()[0]["frame"] == damage.FRAME_SEARCH_INDEX
     _note(registry, "wiki")
-    assert {n["file"] for n in registry.notes()} == {FILE_CORPUS, "wiki"}
-    _note(registry, "osm")  # a lane with no loop this module pauses has no pause to announce
-    assert {n["file"] for n in registry.notes()} == {FILE_CORPUS, "wiki"}
-    for frame in (damage.FRAME_DATA, damage.FRAME_SEARCH_INDEX, damage.FRAME_WIKI):
+    _note(registry, "law")
+    frames = {n["file"]: n["frame"] for n in registry.notes()}
+    assert frames == {
+        FILE_CORPUS: damage.FRAME_SEARCH_INDEX,
+        "wiki": damage.FRAME_WIKI,
+        "law": damage.FRAME_LAW,
+    }
+    # a file with no writer this module pauses is SAID, with a sentence that claims no pause
+    _note(registry, "osm")
+    assert {n["file"]: n["frame"] for n in registry.notes()}["osm"] == damage.FRAME_RECORDED
+    for frame in (
+        damage.FRAME_DATA,
+        damage.FRAME_SEARCH_INDEX,
+        damage.FRAME_WIKI,
+        damage.FRAME_LAW,
+        damage.FRAME_RECORDED,
+        damage.FRAME_PAUSE_OFF,
+    ):
         low = frame.lower()
         assert "repair" not in low and "being checked" not in low and "will be fixed" not in low, (
             "E1 verifies and repairs nothing and must not say it does"
         )
-        assert "nothing was deleted" in low or "were not changed" in low
+        assert "is still readable" not in low and "stays readable" not in low, "E1 has not looked"
+    for frame in (damage.FRAME_DATA, damage.FRAME_SEARCH_INDEX, damage.FRAME_WIKI, damage.FRAME_LAW, damage.FRAME_RECORDED):
+        assert "nothing was deleted" in frame.lower() or "were not changed" in frame.lower()
+    assert "paused" not in damage.FRAME_RECORDED.lower(), "the recorded-only frame claims no pause"
 
 
 def test_the_bundle_member_is_the_record_cut_oldest_first_and_names_the_cut(registry, tmp_path):
@@ -621,6 +731,11 @@ class _FakeRunner:
         r.last_error = None
         r.paused_reason = None
         r._sleeps = 0
+        r._monotonic = __import__("time").monotonic
+        r._drain_since = None
+        r._last_drain_ended = None
+        r.drain_stage = None
+        r.drain_feed = None
         self.drained = 0
         r._should_stop = lambda: False
         r._sleep = self._sleep
@@ -640,7 +755,7 @@ def test_the_wiki_loop_waits_while_its_file_is_latched_and_resumes_when_released
     _note(registry, "wiki")
     assert f.runner.run_until_stopped(max_drains=3) == 0
     assert f.drained == 0 and f.runner.paused_reason == f.wr.DAMAGED
-    assert f.runner.drain_status()["paused"] == f.wr.DAMAGED if hasattr(f.runner, "_monotonic") else True
+    assert f.runner.drain_status()["paused"] == f.wr.DAMAGED, "the status must say why the loop is quiet"
     registry.retry(reason="the Wikipedia lane was started", files=("wiki",))
     assert f.runner.run_until_stopped(max_drains=2) == 2
     assert f.drained == 2 and f.runner.paused_reason is None
@@ -708,12 +823,86 @@ def test_a_lane_engine_names_its_own_file(tmp_path, registry, monkeypatch):
     assert seen["key"] == "wiki"
 
 
-def test_the_operators_start_and_run_now_retry_the_collection_files():
-    src = (ROOT / "src/api/scheduler.py").read_text(encoding="utf-8")
-    assert src.count("damage.registry.retry(") == 2
-    assert 'reason="operator started collection", files=damage.COLLECTION_FILES' in src
-    assert 'reason="operator ran collection now", files=damage.COLLECTION_FILES' in src
-    assert damage.COLLECTION_FILES == (FILE_CORPUS, "law")
+def _all_three_latched(registry):
+    for key in (FILE_CORPUS, "law", "wiki"):
+        _note(registry, key)
+    assert sorted(registry.state()["latched"]) == ["corpus", "law", "wiki"]
+
+
+def test_the_operators_start_and_run_now_release_every_file_but_wikipedia(registry, monkeypatch):
+    """Starting collection tries the corpus and the law file again; the Wikipedia lane has its own start,
+    and a collection start that released its latch would un-pause a loop this button does not run."""
+    import src.api.scheduler as api_sched
+
+    fake = type("S", (), {"start": lambda self: True, "run_now": lambda self: True})()
+    monkeypatch.setattr(api_sched, "get_scheduler", lambda: fake)
+    monkeypatch.setattr(api_sched, "_status_payload", lambda: {})
+    for call in (api_sched.scheduler_start, api_sched.scheduler_run_now):
+        _all_three_latched(registry)
+        call()
+        assert registry.state()["latched"] == ["wiki"], call.__name__
+        assert registry.state()["files"][FILE_CORPUS]["retries"] >= 1
+        registry.retry(reason="reset between calls")
+
+
+def test_going_online_releases_what_starting_collection_releases(registry, monkeypatch):
+    """The airplane button IS the operator starting collection (R117): the same files, the same exception."""
+    import src.scheduler.runner as runner
+    from src.api.system import set_network_mode
+    from src.ingest import clear_kill_switch
+
+    class _Sched:
+        def start(self):
+            return True
+
+        def stop(self):
+            return True
+
+    import src.wiki.service as wiki_service
+
+    monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)
+    monkeypatch.setattr(runner, "get_scheduler", lambda: _Sched())
+    monkeypatch.setattr(wiki_service, "start_wiki_lane", lambda: False)  # the lane has its own retry
+    monkeypatch.setattr(wiki_service, "stop_wiki_lane", lambda: None)
+    try:
+        _all_three_latched(registry)
+        set_network_mode({"online": True})
+        assert registry.state()["latched"] == ["wiki"]
+    finally:
+        clear_kill_switch()
+
+
+def test_the_wikipedia_lanes_own_start_releases_its_file_and_nothing_else(registry, monkeypatch):
+    from src.wiki import service
+
+    started = {}
+
+    class _Lane:
+        streaming = False
+
+        def start(self):
+            started["yes"] = True
+            return False  # no thread is wanted here
+
+    monkeypatch.setattr(service, "_state_of", lambda: "running")
+    monkeypatch.setattr(service, "_RUNNER", None)
+    monkeypatch.setattr(service, "_build", lambda: _Lane())
+    _all_three_latched(registry)
+    service.start_wiki_lane()
+    assert started.get("yes") and registry.state()["latched"] == [FILE_CORPUS, "law"]
+
+
+def test_a_replaced_corpus_file_releases_the_corpus_latch_only(registry, tmp_path):
+    """After a restore or a merge swaps the file in, the latch was about a file that no longer exists."""
+    from src.backup import merge
+
+    working, target = tmp_path / "working.db", tmp_path / "live.db"
+    working.write_bytes(b"new")
+    target.write_bytes(b"old")
+    _all_three_latched(registry)
+    merge._replace_live_corpus(working, target, wait_s=0.5)
+    assert target.read_bytes() == b"new"
+    assert registry.state()["latched"] == ["law", "wiki"]
 
 
 def test_the_pass_pause_loop_maps_the_damage_phase_and_says_it_does_not_resume_by_itself():
@@ -734,16 +923,413 @@ def test_the_law_housekeeping_step_waits_on_its_own_file(registry, monkeypatch):
     monkeypatch.setitem(rn._LANE_STEPS, "backfill", lambda s, f, st: ran.append("backfill") or {"ran": True})
     monkeypatch.setattr(rn, "_lane_pending_kinds", lambda settings: ["law", "backfill"])
     monkeypatch.setattr(rn, "_lane_kind_order", lambda kinds: list(kinds))
-    monkeypatch.setattr(rn, "_activity", lambda *a, **k: None)
+    shown: list[tuple] = []
+    monkeypatch.setattr(rn, "_activity", lambda *a, **k: shown.append(a))
     monkeypatch.setattr(fr, "wrap_fetcher", lambda f, s: f)
     _note(registry, "law")
     out = rn.run_housekeeping_lane(object(), object(), object())
     assert ran == ["backfill"], "the law step ran into a damaged law file, or its neighbour was stopped"
     assert out["law"] == {"skipped": "database-damaged"} and out["backfill"] == {"ran": True}
+    assert any(a[0] == "lane:law" and a[1] == {"skipped": "database-damaged"} for a in shown), (
+        "the skip must be drawn on the lane's activity line, or the page shows a lane that never ran as idle"
+    )
     registry.retry(reason="test", files=("law",))
     ran.clear()
     out = rn.run_housekeeping_lane(object(), object(), object())
     assert ran == ["law", "backfill"]
+
+
+# --------------------------------------------------------------------------- #
+#  what the Opus read of E1 found: behaviour that the first cut only asserted as source text
+# --------------------------------------------------------------------------- #
+GIB = 1 << 30
+
+
+def _engaged_guard(monkeypatch, kind="wal", free=100 * GIB):
+    """A storage guard that is genuinely engaged on injected readings (never the real drive)."""
+    monkeypatch.setenv("OO_STORAGE_GUARD", "1")  # tests/conftest.py turns the resource guard off
+    fake = {"wal_bytes": 2 * GIB if kind == "wal" else 0, "disk_free_bytes": free if kind == "wal" else 1 << 20}
+
+    def readings():
+        return {"corpus_bytes": 10 * GIB, "disk_total_bytes": 500 * GIB, "lane_wal_bytes": {}, **fake}
+
+    g = sg.StorageGuard(trip_after=2, resume_after=2, readings_fn=readings, drain_fn=lambda: {"busy": 1, "skipped": None})
+    g.poll()
+    g.poll()
+    assert g.engaged and g.kind() == kind
+    return g
+
+
+def test_resume_anyway_is_refused_while_the_corpus_file_is_damaged(registry, monkeypatch):
+    """The button is offered, and a click is answered, by ONE decision: a granted override that
+    ``admit()`` then ignores would be a click that does nothing and a notice that lies."""
+    g = _engaged_guard(monkeypatch)
+    assert g.state()["override_refusal"] is None, "healthy file: the button is offered as before"
+    _note(registry, FILE_CORPUS)
+    st = g.state()
+    assert st["override_refusal"] == {"kind": "damage", "frame": sg.FRAME_OVERRIDE_DAMAGE, "vars": {}}
+    out = g.override(reason="test")
+    assert out["overridden"] is False and out["refused"]["kind"] == "damage"
+    assert g.state()["overridden"] is False
+    assert g.admit() == "wal", "the storage limit still names itself first while both hold"
+
+
+def test_an_override_granted_before_the_damage_does_not_bypass_it_and_is_not_told(registry, monkeypatch):
+    g = _engaged_guard(monkeypatch)
+    assert g.override(reason="test")["overridden"] is True
+    assert g.admit() is None, "the override works while the file is whole"
+    _note(registry, FILE_CORPUS)
+    assert g.admit() == "damage", "collection must not write into a file the database called damaged"
+    st = g.state()
+    assert st["phase"] == sg.PHASE_DAMAGE, "the page must say what is stopping collection"
+    assert st["notes"] == [] and st["kinds"] == [], "the override's own sentences ('you resumed') are not told"
+    assert damage.FRAME_DATA in st["reason"] and "resumed" not in (st["reason"] or "").lower()
+    assert st["overridden"] is True, "the override itself is still on record; only its sentences are not told"
+    registry.retry(reason="test")
+    assert g.admit() is None and g.state()["phase"] is None, "released: the override applies again"
+
+
+def test_a_storage_phase_still_names_itself_while_both_hold(registry, monkeypatch):
+    g = _engaged_guard(monkeypatch, kind="disk")
+    _note(registry, FILE_CORPUS)
+    assert g.state()["phase"] == sg.PHASE_DISK
+
+
+def test_a_latch_never_releases_by_itself_however_long_it_stands(monkeypatch):
+    """The file is not healed by the clock: a damaged file that is written to is the harm, and only a
+    check (E2) or the operator can say it is not damaged."""
+    now = {"t": 1_000_000.0}
+    reg = DamageRegistry(path_fn=lambda: Path(os.devnull), clock=lambda: now["t"], mono=lambda: now["t"])
+    monkeypatch.setattr(damage, "registry", reg)
+    g = sg.StorageGuard(readings_fn=lambda: {})
+    _note(reg)
+    for hours in (1, 6, 24, 24 * 14):
+        now["t"] += hours * 3600
+        assert reg.latched(FILE_CORPUS) and g.admit() == "damage", f"released after {hours} h"
+        assert reg.state()["latched"] == [FILE_CORPUS]
+        assert g.state()["phase"] == sg.PHASE_DAMAGE
+    reg.retry(reason="operator")
+    assert not reg.latched(FILE_CORPUS)
+
+
+def test_off_peak_maintenance_does_not_run_while_the_corpus_is_latched(registry):
+    from src.scheduler.settings import SchedulerSettings
+
+    sched = runner.BackgroundScheduler(run_once_fn=lambda: {}, settings_provider=lambda: SchedulerSettings())
+    _note(registry, FILE_CORPUS)
+    assert sched._run_off_peak_maintenance() is False
+    assert sched.status()["maintenance_skips"].get("database_damage") == 1
+    # a lane's latch is not the corpus's: maintenance is a corpus writer and goes on
+    registry.retry(reason="t")
+    _note(registry, "wiki")
+    sched2 = runner.BackgroundScheduler(run_once_fn=lambda: {}, settings_provider=lambda: SchedulerSettings())
+    sched2._run_off_peak_maintenance()
+    assert "database_damage" not in sched2.status()["maintenance_skips"]
+
+
+def test_the_pass_loop_waits_in_the_damage_phase_and_leaves_when_the_operator_retries(registry, monkeypatch):
+    import time as _time
+
+    from src.scheduler.settings import SchedulerSettings
+
+    monkeypatch.setattr(sg, "storage_guard", sg.StorageGuard(readings_fn=lambda: {}))
+    sched = runner.BackgroundScheduler(run_once_fn=lambda: {}, settings_provider=lambda: SchedulerSettings())
+    sched._storage_pause_poll_s = 0.02
+    _note(registry, FILE_CORPUS)
+    done = threading.Event()
+
+    def _wait():
+        sched._wait_while_storage_paused()
+        done.set()
+
+    t = threading.Thread(target=_wait, daemon=True)
+    t.start()
+    try:
+        deadline = _time.monotonic() + 5.0
+        while runner.current_phase() != "paused-damaged" and _time.monotonic() < deadline:
+            _time.sleep(0.02)
+        assert runner.current_phase() == "paused-damaged"
+        assert not done.is_set() and sched.status()["next_run"] is None, "no stale countdown while paused"
+        registry.retry(reason="operator started collection")
+        assert done.wait(5.0), "the loop did not leave the pause when the latch was released"
+        assert runner.current_phase() is None, "the phase must clear with the pause"
+    finally:
+        sched._stop.set()
+        t.join(5.0)
+        runner._phase_set(None)
+
+
+def test_the_latch_is_set_before_the_record_and_the_record_does_not_hold_it_up(tmp_path, monkeypatch):
+    """The failing statement's thread may hold the write gate and the drive may be the failing one: the
+    latch (memory) is set first and read freely, and the record's write is waited for a bounded time."""
+    import time as _time
+
+    monkeypatch.setattr(damage, "RECORD_WAIT_S", 0.3)
+    reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
+    release = threading.Event()
+    entered = threading.Event()
+
+    def _stuck_flush(doc):
+        entered.set()
+        release.wait(10.0)
+
+    monkeypatch.setattr(reg, "_flush", _stuck_flush)
+    result: dict = {}
+
+    def _call():
+        t0 = _time.monotonic()
+        result["noted"] = _note(reg)
+        result["waited"] = _time.monotonic() - t0
+
+    t = threading.Thread(target=_call, daemon=True)
+    t.start()
+    try:
+        assert entered.wait(5.0), "the record was never written"
+        t0 = _time.monotonic()
+        assert reg.latched(FILE_CORPUS), "the latch waits on the drive"
+        assert reg.notes() and reg.state()["latched"] == [FILE_CORPUS]
+        assert _time.monotonic() - t0 < 0.2, "a reader of the latch queued behind the record's write"
+        t.join(5.0)
+        assert not t.is_alive() and result["noted"] is True
+        assert result["waited"] < 3.0, "the failing statement was held by a hung drive"
+    finally:
+        release.set()
+
+
+def test_a_second_corruption_error_that_reads_only_the_index_does_not_soften_a_data_incident(registry):
+    _note(registry, FILE_CORPUS, statement="SELECT sum(length(content)) FROM articles")
+    assert registry.notes()[0]["frame"] == damage.FRAME_DATA
+    _note(registry, FILE_CORPUS, statement="SELECT block FROM article_fts_data WHERE id = ?")
+    assert registry.notes()[0]["frame"] == damage.FRAME_DATA, "'your articles were not changed' after a data incident"
+    assert registry.state()["files"][FILE_CORPUS]["scope"] == SCOPE_DATA
+    registry.retry(reason="t")
+    _note(registry, FILE_CORPUS, statement="SELECT block FROM article_fts_data WHERE id = ?")
+    assert registry.notes()[0]["frame"] == damage.FRAME_SEARCH_INDEX, "a fresh latch takes its own scope"
+
+
+def test_an_index_incident_followed_by_a_data_one_reads_as_data(registry):
+    _note(registry, FILE_CORPUS, statement="SELECT block FROM article_fts_data WHERE id = ?")
+    assert registry.notes()[0]["frame"] == damage.FRAME_SEARCH_INDEX
+    _note(registry, FILE_CORPUS, statement="SELECT sum(length(content)) FROM articles")
+    assert registry.notes()[0]["frame"] == damage.FRAME_DATA, "the worst scope wins"
+    _note(registry, FILE_CORPUS, statement="SELECT 1 FROM article_fts_docsize")
+    assert registry.notes()[0]["frame"] == damage.FRAME_DATA, "...and stays"
+
+
+def test_a_file_with_nothing_to_pause_is_named_but_is_not_a_paused_file(registry):
+    _note(registry, "osm")
+    st = registry.state()
+    assert st["latched"] == [] and st["recorded_only"] == ["osm"]
+    assert [n["frame"] for n in st["notes"]] == [damage.FRAME_RECORDED]
+    _note(registry, FILE_CORPUS)
+    assert registry.state()["latched"] == [FILE_CORPUS] and registry.state()["recorded_only"] == ["osm"]
+
+
+def test_an_older_snapshot_never_overwrites_a_newer_one(tmp_path):
+    reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
+    _note(reg)
+    with reg._lock:
+        older = reg._doc_locked()
+        reg._incidents[-1]["repeats"] = 5
+        newer = reg._doc_locked()
+    reg._flush(newer)
+    reg._flush(older)  # the slower thread arrives last
+    on_disk = json.loads((tmp_path / "rec.json").read_text(encoding="utf-8"))
+    assert on_disk["write_seq"] == newer["write_seq"] and on_disk["incidents"][-1]["repeats"] == 5
+
+
+def test_the_record_keeps_a_route_template_never_a_raw_path(registry):
+    from types import SimpleNamespace
+
+    from src.database import pool_watch
+
+    token = pool_watch.set_endpoint("GET /api/articles/123456/view", method="GET", scope=None)
+    try:
+        assert pool_watch.endpoint_template() is None
+        _note(registry)
+        assert registry.state(detail=True)["incidents"][0]["endpoint"] is None, "a raw path may carry an id"
+        registry.retry(reason="t")
+    finally:
+        pool_watch.reset_endpoint(token)
+    scope = {"route": SimpleNamespace(path="/api/articles/{id}/view")}
+    token = pool_watch.set_endpoint("GET /api/articles/123456/view", method="GET", scope=scope)
+    try:
+        assert pool_watch.endpoint_template() == "GET /api/articles/{id}/view"
+        _note(registry, statement="SELECT b FROM t")
+        assert registry.state(detail=True)["incidents"][-1]["endpoint"] == "GET /api/articles/{id}/view"
+    finally:
+        pool_watch.reset_endpoint(token)
+
+
+def test_the_unattended_start_releases_what_starting_collection_releases(registry, monkeypatch):
+    """The unattended run is another way to start collecting (it goes online and starts the scheduler)."""
+    import contextlib
+
+    import src.database.session as session_mod
+    import src.scheduler.runner as runner
+    from src.api import system as system_api
+    from src.ingest import clear_kill_switch
+    from src.monitoring import expedition
+
+    class _Sched:
+        def start(self):
+            return True
+
+        def is_running(self):
+            return True
+
+    monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)
+    monkeypatch.setattr(runner, "get_scheduler", lambda: _Sched())
+    monkeypatch.setattr(session_mod, "session_scope", lambda: contextlib.nullcontext(object()))
+    monkeypatch.setattr(expedition, "qualification_safety", lambda db: {"safe": False, "reason": "t", "basis": "t"})
+    monkeypatch.setattr(expedition, "arm", lambda **kw: {"started_at": "x"})
+    monkeypatch.setattr(expedition, "record_event", lambda *a, **k: None)
+    try:
+        _all_three_latched(registry)
+        system_api.unattended_start({})
+        assert registry.state()["latched"] == ["wiki"]
+    finally:
+        clear_kill_switch()
+
+
+def test_every_way_of_starting_collection_goes_through_the_one_helper():
+    """A new start path that forgets the retry leaves a healthy file paused behind a sentence that says
+    starting collection tries again: the four known paths call the helper, and nothing else retries."""
+    for rel, expected in (("src/api/scheduler.py", 2), ("src/api/system.py", 2)):
+        src = (ROOT / rel).read_text(encoding="utf-8")
+        assert src.count("damage.retry_for_collection_start(") == expected, rel
+        assert "NOT_RELEASED_BY_COLLECTION" not in src, rel
+
+
+def test_only_the_drivers_cause_chain_is_followed_never_the_context():
+    corrupt = _fake_driver_error("database disk image is malformed", code=11)
+    try:
+        try:
+            raise corrupt
+        except Exception:  # noqa: BLE001
+            raise TypeError("a bug in the handler") from None
+    except TypeError as later:
+        assert later.__context__ is corrupt and later.__cause__ is None
+        assert not is_corruption(later), "an unrelated error raised while handling corruption is not corruption"
+    try:
+        try:
+            raise corrupt
+        except Exception as inner:  # noqa: BLE001
+            raise RuntimeError("wrapped") from inner
+    except RuntimeError as chained:
+        assert is_corruption(chained), "an explicit 'raise ... from' is the cause and is followed"
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "ATTACH DATABASE ? AS other",
+        "attach ? as other",
+        "  \n\tATTACH '/x/y.db' AS o",
+        "ATTACH :p AS other",
+    ],
+)
+def test_every_spelling_of_attach_is_skipped(registry, statement):
+    ctx = type("Ctx", (), {})()
+    ctx.original_exception = _fake_driver_error("database disk image is malformed", code=11)
+    ctx.statement = statement
+    registry.on_engine_error(ctx, FILE_CORPUS)
+    assert not registry.latched(FILE_CORPUS), statement
+    ctx.statement = "SELECT attached FROM t"
+    registry.on_engine_error(ctx, FILE_CORPUS)
+    assert registry.latched(FILE_CORPUS), "a statement that merely contains the word is not an ATTACH"
+
+
+def test_the_read_snapshot_engine_names_the_corpus_file_when_it_meets_a_bad_page(damaged, registry):
+    """The export and the diagnostics bundle read the whole corpus through this engine: the read most
+    likely to meet a bad page must name it."""
+    from src.database import read_snapshot
+
+    path, _bad = damaged
+    eng = read_snapshot._build_read_engine(f"sqlite:///{path}")
+    try:
+        found = damage.attached(eng)
+        assert found is not None and found[0] == FILE_CORPUS
+        with pytest.raises(Exception):  # noqa: B017 - the engine's own error type
+            with eng.connect() as conn:
+                for lo in range(0, 3000, 100):
+                    conn.execute(
+                        text("SELECT sum(length(content)) FROM articles WHERE id > :a AND id <= :b"),
+                        {"a": lo, "b": lo + 100},
+                    ).scalar()
+        assert registry.latched(FILE_CORPUS), "a bad page read through the snapshot engine was not named"
+    finally:
+        eng.dispose()
+
+
+def test_an_incident_of_another_process_is_its_own_record_even_when_no_session_id_is_known(tmp_path, monkeypatch):
+    """The session id can be unknown; two unknowns are not 'the same incident'. The process token is."""
+    path = tmp_path / "rec.json"
+    monkeypatch.setattr(damage, "_current_session_id", lambda: None)
+    first = DamageRegistry(path_fn=lambda: path)
+    _note(first)
+    _note(first)  # same process: a repeat, counted
+    assert len(first.state(detail=True)["incidents"]) == 1
+    assert first.state(detail=True)["incidents"][0]["repeats"] == 1
+    second = DamageRegistry(path_fn=lambda: path)  # a later process, same shape of failure
+    _note(second)
+    incidents = second.state(detail=True)["incidents"]
+    assert len(incidents) == 2, "a new process's incident was swallowed as a repeat of the old one"
+    assert incidents[0]["process"] != incidents[1]["process"]
+
+
+def test_reading_the_record_never_happens_under_the_registrys_lock(tmp_path, monkeypatch):
+    """``latched`` is read on every unit of collection work: the first read of a prior record (a file
+    read, on a drive that may be the failing one) must not make it wait."""
+    import time as _time
+
+    path = tmp_path / "rec.json"
+    path.write_text(json.dumps({"schema": 1, "files": {}, "incidents": []}), encoding="utf-8")
+    release = threading.Event()
+    entered = threading.Event()
+
+    def _slow_path():
+        entered.set()
+        release.wait(10.0)
+        return path
+
+    reg = DamageRegistry(path_fn=_slow_path)
+    t = threading.Thread(target=reg.state, daemon=True)
+    t.start()
+    try:
+        assert entered.wait(5.0)
+        t0 = _time.monotonic()
+        assert reg.latched(FILE_CORPUS) is False
+        assert _time.monotonic() - t0 < 0.2, "a latch read queued behind the record's first read"
+    finally:
+        release.set()
+        t.join(5.0)
+
+
+def test_a_relatch_after_the_operators_retry_is_logged_again(registry, caplog):
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="src.database.damage"):
+        _note(registry)
+        registry.retry(reason="t")
+        _note(registry)  # the same incident, in the same process
+    lines = [r for r in caplog.records if r.levelno == logging.ERROR and "database damage:" in r.getMessage()]
+    assert len(lines) == 2, "the second latch was silent in the log"
+    assert registry.state(detail=True)["incidents"][0]["repeats"] == 1, "...and the record counts it as a repeat"
+
+
+def test_with_the_pause_off_the_log_does_not_say_the_writers_are_paused(registry, caplog, monkeypatch):
+    import logging
+
+    monkeypatch.setenv("OO_DAMAGE_GUARD", "0")
+    with caplog.at_level(logging.ERROR, logger="src.database.damage"):
+        _note(registry)
+    [line] = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert "OO_DAMAGE_GUARD=0" in line and "carry on" in line and "are paused" not in line
+
+
+def test_the_method_names_the_blind_spot_of_a_plaintext_first_page():
+    assert "BLIND SPOT" in damage.METHOD and "26" in damage.METHOD and "not encrypted" in damage.METHOD
 
 
 # --------------------------------------------------------------------------- #
@@ -753,7 +1339,17 @@ def _keys():
     core = (ROOT / "src/static/app-core.js").read_text(encoding="utf-8")
     hover = re.search(r't\("(The database reported that it could not read part of one of your data files[^"]*)"\)', core)
     assert hover, "the damage hover moved -- re-anchor this test"
-    return [damage.FRAME_DATA, damage.FRAME_SEARCH_INDEX, damage.FRAME_WIKI, "Paused: the database reported damage", hover.group(1)]
+    return [
+        damage.FRAME_DATA,
+        damage.FRAME_SEARCH_INDEX,
+        damage.FRAME_WIKI,
+        damage.FRAME_LAW,
+        damage.FRAME_RECORDED,
+        damage.FRAME_PAUSE_OFF,
+        sg.FRAME_OVERRIDE_DAMAGE,
+        "Paused: the database reported damage",
+        hover.group(1),
+    ]
 
 
 def test_every_damage_string_is_in_the_twelve_locales_translated():

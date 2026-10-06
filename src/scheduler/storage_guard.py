@@ -337,6 +337,13 @@ FRAME_OVERRIDE_NO_SUPERVISOR = (
     "collection is overridden could not be started, so a forced resume could not be kept within "
     "what the drive can take. Collection stays paused."
 )
+#: The corpus file was reported damaged (``database/damage.py``): forcing collection on would write into
+#: it, which is exactly what the damage latch stops, so the click is refused with a sentence instead of
+#: being granted and then ignored.
+FRAME_OVERRIDE_DAMAGE = (
+    "Collection cannot be forced on: the database reported damage in your library's file, and writing "
+    "on only makes that worse. Starting collection again tries once more."
+)
 
 
 def _env_mb(name: str) -> int | None:
@@ -1215,11 +1222,14 @@ class StorageGuard:
         return bool("disk" in kinds and self._disk and (free is None or reserve is None or free < reserve))
 
     def _override_refusal_locked(
-        self, free: int | None, floor: int, now_mono: float
+        self, free: int | None, floor: int, now_mono: float, damaged: bool = False
     ) -> dict[str, Any] | None:
         """What a click on "Resume anyway" would be answered with right now, or None when it
-        would be granted: the ONE place the three refusals are decided, so the button that is
-        offered and the click that is answered cannot disagree. Caller holds the lock."""
+        would be granted: the ONE place the refusals are decided, so the button that is
+        offered and the click that is answered cannot disagree. Caller holds the lock;
+        ``damaged`` is the corpus latch of ``database/damage.py``, read BEFORE the lock was taken."""
+        if damaged:
+            return {"kind": "damage", "frame": FRAME_OVERRIDE_DAMAGE, "vars": {}}
         if self._hold_until is not None and now_mono < self._hold_until:
             return {"kind": "held", "frame": FRAME_OVERRIDE_HELD, "vars": {}}
         if free is None:
@@ -1245,6 +1255,7 @@ class StorageGuard:
             r = {}
         wal, free = r.get("wal_bytes"), r.get("disk_free_bytes")
         now_mono = self._clock()
+        damaged = damage.registry.corpus_latched()  # before the lock: the registry's lock is never nested here
         refused: dict[str, Any] | None = None
         with self._lock:
             out["engaged"] = self._wal or self._disk
@@ -1252,7 +1263,7 @@ class StorageGuard:
                 self._override = self._withdrawn = None  # nothing left to override
                 return out
             floor = override_floor_bytes(wal if wal is not None else self._wal_seen)
-            refused = self._override_refusal_locked(free, floor, now_mono)
+            refused = self._override_refusal_locked(free, floor, now_mono, damaged)
             if refused is None:
                 self._override = {
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1566,6 +1577,7 @@ class StorageGuard:
         # Read BEFORE this guard's lock is taken: the record's first read is a file read, and the
         # registry's lock is never held while this one is awaited (nor the reverse).
         dmg = damage.registry.state(detail=detail)
+        damaged = _corpus_latched_in(dmg)
         with self._lock:
             wal, disk = self._wal, self._disk
             thr = dict(self._thresholds)
@@ -1580,7 +1592,10 @@ class StorageGuard:
             by_error = self._hold_until is not None and (
                 free_now is None or reserve_now is None or free_now >= reserve_now
             )
-            if overridden:
+            # While the corpus file is latched as damaged an override does nothing (``admit`` says
+            # "damage" whatever the override), so its sentences ("collection was resumed by you") are
+            # not told: the notice says one thing, the damage.
+            if overridden and not damaged:
                 if disk:
                     notes.append(
                         {
@@ -1650,12 +1665,12 @@ class StorageGuard:
                 "engaged": wal or disk,
                 "kinds": [n["kind"] for n in notes],
                 "phase": (
-                    None
-                    if overridden
+                    PHASE_DISK
+                    if disk and not overridden
                     else (
-                        PHASE_DISK
-                        if disk
-                        else (PHASE_WAL if wal else (PHASE_DAMAGE if _corpus_latched_in(dmg) else None))
+                        PHASE_WAL
+                        if wal and not overridden
+                        else (PHASE_DAMAGE if damaged else None)
                     )
                 ),
                 # An operator's override (R112): collection runs although the latch holds. The
@@ -1666,7 +1681,7 @@ class StorageGuard:
                 # page offers the button only then, and says the refusal otherwise (a supervisor
                 # that is not running is the route's own answer and is not in this preview).
                 "override_refusal": (
-                    self._override_refusal_locked(free_now, floor_now, self._clock())
+                    self._override_refusal_locked(free_now, floor_now, self._clock(), damaged)
                     if (wal or disk) and not overridden
                     else None
                 ),
