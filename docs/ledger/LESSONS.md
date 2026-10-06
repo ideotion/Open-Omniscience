@@ -13203,3 +13203,17 @@ when no other trigger fires**: the guard's "was engaged" flag read only in the f
 the next tick reported a five-second-old pause as a new engagement (a mutant the suite now catches). What this does NOT do: it names the holder in the NEXT
 bundle, it does not stop the kill. Stopping cleanly when the guard stays engaged and memory does not recover is the user's open question 22, and a clean stop
 alone would not resume the run, because a relaunch starts offline under R117 (one click brings it online), so that choice has to be made with the launcher.
+
+### A RECORDER ON A PERIODIC PATH IS COSTED IN THREAD CPU, NOT WALL TIME, AND ITS LOG COUNTER TAKES A LEAF LOCK (export thread, 2026-10-06)
+
+The vitals history (`src/monitoring/vitals_history.py`, R119) rides the 5-second liveness tick. (1) **The first measurement, 190 ms a tick, was the liveness thread
+queueing for the GIL behind three busy Python threads**; the same tick costs 0.11 ms of CPU on an idle machine and 3.3 ms of CPU under them (`time.thread_time()`
+beside the wall clock: what it takes beside what it waits). An instrument's cost is quoted under load and in CPU, or a fast machine hides it and a busy one
+frightens. (2) **A handler that counts log records takes a LEAF lock of its own, never the lock the recorder holds while it folds rows**: `logging` calls `emit`
+with the handler's lock held, so a main lock held across anything slow (the minute's thread walk, 0.3-0.6 s under a GIL-holding burst) stalls every logging
+thread, and a main lock taken inside `emit` against a thread that logs while holding it is a deadlock. The thread sample is therefore taken after the lock is
+released, and two tests pin both halves (a thread holding the main lock cannot stop an `emit`; the sample runs with the lock free). (3) **A budget written before
+the data existed was wrong**: 160 KB would have cut the 48 hours the member exists to show; the full retention with 25 busy loggers measures 166 KB raw and 36 KB
+zipped, so the budget is 200 KB and the plan says why. Measure at the full retention, with the worst-case row, before a number is fixed. (4) **An open accumulator
+restored from a stored, ROUNDED row needs its weight** (the tick count): without it the mean across a restart quietly becomes a mean of means, and the open bucket is
+kept apart from the closed rows in the file so a tick is counted once (both are mutants the suite now kills).

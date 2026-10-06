@@ -1,0 +1,86 @@
+member,largest_bytes_seen,disposition,target,owner,why
+debug-bundle.json,1322467,trim,debug-bundle.json,export,"drops 8 embedded copies of members that stand alone (network, request_latency, session_forensics, slow_queries, storage_composition, corpus_integrity, schema_drift, p0_validation = 408 KB raw on Lenovo) and cuts collect_perf (330 KB raw, covering about five minutes) to its newest 20 ticks, the hourly history moving to vitals.json"
+home-cards.json,289591,keep,home-cards.json,,
+keyword-engine.json,117638,keep,keyword-engine.json,,
+keyword-selftest.json,8318,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+keyword-log-digest.json,1150897,keep+fix-gate,keyword-log-digest.json,export,"present on 3 of 17 today because the RAM gate declines on an estimate; the export spills to disk, so the gate is measured and relaxed (separate PR, after the redesign)"
+date-extraction.json,613737,keep,date-extraction.json,,
+network.json,267001,keep,network.json,,
+performance.json,13247,keep,performance.json,,
+benchmark.json,9490,keep,benchmark.json,,
+columnar.json,1844,keep,columnar.json,,
+freshness.json,7143,keep,freshness.json,,
+elections-floor.json,3570,drop,(build id),export,identical on all 17 instances (a table shipped in the code); the build id in the manifest's machine block identifies it
+request-latency.json,69569,keep,request-latency.json,,
+write-gate.json,1091,merge,contention.json,WAL,"one subject (who waited for whom); gains the holds, checkpoint, guard and pool-timeout histories (WAL needs file, sections 2-3)"
+data-volume.json,458,merge,storage.json,WAL,"one subject (where the bytes are and whether the drive is there); free_bytes renamed freelist_bytes, drive_free_bytes added beside it (WAL needs file, section 1)"
+stall-forensics.json,131109,merge,contention.json,WAL,"one subject (who waited for whom); gains the holds, checkpoint, guard and pool-timeout histories (WAL needs file, sections 2-3)"
+slow-queries.json,31228,keep,slow-queries.json,,
+schema-drift.json,517,keep,schema-drift.json,,
+corpus-integrity.json,2546,keep,corpus-integrity.json,,
+country-code-duplicates.json,3396,keep,country-code-duplicates.json,,
+fixity.json,1017,keep,fixity.json,,
+frontend-errors.json,4603,keep,frontend-errors.json,,
+session-forensics.json,124076,extend,session-forensics.json,export,"D+E: earlier_unclean_ends (10, 60 trace lines each), peaks on every unclean end, build id on boot records"
+session-forensics.txt,17791,drop,session-forensics.json,export,the same facts as the JSON (the user asked for session forensics in the zip ONCE); the stand-alone txt link goes too
+storage-footprint.json,1757,merge,storage.json,WAL,"one subject (where the bytes are and whether the drive is there); free_bytes renamed freelist_bytes, drive_free_bytes added beside it (WAL needs file, section 1)"
+storage-composition.json,51696,merge,storage.json,WAL,"one subject (where the bytes are and whether the drive is there); free_bytes renamed freelist_bytes, drive_free_bytes added beside it (WAL needs file, section 1)"
+windows-locks.json,5951,keep,windows-locks.json,,
+soak-window.json,19938,extend,soak-window.json,plan,the lane's service block after PR 1314; the lane history is its own member (wiki-lane-history.json)
+p0-validation.json,12873,keep,p0-validation.json,,
+release-run.json,86992,extend,release-run.json,RC,"RC extends last_release_run_report() itself (no bundle.py edit): the fresh_install_restore and legacy_restore phases in full (label, seconds, return code, scrubbed stderr tail, restore block), restore_why per board row, and the phase summaries of the last 10 runs (RC needs file, section 3)"
+chronology.json,41989,extend,chronology.json,export,D+E: previous_peaks filled on unclean ends (null on all 56 today)
+article-length.json,23145,keep,article-length.json,,
+month-occupancy.json,19878,keep,month-occupancy.json,,
+keyword-growth.json,9972,keep,keyword-growth.json,,
+recursive-loop.json,3291,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+kpi.json,6468,keep,kpi.json,,
+search-timing.json,3995,keep,search-timing.json,,
+run-journal.json,143484,keep,run-journal.json,,
+run-journal-raw.json,994807,merge,run-journal.json,export,the summary and the lines behind it are one subject; the raw lines stay bounded and say what was dropped
+run-timeline.json,6436,keep,run-timeline.json,,
+merge-diag.json,7459,keep,merge-diag.json,,
+source-audit.json,283295,keep,source-audit.json,,
+non-article-scan.json,5425,keep,non-article-scan.json,,
+criteria-calibration.json,45370,keep,criteria-calibration.json,,
+lemma-preview.json,1150,keep,lemma-preview.json,,
+bulletin-language.json,67877,keep,bulletin-language.json,,
+bulletin-language-selftest.json,1334,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+power-profile.json,6849,drop,(build id),export,identical on all 17 instances (a table shipped in the code); the build id in the manifest's machine block identifies it
+data-dir-persistence.json,613,merge,storage.json,WAL,"one subject (where the bytes are and whether the drive is there); free_bytes renamed freelist_bytes, drive_free_bytes added beside it (WAL needs file, section 1)"
+ir-eval-selftest.json,1612,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+perception-eval-selftest.json,2983,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+keyword-triage-selftest.json,748,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+keyword-triage-run.json,196,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+keyword-triage-proposal.json,210,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+source-tags-selftest.json,799,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+source-tags-run.json,186,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+perception-eval-live.json,189,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+perception-extract-run.json,199,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+model-bench.json,206,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+ai-check.json,75,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+ai.json,8853,keep,ai.json,,
+qualification-assist-selftest.json,495,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+qualification-assist-run.json,216,omit-if-empty,(manifest.empty),export,75-216 bytes on every machine that never ran the job: when nothing was run the manifest names it once; a member that has content stays as today
+search-timing-selftest.json,1673,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+power-profile-selftest.json,1325,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+source-audit-selftest.json,3489,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+source-qualification-export.json,331685,keep,source-qualification-export.json,,
+qualification-integrity.json,3763,keep,qualification-integrity.json,,
+llm-throughput-selftest.json,884,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+ai-activity.json,4304,keep,ai-activity.json,,
+ai-activity-selftest.json,778,fold,selftests.json,export,"a mechanism proof is a function of the build, byte-identical on every instance read; one verdict per self-test (full output only for one that failed) says whether the code works HERE"
+law-coverage.json,29900,keep,law-coverage.json,,
+law-ingest.json,8481,keep,law-ingest.json,,
+leads-quality.json,28032,keep,leads-quality.json,,
+card-audit.json,202492,keep,card-audit.json,,
+bulletin-weekly.json,65709,keep,bulletin-weekly.json,,
+runs.json,,new,runs.json,export,"every Diagnostics run, including a failed, killed or never-saved one: start, end, outcome, profile, members by outcome, bytes, and each file the page was served (name, bytes, time); last 10 runs; closes FINDINGS 8.6"
+vitals.json,,new,vitals.json,export,"process RSS, available memory, swap, drive free, database size, threads and log-line counts by logger and level: 5-minute buckets for 48 h and hourly for 14 days, plus the last 60 minutes; the memory-growth curve and the minutes before a kill"
+selftests.json,,new,selftests.json,export,one verdict per self-test (13 of them)
+database-damage.json,,new,database-damage.json,WAL,"incident records, per-table quick_check verdicts, file pages against the header's page count at every boot, salvage counts (WAL needs 4)"
+transfers.json,,new,transfers.json,WAL,"last 10 runs of each kind of backup, export and restore, with outcome, seconds, bytes and the destination's free space; staging swept at boot (WAL needs 5)"
+boots.json,,new,boots.json,RC + WAL,"last 10 unlocks: synchronous total and phases, log bytes at open, whether the previous end was clean, time to first query, the tier and allocator RC stamps on every boot record (WAL needs 2; RC needs 1 and 2)"
+wiki-lane-history.json,,new (on PR 1314),wiki-lane-history.json,plan,"the lane's own hourly history, already added to bundle.py by the plan thread on PR 1314 as the one exception to the sole-pusher rule: per edition per hour (requests, pages, bytes, busy seconds, bookmark), replies by kind, stream gaps, tick time split, drain holds; its lane_history() call in src/wiki/service.py stays; transport setting and answer-time percentiles ride the manifest's machine block"
+keyword-pipeline.json,,new,keyword-pipeline.json,keyword,"rollup build attempts (last 20), the killed-build marker found at boot, corpus sizes that predict cost, re-index and warm-cache progress, ranking pass counts, parity count per window (keyword needs file)"
+manifest.json (machine block),,new (in the header),manifest.json,export,"build (version, schema head, git head), process start, whether a launcher started it, versions (python, sqlite, duckdb, sqlcipher, libc), RC's stamped memory reading (total, nominal, tier, cores, serve default, resolved_at) beside total RAM now, the tier that total would give now and the memory available now, allocator_setting() once, the transport SETTING, set OO_* variable NAMES; written at the start of the build so a declined member cannot lose it; closes FINDINGS 8.2, 8.3 and half of 8.4"
