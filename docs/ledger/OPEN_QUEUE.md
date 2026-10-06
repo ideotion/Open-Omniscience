@@ -16366,3 +16366,16 @@ maintainer as a card.
   **(i) Two release gaps:** the in-place encryption swaps each live data file with `os.replace` (`src/database/encrypt_tool.py`) and nothing
   releases a latch on a file just replaced (a start does); and the lane files' own indexes (`wiki_lane_fts`, `law_version_fts`, `osm_names`,
   `osm_addresses`) are not in the index-table list, so their incidents carry scope `data` (record only: no sentence differs).
+
+- **THE POISONED-CONNECTION FIX (PR #1333): WHAT IT DOES NOT NAME, AND THE RAW STATEMENTS IT DOES NOT GUARD (WAL / DISK THREAD, 2026-10-06).** The fix discards a pooled SQLCipher connection that
+  raised code 11 or answers an empty `MemoryError`, for the engine's statements (the `handle_error` observer) and for the three raw driver statements that read pages
+  (`damage.guard_raw_driver`: the country-code scan, `PRAGMA incremental_vacuum`, the WAL checkpoint). **Left, on purpose:** (a) **a damaged LAST overflow page of a long value is not named by
+  the read that touched it** (the read returns the right length with wrong tail bytes and no error, measured), so the first thing that fails is the NEXT statement on that connection, once, with an empty `MemoryError`
+  (discarded, never latched: it names no file); only `cipher_integrity_check` (E2's page pass) names the page, and a corpus whose only damage is such a tail reads wrong bytes until a check runs. (b) **The
+  raw driver statements that read no page are not guarded:** `PRAGMA shrink_memory` (`src/scheduler/release.py`, `_shrink_sqlite`), `PRAGMA data_version` (`src/api/insights.py`, `_data_version`), `set_progress_handler`
+  (`src/database/maintenance.py`) and the function registration in `src/database/fts.py` and `fts_reindex.py`; none can raise code 11 and none poisons a connection that was healthy. The raw connections that are NOT
+  pooled (stream backup, the artifact and merge readers) open their own file and close it. Whoever adds a raw cursor on a pooled connection that reads pages goes through the guard. (c) An error
+  raised while a connection is being OPENED never discards (there is none to discard, and SQLAlchemy's cleanup fails an assertion if it is told otherwise).
+  (d) **E1's in-app latch pauses collection on the first code 11 it sees, from one read on one connection (the coordinator's ruling of 2026-10-06: build the re-read).** A code 11 that a fresh read would not
+  repeat (the concern is memory pressure; NOT measured) would pause an unattended machine until someone starts collection again. The follow-up is its OWN small PR after E2 and E2b land, with one read of its final head: before
+  the pause, re-read the incident's table on a fresh connection, reusing the second-read helper E2's fold 3 adds to `src/database/verify.py`; when that re-read is clean, record that it read differently and do not pause.

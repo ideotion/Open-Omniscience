@@ -25,12 +25,17 @@ WHAT IT DOES, AND ALL IT DOES.
   and none stops another; any other file is recorded and NAMED, with nothing to pause. The latch is memory
   only: a restart is the operator trying again, and the first failed read puts it back.
 
-* **Discards a poisoned connection.** On an ENCRYPTED file one read of a damaged page leaves that connection
-  answering ``MemoryError`` to every later read, healthy tables included, until it is closed (measured). The
-  observer therefore marks a SQLCipher ``SQLITE_CORRUPT`` as a disconnect for that ONE connection
-  (:func:`discard_poisoned_connection`), so the pool opens a fresh one instead of handing the poisoned one to
-  the next request. A ``MemoryError`` itself, a wrong key and a plain SQLite file's corruption are never
-  reclassified.
+* **Discards a poisoned connection.** On an ENCRYPTED file a read of a page that fails its check leaves that
+  connection answering an empty ``MemoryError`` to every later read, healthy tables included, until it is closed
+  (measured). The observer therefore marks a SQLCipher ``SQLITE_CORRUPT`` as a disconnect for that ONE connection
+  (:func:`discard_poisoned_connection`), so the pool opens a fresh one instead of handing the poisoned one to the
+  next request. It does the same for an empty ``MemoryError`` raised on a SQLCipher connection, because the LAST
+  overflow page of a long value fails silently (the read returns the right length with wrong tail bytes and the
+  poison arrives on the NEXT statement, measured), and it NEVER latches or records on that: an empty
+  ``MemoryError`` is also what a real allocation failure raises, so by itself it names no file. A wrong key and a
+  plain SQLite file's corruption are never reclassified. A statement the driver runs for the app on a pooled
+  connection WITHOUT going through SQLAlchemy raises past this observer, so those sites go through
+  :func:`guard_raw_driver`, which does the same for them.
 
 WHAT IT DOES NOT DO (and the PR says so). It does not verify, repair or salvage: that is E2 (a boot check
 after an unclean end) and E3 (a salvage copy). Until they land the latch releases only when the operator
@@ -895,43 +900,155 @@ def retry_for_collection_start(reason: str) -> list[str]:
     )
 
 
-def discard_poisoned_connection(context: Any) -> bool:
-    """Tell SQLAlchemy to throw away the connection whose read just failed on a damaged page, when the driver
-    is SQLCipher and the error is ``SQLITE_CORRUPT`` (primary code 11). Returns whether it did. Never raises.
+_SQLCIPHER = "sqlcipher3"
 
-    WHY. After the first page that fails its check, SQLCipher leaves the connection answering ``MemoryError``
-    (no message) to EVERY later page read, healthy tables included; ``rollback``, ``commit``,
-    ``shrink_memory``, ``cache_size`` and a second ``PRAGMA key`` do not clear it, only a new connection does
-    (measured on a real encrypted store; plain ``sqlite3`` connections are not affected). A pooled connection
-    goes back to the pool in that state, so one request that touches a damaged page leaves a connection that
-    fails every later request with the text of a real out-of-memory, until the process restarts.
+
+def _module_root(obj: Any) -> str:
+    return type(obj).__module__.split(".")[0]
+
+
+def _dbapi_of(handle: Any) -> Any:
+    """The driver's own connection behind a SQLAlchemy ``Connection`` or a pooled connection, or ``None``. Reads
+    what is already there: asking a ``Connection`` that was invalidated for its ``.connection`` would open a new
+    one."""
+    cur = handle
+    for _ in range(3):
+        if getattr(cur, "invalidated", False) is True:
+            return None
+        inner = getattr(cur, "dbapi_connection", None)
+        if inner is not None:
+            return inner
+        cur = getattr(cur, "connection", None)
+        if cur is None:
+            return None
+    return None
+
+
+def poisons_connection(exc: BaseException | None, dbapi_connection: Any) -> str | None:
+    """Whether ``exc``, raised on ``dbapi_connection``, leaves that connection unusable, and how it knows.
+
+    * ``"corrupt"``: the driver is SQLCipher and its own error is ``SQLITE_CORRUPT`` (primary code 11).
+    * ``"memory"``: the error is an empty builtin ``MemoryError`` on a SQLCipher connection. By itself this is
+      NOT evidence of damage (a real allocation failure raises the same thing, and field machines do run out of
+      memory), so it is a reason to discard the connection and never a reason to name a file.
+
+    ``None`` for everything else: a wrong key (code 26), a plain SQLite file's corruption (it does not poison
+    its connection), a ``MemoryError`` with a message, and any connection that is not SQLCipher's."""
+    driver = driver_error(exc)
+    if driver is not None:
+        if _module_root(driver) != _SQLCIPHER:
+            return None
+        code = getattr(driver, "sqlite_errorcode", None)
+        if isinstance(code, int) and (code & 0xFF) == SQLITE_CORRUPT:
+            return "corrupt"
+        return None
+    if (
+        type(exc) is MemoryError
+        and not str(exc)
+        and dbapi_connection is not None
+        and _module_root(dbapi_connection) == _SQLCIPHER
+    ):
+        return "memory"
+    return None
+
+
+def discard_poisoned_connection(context: Any) -> bool:
+    """Tell SQLAlchemy to throw away the connection whose statement just failed in a way that poisons it (see
+    :func:`poisons_connection`). Returns whether it did. Never raises.
+
+    WHY. After a page that fails its check, SQLCipher leaves the connection answering an empty ``MemoryError``
+    to EVERY later page read, healthy tables included; ``rollback``, ``commit``, ``shrink_memory``,
+    ``cache_size`` and a second ``PRAGMA key`` do not clear it, only a new connection does (measured on a real
+    encrypted store; plain ``sqlite3`` connections are not affected). A pooled connection goes back to the pool
+    in that state, so one request that touches a damaged page leaves a connection that fails every later
+    request with the text of a real out-of-memory, until the process restarts.
 
     WHAT. ``is_disconnect = True`` makes SQLAlchemy invalidate this one connection: the driver connection is
     closed and the pool opens a fresh one on the next checkout (one key derivation, 0.2 to 0.4 s). The error
-    that is raised is the same corruption error (``connection_invalidated`` is now true on it).
-    ``invalidate_pool_on_disconnect = False`` keeps the damage to that ONE connection: every connection that
-    reads a damaged page fails first with code 11, and so is discarded by its own error, so the rest of the
-    pool needs no replacing (SQLAlchemy's default would drop every connection older than the moment, and each
-    would then pay a key derivation).
+    that is raised is the same error (``connection_invalidated`` is now true on a wrapped one).
+    ``invalidate_pool_on_disconnect = False`` keeps the discard to that ONE connection: every connection that
+    reads a damaged page is discarded by its own error, so the rest of the pool needs no replacing
+    (SQLAlchemy's default would drop every connection older than the moment, and each would then pay a key
+    derivation).
 
-    WHAT IT DOES NOT TOUCH. Only code 11 from the SQLCipher driver. A ``MemoryError`` is never reclassified (a
-    real out-of-memory is not a reason to reconnect, and by itself says nothing about a page), nor is a
-    wrong-key error (code 26) or a plain-SQLite corruption error (it does not poison its connection). A
-    session that was in a transaction on the discarded connection rolls back as it does for any failed
-    statement; the next statement of the same session checks a connection out again."""
+    THE FIRST ERROR IS NOT ALWAYS CODE 11. A damaged first or middle page of a long value's overflow chain
+    raises code 11 on that read. The LAST overflow page does not: the read returns the whole length with the
+    wrong bytes at the tail and the connection is poisoned for the NEXT statement, which raises an empty
+    ``MemoryError`` (measured, ``tests/test_poisoned_connection.py``). So an empty ``MemoryError`` on a SQLCipher
+    connection is discarded too. It is never latched or recorded on that evidence: it names no file (a real
+    allocation failure raises the same) and the observer only reads errors, never the file.
+
+    WHAT HAPPENS TO THE CALLER. The connection is CLOSED, not rolled back and handed on: a session that was in
+    a transaction on it loses everything it had flushed (the writes were on the closed connection), and every
+    later statement of that session, a ``commit`` included, raises ``PendingRollbackError`` until the caller
+    rolls the session back; only then does its next statement check a connection out again. A caller that
+    commits after a failed read without rolling back therefore fails loudly and does not persist a partial
+    transaction.
+
+    WHAT IT DOES NOT TOUCH. A wrong-key error (code 26), a plain-SQLite corruption error (it does not poison its
+    connection), a ``MemoryError`` with a message, and a context whose connection is already closed (SQLAlchemy
+    cannot invalidate it, and marking it a disconnect makes its own cleanup fail an assertion that replaces the
+    real error)."""
     try:
-        exc = getattr(context, "original_exception", None)
-        driver = driver_error(exc)
-        if driver is None or type(driver).__module__.split(".")[0] != "sqlcipher3":
+        connection = getattr(context, "connection", None)
+        if connection is None or getattr(connection, "closed", True):
             return False
-        code = getattr(driver, "sqlite_errorcode", None)
-        if not isinstance(code, int) or (code & 0xFF) != SQLITE_CORRUPT:
+        exc = getattr(context, "original_exception", None)
+        if poisons_connection(exc, _dbapi_of(connection)) is None:
             return False
         context.is_disconnect = True
         context.invalidate_pool_on_disconnect = False
         return True
     except Exception:  # noqa: BLE001 - an observer never replaces the real error
         return False
+
+
+def note_raw_driver_error(handle: Any, exc: BaseException | None, *, engine: Any = None,
+                          file_key: str | None = None, statement: str | None = None) -> bool:
+    """What :func:`attach`'s observer does for a failure it never sees: a statement the app ran on the DRIVER's
+    own cursor over a connection checked out of a pool (``handle`` is that pooled connection, or the SQLAlchemy
+    ``Connection`` it belongs to). SQLAlchemy raises no ``handle_error`` for those, so without this a code 11
+    there neither latches nor discards, and the poisoned connection goes back to the pool.
+
+    Invalidates ``handle`` when :func:`poisons_connection` says the failure poisons it, and records and latches
+    the corruption error against the file the engine is attached for (``file_key`` is the fallback for an engine
+    that is not attached; with neither, nothing is latched, so a file is never named wrongly). An empty
+    ``MemoryError`` discards and names nothing. Returns whether the connection was invalidated. Never raises and
+    never replaces ``exc``."""
+    discarded = False
+    try:
+        engine = engine if engine is not None else getattr(handle, "engine", None)
+        kind = poisons_connection(exc, _dbapi_of(handle))
+        if kind is not None:
+            with contextlib.suppress(Exception):
+                handle.invalidate()
+                discarded = True
+        if kind == "corrupt":
+            seen = attached(engine) if engine is not None else None
+            key = seen[0] if seen else file_key
+            if key is not None:
+                path = None
+                with contextlib.suppress(Exception):
+                    database = engine.url.database
+                    if database and database != ":memory:":
+                        path = Path(database)
+                registry.note(key, exc, statement=statement, path=path)
+    except Exception:  # noqa: BLE001 - an observer never replaces the real error
+        pass
+    return discarded
+
+
+@contextlib.contextmanager
+def guard_raw_driver(handle: Any, *, engine: Any = None, file_key: str | None = None,
+                     statement: str | None = None):
+    """``with guard_raw_driver(conn): <statements on conn's driver cursor>``: a failure is passed to
+    :func:`note_raw_driver_error` and then raised again unchanged. The ONE guard for every raw driver statement on
+    a pooled connection, so no site carries its own copy of the rule."""
+    try:
+        yield
+    except Exception as exc:
+        note_raw_driver_error(handle, exc, engine=engine, file_key=file_key, statement=statement)
+        raise
 
 
 #: engine -> (file key, listener): what :func:`attach` registered, so a test (or a status read) can
