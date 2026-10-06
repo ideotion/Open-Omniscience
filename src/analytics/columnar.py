@@ -641,28 +641,55 @@ _KEYWORD_AGG_DDL = (
 )
 
 
-def build_keyword_read_model(con, session) -> int:
+_AGG_TYPES = ("VARCHAR", "VARCHAR", "VARCHAR", "BIGINT", "BIGINT", "VARCHAR")
+
+
+def build_keyword_read_model(con, session, *, batch_size: int | None = None) -> int:
     """(Re)build the columnar ``keyword_agg`` table from the canonical keyword counters.
 
     A byte-identical projection of ``Keyword.mention_count`` / ``article_count`` (the
     Slice-2 counters) — NOT a recompute, so it inherits their honesty envelope. Off the
     request path (a background/maintenance step). Returns the row count written. The
-    canonical store is unchanged; this is a disposable derived table.
-    """
-    from src.analytics.queries import kind_of
-    from src.database.models import Keyword
+    canonical store is unchanged; this is a disposable derived table. Each batch is its own
+    read, so a counter bumped while the build runs can land in one batch and not in another
+    (the table is rebuilt wholesale and only the tests read it today).
 
+    STREAMED, never one list of ORM entities: the same shape that held 7.5 to 8.8 GB for the
+    in-memory rollup build (October 2026 diagnostics). Keywords come out by keyset over
+    ``keywords.id`` in ``batch_size`` chunks, column-projected, each chunk closed and committed
+    before the next (so no read is held open), and go into DuckDB in bulk (``_bulk_insert``).
+    """
+    from sqlalchemy import text as _sql
+
+    from src.analytics.queries import kind_from
+
+    batch_size = batch_size or BUILD_BATCH_ROWS
     con.execute(_KEYWORD_AGG_DDL)
-    rows = [
-        (kw.normalized_term, kw.term, kind_of(kw), int(kw.mention_count or 0),
-         int(kw.article_count or 0), kw.language)
-        for kw in session.query(Keyword).filter(Keyword.mention_count > 0)
-    ]
-    if rows:
-        con.executemany(
-            "INSERT INTO keyword_agg VALUES (?, ?, ?, ?, ?, ?)", rows
+    total = 0
+    cursor_id = 0
+    while True:
+        result = session.execute(
+            _sql(
+                "SELECT id, normalized_term, term, is_entity, entity_type, mention_count, "
+                "article_count, language FROM keywords "
+                "WHERE mention_count > 0 AND id > :cursor_id ORDER BY id LIMIT :batch_size"
+            ),
+            {"cursor_id": cursor_id, "batch_size": batch_size},
         )
-    return len(rows)
+        chunk = result.fetchall()
+        result.close()
+        if not chunk:
+            break
+        total += _bulk_insert(
+            con, "keyword_agg", _AGG_TYPES,
+            [
+                (r[1], r[2], kind_from(r[3], r[4]), int(r[5] or 0), int(r[6] or 0), r[7])
+                for r in chunk
+            ],
+        )
+        cursor_id = int(chunk[-1][0])
+        session.commit()
+    return total
 
 
 def top_terms_raw(con, *, kind: str | None = None, limit: int = 20) -> list[dict]:
@@ -1035,6 +1062,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     )
     con.execute("DROP TABLE keyword_daily_stage")
     daily_rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+    if on_batch is not None:
+        on_batch("keywords", 0)  # the GROUP BY is over: the keywords stage (and its rate) starts here
 
     # -- keyword metadata projection (for the windowed serve's JOIN) --------------------- #
     # Same keyset shape and the same close-then-commit as the mention loops above, for the same
@@ -1263,7 +1292,7 @@ def _upsert_keyword_meta(con, session, keyword_ids: list[int]) -> int:
         con.execute("CREATE OR REPLACE TEMP TABLE _new_meta ("
                     "keyword_id BIGINT, normalized_term VARCHAR, term VARCHAR, kind VARCHAR, "
                     "is_entity BOOLEAN, entity_type VARCHAR, language VARCHAR)")
-        con.executemany("INSERT INTO _new_meta VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+        _bulk_insert(con, "_new_meta", _META_TYPES, rows)
         con.execute(
             "INSERT INTO keyword_meta SELECT n.* FROM _new_meta n "
             "WHERE NOT EXISTS (SELECT 1 FROM keyword_meta m WHERE m.keyword_id = n.keyword_id)"
@@ -1385,9 +1414,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
             for r in chunk if r[2] is not None
         ]
         if dated_rows:
-            con.executemany(
-                "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)", dated_rows
-            )
+            _bulk_insert(con, "keyword_daily_stage", _STAGE_TYPES, dated_rows)
         # The watermark tracks the MAX id seen across the WHOLE batch (dated or not)
         # -- ordering is by (created_at, id), so the LAST row in a batch is not
         # necessarily the one with the largest raw id.

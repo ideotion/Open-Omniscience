@@ -319,6 +319,92 @@ def test_a_file_that_is_not_an_export_is_refused_with_the_cores_own_words(client
     assert "verdicts" in r.json()["detail"], r.text
 
 
+def test_a_yaml_upload_with_an_impossible_date_is_a_400_not_a_500(client) -> None:
+    """The YAML reader recognises 2026-13-45 as a date and the calendar refuses it with a
+    ValueError, which used to escape the reader as a 500 on an upload anybody can make."""
+    body = b"verdicts:\n  - domain: a.example\n    status: qualified\n    basis: measured\n    qualified_at: 2026-13-45\n"
+    r = client.post(ENDPOINT, files=[("files", ("export.yml", body, "text/yaml"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "cannot be read" in r.json()["detail"]
+    # fixed words, never the library's message: a YAML tag's ValueError carries the upload's text
+    body = b"verdicts: !!int secretPASSPHRASE\n"
+    r = client.post(ENDPOINT, files=[("files", ("export.yml", body, "text/yaml"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "secretPASSPHRASE" not in r.text
+
+
+def test_an_upload_nested_too_deeply_is_a_400_not_a_500(client) -> None:
+    """A hundred thousand opening brackets raised RecursionError out of the JSON reader."""
+    for name, body in (("deep.json", b"[" * 100_000), ("deep-object.json", b'{"a":' * 100_000)):
+        r = client.post(ENDPOINT, files=[("files", (name, body, "application/json"))],
+                        data={"include_this_instance": "false"})
+        assert r.status_code == 400, (name, r.text)
+        assert "nested too deeply" in r.json()["detail"]
+    # the same inside a bundle's export member
+    r = client.post(ENDPOINT, files=[("files", (
+        "deep.zip", _bundle({BUNDLE_MEMBER: b"[" * 100_000}), "application/zip"))],
+        data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "nested too deeply" in r.json()["detail"]
+    # the YAML stage has its own handler: this is not JSON, so it is the one that refuses
+    r = client.post(ENDPOINT, files=[("files", ("deep.yml", b"- " * 100_000 + b"x", "text/yaml"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "nested too deeply" in r.json()["detail"]
+
+
+def test_other_malformed_uploads_are_a_400_not_a_500(client) -> None:
+    """Found by the read of the 500s fix: the same family, other exception types. An integer past
+    Python's digit limit (a ValueError, not a JSONDecodeError), a bundle member that is not UTF-8, a
+    zip whose directory is damaged, and rows that are not mappings (skipped, not a crash)."""
+    def post(name, body, kind):
+        return client.post(ENDPOINT, files=[("files", (name, body, kind))],
+                           data={"include_this_instance": "false"})
+
+    big = b'{"verdicts": [], "n": ' + b"9" * 5000 + b"}"
+    r = post("big.json", big, "application/json")
+    assert r.status_code == 400 and "too long to read" in r.json()["detail"], r.text
+    r = post("big.zip", _bundle({BUNDLE_MEMBER: big}), "application/zip")
+    assert r.status_code == 400 and "too long to read" in r.json()["detail"], r.text
+    r = post("latin.zip", _bundle({BUNDLE_MEMBER: b'{"verdicts": "\xff\xfe"}'}), "application/zip")
+    assert r.status_code == 400 and "not readable text" in r.json()["detail"], r.text
+    # damaged zip directories: every single-byte flip is refused, never a 500
+    good = _bundle({BUNDLE_MEMBER: json.dumps({"verdicts": [_row("a.example", "qualified")]}).encode()})
+    for i in range(len(good)):
+        damaged = bytearray(good)
+        damaged[i] ^= 0xFF
+        r = post("d.zip", bytes(damaged), "application/zip")
+        assert r.status_code in (200, 400), (i, r.status_code, r.text[:200])
+    # a local header that names the member differently from the directory: the library's message
+    # prints that name, which is the upload's own text and must not come back in the refusal
+    renamed = bytearray(good)
+    renamed[30:30 + len(BUNDLE_MEMBER)] = b"secretPASSPHRASE".ljust(len(BUNDLE_MEMBER), b"x")
+    r = post("renamed.zip", bytes(renamed), "application/zip")
+    assert r.status_code == 400 and "secretPASSPHRASE" not in r.text, r.text
+    rows = {"verdicts": [3, "x", None, _row("a.example", "qualified")]}
+    r = post("rows.json", json.dumps(rows).encode(), "application/json")
+    assert r.status_code == 200, r.text
+
+
+def test_a_bundle_with_a_corrupt_compressed_stream_is_a_400_not_a_500(client) -> None:
+    """The archive's headers are intact and the compressed bytes are not: zlib.error escaped the
+    reader (only BadZipFile was caught)."""
+    buf = io.BytesIO()
+    rows = [_row(f"d{i}.example", "qualified") for i in range(2000)]
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(BUNDLE_MEMBER, json.dumps({"verdicts": rows}))
+    damaged = bytearray(buf.getvalue())
+    start = 30 + len(BUNDLE_MEMBER)  # the local header, then the compressed stream
+    for i in range(start + 4, start + 40):
+        damaged[i] ^= 0xFF
+    r = client.post(ENDPOINT, files=[("files", ("damaged.zip", bytes(damaged), "application/zip"))],
+                    data={"include_this_instance": "false"})
+    assert r.status_code == 400, r.text
+    assert "not a readable zip archive" in r.json()["detail"]
+
+
 def test_a_zip_without_the_member_is_refused_by_name(client) -> None:
     """NEGATIVE SPACE: the failure that would hurt is merging NOTHING and calling it a
     success -- the operator would ship an overlay believing an instance contributed."""
