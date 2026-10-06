@@ -52,6 +52,7 @@ from pathlib import Path
 from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
+from src.monitoring.engine_text import engine_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -3605,7 +3606,7 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
     Three things fall out of it, all wanted:
       * the merge stops writing the largest table in the artifact (~10M rows for a
         50k-article backup), which is the single biggest write in a large import;
-      * the re-index stops delete-then-reinserting rows it was about to replace anyway;
+      * the re-index stops rewriting rows it was about to replace anyway;
       * the keyword-counter drift is fixed BY CONSTRUCTION -- counters could never absorb
         a merged corpus (the INSERT omitted the counter columns under a NOT EXISTS that
         never updated), and the re-index then read `old_contrib` from the live rows, which
@@ -5922,7 +5923,7 @@ def _corpus_snapshot(session) -> dict:
 #     backlog", and it is what makes the work impossible to forget.
 #   * a small marker file -- the WATERMARK, for resuming mid-batch without redoing work.
 #     Its loss costs time, never correctness: the re-index is idempotent (it
-#     delete-then-reinserts), so a lost watermark just redoes a batch already known to be
+#     rewrites the difference), so a lost watermark just redoes a batch already known to be
 #     pending from the DB. It is deliberately NOT the source of truth.
 #
 # The asymmetry is the point: the cheap, losable thing is the optimisation, and the
@@ -6165,8 +6166,9 @@ def _backlog_engine() -> str:
         from src.analytics.engine_identity import baseline_engine_id
 
         return baseline_engine_id()
-    except Exception:  # noqa: BLE001 - an unknown engine certifies nothing
-        _LOG.warning("could not compute the engine identity for the backlog", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
+        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
+        _LOG.warning("could not compute the engine identity for the backlog: %s", engine_text(exc))
         return "<unknown>"
 
 
@@ -6197,8 +6199,9 @@ def pending_reindex_batches() -> list[dict]:
              "certified": int(r[3])}
             for r in rows
         ]
-    except Exception:  # noqa: BLE001
-        _LOG.warning("could not read the re-index backlog", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
+        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc))
         return []
 
 
@@ -6225,8 +6228,11 @@ def reindex_backlog() -> dict:
                 text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
-        _LOG.warning("could not read the re-index backlog", exc_info=True)
-        return {"available": False, "reason": str(exc)}
+        # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
+        # because the root error handler writes the traceback, which ends with the engine's own words
+        reason = engine_text(exc)
+        _LOG.warning("could not read the re-index backlog: %s", reason)
+        return {"available": False, "reason": reason}
     owed = [int(r[2]) - int(r[3]) for r in rows]
     certified = [int(r[3]) for r in rows]
     batches = [
@@ -6305,7 +6311,7 @@ def reindex_imported_articles(
         batch_ids = {int(r[0]) for r in rows}
         # R24: an article whose rows are already stamped by the engine this re-index would
         # run -- carried at import, or finished by an earlier interrupted run -- would be
-        # delete-then-reinserted into exactly the rows it already has. Skipped. Read from
+        # re-indexed into exactly the rows it already has. Skipped. Read from
         # the narrow stamps table, never from the article rows.
         certified = {
             int(r[0])

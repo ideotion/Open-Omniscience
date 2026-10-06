@@ -1,0 +1,3 @@
+# console (error + warning) and pageerror text, width 1440x900, theme aubergine
+# CSP violation events (securitypolicyviolation): []
+(no console errors or warnings)

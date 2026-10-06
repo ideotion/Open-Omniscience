@@ -282,7 +282,7 @@ def _maybe_index_keywords(session: Session, article: Article, source: Source) ->
         # disabled, a restore's FTS rebuild racing the live engine, etc.) so the
         # already-fetched article never loses its keyword/when/where/who indexing
         # to a dropped transaction (field log 2026-06-17: 62 such losses, pre-gate).
-        # index_article is idempotent (delete-then-reinsert), so a rollback + re-run
+        # index_article is idempotent (it rewrites the difference), so a rollback + re-run
         # reproduces the full result.
         extractor = get_extractor("baseline")
         run_write_with_retry(

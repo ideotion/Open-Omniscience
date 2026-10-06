@@ -22,7 +22,7 @@ per-article ``index_article`` takes the SINGLE-WRITER GATE on each flush/commit 
 RELEASES it between articles — so a live scrape interleaves cooperatively (never a
 silent collision, never a multi-hour gate hold). ZERO network (pure DB work).
 
-Re-index is idempotent (``index_article`` is delete-then-reinsert with exact counter
+Re-index is idempotent (``index_article`` rewrites the difference with exact counter
 deltas), so a resumed/restarted run never double-counts or loses keyword rows — the
 correctness net beneath the persisted cursor.
 """
@@ -34,6 +34,8 @@ import os
 import threading
 import time
 from pathlib import Path
+
+from src.monitoring.engine_text import engine_text
 
 # Articles per reindex_all_batch loop. Each batch commits per-article inside
 # index_article, and the cursor is persisted after each batch, so a crash loses at
@@ -393,7 +395,7 @@ class ReindexJobManager:
             finally:
                 # THE CLOSING HALF of the once-per-run bump above. In the `finally` so a
                 # pause, a cancel and a crash all land it: every article this run DID
-                # re-index is committed and delete-then-reinserted, so a rollup that
+                # re-index is committed and its changed rows rewritten, so a rollup that
                 # snapshotted mid-run must be invalidated whatever ended the run. Its own
                 # try/except because a `finally` may run on an already-broken session and
                 # a cache-coordination write must never replace the real error.
@@ -406,7 +408,7 @@ class ReindexJobManager:
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
+                self._error = engine_text(exc)
                 self._save()
 
     def _yield_to_exclusive(self) -> None:
@@ -496,9 +498,11 @@ class ReindexJobManager:
             # SPEED, in both units the operator thinks in (field ask 2026-08-12: "add a
             # keyword average per hour so users can estimate the current speed"). The
             # job iterates ARTICLES, so that rate is exact; keywords/h is the mention
-            # rows this run actually wrote over the same window -- a real measurement of
-            # the same work, not the article rate multiplied by an assumed average. Both
-            # over THIS run only (a resume's prior progress would inflate them), and both
+            # rows the articles this run finished NOW HOLD over the same window (rows a re-index
+            # found unchanged and left alone are counted: this is NOT a write rate, which is
+            # the drain's mentions_updated + mentions_added + mentions_removed). A real
+            # measurement of the same work, not the article rate multiplied by an assumed average.
+            # Both over THIS run only (a resume's prior progress would inflate them), and both
             # None until there is something real to divide -- never a fabricated 0/h.
             articles_per_hour = keywords_per_hour = None
             if elapsed_run is not None and recent > 0:

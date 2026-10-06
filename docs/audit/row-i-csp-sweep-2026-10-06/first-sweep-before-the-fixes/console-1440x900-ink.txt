@@ -1,0 +1,12 @@
+# console (error + warning) and pageerror text, width 1440x900, theme ink
+# CSP violation events (securitypolicyviolation): []
+[http 429] GET /api/insights/lunar-correlation?limit=40&fdr_q=0.05
+[error] Failed to load resource: the server responded with a status of 429 (Too Many Requests)
+[http 404] GET /static/osm_borders/admin1.world.json
+[error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[http 404] GET /static/osm_borders/admin0.world.json
+[error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[http 404] GET /static/osm_admin1.json
+[error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[http 404] GET /static/osm_admin0.json
+[error] Failed to load resource: the server responded with a status of 404 (Not Found)

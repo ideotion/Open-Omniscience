@@ -3164,9 +3164,10 @@ class DerivedMeta(Base):
     the non-append mutators (re-index / prune / restore-merge). The disposable columnar
     rollup (:func:`src.analytics.columnar.refresh_keyword_daily`) compares its BUILT epoch
     to this value; a change forces a FULL rebuild instead of an incremental merge, which
-    is what defeats the delete-then-reinsert double-count trap: ``index_article`` deletes
-    then re-inserts an article's mentions, so an id-watermark incremental merge would keep
-    the OLD contribution in the rollup AND re-add the re-inserted higher-id rows. Normal
+    is what defeats the re-index trap: ``index_article`` rewrites the DIFFERENCE of an
+    article's mentions (a gone row is deleted, a changed one is updated in place under its old
+    id, a new one is inserted), so an id-watermark incremental merge would never see the
+    in-place updates and would keep the OLD contribution in the rollup. Normal
     new-article ingest does NOT bump the epoch (else every scrape pass would full-rebuild).
 
     It is a COORDINATION watermark for a disposable cache, never an analytic and never a

@@ -25,7 +25,10 @@ WHAT IT REPORTS, every number carrying the method that produced it:
   stays undivided, exactly as it did;
 * ``write_rate`` -- mentions and distinct articles written in the last hour and the last
   six, read off the ``created_at`` index, so a drain is measured whether or not a job
-  happens to be running. A window that cannot be measured says why; it is never ``0``;
+  happens to be running. A row counts when it was WRITTEN: a re-index leaves an unchanged row
+  with its old ``created_at``, so the figure is the work that reached the file, not the
+  articles walked (the drain's own ``mentions_kept`` says how many were left alone). A window
+  that cannot be measured says why; it is never ``0``;
 * ``reindex_job`` -- the live re-index job's own articles/hour, when one is running.
 
 Read-only, no network, bounded by the statement deadline (an abort is reported, never a
@@ -51,6 +54,7 @@ from src.database.maintenance import (
     deadline_expired,
     statement_deadline,
 )
+from src.monitoring.engine_text import engine_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -85,8 +89,11 @@ _CAVEAT = (
     "page and the sample's spread by id (which follows insertion order) are not modelled, so read each "
     "figure as a range and the split as an order of magnitude, not an audit. What it cannot "
     "divide -- the articles, the full-text index, the other derived tables -- stays in "
-    "'rest_of_file_bytes'. A re-index deletes and rewrites an article's rows, so the write "
-    "rate counts INDEXING work, not new articles."
+    "'rest_of_file_bytes'. A re-index writes only the rows that CHANGED (changed ones are "
+    "stamped now, new ones are added, unchanged ones keep their time), so the write rate counts "
+    "rows WRITTEN, not articles indexed and not new articles: a re-index of rows that all stayed "
+    "the same writes none, and its articles per hour here is a lower bound, not comparable "
+    "with a figure measured before that change."
 )
 
 
@@ -279,15 +286,18 @@ def _write_rate(session: Session, now: datetime) -> dict[str, Any]:
                 ).one()
         except StatementTimeout as exc:
             why = "memory guard" if isinstance(exc, MemoryShort) else "statement deadline"
-            out[key] = {"available": False, "reason": f"stopped by the {why} ({exc})"}
+            out[key] = {"available": False, "reason": f"stopped by the {why} ({engine_text(exc)})"}
             continue
         except Exception as exc:  # noqa: BLE001
-            out[key] = {"available": False, "reason": f"unreadable: {str(exc)[:160]}"}
+            out[key] = {"available": False, "reason": f"unreadable: {engine_text(exc, 160)}"}
             continue
         if not mentions:
             out[key] = {
                 "available": False,
-                "reason": "no mention row was written in this window, so there is no rate to state",
+                "reason": (
+                    "no mention row was written in this window, so there is no rate to state "
+                    "(a re-index that found every row unchanged writes none)"
+                ),
             }
             continue
         out[key] = {
@@ -321,7 +331,7 @@ def _reindex_job() -> dict[str, Any] | None:
 
 def _cut_reason(exc: StatementTimeout) -> str:
     why = "memory guard" if isinstance(exc, MemoryShort) else "statement deadline"
-    return f"stopped before the sample finished, by the {why} ({exc})"
+    return f"stopped before the sample finished, by the {why} ({engine_text(exc)})"
 
 
 def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
@@ -355,9 +365,9 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
         # judged against: a cut-short sample never takes it down with it.
         cut = _cut_reason(exc)
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
-        _LOG.debug("keyword write cost unavailable: %s", exc)
+        _LOG.debug("keyword write cost unavailable: %s", engine_text(exc))
         out["available"] = False
-        out["reason"] = f"unreadable: {str(exc)[:200]}"
+        out["reason"] = f"unreadable: {engine_text(exc, 200)}"
         return out
 
     out["write_rate"] = _write_rate(session, stamp)
@@ -393,7 +403,8 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
     table = {
         "name": _TABLE,
         # LOW is a packed page. HIGH allows the holes a partial re-index leaves (it deletes
-        # and rewrites an article's rows) and the page header and reserve, by the same fill.
+        # the rows that are gone and updates or adds the ones that changed) and the page header
+        # and reserve, by the same fill.
         "bytes_low": int(rows_low * table_cell),
         "bytes_high": int(rows_high * table_cell / _RANDOM_FILL),
     }
