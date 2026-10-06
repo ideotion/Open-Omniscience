@@ -242,7 +242,7 @@ def _build_inmemory_and_swap() -> dict | None:
             # silently-missed one).
             token = serve_gate.change_token(s)
             # the token's second element IS the newest mention id (read in this same session already)
-            total_hint = int(token[1]) if token and len(token) > 1 and token[1] is not None else _mentions_total(s)
+            total_hint = int(token[1]) if token and len(token) > 1 and token[1] is not None else None
             skip: dict | None
             try:
                 columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
@@ -296,18 +296,6 @@ def columnar_batch_mb() -> float:
     from src.analytics import columnar
 
     return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
-
-
-def _mentions_total(session) -> int | None:
-    """The newest mention id: a cheap (index-only) stand-in for how many mentions the build will stream,
-    used to project what a stopped build would have taken in total."""
-    try:
-        from sqlalchemy import text
-
-        v = session.execute(text("SELECT MAX(id) FROM keyword_mentions")).scalar()
-        return int(v) if v is not None else None
-    except Exception:  # noqa: BLE001
-        return None
 
 
 def _refresh_persisted_build() -> None:
