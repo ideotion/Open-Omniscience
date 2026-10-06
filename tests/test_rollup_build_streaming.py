@@ -599,7 +599,7 @@ def test_a_connection_without_a_spill_choice_keeps_duckdbs_own_default():
 
 
 # --------------------------------------------------------------------------- #
-# the review's findings (Opus read of 669b3168)
+# the review's findings (the independent read of 669b3168)
 # --------------------------------------------------------------------------- #
 
 def test_the_engines_own_memory_limit_is_never_retried_row_by_row():
@@ -1037,6 +1037,9 @@ def test_a_real_build_reports_progress_and_clears_it(serve_env, session, monkeyp
     with rollup_serve._BUILD_LOCK:  # a leftover real rollup-build thread would share _PROGRESS: wait for it
         assert rollup_serve._build_inmemory_and_swap() is None
     assert {p["stage"] for p in seen} == {"mentions", "aggregate", "keywords"}
+    assert any(p["stage"] == "keywords" and p["rows_done"] == 0 for p in seen), (
+        "the build announces the keywords stage at zero rows once the GROUP BY ends: its rate starts there"
+    )
     assert rollup_serve.build_progress() is None, "nothing is reported once the build has ended"
     assert rollup_serve.status()["build_progress"] is None
 
@@ -1081,9 +1084,10 @@ def test_the_slow_step_watch_warns_once_then_only_when_progress_has_stopped(monk
     assert len(moving) == 1 and "still running" in moving[0] and "7,000 rows at 500 rows/s" in moving[0]
     stuck = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name and "no progress" in r.getMessage()]
     assert stuck and "999 s" in stuck[0] and "the re-index waiting behind it" in stuck[0]
-    after = len(caplog.records)
+    ours = lambda: [r for r in caplog.records if r.name == bs._LOG.name]  # noqa: E731
+    after = len(ours())
     threading.Event().wait(0.3)
-    assert len(caplog.records) == after, "a cancelled watch is silent"
+    assert len(ours()) == after, "a cancelled watch is silent"
 
 
 def test_a_long_aggregate_statement_is_not_called_stuck_and_a_step_without_a_channel_warns_once(monkeypatch, caplog):
