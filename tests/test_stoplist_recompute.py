@@ -799,8 +799,8 @@ def test_a_pass_stopped_on_a_list_that_added_a_word_is_accounted_for_when_the_li
 
 def test_a_swap_of_one_word_for_another_after_a_stopped_pass_leaves_no_hidden_word_in_a_top(env, monkeypatch):
     """(c) L2 adds w2 and its pass rewrites A's top to w3 and stops. L3 swaps w2 for w3: w3 is hidden
-    now and w2 visible: A's stored top (w3) is a hidden word, and the pass must walk w2 as a restored
-    keyword and put w2 back as the top."""
+    now and w2 visible: A's stored top (w3) is a hidden word. A is reached through hidden w3 either way,
+    so this pins the END STATE: no hidden word in any top, and A's top back on w2."""
     with env.session() as s:
         w2, w3, w4, f = (_keyword(s, t) for t in ("hid2", "hid3", "hid4", "ff"))
         _article(s, "A", {w2: 5, w3: 3, f: 1})

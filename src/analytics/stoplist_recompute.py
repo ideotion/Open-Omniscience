@@ -99,9 +99,9 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger("analytics.stoplist_recompute")
 
 #: The resume point: ``<fingerprint>.<plan>:<hidden keyword id>:<last article id>`` in ``derived_meta``
-#: (``<plan>`` is ``_run``'s walk key: a hash of the baseline and the words taken off). It carries the
-#: list and the plan it was made under, so a cursor from an older list, or from a smaller walk, is never
-#: resumed.
+#: (``<fingerprint>.<plan>`` is ``_run``'s walk key; ``<plan>`` is a hash of the bool ``known`` and the
+#: words taken off the list). It carries the list and the plan it was made under, so a cursor from an
+#: older list, or from a smaller walk, is never resumed.
 CURSOR_KEY = "stoplist_recompute_cursor"
 #: The fingerprint of the last FINISHED run, in the database beside the data it describes (written in
 #: the transaction that deletes the last cursor), so a restored or moved database cannot read as
