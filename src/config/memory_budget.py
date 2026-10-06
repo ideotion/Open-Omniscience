@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import math
 import os
+import threading
+from datetime import UTC, datetime
 from typing import Any
 
 # The tier boundaries. Named, not inline, because the caveat quotes them.
@@ -302,19 +304,108 @@ def _duckdb_threads(tier: str) -> int:
 
 
 _CACHE: dict[str, Any] | None = None
+#: When, and on how many cores, the cached budget above was resolved. ``budget()`` resolves
+#: ONCE per process, from the RAM total read at that instant, so the tier is a fact about a
+#: moment -- and on a virtual machine whose memory is ballooned the total moves afterwards,
+#: so "which moment" is part of the fact. Kept beside the cache and set with it.
+_RESOLVED: dict[str, Any] | None = None
+_LOCK = threading.Lock()
 
 
 def budget() -> dict[str, Any]:
     """The resolved budget, computed once per process."""
-    global _CACHE
-    if _CACHE is None:
-        _CACHE = resolve()
-    return _CACHE
+    global _CACHE, _RESOLVED
+    got = _CACHE
+    if got is None:
+        with _LOCK:
+            got = _CACHE
+            if got is None:
+                got = resolve()
+                _RESOLVED = {"resolved_at": _now_iso(), "cores": _cores()}
+                _CACHE = got
+    return got
 
 
 def reset_for_tests() -> None:
-    global _CACHE
-    _CACHE = None
+    global _CACHE, _RESOLVED
+    with _LOCK:
+        _CACHE = None
+        _RESOLVED = None
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _cores() -> int | None:
+    try:
+        return os.cpu_count() or None
+    except Exception:  # noqa: BLE001 - a platform that cannot say is unmeasured, not 1
+        return None
+
+
+def resolved_reading() -> dict[str, Any]:
+    """What this process's budget was resolved from: the tier, the RAM total it was decided
+    on (as read, and as the provisioned size it implies), the cores, whether that tier leaves
+    the in-memory keyword rollup on by default, and when.
+
+    The facts come from the cached budget itself, so they can never disagree with the budget
+    the process runs on; ``resolved_at`` and ``cores`` are the moment's own. A budget that
+    was not resolved by ``budget()`` (a test injecting the cache) has no moment: both are
+    None. ``total_ram_mb`` None with tier ``unmeasured`` is a machine whose RAM could not be
+    read, which is not a small one (see the module docstring).
+
+    It is a record of a decision, not a measurement of the machine now: for that, see
+    :func:`reading_vs_now`."""
+    b = budget()
+    moment = _RESOLVED or {}
+    return {
+        "tier": b.get("tier"),
+        "total_ram_mb": b.get("total_ram_mb"),
+        "nominal_ram_mb": b.get("nominal_ram_mb"),
+        "cores": moment.get("cores"),
+        "columnar_serve_default": b.get("columnar_serve_default"),
+        "resolved_at": moment.get("resolved_at"),
+    }
+
+
+def reading_vs_now() -> dict[str, Any]:
+    """The reading this process's budget was resolved from, beside the one the machine
+    gives right now and the tier that reading would resolve to.
+
+    The budget is resolved once per process (the pool size, the cache sizes, DuckDB's
+    memory limit and whether the in-memory rollup runs follow from it), and a virtual machine
+    whose memory is ballooned reports a different total later: the 2026-10-06 field
+    diagnostics hold an instance whose pass summaries say ``small`` while its own records of
+    the RAM total read 4,961, 5,921 and 4,600 MiB, and the 2026-09-30 ones a machine whose
+    killed process read 6,759.9 to 6,907.7 MiB (13 distinct totals in 200 samples) and whose
+    retry read 4,349 MiB. Both readings are facts about their own moment. ``tier_differs``
+    says only that the two tiers are not the same name; it passes no verdict on which
+    reading is the machine's real size."""
+    resolved = resolved_reading()
+    now_total = total_ram_mb()
+    now_tier = _tier(now_total)
+    return {
+        "resolved": resolved,
+        "now": {
+            "at": _now_iso(),
+            "total_ram_mb": round(now_total, 1) if now_total is not None else None,
+            "tier": now_tier,
+        },
+        "tier_differs": now_tier != resolved["tier"],
+        "method": (
+            "resolved: the RAM total psutil reported when this process first asked for its "
+            "budget (the pool size, the SQLite page cache, DuckDB's memory limit and whether "
+            "the in-memory rollup runs by default were decided from it, once); now: the same "
+            "reader, the same tier boundaries, read at this moment"
+        ),
+        "caveat": (
+            "the budget is not re-resolved while the process runs, so a machine whose total "
+            "RAM changes (a virtual machine with ballooned memory) keeps the tier of its "
+            "start; a restart resolves it again. A difference is a measured fact about the "
+            "machine, not a finding about which reading is right"
+        ),
+    }
 
 
 def resident_pool_cache_mb() -> int:

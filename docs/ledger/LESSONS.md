@@ -13401,3 +13401,25 @@ caller's environment already carried is never taken for this launcher's word abo
 an operator's own value, which carries no marker. The tests that count run the real launcher against fake server, browser and `curl` programs
 that record what they were started with, on both launcher paths, plus a source tie between the two spellings of the marker, because bash and
 Python share nothing else.
+
+### A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION (release candidate diagnostics, 2026-10-06, PR #NNNN, `src/config/memory_budget.py`)
+
+The in-memory keyword rollup runs on every memory tier but `small`, and the crash read of the 2026-10-06 batch could not say why it was off on seven of
+fifteen machines: the tier reached a report only through the pass-end summary line's `db_memory` block, which three of seventeen bundles happened to keep.
+The tier is resolved ONCE per process, when `session.py` builds the engine at import, from the RAM total psutil reports at that
+instant. The rollup report said mode `auto` and DuckDB available on all seven, so nothing but the tier default could have turned it off and all seven
+resolved `small`; four still read below the floor at export, and three read above it (4.07, 4.95 and 5.78 GiB), so their total at resolve time was lower
+than their total at export (one of them kept `small` in its summaries while its own records of the RAM total read 4,961, 5,921 and 4,600 MiB). In the
+2026-09-30 batch one machine's killed process read 13 distinct totals between 6,759.9 and 6,907.7 MiB where its retry read 4,349 MiB. The pool, the page caches, DuckDB's limit and whether the rollup ran were decided from one reading and then read
+against another by everybody who looked afterwards. **Any setting decided once from a reading that can move (RAM, cores, free disk, a network state) is a
+record of a decision, and the decision's inputs and its moment belong in the session's own record, written when it was made, rather than in whichever
+periodic summary happens to be kept. Show the reading the machine gives now BESIDE it, as two facts and no verdict, and never re-derive the decision from
+the new reading on a look: a look that re-resolved would move the pool under a running app, and a stamp taken at each look would say the budget was
+decided just now.** `memory_budget.resolved_reading()` is what the cached budget was resolved from (its facts are the cache's own, so they cannot disagree
+with what the process runs on; the moment is the resolve's) and `reading_vs_now()` pairs it with the tier the machine would resolve to now. The resolve
+itself is now under a lock with a double check, because the engine is built while several threads ask for the budget in the first moments of a boot and
+two resolves would leave a cache from one reading and a stamp from the other. The boot record, the session's high-water header (read at the next boot as
+the previous session's, so a death is read against the tier THAT session ran under), the crash report and the soak window carry it; chronology `sessions`
+carry it once and the boot event does not repeat it. Twenty-five tests, with thirty-three mutations each caught, pin the rest as negative space: the budget resolves once however often it is
+looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
+record and never a failed boot.

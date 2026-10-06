@@ -266,6 +266,11 @@ def _sessions(records: list[dict[str, Any]], current: dict[str, Any], now: float
             "app_version": r.get("app_version"),
             "source": r.get("source") or "ledger",
             "machine_boot_id": r.get("machine_boot_id"),
+            # What the session ran under (None: a build that did not record it, which is not
+            # the same as a machine that could not be read: that one says tier "unmeasured").
+            "memory_budget": r.get("memory_budget"),
+            "allocator": r.get("allocator"),
+            "rollup_serve_mode": r.get("rollup_serve_mode"),
             "uptime_s": uptime_s,
             "running_s": (round(float(current["uptime_s"])) if (is_current and end is None and current.get("uptime_s") is not None)
                           else (round(float(end["uptime_s"])) if (end and end.get("uptime_s") is not None) else None)),

@@ -35,6 +35,12 @@ with ``MALLOC_ARENA_MAX=2``, only instances launched since an update carry it, a
 "freed but held" memory (``heap_free_held_mb``) can only be read against the setting the
 process started with.
 
+Since 2026-10-06 it also carries the reading the memory budget was resolved from
+(``memory_budget``: the tier, the RAM total, the cores, whether the in-memory rollup is on by
+default, and when). The budget is resolved once per process from the RAM total read at that
+instant, and a virtual machine whose memory is ballooned can resolve one tier at one boot and
+another at the next, so a death is read against the tier THAT session ran under.
+
 Since 2026-10-01 a machine that STAYS short is recorded too. The crash that began 091717's
 last night was a 17-minute plateau at 44-60 MB available with the memory guard engaged: the
 slide into it was snapshotted (one per new low), the plateau -- where whatever was holding
@@ -389,10 +395,29 @@ def allocator_setting() -> dict[str, Any]:
         }
 
 
+def _memory_budget_reading() -> dict[str, Any]:
+    """The reading this process's memory budget was resolved from (the tier, the RAM total,
+    whether the in-memory rollup is on by default, when), or the error that stopped it
+    being read: an optional reading, never a second failure."""
+    try:
+        from src.config.memory_budget import resolved_reading
+
+        return resolved_reading()
+    except Exception as exc:  # noqa: BLE001 - an optional reading
+        return {"error": type(exc).__name__}
+
+
 def _session_header() -> dict[str, Any]:
     """What identifies this session in its own record, written once at its start: the
-    process, when it began, and the allocator setting it began with."""
-    return {"pid": os.getpid(), "started_at": _now(), "allocator": allocator_setting()}
+    process, when it began, the allocator setting it began with and the memory tier it was
+    resolved to. A crashed session's record is read at the next boot, so a death is read
+    against what THAT session ran under, not what the survivor runs under."""
+    return {
+        "pid": os.getpid(),
+        "started_at": _now(),
+        "allocator": allocator_setting(),
+        "memory_budget": _memory_budget_reading(),
+    }
 
 
 def composition(*, walk_heap: bool = True) -> dict[str, Any]:
