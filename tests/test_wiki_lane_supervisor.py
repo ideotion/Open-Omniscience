@@ -146,6 +146,75 @@ def test_the_drain_loop_starts_a_dead_stream_by_itself_once_the_kill_switch_is_c
     runner.stop()
 
 
+def test_a_revive_and_a_start_landing_together_make_ONE_stream_thread():
+    """The drain thread's revive and the service's start are not serialised by the service lock."""
+    import time
+
+    state = {"value": "running"}
+    runner, stream = _runner(state, _Stream(die=True))
+    runner.start()
+    _join(runner)
+    stream.die = False
+    real = runner._state_of
+
+    def slow_state():
+        time.sleep(0.05)  # widen the window between the alive check and the assignment
+        return real()
+
+    runner._state_of = slow_state  # type: ignore[assignment]
+    gate = threading.Barrier(3)
+
+    def go(fn):
+        gate.wait(timeout=5)
+        fn()
+
+    workers = [threading.Thread(target=go, args=(f,)) for f in (runner.revive_stream, runner.start)]
+    for w in workers:
+        w.start()
+    gate.wait(timeout=5)
+    for w in workers:
+        w.join(timeout=5)
+    assert stream.runs == 2, "the original stream plus exactly one restart, never two"
+    stream.release.set()
+    runner.stop()
+
+
+def test_a_failed_restart_leaves_the_next_tick_able_to_try_again():
+    state = {"value": "running"}
+    runner, stream = _runner(state, _Stream(die=True))
+    runner.start()
+    _join(runner)
+    stream.die = False
+    real = runner._state_of
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 2:  # revive's own read passes; start's read fails once
+            raise OSError("database is locked")
+        return real()
+
+    runner._state_of = flaky  # type: ignore[assignment]
+    with pytest.raises(OSError):
+        runner.revive_stream()
+    assert runner._thread is not None, "the dead thread stays, so the lane still counts as started"
+    assert runner.revive_stream() is True
+    stream.release.set()
+    runner.stop()
+
+
+def test_a_restart_that_raises_does_not_end_the_drain_loop():
+    state = {"value": "running"}
+    runner, _stream = _runner(state)
+    runner.revive_stream = lambda: (_ for _ in ()).throw(OSError("busy"))  # type: ignore[method-assign]
+    drained = []
+    runner.drain = lambda: drained.append(1)  # type: ignore[method-assign]
+    runner.refresh_one_pageview_top = lambda: None  # type: ignore[method-assign]
+    runner.idle = lambda _s: None  # type: ignore[method-assign]
+    runner.run_until_stopped(max_drains=2)
+    assert len(drained) == 2
+
+
 # --------------------------------------------------------------------------- #
 # The drain loop: past three failures it keeps going, longer between tries, up to a ceiling.
 # --------------------------------------------------------------------------- #
@@ -294,6 +363,49 @@ def test_start_does_nothing_while_the_kill_switch_holds_a_dead_stream_down(servi
     activate_kill_switch()
     assert svc.start_wiki_lane() is False
     assert len(built) == 1, "a runner whose loop is alive is not rebuilt while it waits"
+
+
+def test_a_start_waits_for_a_stop_still_joining_the_old_lane(service):
+    """No new runner is built beside the tail of the old one."""
+    import time
+
+    svc, built = service
+    svc.start_wiki_lane()
+    first = built[0]
+    stopping = threading.Event()
+    release = threading.Event()
+    real_stop = first.stop
+
+    def slow_stop(**k):
+        stopping.set()
+        release.wait(timeout=5)
+        real_stop(**k)
+
+    first.stop = slow_stop  # type: ignore[method-assign]
+    stopper = threading.Thread(target=svc.stop_wiki_lane)
+    stopper.start()
+    assert stopping.wait(timeout=5)
+    starter = threading.Thread(target=svc.start_wiki_lane)
+    starter.start()
+    time.sleep(0.2)
+    assert len(built) == 1, "the start must wait while the old lane is still being joined"
+    release.set()
+    stopper.join(timeout=5)
+    starter.join(timeout=5)
+    assert len(built) == 2
+
+
+def test_the_release_run_pauses_a_lane_whose_drain_loop_is_alive_even_with_the_stream_down(
+    monkeypatch,
+):
+    import src.wiki.service as svc
+    from src.monitoring import release_run
+
+    stopped = []
+    monkeypatch.setattr(svc, "lane_service_status", lambda: {"streaming": False, "draining": True})
+    monkeypatch.setattr(svc, "stop_wiki_lane", lambda **k: stopped.append(k))
+    out = release_run._pause_collection()
+    assert out["wiki_lane_was_streaming"] is True and stopped
 
 
 def test_the_soak_window_carries_the_service_state(service):

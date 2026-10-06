@@ -42,6 +42,9 @@ from typing import Any
 _LOG = logging.getLogger("wiki.service")
 
 _LOCK = threading.RLock()
+# Held across a whole stop (detach AND join) and taken first by a start, so a start never builds
+# a runner beside the tail of the one a stop is still joining. Always taken before ``_LOCK``.
+_STOP_LOCK = threading.RLock()
 _RUNNER: Any = None
 _DRAIN_THREAD: threading.Thread | None = None
 
@@ -327,7 +330,7 @@ def start_wiki_lane() -> bool:
     beside a live drain thread would put two writers on one lane.
     """
     global _RUNNER, _DRAIN_THREAD
-    with _LOCK:
+    with _STOP_LOCK, _LOCK:
         try:
             if _state_of() != "running":
                 _LOG.info("the Wikipedia lane is not started: its setting does not say running")
@@ -382,12 +385,13 @@ def _finish(runner: Any, thread: threading.Thread | None, timeout: float) -> Non
 def stop_wiki_lane(*, timeout: float = 5.0) -> None:
     """Stop the lane and forget the runner. Idempotent, and never raises.
 
-    The lock is held only to detach: the join can take seconds and a status read must not
-    wait behind it.
+    ``_LOCK`` is held only to detach: the join can take seconds and a status read must not
+    wait behind it. ``_STOP_LOCK`` is held throughout, so a start waits for the old lane's tail.
     """
-    with _LOCK:
-        runner, thread = _detach_locked()
-    _finish(runner, thread, timeout)
+    with _STOP_LOCK:
+        with _LOCK:
+            runner, thread = _detach_locked()
+        _finish(runner, thread, timeout)
 
 
 def lane_runner() -> Any:

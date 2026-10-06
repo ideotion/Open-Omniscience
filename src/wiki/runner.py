@@ -385,6 +385,10 @@ class WikiLaneRunner:
         self._monotonic = monotonic
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # ONE start at a time: the drain thread's revive and the service's start (Start, Run-now,
+        # the airplane button) can land together, and two passes through the alive check would
+        # each build a stream thread, the second orphaning the first.
+        self._start_lock = threading.RLock()
         #: The last drain's report, for a status surface to read. ``None`` before the
         #: first drain — which is an ABSENCE and never a report of zero.
         self.last_drain: dict | None = None
@@ -481,16 +485,17 @@ class WikiLaneRunner:
 
     def start(self) -> bool:
         """Start the stream thread. ``False`` when the setting does not say ``running``."""
-        if self._thread is not None and self._thread.is_alive():
+        with self._start_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return True
+            if self._state_of() != "running":
+                return False
+            self._stop.clear()
+            self._thread = threading.Thread(
+                target=self._stream_body, name="oo-wiki-stream", daemon=True
+            )
+            self._thread.start()
             return True
-        if self._state_of() != "running":
-            return False
-        self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._stream_body, name="oo-wiki-stream", daemon=True
-        )
-        self._thread.start()
-        return True
 
     def revive_stream(self) -> bool:
         """Start the stream thread again when it ended and nobody asked it to. ``True`` if started.
@@ -512,18 +517,20 @@ class WikiLaneRunner:
 
         if self._max_connections is not None:
             return False
-        if self._stop.is_set() or self._thread is None or self.streaming:
-            return False
-        try:
-            if self._state_of() != "running" or kill_switch_active():
+        with self._start_lock:
+            if self._stop.is_set() or self._thread is None or self.streaming:
                 return False
-        except Exception:  # noqa: BLE001 - an unreadable setting is a lane that stays down
-            return False
-        self._thread = None
-        if not self.start():
-            return False
-        self.stream_restarts += 1
-        self.last_stream_restart_at = datetime.now(UTC).isoformat()
+            try:
+                if self._state_of() != "running" or kill_switch_active():
+                    return False
+            except Exception:  # noqa: BLE001 - an unreadable setting is a lane that stays down
+                return False
+            # ``start`` treats a dead thread as restartable, and a failed start leaves the
+            # dead thread in place, so the next tick tries again.
+            if not self.start():
+                return False
+            self.stream_restarts += 1
+            self.last_stream_restart_at = datetime.now(UTC).isoformat()
         _LOG.warning(
             "the Wikipedia stream had ended without being stopped; started it again (restart %d)",
             self.stream_restarts,
@@ -743,7 +750,10 @@ class WikiLaneRunner:
         while not self._should_stop():
             if max_drains is not None and done >= max_drains:
                 break
-            self.revive_stream()
+            try:
+                self.revive_stream()
+            except Exception as exc:  # noqa: BLE001 - a failed restart is retried next tick
+                _LOG.warning("the Wikipedia stream could not be restarted: %s", exc)
             try:
                 self.drain()
                 self.consecutive_failures = 0
