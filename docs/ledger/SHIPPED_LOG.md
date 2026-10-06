@@ -10572,7 +10572,7 @@ one set of helpers in `src/monitoring/secret_scrub.py` (`scrubbed`, `traceback_t
 marker would rebuild an earlier one in; the journal's cuts (2,000, 8,000, 500) are made after the scrub; a log line leads with the exception's own line (the error journal cuts a
 record at 500 characters) and carries the scrubbed traceback as text and no `exc_info`. The route's responses to a caller are left as they are, on the condition that no recorder keeps
 a response's text, which was read: `errorlog.note_http_error` keeps the status, the method and the path (a test pins that no caller passes a `detail`), the frontend reporter keeps
-uncaught UI errors only, and the queue now scrubs where it records. The static walk of the release run (`tests/test_p0_validation.py`) now holds eight modules (the route layer's
+uncaught UI errors only, and the queue now scrubs where it records. The static walk of the release run (`tests/test_p0_validation.py`) now holds eleven modules (the route layer's
 exception may feed a response, nothing else; the eighth is the lock screen's `src/api/unlock.py`: the findings PR (#1319) had put a handler there that wrote the failure of a pool
 dispose with `exc_info=True`, inside a function that holds `body.passphrase`, the coverage test found it on this branch's first merge of main, and it writes through `log_failure` now,
 with a behaviour test that makes the dispose fail with the passphrase in its message), reads `corpus_passphrase` and the queue's `self._passphrase` as secrets, accepts `status` and `partial` only on a `_PhaseError` handler
@@ -10591,3 +10591,12 @@ name is, each caught. The check's D1 (the field count of the crash read) and D2 
 served, `runlog.run`'s journal, a path that is the passphrase, a form that is none of the shapes (a lone surrogate's `UnicodeEncodeError`, among them the unlock screen's compare at
 `src/api/unlock.py:643`), what a syntax walk cannot follow, and the columnar store's three records, which ride with the key-derivation change. Lesson:
 `LESSONS.md`, the entry "EVERY HANDLER THAT HOLDS A SECRET USES ONE SET OF SCRUB HELPERS, AND A RECORDER OF A RESPONSE IS A PLACE THE TEXT IS MADE".
+The one read of the head (14:16 UTC) found no trigger that exists today and a set of paths that would leak once one did, and all of it is folded into the same push: every route that takes a key the
+process does not hold yet is wrapped in `scrub_and_reraise` (the lock screen's unlock, create and encrypt, the encrypted backup, the single-file restore, the volume backup, restore and verify starts
+and the import queue's; what leaves is a `RuntimeError` that names the class and holds the scrubbed words) and the `HTTPException` details of those routes and of the two diagnostics starts are
+scrubbed where they are made; the read of what the process holds fails closed and takes no lock, and `scrubbed` takes the held passphrases out whether or not they are handed in; the shapes are a closure
+of two bases and four carriers three deep (at most 170 for one secret) checked against the writers themselves, with a floor of four characters that says what it protects and what it costs; a failed
+background job is scrubbed of the secrets it was started with and its record is written outside its handler; the journal's counts are read before the scrub; the browser sends its words whole and
+only the server cuts; the guard reads `getattr`, module aliases, `**` splats, a bare re-raise, a new exception with no `from None` and a route's `detail` built from the exception; and the two
+unlock tests that expected the bare exception expect the `RuntimeError`. Sixty-three more mutations are each caught. The paths outside the fold are in `OPEN_QUEUE.md`: the core-limit entry
+(uvicorn's log, the sinks beside the journal, core dumps, the children's environment) and the key-derivation change's derived key.

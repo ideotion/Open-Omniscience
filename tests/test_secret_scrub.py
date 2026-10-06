@@ -27,6 +27,15 @@ from src.monitoring import secret_scrub as ss
 NEEDLE = "hunter2-never-on-disk"
 
 
+@pytest.fixture(autouse=True)
+def _a_secret_of_any_length(monkeypatch):
+    """The cases here pin the MECHANICS of taking a secret out (a marker that rebuilds it, a piece of a field name, two secrets that
+    overlap, every shape it is written in), and they do it with secrets of one to three characters because those are the ones that
+    break a replacement written for the ordinary one. The floor under which a secret is not taken out of free text at all
+    (``secret_scrub.MIN_SECRET_CHARS``) is policy, and it is pinned with the real value in ``test_secret_scrub_floor.py``."""
+    monkeypatch.setattr(ss, "MIN_SECRET_CHARS", 1)
+
+
 def test_the_ordinary_secret_gets_the_readable_marker_and_an_empty_one_is_no_needle():
     assert ss.scrub_text(f"a {NEEDLE} b {NEEDLE}", NEEDLE) == "a ***redacted*** b ***redacted***"
     assert ss.scrub_text("nothing here", NEEDLE) == "nothing here"
@@ -553,11 +562,12 @@ def test_the_secret_is_taken_out_in_every_shape_the_code_writes_it_and_the_text_
     assert ss.scrub_value({"k": [written], "n": 1}, secret) == {"k": [out], "n": 1}
 
 
-@pytest.mark.parametrize("secret", ["x", "e", "'", "\\", '"', "é", "\t"])
-def test_a_one_character_secret_is_taken_out_in_every_shape_wherever_it_stands(secret):
-    """A one-character passphrase is a bad one and a person can type it: every shape of it goes, the text between the
-    pieces stays, and ``e`` (a piece of the readable marker) and ``'`` (the quote an SQL literal doubles) are the cases that
-    break a replacement written for the ordinary secret."""
+@pytest.mark.parametrize("secret", ["x", "e", "'", "\\", '"', "é", "x\t"])
+def test_a_secret_of_one_character_is_taken_out_in_every_shape_wherever_it_stands_when_nothing_stops_it(secret):
+    """The floor is lowered for this file (the fixture above), so the mechanics are the ones under test: every shape of a one-
+    character secret goes, the text between the pieces stays, and ``e`` (a piece of the readable marker) and ``'`` (the quote an
+    SQL literal doubles) are the cases that break a replacement written for the ordinary secret. A whitespace character alone is
+    never a secret (the floor counts the characters that are not whitespace), so the tab comes with a letter."""
     writers = [secret, repr(secret)[1:-1], json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1],
                secret.replace("'", "''"), _sql(secret)]
     text = " | ".join(writers) + " | 7"
@@ -610,10 +620,11 @@ def test_what_is_put_in_is_never_searched_again():
     assert ss._redact('*"x*\\""', ('*\\"', '*"'), "*") == '*x*"'
 
 
-def test_a_plain_secret_has_one_shape_and_an_empty_or_missing_one_has_none():
+def test_a_plain_secret_has_one_shape_and_an_empty_or_missing_one_has_none(monkeypatch):
     assert ss._forms("hunter2") == ("hunter2",)
     assert ss._forms("") == () and ss._forms(None) == ()
-    assert ss._all_forms(("a", "a", None, "", "b")) == ("a", "b")
+    monkeypatch.setattr(ss, "held_passphrases", lambda: ())
+    assert ss._forms_now(("a", "a", None, "", "b")) == ("a", "b"), "each once, and none that is empty or missing"
     assert ss.scrub_text("anything", "") == "anything" and ss.scrubbed("anything", None, "") == "anything"
 
 
@@ -632,10 +643,28 @@ def test_the_error_an_engine_raises_for_a_key_with_a_quote_in_it_is_scrubbed_whe
     assert "it''s" not in out and "the-key" not in out and "PRAGMA key = '***redacted***'" in out
 
 
+def _first_shapes(needle: str) -> tuple[str, ...]:
+    """The ten shapes a secret takes in the text one writer makes of it (typed and SQL-doubled, each as ``repr`` writes it alone,
+    as ``repr`` writes it inside a text with both kinds of quote, and as JSON writes it twice): written here by hand, so that the
+    texts the search builds from them are not made by the helper under test."""
+    shapes: list[str] = []
+    for typed in (needle, needle.replace("'", "''")):
+        shapes += [
+            typed,
+            repr(typed)[1:-1],
+            repr("'\"" + typed)[4:-1],
+            json.dumps(typed)[1:-1],
+            json.dumps(typed, ensure_ascii=False)[1:-1],
+        ]
+    return tuple(dict.fromkeys(shape for shape in shapes if shape))
+
+
 def test_no_shape_of_the_secret_is_in_the_text_for_any_secret_and_text_made_of_the_pieces_that_rebuild_one():
     """EXHAUSTIVE over a small alphabet, like the cut-text one above but over EVERY shape (the quote an SQL literal doubles,
-    repr's escape and JSON's among them): each secret of one or two characters, against every text of one to three pieces
-    from its shapes, a quote, a star and a letter."""
+    repr's escape and JSON's among them, each written again by the others, up to three deep): each secret of one or two
+    characters, against every text of one to three pieces from the shapes ONE writer makes of it, a quote, a star and a
+    letter. The pieces are the first shapes only (the helper's own closure is what must be gone from the output): all of the
+    closure as pieces is 170 to the third power for one secret."""
     from itertools import product
 
     alphabet = ("*", "'", '"', "\\", "#", "x")
@@ -644,7 +673,8 @@ def test_no_shape_of_the_secret_is_in_the_text_for_any_secret_and_text_made_of_t
         for chars in product(alphabet, repeat=size):
             needle = "".join(chars)
             forms = ss._forms(needle)
-            pieces = (*forms, "'", '"', "*", "x")
+            assert set(_first_shapes(needle)) <= set(forms), "the closure holds every shape one writer makes"
+            pieces = (*_first_shapes(needle), "'", '"', "*", "x")
             for count in (1, 2, 3):
                 for parts in product(pieces, repeat=count):
                     text = "".join(parts)

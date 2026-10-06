@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, held_passphrases, scrubbed
+from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, scrubbed
 from src.paths import data_dir
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
@@ -128,34 +128,54 @@ def _append(entry: dict) -> None:
         pass
 
 
+def _flags(message: str, traceback_tail: str) -> dict[str, bool]:
+    """What the summary counts a record for (``database is locked``, an aborted statement), read off the text AS LOGGED. The
+    journal's text has the passphrases out of it, and a passphrase that is a piece of those phrases (``database``,
+    ``interrupted``) would take the phrase out with it and zero the count: so the flags are taken before the scrub and kept as
+    fields, which hold a boolean and no text."""
+    blob = (message[:500] + traceback_tail[-1500:]).lower()
+    found = {}
+    if "database is locked" in blob:
+        found["locked"] = True
+    if "interrupted" in blob or ("exceeded the" in blob and "deadline" in blob):
+        found["interrupted"] = True
+    return found
+
+
 class _JsonlErrorHandler(logging.Handler):
-    """Every WARNING-or-above record of every logger in the process enters the journal here, and the debug bundle carries
-    the journal (``recent_errors``): the one place where the text of every module's exception, however it was logged,
-    becomes a record. The message and the traceback are scrubbed of every passphrase the process holds
-    (``secret_scrub.scrubbed``: as typed, as an SQL literal, as ``repr`` and as JSON write it) BEFORE the cut that keeps
-    their first 500 and last 1,500 characters, because a text cut first can split a passphrase and keep half of it. It is
-    the net under the per-site scrubs (``log_failure`` and the handlers the static guard reads), and it knows only the
-    passphrases the process holds: one typed into a request being served, or a backup's, is the site's to take out."""
+    """Every WARNING-or-above record of every logger in the process enters THIS journal here, and the debug bundle carries
+    the journal (``recent_errors``): the text of every module's exception, however it was logged, becomes an entry here. It is
+    not the only place a record is written (the log files and the console that ``setup_logging`` attaches are their own sinks:
+    docs/ledger/OPEN_QUEUE.md). The message and the traceback are scrubbed of every passphrase the process holds
+    (``secret_scrub.scrubbed``: as typed, as an SQL literal, as ``repr`` and as JSON write it, and written again by each other,
+    up to three deep) BEFORE the cut that keeps their first 500 and last 1,500 characters, because a text cut first can split a
+    passphrase and keep half of it. It is the net under the per-site scrubs (``log_failure`` and the handlers the static guard
+    reads), and it knows only the passphrases the process holds: one typed into a request being served, or a backup's, is the
+    site's to take out. When what the process holds cannot be read the entry carries ``secret_scrub.UNREADABLE_TEXT`` where the
+    message and the traceback would be: the record is still counted, and nothing it said is kept."""
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
         try:
-            held = held_passphrases()
-            entry = {
+            raw_message = record.getMessage()
+            entry: dict[str, Any] = {
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "level": record.levelname,
                 "logger": record.name,
-                "message": scrubbed(record.getMessage(), *held)[:500],
+                "message": scrubbed(raw_message)[:500],
             }
+            raw_tb = ""
             if record.exc_info and record.exc_info[0] is not None:
-                tb = scrubbed("".join(traceback.format_exception(*record.exc_info)), *held)
-                entry["traceback_tail"] = tb[-1500:]
+                raw_tb = "".join(traceback.format_exception(*record.exc_info))
             else:
                 # A handler that holds a passphrase logs through ``secret_scrub.log_failure``, which writes the
                 # traceback as TEXT with the secrets out of it (a record's ``exc_info`` carries the message as raised)
                 # and hands it over as an attribute, so the bundle keeps the frames that say where the failure was.
-                text = getattr(record, TRACEBACK_ATTRIBUTE, None)
-                if isinstance(text, str) and text:
-                    entry["traceback_tail"] = scrubbed(text, *held)[-1500:]
+                attached = getattr(record, TRACEBACK_ATTRIBUTE, None)
+                if isinstance(attached, str):
+                    raw_tb = attached
+            if raw_tb:
+                entry["traceback_tail"] = scrubbed(raw_tb)[-1500:]
+            entry.update(_flags(raw_message, raw_tb))
         except Exception:  # noqa: BLE001 - the log must never break the app
             return
         _append(entry)
@@ -196,7 +216,7 @@ def note_http_error(method: str, path: str, status: int, *, detail: str | None =
         # _append (which re-acquires _LOCK) runs AFTER the `with` block releases it.
         msg = f"HTTP {status} {method} {path}"
         if detail:
-            msg = f"{msg} — {scrubbed(str(detail), *held_passphrases())[:200]}"
+            msg = f"{msg} — {scrubbed(str(detail))[:200]}"
         _append(
             {
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -232,12 +252,11 @@ def note_frontend_error(
     identical (kind, message, source) is throttled so a render loop can't flood the log.
     """
     try:
-        held = held_passphrases()
 
         def clean(value: object, cut: int) -> str:
             """The browser's words with the passphrases the process holds out of them, and only then cut: a text cut first can
-            split a passphrase and keep half of it."""
-            return scrubbed(str(value), *held)[:cut]
+            split a passphrase and keep half of it (the browser sends its words whole for the same reason)."""
+            return scrubbed(str(value))[:cut]
 
         k = (clean(kind, 40), clean(message, 200), clean(source or "", 200))
         now = time.monotonic()
@@ -346,8 +365,10 @@ def summary() -> dict:
         return r.get("level") in _PROBLEM_LEVELS
 
     def _is_locked(r: dict) -> bool:
+        # The flag the record was written with (taken before the scrub, :func:`_flags`); the text for a record written
+        # before the flags existed.
         blob = (r.get("message", "") + r.get("traceback_tail", "")).lower()
-        return "database is locked" in blob
+        return bool(r.get("locked")) or "database is locked" in blob
 
     def _is_interrupted(r: dict) -> bool:
         """A statement that was ABORTED mid-flight, either shape.
@@ -361,7 +382,7 @@ def summary() -> dict:
         splitting the two would make each look rarer than the condition is.
         """
         blob = (r.get("message", "") + r.get("traceback_tail", "")).lower()
-        return "interrupted" in blob or ("exceeded the" in blob and "deadline" in blob)
+        return bool(r.get("interrupted")) or "interrupted" in blob or ("exceeded the" in blob and "deadline" in blob)
 
     def _is_http(r: dict) -> bool:
         return r.get("level") == _HTTP_LEVEL

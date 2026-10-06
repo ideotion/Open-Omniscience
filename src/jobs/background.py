@@ -29,12 +29,13 @@ endpoint up front. No score, local only.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
 from typing import Any, Callable
 
-from src.monitoring.secret_scrub import held_passphrases, log_failure, scrubbed
+from src.monitoring.secret_scrub import log_failure, scrubbed
 
 _LOG = logging.getLogger("jobs.background")
 
@@ -109,6 +110,25 @@ class JobContext:
             self._job._metrics = dict(metrics) if metrics else None
 
 
+def _job_secrets(kwargs: dict[str, Any]) -> tuple[str, ...]:
+    """The strings a job was started with that are secrets, found by the NAME they are passed under: the convention of
+    ``src/safety/scrub.py`` (a key that holds ``passphrase``, ``password``, ``secret``, ``token``, ``api_key`` and the rest of
+    ``SECRET_KEY_FRAGMENTS``), which is how a route hands one over (``passphrase=body.passphrase``, ``**body.model_dump()``,
+    a mailbox's ``password``). The held passphrases are not among them: ``scrubbed`` and ``log_failure`` take those out
+    themselves. Only the top level is read, and only a string is a secret here.
+
+    Imported when a job fails: ``src.safety`` pulls the whole backup stack in, and a module every job imports stays light."""
+    from src.safety.scrub import SECRET_KEY_FRAGMENTS
+
+    return tuple(
+        dict.fromkeys(
+            value
+            for key, value in kwargs.items()
+            if isinstance(key, str) and isinstance(value, str) and value and any(f in key.lower() for f in SECRET_KEY_FRAGMENTS)
+        )
+    )
+
+
 class BackgroundJob:
     """One named background job kind (a process-lifetime singleton per kind)."""
 
@@ -176,6 +196,8 @@ class BackgroundJob:
         return self.status()
 
     def _run(self, ctx: JobContext, kwargs: dict) -> None:
+        failure: Exception | None = None
+        secrets: tuple[str, ...] | None = ()
         try:
             result = self._worker(ctx, **kwargs)
             with self._lock:
@@ -185,20 +207,44 @@ class BackgroundJob:
                 # late cancel() never mislabels a finished-with-full-result run.
                 self._state = "cancelled" if (self.cancellable and self._stop.is_set()) else "done"
         except Exception as exc:  # noqa: BLE001 - a worker crash must not take the app down
+            failure = exc
             # The error is shown in the task manager and /api/jobs, and an engine's error can quote the statement that held
-            # the key: the text is scrubbed of every passphrase the process holds BEFORE the cut, and withheld when it cannot be.
-            held = held_passphrases()
+            # the key: the text is scrubbed of every passphrase the process holds (``scrubbed`` takes those out itself) AND of
+            # the secrets the job was started with (``_job_secrets``: a backup's passphrase, a mailbox's password), BEFORE the
+            # cut, and withheld when it cannot be.
+            name = type(exc).__name__
             try:
-                error = scrubbed(f"{type(exc).__name__}: {exc}", *held)[:300]
+                secrets = _job_secrets(kwargs)
+                error = scrubbed(f"{name}: {exc}", *secrets, withheld=f"{name}: its text is withheld")[:300]
             except Exception:  # noqa: BLE001 - the text could not be made or scrubbed: the class says what failed
-                error = f"{type(exc).__name__}: its text is withheld"
+                secrets = None
+                error = f"{name}: its text is withheld"
             with self._lock:
                 self._error = error
                 self._state = "error"
-            log_failure(_LOG, f"background job {self.kind} failed", exc, *held, level=logging.WARNING)
         finally:
             with self._lock:
                 self._ended_at = time.time()
+        if failure is not None:
+            # Written AFTER the handler, so that a record that cannot be written raises with no exception to chain: the thread's
+            # excepthook prints what is raised and the exception it was raised while handling, as it made its message.
+            self._log_failure(failure, secrets)
+
+    def _log_failure(self, failure: Exception, secrets: tuple[str, ...] | None) -> None:
+        """The failure as a WARNING with the secrets out of it, or, when they could not be read or the record could not be written,
+        the exception's class and none of its words. Never raises: the job has already ended as an error."""
+        try:
+            if secrets is not None:
+                log_failure(_LOG, f"background job {self.kind} failed", failure, *secrets, level=logging.WARNING)
+                return
+        except Exception:  # noqa: BLE001 - what is written instead is the class
+            pass
+        with contextlib.suppress(Exception):
+            _LOG.warning(
+                "background job %s failed (%s): its text is withheld, the scrub could not run",
+                self.kind,
+                type(failure).__name__,
+            )
 
     def cancel(self) -> None:
         """Ask the worker to stop at its next safe point (cooperative; never kills a thread)."""

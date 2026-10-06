@@ -339,7 +339,9 @@ def test_a_crash_inside_the_connect_leaves_no_record_behind(crashed_store, monke
         raise OSError("disk unplugged")
 
     monkeypatch.setattr(connect_mod, "connect", boom)
-    with pytest.raises(OSError):
+    # the key is typed, so an unexpected failure leaves the unlock scrubbed and as a RuntimeError
+    # that names the class it was; the record still ends
+    with pytest.raises(RuntimeError, match=r"OSError: disk unplugged"):
         unlock(PassphraseBody(passphrase=_KEY))
     assert ss.get_recovery() == {"active": False}
 
@@ -705,7 +707,8 @@ def test_a_finish_that_fails_returns_the_app_to_locked_so_the_retry_is_a_real_re
         monkeypatch.setattr(unlock_mod, "_finish_unlock", finish)
         connect_mod.set_passphrase(None)
         assert unlock_mod.app_lock_state() == "locked"
-        with pytest.raises(type(failure)):
+        # the typed key is scrubbed on the way out, so the failure leaves as a RuntimeError naming its class
+        with pytest.raises(RuntimeError, match=type(failure).__name__):
             unlock(PassphraseBody(passphrase=_KEY))
         assert connect_mod.get_passphrase() is None and unlock_mod.app_lock_state() == "locked", repr(failure)
         assert disposed, "the pool keeps the connections init_db opened with the key; they go with it"

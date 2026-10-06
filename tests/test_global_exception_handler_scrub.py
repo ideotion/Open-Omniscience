@@ -9,7 +9,8 @@ read of its source.
 
 The server logs the exception once more itself, as the middleware re-raises it after this handler has answered, and a
 passphrase typed into the request being served (the unlock screen's) is not held yet: both are recorded in
-``docs/ledger/OPEN_QUEUE.md`` as outside what the handler can do.
+``docs/ledger/OPEN_QUEUE.md`` as outside what the handler can do. The routes that take a typed key convert what escapes them
+(``secret_scrub.scrub_and_reraise``), so the exception that reaches this handler from one is already scrubbed.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import asyncio
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -130,15 +132,46 @@ def test_the_store_is_looked_up_among_the_imported_modules_and_never_imported_by
     assert "src.database.connect" not in sys.modules
 
 
-def test_a_store_that_cannot_say_what_it_holds_does_not_stop_the_environments_passphrase_being_read(monkeypatch):
-    def half_imported():
-        raise RuntimeError("the store is half imported")
+def test_the_sessions_passphrase_is_read_without_the_stores_lock_so_a_record_written_under_it_does_not_wait_on_itself(monkeypatch):
+    """MUTATION TARGET: the read of the store's global. ``connect.get_passphrase`` takes the store's lock, which is not
+    reentrant, and a log record is written by a thread that may hold it (the unlock holds it for the whole of its work): a scrub
+    that waited on it would hang the thread that is trying to say why it failed."""
+    monkeypatch.setattr(connect, "_passphrase", HELD)
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "")
+    answered: list[object] = []
+    with connect._lock:
+        reader = threading.Thread(target=lambda: answered.append(ss.held_passphrases()), daemon=True)
+        reader.start()
+        reader.join(5)
+        assert not reader.is_alive(), "the read waited on the store's lock"
+    assert answered == [(HELD,)]
 
+
+def test_what_the_process_holds_that_cannot_be_read_is_none_and_never_an_empty_answer(monkeypatch):
+    """MUTATION TARGET: ``None`` for a read that failed. An empty tuple would say "nothing is held" and every net would keep
+    the text it could not check; ``None`` is what makes each of them withhold it."""
     monkeypatch.setenv("OO_DB_PASSPHRASE", ENV)
-    monkeypatch.setattr(connect, "get_passphrase", half_imported)
-    assert ss.held_passphrases() == (ENV,)
-    monkeypatch.delattr(connect, "get_passphrase")  # an attribute that is not there yet is the same case
-    assert ss.held_passphrases() == (ENV,)
+    monkeypatch.setattr(connect, "_passphrase", b"not text")  # a store whose global holds something that is no passphrase
+    assert ss.held_passphrases() is None
+    monkeypatch.setattr(connect, "_passphrase", HELD)
+    monkeypatch.setenv("OO_DB_PASSPHRASE", ENV)
+    assert ss.held_passphrases() == (HELD, ENV)
+    monkeypatch.setattr(ss, "vars", lambda *_a: (_ for _ in ()).throw(TypeError("no namespace")), raising=False)
+    assert ss.held_passphrases() is None
+
+
+def test_a_handler_that_cannot_read_what_the_process_holds_writes_none_of_the_exceptions_words(both_held, caplog, monkeypatch):
+    """MUTATION TARGET: the unreadable answer treated as "nothing is held", in the response, in the log line or in the
+    log record: each would keep the text on the chance that it holds no passphrase."""
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    caplog.set_level(logging.DEBUG, logger="api")
+    resp = _call(RuntimeError(f"the key {HELD} was refused"))
+    assert resp.status_code == 500
+    assert json.loads(resp.body) == {"detail": "internal error (its text is withheld: the scrub could not run)"}
+    written = resp.body.decode() + caplog.text
+    assert HELD not in written and "refused" not in written
+    (record,) = [r for r in caplog.records if r.name == "api"]
+    assert "RuntimeError: its text is withheld" in record.getMessage() and record.exc_info is None
 
 
 @pytest.mark.parametrize("broken", ["scrubbed", "log_failure"])
@@ -168,10 +201,13 @@ def test_an_exception_whose_text_cannot_be_made_is_answered_not_raised_again(bot
     assert json.loads(resp.body) == {"detail": "internal error (its text is withheld: the scrub could not run)"}
 
 
-def test_the_handler_uses_its_exception_only_inside_a_scrub_that_is_given_every_passphrase_it_holds():
-    """MUTATION TARGET: a use of ``exc`` outside the scrubbing calls, a scrubbing call not given ``*held``, a traceback written
-    by ``.exception()`` or ``exc_info``. A read of the source, because the static guard in ``test_p0_validation.py`` reads the
-    handlers of ``except`` blocks and the exception here is the handler's parameter."""
+def test_the_handler_uses_its_exception_only_inside_the_scrubbing_helpers_and_reads_no_passphrase_itself():
+    """MUTATION TARGET: a use of ``exc`` outside the scrubbing calls, a traceback written by ``.exception()`` or ``exc_info``, or
+    a second reading of what the process holds. ``scrubbed`` and ``log_failure`` take out every passphrase the process holds
+    themselves (pinned by behaviour in ``test_secret_scrub.py``), so the handler is handed none and reads none: a handler that
+    reads them itself is one more place where "what is held" is decided, and the one that is read differently leaves a text
+    unscrubbed. A read of the source, because the static guard in ``test_p0_validation.py`` reads the handlers of ``except``
+    blocks and the exception here is the handler's parameter."""
     tree = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
     fn = next(
         n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "unhandled_exception_handler"
@@ -184,10 +220,6 @@ def test_the_handler_uses_its_exception_only_inside_a_scrub_that_is_given_every_
         assert not (isinstance(node.func, ast.Attribute) and node.func.attr == "exception"), f"line {node.lineno}"
         assert not any(kw.arg == "exc_info" for kw in node.keywords), f"line {node.lineno}: exc_info"
         if isinstance(node.func, ast.Name) and node.func.id in {"scrubbed", "log_failure"}:
-            given = [
-                a for a in node.args if isinstance(a, ast.Starred) and isinstance(a.value, ast.Name) and a.value.id == "held"
-            ]
-            assert given, f"line {node.lineno}: {node.func.id} is not given *held"
             allowed |= {id(n) for n in ast.walk(node)}
             scrubbing += 1
         elif isinstance(node.func, ast.Name) and node.func.id == "type" and len(node.args) == 1:
@@ -195,3 +227,5 @@ def test_the_handler_uses_its_exception_only_inside_a_scrub_that_is_given_every_
     outside = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "exc" and id(n) not in allowed]
     assert not outside, f"the exception is used outside a scrub on lines {outside}"
     assert scrubbing == 3, "the log line's words, the log record and the response: the walk must not be left looking at nothing"
+    reads = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "held_passphrases"]
+    assert not reads, f"the handler reads what the process holds itself, on lines {reads}"

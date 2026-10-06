@@ -71,9 +71,12 @@ def test_a_dispose_that_fails_after_a_failed_finish_is_written_without_the_passp
 
 
 def test_the_unlock_still_ends_as_it_did_when_the_dispose_fails(failing_unlock):
-    """The handler only writes: the key is put back, and what propagates is the finish's failure and not the dispose's."""
+    """The handler only writes: the key is put back, and what propagates is the finish's failure and not the dispose's. It leaves
+    the function as the block around it converts it (``scrub_and_reraise``: the class and the words, the key taken out, raised
+    from None), which is the finish's own text and none of the dispose's."""
     held, path = failing_unlock
     with pytest.raises(RuntimeError) as err:
         unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
-    assert str(err.value) == "the finish failed", "the dispose's failure replaced the finish's"
+    assert str(err.value) == "RuntimeError: the finish failed", "the dispose's failure replaced the finish's"
+    assert err.value.__suppress_context__ is True
     assert held == [_PASS, None], "the unlock must be undone: the key set for the finish, then cleared"

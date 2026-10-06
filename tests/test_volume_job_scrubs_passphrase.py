@@ -107,6 +107,25 @@ def test_a_failed_backup_writes_no_passphrase_to_its_status_its_log_or_its_journ
     assert f"RuntimeError: could not seal the set with {REDACTED}" in _message_of(caplog, "volume backup failed")
 
 
+def test_a_failed_backup_takes_out_the_passphrase_the_process_holds_though_the_job_was_handed_another(
+        tmp_path, caplog, monkeypatch):
+    """The job holds the backup's passphrase, and the engine under it opened the store with the session's: a handler cannot know
+    which key a callee used, so every helper takes out what the process holds as well as what the handler was given.
+    MUTATION TARGET: the held passphrases left out of ``scrubbed``, ``traceback_text`` or ``log_failure``, which the handlers
+    here are written through."""
+    from src.database import connect
+
+    held = "mQ2$wXz-the-sessions-own-key"
+    monkeypatch.setattr(connect, "_passphrase", held)
+    mgr = _backup_that_raises(tmp_path, RuntimeError(f"the store refused {held} and the set key {PASS}"))
+    st = mgr.status()
+    assert st["error"] == f"the store refused {REDACTED} and the set key {REDACTED}"
+    written = _everything_written(mgr, caplog, tmp_path)
+    assert held not in written and PASS not in written
+    record = _error_record(tmp_path)
+    assert held not in record["traceback"] and held not in record["msg"]
+
+
 def test_a_failed_backup_scrubs_the_cause_of_a_chain_in_the_log_and_the_journal(tmp_path, caplog):
     try:
         try:

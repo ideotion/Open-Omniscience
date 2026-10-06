@@ -37,19 +37,20 @@ from pydantic import BaseModel
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, run_restore
 from src.jobs.background import BackgroundJob, Framed, register_job
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrub_and_reraise, scrubbed
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
 
 
-def _restore_error(action: str, exc: Exception) -> HTTPException:
-    """Wrap ``classify_restore_error``'s honest detail (P0-2) in a 500.
+def _restore_error(action: str, exc: Exception, *secrets: str | None) -> HTTPException:
+    """Wrap ``classify_restore_error``'s honest detail (P0-2) in a 500, with the secrets the route holds taken out of it (and
+    the ones the process holds: ``scrubbed``). The detail is recorded by ``note_http_error`` as the response is served.
 
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
     from src.backup.merge import classify_restore_error
 
-    return HTTPException(status_code=500, detail=classify_restore_error(action, exc))
+    return HTTPException(status_code=500, detail=scrubbed(classify_restore_error(action, exc), *secrets))
 
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
@@ -135,9 +136,9 @@ def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
     try:
         return read_artifact(data, passphrase=passphrase)
     except EncryptionError as exc:
-        raise HTTPException(status_code=400, detail=f"decryption failed: {exc}") from exc
+        raise HTTPException(status_code=400, detail=scrubbed(f"decryption failed: {exc}", passphrase)) from exc
     except ArtifactError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=scrubbed(str(exc), passphrase)) from exc
 
 
 def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: bool) -> None:
@@ -206,55 +207,58 @@ def restore_legacy_path(
     p = _Path(path)
     if not p.is_file():
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
-    try:
-        data = p.read_bytes()
-    except OSError as exc:
-        raise HTTPException(status_code=400, detail=f"could not read {p}: {exc}") from exc
-    staged = _stage_upload(data, passphrase or None)
-    _apply_restore_selection(staged, include_newsletters=include_newsletters)
-    from src.backup import runlog
-    from src.backup.volume_job import defer_reindex, hand_off_reindex
+    # The passphrase handed in is not held by the process (a backup's own), so the nets that read what it holds cannot know it,
+    # and an engine's error can quote the statement that carried it: what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "legacy restore failed", passphrase):
+        try:
+            data = p.read_bytes()
+        except OSError as exc:
+            raise HTTPException(status_code=400, detail=scrubbed(f"could not read {p}: {exc}", passphrase)) from exc
+        staged = _stage_upload(data, passphrase or None)
+        _apply_restore_selection(staged, include_newsletters=include_newsletters)
+        from src.backup import runlog
+        from src.backup.volume_job import defer_reindex, hand_off_reindex
 
-    try:
-        with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
-            report = run_restore(
-                staged,
-                commit=True,
-                allow_unverified=allow_unverified,
-                # The Q701-note answer for THIS import; None falls back to the stored
-                # first-launch choice inside run_restore, so the endpoint wrapper that
-                # sends nothing is byte-identical to today.
-                trust_fetch_history=trust_fetch_history,
-                should_stop=should_stop,
-                # The import queue holds ONE exclusive window across the whole run, so
-                # a restore driven from it owns the machine: the whole-corpus snapshots
-                # may take the byte-copy fast path instead of re-encrypting the corpus
-                # row by row. Read live rather than passed in, so the plain endpoint
-                # wrapper (a user-facing request that must NOT stall the app) keeps the
-                # default.
-                exclusive=exclusive_window_open(),
-                # Deferred from the same switch as every other committing path -- this
-                # one is queue-driven, so a folder of mixed volume and legacy backups
-                # would otherwise defer for some items and block for hours on others
-                # inside a single run.
-                reindex_imported=not defer_reindex(),
-            )
-            if defer_reindex():
-                hand_off_reindex(report)
-            return report
-    except (MergeError, RestoreRefused) as exc:
-        # See restore_commit above: a refusal keeps its own message.
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except HTTPException:
-        raise
-    except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
-        # The passphrase is in scope: the record is written with it taken out of the exception's line and of its
-        # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is the
-        # caller's own; the recorders that keep a response text scrub it where they make the record.
-        log_failure(_LOG, "legacy restore failed", exc, passphrase)
-        raise _restore_error("restore", exc) from exc
-    finally:
-        cleanup_staging(staged)
+        try:
+            with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
+                report = run_restore(
+                    staged,
+                    commit=True,
+                    allow_unverified=allow_unverified,
+                    # The Q701-note answer for THIS import; None falls back to the stored
+                    # first-launch choice inside run_restore, so the endpoint wrapper that
+                    # sends nothing is byte-identical to today.
+                    trust_fetch_history=trust_fetch_history,
+                    should_stop=should_stop,
+                    # The import queue holds ONE exclusive window across the whole run, so
+                    # a restore driven from it owns the machine: the whole-corpus snapshots
+                    # may take the byte-copy fast path instead of re-encrypting the corpus
+                    # row by row. Read live rather than passed in, so the plain endpoint
+                    # wrapper (a user-facing request that must NOT stall the app) keeps the
+                    # default.
+                    exclusive=exclusive_window_open(),
+                    # Deferred from the same switch as every other committing path -- this
+                    # one is queue-driven, so a folder of mixed volume and legacy backups
+                    # would otherwise defer for some items and block for hours on others
+                    # inside a single run.
+                    reindex_imported=not defer_reindex(),
+                )
+                if defer_reindex():
+                    hand_off_reindex(report)
+                return report
+        except (MergeError, RestoreRefused) as exc:
+            # See restore_commit above: a refusal keeps its own message.
+            raise HTTPException(status_code=400, detail=scrubbed(str(exc), passphrase)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
+            # The passphrase is in scope: the record is written with it taken out of the exception's line and of its
+            # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is built from
+            # the scrubbed text, and the recorders that keep a response text scrub it again where they make the record.
+            log_failure(_LOG, "legacy restore failed", exc, passphrase)
+            raise _restore_error("restore", exc, passphrase) from exc
+        finally:
+            cleanup_staging(staged)
 
 
 @router.get("/v2/batches")
@@ -558,19 +562,22 @@ def volume_backup_start(body: VolumeBackupBody) -> dict:
     409 if a volume backup/restore is already running."""
     from src.backup.volume_job import get_volume_manager
 
-    try:
-        return get_volume_manager().start_backup(
-            body.dest,
-            body.passphrase,
-            include_newsletters=body.include_newsletters,
-            parity_fraction=body.parity_fraction,
-            include_blobs=body.include_blobs,
-            verify_after_write=body.verify_after_write,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # The passphrase typed into this request is not held by the process: what escapes the block is converted (and the two
+    # answers below are written with it out of them).
+    with scrub_and_reraise(_LOG, "volume backup start failed", body.passphrase):
+        try:
+            return get_volume_manager().start_backup(
+                body.dest,
+                body.passphrase,
+                include_newsletters=body.include_newsletters,
+                parity_fraction=body.parity_fraction,
+                include_blobs=body.include_blobs,
+                verify_after_write=body.verify_after_write,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=scrubbed(str(exc), body.passphrase)) from exc
 
 
 @router.post("/v2/volumes/restore")
@@ -579,17 +586,23 @@ def volume_backup_restore(body: VolumeRestoreBody) -> dict:
     + reassemble, then merge ADDITIVELY into the live corpus (the standard merge)."""
     from src.backup.volume_job import get_volume_manager
 
-    try:
-        return get_volume_manager().start_restore(
-            body.src,
-            body.passphrase,
-            allow_unverified=body.allow_unverified,
-            corpus_passphrase=body.corpus_passphrase or None,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Both keys typed into this request are the block's secrets: neither is held by the process.
+    with scrub_and_reraise(_LOG, "volume restore start failed", body.passphrase, body.corpus_passphrase):
+        try:
+            return get_volume_manager().start_restore(
+                body.src,
+                body.passphrase,
+                allow_unverified=body.allow_unverified,
+                corpus_passphrase=body.corpus_passphrase or None,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail=scrubbed(str(exc), body.passphrase, body.corpus_passphrase)
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=409, detail=scrubbed(str(exc), body.passphrase, body.corpus_passphrase)
+            ) from exc
 
 
 @router.post("/v2/volumes/verify")
@@ -601,12 +614,13 @@ def volume_backup_verify(body: VolumeVerifyBody) -> dict:
     are bad and whether parity can recover them) lands in the job summary."""
     from src.backup.volume_job import get_volume_manager
 
-    try:
-        return get_volume_manager().start_verify(body.src, body.passphrase or None)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    with scrub_and_reraise(_LOG, "volume verify start failed", body.passphrase):
+        try:
+            return get_volume_manager().start_verify(body.src, body.passphrase or None)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=scrubbed(str(exc), body.passphrase)) from exc
 
 
 @router.post("/v2/volumes/cancel")
@@ -819,14 +833,15 @@ def import_queue_start(body: ImportQueueBody) -> dict:
     """Queue an import run and begin it. 409 if one is already in flight."""
     from src.backup.import_queue import get_import_queue
 
-    try:
-        return get_import_queue().start(
-            [i.model_dump() for i in body.items], passphrase=body.passphrase
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with scrub_and_reraise(_LOG, "import queue start failed", body.passphrase):
+        try:
+            return get_import_queue().start(
+                [i.model_dump() for i in body.items], passphrase=body.passphrase
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=scrubbed(str(exc), body.passphrase)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
 
 
 @router.get("/import-queue/status")

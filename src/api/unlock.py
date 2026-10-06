@@ -31,7 +31,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrub_and_reraise, scrubbed
 
 # Re-exported so the first-launch page and the module that creates the folder cannot
 # disagree about the subfolder's name (the maintainer named it; see data_location.py).
@@ -234,13 +234,16 @@ def encrypt_db(body: EncryptBody) -> dict:
         )
     if body.passphrase != body.confirm:
         raise HTTPException(status_code=400, detail="passphrases do not match")
-    dispose_engine()
-    try:
-        reports = encrypt_all(body.passphrase)
-    except EncryptToolError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    set_passphrase(body.passphrase)
-    dispose_engine()  # next connection opens through the keyed factory
+    # The key typed into this request is not held until the store is encrypted, so the nets that read what the process holds
+    # cannot know it, and an engine's error can quote the statement that carried it: what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "encrypt in place failed", body.passphrase):
+        dispose_engine()
+        try:
+            reports = encrypt_all(body.passphrase)
+        except EncryptToolError as exc:
+            raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
+        set_passphrase(body.passphrase)
+        dispose_engine()  # next connection opens through the keyed factory
     _LOG.info("store encrypted in place")
     return {"encrypted": True, "reports": reports, "state": app_lock_state()}
 
@@ -652,49 +655,54 @@ def unlock(body: PassphraseBody) -> dict:
 def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
     from src.database.connect import WrongPassphraseError, connect, set_passphrase
 
-    # S0.1: read the -wal BEFORE the verify connection, because that connection
-    # checkpoints and unlinks it. This reading is about the unlock path's own timing;
-    # the load-bearing forensic reading is the one record_session_start() takes at
-    # boot, which a wrong-passphrase attempt cannot destroy.
-    try:
-        from src.monitoring.forensics import wal_state_before_open
-
-        _wal_state = wal_state_before_open()
-    except Exception:  # noqa: BLE001 - forensics never blocks an unlock
-        _wal_state = None
-    _recovery_token = _begin_recovery_notice(_wal_state)
-    _verify_t0 = time.monotonic()
-    try:
-        conn = connect(p, key=body.passphrase, check_same_thread=False)
-        _close_after_checkpoint(conn)
-    except WrongPassphraseError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    finally:
-        _end_recovery_notice(_recovery_token)
-    _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
-    set_passphrase(body.passphrase)
-    try:
-        _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
-    except Exception:
-        # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
-        # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
-        # that state without running anything, and the page waits on "opening the database" for ever. Back to
-        # locked, as ``create_db`` does, so the retry is a real one.
-        set_passphrase(None)
+    # The key typed into this request is not held until the verify below has accepted it, so no net that reads what the
+    # process holds can know it, and an engine's error can quote the statement that carried it: whatever escapes the block (a
+    # verify that fails some other way than a wrong key, a finish that fails after the key was proven right) is written with
+    # the key out of it and raised again as a ``RuntimeError`` carrying the scrubbed text.
+    with scrub_and_reraise(_LOG, "unlock failed", body.passphrase):
+        # S0.1: read the -wal BEFORE the verify connection, because that connection
+        # checkpoints and unlinks it. This reading is about the unlock path's own timing;
+        # the load-bearing forensic reading is the one record_session_start() takes at
+        # boot, which a wrong-passphrase attempt cannot destroy.
         try:
-            # the pool keeps the connections init_db opened with the key; drop them with it
-            from src.database.session import dispose_engine
+            from src.monitoring.forensics import wal_state_before_open
 
-            dispose_engine()
-        except Exception as dispose_exc:  # noqa: BLE001 - the retry disposes the engine again before it connects
-            # Written through ``log_failure`` with the passphrase out of it, as every handler that holds one is: this
-            # function holds ``body.passphrase`` and ``tests/test_p0_validation.py`` reads its handlers.
-            log_failure(
-                _LOG, "engine dispose after a failed unlock finish failed", dispose_exc, body.passphrase, level=logging.DEBUG
-            )
-        raise
-    _LOG.info("store unlocked")
-    return {"unlocked": True, "state": app_lock_state()}
+            _wal_state = wal_state_before_open()
+        except Exception:  # noqa: BLE001 - forensics never blocks an unlock
+            _wal_state = None
+        _recovery_token = _begin_recovery_notice(_wal_state)
+        _verify_t0 = time.monotonic()
+        try:
+            conn = connect(p, key=body.passphrase, check_same_thread=False)
+            _close_after_checkpoint(conn)
+        except WrongPassphraseError as exc:
+            raise HTTPException(status_code=403, detail=scrubbed(str(exc), body.passphrase)) from exc
+        finally:
+            _end_recovery_notice(_recovery_token)
+        _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
+        set_passphrase(body.passphrase)
+        try:
+            _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+        except Exception:
+            # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
+            # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
+            # that state without running anything, and the page waits on "opening the database" for ever. Back to
+            # locked, as ``create_db`` does, so the retry is a real one.
+            set_passphrase(None)
+            try:
+                # the pool keeps the connections init_db opened with the key; drop them with it
+                from src.database.session import dispose_engine
+
+                dispose_engine()
+            except Exception as dispose_exc:  # noqa: BLE001 - the retry disposes the engine again before it connects
+                # Written through ``log_failure`` with the passphrase out of it, as every handler that holds one is: this
+                # function holds ``body.passphrase`` and ``tests/test_p0_validation.py`` reads its handlers.
+                log_failure(
+                    _LOG, "engine dispose after a failed unlock finish failed", dispose_exc, body.passphrase, level=logging.DEBUG
+                )
+            raise
+        _LOG.info("store unlocked")
+        return {"unlocked": True, "state": app_lock_state()}
 
 
 @router.post("/create-db")
@@ -714,17 +722,19 @@ def create_db(body: CreateBody) -> dict:
         raise HTTPException(status_code=400, detail="passphrases do not match")
     if len(body.passphrase) < _MIN_PASSPHRASE:
         raise HTTPException(status_code=400, detail=f"use at least {_MIN_PASSPHRASE} characters")
-    set_passphrase(body.passphrase)
-    try:
-        _finish_unlock()
-    except Exception:
-        set_passphrase(None)  # leave the fresh state intact on any failure
-        raise
-    finally:
-        # S3.6: the store file now exists (or the attempt touched it), so the
-        # cached header is stale either way. In a `finally` on purpose -- a
-        # half-created file left by a failure must not be answered for from a
-        # cache that still says "fresh".
-        invalidate_header_cache()
+    # As in ``_unlock_locked``: the key is not held until the store is created, so what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "create failed", body.passphrase):
+        set_passphrase(body.passphrase)
+        try:
+            _finish_unlock()
+        except Exception:
+            set_passphrase(None)  # leave the fresh state intact on any failure
+            raise
+        finally:
+            # S3.6: the store file now exists (or the attempt touched it), so the
+            # cached header is stale either way. In a `finally` on purpose -- a
+            # half-created file left by a failure must not be answered for from a
+            # cache that still says "fresh".
+            invalidate_header_cache()
     _LOG.info("encrypted store created")
     return {"created": True, "state": app_lock_state()}
