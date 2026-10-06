@@ -4,14 +4,19 @@ Diagnostics round of 2026-09-30, rank 10: K2 says what its number is MADE OF.
 K2 was red on sixteen of sixteen instances, nearly always on a route with one or two samples, and
 the entry could not say whether that was a slow read, a refused request or the first call after an
 unlock. These tests pin the method text that now says so -- and, as importantly, that it only SAYS:
-the value, the n and the verdict are exactly what they were, and an attributed breach is still a
-breach. Every figure is read from the latency summary; none is computed here.
+the value, the n and the verdict are what the same latency summary gave before (the summary now
+lists every route, so on an instance whose old cut at 60 had dropped the worst route the number can
+move toward the true worst), and an attributed breach is still a breach. Every figure is read from
+the latency summary; none is computed here.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
 
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 import pytest
 
@@ -133,6 +138,22 @@ def test_the_request_that_performs_an_unlock_is_called_the_unlocks_own_and_no_ot
     call, _ = _k2_made_of(_snappy(), _worst(route="GET /api/system/startup-status", slowest=_slowest(-3.2)))
     assert "it began 3.2 s BEFORE an unlock finished while it ran" in call
     assert "own request" not in call
+
+
+def test_the_unlock_routes_are_routes_the_unlock_router_defines():
+    """``UNLOCK_ROUTES`` names the two requests that perform an unlock by the key the latency log files
+    them under (``METHOD template``), and nothing tied those strings to the router: a route renamed or
+    moved would drop the words "(the unlock's own request)" and leave every distance as it was.
+    Anchored to the router's own definitions (never the app singleton's route table, which is
+    process-global state) and to the wiring's source: the router is included with no prefix, so a
+    definition's path IS the template the latency log records."""
+    from src.api import unlock as unlock_api
+
+    defined = {f"{m} {r.path}" for r in unlock_api.router.routes for m in r.methods}
+    assert defined >= unlock_marker.UNLOCK_ROUTES, sorted(unlock_marker.UNLOCK_ROUTES - defined)
+    wiring = (Path(__file__).resolve().parents[1] / "src" / "api" / "_wiring.py").read_text(encoding="utf-8")
+    calls = re.findall(r"include_router\(([^)]*)\)", wiring)
+    assert calls and all("prefix" not in c for c in calls), "a prefix would change every route's key"
 
 
 def test_no_unlock_in_this_process_is_unknown_never_zero_seconds():

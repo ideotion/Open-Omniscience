@@ -10,8 +10,10 @@ cleaned, and a cancelled run leaves no backup that looks complete.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -391,6 +393,231 @@ def test_worker_refuses_a_dest_that_overlaps_the_data_dir(tmp_path, monkeypatch)
 def test_worker_requires_a_passphrase(tmp_path):
     with pytest.raises(ValueError, match="passphrase is required"):
         p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "d"), passphrase="")
+
+
+# --------------------------------------------------------------------------- #
+# The passphrase and the exceptions a check catches (the coordinator's delta check of #1312, B1)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("site", ["backup", "incremental", "verify", "restore"])
+def test_the_passphrase_is_out_of_every_exception_text_a_p0_report_writes_down(tmp_path, monkeypatch, site):
+    """The four checks that hold the passphrase catch whatever the engine raises and write its words into
+    the report: a file the debug bundle carries and, in a release run, the run's own state and report.
+    Nothing in the engine names the passphrase today; this is the net where the text is made, so a message
+    that did cannot reach any of them. Each site is driven with a failure whose message holds the passphrase,
+    over a real backup where the site comes after one. MUTATION TARGETS: each of the four uses of
+    ``_exception_text`` (replaced by the bare ``Name: message``)."""
+    import src.backup.artifact as artifact
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    secret = "p0-exception-passphrase-7q3"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError(f"could not reach {secret} on the drive")
+
+    if site == "backup":
+        monkeypatch.setattr(artifact, "write_volume_backup", boom)
+    elif site == "incremental":
+        real_backup = artifact.write_volume_backup
+        taken: list[int] = []
+
+        def once_then_boom(*args, **kwargs):
+            taken.append(1)
+            return real_backup(*args, **kwargs) if len(taken) == 1 else boom()
+
+        monkeypatch.setattr(artifact, "write_volume_backup", once_then_boom)
+    elif site == "verify":
+        monkeypatch.setattr(stream_backup, "verify_stream_backup", boom)
+    else:
+        monkeypatch.setattr(artifact, "read_volume_backup", boom)
+
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret,
+        measure_incremental=(site == "incremental"),
+    )
+    checks = out["report"]["checks"]
+    said = {
+        "backup": checks["p0_1_backup"]["reason"],
+        "incremental": (checks["p0_1_backup"]["measurements"]["incremental_refresh"] or {}).get("error"),
+        "verify": checks["p0_1_verify"]["reason"],
+        "restore": checks["p0_2_restore"]["reason"],
+    }[site]
+    assert "RuntimeError: could not reach ***redacted*** on the drive" in said, said
+    assert secret not in json.dumps(out)
+    assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
+
+
+def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verdicts_and_the_success_texts_alone(
+        tmp_path, monkeypatch):
+    """Why the scrub is on the caught texts and not on the finished report: a report holds verdicts
+    (``pass``, ``fail``) that code and the panel compare, and the run puts no minimum on a passphrase's
+    length. An exact-match scrub of the whole report by the passphrase ``pass`` would turn every verdict and
+    the word in ``passphrase`` into the marker, and read a good backup as one that did not verify. MUTATION
+    TARGET: a scrub of the report (or of a check) as a whole."""
+    _live_corpus(tmp_path, monkeypatch)
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="pass", measure_incremental=False
+    )
+    checks = out["report"]["checks"]
+    assert checks["p0_1_verify"]["verdict"] == "pass" and checks["p0_2_restore"]["verdict"] == "pass", checks
+    assert "the passphrase decrypted every volume" in checks["p0_1_verify"]["reason"]
+    assert out["report"]["summary"]["pass"] >= 2
+    assert "***redacted***" not in json.dumps(out), "nothing the run said was a message that named it"
+
+
+#: What the ``traceback`` module's functions that read the exception being handled are called, for the
+#: ``from traceback import format_exc`` form (``traceback.format_exc()`` is found by the module's name).
+_TRACEBACK_NAMES = frozenset(
+    {"format_exc", "print_exc", "format_exception", "print_exception", "format_exception_only", "exc_info"}
+)
+
+
+def _writes_a_traceback(call: ast.Call) -> bool:
+    """Whether ``call`` writes the exception being handled: ``.exception(...)`` (a logger's, or
+    ``sys.exception()``), a call into the ``traceback`` module or a name imported from it, ``sys.exc_info()``,
+    or any call given an ``exc_info`` that is not the constant ``False`` or ``None``."""
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        if func.attr == "exception" or (isinstance(func.value, ast.Name) and func.value.id == "traceback"):
+            return True
+        if func.attr == "exc_info" and isinstance(func.value, ast.Name) and func.value.id == "sys":
+            return True
+    elif isinstance(func, ast.Name) and func.id in _TRACEBACK_NAMES:
+        return True
+    return any(
+        kw.arg == "exc_info" and not (isinstance(kw.value, ast.Constant) and kw.value.value in (False, None))
+        for kw in call.keywords
+    )
+
+
+def _caught_exception_leaks(source: str) -> tuple[list[str], list[str], int]:
+    """Read ``source`` the way the guard below does: ``(holders, offenders, routed)`` -- the functions given a
+    ``passphrase`` (any parameter kind, ``async`` or not), the places inside their ``except`` handlers where
+    the caught exception reaches a text some way other than ``_exception_text(exc, passphrase)``, and how many
+    calls of that helper the handlers make (a walk that routes nothing has found nothing to guard).
+
+    A way is: the handler's own name used anywhere but as the helper's first argument (an f-string, ``str()``,
+    ``.args``, a copy under another name, a call that is handed it, ``raise ... from exc``, which carries it on
+    as the cause), and, in a handler WITH OR WITHOUT a name, a call that writes the traceback
+    (:func:`_writes_a_traceback`). It follows no call: a helper the handler calls that reads the exception
+    itself is not seen."""
+    tree = ast.parse(source)
+    holders: list[str] = []
+    offenders: dict[int, str] = {}
+    routed: set[int] = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if "passphrase" not in {a.arg for a in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}:
+            continue
+        holders.append(fn.name)
+        for handler in (n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)):
+            through = {
+                id(call.args[0])
+                for call in ast.walk(handler)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "_exception_text"
+                and call.args
+            }
+            routed |= {
+                id(call)
+                for call in ast.walk(handler)
+                if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_exception_text"
+            }
+            for node in ast.walk(handler):
+                named = handler.name and isinstance(node, ast.Name) and node.id == handler.name
+                if (named and id(node) not in through) or (isinstance(node, ast.Call) and _writes_a_traceback(node)):
+                    offenders.setdefault(id(node), f"{fn.name}, line {node.lineno}")
+    return holders, sorted(offenders.values()), len(routed)
+
+
+def test_no_check_that_holds_the_passphrase_writes_a_caught_exception_any_way_but_through_exception_text():
+    """The four sites above are the ones there are; the next ``except ... as exc`` that puts ``{exc}`` into a
+    report is how the next leak is made, and no test of the four would see it. Every handler inside a
+    function that is given the passphrase may use the caught exception only as the argument of
+    ``_exception_text``, and may ask for no traceback (``exc_info=``, ``.exception()``, the ``traceback``
+    module, ``sys.exc_info()``), because the text such a call writes carries the message too. (The two
+    instrumentation reads, ``_check_unlock`` and ``_check_collector``, are not given the passphrase, so they
+    are not held to this.) It reads this module's syntax and follows no call, so a helper that reads the
+    exception for itself is not seen; the cases below it pin what is."""
+    import inspect
+
+    holders, offenders, routed = _caught_exception_leaks(inspect.getsource(p0))
+    assert {"_check_backup", "_check_restore"} <= set(holders), (
+        f"the walk found {holders}: a rename must not leave it looking at nothing"
+    )
+    assert routed >= 4, (
+        f"the walk saw {routed} calls of _exception_text in the handlers and the module makes four: "
+        "a restructure must not leave it looking at nothing"
+    )
+    assert not offenders, f"a caught exception reaches a report without going through _exception_text: {offenders}"
+
+
+def _guarded(clause: str, body: str, head: str = "def check(ctx, passphrase):") -> str:
+    """The source of a function with one handler: ``clause`` is its ``except`` line and ``body`` the one line
+    under it -- the guard's question, small enough to read at a glance."""
+    return f"{head}\n    try:\n        go()\n    {clause}\n        {body}\n"
+
+
+_NAMED = "except Exception as exc:"
+_UNNAMED = "except Exception:"
+
+#: Each way a caught exception can reach a text, as the function the guard must flag.
+_WAYS_THAT_LEAK = {
+    "its text in an f-string": _guarded(_NAMED, "err = f'failed: {exc}'"),
+    "str() of it": _guarded(_NAMED, "err = str(exc)"),
+    "its arguments": _guarded(_NAMED, "err = exc.args[0]"),
+    "a copy under another name": _guarded(_NAMED, "kept = exc"),
+    "handed to another function": _guarded(_NAMED, "note(exc)"),
+    "the cause of a new exception": _guarded(_NAMED, "raise RuntimeError('x') from exc"),
+    "a log call asked for the traceback": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=True)"),
+    "a log call whose exc_info is not a constant": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=want)"),
+    "a logger's .exception()": _guarded(_UNNAMED, "_LOG.exception('x')"),
+    "traceback.format_exc()": _guarded(_UNNAMED, "err = traceback.format_exc()"),
+    "format_exc imported by name": _guarded(_UNNAMED, "err = format_exc()"),
+    "sys.exc_info()": _guarded(_UNNAMED, "err = sys.exc_info()"),
+    "sys.exception()": _guarded(_UNNAMED, "err = sys.exception()"),
+    "an async function": _guarded(_NAMED, "err = str(exc)", head="async def check(ctx, passphrase):"),
+    "a positional-only passphrase": _guarded(_NAMED, "err = str(exc)", head="def check(passphrase, /, ctx):"),
+    "a keyword-only passphrase": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, *, passphrase):"),
+    "a closure inside the function": (
+        "def check(ctx, passphrase):\n    def inner():\n        try:\n            go()\n"
+        "        except Exception as exc:\n            return str(exc)\n    return inner()\n"
+    ),
+}
+
+#: What the guard must leave alone, as the function it is asked about.
+_WAYS_THAT_ARE_FINE = {
+    "the helper, given the passphrase": _guarded(_NAMED, "err = _exception_text(exc, passphrase)"),
+    "a log call that asks for no traceback": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=False)"),
+    "a log call whose exc_info is None": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=None)"),
+    "a handler that only returns": _guarded(_UNNAMED, "return None"),
+}
+
+
+@pytest.mark.parametrize("way", sorted(_WAYS_THAT_LEAK))
+def test_the_guard_on_caught_exception_texts_flags_each_way_one_can_reach_a_text(way):
+    """Negative space for the guard itself: a walk that cannot see ``exc_info=True``, an unnamed handler, an
+    ``async`` function or a positional-only ``passphrase`` passes the real module and sees nothing.
+    MUTATION TARGET: any one of the walk's rules, or its choice of function kinds and parameter kinds."""
+    holders, offenders, _ = _caught_exception_leaks(_WAYS_THAT_LEAK[way])
+    assert holders, f"{way}: the function was not read as one that holds the passphrase"
+    assert offenders, f"{way}: the guard did not flag it"
+
+
+@pytest.mark.parametrize("way", sorted(_WAYS_THAT_ARE_FINE))
+def test_the_guard_on_caught_exception_texts_leaves_the_allowed_forms_alone(way):
+    holders, offenders, routed = _caught_exception_leaks(_WAYS_THAT_ARE_FINE[way])
+    assert holders == ["check"] and offenders == [], (holders, offenders)
+    assert routed == (1 if way.startswith("the helper") else 0), routed
+
+
+def test_the_guard_on_caught_exception_texts_does_not_read_a_function_that_is_not_given_the_passphrase():
+    """``_check_unlock`` and ``_check_collector`` put ``{exc}`` into their reports on purpose; they hold no
+    secret, so a guard that read every function would reject them."""
+    holders, offenders, _ = _caught_exception_leaks(_guarded(_NAMED, "err = str(exc)", head="def check(ctx):"))
+    assert holders == [] and offenders == []
 
 
 # --------------------------------------------------------------------------- #

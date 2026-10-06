@@ -13206,6 +13206,198 @@ alone would not resume the run, because a relaunch starts offline under R117 (on
 
 - **2026-10-06 (PR #1310): THE SAME LOOP SHAPE COST HOURS IN TWO PLACES, AND THE FIX WAS ONE STATEMENT PER BATCH.** The in-memory rollup build staged mentions with `con.executemany("INSERT ... VALUES (?, ?, ?, ?)", rows)` and read every keyword as an ORM entity into one list; on eight 4.81 GiB VMs it was killed 12 times in 4.7 days and restarted identically after each. MEASURED (DuckDB 1.5.6, 50,000-row batches of the build's own tuple shape): `executemany` 1,138 rows/s; list parameters with `unnest` 2,960 rows/s; a CSV written to a temp file 530 thousand; Arrow 828 thousand but `pyarrow` is not an app dependency; **JSON column arrays, `INSERT ... SELECT unnest(from_json(?::JSON, '["BIGINT"]')), ...` with one `json.dumps` per column, 563 thousand rows/s, no dependency and no file** (a CSV would put derived data on disk, which the in-memory store's own rule forbids). The route is `columnar._bulk_insert`, which falls back to `executemany` for a batch the JSON path refuses, so no row is lost. END TO END on a seeded corpus (4 cores, DuckDB limited to 740 MB as on a 4.81 GiB VM): 3 million mentions and 400,000 keywords in 25.6 s at a 735 MB peak; 1.5 million keywords with 40,000 mentions in 9.2 s at 383 MB (the old code: 1,955 s and 2,995 MB); 12 million mentions and 1.5 million keywords in 98.3 s at a 1,193 MB peak, DuckDB reporting 526 MB at the end. **DuckDB's memory limit is not the process's ceiling**: at a 740 MB limit the process peaked at 1,193 MB, about 1.45 times the limit above its pre-build size, which is why the start check multiplies the limit by 1.5. **A bound that is only read once at the start is not a bound**: the memory guard was consulted before the build, and the build ran for hours after it engaged; the guard is now polled after every batch, and the build declines part-way with nothing swapped in. **A process that is killed leaves no record, so a retry loop cannot tell a kill from "never ran"**: the in-progress marker (`rollup_marker`) is written at the start, refreshed as batches finish and removed by every exit Python can see, so one found at the next boot is a kill; its retry condition is measured (what the dead build grew by, peak minus the size it began with, plus the guard's floor; counting the whole resident size counts the app's own baseline twice), and a daemon thread's `finally` never runs on a normal quit, so `atexit` must clear it or an ordinary restart reads as a kill. **DuckDB's offload is a file**: `temp_directory` defaults to `.tmp` beside the working directory and `""` turns it off (the build then raises `OutOfMemoryException`, which the dispatcher turns into a decline); `SET temp_directory` after connect is refused once `enable_external_access` is off, so it has to be in the connect config. **A fallback `except Exception` around a fast path swallows the engine's own limit**: the JSON staging's fallback to `executemany` also caught `OutOfMemoryException`, so an encrypted corpus that outgrew the limit (no offload allowed) re-ran the batch at 1.2 thousand rows/s with the build lock held, instead of declining; reproduced against DuckDB 1.5.6 at `memory_limit=48MB` by the Opus read, and fixed by letting the limit and interrupt errors propagate. A stop part-way needs its own retry rule too: without one the next serve request rescans the corpus up to the same point (and that rule must project the TOTAL growth, since a guard stop only shows the lower bound, and release when the corpus epoch changes). **A rebuild runs beside the rollup it replaces, so each DuckDB connection needs its own offload folder**: two live in-memory connections sharing one `temp_directory` made the serving connection's queries fail with an IOException and, in 1 of 8 runs, killed the process natively; the fix is a folder per connection, removed after that connection is closed, with the dead-pid sweep never touching a live process's folders. **A test that races two threads cannot pin an ordering the GIL hides**: the releasing thread keeps the GIL through its next statement, so a write moved after `release()` passed 3,000 of 3,000 runs; a spy lock that records the value inside `release()` pins it.
 
+### A PHASE'S STATUS WAS THE RUNNER'S, NOT THE CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED (release candidate diagnostics, 2026-10-01, `src/monitoring/release_run.py`)
+
+`_run_phase` records a phase `measured` when its function returns without raising, and `_fresh_install_restore`
+returned its dict whatever its child had done: it stored the `returncode` and the child's JSON and read neither. Two of the
+16 bundles of the 2026-09-30 round held a run whose restore had failed (`20260930-085218`: the engine's own staging check
+refused after 128 s, "needs about 38.0 GB, only 14.7 GB free"; `20260930-085230`: `OperationalError: Error creating
+function` after 53 minutes), and both reports read `fresh_install_restore: measured` with `returncode: 1` and `child.ok:
+false` inside the same record, and rows A and I `measured` over a `restore` block that was `null` (row K read `measured`
+from the P0 trio, its scan of the restored corpus `null`). Nothing raised, so nothing could tell: the evidence of the
+failure sat in the record beside the status that denied it. `if child:` was the second half of the same fault, since a
+failed child's `{ok: false, error: ...}` is a non-empty dict. **A status for work a spawned process did is that process's
+outcome (its exit status AND its own ok AND what it reports having done), never the parent's return: read them where the
+phase is recorded, and again where a row is BUILT from the record, because a record an earlier build wrote keeps its old
+status.** Corollaries from the fix: a failed restore reads `error`, because the resume rule keeps `refused` for ever and
+retakes `error` (R20), so the status choice IS the retry policy; a cancel that terminates the child is `cancelled`, so the
+failure check yields to `ctx.stopping`; `run_restore` RETURNS a refusal ("post-merge verification failed") without
+raising, so a child can say ok, exit 0 and have committed nothing, and a restore counts only with `restore.committed`
+true; the row text says "not counted", never "failed", because a child that wrote its ok and its commit and was then
+killed (`Popen` reads a signal as a negative status) may well have restored, so the exit status says "did not end
+cleanly" and nothing more; and the same reading found a latent crash, row K's `.get("child", {})` raising on a legacy
+restore whose child left no result, which would have cost a run its final report.
+Reporting the child's words widens where they go (the phase detail, the board notes, the log, the status route), and
+the endpoint scrubber `_p0_scrub` redacts by KEY name, so a passphrase the child echoed inside a VALUE would ride out:
+the run's passphrase is taken out of everything the child said, by the child where it writes its result and again by the
+parent where it enters the record (`src/monitoring/secret_scrub.py`), exact match only, tested on a first failure and on
+the retake a resume makes. A retake owes the passphrase for EVERY restore it has left, the pre-migration one included
+(`resume_preflight` counted only the backup and the run's own restore), because each restore is a child that is handed it.
+The reviews of the scrub found four faults in it, each a way a safety net hurts the thing it guards. **(1) A scrub
+that walks a record must leave its KEYS alone**: the first version renamed dict keys too, the record is read through
+`ok`, `restore`, `committed` and `child`, and a passphrase that was a piece of one (`ok`, `store`, `e`; the run puts no
+minimum on its length) turned a restore that committed into an error that every resume retook for ever. A key is a field
+name the code defines, a child builds none from what it is handed, and a passphrase has nothing to take out of one.
+**(2) A replacement can rebuild the secret**: a passphrase ending in `*` meets the marker's own asterisks, and a
+passphrase that is a piece of `***redacted***` (`red`) is in the marker itself, so the result is CHECKED and a marker that
+would give the secret back is replaced by one that does not. **(3) The parent can scrub only what it reads, and the child's
+result file is not the only record that outlives the run**: `keep_fresh_install` leaves the child's whole data directory on
+the drive, and beside the encrypted database (the passphrase is its key, not text in it) sit the app's own run journal
+(`run_logs/*.jsonl`, whose `label` is the backup's name and `dest` its full path) and its import reports, written by code that has never
+heard of the passphrase. The first fix scrubbed the child's result file and called it "the one record that can outlive the
+run" in two docstrings and in this entry; the next review put the passphrase in a backup's file name, ran the real child and
+found it in the journal. So the child scrubs the whole of its result, and the parent, once the child has exited, rewrites a
+kept install's journals and reports by what they are (JSON lines and documents are parsed, values scrubbed, keys left; a raw
+replace renames a key and cannot see a secret JSON escaped), REMOVES a file it cannot rewrite, and says what it did; a test
+restores a real fixture whose file name holds the passphrase and scans every file under the kept install. **A claim that a
+place is "the one" a secret can reach is a claim to test: name the secret in an input and look in every file.**
+**(4) A check that raises inside the code it watches can be swallowed by it**: the run writes its interim reports and its soak
+state under `contextlib.suppress(Exception)`, and an `AssertionError` is an `Exception`, so a watcher that asserted as each
+file was written passed whatever was written (a mutation that put the passphrase in every interim report went uncaught). A
+watcher RECORDS, and the test asserts on the record after the run.
+**(5) The handler is part of the net, and so is the place it runs**: the scrub read every missing-file error as "there is
+no file to clean", but the rewrite itself raises it (a `.part` path the platform refuses, a directory that went away
+between the read and the write) with the journal in place, so the file was KEPT, holding the passphrase, under a record that
+said nothing had been found (`os.path.lexists` decides now, and whatever else stops a rewrite removes the file); a handler for
+`OSError` let a `RecursionError` (a record nested past the interpreter's limit) through, which lost the phase's whole result,
+so it catches `Exception` file by file; the scrub ran only on the way through, so a cancel, a progress callback that raised
+or a pipe that could not be read left the journal as it was (it also runs from `finally` now, after a child that is still
+running has been killed, or it would go on writing into the directory being cleaned); and text that does not parse (a line
+cut by a kill) holds the secret in the form JSON escaped it to, which no search for the secret as typed finds, so it is
+scrubbed in both forms. What stays outside the net is stated where it is made: a parent killed outright leaves its
+`.restore-release-run-*` directory (nothing sweeps that destination, the claim that something does was wrong), and a path
+the operator typed that holds the passphrase is kept as typed. Each was found by simulating the case through the real
+function, none by reading the code for the cases it handles.
+**(6) One secret has several forms, and the marker for a LATER form can rebuild an EARLIER one** (the independent read of 87e5284e).
+The scrub of text that does not parse took out the typed form and then the two forms JSON writes (escaped, and with its
+non-ASCII letters kept), each through a replacement that checked its OWN form and no other. A passphrase of a star and a
+quote has the escaped form star, backslash, quote; where that form is followed by the quote that closed its JSON string, the
+marker's last star plus that quote IS the passphrase as typed, so `scrub_file` answered "rewritten" for a file that still
+held it. The result is now checked against every form, a form left is redone with ONE marker for all of them (each marker in
+turn), and the forms are taken out whole when no marker stays out. Two mutations kept the first tests green (the check
+looking at the first form only, the redo replacing the last form only), and an exhaustive test now stands beside the written
+cases: every passphrase of one to three characters from the marker's and JSON's punctuation (155) against every text of one to
+three pieces of its forms (21,256 pairs), of which 28 left a form behind before and none does. **A property of a
+transformation that has a small, complete input space is proven over all of it; a sample is what lets a form that is not the
+first one through.**
+**(7) A net goes where the text is MADE, not over the record that holds it** (the coordinator's check of e7f729d8, B1). The run
+scrubbed what a phase RAISES (`_run_phase`) and what the child says, but the P0 phase CATCHES the engine's exceptions itself,
+writes `Name: message` into its report (a file the debug bundle carries) and returns it as the phase's result, so a message that
+named the passphrase would have reached the P0 file, the state file and the report, and no test could see it because the fixture
+stubs the phase whole. The fix proposed was one scrub of the finished report or of every phase result. That is the wrong place:
+those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an exact-match scrub by a passphrase of `pass` (the
+run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
+restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
+passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function that is given
+the passphrase to the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`sys.exc_info()`), so a fifth cannot be added unseen by those routes; it follows no call, so a helper that reads the exception for
+itself is not seen, and the walk's own cases are pinned. **A scrub of a value code compares changes the value: scrub the
+text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
+the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
+traceback, and a test names the passphrase only in the cause (`from`, and an implicit context).
+
+### A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/release_run.py`, the independent read of 87e5284e)
+
+The fresh-install restore of the release run made its directory as `.restore-release-run-<label>-<pid>` with `mkdir(exist_ok=True)`.
+The server runs more than one release run in its lifetime (a resumed run, a second run for another backup), so the second attempt
+found the first's directory, which a run that keeps its install had left holding it, restored INTO it, and a later run that did not
+keep its install deleted it. Every test restored once. **A directory that is the private place of ONE attempt takes a name that cannot
+repeat (a random part beside the pid) and is made with `exist_ok=False`, so a second claimant fails loudly instead of sharing; and
+its test runs the operation twice in one process, which no single run can.** The same read ran a child that wrote 70,000 bytes to
+stderr: the wait loop polled `proc.poll()` and slept, nothing read the two pipes, and a child that fills one (64 KB on Linux)
+blocks in `write()` until the run is cancelled (60,000 bytes went through, 70,000 hung). **A parent that waits on a child with
+piped output reads the pipes while it waits**: `proc.communicate(timeout=...)` in the loop loses nothing when it times out and
+can be called again, and the output comes back whole from the call that sees the exit; the test makes the child write more than
+a pipe holds and has a watchdog, so a regression fails instead of hanging the suite.
+
+### CODEQL READS NAMES: A HELPER THAT TAKES A SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/secret_scrub.py`)
+
+The first push of the release-run PR raised three HIGH alerts from GitHub's default-setup CodeQL: `py/clear-text-storage-sensitive-data`
+at `out_path.write_text(text, ...)` and `py/clear-text-logging-sensitive-data` at `print(text)` in the restore child, and a storage alert at a
+fixture write in `tests/test_release_run.py`. All three were labelled "(secret)", none was a passphrase reaching a file: `text` is the
+child's result with the passphrase taken OUT of it, and the test wrote a throwaway string. The analyser classifies a value by the NAME that
+produces it, and the two names on the path were `without_secret(...)` (the scrubber, whose job is the opposite of what its name says to a
+reader that does not read verbs) and a constant `SECRET`. It is the same family as the `token` finding of e07989c9 (a feed cursor named
+`from_token`). **Name a helper that REMOVES a sensitive value for the verb (`scrub_value`, `redact`), never for the noun, and name a test's
+stand-in for what it is to the test (`NEEDLE`), not for what it stands for.** The fix was a rename in CODE only (a docstring or a comment is
+not read as a source, so the prose still says "secret"), done by token, so no string a program reads was touched (the commit message said
+"no string or comment was touched", which overclaimed: the docstrings that named the old identifiers were edited to name the new ones,
+and `scrub_text`'s was rewritten), with `scrub_text` written as `split`/`join`
+(the text `str.replace` gives for a needle that is not empty) so the needle is not an argument a taint rule may follow into the result. The
+three changes went in together, so which of them the analyser was reading is not known; the `(secret)` label and the precedent point at the
+names. CodeQL's verdict on the next head was "No new alerts in code changed by this pull request", which is the only test there is. **How to
+READ an alert here:** the code-scanning alerts endpoint answers 403 to this integration, but the CodeQL check run's annotations give the
+file, line and columns of every one (`gh api repos/<owner>/<repo>/check-runs/<id>/annotations`), and the columns say which expression is
+the sink. The default setup has no file in the repo, so a path filter or a config cannot excuse a name: it is renamed.
+
+### THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF (release candidate diagnostics, 2026-10-06, PR #1312, `scripts/ruff_ratchet.py`)
+
+Main was red when this PR was cut, and a red step early in the ubuntu job SKIPS every later step, pytest included, so the PR's own tests
+never ran in CI. Two steps were involved. The blocking `ruff --select=F,B` lane failed on an unused import and loop variable in a test; the
+"style non-growth ratchet" failed because main reads 439 with the ruff CI installs (0.16.10) against a ceiling of 436. The second was first
+mistaken for advice: the fix PR (#1311) carried two import-block reorders that looked cosmetic, were left out of the port as "advisory style
+lane only", and were exactly what brought the count to 435; leaving them out cost a CI cycle and a correction on the PR. **A step that can
+turn the job red is a gate whatever its job name calls it; port every hunk of a fix for main's red, and when a gate is a COUNT, measure it
+with the tool version CI uses**: a local ruff (0.15.8) read 441 on the same tree where CI's read 439, a two-finding difference that decides
+a ceiling of 436. `python3 -m pip install --target <dir> ruff==<version>` and `PYTHONPATH=<dir> python scripts/ruff_ratchet.py --max <n>`
+give the CI figure without touching the venv (the script runs `sys.executable -m ruff`, so a binary on PATH is not enough, and it then reports
+"0 findings, unknown version" rather than failing).
+
+### A READING OF ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE (release candidate diagnostics, 2026-10-06, PR #1312, `src/monitoring/session_hwm.py`, the independent read of R114 / #1304)
+
+`allocator_setting()` reports whether a process "runs with the cap" from the environment it started with, and it shipped with a docstring
+that said glibc and `os.environ` both keep the LAST of two `MALLOC_ARENA_MAX` entries, a test that pinned that order, and a number parser
+(`strip()` plus `isdigit()`) written from how a person reads "4". The independent read ran glibc itself (children started with a crafted
+environment block, arenas counted with `malloc_info` after 16 allocating threads, glibc 2.39, 4 cores) and every one of those was wrong:
+the FIRST entry wins in both (8 then 1 gives 8 arenas where the reading said "capped at 1"), so the test pinned the wrong order and the
+mutation that restored the right one passed; blanks and tabs may LEAD a number (`" 4"` applies), anything after the digits makes glibc ignore
+the whole value (`"4 "`, `" 4 "`, `"2x"`), a leading 0 is octal (`"010"` is 8, `"08"` is ignored), `0x` is hex, an overflowing number is
+ignored, and a non-ASCII digit is a digit for `isdigit()` and nothing for glibc; `glibc.malloc.arena_max` in `GLIBC_TUNABLES` outranks the
+variable in either order; a preloaded jemalloc leaves glibc's malloc unused; and an EMPTY `/proc/self/environ` is an `env -i` start, not an
+unreadable one (falling back to `os.environ` there let a later assignment read as applied). The tests written beside the code could find
+none of it because they encoded the code's own assumptions. **When a diagnostic says what ANOTHER program did with a value (an allocator,
+a parser, the kernel), pin it against that program: start a child with the crafted input, count what it did, and put the expectation on
+the program's behaviour rather than on the diagnostic's own arithmetic. A sentence in a docstring about what a library "does" is a
+measurement or a guess, and it should say which.** `tests/test_malloc_arena_default.py` now does this for the duplicate-entry rule: no
+dict-based API (`subprocess`, `os.execve`) can name a variable twice, so the child is started through `execve` with `ctypes`, and the test
+skips where there is nothing for the cap to bound (not glibc, or a runtime that creates no per-thread arenas). The reading now takes a plain
+decimal number only (up to 18 digits), says "not known" (`effective: None`) for anything else glibc may read differently, for an arena-limit
+tunable and nowhere else, says `effective: False` under a preloaded malloc replacement, and names `arena_cap` only when the process runs
+with that cap. Fifteen mutations of the reading, the launcher's order and the soak window are each caught.
+**The read of the fix ran the same program again and found the reading still judging by NAMES.** A preload "was a replacement"
+because `LD_PRELOAD` NAMED one, but a preload the loader cannot load (a path that is not there) leaves glibc's malloc in place and
+the cap in force; the reading now asks what the process LOADED, from `/proc/self/maps` (mapped libraries by their real file
+names, so a symlinked jemalloc shows as its target and a preload the loader skipped not at all; `dladdr(malloc)` was tried and
+rejected, it answers "python3" for every allocator), and says "not known" when the map cannot be read. The first-entry rule above
+is the first ACCEPTED entry: a value glibc cannot parse is skipped, so `("4 ", "2")` and `("abc", "2")` both run with 2 arenas.
+`GLIBC_TUNABLES` is read in EVERY copy of the variable (the reading joined none and looked at the first), and a `;` is no
+separator there: it makes the tunable's value invalid, the tunable is ignored, and `MALLOC_ARENA_MAX` applies. Each is pinned
+against a real glibc child, against a real jemalloc where the runner has one, and against fake maps for the shapes it has not.
+The check of that fix found a row of the table wrong the same way: `-2` was said to be IGNORED by glibc, and glibc reads it with
+`strtoul`, which takes a sign and wraps it to 2**64 - 2, a cap so large it bounds nothing (named first, it keeps all 17 arenas
+with `2` after it). A machine with three CPUs or more cannot tell it from an ignored value, because glibc's own limit (8 arenas
+per online CPU, applied once nine exist) lies above what 16 threads ask for and both keep 17; with fewer CPUs the default bites
+and they differ (not measured here: glibc counts online CPUs, so pinning does not reproduce it). **A table of what a
+program does needs a test that tells two behaviours apart on EVERY machine it runs on, not only on the one where they differ**:
+each ignored value is now named first with a bounding value second (an ignored one lets the second apply, an accepted one does
+not), and the rows that expect a cap that bounds nothing compare with what a huge valid cap keeps, not with the default.
+
+### A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS (release candidate diagnostics, 2026-10-06, PR #1312, `scripts/launch.sh`, the coordinator's check of #1304, should-fix 1)
+
+R114 ruled `MALLOC_ARENA_MAX=2` for the instance, and the launcher shipped it as `export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"` near its
+top. That is true of the ruling's subject, the server, and equally of everything else the script or the server starts afterwards: the browser
+`xdg-open` opens (on a fresh start, and on the "already running" path where no server starts at all) and, through the server's `os.environ`,
+the Ollama daemon, the vLLM server and the installs and weights download that `launch_env()` copies it into. Nothing ruled or measured a cap
+of 2 for an inference engine's many allocating threads, and the diagnostics built to read the cost see only the server's own allocator, so the
+one place the cap could have slowed somebody down was the one place nobody was reading. **An environment variable reaches every descendant
+unless something stops it. A default decided for one process is handed to that process's command (`env VAR=value cmd`, which also cannot trip
+a `readonly` declaration of the operator's under `set -e`), and where the process's own children would still inherit it, the launcher says so
+in a marker that lets the server tell its default from a value somebody chose** (here `OO_ARENA_MAX_DEFAULTED=1`, cleared first so a marker the
+caller's environment already carried is never taken for this launcher's word about this number): the engines drop the marked default and keep
+an operator's own value, which carries no marker. The tests that count run the real launcher against fake server, browser and `curl` programs
+that record what they were started with, on both launcher paths, plus a source tie between the two spellings of the marker, because bash and
+Python share nothing else.
+
 ### A BACKUP THAT CANNOT FOLD THE LOG INTO THE MAIN FILE COPIES THE CORPUS; IT NEVER SHIPS THE LOG, AND IT DECIDES FROM THE CHECKPOINT'S ROW, NOT THE LOG'S SIZE (WAL / disk thread, 2026-10-06)
 
 The volume backup drained the write-ahead log into the main file and, when a reader older than a later commit kept
