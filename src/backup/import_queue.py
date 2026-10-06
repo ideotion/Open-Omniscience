@@ -661,20 +661,16 @@ class ImportQueueManager:
                     # group is discarded exactly as for a failure -- a half-merged copy
                     # is unsafe whatever interrupted it.
                     stopped_here = self._stop.is_set()
-                    # Logged from the SCRUBBED text: the exception's own text and its traceback
-                    # (which ends with it, and with every chained message) are a sink, and
-                    # ``data/app_errors.jsonl`` rides the debug bundle.
+                    # The exception's own text and its traceback (which ends with it, and with every
+                    # chained message) are a sink, and ``data/app_errors.jsonl`` rides the debug
+                    # bundle: the log names the CLASS only. The scrubbed text is in the item's
+                    # ``error`` (the queue state) and, for the run, in its journal.
                     detail = self._failure_text(exc)
                     if stopped_here:
-                        _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), detail)
+                        _LOG.info("import item %s stopped mid-merge", item.get("id"))
                     else:
-                        import traceback
-
                         _LOG.warning(
-                            "import item %s failed: %s\n%s",
-                            item.get("id"),
-                            detail,
-                            self._scrubbed("".join(traceback.format_exception(exc))),
+                            "import item %s failed (%s)", item.get("id"), type(exc).__name__
                         )
                     with self._lock:
                         item["state"] = "stopped" if stopped_here else "error"

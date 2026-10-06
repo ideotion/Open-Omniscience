@@ -260,7 +260,7 @@ def restore_legacy_path(
         # Written from the scrubbed fields, never with exc_info: the engine's text can quote the
         # passphrase in scope here, and the log rides the debug bundle.
         fields = runlog.failure_fields(exc, passphrase)
-        _LOG.warning("legacy restore failed: %s\n%s", fields["msg"], fields["traceback"])
+        _LOG.warning("legacy restore failed (%s); the run journal carries the scrubbed text", fields["cls"])
         raise _restore_error("restore", exc, passphrase) from exc
     finally:
         cleanup_staging(staged)

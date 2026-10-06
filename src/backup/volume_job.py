@@ -458,7 +458,7 @@ class VolumeBackupManager:
             # exception (its text and its traceback are sinks, and ``app_errors.jsonl`` rides the debug
             # bundle): no ``_LOG.exception``, no ``exc_info``.
             fields = runlog.failure_fields(exc, passphrase)
-            _LOG.warning("volume backup failed: %s\n%s", fields["msg"], fields["traceback"])
+            _LOG.warning("volume backup failed (%s); the run journal carries the scrubbed text", fields["cls"])
             runlog.milestone("error", **fields)
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
@@ -866,9 +866,7 @@ class VolumeBackupManager:
                         except Exception as exc:  # noqa: BLE001 - never lose a good merge
                             placing = runlog.failure_fields(exc, passphrase, corpus_passphrase)
                             _LOG.warning(
-                                "placing the artifact's large files failed: %s\n%s",
-                                placing["msg"],
-                                placing["traceback"],
+                                "placing the artifact's large files failed (%s)", placing["cls"]
                             )
                             report["file_members"] = {
                                 "placed": 0,
@@ -928,7 +926,7 @@ class VolumeBackupManager:
             # naming the holder) was dropped on the way to the UI and the operator got
             # a bare "cancelled".
             said = runlog.failure_fields(exc, passphrase, corpus_passphrase)["msg"]
-            _LOG.warning("volume restore refused before the swap: %s", said)
+            _LOG.warning("volume restore refused before the swap (%s)", type(exc).__name__)
             runlog.end("refused", detail=said[:500])
             with self._lock:
                 self._state = "error"
@@ -939,7 +937,7 @@ class VolumeBackupManager:
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
             said = runlog.failure_fields(exc, passphrase, corpus_passphrase)["msg"]
-            _LOG.info("volume restore stopped by the operator: %s", said)
+            _LOG.info("volume restore stopped by the operator")
             runlog.end("stopped-by-operator", detail=said[:500])
             with self._lock:
                 self._state = "cancelled"
@@ -947,7 +945,7 @@ class VolumeBackupManager:
                 self._progress = {"phase": "cancelled", "detail": said}
         except Exception as exc:  # noqa: BLE001
             fields = runlog.failure_fields(exc, passphrase, corpus_passphrase)
-            _LOG.warning("volume restore failed: %s\n%s", fields["msg"], fields["traceback"])
+            _LOG.warning("volume restore failed (%s); the run journal carries the scrubbed text", fields["cls"])
             from src.backup.merge import MergeError, classify_restore_error
 
             # A MergeError is an intentional, well-formed refusal (the live DB stays
@@ -1019,7 +1017,7 @@ class VolumeBackupManager:
                 self._progress = {"phase": "done"}
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             fields = runlog.failure_fields(exc, passphrase)
-            _LOG.warning("volume verify failed: %s\n%s", fields["msg"], fields["traceback"])
+            _LOG.warning("volume verify failed (%s); the run journal carries the scrubbed text", fields["cls"])
             with self._lock:
                 self._state, self._error = "error", fields["msg"]
 
