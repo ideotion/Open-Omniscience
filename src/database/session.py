@@ -47,6 +47,8 @@ from sqlalchemy.orm import sessionmaker
 # Data directory resolution is centralised in src.paths so a source checkout, an
 # editable install under $HOME, and a wheel install into a read-only location all
 # behave correctly (see that module's docstring). OO_DATA_DIR still wins.
+from src.database import damage as _damage
+
 # Before any engine exists: every pool's new connections get the search index's transform
 # functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
 from src.database import fts_norm as _fts_norm  # noqa: F401
@@ -265,6 +267,11 @@ def _storage_guard_on_disk_full(context) -> None:
         on_engine_error(context)
     except Exception:  # noqa: BLE001 - an observer never replaces the real error
         pass
+
+
+# A failed statement whose DRIVER error is SQLITE_CORRUPT names the corpus file as damaged and pauses
+# its writers (``database/damage.py``). Observes only: the error still propagates unchanged.
+_damage.attach(engine, _damage.FILE_CORPUS)
 
 
 @event.listens_for(engine, "reset")

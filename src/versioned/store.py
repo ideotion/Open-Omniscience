@@ -197,6 +197,12 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         except Exception:  # noqa: BLE001 - an observer never replaces the real error
             pass
 
+    # A failed statement whose DRIVER error is SQLITE_CORRUPT names THIS lane's file as damaged and
+    # stops this lane's writers, never the corpus's (``database/damage.py``). Observes only.
+    from src.database import damage
+
+    damage.attach(eng, spec.kind)
+
     @event.listens_for(eng, "connect")
     def _lane_pragmas(dbapi_connection, _record) -> None:
         """WAL + the safety PRAGMAs, mirroring the corpus engine's own listener.

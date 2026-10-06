@@ -222,6 +222,18 @@ def _storage_guard_not_leaked():
 
 
 @pytest.fixture(autouse=True)
+def _damage_registry_not_leaked():
+    """The database-damage latch (database/damage.py) is a process-global, per-file pause: a test
+    that damages a copy of a database must never leave the corpus (or the Wikipedia lane) paused
+    for the next one, nor carry its incident record into it."""
+    from src.database import damage
+
+    damage.registry._reset_for_tests()
+    yield
+    damage.registry._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _pending_resume_not_leaked():
     """SCHED-1's resume watcher is a process-global daemon: any test whose resume
     runs out of retries hands off to one, and it polls every RESUME_POLL_S for the

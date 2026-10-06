@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.database import damage
 from src.versioned.adapters.base import ReadBudget
 from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
@@ -67,6 +68,10 @@ _LOG = logging.getLogger("wiki.runner")
 #: Distinct from ``tiers.DEFERRED_UNTIL_WARM_TIER`` — a full disk and a tier this
 #: release does not ingest need opposite responses from the operator.
 BUDGET_FULL: str = "storage_budget_spent"
+
+#: The lane's file key in ``database/damage.py`` (the lane kind), and the pause reason the status carries.
+WIKI_FILE: str = "wiki"
+DAMAGED: str = "database-damaged"
 
 #: How many buffered changes one drain takes per edition. A bound, not a tuning knob:
 #: a drain that took an unbounded buffer would hold one transaction open across an
@@ -430,6 +435,10 @@ class WikiLaneRunner:
         #: When the latest failed drain was seen, and when the next try is due.
         self.last_error_at: str | None = None
         self._retry_due_at: str | None = None
+        #: Why the loop is paused, when it is: ``database-damaged`` while the database reports the
+        #: Wikipedia lane's FILE as damaged (``database/damage.py``). A status surface cannot read a
+        #: log, and a paused lane that reads as idle is a lane nobody knows to look at.
+        self.paused_reason: str | None = None
         #: WHERE THE DRAIN IS, for a status surface. A status that said only ``drains: 0``
         #: could not tell a drain that had not started from one stuck in its first hot-set
         #: read, or fetching texts behind a backlog, or failing and retrying: four different
@@ -510,6 +519,7 @@ class WikiLaneRunner:
             "since_last_drain_s": round(now - ended, 1) if ended is not None else None,
             "consecutive_failures": self.consecutive_failures,
             "last_error": self.last_error,
+            "paused": self.paused_reason,
             "stopped": self._stop.is_set(),
             # PAST MAX_CONSECUTIVE_FAILURES THE LOOP KEEPS TRYING, and says so. ``retry_in_s``
             # is the wait it chose after the latest failure; the ceiling and what it protects
@@ -1006,6 +1016,17 @@ class WikiLaneRunner:
         while not self._should_stop():
             if max_drains is not None and done >= max_drains:
                 break
+            if damage.registry.latched(WIKI_FILE):
+                # The database reported THIS lane's file damaged: every writer in this loop (the
+                # drain, the pageview top-up, the index, WARM and the walk windows) waits, and
+                # nothing else does (the corpus has its own latch). Released by starting the lane
+                # again; the stream thread keeps filling its bounded buffer meanwhile.
+                self.paused_reason = DAMAGED
+                if max_drains is not None:
+                    break  # a caller asking for a tick gets the pause, not an endless wait
+                self._sleep(self._interval)
+                continue
+            self.paused_reason = None
             try:
                 self.revive_stream()
             except Exception as exc:  # noqa: BLE001 - a failed restart is retried next tick

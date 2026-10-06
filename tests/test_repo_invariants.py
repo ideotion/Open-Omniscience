@@ -8344,7 +8344,7 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
 #: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
 #: appends a lesson raises this number in the same diff (rule (5a)(b)); re-measure at the merge
 #: point if another PR appended first, the recorded 2026-09-08 precedent.
-_LESSONS_LINE_CEILING = 13580
+_LESSONS_LINE_CEILING = 13603
 
 
 def _lessons_md_lines() -> int:

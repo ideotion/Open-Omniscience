@@ -13578,3 +13578,26 @@ statement and its values into the status payload; `is_io_error` had been fixed f
 in a lesson is measured, not remembered**: "three through the endpoint, eight directly" was corrected to two and nine by putting the detach-everything probe back and
 running the four files (11 failures: 1 through `GET /api/articles`, 1 through `GET /api/articles/export` and 9 through `_query_articles`). (4) A shared "failed again" key flips when two paths fail in turn and
 each logs a traceback every pass: key it per path. (5) A reading taken for a caller that does not wait has an age bound, or an hours-old figure classifies a new incident.
+
+
+### A DATABASE THAT SAYS "MALFORMED" WHILE `count(*)` AND THE FIRST PAGE ANSWER: NOTICE IT BY THE DRIVER'S CODE, PER FILE, AND NAME WHAT IS NOT YET DONE (WAL / disk thread, E1 of the damaged-database plan, 2026-10-06)
+
+The Asus corpus of the 10-06 bundles had held a page SQLite itself called malformed from 10-02, and collection went on for a day and a half (about 300 "batched collect commit failed;
+redoing N article(s) one at a time" lines): `grep malformed src` found one reader, the full-text health probe. `src/database/damage.py` is the missing sentence; what it measured, on REAL
+damaged copies (random bytes written over leaf pages of a 3,000-row table), is the part worth keeping. (1) **A damaged content page does not touch `count(*)` while a narrow index
+exists** (the planner counts the narrowest index and never reads the wide pages), nor `max(id)`, nor the first page: only a range scan or a full scan over the damaged rows raises, so a
+"is the file readable" probe built on a count is blind to exactly the damage that matters (the test fixture has a `title` index for that reason: without one the count raised and the
+measurement would have been wrong). (2) **Wrong key and bad page are two different primary codes on the real driver**: SQLCipher under a wrong passphrase raises `SQLITE_NOTADB` (26,
+"file is not a database"), a bad page under the right key raises `SQLITE_CORRUPT` (11, extended 267, 523 or 779), and both carry `sqlite_errorcode` on `sqlite3` and `sqlcipher3`; classify the
+DRIVER's exception (the `orig` / cause chain) and never SQLAlchemy's wrapper text, which appends the statement and its bound values, so a title that reads "database disk image is malformed"
+must not latch a file (the lesson of `is_disk_full` in #1306, applied again). (3) **FTS5 index-page damage reads as a plain 11 through `MATCH`, never 267**, so a scope of "the search index"
+can be claimed only on evidence (the virtual-table code, or a statement that reads an index shadow table directly); an external-content table reads the content table through the index, so a
+statement that merely NAMES the index proves nothing. The incident record states its basis, and E1 only records the route (`search-index-rebuild` or `verify-then-salvage`): it does not run
+`ensure_fts(rebuild="always")`, which no runtime path calls and whose single-transaction rebuild on a corpus this size would fill the log again; that belongs to E2's offline boot path. (4) **The
+latch is per file**: the corpus latch stops collection admission, maintenance and the housekeeping lanes; a Wikipedia latch stops only that lane's loop; a law latch skips only the law step; an
+OSM lane's incident is recorded and nothing waits, because the OSM lane only runs jobs the operator starts. The latch is memory-only and released when the operator starts the work again (a
+restart is the operator trying again, and the first failed read puts it back); it follows neither `OO_STORAGE_GUARD` nor "Resume anyway", because a damaged file that keeps being written is the
+harm and only a check (E2) can say it is not damaged. (5) **The wording says what is not done**: "your data files were not changed", never "being repaired" or "will be fixed"; a test pins that no
+frame contains those words, because the next slice owns the verb. (6) The record is written OUTSIDE the registry's lock, so `admit()` never queues behind a slow drive, and it keeps no value,
+no passphrase and no URL (statement shapes only: strings become `?`, numbers `N`). (7) **`tests/conftest.py` sets `OO_STORAGE_GUARD=0`**, so a test of anything that composes with the resource
+guard must turn it on, or it passes for the wrong reason; the damage latch itself is deliberately independent of that switch (`OO_DAMAGE_GUARD=0` is its own).

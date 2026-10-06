@@ -2026,18 +2026,29 @@
     // server (it ends by itself when the cause clears, stops again at the override floor or on a
     // write error, and is refused with a sentence when it cannot be granted). While an
     // override holds the notice says so and offers no button.
+    // The database-damage notice: a file the database itself reported as damaged (database/damage.py).
+    // Unlike the limits below it is a fact about the data, not about collection running, so it shows
+    // whether or not the scheduler is on and in airplane mode. Frames carry no numbers; the hover is
+    // the long form.
+    function _damageHtml(a, t, tf) {
+      const d = a && a.storage_guard && a.storage_guard.database_damage;
+      if (!d || !Array.isArray(d.notes) || !d.notes.length) return "";
+      const lines = d.notes.map((n) => `<div class="vwarn">${esc(tf(n.frame, {}))}</div>`).join("");
+      return `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app stopped what could make it worse: new collection passes, housekeeping and maintenance on that file. Nothing is deleted and what can still be read stays readable. Starting collection again tries once more; if the damage is still there it pauses again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
+    }
     function _storageGuardHtml(a, t, tf) {
       // Only while collection is meant to be running: "Collection is paused" about a stopped
       // scheduler or airplane mode would be a claim about a state that is not the case.
+      const dmg = _damageHtml(a, t, tf);
       const g = a && a.storage_guard;
-      if (!g || !g.engaged || !Array.isArray(g.notes) || !g.notes.length) return "";
-      if (!a.running || a.online === false) return "";
+      if (!g || !g.engaged || !Array.isArray(g.notes) || !g.notes.length) return dmg;
+      if (!a.running || a.online === false) return dmg;
       const lines = g.notes.map((n) => {
         const vars = {};
         Object.keys(n.vars || {}).forEach((k) => { vars[k] = _fmtBytes(n.vars[k]); });
         return `<div class="vwarn">${esc(tf(n.frame, vars))}</div>`;
       }).join("");
-      return `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
+      return dmg + `<div title="${esc(t("Measured from the size of the database’s write-ahead log and the free bytes on the drive that holds your data; no table is read. Each limit is sized from this machine: the log limit protects the next unlock’s recovery time and the drive, and the drive reserve is the larger of 1 GB (for the writes still in flight) and 2% of the drive (room for everything else that writes to it). Collection resumes by itself. “Resume anyway” forces it on while the limit is still exceeded: it stops again by itself if free space falls to the size of the log (never less than 128 MB), the room needed to write the log back into the database and finish a write, if free space cannot be read, if a write fails for lack of space, or if a second limit is crossed, and it ends when the cause clears. Quitting and reopening the app ends anything the app itself is holding open, and the log is reset when the database reopens (a very large log takes longer)."))}">` +
         lines + _storageGuardTail(g, t, tf) + "</div>";
     }
     // What stands under the notice: the button when the last sample says a click would be granted, the server's own
@@ -2059,6 +2070,8 @@
     // one poll after "Resume anyway", and a "Paused" pill beside the "resumed by you" note says
     // two things at once.
     function _storagePausedText(phase, g) {
+      // The damage pause is the database's own report, not a limit the override covers.
+      if (phase === "paused-damaged") return "Paused: the database reported damage";
       if (g && g.overridden) return null;
       return { "paused-wal-pinned": "Paused: the database log has grown too large",
                "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;

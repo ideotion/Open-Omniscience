@@ -182,6 +182,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.database import damage
+
 _LOG = logging.getLogger("scheduler.storage_guard")
 
 MIB = 1024 * 1024
@@ -257,6 +259,9 @@ TAIL_KEEP = 20
 
 PHASE_WAL = "paused-wal-pinned"
 PHASE_DISK = "paused-low-disk"
+#: The corpus file was reported damaged (``database/damage.py``). Not a storage reading: the latch is
+#: the damage registry's, and it is released by the operator starting collection again.
+PHASE_DAMAGE = "paused-damaged"
 
 #: The plain-words sentences, as frames the page fills with the numbers in its own
 #: language (the pattern of ``estimate_method_i18n``). Each is also a locale key, x12.
@@ -757,12 +762,20 @@ class StorageGuard:
             return self._wal or self._disk
 
     def kind(self) -> str | None:
-        """``"disk"`` (the more severe, wins), ``"wal"`` or None."""
+        """``"disk"`` (the more severe, wins), ``"wal"``, ``"damage"`` (the corpus file was reported
+        damaged) or None."""
         with self._lock:
-            return "disk" if self._disk else ("wal" if self._wal else None)
+            storage = "disk" if self._disk else ("wal" if self._wal else None)
+        return storage or ("damage" if damage.registry.corpus_latched() else None)
 
     def admit(self) -> str | None:
-        """None = start the next unit of work; else ``"disk"`` or ``"wal"``.
+        """None = start the next unit of work; else ``"disk"``, ``"wal"`` or ``"damage"``.
+
+        ``"damage"`` is the CORPUS file's latch in ``database/damage.py``: the database reported it
+        damaged, and writing on only makes that worse. It is not a storage reading and it follows
+        neither this guard's switch (``OO_STORAGE_GUARD``) nor the operator's "Resume anyway" (which
+        covers the limits it listed, a log and a drive); it releases when the operator starts
+        collection again.
 
         A non-blocking read of the latch: it samples nothing, takes no lock a worker could
         queue on for long, and never raises. Long background writers call it at a chunk
@@ -772,16 +785,16 @@ class StorageGuard:
         maintenance, the keyword boot recompute) reads ``engaged`` or :meth:`wait_if_engaged`,
         which do NOT follow the override: forcing collection on does not force a rewrite on.
         """
-        if not self.enabled():
-            return None
-        with self._lock:
-            if self._override is not None:
-                return None
-            return "disk" if self._disk else ("wal" if self._wal else None)
+        storage: str | None = None
+        if self.enabled():
+            with self._lock:
+                if self._override is None:
+                    storage = "disk" if self._disk else ("wal" if self._wal else None)
+        return storage or ("damage" if damage.registry.corpus_latched() else None)
 
     def phase(self) -> str | None:
         kind = self.kind()
-        return PHASE_DISK if kind == "disk" else (PHASE_WAL if kind == "wal" else None)
+        return {"disk": PHASE_DISK, "wal": PHASE_WAL, "damage": PHASE_DAMAGE}.get(kind or "")
 
     # -- the latches ---------------------------------------------------------------
     def observe(
@@ -1550,6 +1563,9 @@ class StorageGuard:
         ``detail`` adds the six-hour history (360 samples) and the last pin report (holders with
         stacks): they ride the bundle's storage block, never the polled status payload.
         """
+        # Read BEFORE this guard's lock is taken: the record's first read is a file read, and the
+        # registry's lock is never held while this one is awaited (nor the reverse).
+        dmg = damage.registry.state(detail=detail)
         with self._lock:
             wal, disk = self._wal, self._disk
             thr = dict(self._thresholds)
@@ -1626,11 +1642,22 @@ class StorageGuard:
                     }
                 )
             reason = " ".join(_render_english(n) for n in notes) or None
+            if dmg["notes"]:
+                # The damage latch has no numbers to render: its sentences are plain frames.
+                reason = " ".join([*([reason] if reason else []), *(n["frame"] for n in dmg["notes"])])
             return {
                 "enabled": self.enabled(),
                 "engaged": wal or disk,
                 "kinds": [n["kind"] for n in notes],
-                "phase": None if overridden else (PHASE_DISK if disk else (PHASE_WAL if wal else None)),
+                "phase": (
+                    None
+                    if overridden
+                    else (
+                        PHASE_DISK
+                        if disk
+                        else (PHASE_WAL if wal else (PHASE_DAMAGE if _corpus_latched_in(dmg) else None))
+                    )
+                ),
                 # An operator's override (R112): collection runs although the latch holds. The
                 # button is offered only while it does not.
                 "overridden": bool(overridden),
@@ -1653,6 +1680,10 @@ class StorageGuard:
                     else None
                 ),
                 "overrides": self._overrides,
+                # The corpus file's (and a lane's) damage latch: its own record, its own sentences
+                # (``notes``), released by the operator starting collection again. Not part of
+                # ``engaged`` or of this guard's override, which cover the limits it measures.
+                "database_damage": dmg,
                 "since": self._since,
                 "reason": reason,
                 "notes": notes,
@@ -1719,6 +1750,11 @@ class StorageGuard:
                     "the end of the pass in flight (an upper bound: it counts every writer)."
                 ),
             }
+
+
+def _corpus_latched_in(dmg: dict[str, Any]) -> bool:
+    """Whether a damage state (``damage.registry.state()``) has the corpus file latched."""
+    return damage.FILE_CORPUS in dmg.get("latched", ())
 
 
 def _render_english(note: dict[str, Any]) -> str:
