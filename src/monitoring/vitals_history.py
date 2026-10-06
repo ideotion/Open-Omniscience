@@ -49,6 +49,7 @@ HONESTY RULES BAKED IN
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import logging
 import os
@@ -321,10 +322,8 @@ def _slow_readings(now: float) -> dict[str, float]:
     _LAST_SLOW = now
     out: dict[str, float] = {}
     base = data_dir()
-    try:
+    with contextlib.suppress(OSError):
         out["drive_free"] = shutil.disk_usage(base).free / (1024 * 1024)
-    except OSError:
-        pass
     for key, name in (
         ("db", "open_omniscience.db"),
         ("wal", "open_omniscience.db-wal"),
@@ -358,14 +357,10 @@ def _fast_readings() -> dict[str, float]:
         out["threads"] = float(_PROC.num_threads())
     except Exception:  # noqa: BLE001
         out.setdefault("threads", float(threading.active_count()))
-    try:
+    with contextlib.suppress(Exception):  # an optional reading: absent when it fails
         out["avail"] = psutil.virtual_memory().available / (1024 * 1024)
-    except Exception:  # noqa: BLE001
-        pass
-    try:
+    with contextlib.suppress(Exception):
         out["swap"] = psutil.swap_memory().used / (1024 * 1024)
-    except Exception:  # noqa: BLE001
-        pass
     return out
 
 
@@ -417,7 +412,7 @@ def _close_fine() -> None:
     _FINE.append(acc.row(t))
     _trim(_FINE, FINE_KEEP)
     hour = t - t % COARSE_S
-    if _COARSE_ACC is not None and _COARSE_T != hour:
+    if _COARSE_ACC is not None and hour != _COARSE_T:
         _COARSE.append(_COARSE_ACC.row(_COARSE_T))
         _trim(_COARSE, COARSE_KEEP)
         _COARSE_ACC = None
