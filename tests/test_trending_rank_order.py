@@ -85,7 +85,7 @@ def test_scanned_counts_the_keywords_over_the_floor_and_no_others(tmp_path):
     scanned, some ratios run high by chance"): how many keywords were screened, i.e. the ones
     over the ``min_recent`` floor. It is its own pass now, so it is pinned (the coordinator's
     check of PR #1284, mutant E11: counting every keyword passed every test)."""
-    from datetime import date, timedelta
+    from datetime import date
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -97,7 +97,7 @@ def test_scanned_counts_the_keywords_over_the_floor_and_no_others(tmp_path):
     today = date.today()
     with sessionmaker(bind=engine, future=True)() as s:
         s.add(Source(name="S", domain="x.test"))
-        for i, recent in enumerate([1, 2, 3, 4, 9], start=1):
+        for i, _recent in enumerate([1, 2, 3, 4, 9], start=1):
             s.add(Keyword(term=f"zzscan{i}", normalized_term=f"zzscan{i}", language="en"))
         s.flush()
         for i, recent in enumerate([1, 2, 3, 4, 9], start=1):
