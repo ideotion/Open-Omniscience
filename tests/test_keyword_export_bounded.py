@@ -21,9 +21,11 @@ What is pinned here, and why each line is not a restatement of the implementatio
 * what the export holds does not grow with the window (tracemalloc, not a guess);
 * the constants that turn memory into a row budget are checked against a measurement.
 
-The end-to-end contract (byte-identical json, digest and shards against the implementation this
-replaces) was checked by ``differential_keyword_export.py`` (shared under
-``keyword-export/``) on random databases; it is not repeated here because it needs the old code.
+The end-to-end contract (byte-identical json and shards, and a digest identical apart from the six
+keys it gained, against the implementation this replaces) was checked by
+``differential_keyword_export_normalised.py`` (shared under ``keyword-export/``, a copy of
+``differential_keyword_export.py`` that sets those six keys aside) on random databases; it is not
+repeated here because it needs the old code.
 """
 
 from __future__ import annotations
@@ -1774,7 +1776,7 @@ def test_what_the_zip_holds_does_not_grow_with_the_window(tmp_path_factory, monk
     root = tmp_path_factory.mktemp("kw-flat")
     monkeypatch.setenv("OO_DATA_DIR", str(root))
     # The families are grouped over what fits a memory budget (production: a tenth of the
-    # memory available at the start, ~2 KB per keyword); both windows below are LARGER than
+    # memory available at the start, 2.5 KB per keyword: FAMILY_ROW_BYTES); both windows below are LARGER than
     # the budget used here, so what is held has reached its bound.
     monkeypatch.setattr(
         kls, "memory_plan", lambda _a: {"heap_rows": 500, "batch": 800, "family_rows": 900}
@@ -1904,8 +1906,8 @@ def test_the_digests_sample_is_the_highest_mentions_with_ties_in_window_order(db
 
 
 def test_a_machine_that_cannot_group_the_window_groups_a_prefix_and_says_so(dbs, data_dir, monkeypatch):
-    """The families' grouping is the digest's largest working set (about 1.8 KB per keyword it
-    groups), so it is sized from the memory available when the export starts, as the archive's is.
+    """The families' grouping is the digest's largest working set (2.5 KB per keyword it
+    groups: FAMILY_ROW_BYTES), so it is sized from the memory available when the export starts, as the archive's is.
     Everything else the digest says covers the whole window either way, and the provenance names
     what the grouping was given."""
     db = _session(dbs[1])

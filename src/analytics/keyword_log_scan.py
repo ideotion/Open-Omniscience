@@ -912,8 +912,8 @@ def estimate_export_need(
     "?"), because counting the keyword table's own languages would scan the whole table, which has
     no index on it. A mention-bearing keyword always lands in one of its articles' languages, so
     only ORPHANS in a language no article carries are missed (at most one window for each such
-    language: 5,000 entries, at most 12 MiB at the default, and how many such languages there are is
-    not measured); an instance with many thin languages is over-counted, since each is priced at
+    language: 5,000 entries at 500 B and as many family rows at 2,500 B, at most 14.3 MiB at the
+    default, and how many such languages there are is not measured); an instance with many thin languages is over-counted, since each is priced at
     a full window. The error is on the side of declining a machine slightly early.
     """
     n_art, min_art, max_art = (int(v or 0) for v in db.execute(

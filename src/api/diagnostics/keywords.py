@@ -475,7 +475,8 @@ def _families_summary(families: Iterable[dict], *, basis_per_language: int | Non
                 "Computed over ALL the families the grouping was given, before the print cap "
                 f"is applied: those of the first {basis_per_language} keywords of each "
                 "language's window, which is what the memory this machine had when the export "
-                "started could hold. The capped `families` list costs no aggregate answer about "
+                "started could hold, and never fewer than a budget of 50,000 keywords in all (the "
+                "floor). The capped `families` list costs no aggregate answer about "
                 "THEM; a keyword beyond that prefix is in no family and in none of these counts. "
                 "Counts only; no scores."
             )
@@ -988,10 +989,19 @@ def keyword_log(
                 )
                 # THE BUNDLE'S DEADLINE NOW COVERS THIS LOOP: the entries are built between batches
                 # of SQL, so a ``statement_deadline`` that expires while the digest is being built
-                # interrupts the NEXT batch's statement (a 503, and the member is lost), where the
-                # metadata used to be read whole before any entry was built and an expiry during
-                # the building did nothing. Measured: about 4 s of building inside a 6 s pass at
-                # 205,000 entries. It matters only for a member already near its 300 s.
+                # interrupts the NEXT batch's statement. That is a 503 chained to the timeout, and
+                # the bundle records the member as ``skipped-deadline`` with a marker and NO
+                # payload: the member is lost. It is not shipped as ``partial-deadline`` on
+                # purpose, because a digest cut off after the first batches would print entries and
+                # a ``families_summary`` over a prefix of the window while its counts read as the
+                # window's own (the 2026-09-11 objection: what is printed may shrink, what is
+                # COUNTED may not). An expiry after the LAST batch's statement interrupts nothing:
+                # the digest completes whole and the bundle flags it ``partial-deadline`` because
+                # the clock had run out, which is the honest word for "late", not for "cut".
+                # Before this change the metadata was read whole before any entry was built, so an
+                # expiry during the building did nothing at all. Measured: about 4 s of building
+                # inside a 6 s pass at 205,000 entries. It matters only for a member already near
+                # its 300 s.
                 for i in range(0, len(survivors), plan["batch"]):
                     chunk = survivors[i : i + plan["batch"]]
                     ids = [s[0] for s in chunk]

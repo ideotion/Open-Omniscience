@@ -423,17 +423,27 @@ def test_the_gates_estimate_error_is_scrubbed_and_so_is_its_log_line(monkeypatch
     monkeypatch.setattr(_connect, "_passphrase", SECRET)
     name = "keyword-log-digest.json"
 
-    def boom(_db):
-        raise RuntimeError(f"[SQL: PRAGMA key = '{SECRET}']")
+    # the estimator takes the memory the gate read (``estimator(db, avail)``): a stub that takes one argument
+    # raises TypeError before it reaches the secret, and every assertion below would pass for that reason
+    seen: dict = {}
+
+    def boom(_db, _avail=None):
+        seen["called"] = True
+        # long enough that the reading's own cut (160 characters) falls INSIDE the key statement
+        raise RuntimeError("y" * 130 + f" [SQL: PRAGMA key = '{SECRET}']")
 
     monkeypatch.setitem(_bundle._MEMBER_NEED_ESTIMATORS, name, boom)
     monkeypatch.setitem(_bundle._MEMBER_RSS_NEED_MB, name, 3322.8)
     reading: dict = {}
     with caplog.at_level(logging.DEBUG, logger=_bundle._LOG.name):
         _bundle.ram_declined_reason(name, db=object(), total_mb=4029.0, available_mb=10.0, reading=reading)
-    assert reading.get("estimate_error"), "the estimator failed, so the reading names the failure"
-    assert SECRET not in json.dumps(reading)
-    assert SECRET not in caplog.text, "the debug line carried the traceback, and the traceback the key"
+    assert seen.get("called") is True
+    assert reading["estimate_error"].startswith("RuntimeError: "), reading  # the estimator's own failure, not another's
+    assert "y" * 100 in reading["estimate_error"] and len(reading["estimate_error"]) <= len("RuntimeError: ") + 160
+    assert SECRET not in json.dumps(reading) and SECRET[:6] not in json.dumps(reading)
+    lines = [rec.getMessage() for rec in caplog.records if "need estimate" in rec.getMessage()]
+    assert lines and "y" * 100 in lines[0], "the debug line is the scrubbed text, and it was written"
+    assert SECRET not in caplog.text and SECRET[:6] not in caplog.text, "the debug line carried the traceback, and the traceback the key"
     assert all(rec.exc_info is None for rec in caplog.records if "need estimate" in rec.getMessage())
 
 
