@@ -233,6 +233,43 @@ def test_the_soak_window_reports_a_lane_that_has_NEVER_RUN_as_absent(tmp_path, m
     assert "not a reading of zero" in block["reason"]
 
 
+def test_the_soak_window_reports_an_EMPTY_lane_file_as_never_stored_not_as_a_crash(
+    tmp_path, monkeypatch
+):
+    """A zero-byte wiki.db (an interrupted first start) used to fail the whole block with
+    ``no such table: versioned_changes``; a real bundle (2026-10-06) carried exactly that."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+    dispose_all()
+    try:
+        from src.monitoring.soak_window import _block, _wiki_lane
+        from src.versioned.store import lane_path
+
+        lane_path("wiki").write_bytes(b"")
+        block = _block("wiki_lane", lambda: _wiki_lane(72.0))
+    finally:
+        dispose_all()
+    assert block["measured"] is False and "block_error" not in block
+    assert "empty" in block["reason"] and "not a reading of zero" in block["reason"]
+    assert block["service"]["runner"] is False
+
+
+def test_the_lane_block_carries_the_process_service_state(lane, monkeypatch):
+    """The run clock says WHEN a lane was quiet; only the process says whether its threads are alive."""
+    import src.wiki.counters as counters_mod
+
+    monkeypatch.setattr(counters_mod, "_utcnow", lambda: NOW)
+    with lane_session("wiki") as db:
+        _changes(db, day_offsets=[0])
+    from src.monitoring.soak_window import _wiki_lane
+
+    service = _wiki_lane(72.0)["service"]
+    assert service["runner"] is False, "no runner since boot is the offline start, not a dead lane"
+    assert service["streaming"] is False and service["draining"] is False
+    assert service["basis"].startswith("this process")
+
+
 def test_the_soak_window_reads_a_lane_that_HAS_run(lane, monkeypatch):
     # _wiki_lane reads the counters on the real clock, and these rows sit at the fixed NOW.
     # Unfrozen, the test passed only while the real date stayed inside the 7-day window:

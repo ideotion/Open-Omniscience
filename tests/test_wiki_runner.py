@@ -441,6 +441,7 @@ def test_the_failures_REASON_lives_on_the_runner_and_not_only_in_the_log(lane):
     runner = _runner(_filled_adapter(), state)
 
     def always_fail():
+        state["value"] = "halted"  # one failure is enough to read; the loop then ends by its setting
         raise RuntimeError("the disk is gone")
 
     runner.drain = always_fail  # type: ignore[method-assign]
@@ -450,9 +451,15 @@ def test_the_failures_REASON_lives_on_the_runner_and_not_only_in_the_log(lane):
     assert "RuntimeError" in runner.last_error
 
 
-def test_a_loop_that_CANNOT_succeed_gives_up_rather_than_spinning_forever(lane):
-    """The same failure wearing the opposite face: burning a core on an error that is
-    not going to clear, and burying the one log line that said why."""
+def test_a_loop_that_CANNOT_succeed_keeps_trying_slowly_rather_than_ending_or_spinning(lane):
+    """Changed 2026-10-06 (it used to pin the opposite: give up after MAX_CONSECUTIVE_FAILURES).
+
+    Giving up left the setting saying ``running`` over a lane that collected nothing for the rest
+    of the process, with no way back short of a restart (a real instance showed no lane row for
+    40 hours with the app online). Spinning is still refused: past the third failure the wait
+    doubles up to ``FAILING_RETRY_CEILING_S``, which is what protects the corpus's writer and
+    names how long a recovered lane can sit idle. tests/test_wiki_lane_supervisor.py pins the
+    waits themselves; this pins that the loop is still alive past the old limit."""
     from src.wiki.runner import MAX_CONSECUTIVE_FAILURES
 
     state = {"value": "running"}
@@ -461,12 +468,14 @@ def test_a_loop_that_CANNOT_succeed_gives_up_rather_than_spinning_forever(lane):
 
     def always_fail():
         calls["n"] += 1
+        if calls["n"] >= MAX_CONSECUTIVE_FAILURES + 2:
+            state["value"] = "halted"
         raise RuntimeError("permanently broken")
 
     runner.drain = always_fail  # type: ignore[method-assign]
     assert runner.run_until_stopped() == 0
-    assert calls["n"] == MAX_CONSECUTIVE_FAILURES, calls
-    assert runner._should_stop() is True, "it stopped itself rather than being stopped"
+    assert calls["n"] == MAX_CONSECUTIVE_FAILURES + 2, "it did not stop itself at the old limit"
+    assert runner.drain_status()["degraded"] is True
 
 
 def test_the_production_service_creates_the_lane_FILE_rather_than_raising_into_the_thread(

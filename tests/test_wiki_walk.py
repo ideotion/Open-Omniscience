@@ -533,7 +533,7 @@ def test_the_runner_WALKS_in_the_idle_time_and_a_broken_walk_never_ends_the_lane
         monotonic=lambda: 0.0, drain_interval_s=30.0,
     )
     runner.idle(30.0)
-    assert slept == [30.0], "the interval is still slept when the walk fails"
+    assert sum(slept) == 30.0, "the interval is still slept when the walk fails"
     assert runner.last_walk == {"error": "RuntimeError"}
 
     walker = _walker(FixtureWikiClient())
