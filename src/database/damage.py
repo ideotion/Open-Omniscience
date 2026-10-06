@@ -962,6 +962,7 @@ class DamageRegistry:
                     else:
                         st["latched"] = False
                         st.pop("check_tables", None)
+                        self._supersede_incidents_locked(file_key)  # the reported tables read clean: the earlier errors are answered
                         released = True
             if damaged:
                 self._note_verified_damage(file_key, damaged, path=path, at=at)
@@ -1094,7 +1095,8 @@ class DamageRegistry:
             self._ensure_loaded()
             with self._lock:
                 gone = self._verification.pop(file_key, None)
-            if gone is not None:
+                superseded = self._supersede_incidents_locked(file_key)  # they were about a file that no longer is
+            if gone is not None or superseded:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
         except Exception:  # noqa: BLE001
             _LOG.debug("database damage: could not forget a check's record", exc_info=True)
@@ -1282,7 +1284,7 @@ class DamageRegistry:
     # -- the repair of a damaged file (database/repair.py) ----------------------------------------
     def confirmed_damage(self, file_key: str) -> dict[str, Any] | None:
         """What THIS process's start-up check confirmed about ``file_key``: ``{"tables": [the names read as damaged],
-        "file_name"}``, or ``None`` when it did not (no check ran, it read clean, it was left unfinished, or the finding
+        "file_name", "pages_unread"}``, or ``None`` when it did not (no check ran, it read clean, it was left unfinished, or the finding
         is an earlier process's, carried over: a repair acts only on a verdict this process measured)."""
         self._ensure_loaded()
         with self._lock:
@@ -1298,6 +1300,10 @@ class DamageRegistry:
             return {
                 "tables": [str(t.get("table")) for t in tables if t.get("verdict") == VERDICT_DAMAGED],
                 "file_name": entry.get("file_name"),
+                # Pages the DRIVE could not read during the check (the page pass counts them apart from damage): a drive that failed to
+                # read the file once is a drive to look at, and a copy the repair keeps is never removed on the strength of a file
+                # the disk itself could not give (``repair.sweep_kept_copies``).
+                "pages_unread": sum(int(t.get("pages_unread") or 0) for t in tables),
             }
 
     def repair_upsert(self, rec_id: str, **fields: Any) -> None:
@@ -1321,6 +1327,71 @@ class DamageRegistry:
         self._ensure_loaded()
         with self._lock:
             return [dict(r) for r in self._repairs]
+
+    def repairing_now(self) -> bool:
+        """Whether a repair of THIS process is running. An earlier process's ``running`` record is not: a repair that a crash, a
+        power cut or a stop ended leaves its record ``running`` for good, and counting it would hold every later removal for ever
+        (:meth:`settle_interrupted_repairs` marks those)."""
+        with self._lock:
+            return any(r.get("process") == self._process and r.get("state") == "running" for r in self._repairs)
+
+    def settle_interrupted_repairs(self) -> int:
+        """Mark the repair records an EARLIER process left ``running`` as ``interrupted``: that process is not running them. Returns
+        how many. Never raises."""
+        try:
+            self._ensure_loaded()
+            at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+            changed = 0
+            with self._lock:
+                for rec in self._repairs:
+                    if rec.get("state") == "running" and rec.get("process") != self._process:
+                        rec.update(state="interrupted", finished_at=at)
+                        changed += 1
+            if changed:
+                self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
+            return changed
+        except Exception:  # noqa: BLE001 - bookkeeping must never stop a start
+            _LOG.debug("database damage: could not settle an interrupted repair", exc_info=True)
+            return 0
+
+    def latch_is_set(self, file_key: str) -> bool:
+        """Whether ``file_key`` is latched damaged, WHATEVER the pause's switch says. ``latched`` answers ``False`` under
+        ``OO_DAMAGE_GUARD=0`` because that switch turns the PAUSE off; a removal of a kept file that waits for "the library is
+        damaged again" must not stop waiting because someone switched the pause off."""
+        with self._lock:
+            st = self._files.get(file_key)
+            return bool(st and st["latched"])
+
+    def check_is_running(self) -> bool:
+        """Whether a check of the data files is armed or running, whatever the pause's switch says (see :meth:`latch_is_set`)."""
+        with self._lock:
+            return self._verifying is not None
+
+    def _supersede_incidents_locked(self, file_key: str) -> bool:
+        """Mark the recorded corruption errors of ``file_key`` as answered (the file was replaced, or the tables a check reported read
+        clean again): they stop being a reason to check at the next start. Caller holds the lock; whether any changed."""
+        changed = False
+        for inc in self._incidents:
+            if inc.get("file") == file_key and not inc.get("superseded"):
+                inc["superseded"] = True
+                changed = True
+        return changed
+
+    def incident_after_last_check(self, file_key: str) -> bool:
+        """Whether an EARLIER process recorded a corruption error against ``file_key`` that no check finished since: damage found
+        while the app ran is a reason to read the file at the next start, which an ordinary quit would otherwise forget (the latch
+        lives in memory and the ledger reads a clean end). ``False`` once a later check has finished; a check that read the file
+        damaged is carried by :func:`carried_damage`, not here."""
+        self._ensure_loaded()
+        with self._lock:
+            entry = self._verification.get(file_key)
+            done_at = str(entry.get("finished_at") or "") if entry is not None and entry.get("state") == "done" else ""
+            for inc in self._incidents:
+                if inc.get("file") != file_key or inc.get("process") == self._process or inc.get("superseded"):
+                    continue
+                if str(inc.get("last_at") or inc.get("at") or "") > done_at:
+                    return True
+        return False
 
     def _repair_notes_locked(self, corpus_latched: bool) -> list[dict[str, Any]]:
         """The sentences about the repair. Caller holds the lock. This process's newest attempt says what it did; a
@@ -1378,8 +1449,20 @@ class DamageRegistry:
                 )
             elif kept is not None:
                 where = {"name": name, "size": _size_words(kept), "folder": str(kept.parent)}
-                if last.get("kept_file_removal_refused"):
+                if last.get("kept_file_removal_withheld"):
+                    out.append(
+                        {
+                            "kind": "repaired",
+                            "file": FILE_CORPUS,
+                            "frame": FRAME_KEPT_DISK,
+                            "vars": {**where, "pages": int(last.get("kept_file_disk_unread_pages") or 0)},
+                        }
+                    )
+                elif last.get("kept_file_removal_refused"):
                     out.append({"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_KEPT_NOT_REMOVED, "vars": where})
+                elif not repair_switch_on():
+                    # The sweep is off with the repair (``OO_BOOT_REPAIR=0``): a date promised here would never come.
+                    out.append({"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_KEPT_SWITCH, "vars": where})
                 elif last.get("kept_file_removal_after"):
                     out.append(
                         {
@@ -1691,6 +1774,15 @@ FRAME_KEPT_REMOVED = (
 FRAME_KEPT_NOT_REMOVED = (
     "The app will not remove the damaged file the repair set aside ({name}, {size}) in {folder}: what is there now is "
     "not the file the repair recorded, or it is a link. It stays until you remove it yourself."
+)
+FRAME_KEPT_DISK = (
+    "The drive could not read {pages} pages of your library file, so the app keeps the damaged file the repair set aside "
+    "({name}, {size}) in {folder} and will not remove it. Check the drive (a failing drive is the likeliest reason); once "
+    "you no longer need that file, remove it yourself."
+)
+FRAME_KEPT_SWITCH = (
+    "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. Removing it by itself is switched off on "
+    "this machine (OO_BOOT_REPAIR=0), so it stays until you remove it yourself."
 )
 FRAME_REPAIR_NO_ROOM = (
     "The app did not repair your damaged library file: the drive has {free} MB free and the repair needs about {needed} "

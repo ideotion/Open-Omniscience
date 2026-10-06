@@ -504,6 +504,49 @@ def test_a_check_left_unfinished_is_tried_again_after_a_clean_end_and_counts_its
     assert plan["files"] == [(FILE_CORPUS, healthy, 1)]
 
 
+def _incident_left(tmp_path, *, key=FILE_CORPUS, process="another-process", at="2026-10-06T01:00:00+00:00", verification=None):
+    """The record an earlier process left after it met a corruption error on ``key`` while it ran."""
+    (tmp_path / "database-damage.json").write_text(
+        json.dumps(
+            {
+                "schema": damage.SCHEMA,
+                "files": {},
+                "incidents": [{"file": key, "process": process, "at": at, "last_at": at}],
+                "verification": verification or {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_damage_an_earlier_process_met_while_it_ran_plans_the_check_at_the_next_start_even_after_a_clean_end(tmp_path, healthy, files):
+    """The notice says "the app repairs a damaged library file by itself at its next start" for damage found while the app runs. The
+    latch lives in memory and an ordinary quit is a clean end, so without this the next start planned no check and the promise was
+    never kept (the deep read of E3, S4)."""
+    files[FILE_CORPUS] = healthy
+    _incident_left(tmp_path)
+    plan = verify.plan_boot(previous_end=CLEAN)
+    assert plan and plan["trigger"] == verify.TRIGGER_DAMAGE_FOUND and plan["files"] == [(FILE_CORPUS, healthy, 0)], plan
+
+
+def test_a_check_that_finished_after_the_incident_ends_the_reason_and_a_later_incident_starts_it_again(tmp_path, healthy, files):
+    files[FILE_CORPUS] = healthy
+    done = {FILE_CORPUS: {"file": FILE_CORPUS, "process": "another-process", "state": "done", "verdict": VERDICT_OK, "finished_at": "2026-10-06T02:00:00+00:00", "tables": []}}
+    _incident_left(tmp_path, verification=done)
+    assert verify.plan_boot(previous_end=CLEAN) is None, "the file read clean after the incident and was planned again"
+    _incident_left(tmp_path, at="2026-10-06T03:00:00+00:00", verification=done)
+    damage.registry._loaded = False  # the next process reads the record again
+    damage.registry._incidents.clear()
+    assert verify.plan_boot(previous_end=CLEAN)["trigger"] == verify.TRIGGER_DAMAGE_FOUND
+
+
+def test_an_incident_of_this_process_is_not_a_reason_to_check_at_a_later_plan(tmp_path, healthy, files):
+    files[FILE_CORPUS] = healthy
+    damage.registry._ensure_loaded()
+    damage.registry._incidents.append({"file": FILE_CORPUS, "process": damage.registry._process, "at": "2026-10-06T01:00:00+00:00", "last_at": "2026-10-06T01:00:00+00:00"})
+    assert verify.plan_boot(previous_end=CLEAN) is None
+
+
 def test_a_check_that_ends_every_start_unfinished_stops_being_tried_and_says_so(tmp_path, healthy, files, caplog):
     """What the cap protects: a check that itself brings the process down must not become a boot loop that never
     reaches collection."""

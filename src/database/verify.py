@@ -713,9 +713,10 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     """What the start-up check will do, or ``None`` when it has nothing to do.
 
     A file is checked when the previous session ended unclean (``previous_end["clean"] is False``: an UNKNOWN
-    end, ``None``, is not a reason), an earlier process left a check of that file unfinished, or an earlier
-    process's check found it DAMAGED (the latch lives in memory and the ledger reads a clean end, so without this a
-    restart would forget the finding; the file is read again at every start until it reads clean or is replaced). A file that
+    end, ``None``, is not a reason), an earlier process left a check of that file unfinished, an earlier process's check
+    found it DAMAGED, or an earlier process met a corruption error on it while it ran and no check has finished since (the
+    latch lives in memory and the ledger reads a clean end, so without this a restart would forget the finding; the file is
+    read again at every start until it reads clean or is replaced). A file that
     does not exist is not checked (and never created: ``connect`` would create it); a file that cannot even be examined
     (an I/O error from ``stat``) is UNCHECKED, not absent. A file whose check has been left unfinished
     ``MAX_VERIFY_ATTEMPTS`` starts in a row is SKIPPED, and said: the cap stops re-running the check, and a finding
@@ -768,7 +769,11 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         # trigger names why (an "unfinished check" label for a file damaged before was untrue).
         own_owed = last is not None and bool(last.get("own")) and last.get("state") == "owed"
         unfinished = last is not None and (last.get("state") == "running" or (last.get("state") == "owed" and not own_owed))
-        if not (unclean or unfinished or own_owed or carried):
+        # Damage an EARLIER process found while it ran (a corruption error on a request, ``damage.note``) is a reason to read the
+        # file now: the latch lived in memory and an ordinary quit wrote a clean end, so without this the notice's "repaired at the
+        # next start" was never true for it.
+        incident = damage.registry.incident_after_last_check(key)
+        if not (unclean or unfinished or own_owed or carried or incident):
             continue
         # A file HELD on an earlier finding keeps the attempts its hold carries at every clean start that follows: the hold
         # writes a ``skipped`` entry that is neither unfinished nor owed, and reading it as "no attempts" would run the check

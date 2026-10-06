@@ -23,7 +23,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -60,6 +60,9 @@ def engine_calls(monkeypatch):
     monkeypatch.setattr(session, "dispose_engine", lambda: calls.append("dispose"))
     monkeypatch.setattr(session, "init_db", lambda: calls.append("init_db"))
     monkeypatch.setattr(repair, "_after_the_swap", lambda: calls.append("after") or {"corpus_epoch": 1, "source_counts_cleared": 0})
+    # The fold of the live log goes through the app's own engine, which is not over the test's file: it is tested apart, over a real
+    # engine (``test_the_log_is_folded_in_before_the_swap`` and its neighbours).
+    monkeypatch.setattr(repair, "_empty_the_log", lambda target: None)
     return calls
 
 
@@ -471,15 +474,353 @@ def test_a_copy_whose_source_was_written_to_since_is_discarded_and_a_fresh_one_i
     assert merge is not None
 
 
+def _sidecar_doc(live: Path, stamp: str, **over) -> dict:
+    """A sidecar as ``_swap`` writes it, for a copy made at ``stamp``."""
+    doc = {
+        "schema": 1, "stamp": stamp, "finished": f"live.salvage-{stamp}.db", "damaged": f"live.damaged-{stamp}.db",
+        "source": repair.fingerprint(live), "created_at": "2026-10-06T03:00:00+00:00", "kept_rows": 5, "unreadable_ids": 1,
+        "open_ended": False, "copy_bytes": 10, "reconnects": 0, "tables": [], "clean_at": "2026-10-06T03:00:00+00:00",
+        "page_size": 4096, "disk_unread_pages": 0, "disk_unread_first": [], "check_pages_unread": 0,
+    }
+    doc.update(over)
+    return doc
+
+
+def _write_sidecar(folder: Path, stamp: str, doc) -> Path:
+    path = folder / f"live.salvage-{stamp}.db.json"
+    path.write_text(doc if isinstance(doc, str) else json.dumps(doc), encoding="utf-8")
+    return path
+
+
 def test_a_sidecar_nothing_matches_is_spent_and_is_removed(tmp_path, monkeypatch, reg):
     live = _live(tmp_path, monkeypatch, reg, damage_it=False)
-    (tmp_path / "live.salvage-20260101T000000Z.db.json").write_text("not json", encoding="utf-8")
-    (tmp_path / "live.salvage-20260102T000000Z.db.json").write_text(
-        json.dumps({"finished": "live.salvage-20260102T000000Z.db", "source": repair.fingerprint(live)}), encoding="utf-8"
-    )  # its copy is not there: the swap already ran
+    _write_sidecar(tmp_path, "20260101T000000Z", "not json")
+    # its copy is not there and no second name of the damaged file exists: the swap never ran and never will
+    _write_sidecar(tmp_path, "20260102T000000Z", _sidecar_doc(live, "20260102T000000Z"))
     assert repair.find_resumable(live) is None
     assert not list(tmp_path.glob("live.salvage-*")), "a spent sidecar outlived its swap"
     assert repair.snapshot()["late_sidecar"]["swapped"] is True
+
+
+# --------------------------------------------------------------------------- #
+#  a sidecar is an untrusted input (the deep read of E3, B3)
+# --------------------------------------------------------------------------- #
+_NOT_THE_KEPT_NAME = "live.db"
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda live, stamp: {"finished": "live.db"}, id="finished-names-the-live-library"),
+        pytest.param(lambda live, stamp: {"finished": "live.salvage-20260109T000000Z.db"}, id="finished-is-another-copy"),
+        pytest.param(lambda live, stamp: {"finished": "../live.db"}, id="finished-leaves-the-folder"),
+        pytest.param(lambda live, stamp: {"source": None}, id="source-is-null"),
+        pytest.param(lambda live, stamp: {"source": {"size": 1}}, id="source-is-partial"),
+        pytest.param(lambda live, stamp: {"source": {"size": "1", "mtime_ns": 1, "ino": 1, "wal": 0}}, id="source-is-not-numbers"),
+        pytest.param(lambda live, stamp: {"damaged": _NOT_THE_KEPT_NAME}, id="damaged-names-the-live-library"),
+        pytest.param(lambda live, stamp: {"damaged": "../elsewhere.damaged-20260102T000000Z.db"}, id="damaged-leaves-the-folder"),
+        pytest.param(lambda live, stamp: {"schema": 2}, id="schema-is-another-version"),
+        pytest.param(lambda live, stamp: {"schema": None}, id="schema-is-missing"),
+    ],
+)
+def test_an_edited_sidecar_never_deletes_or_swaps_a_file_it_names(tmp_path, monkeypatch, reg, edit):
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    before = H.sha(live)
+    stamp = "20260102T000000Z"
+    copy = tmp_path / f"live.salvage-{stamp}.db"
+    copy.write_bytes(b"a finished copy")
+    sidecar = _write_sidecar(tmp_path, stamp, {**_sidecar_doc(live, stamp), **edit(live, stamp)})
+    assert repair.find_resumable(live) is None, "an edited sidecar was believed"
+    assert repair.plan() is None
+    assert live.exists() and H.sha(live) == before, "the live library was deleted or changed by what a sidecar said"
+    assert not sidecar.exists(), "an untrusted sidecar was left to be read again"
+    assert copy.exists(), "a file was deleted on the word of a sidecar that could not vouch for it"
+
+
+def test_a_sidecar_that_names_a_symlink_as_its_copy_deletes_nothing(tmp_path, monkeypatch, reg):
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    before = H.sha(live)
+    stamp = "20260102T000000Z"
+    link = tmp_path / f"live.salvage-{stamp}.db"
+    try:
+        link.symlink_to(live)
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform cannot make a symlink")
+    _write_sidecar(tmp_path, stamp, _sidecar_doc(live, stamp))
+    assert repair.find_resumable(live) is None
+    assert live.exists() and H.sha(live) == before
+
+
+def test_a_json_file_that_is_not_a_name_a_repair_gives_is_left_exactly_as_it_is(tmp_path, monkeypatch, reg):
+    """The glob finds ``live.salvage-*.db.json``; a person's own ``live.salvage-notes.db.json`` matches it and is not this module's file.
+    It is not believed AND not removed (a sidecar that FAILS is removed, a file that was never a sidecar is not touched)."""
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    theirs = tmp_path / "live.salvage-notes.db.json"
+    theirs.write_text('{"schema": 1, "my": "notes"}', encoding="utf-8")
+    assert repair.find_resumable(live) is None
+    assert repair.plan() is None
+    assert theirs.exists() and theirs.read_text(encoding="utf-8") == '{"schema": 1, "my": "notes"}', "a file the app did not write was removed"
+
+
+def test_a_scratch_name_must_be_the_apps_whole_pattern_before_it_is_deleted(tmp_path, monkeypatch, reg):
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    mine = [tmp_path / "live.salvage-20260102T000000Z.db.partial", tmp_path / "live.salvage-20260102T000000Z.db.partial-wal"]
+    not_mine = [tmp_path / "live.salvage-notes.db.partial", tmp_path / "live.salvage-20260102T000000Z.db.partial.bak"]
+    for path in (*mine, *not_mine):
+        path.write_bytes(b"x")
+    assert repair._remove_scratch(live) == 2
+    assert not any(p.exists() for p in mine) and all(p.exists() for p in not_mine), "a file the app did not make was removed"
+
+
+# --------------------------------------------------------------------------- #
+#  saves that sit in the log, and the swap that must not lose them (the deep read of E3, B2)
+# --------------------------------------------------------------------------- #
+_REAL_EMPTY_THE_LOG = repair._empty_the_log
+
+
+def _engine_over(live: Path):
+    from sqlalchemy import create_engine
+
+    return create_engine("sqlite://", creator=lambda: H.open_store(live), future=True)
+
+
+def _wal_save(live: Path, name: str):
+    """A save the app made: committed into the write-ahead log of ``live`` through a connection that STAYS OPEN (a request's), so the
+    log is not folded in when it closes. Returns that connection."""
+    con = H.open_store(live)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("INSERT INTO sources (name, domain) VALUES (?, ?)", (name, name.replace(" ", "-") + ".example.org"))
+    con.commit()
+    return con
+
+
+def _count_named(path: Path, name: str) -> int:
+    con = H.open_store(path)
+    try:
+        return int(con.execute("SELECT count(*) FROM sources WHERE name = ?", (name,)).fetchone()[0])
+    finally:
+        con.close()
+
+
+def test_the_log_is_folded_into_the_file_before_the_swap_and_a_log_that_stays_full_is_refused(tmp_path, monkeypatch, reg):
+    import shutil
+
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    engine = _engine_over(live)
+    monkeypatch.setattr(repair, "_live_engine", lambda: engine)
+    wal = Path(str(live) + "-wal")
+    holder = _wal_save(live, "folded")
+    try:
+        assert wal.exists() and wal.stat().st_size > 0, "the test needs a save that sits in the log"
+        _REAL_EMPTY_THE_LOG(live)
+        assert not wal.exists() or wal.stat().st_size == 0, "the log still held saves after the fold"
+        alone = tmp_path / "alone.db"
+        shutil.copyfile(live, alone)  # the file with NO log beside it
+        assert _count_named(alone, "folded") == 1, "the save was not in the file itself"
+        # a reader that holds a snapshot keeps the newest saves in the log: refused, with the files as they are
+        reader = H.open_store(live)
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM sources").fetchone()
+        holder.execute("INSERT INTO sources (name, domain) VALUES ('later', 'later.example.org')")
+        holder.commit()
+        with pytest.raises(repair.Declined) as refusal:
+            _REAL_EMPTY_THE_LOG(live)
+        assert refusal.value.code == "writer-busy" and wal.stat().st_size > 0
+        # the short wait the fold asked for is given back before the connection returns to the pool: a writer that gets it later waits
+        again = engine.raw_connection()
+        try:
+            assert again.cursor().execute("PRAGMA busy_timeout").fetchone()[0] == 30000, "the fold left a short busy wait on a pooled connection"
+        finally:
+            again.close()
+        reader.close()
+    finally:
+        holder.close()
+        engine.dispose()
+
+
+def test_a_log_that_does_not_exist_needs_no_fold(tmp_path, monkeypatch, reg):
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    monkeypatch.setattr(repair, "_live_engine", lambda: (_ for _ in ()).throw(AssertionError("the engine was used for a log that is not there")))
+    Path(str(live) + "-wal").unlink(missing_ok=True)
+    _REAL_EMPTY_THE_LOG(live)
+
+
+def test_the_identity_of_a_file_includes_its_log(tmp_path, monkeypatch, reg):
+    """In WAL mode a commit leaves the file's size, time and inode alone: a copy "matches" a file that has been saved to unless the
+    log is part of the identity."""
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    switch = H.open_store(live)
+    switch.execute("PRAGMA journal_mode=WAL")  # the one-time change of the file's mode writes the file itself
+    switch.close()
+    before = repair.fingerprint(live)
+    assert before is not None and before["wal"] == 0
+    holder = _wal_save(live, "saved")
+    try:
+        after = repair.fingerprint(live)
+        assert {k: after[k] for k in ("size", "mtime_ns", "ino")} == {k: before[k] for k in ("size", "mtime_ns", "ino")}, (
+            "the premise failed: the save changed the file itself"
+        )
+        assert after["wal"] > 0 and after != before
+    finally:
+        holder.close()
+
+
+def test_a_copy_whose_source_was_saved_to_in_the_log_since_is_discarded_at_plan_time(tmp_path, monkeypatch, reg, engine_calls):
+    live = _live(tmp_path, monkeypatch, reg)
+    _cut_before_the_replace(monkeypatch)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    assert len(list(tmp_path.glob("live.salvage-*.db"))) == 1
+    holder = _wal_save(live, "saved after the cut")
+    try:
+        work = repair.plan()
+        assert work["kind"] == "repair", "a copy made before a save was resumed over it"
+        assert not list(tmp_path.glob("live.salvage-*")), "the stale copy or its sidecar was left"
+        assert not list(tmp_path.glob("live.damaged-*")), "the extra name the cut start made of the live file was left"
+    finally:
+        holder.close()
+
+
+def test_a_resume_over_a_file_saved_to_between_the_decision_and_the_gate_is_refused_and_the_save_survives(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    from src.backup import merge
+
+    live = _live(tmp_path, monkeypatch, reg)
+    real_replace = _cut_before_the_replace(monkeypatch)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    monkeypatch.setattr(merge, "_replace_live_corpus", real_replace)
+    work = repair.plan()
+    assert work["kind"] == "resume"
+    holder = _wal_save(live, "saved after the decision")  # the save that the copy does not have
+    engine = _engine_over(live)
+    monkeypatch.setattr(repair, "_empty_the_log", _REAL_EMPTY_THE_LOG)
+    monkeypatch.setattr(repair, "_live_engine", lambda: engine)
+    try:
+        with pytest.raises(repair.Declined) as refusal:
+            repair.run(work)
+        assert refusal.value.code == "copy-stale"
+        assert not list(tmp_path.glob("live.salvage-*")), "the stale copy or its sidecar was left"
+        assert not list(tmp_path.glob("live.damaged-*")), "the extra name of the live file was left"
+        assert _count_named(live, "saved after the decision") == 1, "the save was lost under the older copy"
+        assert reg.repairs()[-1]["state"] == "refused" and reg.repairs()[-1]["reason"] == "copy-stale"
+    finally:
+        holder.close()
+        engine.dispose()
+
+
+def test_a_repair_over_a_log_that_stays_full_is_refused_before_anything_is_named_or_linked(tmp_path, monkeypatch, reg, engine_calls):
+    live = _live(tmp_path, monkeypatch, reg)
+    engine = _engine_over(live)
+    monkeypatch.setattr(repair, "_empty_the_log", _REAL_EMPTY_THE_LOG)
+    monkeypatch.setattr(repair, "_live_engine", lambda: engine)
+    holder = _wal_save(live, "pinned one")
+    reader = H.open_store(live)
+    reader.execute("BEGIN")
+    reader.execute("SELECT count(*) FROM sources").fetchone()
+    holder.execute("INSERT INTO sources (name, domain) VALUES ('pinned two', 'two.example.org')")
+    holder.commit()
+    before = (H.sha(live), Path(str(live) + "-wal").stat().st_size)
+    try:
+        with pytest.raises(repair.Declined) as refusal:
+            repair.run(repair.plan())
+        assert refusal.value.code == "writer-busy"
+        assert (H.sha(live), Path(str(live) + "-wal").stat().st_size) == before, "the refusal changed a file"
+        assert not list(tmp_path.glob("live.damaged-*")) and not list(tmp_path.glob("live.salvage-*")), _names(tmp_path)
+    finally:
+        reader.close()
+        holder.close()
+        engine.dispose()
+
+
+# --------------------------------------------------------------------------- #
+#  an earlier process's finding is not this install's measurement (the deep read of E3, S1)
+# --------------------------------------------------------------------------- #
+def test_a_finished_copy_is_resumed_only_by_a_start_that_measured_the_damage_itself(tmp_path, monkeypatch, reg, engine_calls):
+    _live(tmp_path, monkeypatch, reg)
+    _cut_before_the_replace(monkeypatch)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    sidecar = next(tmp_path.glob("live.salvage-*.db.json"))
+    other = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json")  # the next process: it has measured nothing yet
+    monkeypatch.setattr(damage, "registry", other)
+    assert repair.plan() is None, "an earlier process's finding was acted on"
+    assert sidecar.exists() and next(tmp_path.glob("live.salvage-*.db")).exists(), "a copy of a file that may still be damaged was thrown away"
+    monkeypatch.setattr(damage, "registry", reg)  # a start that measured it
+    assert repair.plan()["kind"] == "resume"
+
+
+# --------------------------------------------------------------------------- #
+#  a cut right after the replace (the deep read of E3, S2)
+# --------------------------------------------------------------------------- #
+def test_a_cut_right_after_the_replace_is_finished_at_the_next_start_with_a_record_and_the_follow_up_steps(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    from src.database import library_generation
+
+    live = _live(tmp_path, monkeypatch, reg)
+
+    def die_after_the_replace() -> int:
+        raise OSError(5, "the power went out")
+
+    monkeypatch.setattr(library_generation, "bump", die_after_the_replace)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    kept = _the_kept_file(tmp_path)
+    assert salvage.check_copy(live) == (True, []), "the switch had not run"
+    assert list(tmp_path.glob("live.salvage-*.db.json")) and not list(tmp_path.glob("live.salvage-*.db")), "the cut is not the one under test"
+    # the next process: no registry memory of the repair, no check of its own, the attempt marker the dead process left
+    nxt = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json")
+    monkeypatch.setattr(damage, "registry", nxt)
+    monkeypatch.undo()
+    monkeypatch.setattr(damage, "registry", nxt)
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (live, live.name) if key == FILE_CORPUS else (None, None))
+    monkeypatch.setattr(repair, "_marker_path", lambda: tmp_path / repair.ATTEMPT_FILE)
+    monkeypatch.setattr(repair, "_after_the_swap", lambda: engine_calls.append("after") or {"corpus_epoch": 1})
+    repair._reset_for_tests()
+    repair._write_marker(1)
+    work = repair.plan()
+    assert work["kind"] == "finish", work
+    report = repair.run(work)
+    assert report["outcome"] == "repaired" and report["kept_file"] == kept.name
+    record = nxt.repairs()[-1]
+    assert record["state"] == "done" and record["kept_file"] == kept.name and record["kept_file_ino"] == os.lstat(kept).st_ino
+    assert record["kept_file_removal_after"], "the thirty days were never recorded: the kept file would never be removed or mentioned"
+    assert "after" in engine_calls, "the corpus epoch and the source counts were never brought up to date"
+    assert not (tmp_path / repair.ATTEMPT_FILE).exists(), "the attempt the cut start left behind was never cleared"
+    assert not list(tmp_path.glob("live.salvage-*")), "the sidecar outlived the finished repair"
+    assert _the_kept_file(tmp_path) == kept
+    assert repair.plan() is None
+    assert [n["frame"] for n in nxt.notes() if n["kind"] == "repaired"][-1] == damage.FRAME_KEPT_UNTIL
+
+
+# --------------------------------------------------------------------------- #
+#  durable before it is named (the deep read of E3, S7), and the counter moves (B1)
+# --------------------------------------------------------------------------- #
+def test_the_copy_is_made_durable_before_it_replaces_the_library_and_the_folder_after(tmp_path, monkeypatch, reg, engine_calls):
+    from src.backup import merge
+
+    _live(tmp_path, monkeypatch, reg)
+    order: list[str] = []
+    real_replace = merge._replace_live_corpus
+    monkeypatch.setattr(repair, "_durable", lambda path: order.append("fsync-copy:" + ("copy" if ".salvage-" in path.name else path.name)))
+    monkeypatch.setattr(repair, "_fsync_dir", lambda folder: order.append("fsync-dir"))
+    monkeypatch.setattr(merge, "_replace_live_corpus", lambda *a, **kw: order.append("replace") or real_replace(*a, **kw))
+    assert repair.run(repair.plan())["outcome"] == "repaired"
+    assert order[:2] == ["fsync-copy:copy", "fsync-dir"], order  # the data first, then the folder entry of the copy's final name
+    assert order.index("fsync-copy:copy") < order.index("replace"), order
+    assert order[order.index("replace") + 1] == "fsync-dir", "the folder entries of the switch were not made durable"
+
+
+def test_the_swap_moves_the_library_generation_after_the_replace(tmp_path, monkeypatch, reg, engine_calls):
+    from src.database import library_generation
+
+    _live(tmp_path, monkeypatch, reg)
+    before = library_generation.current()
+    assert repair.run(repair.plan())["outcome"] == "repaired"
+    assert library_generation.current() == before + 1
+    assert engine_calls.count("dispose") >= 3, "the pool was not let go again after the switch"
 
 
 # --------------------------------------------------------------------------- #
@@ -674,3 +1015,175 @@ def test_a_failed_repair_and_a_failed_step_after_the_switch_record_the_type_of_t
         assert "the stored source counts were not cleared (RuntimeError)" in caplog.text, caplog.text
     finally:
         connect.set_passphrase(previous)
+
+
+# --------------------------------------------------------------------------- #
+#  a drive that could not read the damaged file: the copy is kept, never removed (the coordinator's ruling, 2026-10-06)
+# --------------------------------------------------------------------------- #
+class _FailingReads:
+    """A file whose reads fail with EIO over the pages named (1-based, ``unit`` bytes each): a drive that fails cannot be made on
+    demand, and the real file under it is read for everything else."""
+
+    def __init__(self, real, bad_pages, unit):
+        self._real, self._bad, self._unit, self._pos = real, set(bad_pages), unit, 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._real.close()
+        return False
+
+    def seek(self, offset, *a):
+        self._pos = offset
+        return self._real.seek(offset, *a)
+
+    def read(self, n=-1):
+        first, last = self._pos // self._unit + 1, (self._pos + max(n, 1) - 1) // self._unit + 1
+        if any(p in self._bad for p in range(first, last + 1)):
+            raise OSError(5, "Input/output error")
+        data = self._real.read(n)
+        self._pos += len(data)
+        return data
+
+
+def _drive_fails_on(monkeypatch, pages, unit=4096):
+    real_open = open
+    monkeypatch.setattr(repair, "_raw_open", lambda path, mode="rb", **kw: _FailingReads(real_open(path, mode, **kw), pages, unit))
+
+
+def test_the_raw_pass_counts_the_pages_the_drive_cannot_give_and_not_the_pages_that_are_merely_wrong(tmp_path, monkeypatch):
+    path = tmp_path / "f.db"
+    path.write_bytes(b"x" * (4096 * 9 + 100))  # nine pages and a short tail: ten pages
+    cancel = threading.Event()
+    assert repair._disk_unread_pages(path, 4096, cancel) == (0, []), "a clean read counted a page"
+    path.write_bytes(b"\0" * (4096 * 9 + 100))  # a file full of nonsense reads fine: that is damage, SQLite's to name
+    assert repair._disk_unread_pages(path, 4096, cancel) == (0, [])
+    _drive_fails_on(monkeypatch, [3, 10])
+    assert repair._disk_unread_pages(path, 4096, cancel) == (2, [3, 10]), "the first read is a whole-file chunk that fails and is read page by page"
+    monkeypatch.setattr(repair, "RAW_CHUNK_BYTES", 8192)  # several chunks: the bad page costs its chunk, no more
+    assert repair._disk_unread_pages(path, 4096, cancel) == (2, [3, 10])
+    _drive_fails_on(monkeypatch, list(range(1, 11)))
+    count, first = repair._disk_unread_pages(path, 4096, cancel)
+    assert count == 10 and first == list(range(1, 9)), "the pages named are capped; the count is not"
+
+
+def test_the_raw_pass_stops_when_the_app_does_and_a_file_that_cannot_be_opened_is_not_a_clean_read(tmp_path, monkeypatch):
+    path = tmp_path / "f.db"
+    path.write_bytes(b"x" * 8192)
+    stopped = threading.Event()
+    stopped.set()
+    with pytest.raises(salvage.SalvageStopped):
+        repair._disk_unread_pages(path, 4096, stopped)
+
+    def cannot_open(*a, **k):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(repair, "_raw_open", cannot_open)
+    with pytest.raises(OSError):
+        repair._disk_unread_pages(path, 4096, threading.Event())
+
+
+def test_a_repair_of_a_file_the_drive_could_not_read_keeps_the_damaged_copy_with_no_date_and_says_to_check_the_drive(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    live = _live(tmp_path, monkeypatch, reg)
+    before = H.sha(live)
+    _drive_fails_on(monkeypatch, [5, 6])
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["disk_unread_pages"] == 2 and report["disk_unread_first"] == [5, 6]
+    kept = _the_kept_file(tmp_path)
+    assert H.sha(kept) == before, "the damaged file's bytes changed"
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_withheld"] == "disk-read-failed" and rec["kept_file_disk_unread_pages"] == 2
+    assert "kept_file_removal_after" not in rec, "a date was recorded for a file that is never removed"
+    assert rec["disk_unread_pages"] == 2 and rec["check_pages_unread"] == 0
+    notes = [n for n in reg.notes() if n["kind"] == "repaired"]
+    assert [n["frame"] for n in notes] == [damage.FRAME_REPAIRED, damage.FRAME_KEPT_DISK], notes
+    assert notes[1]["vars"] == {"name": kept.name, "size": damage._size_words(kept), "folder": str(tmp_path), "pages": 2}
+    # a start any time later (a century on) removes nothing, and lists nothing
+    far = datetime.now(UTC) + timedelta(days=36500)
+    assert repair.sweep_kept_copies(now=far) == [] and kept.exists()
+    assert "kept_file_removed_at" not in reg.repairs()[-1]
+    assert repair._remove_kept_copy(reg.repairs()[-1], far) == {"outcome": "withheld", "reason": "disk-read-failed"} and kept.exists()
+
+
+def test_pages_the_start_up_checks_page_pass_could_not_read_withhold_the_removal_even_when_the_raw_read_is_clean(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    live = _live(tmp_path, monkeypatch, reg)
+    work = repair.plan()
+    assert work["pages_unread"] == 0
+    work["pages_unread"] = 3  # what the check's page pass answered as "error reading ... page N" (counted apart from damage)
+    report = repair.run(work)
+    assert report["disk_unread_pages"] == 0 and report["check_pages_unread"] == 3
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_withheld"] == "disk-read-failed" and rec["kept_file_disk_unread_pages"] == 3
+    assert "kept_file_removal_after" not in rec
+    assert live.exists() and repair.sweep_kept_copies(now=datetime.now(UTC) + timedelta(days=36500)) == []
+
+
+def test_a_clean_drive_still_sets_the_date_and_a_raw_pass_that_cannot_open_the_file_is_a_failed_repair_with_every_file_as_it_was(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    live = _live(tmp_path, monkeypatch, reg)
+    before = H.sha(live)
+
+    def cannot_open(*a, **k):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(repair, "_raw_open", cannot_open)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    assert H.sha(live) == before and not list(tmp_path.glob("live.damaged-*")) and not list(tmp_path.glob("live.salvage-*"))
+    rec = reg.repairs()[-1]
+    assert rec["state"] == "failed" and rec["reason"] == "copy-failed"
+    monkeypatch.setattr(repair, "_raw_open", open)
+    work = repair.plan()
+    assert work is not None, "the next start must try again"
+    report = repair.run(work)
+    assert report["outcome"] == "repaired" and report["disk_unread_pages"] == 0
+    assert "kept_file_removal_withheld" not in reg.repairs()[-1] and reg.repairs()[-1]["kept_file_removal_after"]
+
+
+def test_a_swap_finished_at_the_next_start_keeps_what_the_drive_said_at_the_first(tmp_path, monkeypatch, reg, engine_calls):
+    from src.backup import merge
+
+    live = _live(tmp_path, monkeypatch, reg)
+    real_replace = _cut_before_the_replace(monkeypatch)
+    _drive_fails_on(monkeypatch, [4])
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    sidecar = next(tmp_path.glob("live.salvage-*.db.json"))
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["disk_unread_pages"] == 1 and doc["disk_unread_first"] == [4], "the sidecar did not carry the measurement"
+    monkeypatch.setattr(repair, "_raw_open", open)  # the drive reads fine at the next start: the first start's word stands
+    monkeypatch.setattr(merge, "_replace_live_corpus", real_replace)
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["resumed"] is True
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_withheld"] == "disk-read-failed" and rec["kept_file_disk_unread_pages"] == 1
+    assert "kept_file_removal_after" not in rec and live.exists()
+
+
+def test_a_sidecar_that_carries_no_measurement_is_measured_at_the_resume_and_never_taken_as_a_clean_read(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    from src.backup import merge
+
+    live = _live(tmp_path, monkeypatch, reg)
+    real_replace = _cut_before_the_replace(monkeypatch)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    sidecar = next(tmp_path.glob("live.salvage-*.db.json"))
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["disk_unread_pages"] == 0
+    for key in ("disk_unread_pages", "disk_unread_first", "check_pages_unread"):
+        doc.pop(key)
+    sidecar.write_text(json.dumps(doc), encoding="utf-8")
+    _drive_fails_on(monkeypatch, [2, 3])
+    monkeypatch.setattr(merge, "_replace_live_corpus", real_replace)
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["disk_unread_pages"] == 2
+    rec = reg.repairs()[-1]
+    assert rec["kept_file_removal_withheld"] == "disk-read-failed" and rec["kept_file_disk_unread_pages"] == 2 and live.exists()

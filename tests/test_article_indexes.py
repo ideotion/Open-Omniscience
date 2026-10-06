@@ -898,10 +898,11 @@ def test_a_run_that_finds_nothing_to_do_carries_nothing_of_a_refused_one(eng, mo
 #  the boot step
 # --------------------------------------------------------------------------- #
 def test_the_step_comes_after_the_check_and_before_the_warm_up_inside_the_warm_window():
-    assert boot_sequence.STEPS[:3] == ("verify-database", "article-indexes", "warm-cache")
+    # The repair (E3) sits between the check and the build: a damaged file is repaired before an index is built on it.
+    assert boot_sequence.STEPS[:4] == ("verify-database", "repair-database", "article-indexes", "warm-cache")
     src = (ROOT / "src" / "api" / "boot_sequence.py").read_text(encoding="utf-8")
     run = python_function_source(src, "run")
-    assert run.index("_verify_database") < run.index("_article_indexes") < run.index("warm,")
+    assert run.index("_verify_database") < run.index("_repair_database") < run.index("_article_indexes") < run.index("warm,")
     assert run.index("_article_indexes") < run.index('_STATE["warm"] = "done"'), (
         "the build is inside the window in which a serve-kicked rollup declines"
     )

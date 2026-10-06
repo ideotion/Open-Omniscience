@@ -387,6 +387,79 @@ def test_children_of_a_lost_parent_are_kept_and_counted_as_orphans(tmp_path):
         con.close()
 
 
+def test_children_of_a_lost_tail_are_removed_so_a_new_row_cannot_inherit_them_and_those_of_a_gap_are_kept(tmp_path):
+    """The deep read of E3 (S6): no app table is AUTOINCREMENT, so when the NEWEST pages of a parent table are lost the next row
+    saved takes a lost row's id, and would claim the children kept for it (dates, entities, keyword rows). Children whose parent id is
+    above the highest id left are removed (and so, a level down, the grandchildren whose child went); children of a lost row in a
+    GAP point at an id that is never handed out again and are kept."""
+    src = tmp_path / "src.db"
+    _one_store(
+        src,
+        [
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT)",
+            "CREATE TABLE child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent(id), v TEXT)",
+            "CREATE TABLE grandchild (id INTEGER PRIMARY KEY, cid INTEGER REFERENCES child(id), v TEXT)",
+        ],
+        {},
+        page=1024,
+    )
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO parent VALUES (?, ?)", [(i, "p" * 60 + str(i)) for i in range(1, 801)])
+    con.executemany("INSERT INTO child VALUES (?, ?, ?)", [(i, i, f"c{i}") for i in range(1, 801)])
+    con.executemany("INSERT INTO grandchild VALUES (?, ?, ?)", [(i, i, f"g{i}") for i in range(1, 801)])
+    con.commit()
+    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='parent'") if kind == "leaf"]
+    con.close()
+    H.overwrite_pages(src, [leaves[len(leaves) // 2], leaves[-1]], 1024)  # a gap in the middle and the tail
+    report, out = _salvage(src, tmp_path)
+    con = sqlite3.connect(out)
+    try:
+        top = con.execute("SELECT max(id) FROM parent").fetchone()[0]
+        gap = 800 - con.execute("SELECT count(*) FROM parent").fetchone()[0] - (800 - top)
+        assert top < 800 and gap > 0, "the test needs a lost tail and a lost gap"
+        assert con.execute("SELECT count(*) FROM child WHERE pid > ?", (top,)).fetchone()[0] == 0
+        assert con.execute("SELECT count(*) FROM grandchild WHERE cid > ?", (top,)).fetchone()[0] == 0
+        assert con.execute("SELECT count(*) FROM child").fetchone()[0] == top, "a child of a row lost in a gap was dropped"
+        assert con.execute("SELECT count(*) FROM grandchild").fetchone()[0] == top
+        con.execute("INSERT INTO parent (name) VALUES ('new')")
+        new_id = con.execute("SELECT max(id) FROM parent").fetchone()[0]
+        assert new_id == top + 1
+        assert con.execute("SELECT count(*) FROM child WHERE pid = ?", (new_id,)).fetchone()[0] == 0, "a new row inherited a lost row's child"
+    finally:
+        con.close()
+    assert report["orphans_removed"] == {"child": 800 - top, "grandchild": 800 - top}, report.get("orphans_removed")
+    assert report["orphans"] == {"child": gap}, "the orphans of a gap are kept and counted"
+    assert "damaged file the repair keeps" in report["orphans_removed_note"] and "R129" in report["orphans_removed_note"]
+    assert "orphans_removed_verdicts" not in report, "no removed table holds a verdict, and none was named"
+
+
+def test_a_table_of_measured_verdicts_whose_orphans_were_removed_is_named_in_the_report(tmp_path):
+    """The verdict rule (R100: a verdict this install measured never gives way silently to a repair): the source qualification attempts
+    and admission events carry a ``verdict`` column; when their children-of-a-lost-source are among the removed rows the report says so."""
+    src = tmp_path / "src.db"
+    _one_store(
+        src,
+        [
+            "CREATE TABLE sources (id INTEGER PRIMARY KEY, name TEXT)",
+            "CREATE TABLE source_qualification_attempts (id INTEGER PRIMARY KEY, source_id INTEGER REFERENCES sources(id), verdict TEXT)",
+            "CREATE TABLE notes (id INTEGER PRIMARY KEY, source_id INTEGER REFERENCES sources(id), body TEXT)",
+        ],
+        {},
+        page=1024,
+    )
+    con = sqlite3.connect(src)
+    con.executemany("INSERT INTO sources VALUES (?, ?)", [(i, "s" * 60 + str(i)) for i in range(1, 601)])
+    con.executemany("INSERT INTO source_qualification_attempts VALUES (?, ?, ?)", [(i, i, "qualified") for i in range(1, 601)])
+    con.executemany("INSERT INTO notes VALUES (?, ?, ?)", [(i, i, "n") for i in range(1, 601)])
+    con.commit()
+    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='sources'") if kind == "leaf"]
+    con.close()
+    H.overwrite_pages(src, [leaves[-1]], 1024)
+    report, _out = _salvage(src, tmp_path)
+    assert set(report["orphans_removed"]) == {"source_qualification_attempts", "notes"}, report.get("orphans_removed")
+    assert report["orphans_removed_verdicts"] == ["source_qualification_attempts"], report.get("orphans_removed_verdicts")
+
+
 def test_text_that_is_not_utf8_is_kept_with_a_replacement_character_and_counted(tmp_path):
     src = tmp_path / "src.db"
     _one_store(src, ["CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)"], {}, page=1024)
@@ -610,6 +683,21 @@ def test_an_undamaged_encrypted_file_is_copied_row_for_row(tmp_path, enc_pristin
     assert report["search_index"]["documents"] == 800
     assert all(t["unreadable_ids"] == 0 for t in report["tables"])
     assert salvage.check_copy(out)[0]
+
+
+def test_a_passphrase_with_a_line_break_that_the_driver_echoes_is_scrubbed_before_the_text_is_cut():
+    """The coordinator's check of E3, item 4: the first line was taken and THEN scrubbed, so a passphrase with a line break that the driver
+    echoed was cut in two first and the first half stayed in the repair record."""
+    from src.database import connect
+
+    previous = connect.get_passphrase()
+    connect.set_passphrase("first-half-of-the-key\nsecond-half-of-the-key")
+    try:
+        text = salvage._failure_text(RuntimeError("could not open with the key first-half-of-the-key\nsecond-half-of-the-key, sorry"))
+    finally:
+        connect.set_passphrase(previous)
+    assert "first-half-of-the-key" not in text and "second-half-of-the-key" not in text, text
+    assert text.startswith("RuntimeError: ") and "could not open with the key" in text
 
 
 def test_a_wrong_key_refuses_to_open_and_writes_nothing(tmp_path, enc_pristine):

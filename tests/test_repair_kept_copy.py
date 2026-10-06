@@ -164,9 +164,56 @@ def test_nothing_is_removed_while_a_repair_runs(world, monkeypatch):
 
 
 def test_nothing_is_removed_while_a_check_of_the_data_files_runs(world, monkeypatch):
-    monkeypatch.setattr(world.reg, "verifying", lambda: True)
+    monkeypatch.setattr(world.reg, "check_is_running", lambda: True)
     result = _only(repair.sweep_kept_copies(now=DUE))
     assert (result["outcome"], result["reason"]) == ("waiting", "check-running") and world.kept.exists()
+
+
+def test_the_holds_of_the_removal_do_not_follow_the_switch_that_turns_the_pause_off(world, monkeypatch):
+    """``OO_DAMAGE_GUARD=0`` turns the PAUSE of writers off (``latched()`` and ``verifying()`` answer False). The notice says the copy
+    stays "unless your library is damaged again then": that must hold with the pause off too (the deep read of E3, S3)."""
+    monkeypatch.setenv("OO_DAMAGE_GUARD", "0")
+    world.reg._note_verified_damage(FILE_CORPUS, ["articles"], path=world.live, at="2026-11-05T02:00:00+00:00")
+    assert world.reg.latched(FILE_CORPUS) is False, "the premise: the switch makes the pause answer False"
+    result = _only(repair.sweep_kept_copies(now=DUE + timedelta(days=100)))
+    assert (result["outcome"], result["reason"]) == ("waiting", "corpus-latched") and world.kept.exists()
+    world.reg.retry(reason="replaced", files=(FILE_CORPUS,), file_replaced=True)
+    monkeypatch.setattr(world.reg, "check_is_running", lambda: True)
+    assert world.reg.verifying() is False
+    result = _only(repair.sweep_kept_copies(now=DUE + timedelta(days=100)))
+    assert (result["outcome"], result["reason"]) == ("waiting", "check-running") and world.kept.exists()
+
+
+def test_a_repair_an_earlier_process_left_running_holds_nothing_and_is_marked_interrupted(world, tmp_path, monkeypatch):
+    """A repair a crash, a power cut or a stop ended leaves its record ``running`` for ever; counting it made every later removal wait
+    for ten newer repairs to push it out, while the notice kept promising the date (the deep read of E3, S2)."""
+    world.reg.repair_upsert("dead", file=FILE_CORPUS, state="running")
+    world.reg._flush_latest()  # what the dead process had written before it died
+    nxt = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json")  # the next process
+    monkeypatch.setattr(damage, "registry", nxt)
+    assert any(r["id"] == "dead" and r["state"] == "running" for r in nxt.repairs()), "the premise: the record is carried over"
+    assert nxt.repairing_now() is False, "an earlier process's record held the removal (asked AFTER the file was read: before it, an empty answer proves nothing)"
+    assert nxt.settle_interrupted_repairs() == 1
+    assert next(r for r in nxt.repairs() if r["id"] == "dead")["state"] == "interrupted"
+    assert nxt.settle_interrupted_repairs() == 0
+    assert _only(repair.sweep_kept_copies(now=DUE))["outcome"] == "removed"
+
+
+def test_this_processs_own_running_repair_still_holds_the_removal(world):
+    world.reg.repair_upsert("mine", file=FILE_CORPUS, state="running")
+    assert world.reg.repairing_now() is True
+    assert _only(repair.sweep_kept_copies(now=DUE))["reason"] == "repair-running"
+    assert world.reg.settle_interrupted_repairs() == 0, "a repair of this process was marked interrupted while it ran"
+
+
+def test_the_notice_does_not_promise_a_date_the_switched_off_sweep_will_never_keep(world, monkeypatch):
+    monkeypatch.setenv("OO_BOOT_REPAIR", "0")
+    notes = [n for n in world.reg.notes() if n["kind"] == "repaired"]
+    assert notes[-1]["frame"] == damage.FRAME_KEPT_SWITCH, notes
+    assert {"name", "size", "folder"} <= set(notes[-1]["vars"]) and "{date}" not in damage.FRAME_KEPT_SWITCH
+    assert "OO_BOOT_REPAIR=0" in damage.FRAME_KEPT_SWITCH and "remove it yourself" in damage.FRAME_KEPT_SWITCH
+    monkeypatch.delenv("OO_BOOT_REPAIR")
+    assert [n for n in world.reg.notes() if n["kind"] == "repaired"][-1]["frame"] == damage.FRAME_KEPT_UNTIL
 
 
 def test_nothing_is_removed_while_the_live_library_is_latched_damaged_again_and_it_goes_at_the_start_after(world):
@@ -400,3 +447,32 @@ def test_the_removal_survives_a_restart_in_the_record_the_diagnostics_zip_reads(
     rec = again.repairs()[-1]
     assert rec["kept_file_removed_at"] == DUE.isoformat(timespec="seconds") and rec["kept_file_removed_bytes"] > 0
     assert repair.sweep_kept_copies(now=DUE + timedelta(days=1)) == []
+
+
+# --------------------------------------------------------------------------- #
+#  a file the drive could not read is never removed (the coordinator's ruling, 2026-10-06)
+# --------------------------------------------------------------------------- #
+def test_a_copy_the_drive_could_not_read_is_not_removed_whatever_the_date_says(world):
+    world.reg.repair_upsert("a", kept_file_removal_withheld="disk-read-failed", kept_file_disk_unread_pages=4)
+    assert repair.sweep_kept_copies(now=DUE + timedelta(days=3650)) == [], "a withheld copy is not even listed"
+    assert world.kept.exists() and "kept_file_removed_at" not in world.rec() and "kept_file_removal_refused" not in world.rec()
+    # the one place a file goes refuses it too: a record that carries only the count (or a sweep that reached it by another road)
+    for fields in ({"kept_file_removal_withheld": "disk-read-failed", "kept_file_disk_unread_pages": 0},
+                   {"kept_file_removal_withheld": None, "kept_file_disk_unread_pages": 1}):
+        rec = {**world.rec(), **fields}
+        assert repair._remove_kept_copy(rec, DUE + timedelta(days=1)) == {"outcome": "withheld", "reason": "disk-read-failed"}
+        assert world.kept.exists(), fields
+
+
+def test_the_notice_for_a_copy_the_drive_could_not_read_says_so_and_does_not_promise_a_removal(world):
+    world.reg.repair_upsert("a", kept_file_removal_withheld="disk-read-failed", kept_file_disk_unread_pages=4, kept_file_removal_after=None)
+    notes = [n for n in world.reg.notes() if n["kind"] == "repaired"]
+    assert [n["frame"] for n in notes] == [damage.FRAME_REPAIRED, damage.FRAME_KEPT_DISK], notes
+    assert notes[1]["vars"] == {"name": KEPT_NAME, "size": damage._size_words(world.kept), "folder": str(world.folder), "pages": 4}
+    for var in ("{pages}", "{name}", "{size}", "{folder}"):
+        assert var in damage.FRAME_KEPT_DISK, var
+    assert "will not remove it" in damage.FRAME_KEPT_DISK and "Check the drive" in damage.FRAME_KEPT_DISK
+    assert "{date}" not in damage.FRAME_KEPT_DISK, "a date was promised for a file that is never removed"
+    # the withheld notice outranks a refusal's: it is the truer reason
+    world.reg.repair_upsert("a", kept_file_removal_refused="symlink")
+    assert [n["frame"] for n in world.reg.notes() if n["kind"] == "repaired"][-1] == damage.FRAME_KEPT_DISK

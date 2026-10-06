@@ -45,7 +45,10 @@ finished one whose source has since changed), and the extra name a failed hard-l
 damaged file the repair set aside, which the app removes ``KEPT_COPY_DAYS`` days after the new file first read clean (R129,
 the user's answer 35 = b): see :func:`sweep_kept_copies` for every condition, among them that it deletes only the file the
 repair itself recorded (its name, its inode, in the data folder, not a link) and never while a repair or a check runs or the
-library is latched damaged again.
+library is latched damaged again. NOR A FILE THE DRIVE COULD NOT READ: SQLite 3.43 and later answer a failed read as
+``SQLITE_CORRUPT``, so the per-table check cannot tell a failing drive from an overwritten file, and the repair therefore reads
+the damaged file raw once (:func:`_disk_unread_pages`); a page the drive could not give, here or in the start-up check's own page
+pass, means the file is kept for ever (no date is recorded) and the notice says to check the drive.
 
 PASSPHRASE. The record holds counts, table names, id ranges and reason CODES; an engine's text enters it only through
 ``secret_scrub`` and only in the report's ``failure`` line.
@@ -266,49 +269,150 @@ def _side(path: Path, suffix: str) -> Path:
 
 
 def fingerprint(path: Path) -> dict[str, int] | None:
-    """The identity a file has until it is written to or replaced: size, modification time and inode."""
+    """The identity a file has until it is written to or replaced: size, modification time and inode of the file, and the size of
+    its write-ahead log (0 when there is none). THE LOG IS PART OF IT because in WAL mode a commit does not touch the main file at
+    all: a save made after the copy was taken sits in the log, the file's size, time and inode all still match, and a copy that
+    "matches" would be switched in over it (the deep read of E3, B2)."""
     try:
         st = path.stat()
     except OSError:
         return None
-    return {"size": int(st.st_size), "mtime_ns": int(st.st_mtime_ns), "ino": int(st.st_ino)}
+    wal = 0
+    with contextlib.suppress(OSError):
+        wal = int(_side(path, "-wal").stat().st_size)
+    return {"size": int(st.st_size), "mtime_ns": int(st.st_mtime_ns), "ino": int(st.st_ino), "wal": wal}
+
+
+def _durable(path: Path) -> None:
+    """Make the file's data durable (``fsync``): the copy is written with ``synchronous=OFF``, and a name must not be handed to a
+    file whose last pages may still be only in the cache (the deep read of E3, S7). Opened for writing because Windows refuses
+    to flush a read-only handle."""
+    fd = os.open(path, os.O_RDWR | getattr(os, "O_BINARY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_dir(folder: Path) -> None:
+    """Make a folder's entries (a rename, a link) durable. A platform that cannot open a folder (Windows) has nothing to call."""
+    flags = getattr(os, "O_RDONLY", 0) | getattr(os, "O_DIRECTORY", 0)
+    try:
+        fd = os.open(folder, flags)
+    except OSError:
+        return
+    try:
+        with contextlib.suppress(OSError):
+            os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _scratch_pattern(live: Path, tail: str) -> re.Pattern[str]:
+    """The names this module gives its own scratch beside ``live``: ``<stem>.salvage-<UTC time><suffix><tail>`` (``_salvage_target``)."""
+    return re.compile(re.escape(live.stem) + r"\.salvage-\d{8}T\d{6}Z" + re.escape(live.suffix) + tail)
 
 
 def _remove_scratch(target: Path) -> int:
     """Delete the app's own unfinished scratch beside ``target``: ``.partial`` copies and their side files. Returns how
     many files went. The only deletion of this module besides a failed link step's own extra name, and it can only ever
-    touch a file whose name this module made."""
+    touch a file whose name this module made (the name is matched whole, never by a glob alone)."""
     gone = 0
+    pattern = _scratch_pattern(target, r"\.partial(?:-wal|-shm|-journal)?")
     for path in target.parent.glob(f"{target.stem}.salvage-*{target.suffix}.partial*"):
+        if not pattern.fullmatch(path.name):
+            continue
         with contextlib.suppress(OSError):
             path.unlink()
             gone += 1
     return gone
 
 
-def find_resumable(target: Path) -> dict[str, Any] | None:
+_SOURCE_KEYS = ("size", "mtime_ns", "ino", "wal")
+
+
+def _sidecar_problem(sidecar: Path, target: Path, doc: Any) -> str | None:
+    """Why a sidecar cannot be trusted, or ``None``. A sidecar names files this module is about to act on (the finished copy it
+    deletes when stale, the damaged file it swaps), so it is read as the untrusted input it is: the name of the finished copy
+    must be its own name without ``.json`` and nothing else, the damaged file's name must be one a repair gives, and the
+    identity it records must be a whole one (the deep read of E3, B3: a sidecar naming the live library as ``finished`` made
+    ``plan()`` delete the library, and ``"source": null`` matched a file that was not there)."""
+    if not isinstance(doc, dict) or doc.get("schema") != 1:
+        return "it is not a sidecar this version wrote"
+    if not _scratch_pattern(target, r"\.json").fullmatch(sidecar.name):
+        return "its own name is not one a repair gives"
+    if doc.get("finished") != sidecar.name[: -len(".json")]:
+        return "it names a finished copy that is not its own"
+    damaged = doc.get("damaged")
+    if not isinstance(damaged, str) or not _kept_name_pattern(target).fullmatch(damaged):
+        return "it names a damaged file that is not one a repair sets aside"
+    source = doc.get("source")
+    if not isinstance(source, dict) or any(type(source.get(k)) is not int for k in _SOURCE_KEYS):
+        return "it records no whole identity of the damaged file"
+    return None
+
+
+def _drop_extra_names(target: Path, damaged: Path) -> None:
+    """Remove the second names a repair that did not finish gave the LIVE file (``damaged`` and its log's): a name is removed only
+    when it is the same file as the live one (inode and device), so the damaged file a finished swap set aside, which is a different
+    file, can never be touched here, and unlinking a second name of a file loses nothing."""
+    for suffix in ("", "-wal"):
+        extra, original = _side(damaged, suffix), _side(target, suffix)
+        if extra == original:
+            continue
+        a, b = _identity(extra), _identity(original)
+        if a is not None and a == b:
+            with contextlib.suppress(OSError):
+                extra.unlink()
+
+
+def _swap_ran(target: Path, doc: dict[str, Any]) -> bool:
+    """Whether the switch the sidecar describes already happened: the damaged file's second name is there, and it is not the live
+    library's own file (a name that is the live file's inode means the replace never ran)."""
+    damaged = target.parent / str(doc["damaged"])
+    if damaged.is_symlink() or not damaged.is_file():
+        return False
+    kept, live = _identity(damaged), _identity(target)
+    return kept is not None and live is not None and kept["ino"] != live["ino"]
+
+
+def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """A finished copy whose swap a power cut or a crash interrupted, when the damaged file is still the one it was made
     from. ``{"finished": Path, "sidecar": Path, "doc": dict}``; ``None`` otherwise. A copy that no longer matches (the file
-    was written to since), a sidecar with no copy and a copy with no sidecar are the app's own scratch and are cleaned
-    up here: a stale copy swapped in would lose what was written since."""
+    was written to since, its log counted), a sidecar with no copy and a copy with no sidecar are the app's own scratch and are
+    cleaned up here: a stale copy swapped in would lose what was written since. A sidecar this module did not write, or that was
+    edited, is never believed: only the sidecar itself is removed, never a file it names. A sidecar whose copy is gone BECAUSE
+    THE SWITCH RAN (the copy is the live file now and the damaged file is kept beside it) is appended to ``late`` when the
+    caller passes a list: a cut right after the replace left the repair's record unwritten and its follow-up steps undone, and
+    :func:`_finish` writes and does them; without a list such a sidecar is spent."""
     resumable: dict[str, Any] | None = None
     for sidecar in sorted(target.parent.glob(f"{target.stem}.salvage-*{target.suffix}.json")):
+        if not _scratch_pattern(target, r"\.json").fullmatch(sidecar.name):
+            continue  # not a name a repair gives: not this module's file, left exactly as it is
         try:
             doc = json.loads(sidecar.read_text(encoding="utf-8"))
-            finished = sidecar.with_name(str(doc["finished"]))
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError):
+            doc = None
+        problem = _sidecar_problem(sidecar, target, doc)
+        if problem is not None:
+            _LOG.warning("database repair: a repair sidecar is discarded (%s); the file it names is left alone", problem)
             with contextlib.suppress(OSError):
                 sidecar.unlink()
             continue
-        if not finished.is_file():
-            # The copy is not there: it is the live file already (the swap ran and the sidecar outlived it), or it was
-            # never finished. Either way the sidecar is spent.
+        finished = sidecar.with_name(str(doc["finished"]))
+        if finished.is_symlink() or not finished.is_file():
+            # The copy is not there: it is the live file already (the swap ran and the sidecar outlived it), or it was never
+            # finished.
+            if late is not None and _swap_ran(target, doc):
+                late.append({"sidecar": sidecar, "doc": doc})
+                continue
             doc["swapped"] = True
             _record(late_sidecar=doc)
+            _drop_extra_names(target, target.parent / str(doc["damaged"]))
             with contextlib.suppress(OSError):
                 sidecar.unlink()
             continue
-        if fingerprint(target) == doc.get("source"):
+        if fingerprint(target) == doc["source"]:
             resumable = {"finished": finished, "sidecar": sidecar, "doc": doc}
             continue
         _LOG.warning(
@@ -318,6 +422,7 @@ def find_resumable(target: Path) -> dict[str, Any] | None:
         for stale in (finished, sidecar):
             with contextlib.suppress(OSError):
                 stale.unlink()
+        _drop_extra_names(target, target.parent / str(doc["damaged"]))
     return resumable
 
 
@@ -335,6 +440,52 @@ def _can_hard_link(folder: Path) -> bool:
         for p in (twin, probe):
             with contextlib.suppress(OSError):
                 p.unlink()
+
+
+#: How many bytes the raw read of the damaged file asks for at once. WHAT IT PROTECTS: the time of the pass (one sequential read
+#: of a file that may be 14 GB) against how many pages a failing chunk makes the pass read one by one to find the bad ones.
+RAW_CHUNK_BYTES = 4 << 20
+
+#: Opens the damaged file for the raw read (no SQLite, no key): a name tests replace with a file whose reads fail, because a drive
+#: that fails to read cannot be made on demand.
+_raw_open = open
+
+
+def _disk_unread_pages(path: Path, page_size: int, cancel: threading.Event) -> tuple[int, list[int]]:
+    """How many pages of the damaged file the DRIVE cannot give, by reading every page raw: ``(count, the first few, 1-based)``.
+    A read that raises (``EIO`` from a failing drive, a CRC error, a vanished device) is a page the disk could not read; a page
+    that reads and is wrong is damage, which SQLite names, and is not counted here. WHY IT EXISTS: SQLite 3.43 and later answer
+    a failed READ as ``SQLITE_CORRUPT``, so the per-table check cannot tell a drive that failed from a file that was overwritten,
+    and R129's removal of the kept copy must not rest on a verdict that may be the drive's. The file is quiescent (the repair
+    holds the write gate and the engine has not been touched since the copy) and the pass is one sequential read, which the copy
+    has already warmed. A file that cannot be OPENED raises: the repair then fails with every file as it was and is tried again
+    at the next start. Reads in chunks and falls back to page by page inside a chunk that fails, so a bad page costs one chunk."""
+    size = path.stat().st_size
+    unit = max(512, int(page_size))
+    total = -(-size // unit)
+    chunk_pages = max(1, RAW_CHUNK_BYTES // unit)
+    failed = 0
+    first: list[int] = []
+    with _raw_open(path, "rb", buffering=0) as handle:
+        page = 0
+        while page < total:
+            if cancel.is_set():
+                raise salvage.SalvageStopped
+            count = min(chunk_pages, total - page)
+            try:
+                handle.seek(page * unit)
+                handle.read(count * unit)
+            except OSError:
+                for single in range(page, page + count):
+                    try:
+                        handle.seek(single * unit)
+                        handle.read(unit)
+                    except OSError:
+                        failed += 1
+                        if len(first) < 8:
+                            first.append(single + 1)
+            page += count
+    return failed, first
 
 
 def preflight(target: Path) -> dict[str, Any]:
@@ -371,20 +522,33 @@ def preflight(target: Path) -> dict[str, Any]:
 
 
 def plan() -> dict[str, Any] | None:
-    """What the step has to do, or ``None``. ``{"kind": "resume", ...}`` for an interrupted swap, ``{"kind": "repair",
-    ...}`` for a corpus this process's check confirmed damaged."""
+    """What the step has to do, or ``None``. ``{"kind": "finish", ...}`` for a switch that ran and whose record and follow-up steps
+    a cut left undone, ``{"kind": "resume", ...}`` for an interrupted swap, ``{"kind": "repair", ...}`` for a corpus this
+    process's check confirmed damaged. A resume needs that confirmation too (R100: an earlier process's finding is not this
+    install's measurement: a file this process read clean is not switched out from under it); a copy that is not resumed stays
+    where it is until a start that confirms the damage, or until the file is written to (``find_resumable`` then discards it)."""
     if not switch_on():
         return None
     target = corpus_path()
     if target is None or not target.exists():
         return None
-    resumable = find_resumable(target)
-    if resumable is not None:
-        return {"kind": "resume", "target": target, "resume": resumable}
+    late: list[dict[str, Any]] = []
+    resumable = find_resumable(target, late=late)
+    if late:
+        for spent in late[:-1]:  # an earlier cut's, if two are left: the newest is the one to finish
+            _record(late_sidecar={**spent["doc"], "swapped": True})
+            with contextlib.suppress(OSError):
+                spent["sidecar"].unlink()
+        return {"kind": "finish", "target": target, "late": late[-1]}
     confirmed = damage.registry.confirmed_damage(damage.FILE_CORPUS)
     if confirmed is None:
         return None
-    return {"kind": "repair", "target": target, "tables": confirmed["tables"]}
+    if resumable is not None:
+        return {
+            "kind": "resume", "target": target, "resume": resumable, "tables": confirmed["tables"],
+            "pages_unread": int(confirmed.get("pages_unread") or 0),
+        }
+    return {"kind": "repair", "target": target, "tables": confirmed["tables"], "pages_unread": int(confirmed.get("pages_unread") or 0)}
 
 
 # --- the job ------------------------------------------------------------------------------------------------------------
@@ -434,6 +598,7 @@ def run_now_and_wait() -> str:
     """The boot step's call. Returns ``repaired``, ``declined``, ``failed``, ``stopped`` or ``skipped`` (nothing to repair).
     A store with nothing to repair never starts a job (no row flashes by). Afterwards, at this start and no other time, the
     damaged file an earlier repair kept is removed when its thirty days are over (:func:`sweep_kept_copies`)."""
+    damage.registry.settle_interrupted_repairs()  # a record an earlier process left ``running`` is not a repair under way
     outcome = _repair_once()
     try:
         sweep_kept_copies()
@@ -495,7 +660,9 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
             # The write gate for the WHOLE repair: nothing the app saves can land in the damaged file between a row being
             # read and the new file replacing it (a save waits; the job row says so).
             with write_lock():
-                if work["kind"] == "resume":
+                if work["kind"] == "finish":
+                    report["outcome"] = _finish(work, report, ctx)
+                elif work["kind"] == "resume":
                     report["outcome"] = _resume(work, report, ctx)
                 else:
                     report["outcome"] = _repair(work, target, report, ctx)
@@ -520,7 +687,8 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
     finally:
         report["finished_at"] = time.time()
         report["seconds"] = round(time.monotonic() - started, 1)
-        if armed:
+        if armed or (work["kind"] != "repair" and report["outcome"] == "repaired"):
+            # A finished resume or finish clears the attempt the cut start left behind (it counted one that never saw its end).
             _disarm()
         _record(**report)
         state = {"repaired": "done", "stopped": "stopped"}.get(str(report["outcome"]), "refused" if report["outcome"] == "declined" else "failed")
@@ -534,9 +702,10 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
 def _registry_fields(report: dict[str, Any], state: str) -> dict[str, Any]:
     keep = (
         "reason", "failure", "free_mb", "needed_mb", "seconds", "kept_rows", "unreadable_ids", "open_ended", "kept_file", "kept_file_bytes",
-        "copy_bytes", "reconnects", "orphans", "replaced_text_values", "tables", "search_index", "indexes_seconds",
+        "copy_bytes", "reconnects", "orphans", "orphans_removed", "orphans_removed_note", "orphans_removed_verdicts", "replaced_text_values", "tables", "search_index", "indexes_seconds",
         "preflight", "post_steps", "resumed", "clean_at", "kept_file_ino", "kept_file_dev", "kept_wal_ino", "kept_wal_bytes",
-        "kept_file_removal_after",
+        "kept_file_removal_after", "kept_file_removal_withheld", "kept_file_disk_unread_pages", "disk_unread_pages", "disk_unread_first",
+        "check_pages_unread",
     )
     out: dict[str, Any] = {"state": state, "finished_at": datetime.now(UTC).isoformat(timespec="seconds")}
     out.update({k: report[k] for k in keep if k in report})
@@ -613,6 +782,12 @@ def _repair(work: dict[str, Any], target: Path, report: dict[str, Any], ctx: Job
         report["failure"] = f"{exc.where}: {exc.reason}"
         raise
     report["copy_seconds"] = round(time.monotonic() - t0, 1)
+    report["page_size"] = copy_report.get("page_size")
+    # What the DRIVE could not read, measured raw while the file is quiescent: the kept copy is never removed on the strength of
+    # a file the disk itself could not give (see :func:`_disk_unread_pages`). The check's own count of pages it could not read
+    # (the page pass answers them apart from damage) is carried beside it.
+    report["check_pages_unread"] = int(work.get("pages_unread") or 0)
+    report["disk_unread_pages"], report["disk_unread_first"] = _disk_unread_pages(target, int(copy_report.get("page_size") or 4096), _CANCEL)
     if ctx is not None:
         ctx.set_progress(detail=_frame(FRAME_CHECKING))
     clean, bad = salvage.check_copy(partial, cancel=_CANCEL)
@@ -636,6 +811,9 @@ def _repair(work: dict[str, Any], target: Path, report: dict[str, Any], ctx: Job
         search_index=copy_report.get("search_index"),
         indexes_seconds=copy_report.get("indexes_seconds"),
         orphans=copy_report.get("orphans"),
+        orphans_removed=copy_report.get("orphans_removed"),
+        orphans_removed_note=copy_report.get("orphans_removed_note"),
+        orphans_removed_verdicts=copy_report.get("orphans_removed_verdicts"),
         copy_bytes=partial.stat().st_size,
         page_size=copy_report.get("page_size"),
         encrypted=copy_report.get("encrypted"),
@@ -646,39 +824,152 @@ def _repair(work: dict[str, Any], target: Path, report: dict[str, Any], ctx: Job
     return "repaired"
 
 
+def _int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path) -> None:
+    """What the start that made the copy measured, read back from its sidecar for the start that finishes the switch: the numbers,
+    the first clean read (R129's clock runs from it, not from the start that finished the swap), and what the drive could not
+    read."""
+    report.update(
+        resumed=True,
+        kept_rows=doc.get("kept_rows"), unreadable_ids=doc.get("unreadable_ids"), open_ended=bool(doc.get("open_ended")),
+        copy_bytes=doc.get("copy_bytes"), reconnects=doc.get("reconnects"), tables=doc.get("tables") or [],
+        clean_at=doc.get("clean_at"), page_size=doc.get("page_size"), check_pages_unread=_int(doc.get("check_pages_unread")),
+        disk_unread_pages=doc.get("disk_unread_pages"), disk_unread_first=doc.get("disk_unread_first") or [],
+    )
+
+
 def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None) -> str:
     resume = work["resume"]
     doc = resume["doc"]
     target: Path = work["target"]
-    report["resumed"] = True
     if ctx is not None:
         ctx.set_progress(detail=_frame(FRAME_SWITCHING))
-    report.update(
-        kept_rows=doc.get("kept_rows"), unreadable_ids=doc.get("unreadable_ids"), open_ended=bool(doc.get("open_ended")),
-        copy_bytes=doc.get("copy_bytes"), reconnects=doc.get("reconnects"), tables=doc.get("tables") or [],
-        clean_at=doc.get("clean_at"),
-    )
+    _carry_from(report, doc, target)
+    if report["disk_unread_pages"] is None:
+        # A sidecar that does not carry the measurement (never written by this code): measured now, on the damaged file, which the
+        # fingerprint check of ``find_resumable`` has just shown is still the file the copy was made from.
+        report["disk_unread_pages"], report["disk_unread_first"] = _disk_unread_pages(target, int(doc.get("page_size") or 4096), _CANCEL)
     stamp = str(doc.get("stamp") or datetime.now(UTC).strftime(STAMP_FORMAT))
-    _swap(resume["finished"], target, stamp, report, sidecar=resume["sidecar"], damaged=target.parent / str(doc["damaged"]))
+    _swap(
+        resume["finished"], target, stamp, report, sidecar=resume["sidecar"], damaged=target.parent / str(doc["damaged"]),
+        expect=doc["source"],
+    )
     return "repaired"
 
 
+def _finish(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None) -> str:
+    """A cut right after the replace: the new file is the library and the damaged file is kept beside it, but the repair's record
+    was never written, the corpus epoch and the source counts were never brought up to date, and the attempt marker still counts
+    a start that did not see its end. Nothing is copied or switched here: the record is written from the sidecar and the file as
+    it is, the follow-up steps run, and the sidecar is spent (the deep read of E3, S2)."""
+    late = work["late"]
+    doc, sidecar = late["doc"], late["sidecar"]
+    target: Path = work["target"]
+    damaged = target.parent / str(doc["damaged"])
+    if ctx is not None:
+        ctx.set_progress(detail=_frame(FRAME_SWITCHING))
+    _carry_from(report, doc, target)
+    _note_what_was_set_aside(report, damaged)
+    report["kept_file"] = damaged.name
+    with contextlib.suppress(OSError):
+        report["kept_file_bytes"] = damaged.stat().st_size
+    report["post_steps"] = _after_the_swap()
+    with contextlib.suppress(OSError):
+        sidecar.unlink()
+    _LOG.warning(
+        "database repair: a switch to a repaired library file that a stop interrupted was finished (%s rows kept); the damaged file "
+        "is kept as %s",
+        report.get("kept_rows"), damaged.name,
+    )
+    return "repaired"
+
+
+#: How long the checkpoint that empties the live log waits for a reader that holds it (ms). WHAT IT PROTECTS: a boot that waits for a
+#: request that will never end against a swap that gives up quickly and is tried again at the next start; a reader that is only slow
+#: gets this long.
+FOLD_WAIT_MS = 2000
+
+
+def _live_engine() -> Any:
+    from src.database.session import engine
+
+    return engine
+
+
+def _empty_the_log(target: Path) -> None:
+    """Fold the live file's write-ahead log into the file, BEFORE the file's identity is recorded or a name is given to it. A commit
+    sits in the log until a checkpoint moves it into the file; ``dispose_engine`` closes the pool's idle connections and SQLite
+    folds the log in as the last one closes, but a connection a request has checked out stays open and keeps the log. Unlinking a
+    log that still holds commits loses them, and a copy made before them would replace the file that has them (the deep read of
+    E3, B2). The restore's swap does the same before it lets go of the engine. A log that is still not empty afterwards is
+    refused, with every file as it was."""
+    wal = _side(target, "-wal")
+    if not wal.exists():
+        return
+    raw = _live_engine().raw_connection()
+    try:
+        cursor = raw.cursor()
+        # A short wait for a reader to finish, given back before the connection returns to the pool: one that goes back with a short
+        # wait hands the next writer "database is locked" where it should have waited (the hygiene checkpoint restores it the same way).
+        previous = cursor.execute("PRAGMA busy_timeout").fetchone()
+        try:
+            cursor.execute(f"PRAGMA busy_timeout={FOLD_WAIT_MS}")
+            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        finally:
+            with contextlib.suppress(Exception):
+                cursor.execute(f"PRAGMA busy_timeout={int(previous[0]) if previous else 30000}")
+    finally:
+        raw.close()
+    left = 0
+    with contextlib.suppress(OSError):
+        left = int(wal.stat().st_size)
+    if left:
+        raise Declined(
+            "writer-busy",
+            f"a connection to the library is still open and its write-ahead log holds {left:,} bytes of saves that are not in the "
+            "file yet, so nothing was switched",
+        )
+
+
 def _swap(
-    source: Path, target: Path, stamp: str, report: dict[str, Any], *, sidecar: Path | None = None, damaged: Path | None = None
+    source: Path, target: Path, stamp: str, report: dict[str, Any], *, sidecar: Path | None = None, damaged: Path | None = None,
+    expect: dict[str, int] | None = None,
 ) -> Path:
     """Put the finished copy under the live name, keeping the damaged file. ``source`` is the ``.partial`` copy of a fresh
-    repair (renamed here once the damaged file's identity is recorded) or the finished copy of an interrupted one."""
+    repair (renamed here once the damaged file's identity is recorded) or the finished copy of an interrupted one, whose
+    sidecar's ``source`` identity is ``expect``: the damaged file must STILL be that file once its log is folded in, or the copy is
+    stale (a save committed since would be lost under it) and is discarded."""
     from src.backup.merge import _clear_stale_side_files, _replace_live_corpus
+    from src.database import library_generation
     from src.database.session import dispose_engine, init_db
 
     _quiet(10.0)  # nothing new could start under the exclusive window: this only confirms what the first wait found
     dispose_engine()
+    _empty_the_log(target)
+    dispose_engine()  # the connection the fold used goes too: nothing of ours is left open on the damaged file
+    now = fingerprint(target)
     if damaged is None:
         damaged = _damaged_name(target, stamp)
     finished = source
+    if expect is not None and now != expect:
+        assert sidecar is not None
+        for stale in (finished, sidecar):
+            with contextlib.suppress(OSError):
+                stale.unlink()
+        _drop_extra_names(target, damaged)
+        raise Declined(
+            "copy-stale",
+            "the library file was written to after the copy was made, so the copy is discarded and a new one is made at the next start",
+        )
     if sidecar is None:
-        # The damaged file's identity AFTER the engine let go (SQLite folds the log into it as the last connection closes),
-        # recorded before the copy is given its final name: a copy with no sidecar is scratch, a copy with one is resumable.
+        # The damaged file's identity AFTER the engine let go and its log was folded in, recorded before the copy is given its
+        # final name: a copy with no sidecar is scratch, a copy with one is resumable.
         finished = source.with_name(source.name[: -len(".partial")])
         sidecar = finished.with_name(finished.name + ".json")
         doc = {
@@ -686,7 +977,7 @@ def _swap(
             "stamp": stamp,
             "finished": finished.name,
             "damaged": damaged.name,
-            "source": fingerprint(target),
+            "source": now,
             "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "kept_rows": report.get("kept_rows"),
             "unreadable_ids": report.get("unreadable_ids"),
@@ -695,9 +986,18 @@ def _swap(
             "reconnects": report.get("reconnects"),
             "tables": report.get("tables"),
             "clean_at": report.get("clean_at"),
+            "page_size": report.get("page_size"),
+            "disk_unread_pages": report.get("disk_unread_pages"),
+            "disk_unread_first": report.get("disk_unread_first"),
+            "check_pages_unread": report.get("check_pages_unread"),
         }
         _write_json_atomic(sidecar, doc)
         os.replace(source, finished)
+    # The copy is written with ``synchronous=OFF``: its data is made durable BEFORE any name is given to it and the folder entries
+    # before the replace (the deep read of E3, S7), so a power cut after the switch cannot leave a library whose last pages never
+    # reached the drive.
+    _durable(finished)
+    _fsync_dir(target.parent)
     made: list[Path] = []
     try:
         for suffix in ("", "-wal"):
@@ -724,6 +1024,11 @@ def _swap(
     _note_what_was_set_aside(report, damaged)
     _clear_stale_side_files(target)
     _replace_live_corpus(finished, target)
+    # The name points at a different file now: every connection made before this line is to the old one, and a statement on it is
+    # refused (``library_generation``), so a save that waited out the repair fails instead of landing in the file that is kept.
+    library_generation.bump()
+    dispose_engine()
+    _fsync_dir(target.parent)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
         report["kept_file_bytes"] = damaged.stat().st_size
@@ -761,7 +1066,14 @@ def _note_what_was_set_aside(report: dict[str, Any], damaged: Path) -> None:
             report["kept_wal_bytes"] = _side(damaged, "-wal").stat().st_size
     clean = _parse_time(report.get("clean_at")) or datetime.now(UTC)
     report["clean_at"] = clean.isoformat(timespec="seconds")
-    report["kept_file_removal_after"] = (clean + timedelta(days=KEPT_COPY_DAYS)).isoformat(timespec="seconds")
+    unread = max(int(report.get("disk_unread_pages") or 0), int(report.get("check_pages_unread") or 0))
+    if unread:
+        # A file the drive could not read is kept, not removed after the thirty days: no date is recorded, the record says why, and
+        # the notice tells the person to check the drive (the coordinator's ruling of 2026-10-06 on the SQLite 3.43 read-error case).
+        report["kept_file_removal_withheld"] = "disk-read-failed"
+        report["kept_file_disk_unread_pages"] = unread
+    else:
+        report["kept_file_removal_after"] = (clean + timedelta(days=KEPT_COPY_DAYS)).isoformat(timespec="seconds")
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -780,11 +1092,14 @@ def _kept_name_pattern(live: Path) -> re.Pattern[str]:
 def _why_not_now() -> str | None:
     """Why nothing may be removed at this moment, or ``None``: a repair or a check is running, or the live library is latched
     damaged (a removal while it is would take away the only other copy of rows the repair may not have read)."""
-    if REPAIR_JOB.status().get("state") == "running" or any(r.get("state") == "running" for r in damage.registry.repairs()):
+    # Each hold reads the registry's own state and NOT ``latched()``/``verifying()``: those answer False under ``OO_DAMAGE_GUARD=0``,
+    # which turns off the PAUSE and must not turn off the holds of a removal that is waiting for exactly this. And only a repair of
+    # THIS process counts as running: one a crash, a power cut or a stop ended is ``interrupted`` (``settle_interrupted_repairs``).
+    if REPAIR_JOB.status().get("state") == "running" or damage.registry.repairing_now():
         return "repair-running"
-    if damage.registry.verifying():
+    if damage.registry.check_is_running():
         return "check-running"
-    if damage.registry.latched(damage.FILE_CORPUS):
+    if damage.registry.latch_is_set(damage.FILE_CORPUS):
         return "corpus-latched"
     return None
 
@@ -808,6 +1123,8 @@ def sweep_kept_copies(*, now: datetime | None = None) -> list[dict[str, Any]]:
       ``refused`` FOR GOOD (recorded, said in the notice, never tried again): a name that points at something else now is not
       the file the user was told about;
     * the ``-wal`` hard link the swap made goes with it, by the same identity (an unrecognised ``-wal`` is left and recorded);
+    * a copy whose repair recorded ``kept_file_removal_withheld`` (the drive could not read a page of the damaged file) is never
+      removed, whatever date a record carries: it is not listed, nothing is written, and the notice says to check the drive;
     * a copy the user removed already is recorded ``gone`` (nothing to say); a failed unlink is retried at the next start;
     * the removal (date, bytes) is written into the repair record the damage notice and the Diagnostics zip read."""
     out: list[dict[str, Any]] = []
@@ -820,6 +1137,8 @@ def sweep_kept_copies(*, now: datetime | None = None) -> list[dict[str, Any]]:
                 continue
             if rec.get("kept_file_removed_at") or rec.get("kept_file_gone_at") or rec.get("kept_file_removal_refused"):
                 continue
+            if rec.get("kept_file_removal_withheld"):
+                continue  # the drive could not read the file: it is kept, whatever date a record may carry
             due = _parse_time(rec.get("kept_file_removal_after"))
             if due is None or when < due:
                 continue
@@ -840,6 +1159,8 @@ def _remove_kept_copy(rec: dict[str, Any], when: datetime) -> dict[str, Any]:
     "reason"}`` and writes the record."""
     rec_id = str(rec.get("id"))
     name = str(rec.get("kept_file") or "")
+    if rec.get("kept_file_removal_withheld") or int(rec.get("kept_file_disk_unread_pages") or 0) > 0:
+        return {"outcome": "withheld", "reason": "disk-read-failed"}  # the one place a file goes: never one the drive could not read
 
     def refuse(code: str) -> dict[str, Any]:
         _LOG.warning("database repair: the kept copy %s is not removed (%s) and will not be", name or "?", code)

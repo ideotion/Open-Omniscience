@@ -16516,12 +16516,21 @@ maintainer as a card.
   `/mnt/project-files/wal-disk-pool/PLAN-damaged-database.md`).** (a) The repair acts on exactly one thing: a CORPUS file whose per-table check THIS process measured as `damaged`
   (`damage.registry.confirmed_damage`). Not done: **E3b** a file found damaged while the app runs is latched and repaired at the NEXT start, not in place (an in-process repair
   needs the engines quiesced and a window the operator did not ask for); the Wikipedia and law files are paused as before and not repaired (their latches contain them, and a lane's
-  file is rebuilt from its feed); a finding an earlier process made that this one did not read again is not acted on. **E3c** a finding limited to the search index is repaired by the
+  file is rebuilt from its feed); a finding an earlier process made that this one did not read again is not acted on (R100: the same holds for RESUMING an interrupted swap, which also needs this
+  process's own `damaged` verdict; a finished copy waits where it is until a start that confirms the damage, or the file is written to and the copy is discarded). **A file found damaged while
+  the app runs is now planned for the check at the next start** (`verify.plan_boot` reads an earlier process's incident that no finished check follows, `damage.incident_after_last_check`),
+  because the latch lives in memory and an ordinary quit is a clean end: until the deep read of 2026-10-06 (S4) the notice promised «repaired at its next start» for a start that planned
+  no check. **E3c** a finding limited to the search index is repaired by the
   whole-file copy (which rebuilds the search index anyway); a rebuild of the search index alone, without a second copy of the library, is not built. (b) **Rows are not invented:** an
   unreadable id is counted and its range listed in the repair record; children whose parent row could not be read are KEPT and counted per table (deleting them would turn one lost page
-  of a parent into the loss of every row that refers to it). **E3d, a known limit:** an AUTOINCREMENT table never hands out an id the damaged file's own counter or a lost range reached
-  (`sqlite_sequence` is raised to the highest id seen), but a table without AUTOINCREMENT hands out `max(rowid) + 1`, so ids at the very tail whose rows could not be read can be given
-  to new rows; the record says when a table's tail was unreadable (`open_ended`, `unreadable_from`). The derived stores re-read the new file through the corpus epoch (`bump_corpus_epoch`,
+  of a parent into the loss of every row that refers to it). **E3d, a known limit, NARROWED by the deep read of 2026-10-06 (S6):** an AUTOINCREMENT table never hands out an id the damaged
+  file's own counter or a lost range reached (`sqlite_sequence` is raised to the highest id seen), but NO app table is AUTOINCREMENT, and a table without it hands out `max(rowid) + 1`, so ids
+  at the very tail whose rows could not be read are given to new rows (measured: the next collected article took a lost id and inherited a lost article's date row). **DECIDED (the deep read's S6, accepted by the coordinator 2026-10-06; the user is not asked):** a child whose parent id is ABOVE the highest id left in the parent table is REMOVED from the copy
+  (`salvage._drop_orphans_that_a_new_row_would_inherit`, repeated until nothing more goes, because a removed child frees its own id for a grandchild's key), reported per table as `orphans_removed`
+  with a note saying they remain in the kept damaged copy until R129's removal (`orphans_removed_note`) and naming any table that holds a verdict this install measured
+  (`orphans_removed_verdicts`: a table with a `verdict` column); a child of a row lost in a gap below the highest id is still KEPT and counted (that id is never handed out again). The removed rows are dates, entities, keyword rows and index stamps, all derived from article text that is itself lost, and
+  the damaged file the repair keeps still holds them; the alternative (keep them and accept a misattribution to the next article saved) was refused. NOT covered: a table keyed by an article id
+  WITHOUT a declared foreign key (the derived rollups follow the corpus epoch bump instead); the record says when a table's tail was unreadable (`open_ended`, `unreadable_from`). The derived stores re-read the new file through the corpus epoch (`bump_corpus_epoch`,
   reason `salvage`), which is also what the keyword counters follow, and each source's stored article count is cleared so the live count is read. (c) Two guards stop a repair that itself
   fails: `MAX_UNFINISHED_STARTS = 2` (two starts in a row that began a repair and did not see it end; not tried again until the app is updated, the record is `database-repair-attempt.json`)
   and the room check (the file, its log and the disk guard's own reserve; an unreadable figure is not a refusal and the drive filling while the copy grows is what the number protects). A drive
@@ -16532,9 +16541,28 @@ maintainer as a card.
   name is exactly `<stem>.damaged-<stamp>[-n]<suffix>` of the live library, in its folder (the record's folder resolves to the live folder), not a link and a regular file, its inode is the one
   the swap noted when it made the second name (the device number is noted and NOT compared: it is not stable across mounts, and a mismatch there would make the refusal permanent for the right
   file), and it is not the live file; nothing is removed while a repair or a check runs or the live library is latched damaged again (`waiting`, retried at the next start). The `-wal`
-  name the swap made goes with it by the same identity (an unrecognised `-wal` is left and recorded as `kept_wal_left`). A failed unlink is retried at the next start; a file the user removed is
+  name the swap made goes with it by the same identity (an unrecognised `-wal` is left and recorded as `kept_wal_left`). The holds read the registry's own state, NOT `latched()` and `verifying()` (which answer False under `OO_DAMAGE_GUARD=0`, a switch that turns the PAUSE off and must not turn
+  off a removal's wait for «damaged again»), and only a repair of THIS process counts as running: a repair a crash or a power cut ended is marked `interrupted` at the next start
+  (`settle_interrupted_repairs`), where before it held every later removal until ten newer repairs pushed it out. **DECIDED (the coordinator, 2026-10-06; the SQLite 3.43 read-error case): a copy in
+  which a read FAILED AT THE DISK is never removed, whatever the date.** SQLite 3.43 and later map EIO to `SQLITE_CORRUPT` (`IOERR_CORRUPTFS`), so the per-table verdict cannot tell a failing
+  drive from an overwritten file; the verdict stays as SQLite gives it (so the repair still repairs), but R129's removal rests on the disk's own answer: the repair reads the damaged file raw once
+  (`repair._disk_unread_pages`, in 4 MiB chunks with a page-by-page fall-back, sequential, on a file the copy has just warmed) and carries the start-up check's own `pages_unread`; either count above
+  zero records `kept_file_removal_withheld = "disk-read-failed"` and NO removal date, the sweep skips it for good, and the notice (`FRAME_KEPT_DISK`, ×12) says the drive could not read N pages
+  and to check the drive. With `OO_BOOT_REPAIR=0` the notice says removal is switched off (`FRAME_KEPT_SWITCH`) instead of promising a date. A failed unlink is retried at the next start; a file the user removed is
   recorded `kept_file_gone_at` and nothing is said. **The removal date is `clean_at + 30 days`, and `clean_at` is the FIRST clean read of the new file, kept through a resume by the sidecar.**
   (e) **A kept file whose repair record has aged out is never removed:** `damage.REPAIRS_KEEP = 10` keeps the last ten repairs in `database-damage.json`; the sweep reads those records, so a
   file whose record fell out (ten repairs, itself a sign of a failing drive) stays until the user removes it; the manual says so. The removal notice is shown for 30 days after it. NOT DONE: a
   setting for the number of days (the user's answer fixed it at 30), and a list of kept files for the Diagnostics zip as a dump lister (the coordinator's diagnostics-members PR, RC's function).
   (f) The salvage's passphrase scrub (`salvage._scrub`) is its own until RC's hardened `secret_scrub` lands; adapt it then (the repair's own sentence frames carry no engine text).
+  (g) **THE SWAP AFTER THE DEEP READ (2026-10-06; blocks B1-B3 and S1, S2, S7 of the read, all folded).** B1: `dispose_engine()` closes IDLE connections only, a connection a request has checked out stays on the
+  OLD inode, and in WAL mode SQLite never notices the name now points elsewhere: a save that waited out the repair committed into the damaged file (removed 30 days later) with no error.
+  `src/database/library_generation.py` stamps every connection of the corpus engine and refuses (`StaleLibraryError`, connection invalidated) a statement on one made before `bump()`, which the swap
+  calls right after the replace; the read-snapshot engine and the backup's raw drivers are not stamped (short-lived, read-only). B2: a commit in WAL mode leaves the main file's size, time and inode alone,
+  so a copy «matched» a file that had since been saved to; the identity now includes the log's size (`fingerprint`), the swap folds the log into the file first (`_empty_the_log`, a TRUNCATE
+  checkpoint on a fresh connection, as the restore does) and refuses with `writer-busy` while a connection still pins it, and a resumed swap compares the identity again AFTER that fold and discards
+  a stale copy (`copy-stale`, and the extra name a cut start made of the live file). B3: a sidecar is an untrusted input: its `finished` must be its own name without `.json`, its `damaged` a name a
+  repair gives, its `source` a whole identity, and only a sidecar that fails is removed, never a file it names; scratch is deleted only by its whole name. S2: a cut right after the replace is
+  finished at the next start (`kind = "finish"`: the record, the corpus epoch and source counts, the attempt marker) instead of being lost with the kept file unrecorded. S7: the copy is `fsync`ed
+  before it is named and the folder after each rename (`_durable`, `_fsync_dir`). **NOT FIXED HERE, and the same hazard:** the RESTORE's swap (`backup/merge.py`) has B1's mechanism (it disposes the
+  engine and replaces the file with checked-out connections possible); one `library_generation.bump()` after its `_replace_live_corpus` closes it, left to that file's owner (#1328 touches it). **ACCEPTED COST:** a resume is
+  refused (and the copy discarded and made again) when anything wrote into the log between the cut and the next start, however small; safe, and slower than a resume that would have matched.

@@ -96,6 +96,18 @@ SORT_RAM_BYTES_PER_ROW = RAM_BYTES_PER_ARTICLE
 #: The id the search runs to when a table's last row id cannot be read: the end of the 64-bit space.
 _ID_CEILING = 2**62
 
+#: What the report says about the children it removed (``orphans_removed``): why, and where the rows still are.
+ORPHANS_REMOVED_NOTE = (
+    "Rows whose parent row could not be read, and whose parent's id is above the highest id left in the new file, were not copied: "
+    "a row saved later would be handed that id and would have claimed them. They are still in the damaged file the repair keeps, "
+    "until that file is removed (R129)."
+)
+
+#: How many times the removal of children that a new row would inherit is repeated: one round per level of foreign keys it can
+#: cascade through (a child's own id, freed by its removal, can be what a grandchild points at). WHAT IT PROTECTS: the end of the
+#: copy against a chain it cannot make progress on; the longest chain of foreign keys in the app's schema is four tables deep (measured).
+_ORPHAN_ROUNDS = 8
+
 #: Report caps, so a file with a thousand damaged pages is a record, not a log: this many unreadable id ranges are listed
 #: per table (the count of all of them is kept).
 RANGES_LISTED = 50
@@ -152,10 +164,12 @@ def _scrub(text: str) -> str:
 
 def _failure_text(exc: BaseException) -> str:
     """The reason for a failure, from the DRIVER's exception when there is one (its first line), scrubbed. Never the
-    wrapper's text, which can carry a statement and its values."""
+    wrapper's text, which can carry a statement and its values. The WHOLE text is scrubbed before the first line is taken: a passphrase
+    with a line break that the driver echoes would otherwise be cut in two first, and neither half matches the needle (the coordinator's
+    check of E3, item 4)."""
     driver = damage.driver_error(exc) or exc
-    first = (str(driver).splitlines() or [""])[0].strip() or type(driver).__name__
-    return _scrub(f"{type(driver).__name__}: {first}")[:240]
+    first = (_scrub(str(driver)).splitlines() or [""])[0].strip() or type(driver).__name__
+    return f"{type(driver).__name__}: {first}"[:240]
 
 
 def _row_bytes(row: tuple) -> int:
@@ -257,6 +271,7 @@ class Salvage:
         self._shadow: set[str] = set()
         self._without_rowid: set[str] = set()
         self._autoincrement: set[str] = set()
+        self._row_id_alias: dict[str, str] = {}  # table -> the INTEGER PRIMARY KEY column that IS its row id (the next id is the highest + 1)
         self._started = time.monotonic()
         self.report: dict[str, Any] = {"tables": [], "reconnects": 0}
 
@@ -360,6 +375,7 @@ class Salvage:
             raise self._classify("the schema", exc) from exc
         by_name = {t.name: t for t in tables}
         self._autoincrement = {t.name for t in tables if t.autoincrement}
+        self._row_id_alias = {t.name: t.alias for t in tables if t.alias and not t.without_rowid}
         for kind, name, tbl, sql in others:
             if kind == "index" and tbl in by_name:
                 by_name[tbl].indexes.append((name, sql))
@@ -807,21 +823,86 @@ class Salvage:
             except Exception:  # noqa: BLE001 - a table that has no counter has nothing to restore
                 _LOG.debug("salvage: could not restore a counter", exc_info=True)
 
-    def _orphans(self) -> None:
-        """Children whose parent row was unreadable are KEPT and counted per table: deleting them would turn one lost page
-        of a parent into the loss of every row that refers to it."""
-        counts: dict[str, int] = {}
+    def _orphan_groups(self) -> dict[tuple[str, str, int], int]:
+        """The rows whose parent is not there, counted per ``(child table, parent table, foreign key number)``."""
+        groups: dict[tuple[str, str, int], int] = {}
         try:
             for row in self.dst.execute("PRAGMA foreign_key_check"):
-                counts[str(row[0])] = counts.get(str(row[0]), 0) + 1
+                key = (str(row[0]), str(row[2]), int(row[3]))
+                groups[key] = groups.get(key, 0) + 1
                 if self.cancel.is_set():
                     raise SalvageStopped
         except SalvageStopped:
             raise
         except Exception as exc:  # noqa: BLE001
             self._raise_for_target("the foreign key check", exc)
+        return groups
+
+    def _drop_orphans_that_a_new_row_would_inherit(self, groups: dict[tuple[str, str, int], int]) -> dict[str, int]:
+        """Delete the children whose parent id is ABOVE the highest id of the parent table in the copy. A table whose row id is its
+        INTEGER PRIMARY KEY (and that is not AUTOINCREMENT, which none of the app's tables is) hands out the highest id plus one, so
+        when the newest pages of a parent table are lost the next row saved gets an id that belonged to a lost row, and would
+        INHERIT the children kept for it (dates, entities, keyword rows, index stamps: the deep read of E3, S6). A child whose parent
+        id lies BELOW the highest id points into a gap, which is never handed out again, and is kept."""
+        removed: dict[str, int] = {}
+        for (child, parent, number), _n in groups.items():
+            alias = self._row_id_alias.get(parent)
+            if alias is None or parent in self._autoincrement:
+                continue
+            try:
+                keys = [r for r in self.dst.execute(f"PRAGMA foreign_key_list({_ident(child)})") if int(r[0]) == number]
+                if len(keys) != 1 or keys[0][4] not in (None, alias):
+                    continue  # a key over several columns, or over a column that is not the parent's row id: not handled, kept
+                top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(parent)}").fetchone()[0] or 0
+                cur = self.dst.execute(f"DELETE FROM {_ident(child)} WHERE {_ident(str(keys[0][3]))} > ?", (int(top),))
+                if cur.rowcount and cur.rowcount > 0:
+                    removed[child] = removed.get(child, 0) + int(cur.rowcount)
+            except SalvageStopped:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self._raise_for_target("the removal of orphans", exc)
+            if self.cancel.is_set():
+                raise SalvageStopped
+        return removed
+
+    def _orphans(self) -> None:
+        """Children whose parent row was unreadable are KEPT and counted per table: deleting them would turn one lost page
+        of a parent into the loss of every row that refers to it. The exception is a child whose parent's id is above the
+        highest id left in the parent table (see :meth:`_drop_orphans_that_a_new_row_would_inherit`): those are removed, because a
+        row saved later would be handed that id and claim them. Removing a child can free ITS id for a grandchild's reference, so
+        it is repeated until nothing more goes (bounded by the number of tables, which is the longest chain of keys)."""
+        groups = self._orphan_groups()
+        removed: dict[str, int] = {}
+        for _round in range(_ORPHAN_ROUNDS):
+            if not groups:
+                break
+            gone = self._drop_orphans_that_a_new_row_would_inherit(groups)
+            if not gone:
+                break
+            for table, n in gone.items():
+                removed[table] = removed.get(table, 0) + n
+            groups = self._orphan_groups()
+        counts: dict[str, int] = {}
+        for (child, _parent, _number), n in groups.items():
+            counts[child] = counts.get(child, 0) + n
         if counts:
             self.report["orphans"] = counts
+        if removed:
+            self.report["orphans_removed"] = removed
+            self.report["orphans_removed_note"] = ORPHANS_REMOVED_NOTE
+            # A table that holds verdicts this install MEASURED (a column named ``verdict``: the source qualification attempts and
+            # admission events) is named, because a measured verdict never gives way silently to a repair: the removed rows are
+            # still in the damaged file the repair keeps.
+            verdict_tables = []
+            for table in sorted(removed):
+                try:
+                    columns = {str(r[1]) for r in self.dst.execute(f"PRAGMA table_info({_ident(table)})")}
+                except Exception as exc:  # noqa: BLE001
+                    self._raise_for_target("the list of columns of a table with removed orphans", exc)
+                if "verdict" in columns:
+                    verdict_tables.append(table)
+            if verdict_tables:
+                self.report["orphans_removed_verdicts"] = verdict_tables
 
 
 def check_copy(path: Path, *, cancel: threading.Event | None = None) -> tuple[bool, list[dict[str, Any]]]:
