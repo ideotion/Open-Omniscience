@@ -10387,12 +10387,13 @@ data (the bulletin's method sentence is the key of its 11 translations). Lesson:
 - **2026-10-01 · monitoring/diagnostics-instruments (release candidate diagnostics, ranks 9 and 10).** From the
 16-instance diagnostics round: K2 read red on 16 of 16 instances, 287 of the 306 breaching routes (summed over the
 sixteen exports) on fewer than 20 samples, and the article list's browse (K2's worst route on 8 of 16) was timed
-nowhere. Instruments only; K2's value, n and verdict are unchanged. The latency summary lists every route and says
+nowhere. Instruments only; K2's formula is unchanged (it reads a route list that is now whole, so where the old cut at
+60 had dropped the worst route its number can move toward the true worst). The latency summary lists every route and says
 how each window ended, its first and slowest call and the slowest call's distance from the last unlock; the article
 list's browse is timed per phase into the search-timing record, whose self-test no longer wipes the live window; the
 durable logs are cut by a copy swapped in with os.replace. The same PR closes 0.4 row D on instance 090243's
-release-run report and records PR #1281 in row A. Lesson: `LESSONS.md`, the entry "A LIST THE PRODUCER CUT CANNOT BE
-LOOKED UP IN".
+release-run report and records PR #1281, with the export changes of PRs #1288 and #1294, in row A. Lessons: `LESSONS.md`, the entries "A LIST THE PRODUCER CUT CANNOT BE
+LOOKED UP IN" and "A SELF-TEST THAT RESETS THE PROCESS'S OWN STATE RUNS INSIDE THE EXPORT THAT READS IT".
 
 - **2026-10-01 · scheduler/pool-disk-unlock-findings (WAL / disk thread, the follow-up to #1287, #1289 and #1293).**
 Every finding of the Opus reads and the coordinator's checks of the three merged PRs. Unlock: the verify
@@ -10413,6 +10414,101 @@ available memory and engaged in that crash, so no gate change was made. Cost bou
 stack caps, 8 kept, counters only, never `gc.get_objects`). Lesson: `LESSONS.md`, the entry "A PLATEAU UNDER THE MEMORY
 LINE WAS UNRECORDED BY DESIGN". Stopping cleanly when memory does not recover stays the user's question 22; a relaunch
 starts offline under R117, so a clean stop alone would not resume the run.
+
+- **2026-10-01 · monitoring/release-run-restore (release candidate diagnostics, PR #1312).** From the 16-instance
+diagnostics round: two of the four release runs that reached the restore had failed there (one refused by the restore
+engine's own staging check after 128 s, one dead after 53 minutes with `Error creating function`), and the report
+recorded both as `measured`, with rows A and I over an empty restore block. A phase's status is now the child's outcome:
+a restore counts only when its child reported ok, exited 0 and committed; otherwise the phase reads `error` with the
+child's own words, rows A and I read `error`, rows E and K say the restored install's reading is not counted, and a
+resume retakes it and owes the passphrase as a first run does (a state file an earlier build wrote keeps no restore
+this rule would not count). The passphrase is taken out of what the child says, and out of the run journal and import
+reports a kept fresh install leaves on the drive (`src/monitoring/secret_scrub.py`). Row A's evidence paragraph in the
+0.4 gate records the five reports' figures and what stays inferred. On its first push CodeQL raised three high
+clear-text alerts that were the scrubber's own name (`without_secret`) and a test fixture's (`SECRET`), not a passphrase
+reaching a file; they became `scrub_value` and `NEEDLE`, and the next head read "No new alerts". Main's own red (the
+blocking ruff lane, the style ratchet at 439 against a ceiling of 436, three French strings) is ported from PR #1311
+byte for byte so this PR's tests run in CI. The independent read of the PR's head 87e5284e then found one blocking fault and three
+should-fixes in this part, fixed with tests: every restore attempt's directory had a name from the backup's label and the process
+id and was made with `exist_ok=True`, so a second release run in one server restored into the first one's kept install (and a
+later run that did not keep its install deleted it), where it now has a random part and is made with `exist_ok=False`; the wait
+on the restore child never read its pipes, so a child that wrote more than a pipe holds (70,000 bytes hung, 60,000 went
+through) stayed blocked until the run was cancelled, and the wait now reads them; the scrub of text that does not parse could
+leave the passphrase in one JSON form when the marker for a later form rebuilt an earlier one (a passphrase of a star and a
+quote), and `scrub_file` said "rewritten" over it, so the result is checked against every form and redone with one marker
+(proved over all 21,256 pairs of a small complete space, 28 of which had left a form); and a half-written `.json.tmp` import
+report in a kept install is scrubbed with the others. The coordinator's check of the next head found one more path: what the
+P0 phase CATCHES (the backup, the verify, the restore probe and the incremental refresh each write `Name: message` of whatever
+the engine raised) went into the P0 report, which the debug bundle carries, and into the run's own record unscrubbed, because the
+scrub covered what a phase RAISES. The four texts are now scrubbed where they are made (`p0_validation._exception_text`), not by a
+scrub of the finished report or of the phase's result, which was the proposed fix and is wrong here: both hold the verdicts the
+restore gate compares (`backup_ok` reads `p0_1_verify`'s `pass`), and an exact-match scrub by a passphrase of `pass` turns every
+one of them into the marker and reads a good backup as one that did not verify, so the restore would not have run. A test runs the
+whole run with that passphrase (a mutation that scrubs the whole result fails it), one drives the four sites with the engine
+raising the passphrase, one runs the real P0 phase through a release run and finds the passphrase in no file under the data
+folder or the destination, and a static test holds every handler of a function that is given the passphrase to using the caught
+exception only through the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`sys.exc_info()`; it follows no call, and its own walk is tested on seventeen ways a caught exception can reach a text and four forms
+it must leave alone). The run's parameters no longer print the passphrase in their repr, a failed start removes its
+directory with `rmdir` (an empty directory and nothing else), and a failure that wraps another is scrubbed from its whole
+traceback, with a test for `__cause__` and for `__context__`. Recorded, not fixed (small, and the PR carries no logic for them): a
+cancel that lands after the restore committed reads the phase as `cancelled` while its install exists, the scrub's own
+result is not recorded when it runs from `finally`, and the test that ties `UNLOCK_ROUTES` to the unlock router's own routes
+catches a route the router lost but not one it gained (`OPEN_QUEUE.md` holds the three as deliberate omissions). Lessons: `LESSONS.md`, the entries "A PHASE'S STATUS WAS THE RUNNER'S, NOT THE
+CHILD'S: A RESTORE THAT FAILED READ "MEASURED" BECAUSE THE PARENT RETURNED", "A DIRECTORY MADE FOR ONE ATTEMPT IS NAMED BY SOMETHING
+THAT CANNOT REPEAT, AND A CHILD'S PIPES ARE READ WHILE IT RUNS", "CODEQL READS NAMES: A HELPER THAT TAKES A
+SECRET OUT IS, BY ITS NAME, A SOURCE OF ONE" and "THE STYLE RATCHET IS A GATE, NOT ADVICE, AND IT COUNTS WITH ITS OWN RUFF".
+
+- **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the independent read of R114 / #1304).** #1304
+was merged before its independent read ended. The read ran glibc 2.39 itself with crafted environments (children started through
+`execve`, arenas counted with `malloc_info` after 16 allocating threads) and found that the allocator setting each session
+records could say the opposite of what the allocator did: a variable named twice read as its LAST value where glibc and
+`os.environ` take the first (8 then 1 gives 8 arenas, the reading said capped at 1, and the test pinned that order), and
+`strip()` plus `isdigit()` claimed caps glibc never applied (`"4 "`, `" 4 "`, `"08"` and a 23-digit number each leave 17
+arenas; `"010"` is octal). The reading now takes the first entry, counts only a plain decimal number (blanks and tabs may
+lead; anything else reads `effective: None`, not known), says not known when `GLIBC_TUNABLES` names `glibc.malloc.arena_max`
+(it outranks the variable in either order), says not capped under a preloaded jemalloc, tcmalloc or mimalloc, treats an
+empty `/proc/self/environ` as an `env -i` start rather than falling back to `os.environ`, and names `arena_cap` only for a cap
+the process runs with. The soak window's memory-guard block carries the setting when the guard's own state cannot be read, the
+launcher's comment and the changelog no longer say freed memory stays in its own thread's arena, and the launcher tests pin
+that an install file that unsets or empties the variable, or a caller that passes it empty, still gets the default. A test
+starts a child with the variable named twice and counts the arenas glibc kept. The read of that fix, at 87e5284e, ran the same
+child again and found the reading still judging by names: a preload counted as a replacement because `LD_PRELOAD` named one,
+though a path that is not there loads nothing and the cap holds (and one that loaded under another name through a symlink is a
+replacement), so the reading asks what the process LOADED, from `/proc/self/maps`, and says not known where the map cannot be read
+(`dladdr(malloc)` was tried and answers "python3" for every allocator); a variable named twice applies its first ACCEPTED value,
+so a first value glibc ignores (`"4 "`) lets the second apply and reads as not known; `GLIBC_TUNABLES` is parsed in every copy
+and `;` is no separator there (the tunable's value is invalid, so it is ignored and the variable applies). Measured against a
+real glibc child (29 environments) and a real jemalloc. The coordinator's check of that fix then found a row of the table wrong:
+`-2` was said to be IGNORED by glibc, and it is read with `strtoul`, which takes a sign and wraps it to 2**64 - 2, a cap that
+bounds nothing (named first it keeps all 17 arenas, with `2` after it); three CPUs or more cannot tell it from an ignored value
+(both keep 17), so the rows that expect a cap that bounds nothing now compare with what a huge valid cap keeps (below three CPUs
+glibc's own limit of 8 arenas per online CPU bites and the two differ), and each ignored value is proved ignored by naming it first with a
+bounding value second. Lessons: `LESSONS.md`, the entry "A READING OF
+ANOTHER PROGRAM'S BEHAVIOUR IS TESTED BY RUNNING THAT PROGRAM, NOT BY AGREEING WITH THE CODE" (the second read is its last paragraph).
+
+- **2026-10-06 · monitoring/allocator-cap (release candidate diagnostics, PR #1312, the coordinator's check of #1304, should-fix 1).** R114 ruled the
+cap for the instance and the launcher exported it, so the browser it opened and, through the server's environment, the Ollama daemon, the vLLM server
+and the installs and weights download inherited it, none of them ruled or measured for it and none read by the diagnostics. The launcher now gives it
+to the server's command alone (through `env`, so a `readonly` declaration in `oo.env` cannot stop the app starting) and marks its own default with
+`OO_ARENA_MAX_DEFAULTED=1` (cleared first); `launch_env` drops the variable when the marker says it was the launcher's default and always drops the
+marker, and an operator's own value, which carries none, still reaches the engines. The Ollama install script (`installer.run_installer`) is a
+deliberate non-member of the three spawners (a short shell, not an engine, which inherits the server's environment; the daemon it installs is
+started by the service manager), said so in the code, in `launch_env`'s docstring and in the spawner test. Recorded in the R114 row and queue entry
+as a session decision under `16c`. Lesson: `LESSONS.md`, the entry "A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS".
+
+- **2026-10-06 · backup/snapshot-instead-of-wal-member (WAL / disk thread).**
+A volume backup no longer carries a residual write-ahead log. A free PASSIVE probe decides from the checkpoint's own row: a
+reader that started after the last commit costs nothing; a reader older than a later commit makes the backup copy the corpus
+through one read transaction into its staging directory on the destination drive, under the collection pause and without the
+write gate, instead of streaming the `-wal` as a member. The space check and the volume sizing count the store through the log
+(`page_count` x `page_size`), refuse before any byte is copied in the standard free-space words, and a reader that appears after
+the sizing is copied late inside the same pause. A stop interrupts an encrypted copy within seconds and a plaintext copy ends
+first; a crash's leftover copy is swept by its owner (dead at once, live never, unmarked by age) and the destinations ever given
+a copy are swept at boot on a thread of their own. The summary reports `snapshot_s` and `snapshot_bytes` beside `gate_held_s`
+(which now means the deciding window only); the progress label is "Making a temporary copy of your data..." in 12 languages.
+Restore still reads an old archive's `corpus-wal` member. Lesson: `LESSONS.md`, the entry "A BACKUP THAT CANNOT FOLD THE LOG INTO
+THE MAIN FILE COPIES THE CORPUS".
 
 - **2026-10-06 · diagnostics/first-run-hand-over (keyword-export thread; the maintainer's 02:36 UTC report).**
 "Running the full diagnostics did not work, I had to push the 'run again' button": the ten bundles (eight machines) carry no error;

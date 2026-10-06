@@ -1192,6 +1192,7 @@
             settled = true;
             set(t("Ready — preparing the numbered files…"));
             let handOver = 0;   // files to hand over once the bar is set; the hand-over is outside the try
+            let handSet = null;   // the set the bar was given for it, to tell whether it still holds it afterwards
             try {
               const m = await api("/api/diagnostics/all-job/volumes");
               // A listing with nothing in it is the same failure the "again" button names: say so
@@ -1220,7 +1221,7 @@
               } else {
                 ++_partsGen;
                 set("");
-                _partsReady(m, "diagnostics");
+                handSet = _partsReady(m, "diagnostics");
                 handOver = m.files.length;
               }
             } catch (e) {
@@ -1263,7 +1264,19 @@
               // or refuse without telling the page: the line says «Asked your browser», never
               // «saved», and «All diagnostics, again» beside it sends the same files again. A
               // larger set still waits for the button, five to a click.
-              if (handOver <= _PARTS_PER_CLICK) await _partsSave(_PARTS_PER_CLICK);
+              if (handOver <= _PARTS_PER_CLICK) {
+                await _partsSave(_PARTS_PER_CLICK);
+                // The last line of the save replaced the sentence _partsReady wrote about the
+                // browser's several-downloads question, and this hand-over (no click of the
+                // person's own, minutes after the press) is the case that question is for: a
+                // person whose second file is held by it must still read what to do about it, not
+                // only «check that they all arrived». It goes back after the save's line, for a
+                // set of two files or more, and only while the bar still holds this set.
+                const line = $("parts-status");
+                if (handSet && _partsSet === handSet && handOver > 1 && line) {
+                  _partsStatus((line.textContent || "") + " " + t("Your browser may ask once to allow several downloads: allow them."));
+                }
+              }
             }
             break;
           }
@@ -1646,8 +1659,9 @@
 
     // The resume (2026-09-18): the run the app restarted out of continues under the
     // same run id -- every measured phase kept, the backup and the restore never
-    // redone, the soak a NEW stretch (the bar is continuous). The passphrase is asked
-    // for only when the status said the backup or the restore is still owed.
+    // redone once they finished (a restore that failed is retaken), the soak a NEW
+    // stretch (the bar is continuous). The passphrase is asked for only when the
+    // status said the backup or the restore is still owed.
     let _rrResumePlan = null;
     async function releaseRunResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

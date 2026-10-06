@@ -54,6 +54,8 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     # test_release_run pins as the package's last.
     "keyword_parts_latest",
     "keyword_part_download",
+    # 2026-10-06, the Wikipedia lane's own hourly history, before the release run.
+    "wiki_lane_history",
     # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,
     # six routes, imported last -- the button the maintainer asked for.
     "release_run_start",

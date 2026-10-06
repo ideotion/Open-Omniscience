@@ -129,15 +129,19 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
     relaunched since does not. It is a property of the process, not a reading over the
     window, and it never changes ``measured``.
     """
+    from src.monitoring.session_hwm import allocator_setting
+
     try:
         from src.scheduler import memguard
 
         state = memguard.memory_guard.state()
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
         _LOG.debug("memory-guard state unavailable", exc_info=True)
-        return {"measured": False, "reason": f"memory-guard state unavailable: {exc}"}
-
-    from src.monitoring.session_hwm import allocator_setting
+        return {
+            "measured": False,
+            "reason": f"memory-guard state unavailable: {exc}",
+            "allocator": allocator_setting(),
+        }
 
     engagements = state.get("engagements")
     engaged_s = state.get("total_engaged_s")
@@ -454,21 +458,81 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
                 "the Wikipedia lane has no database file yet -- it has never run. "
                 "This is not a reading of zero."
             ),
+            # A drain that fails before it creates the file leaves its reason ONLY here.
+            "service": _wiki_service(),
         }
+    if not lane_file_bytes("wiki"):
+        # A zero-byte file is a lane that was opened and never given its tables (an
+        # interrupted first start): reading it raised "no such table" and the whole block
+        # reported a crash on a bundle from an instance whose lane had simply never stored.
+        return {
+            "measured": False,
+            "reason": (
+                "the Wikipedia lane file is empty -- it has never stored anything. "
+                "This is not a reading of zero."
+            ),
+            "service": _wiki_service(),
+        }
+    from sqlalchemy.exc import SQLAlchemyError
+
     from src.versioned.store import lane_session
     from src.wiki.counters import lane_counters
 
     window_days = max(1, int(round(bar_hours / 24.0)) + 4)
-    with lane_session("wiki") as lane:
-        out = lane_counters(
-            lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"), bar_hours=bar_hours
-        )
+    try:
+        with lane_session("wiki") as lane:
+            out = lane_counters(
+                lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"),
+                bar_hours=bar_hours,
+            )
+    except SQLAlchemyError as exc:
+        # A header-only file (the journal on, the tables never created) is as unread as an empty
+        # one, and the service state beside it is what says why.
+        return {
+            "measured": False,
+            "reason": (
+                f"the Wikipedia lane file could not be read ({type(exc).__name__}) -- it has no "
+                "tables yet. This is not a reading of zero."
+            ),
+            "service": _wiki_service(),
+        }
     # MEASURED means the lane produced a reading at all. The per-block ``measured``
     # flags inside it stay exactly as ``lane_counters`` set them; flattening them into
     # one verdict here is what would let an absent growth series hide behind a present
     # row count.
     out["measured"] = True
+    out["service"] = _wiki_service()
     return out
+
+
+def _wiki_service() -> dict[str, Any]:
+    """What this process is doing about the lane RIGHT NOW: the reason a quiet lane is quiet.
+
+    The run clock says WHEN the lane showed no sign of life; only the process can say whether
+    its stream thread and its drain loop are alive, how many drains failed in a row and why,
+    and whether the loop has had to start the stream again. Measured at read time, so it
+    describes this process and nothing older: ``runner: false`` is a lane that was never
+    started since boot (the app starts offline), which is not a lane that died. ``state`` is the
+    operator's setting and ``online`` is the kill switch, so a lane that is off, one waiting
+    for airplane mode to clear and one whose build failed read as three different things.
+    Never raises: a failure here must not turn an already computed counters block into an error.
+    """
+    try:
+        from src.ingest import kill_switch_active
+        from src.wiki.service import _state_of, lane_service_status
+
+        status = lane_service_status()
+        status["runner"] = status.get("drain") is not None
+        status["basis"] = "this process, at the moment of the read"
+        try:
+            status["state"] = _state_of()
+        except Exception:  # noqa: BLE001 - an unreadable setting is absent, not guessed
+            status["state"] = None
+        status["online"] = not kill_switch_active()
+        return status
+    except Exception as exc:  # noqa: BLE001 - the service state is a reading, not the block's work
+        _LOG.debug("wiki lane service state unreadable", exc_info=True)
+        return {"measured": False, "reason": f"unreadable: {type(exc).__name__}"}
 
 
 def _block(name: str, fn: Any) -> dict[str, Any]:

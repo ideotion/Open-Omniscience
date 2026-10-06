@@ -350,6 +350,11 @@ def run_installer(path: str) -> Iterator[str]:
     from src.ingest.egress_window import hold
 
     with hold():
+        # No ``env=``, on purpose: this child is the install SCRIPT (a short shell that downloads and unpacks
+        # the binary and asks the service manager to start the daemon), not an engine, so it inherits the
+        # server's environment as it is -- the launcher's default malloc-arena cap (R114) included, which is
+        # harmless to a download. The daemon it installs is started by the service manager with its own
+        # environment, and the one this app starts itself takes ``model_store.launch_env``.
         proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, verified script
             cmd,
             stdout=subprocess.PIPE,

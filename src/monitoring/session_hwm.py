@@ -60,10 +60,12 @@ import ctypes
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
 import types
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -192,31 +194,109 @@ def _glibc_heap() -> dict[str, float] | None:
 
 
 _ARENA_VAR = "MALLOC_ARENA_MAX"
+_TUNABLES_VAR = "GLIBC_TUNABLES"
+_PRELOAD_VAR = "LD_PRELOAD"
+_STARTING_ENVIRONMENT = "the environment the process started with"
+
+# Malloc replacements people preload to tame glibc's memory behaviour. They have no glibc
+# arenas, so MALLOC_ARENA_MAX does nothing to them. Matched against the base name of a file the
+# process has LOADED (``_loaded_files``); ``tbbmalloc_proxy`` is the one of Intel's two libraries
+# that takes malloc over, and ``libtbbmalloc`` alone, which a threading runtime may load, does not.
+_MALLOC_REPLACEMENTS = ("jemalloc", "tcmalloc", "mimalloc", "tbbmalloc_proxy", "snmalloc", "scudo")
+
+# What glibc 2.39 was MEASURED to read as the same number a person would: blanks and tabs may
+# come first; a leading 0 is read as octal ("010" is 8, "08" is ignored), 0x as hex, a value
+# with anything after its digits (a trailing blank too) is ignored, and so is one that
+# overflows. Only the plain decimal form is claimed; 18 digits stay well inside a 64-bit count.
+_PLAIN_COUNT = re.compile(r"[ \t]*([1-9][0-9]{0,17})")
 
 
-def _starting_value(name: str) -> tuple[str | None, str]:
-    """The value environment variable ``name`` had when this process STARTED, and where
-    that was read (``None`` for a variable that was not set).
+def _starting_values(*names: str) -> tuple[dict[str, str | None], str]:
+    """The value each of ``names`` had when this process STARTED, and where that was read
+    (``None`` for a variable that was not set).
 
-    glibc reads ``MALLOC_ARENA_MAX`` once, before the process's first allocation, so a
-    later change to ``os.environ`` can never have applied to it. On Linux
-    ``/proc/self/environ`` is the block the process was started with and is read first;
-    where it cannot be read (no procfs, an empty block) ``os.environ`` stands in and the
-    source says so. A variable set twice takes its last value, as glibc and ``os.environ``
-    both do."""
-    source = "the environment the process started with"
+    glibc reads its malloc variables once, before the process's first allocation, so a later
+    change to ``os.environ`` can never have applied to it. On Linux ``/proc/self/environ`` is
+    the block the process was started with and is read first: an EMPTY block is an ``env -i``
+    start where nothing was set, not a failure. Only where it cannot be read at all (no
+    procfs) does ``os.environ`` stand in, and the source says so. A variable set twice reads as
+    its FIRST value, as ``os.environ`` does. glibc applies the first value it ACCEPTS (a first
+    one it ignores, such as ``"4 "``, lets the second apply), which the number check does not
+    claim: an ignored first value reads as not known, never as the second. ``GLIBC_TUNABLES``
+    is the exception: glibc parses EVERY copy of it, so the copies are joined with ``:`` and a
+    later one that names ``glibc.malloc.arena_max`` is not missed."""
     try:
         block = Path("/proc/self/environ").read_bytes()
     except OSError:
-        block = b""
-    if not block:
-        return os.environ.get(name), "os.environ (the starting environment could not be read)"
-    want = name.encode("ascii") + b"="
-    value: str | None = None
+        return (
+            {name: os.environ.get(name) for name in names},
+            "os.environ (the starting environment could not be read)",
+        )
+    found: dict[str, str | None] = dict.fromkeys(names)
+    wanted = {name.encode("ascii"): name for name in names}
     for entry in block.split(b"\0"):
-        if entry.startswith(want):
-            value = entry[len(want):].decode("utf-8", errors="replace")
-    return value, source
+        key, equals, value = entry.partition(b"=")
+        name = wanted.get(key) if equals else None
+        if name is None:
+            continue
+        text = value.decode("utf-8", errors="replace")
+        if found[name] is None:
+            found[name] = text
+        elif name == _TUNABLES_VAR:
+            found[name] = f"{found[name]}:{text}"
+    return found, _STARTING_ENVIRONMENT
+
+
+def _plain_count(raw: str | None) -> int | None:
+    """``raw`` as a positive whole number glibc is known to read the same way, else None."""
+    match = _PLAIN_COUNT.fullmatch(raw) if raw is not None else None
+    return int(match.group(1)) if match else None
+
+
+def _loaded_files() -> list[str] | None:
+    """The base names of the files mapped into this process (``libjemalloc.so.2``), each once and in map
+    order, or None where ``/proc/self/maps`` cannot be read.
+
+    What is LOADED is what decides which malloc a process runs, and ``LD_PRELOAD`` is only one way to ask
+    for it: the entry may not load (a path that is not there is skipped with a message on stderr), may
+    be a symlink with another name, and ``/etc/ld.so.preload`` names libraries the environment never
+    mentions. The kernel lists the file a library was really loaded from, so each of those reads right.
+    Measured on glibc 2.39 with a real jemalloc: a nonexistent ``LD_PRELOAD`` path is absent from the
+    map and the process ran on glibc's arenas; the same library through a symlink named
+    ``libfastalloc.so`` is listed as ``libjemalloc.so.2`` and the process ran on one glibc arena.
+
+    THE LIMIT, measured: the map is read when the setting is asked for, and it lists a library loaded AFTER the
+    process started (a ``ctypes`` or ``dlopen`` load) as well, which does not take malloc over. A stand-in named
+    like mimalloc and loaded through ``ctypes`` moved the same process from ``capped at 2`` to ``replaced, no
+    effect``. Nothing in this application loads such a library, and the error is on the modest side (it says a cap
+    had no effect that did), but a reading taken later than the start can say it."""
+    try:
+        lines = Path("/proc/self/maps").read_bytes().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    found: dict[str, None] = {}
+    for line in lines:
+        fields = line.split(None, 5)  # address, permissions, offset, device, inode, pathname
+        if len(fields) == 6 and fields[5].startswith("/"):
+            found[fields[5].removesuffix(" (deleted)").rsplit("/", 1)[-1]] = None
+    return list(found)
+
+
+def _malloc_replacement(names: Iterable[str]) -> str | None:
+    """The first of ``names`` (base names of files) that is a known malloc replacement, or None."""
+    for base in names:
+        if any(known in base.lower() for known in _MALLOC_REPLACEMENTS):
+            return base
+    return None
+
+
+def _tunes_arena_max(tunables: str | None) -> bool:
+    """Whether ``GLIBC_TUNABLES`` names ``glibc.malloc.arena_max``, which glibc lets take
+    precedence over ``MALLOC_ARENA_MAX`` in whichever order the two were set (measured). Tunables
+    are separated by ``:`` and nothing else: a ``;`` makes the value glibc reads for the tunable
+    before it invalid, so it ignores that one and the variable applies (measured), and an entry
+    after a ``;`` is not one glibc ever reads."""
+    return any(part.strip().startswith("glibc.malloc.arena_max=") for part in (tunables or "").split(":"))
 
 
 def _glibc_version() -> str | None:
@@ -235,33 +315,58 @@ def allocator_setting() -> dict[str, Any]:
     (R114). Every session's record carries it, so a report can tell the instances that run
     with the cap from those that do not, and the sessions either side of an update.
 
-    ``effective`` is the answer to "does this process run with the cap": True only on glibc
-    started with ``MALLOC_ARENA_MAX`` set to a plain positive whole number (``arena_cap``);
-    False where it is not set, or where the allocator is not glibc and the variable does
-    nothing; None where it was set to something that is not a plain positive whole number,
-    because what glibc made of it is not known. The value is the process's STARTING
-    environment (``source`` says where it was read), never a later ``os.environ``."""
+    ``effective`` is the answer to "does this process run with the cap". True only on glibc
+    started with ``MALLOC_ARENA_MAX`` set to a plain positive whole number (``arena_cap`` is
+    then that number, and None otherwise: it names a cap the process runs with, never one the
+    environment merely says). False where the variable is not set, where the allocator is not
+    glibc, and where a malloc replacement is LOADED (read from the process's own memory map, not
+    from the name an ``LD_PRELOAD`` entry gives: one that did not load is no replacement, and one
+    that loaded under another name is), because the variable does nothing there. None where it
+    cannot be told: a value glibc may have ignored or read differently (not a plain positive whole
+    number), ``GLIBC_TUNABLES`` naming ``glibc.malloc.arena_max``, which outranks the variable and
+    is not interpreted here, or an ``LD_PRELOAD`` naming a replacement while the loaded files
+    cannot be read. The variables are the process's STARTING environment (``source`` says where
+    they were read), never a later ``os.environ``."""
     try:
-        raw, source = _starting_value(_ARENA_VAR)
+        env, source = _starting_values(_ARENA_VAR, _TUNABLES_VAR, _PRELOAD_VAR)
+        raw = env[_ARENA_VAR]
         libc = _glibc_version()
-        cap: int | None = None
-        if raw is not None:
-            text = raw.strip()
-            if text.isascii() and text.isdigit() and int(text) >= 1:
-                cap = int(text)
+        loaded = _loaded_files()
+        replacement = _malloc_replacement(loaded or ())
+        # Only used where the map cannot be read: what the environment NAMES stands in, as a doubt.
+        named = _malloc_replacement(
+            entry.rsplit("/", 1)[-1] for entry in (env[_PRELOAD_VAR] or "").replace(":", " ").split()
+        )
+        cap = _plain_count(raw)
         out: dict[str, Any] = {
             "allocator": libc or f"not glibc ({sys.platform})",
-            "arena_cap": cap,
+            "arena_cap": None,
             "effective": False,
             "source": source,
         }
+        was_set = f" (it was set to {raw!r})" if raw is not None else ""
         if libc is None:
-            out["note"] = "MALLOC_ARENA_MAX has no effect here" + (
-                f" (it was set to {raw!r})" if raw is not None else ""
+            out["note"] = "MALLOC_ARENA_MAX has no effect here" + was_set
+        elif replacement is not None:
+            out["note"] = (
+                f"malloc is replaced by {replacement} (loaded into this process), which has no glibc "
+                "arenas: MALLOC_ARENA_MAX has no effect on it" + was_set
+            )
+        elif loaded is None and named is not None:
+            out["effective"] = None
+            out["note"] = (
+                f"LD_PRELOAD names {named}, and the files this process loaded could not be read: "
+                "whether malloc is replaced, and so whether MALLOC_ARENA_MAX applies, is not known" + was_set
+            )
+        elif _tunes_arena_max(env[_TUNABLES_VAR]):
+            out["effective"] = None
+            out["note"] = (
+                "GLIBC_TUNABLES sets glibc.malloc.arena_max, which outranks MALLOC_ARENA_MAX "
+                "and is not read here: whether the arenas are capped is not known"
             )
         elif raw is None:
             out["note"] = (
-                "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per core, glibc's default "
+                "MALLOC_ARENA_MAX was not set: up to 8 malloc arenas per online CPU, glibc's default "
                 "on a 64-bit machine"
             )
         elif cap is None:
@@ -272,6 +377,7 @@ def allocator_setting() -> dict[str, Any]:
             )
         else:
             out["effective"] = True
+            out["arena_cap"] = cap
             out["note"] = f"malloc arenas capped at {cap} by MALLOC_ARENA_MAX"
         return out
     except Exception as exc:  # noqa: BLE001 - an optional reading, never a second failure

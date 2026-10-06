@@ -429,8 +429,26 @@ def _reset_for_tests() -> None:
     _unlock._reset_for_tests()
 
 
+def _snapshot_route(r: dict[str, Any]) -> dict[str, Any]:
+    """One route's record copied for ``_route_row`` to read AFTER ``_LOCK`` is released. Called under
+    ``_LOCK``, and copies only: the window's two deques become lists (a live deque cannot be
+    iterated while ``record`` appends to it), the status map is copied, and ``first`` and ``slowest``
+    are shared because a call dict is never changed once it is stored (a new call replaces it)."""
+    return {
+        "durations": list(r["durations"]),
+        "kinds": list(r["kinds"]),
+        "count": r["count"],
+        "max_ms": r["max_ms"],
+        "statuses": dict(r["statuses"]),
+        "first": r["first"],
+        "slowest": r["slowest"],
+    }
+
+
 def _route_row(key: str, r: dict[str, Any], bar_ms: float) -> dict[str, Any]:
-    """One route's published row. Called under ``_LOCK``.
+    """One route's published row, from a ``_snapshot_route`` copy and NEVER the live record, so it
+    takes no lock: it sorts the window three times, which is what held ``_LOCK`` for tens of
+    milliseconds when ``summary`` built the rows under it.
 
     Every figure beside ``p95_ms`` ATTRIBUTES it and none replaces it: ``p95_ms`` still counts
     every request, refused ones included, because a person waited for them. What the extra
@@ -502,10 +520,14 @@ def summary() -> dict[str, Any]:
     listed, bounded only by the keyspace memory bound, whose dropped requests are published."""
     bar_ms = _snappy_bar_ms()
     with _LOCK:
-        routes = [_route_row(key, r, bar_ms) for key, r in _ROUTES.items()]
+        # COPIES ONLY under the lock; the rows (three sorts of a window of up to 512 per route) are
+        # built after it. ``record`` takes this same lock on the event-loop thread for every
+        # response, so every millisecond held here is a millisecond the loop cannot answer anyone.
+        snapshots = [(key, _snapshot_route(r)) for key, r in _ROUTES.items()]
         events = list(_EVENTS)
         in_flight_now = len(_INFLIGHT)
         dropped = _KEYSPACE_DROPPED
+    routes = [_route_row(key, snap, bar_ms) for key, snap in snapshots]
     routes.sort(key=lambda x: x["p99_ms"], reverse=True)
     # S2.7 top-level roll-up: how the INTERACTIVE routes stand against the bar, so a field
     # export shows pass/fail directly. `failing` lists the offenders (interactive routes

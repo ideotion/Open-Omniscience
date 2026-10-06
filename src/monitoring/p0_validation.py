@@ -50,6 +50,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import scrub_text
+
 _LOG = logging.getLogger("monitoring.p0_validation")
 
 P0_VALIDATION_SCHEMA = "oo-p0-validation-1"
@@ -277,6 +279,19 @@ def validate_dest_dir(dest_dir: str | Path) -> Path:
 # --------------------------------------------------------------------------- #
 #  P0.1 — backup (+ incremental refresh) + verify
 # --------------------------------------------------------------------------- #
+def _exception_text(exc: BaseException, passphrase: str) -> str:
+    """What a caught exception says, for a report: ``Name: message`` with the passphrase taken out of it.
+
+    The four checks that are handed the passphrase (the backup, its refresh, the verify and the restore
+    probe) catch whatever the engine raises and write its words into the report, which is a file the debug
+    bundle carries and, in a release run, the run's state file and report. Nothing in the engine puts the
+    passphrase in a message today; this is the net where the text is MADE, so a message that did cannot
+    reach any of those. Done on the text, never on the finished report: a report holds verdicts (``pass``,
+    ``fail``) that code and the panel compare, and an exact-match scrub of a short passphrase (``a``,
+    ``pass``) would rewrite them."""
+    return scrub_text(f"{type(exc).__name__}: {exc}", passphrase)
+
+
 def _check_backup(
     ctx: Any,
     dest_dir: Path,
@@ -311,7 +326,7 @@ def _check_backup(
                 progress_cb=_progress,
             )
         except Exception as exc:  # noqa: BLE001 - a backup fault is a measured FAIL
-            err = f"{type(exc).__name__}: {exc}"
+            err = _exception_text(exc, passphrase)
     backup_wall_s = round(time.monotonic() - t0, 3)
 
     corpus_bytes = int((summary or {}).get("corpus_bytes") or 0)
@@ -348,7 +363,7 @@ def _check_backup(
             # real changed-volume-re-emit failure is visible (not None-as-if-not-attempted).
             if not ctx.stopping:
                 incremental = {
-                    "error": f"{type(exc).__name__}: {exc}",
+                    "error": _exception_text(exc, passphrase),
                     "note": "the incremental refresh pass raised; the full backup + verify still stand.",
                 }
 
@@ -424,7 +439,7 @@ def _check_backup(
     try:
         vrep = verify_stream_backup(dest_dir, passphrase)
     except Exception as exc:  # noqa: BLE001
-        verr = f"{type(exc).__name__}: {exc}"
+        verr = _exception_text(exc, passphrase)
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
         "ok": None if vrep is None else vrep.get("ok"),
@@ -489,7 +504,7 @@ def _check_restore(
                     cleanup_staging(staged)
             return _verdict(
                 "fail",
-                f"the staged restore probe did not complete: {type(exc).__name__}: {exc}",
+                f"the staged restore probe did not complete: {_exception_text(exc, passphrase)}",
                 {"duration_s": round(time.monotonic() - t0, 3), "peak_rss_mb": rss.peak_mb},
                 bars["p0_2_restore"],
             )

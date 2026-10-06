@@ -198,7 +198,12 @@ def test_serves_previous_rollup_stale_but_disclosed_during_rebuild(session, monk
     numbers with as_of visible — NOT a live 21M-mention scan; basis discloses it stale. The
     D3 regression guard: this must never quietly regress into a live scan during a rebuild."""
     kw = dict(window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=100)
-    live = q.trending(session, **kw)  # default off -> the live numbers
+    # The live baseline is taken with the serve explicitly OFF. Left on auto (it is on whenever duckdb is
+    # installed), this very call kicks a REAL background build whose swap can land after the stale state
+    # below is set and flip it to fresh (seen in full-suite runs; the thread's start is slower since the
+    # build gained its start checks, which widens the window).
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
+    live = q.trending(session, **kw)  # serve off -> the live numbers
 
     con = columnar.connect(passphrase=None)
     columnar.build_keyword_daily(con, session)

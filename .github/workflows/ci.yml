@@ -457,7 +457,8 @@ jobs:
           python -m pytest -q \
             tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
             tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
-            tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py
+            tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py \
+            tests/test_rollup_build_streaming.py
 
       - name: D1 persisted-encrypted round trip (CI-only httpfs trust path)
         env:
