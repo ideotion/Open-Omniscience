@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import shutil
 import subprocess
 import tracemalloc
@@ -299,8 +300,15 @@ def test_a_record_larger_than_a_part_goes_out_as_numbered_byte_pieces_never_over
 
 
 def test_the_cap_cannot_be_smaller_than_a_part_s_own_index(tmp_path):
-    with pytest.raises(ValueError, match="too small"):
+    with pytest.raises(ValueError, match="too small") as err:
         up.PartWriter(tmp_path / "set", stem="oo-test-tiny", cap=900)
+    # the message names the smallest cap that works, and that number is the threshold: one byte
+    # under it is refused, and it itself is not (a figure the person reads must be one they can act on)
+    needed = int(re.search(r"cap needs at least (\d+)", str(err.value)).group(1))
+    assert needed > 900
+    with pytest.raises(ValueError, match="too small"):
+        up.PartWriter(tmp_path / "under", stem="oo-test-tiny", cap=needed - 1)
+    up.PartWriter(tmp_path / "at", stem="oo-test-tiny", cap=needed)
 
 
 def test_parts_are_filled_to_the_cap_at_the_real_cap(tmp_path):

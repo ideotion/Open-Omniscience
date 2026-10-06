@@ -13534,7 +13534,7 @@ release that declines a session which has written, so a member's flushed work is
 (`run.read_release`: `released`, `none_held`, `declined`, with its method and its caveat). What that buys is real and smaller than the story: the pool slot and the D44
 reservation's "standing holder" count come back between members, and the reader list stops naming the build at times it holds nothing; it does NOT shorten a long
 statement inside `keyword-engine` (250 s), `leads-quality` (275 s), `bulletin-weekly` (302 s, its deadline) or `debug-bundle` (92 s), the figures from `OOS-12`'s bundle.
-**Reusable:** before writing "pinned", ask the connection (`dbapi_connection.in_transaction`, or a TRUNCATE checkpoint from a third connection with no busy wait), not a
+**Reusable:** before writing "pinned", ask the log with a TRUNCATE checkpoint from a third connection with no busy wait (`dbapi_connection.in_transaction` sees only an open BEGIN, a write or the explicit-BEGIN recipe, and is False while a SELECT is partly read, which pins the log all the same), not a
 list of checkouts; and when a test needs a pin, MODEL it (an explicit BEGIN) and prove the model with a negative control (the same sequence with the release switched off
 leaves the checkpoint busy), because on the shared engine's own mode the pin is absent whether or not the code under test ran. Not explained here and not this thread's:
 the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which a build of 9 to 48 minutes does not obviously

@@ -1326,16 +1326,19 @@ def _trim_after_heavy_member(probe: "_RssProbe", rss_after: int | None) -> dict 
 
 #: What the manifest's ``run.read_release`` says about itself, beside its three counts.
 _READ_RELEASE_METHOD = (
-    "between two members the build ends its session's read transaction "
-    "(src.database.session.release_idle_connection), so the pooled connection goes back "
-    "and a checkpoint, the pin report and the collector's reserved slots no longer see a "
-    "standing reader for the whole run"
+    "between two members the build ends its session's transaction "
+    "(src.database.session.release_idle_connection) and returns its pooled connection, so "
+    "the build no longer holds a connection checked out for the whole run; a statement or a "
+    "cursor a member left open is not ended by it"
 )
 _READ_RELEASE_CAVEAT = (
     "it does not bound ONE member: a statement or an open cursor inside a member still pins "
-    "the log for as long as that member reads, which the slow members' own wall time "
+    "the log for as long as that member reads (and a cursor left partly read past the member "
+    "can keep the log pinned after a boundary that counts `released`: SQLite's own "
+    "in_transaction flag is False for it), which the slow members' own wall time "
     "(run.slowest_members) is the measure of. `none_held` counts boundaries where the session "
-    "had no transaction open, `declined` those where releasing could have discarded work"
+    "had no transaction open, `declined` those where releasing could have discarded work or "
+    "the session could not say"
 )
 
 
@@ -2865,27 +2868,37 @@ _ALL_DIAG_VOLUMES_LOCK = threading.Lock()
 _VOLUME_BUILD_PREFIX = "volumes-build-"
 
 
-def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path) -> None:
+def _check_room_for_volumes(src: pathlib.Path, where: pathlib.Path, *, had_set: bool) -> None:
     """Refuse, with the numbers, a split the drive cannot take beside the archive (HTTP 507).
 
     The set is built beside the previous one and replaces it only when whole, so for a while the
     drive holds the archive, the old set and the new one: the new set weighs about what the archive
-    does (its members are re-deflated or stored as they were), and the same headroom and reserve
-    the keyword export keeps free apply. What the reserve protects is the database's own log on
-    the same drive, which a full disk stops. Without this the split ran into a full disk after
-    sweeping the old set and reported a raw operating-system error."""
-    from src.analytics.keyword_log_export import room_for
+    does (1.006 to 1.04 times, measured at caps of 1 MB to 50 KB), so the keyword export's 20 %
+    headroom covers it, and the old set is NOT counted as free (it stays until the new one is in).
+    THE RESERVE IS THE FLOOR (512 MiB), NOT THE DRIVE'S ONE PER CENT: what it protects is the
+    database's own log, which a full disk stops, and a split writes a few megabytes where the
+    keyword export writes gigabytes. The share would refuse the split on a 2 TB drive with 15 GiB
+    free, and the diagnostics are for the machines that are nearly full. Without a check at all the
+    split ran into a full disk after sweeping the old set and reported a raw operating-system error.
+    ``had_set``: a set was on disk before (the text only says its files were not touched when they
+    were there to touch)."""
+    from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR, room_for
     from src.api import diagnostics_volumes as dvol
 
     need = src.stat().st_size
-    fits, free, reserve = room_for(where, need)
+    fits, free, reserve = room_for(where, need, reserve=_DISK_RESERVE_FLOOR)
     if not fits:
         raise dvol.VolumeRoomError(
             f"the numbered files need about {need / 2**20:.0f} MiB beside the archive on the drive "
             f"the data folder is on, and only {free / 2**20:.0f} MiB is free there (about "
             f"{reserve / 2**30:.1f} GiB is kept free on it for whatever else writes to it, the "
-            "database's own log included). The files of the previous archive are still there. "
-            "Free some space and press the button again."
+            "database's own log included). "
+            + (
+                "The files of the previous archive were not touched. "
+                if had_set
+                else "Nothing on the server was changed. "
+            )
+            + "Free some space and press the button again."
         )
 
 
@@ -2907,8 +2920,14 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
 
     out = _all_diagnostics_volumes_dir()
     with _ALL_DIAG_VOLUMES_LOCK:
+        # A build folder left by a process that died is removed first (the lock means none is in
+        # use by this process), on the path that re-serves a set as well as on the one that builds.
+        for left in out.parent.glob(_VOLUME_BUILD_PREFIX + "*"):
+            shutil.rmtree(left, ignore_errors=True)
+        had_set = False
         with contextlib.suppress(Exception):
             current = dvol.load_manifest(out)
+            had_set = True
             # The cap is part of what makes it "the current set": one built under another cap
             # (OO_DIAG_VOLUME_MAX_MB changed, or the 9 MiB default this replaced) is rebuilt.
             if (
@@ -2916,12 +2935,11 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
                 and current.get("volume_max_bytes") == dvol.volume_max_bytes()
                 and dvol.verify_volume_set(out)["ok"]
             ):
+                # Files a killed publish or a refused removal left (the previous set's, once the
+                # sidecar had moved) are swept here too, or they would outlive the set they belong to.
+                dvol.retire_unnamed(out, current)
                 return current
-        # Beside the live folder, so the move in is a rename on one drive. A build folder left by
-        # a process that died is removed first (the lock means none is in use by this process).
-        for left in out.parent.glob(_VOLUME_BUILD_PREFIX + "*"):
-            shutil.rmtree(left, ignore_errors=True)
-        _check_room_for_volumes(src, out.parent)
+        _check_room_for_volumes(src, out.parent, had_set=had_set)
         build = pathlib.Path(tempfile.mkdtemp(prefix=_VOLUME_BUILD_PREFIX, dir=out.parent))
         try:
             dvol.write_volume_set(src, build)
@@ -2946,9 +2964,11 @@ def all_diagnostics_volumes() -> JSONResponse:
     TWO COSTS, STATED RATHER THAN DISCOVERED. It holds a request thread while it reads
     and re-compresses the archive once (seconds for a typical bundle; the sibling ``/all``
     route already runs for far longer on the same machine, so this is not a new kind of
-    load). And it roughly DOUBLES the archive's footprint on disk while both exist, which
-    on a machine already short of space is a real cost -- the volumes are removed and
-    rebuilt when a newer archive replaces them, never accumulated across builds.
+    load). And it holds up to THREE copies of the archive's weight on disk for a moment (the
+    archive, the previous set and the set being built, which replaces it whole), which on a
+    machine already short of space is a real cost -- refused with the numbers, HTTP 507, when
+    the drive cannot take the new set -- and the volumes are removed and rebuilt when a newer
+    archive replaces them, never accumulated across builds.
     """
     # NEVER serve a stale archive while a build is RUNNING -- the same refusal the
     # single-file download already makes, for the same reason. The operator asked the
@@ -2980,6 +3000,22 @@ def all_diagnostics_volumes() -> JSONResponse:
         manifest = _ensure_volume_set(src)
     except dvol.VolumeRoomError as exc:
         raise HTTPException(status_code=507, detail=str(exc)) from exc
+    except OSError as exc:
+        from src.analytics.keyword_log_scan import no_room_refusal
+
+        # The same condition as the preflight's, found halfway instead of at the start (the
+        # archive grew, or something else wrote): the same status, with what is still true.
+        if no_room_refusal(exc, "splitting the archive") is None:
+            raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc
+        raise HTTPException(
+            status_code=507,
+            detail=(
+                f"the drive ran out of room, or turned read-only, while the numbered files were being "
+                f"written ({exc.strerror or type(exc).__name__}). The set that was there before was "
+                "not touched and the half-written files were removed. Free some space and press the "
+                "button again."
+            ),
+        ) from exc
     except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500
         # No "could not split the archive" prefix here: the page puts its own, translated, before
         # whatever this says, and a caller of the endpoint knows what it asked.

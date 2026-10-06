@@ -396,35 +396,36 @@ def _keyword_parts(
     size and SHA-256 and the URL base. The files stay until the next build retires them."""
     stem = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     set_dir, manifest = finish_parts(job, keep, omitted, scratch_dir=scratch_dir, stem=stem)
-    files = [
-        {"name": p["name"], "bytes": p["bytes"], "sha256": p["sha256"], "kind": "part"}
-        for p in manifest["parts"]
-    ]
-    for name in manifest["manifest_files"]:
-        f = set_dir / name
-        files.append({
-            "name": name, "bytes": f.stat().st_size, "sha256": sha256_file(f), "kind": "manifest",
-        })
-    listing = {
-        "set": set_dir.name,
-        "stem": stem,
-        "part_count": manifest["part_count"],
-        "part_max_bytes": manifest["part_max_bytes"],
-        "total_bytes": sum(f["bytes"] for f in files),
-        "files": files,
-        "download_base": f"/api/diagnostics/keywords/parts/{set_dir.name}/",
-        "note": (
-            "Save every file listed, the manifest first: each part opens on its own, and the "
-            "manifest lists every part with its size and SHA-256 so a set can be confirmed "
-            "complete."
-        ),
-    }
     try:
+        files = [
+            {"name": p["name"], "bytes": p["bytes"], "sha256": p["sha256"], "kind": "part"}
+            for p in manifest["parts"]
+        ]
+        for name in manifest["manifest_files"]:
+            f = set_dir / name
+            files.append({
+                "name": name, "bytes": f.stat().st_size, "sha256": sha256_file(f), "kind": "manifest",
+            })
+        listing = {
+            "set": set_dir.name,
+            "stem": stem,
+            "part_count": manifest["part_count"],
+            "part_max_bytes": manifest["part_max_bytes"],
+            "total_bytes": sum(f["bytes"] for f in files),
+            "files": files,
+            "download_base": f"/api/diagnostics/keywords/parts/{set_dir.name}/",
+            "note": (
+                "Save every file listed, the manifest first: each part opens on its own, and the "
+                "manifest lists every part with its size and SHA-256 so a set can be confirmed "
+                "complete."
+            ),
+        }
         (set_dir / _SET_LISTING).write_text(json.dumps(listing), encoding="utf-8")
     except OSError as exc:
         # The listing is what makes a set exist: without it the finished files are served by
         # nothing and found by nothing ("again" cannot see them), so they go now rather than at the
-        # next retire. The set the person had before stays.
+        # next retire, whether it was reading them back or writing the listing that failed. The
+        # set the person had before stays.
         shutil.rmtree(set_dir, ignore_errors=True)
         refusal = no_room_refusal(exc, "listing the parts")
         if refusal is None:

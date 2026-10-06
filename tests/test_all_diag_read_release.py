@@ -25,6 +25,7 @@ from __future__ import annotations
 import io
 import json
 import sqlite3
+import time
 import zipfile
 
 import pytest
@@ -33,6 +34,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import QueuePool
 
 from src.api.diagnostics import bundle as _bundle
+from src.database.maintenance import StatementTimeout
 
 
 class _Base(DeclarativeBase):
@@ -172,6 +174,65 @@ def test_the_pooled_connection_goes_back_between_members(wal_db, monkeypatch):
     with Session(eng) as db:
         _run(_pin_then_probe(db, eng, path, kept), db)
     assert kept["checked_out"] == 1
+
+
+def _pin_how_then_probe(db, eng, path, seen, how):
+    """``_pin_then_probe`` with the first member ending the way the long members end: it has
+    read and let another connection commit, and THEN it fails, times out or overruns its
+    deadline. These are the members whose snapshot matters most, so the boundary after them
+    is the one that must not be skipped."""
+    def pin():
+        db.execute(text("SELECT count(*) FROM note")).scalar()
+        _commit_a_frame(path)
+        if how == "error":
+            raise RuntimeError("the member failed after reading")
+        if how == "timeout":
+            raise StatementTimeout("the member was aborted at its deadline")
+        if how == "partial":
+            time.sleep(0.15)
+        return {"pinned": True}
+
+    def probe():
+        seen["busy"] = _truncate_checkpoint_busy(path)
+        seen["checked_out"] = eng.pool.checkedout()
+        return {"probed": True}
+
+    return [("pin.json", pin), ("probe.json", probe)]
+
+
+@pytest.mark.parametrize(
+    ("how", "outcome"),
+    [("error", "error"), ("timeout", "skipped-deadline"), ("partial", "partial-deadline")],
+)
+def test_a_member_that_failed_or_overran_still_releases_at_its_boundary(wal_db, monkeypatch, how, outcome):
+    """The long members are the ones that fail or overrun, and a release after the ``ok``
+    ones only would leave the snapshot pinned exactly where the log grows most. Each
+    ending is checked on the member's own outcome (so the case is the one named), then on
+    what the next member sees: the log free to checkpoint and no pooled connection held."""
+    path, build = wal_db
+    eng = build(explicit_begin=True)
+    monkeypatch.setattr(_bundle, "_all_diag_db_member_deadline_s", lambda: 0.05)
+    seen: dict = {}
+    with Session(eng) as db:
+        results, manifest = _run(_pin_how_then_probe(db, eng, path, seen, how), db)
+    assert results[0]["outcome"] == outcome, results[0]
+    assert seen["busy"] == 0, "the checkpoint completed between the two members"
+    assert seen["checked_out"] == 0, "no connection is held while the next member starts"
+    assert manifest["run"]["read_release"]["released"] >= 1
+
+
+@pytest.mark.parametrize("how", ["error", "timeout", "partial"])
+def test_the_release_after_a_failing_member_is_what_frees_the_log(wal_db, monkeypatch, how):
+    """The negative control for the test above: with the release switched off, the same
+    ending leaves the member's snapshot standing, so the checkpoint is blocked."""
+    path, build = wal_db
+    eng = build(explicit_begin=True)
+    monkeypatch.setattr(_bundle, "_all_diag_db_member_deadline_s", lambda: 0.05)
+    monkeypatch.setattr(_bundle, "_release_read_between_members", lambda db: "declined")
+    seen: dict = {}
+    with Session(eng) as db:
+        _run(_pin_how_then_probe(db, eng, path, seen, how), db)
+    assert seen["busy"] == 1, "a snapshot kept past a failed member blocks the checkpoint"
 
 
 def test_a_member_that_wrote_is_never_rolled_back(wal_db):

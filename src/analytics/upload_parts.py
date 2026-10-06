@@ -41,6 +41,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import math
 import os
 import re
 import struct
@@ -56,8 +57,8 @@ from typing import Any
 #: bytes and not 2**20 keeps a margin under that. It is not a memory or disk limit, and it bounds
 #: each FILE, never the total (an export asking for no total cap is simply more files). The one
 #: thing that moves it is an operator's own override of the diagnostics set's cap
-#: (``OO_DIAG_VOLUME_MAX_MB``, in MiB, so ``1`` is 1,048,576 bytes); the default, every keyword
-#: set and the manifest zips are this number.
+#: (``OO_DIAG_VOLUME_MAX_MB``, in MiB, so ``1`` is 1,048,576 bytes, and the manifest zips of that
+#: set follow it); the default, every keyword set and its manifest zips are this number.
 UPLOAD_PART_BYTES = 1_000_000
 
 PART_KIND = "oo-upload-part-1"
@@ -421,8 +422,10 @@ class PartWriter:
         )
         self._piece_limit = min(piece_limit(cap), int((cap - self._fixed) * _PIECE_ROOM_SHARE))
         if self._piece_limit < _MIN_PIECE_BYTES:
+            needed = self._fixed + math.ceil(_MIN_PIECE_BYTES / _PIECE_ROOM_SHARE)
             raise ValueError(
-                f"a part cap of {cap} bytes is too small: a part's own index needs {self._fixed}"
+                f"a part cap of {cap} bytes is too small: a part's own index needs {self._fixed} "
+                f"and a piece at least {_MIN_PIECE_BYTES} more, so the cap needs at least {needed}"
             )
         self.out_dir.mkdir(parents=True, exist_ok=True)
 

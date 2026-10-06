@@ -230,15 +230,18 @@ def disk_reserve(d: Path) -> int:
     return max(_DISK_RESERVE_FLOOR, int(total * _DISK_RESERVE_SHARE))
 
 
-def room_for(d: Path, need: int, credit: int = 0) -> tuple[bool, int, int]:
+def room_for(d: Path, need: int, credit: int = 0, reserve: int | None = None) -> tuple[bool, int, int]:
     """``(fits, free, reserve)``: whether ``need`` bytes, with the headroom, leave the reserve on
-    ``d``'s drive. ``credit`` counts bytes that are about to be freed as free already. An
-    unreadable volume is not refused on a guess (``free`` is then -1)."""
+    ``d``'s drive. ``credit`` counts bytes that are about to be freed as free already. ``reserve``
+    replaces the drive-sized one (``disk_reserve``) for a write that is small beside it: the share
+    of the drive is for a write of gigabytes that the database's log competes with, and applied to
+    a few megabytes it refused the diagnostics on exactly the machines that need them (a 2 TB
+    drive with 15 GiB free). An unreadable volume is not refused on a guess (``free`` is then -1)."""
     try:
         free = shutil.disk_usage(d).free
     except OSError:
         return True, -1, 0
-    reserve = disk_reserve(d)
+    reserve = disk_reserve(d) if reserve is None else reserve
     return free + credit >= need * _DISK_NEED_MARGIN + reserve, free, reserve
 
 

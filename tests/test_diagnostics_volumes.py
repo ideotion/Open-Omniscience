@@ -21,6 +21,7 @@ answer; this is the other half, and what it has to guarantee is narrow and check
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import zipfile
@@ -684,13 +685,13 @@ def test_a_split_that_fails_leaves_the_previous_set_serving_and_no_half_written_
 
     def _dies_after_one_file(src_zip, out_dir, **kw):
         (Path(out_dir) / "half-written-part-01-of-03.zip").write_bytes(b"PK" + b"0" * 1000)
-        raise OSError(28, "No space left on device")
+        raise OSError(5, "Input/output error")
 
     monkeypatch.setattr(dv, "write_volume_set", _dies_after_one_file)
     with pytest.raises(HTTPException) as exc:
         d.all_diagnostics_volumes()
     assert exc.value.status_code == 500
-    assert "No space left" in exc.value.detail
+    assert "Input/output error" in exc.value.detail
     assert "could not split" not in exc.value.detail.lower(), "the page says that, translated"
     assert sorted(p.name for p in vol_dir.iterdir()) == before, "the set that was there is untouched"
     assert not list(_diag_dir.glob("volumes-build-*")), "the build folder goes on every path"
@@ -769,6 +770,11 @@ def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
         d.all_diagnostics_volumes()
     assert exc.value.status_code == 507
     assert "MiB" in exc.value.detail and "free" in exc.value.detail
+    if with_a_previous_set:
+        assert "were not touched" in exc.value.detail and "Nothing on the server" not in exc.value.detail
+    else:
+        assert "Nothing on the server was changed" in exc.value.detail
+        assert "still there" not in exc.value.detail and "not touched" not in exc.value.detail
     assert sorted(p.name for p in vol_dir.iterdir()) == before
     assert not list(_diag_dir.glob("volumes-build-*"))
     if old is not None:
@@ -776,37 +782,117 @@ def test_a_drive_without_room_is_refused_with_507_before_anything_is_written(
             assert Path(d.all_diagnostics_volume_download(f["name"]).path).is_file()
 
 
-def test_a_drive_with_room_for_the_archive_twice_over_is_not_refused(_diag_dir, monkeypatch):
+def test_a_drive_with_room_for_the_archive_and_its_headroom_above_the_floor_is_not_refused(_diag_dir, monkeypatch):
+    from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR
     from src.api import diagnostics as d
 
     src = _build_bundle(_diag_dir)
     need = src.stat().st_size
     src.rename(_diag_dir / "oo-all-diagnostics-20261001-100000.zip")
-    # The reserve (512 MiB at least) plus the archive and its 20% headroom: exactly enough.
-    from src.analytics.keyword_log_export import disk_reserve
-
-    _fake_disk(monkeypatch, free=int(need * 1.2) + disk_reserve(_diag_dir) + 1)
+    # The floor (512 MiB) plus the archive and its 20% headroom: exactly enough.
+    _fake_disk(monkeypatch, free=int(need * 1.2) + _DISK_RESERVE_FLOOR + 1)
     assert json.loads(bytes(d.all_diagnostics_volumes().body))["volume_count"] >= 1
 
 
-def test_a_drive_one_byte_short_of_the_archive_and_its_headroom_is_refused(_diag_dir, monkeypatch):
+@pytest.mark.parametrize("with_a_previous_set", [False, True])
+def test_a_drive_one_byte_short_of_the_archive_and_its_headroom_is_refused(
+    _diag_dir, monkeypatch, with_a_previous_set
+):
     """The other side of the test above: the room check counts the ARCHIVE'S size (a check that counted
-    nothing would still refuse a nearly full drive and still pass the test of a roomy one)."""
+    nothing would still refuse a nearly full drive and still pass the test of a roomy one), and it does
+    not count the previous set as free (it stays until the new one is in, so for a moment all three are
+    on the drive)."""
     from fastapi import HTTPException
 
-    from src.analytics.keyword_log_export import disk_reserve
+    from src.analytics.keyword_log_export import _DISK_RESERVE_FLOOR
     from src.api import diagnostics as d
 
-    src = _build_bundle(_diag_dir)
-    need = src.stat().st_size
+    if with_a_previous_set:
+        _old, newer = _two_archives(_diag_dir)
+        need = newer.stat().st_size
+    else:
+        src = _build_bundle(_diag_dir)
+        need = src.stat().st_size
+        src.rename(_diag_dir / "oo-all-diagnostics-20261001-110000.zip")
     assert need > 1_000, "the archive is big enough for the headroom to be more than a byte"
-    src.rename(_diag_dir / "oo-all-diagnostics-20261001-110000.zip")
-    _fake_disk(monkeypatch, free=0)  # the reserve is a share of the drive: read it on the drive that is faked
-    _fake_disk(monkeypatch, free=int(need * 1.2) + disk_reserve(_diag_dir) - 1)
+    _fake_disk(monkeypatch, free=int(need * 1.2) + _DISK_RESERVE_FLOOR - 1)
     with pytest.raises(HTTPException) as exc:
         d.all_diagnostics_volumes()
     assert exc.value.status_code == 507
     assert f"{need / 2**20:.0f} MiB" in exc.value.detail
+
+
+def test_a_large_drive_that_is_nearly_full_still_takes_the_split(_diag_dir, monkeypatch):
+    """What the reserve is: the floor, not one per cent of the drive. The keyword export writes
+    gigabytes and keeps a share of the drive free for the database's log; the split writes about the
+    archive's size, and refusing it on a 2 TB drive with 15 GiB free closed the diagnostics on exactly
+    the machines that need them."""
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-120000.zip")
+    _fake_disk(monkeypatch, free=15 * 2**30, total=2 * 2**40)
+    assert json.loads(bytes(d.all_diagnostics_volumes().body))["volume_count"] >= 1
+
+
+def test_a_second_click_on_a_full_drive_re_serves_the_current_set(_diag_dir, monkeypatch):
+    """The idempotent path comes BEFORE the room check: a set that is already the current one needs no
+    room, so a drive that has since filled up still hands the person the files they were given."""
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-130000.zip")
+    first = json.loads(bytes(d.all_diagnostics_volumes().body))
+    _fake_disk(monkeypatch, free=1 * 2**20)
+    again = json.loads(bytes(d.all_diagnostics_volumes().body))
+    assert [f["name"] for f in again["files"]] == [f["name"] for f in first["files"]]
+
+
+def test_a_current_set_is_re_served_and_what_a_killed_publish_left_goes(_diag_dir):
+    """A publish killed between the sidecar's move and the end of its sweep, or a file the system
+    refused to remove, left the previous set's files beside the new one; the re-serving path swept
+    nothing, so they outlived the set they belonged to. A build folder left by a killed process goes
+    on the same path."""
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-140000.zip")
+    first = json.loads(bytes(d.all_diagnostics_volumes().body))
+    vol_dir = d._all_diagnostics_volumes_dir()
+    leftover = vol_dir / "old-bundle-part-01-of-02.zip"
+    leftover.write_bytes(b"PK" + b"0" * 50)
+    build = _diag_dir / "volumes-build-killed"
+    build.mkdir()
+    (build / "half.zip").write_bytes(b"PK")
+    again = json.loads(bytes(d.all_diagnostics_volumes().body))
+    assert [f["name"] for f in again["files"]] == [f["name"] for f in first["files"]]
+    assert not leftover.exists() and not build.exists()
+    named = {f["name"] for f in first["files"]} | {dv.MANIFEST_NAME}
+    assert {p.name for p in vol_dir.iterdir()} == named, "and nothing the sidecar names went with them"
+
+
+@pytest.mark.parametrize("code, status", [(errno.ENOSPC, 507), (errno.EROFS, 507), (errno.EIO, 500)])
+def test_a_split_that_runs_out_of_room_halfway_is_the_507_the_preflight_gives(_diag_dir, monkeypatch, code, status):
+    """The same condition got two statuses: 507 at the start of the split and 500 when the drive filled
+    during it. Another operating-system error is still the 500 it was (it may be a bug)."""
+    from fastapi import HTTPException
+
+    from src.api import diagnostics as d
+
+    old, _newer = _two_archives(_diag_dir)
+
+    def _dies(src_zip, out_dir, **kw):
+        raise OSError(code, os.strerror(code))
+
+    monkeypatch.setattr(dv, "write_volume_set", _dies)
+    with pytest.raises(HTTPException) as exc:
+        d.all_diagnostics_volumes()
+    assert exc.value.status_code == status
+    assert os.strerror(code) in exc.value.detail
+    if status == 507:
+        assert "not touched" in exc.value.detail and "Free some space" in exc.value.detail
+    for f in old["files"]:
+        assert Path(d.all_diagnostics_volume_download(f["name"]).path).is_file()
 
 
 def test_publishing_moves_the_sidecar_last_and_retires_only_what_nothing_names(tmp_path, monkeypatch):
@@ -819,16 +905,28 @@ def test_publishing_moves_the_sidecar_last_and_retires_only_what_nothing_names(t
     manifest = dv.write_volume_set(src, build, cap=100_000)
 
     moved: list[str] = []
+    events: list[tuple[str, str]] = []
     real = os.replace
+    real_unlink = Path.unlink
 
     def _recording_replace(a, b, *args, **kw):
         moved.append(Path(b).name)
+        events.append(("replace", Path(b).name))
         return real(a, b, *args, **kw)
 
+    def _recording_unlink(self, *args, **kw):
+        events.append(("unlink", self.name))
+        return real_unlink(self, *args, **kw)
+
     monkeypatch.setattr(os, "replace", _recording_replace)
+    monkeypatch.setattr(Path, "unlink", _recording_unlink)
     got = dv.publish_volume_set(build, out)
     assert got == manifest
     assert moved[-1] == dv.MANIFEST_NAME and dv.MANIFEST_NAME not in moved[:-1]
+    # "only then are the files nothing names any more removed": the old part goes after the sidecar's move
+    sidecar_at = events.index(("replace", dv.MANIFEST_NAME))
+    assert ("unlink", "old-part-01-of-01.zip") in events[sidecar_at:]
+    assert not [e for e in events[:sidecar_at] if e[0] == "unlink"], "nothing is removed before the sidecar is in"
     assert sorted(moved[:-1]) == sorted(
         [v["name"] for v in manifest["volumes"]] + [f["name"] for f in manifest["manifest_files"]]
     )

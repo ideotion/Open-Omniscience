@@ -226,6 +226,18 @@ def test_a_set_that_was_replaced_is_a_404_that_says_to_build_it_again(db_path, d
     with pytest.raises(HTTPException) as err:
         keyword_part_download(listing["set"], name)
     assert err.value.status_code == 404 and "build it again" in str(err.value.detail)
+    # a set can also go to make room for a build that then failed (the preflight's trade-off), so
+    # the text names that cause too rather than only the two that apply when nothing failed
+    assert "to make room for a build that did not finish" in str(err.value.detail)
+
+
+def test_the_latest_route_names_the_removal_for_room_among_the_reasons_a_set_is_gone(data_dir):
+    from src.api.diagnostics.keyword_parts import keyword_parts_latest
+
+    with pytest.raises(HTTPException) as err:
+        keyword_parts_latest()
+    assert err.value.status_code == 404
+    assert "to make room for a build that did not finish" in str(err.value.detail)
 
 
 def test_the_next_build_retires_an_old_set_but_not_one_still_being_downloaded(db_path, data_dir):
@@ -305,6 +317,27 @@ def test_a_drive_that_cannot_take_the_listing_loses_the_new_set_not_the_old_one(
     with pytest.raises(HTTPException) as err:
         _call(db_path, fmt="parts")
     assert err.value.status_code == 507
+    assert [p.name for p in data_dir.iterdir() if p.name.startswith(kle.PARTS_DIR_PREFIX)] == [d1.name]
+
+
+def test_a_read_that_fails_between_the_last_part_and_the_listing_leaves_no_unlisted_set(
+    db_path, data_dir, monkeypatch
+):
+    """A finished set is found by its listing and by nothing else, so a failure after the parts
+    are closed and before the listing is written (here the read-back of a file for its checksum)
+    must take the folder with it and keep the set the person had. The drive's own words are not
+    "no room", so the error is the drive's, not a 507."""
+    first = _listing(db_path)
+    d1 = _set_dir(data_dir, first)
+    _age_past_the_grace(d1)
+
+    def _the_read_fails(path):
+        raise OSError(errno.EIO, "read failed")
+
+    monkeypatch.setattr("src.api.diagnostics.keywords.sha256_file", _the_read_fails)
+    with pytest.raises(OSError) as err:
+        _call(db_path, fmt="parts")
+    assert err.value.errno == errno.EIO
     assert [p.name for p in data_dir.iterdir() if p.name.startswith(kle.PARTS_DIR_PREFIX)] == [d1.name]
 
 

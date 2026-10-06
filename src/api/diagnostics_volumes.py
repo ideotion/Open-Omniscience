@@ -807,12 +807,29 @@ def publish_volume_set(
     for name in names:
         os.replace(build / name, out / name)
     os.replace(build / MANIFEST_NAME, out / MANIFEST_NAME)
-    keep = {*names, MANIFEST_NAME}
-    for stale in out.iterdir():
-        if stale.name not in keep:
-            with contextlib.suppress(OSError):
-                stale.unlink()
+    retire_unnamed(out, manifest)
     return manifest
+
+
+def retire_unnamed(out_dir: str | os.PathLike[str], manifest: dict[str, Any]) -> None:
+    """Remove the files in ``out_dir`` that the sidecar's ``manifest`` does not name.
+
+    What is left after a publish that was killed between the sidecar's move and the end of its
+    sweep, or a file the system refused to remove (a download holding it open on Windows), is the
+    previous set's: it is never served (only a name the sidecar lists is), but it is a set's worth
+    of disk and a second bundle in the one folder. Called after every publish and whenever a
+    current set is re-served, so a leftover does not outlive the set it was left by."""
+    out = Path(out_dir)
+    keep = {
+        MANIFEST_NAME,
+        *(v["name"] for v in manifest.get("volumes", [])),
+        *(f["name"] for f in manifest.get("manifest_files", [])),
+    }
+    with contextlib.suppress(OSError):
+        for stale in out.iterdir():
+            if stale.name not in keep:
+                with contextlib.suppress(OSError):
+                    stale.unlink()
 
 
 def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
