@@ -18,7 +18,8 @@ transformed copy (an escaped quote, a re-encoding) is not recognised in free tex
 :func:`scrub_file` reads are parsed first, so the secret is found in the form their READER sees, and
 text it cannot parse is scrubbed for the secret as typed and as JSON writes it. The P0 check, which is
 handed the same passphrase, uses :func:`scrub_text` on the exception texts it writes into its report
-(``p0_validation._exception_text``), where each is made.
+(``p0_validation._exception_text``), where each is made, and :func:`scrub_value` on the failure lines the
+engine hands back as data (``problems``), where it copies them.
 
 WHAT IT GUARANTEES, and the two things a naive ``str.replace`` does not:
 
@@ -99,7 +100,10 @@ def _scrub_cut_text(text: str, needle: str) -> str:
     star and quote, in its escaped form followed by the closing quote of its string: ``*\\"`` + ``"``
     becomes ``***redacted***"``, which ends in the secret as typed). So the result is checked, and when
     a form is left the whole text is redone with ONE marker for every form, each of the markers in turn,
-    and with the forms taken out whole if none of them stays out."""
+    and with the forms taken out whole if none of them stays out. An empty ``needle`` matches nothing, so the
+    text comes back as it was."""
+    if not needle:
+        return text
     forms = tuple(dict.fromkeys((needle, json.dumps(needle)[1:-1], json.dumps(needle, ensure_ascii=False)[1:-1])))
     out = text
     for form in forms:

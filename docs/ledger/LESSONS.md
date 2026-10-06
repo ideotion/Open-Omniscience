@@ -13288,11 +13288,26 @@ stubs the phase whole. The fix proposed was one scrub of the finished report or 
 those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an exact-match scrub by a passphrase of `pass` (the
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
-passphrase, a mutation that scrubs the whole result fails it, and a static test holds each handler of a function that is given
-the passphrase to the helper and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
-`sys.exc_info()`), so a fifth cannot be added unseen by those routes; it follows no call, so a helper that reads the exception for
-itself is not seen, and the walk's own cases are pinned. **A scrub of a value code compares changes the value: scrub the
-text a person reads at the place it is made, and leave the fields a program reads alone.** A failure that wraps another carries
+passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
+holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py`, to using the caught exception
+only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
+`_log_phase_failure`; a missing, empty or other second argument does not count), as its class, or as a phase error's `status`
+and `partial`, and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
+a parameter, reads a local or reads an attribute named `passphrase` (the release run holds it as `run.params.passphrase`), or
+takes or reads one named `secret` or `needle`. The test reads those three modules' syntax and follows no call, so this stays
+outside it: a secret held under another name or route (a parameter named `pw`, `**kwargs`, a closure or a global; the job
+worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` of a network call into their result and are
+handed no secret); a helper the handler calls that reads the exception for itself, a bare re-raise or a raise without `from`
+(which let the original out as it is or as the context), a `finally` that reads the traceback, an alias (`import traceback as
+tb`, `from sys import exc_info as ei`) and `repr(locals())`; the engine's own failure lines handed back as DATA
+(`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed where the engine makes the
+line, so that every consumer of the report gets it clean (the P0 check, the volume-verify job whose status an endpoint serves, the
+dev bench), and again line by line where the P0 check copies the lines, each pinned by its own test), and a phase error's
+`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every other module (the endpoint that
+receives the passphrase, the engines it is handed to; the volume job's own error handlers are one, recorded in `OPEN_QUEUE.md`).
+**A scrub of a value code compares changes the value: scrub the text a person reads at the place it is made, and leave the fields
+a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
 traceback, and a test names the passphrase only in the cause (`from`, and an implicit context).
 
@@ -13492,6 +13507,28 @@ at 1,972 s, `rollup-build` or an AnyIO worker), with a WAL of 1.19 GB on one ins
 limit (`journal_size_limit`). The same hourly series holds far larger WALs on other machines (at most 36.3 GB on Asus, 29.3 GB on OOS-7, 25.7 GB on OOS-8,
 23.1 GB on NUC), which this entry does not explain. Whether the build's session pins SQLite itself for the whole run is NOT established, and whether a pinned
 log slows or kills anything is unmeasured.
+
+### A VALUE RESOLVED ONCE FROM A READING THAT CAN MOVE IS A FACT ABOUT AN INSTANT: RECORD WHAT IT WAS READ FROM AND WHEN, ON EVERY SESSION (release candidate diagnostics, 2026-10-06, PR #1318, `src/config/memory_budget.py`)
+
+The in-memory keyword rollup runs on every memory tier but `small`, and the crash read of the 2026-10-06 batch could not say why it was off on seven of
+fifteen machines: the tier reached a report only through the pass-end summary line's `db_memory` block, which three of seventeen bundles happened to keep.
+The tier is resolved ONCE per process, when `session.py` builds the engine at import, from the RAM total psutil reports at that
+instant. The rollup report said mode `auto` and DuckDB available on all seven, so nothing but the tier default could have turned it off and all seven
+resolved `small`; four still read below the floor at export, and three read above it (4.07, 4.95 and 5.78 GiB), so their total at resolve time was lower
+than their total at export (one of them kept `small` in its one pass summary while its own records of the RAM total read 4,961, 5,921 and 4,600 MiB). In the
+2026-09-30 batch one machine's killed process read 13 distinct totals between 6,759.9 and 6,907.7 MiB where its retry read 4,349 MiB. The pool, the page caches, DuckDB's limit and whether the rollup ran were decided from one reading and then read
+against another by everybody who looked afterwards. **Any setting decided once from a reading that can move (RAM, cores, free disk, a network state) is a
+record of a decision, and the decision's inputs and its moment belong in the session's own record, written when it was made, rather than in whichever
+periodic summary happens to be kept. Show the reading the machine gives now BESIDE it, as two facts and no verdict, and never re-derive the decision from
+the new reading on a look: a look that re-resolved would move the pool under a running app, and a stamp taken at each look would say the budget was
+decided just now.** `memory_budget.resolved_reading()` is what the cached budget was resolved from (its facts are the cache's own, so they cannot disagree
+with what the process runs on; the moment is the resolve's) and `reading_vs_now()` pairs it with the tier the machine would resolve to now. The resolve
+itself is now under a lock with a double check, so that two threads asking at once could never leave a cache from one reading and a stamp from the other
+(at boot it resolves once, on the importing thread, before another thread exists, so the lock is defensive). The lock is re-entrant on purpose: behind a plain one, a resolve that ever asked for the budget again would hang the thread that imports the engine (a child that did it never returned) where it used to raise a `RecursionError`, and an app that never starts says nothing. The boot record, the session's high-water header (read at the next boot as
+the previous session's, so a death is read against the tier THAT session ran under) and the crash report carry the reading; chronology `sessions`
+carry it once and the boot event does not repeat it; only the soak window carries `reading_vs_now()`, the machine's reading of now beside it, once per export and for the process that was running. Thirty-four tests, with fifty mutations each caught, pin the rest as negative space: the budget resolves once however often it is
+looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
+record and never a failed boot.
 
 ### A RECORDER ON A PERIODIC PATH IS COSTED IN THREAD CPU, NOT WALL TIME, AND ITS LOG COUNTER TAKES A LEAF LOCK (export thread, 2026-10-06)
 

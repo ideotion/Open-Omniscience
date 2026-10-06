@@ -403,6 +403,50 @@ def _launcher_exit(prev_state: dict[str, Any] | None) -> dict[str, Any] | None:
     return {k: got.get(k) for k in ("signal", "status", "kind", "at", "seen_by")}
 
 
+def _boot_memory_budget() -> dict[str, Any]:
+    """The reading this process's memory budget was resolved from: the tier, the RAM total
+    it was decided on, the logical CPUs, whether that tier leaves the in-memory keyword rollup on
+    by default, and when. Written on the boot record so EVERY session of the ledger says
+    which tier it ran under: until this, the tier reached a report only on a pass-end
+    summary line, which three of seventeen bundles happened to keep, and on a virtual
+    machine whose memory is ballooned the tier can differ from one boot to the next."""
+    try:
+        from src.config.memory_budget import resolved_reading
+
+        return resolved_reading()
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
+def _boot_allocator() -> dict[str, Any]:
+    """Which C allocator this process runs on and whether its malloc arenas are capped
+    (R114), compactly: the four fields that answer it, never the sentence that explains
+    them (the previous-session peaks carry that). The ledger spans updates, so a comparison
+    on one instance before and after the cap is a read of these, session by session."""
+    try:
+        from src.monitoring.session_hwm import allocator_setting
+
+        got = allocator_setting()
+        return {k: got.get(k) for k in ("allocator", "arena_cap", "effective", "source")}
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
+def _boot_rollup_mode() -> str | None:
+    """``auto``, ``forced-on`` or ``forced-off``: whether an operator's own
+    ``OO_COLUMNAR_SERVE`` is in play beside the tier's default. A rollup that is off
+    because the variable says so is not one that is off because the tier does. Read from the
+    environment only. A read that cannot be taken is ``unreadable (ErrorName)``, as its two
+    siblings record theirs as an error: ``None`` is the record of a build that did not keep
+    this at all, and a failure must not be mistaken for it."""
+    try:
+        from src.analytics.rollup_serve import serve_mode
+
+        return serve_mode()
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return f"unreadable ({type(exc).__name__})"
+
+
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
     """Called once per process from ``forensics.record_session_start`` (after the
     sentinel is read). Closes the previous session's record if it could not, appends
@@ -430,6 +474,9 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "machine_boot_id": machine_boot_id(),
         "clocks": "boot-time" if now_bt is not None else "monotonic-only",
         "ledger_features": list(LEDGER_FEATURES),
+        "memory_budget": _boot_memory_budget(),
+        "allocator": _boot_allocator(),
+        "rollup_serve_mode": _boot_rollup_mode(),
     }
     _append(rec)
     compact_if_needed()
