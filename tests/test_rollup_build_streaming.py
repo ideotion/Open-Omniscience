@@ -373,10 +373,12 @@ def test_the_dispatcher_records_a_stopped_build_as_declined_with_its_readings(se
 def test_the_start_check_declines_a_build_whose_ceiling_is_more_than_is_available(monkeypatch):
     monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
     monkeypatch.setattr(rollup_serve, "_guard_floor_mb", lambda: 256.0)
-    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 3000.0, "avail_mb": 900.0})
+    monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 3000.0, "avail_mb": 1300.0})
     verdict = rollup_serve._affordability_verdict()
     assert verdict["reason"] == "mem-short"
-    assert verdict["available_mb"] == 900.0 and verdict["needs_available_mb"] > 740 + 256
+    # more than the limit and the floor alone: the process grows past DuckDB's limit (measured 1.45x)
+    assert verdict["available_mb"] == 1300.0 and verdict["needs_available_mb"] > 740 + 256 + 100
+    assert verdict["limit_overshoot"] == rollup_serve._LIMIT_OVERSHOOT
     assert verdict["duckdb_limit_mb"] == 740.0 and verdict["guard_floor_mb"] == 256.0
     monkeypatch.setattr(rollup_serve, "_readings", lambda: {"rss_mb": 900.0, "avail_mb": 2500.0})
     assert rollup_serve._affordability_verdict() is None

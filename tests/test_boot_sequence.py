@@ -219,9 +219,11 @@ def test_build_now_and_wait_waits_for_a_build_already_running_instead_of_startin
 
 
 def test_a_waiter_is_told_the_outcome_of_the_real_build_it_waited_for(monkeypatch):
-    """The ordering the fix depends on: the real ``_build_and_swap`` writes its outcome BEFORE it
-    releases the lock, so a thread blocked in ``build_now_and_wait`` reads that build's outcome and
-    never an older one. Run for real, in two threads, with the build held inside its verdict."""
+    """What a waiter reads: a thread blocked in ``build_now_and_wait`` gets the outcome of the real
+    ``_build_and_swap`` it waited for, never an older one, run for real in two threads with the build
+    held inside its verdict. It does NOT pin that the outcome is written before the lock is released
+    (the releasing thread keeps the GIL through its next statement, so a reorder is invisible here);
+    ``test_the_outcome_is_written_before_the_lock_is_released`` below pins that."""
     from src.analytics import rollup_serve
 
     inside = threading.Event()

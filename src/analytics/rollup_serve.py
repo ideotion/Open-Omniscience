@@ -316,6 +316,13 @@ def _refresh_persisted_build() -> None:
 #: terms): about 300 to 450; 600 leaves room for longer terms. It sizes the start check only.
 _CHUNK_ROW_BYTES = 600
 
+#: DuckDB's memory limit counts its buffer pool, not everything it allocates (hash tables of the
+#: grouping, the connection's own working memory), so the process grows past it. Measured on a seeded
+#: corpus of 12 million mentions and 1.5 million keywords with the limit at 740 MB (a 4.81 GiB
+#: machine): the process peaked at 1,193 MB resident, about 120 MB of it already there before the
+#: build, so the build added about 1,070 MB, 1.45 times the limit. 1.5 leaves the measured margin.
+_LIMIT_OVERSHOOT = 1.5
+
 
 def _readings() -> dict:
     """This process's resident size and the machine's available memory, in MB (None where unread)."""
@@ -349,8 +356,8 @@ def _affordability_verdict() -> dict | None:
     """Decline a build the machine cannot afford at ITS START, from what is measured now.
 
     The most the build can add is what DuckDB may take (its memory limit, from the machine's own
-    budget; a serving rollup's resident size is already inside the available figure), one batch in
-    Python, and the margin the memory guard itself keeps. If that is more than is available the build
+    budget, times the measured overshoot above; a serving rollup's resident size is already inside the
+    available figure), one batch in Python, and the margin the memory guard itself keeps. If that is more than is available the build
     does not start; the readings are returned. Unreadable memory is no evidence: the build proceeds,
     and the guard polled after every batch is the net beneath."""
     try:
@@ -362,7 +369,7 @@ def _affordability_verdict() -> dict | None:
         limit = _duckdb_limit_mb()
         chunk = columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
         floor = _guard_floor_mb()
-        need = limit + chunk + floor
+        need = limit * _LIMIT_OVERSHOOT + chunk + floor
         if avail >= need:
             return None
         return {
@@ -371,6 +378,7 @@ def _affordability_verdict() -> dict | None:
             "needs_available_mb": round(need, 1),
             "available_mb": avail,
             "duckdb_limit_mb": limit,
+            "limit_overshoot": _LIMIT_OVERSHOOT,
             "batch_mb": round(chunk, 1),
             "guard_floor_mb": floor,
         }
