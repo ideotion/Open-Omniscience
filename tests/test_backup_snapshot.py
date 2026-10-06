@@ -274,8 +274,9 @@ def test_a_log_that_holds_growth_is_counted_and_refused_before_any_copy(
 
 def test_the_snapshot_check_asks_for_the_copy_and_for_what_is_still_to_be_written(monkeypatch):
     """MUTATION TARGET (each term). The copy itself, plus the finished set; minus the reusable
-    volumes of the other members (credit, never below the copy); minus the side members and blobs
-    when a LATE copy finds them already on the drive."""
+    volumes of the other members (credit, never more than the side members' own size); minus the
+    side members and blobs when a LATE copy finds them already on the drive, and then NOT the
+    credit as well (it counts those same bytes: the second opus read of #1313, A)."""
     asked: list[int] = []
     monkeypatch.setattr(
         "src.backup.artifact.preflight_free_space", lambda _d, n, what: asked.append(n)
@@ -283,17 +284,38 @@ def test_the_snapshot_check_asks_for_the_copy_and_for_what_is_still_to_be_writte
     mib = 1 << 20
     copy, side, par = 100 * mib, 40 * mib, 0.1
     full = sb._volumes_need(copy, side, par)
+    side_part = int(side * 1.02)
     here = Path(".")
     sb._preflight_snapshot(here, copy, side, par)
     sb._preflight_snapshot(here, copy, side, par, credit=30 * mib)
     sb._preflight_snapshot(here, copy, side, par, side_written=True)
-    sb._preflight_snapshot(here, copy, side, par, credit=10**12)
+    sb._preflight_snapshot(here, copy, side, par, credit=10**12)  # early: capped at the side part
+    sb._preflight_snapshot(here, copy, side, par, side_written=True, credit=10**12)  # late: none
     assert asked == [
         copy + full,
         copy + full - 30 * mib,
-        copy + full - int(side * 1.02),
-        copy,
+        copy + full - side_part,
+        copy + full - side_part,
+        copy + full - side_part,
     ]
+    # whatever the credit, the corpus volumes and the parity of everything are still asked for
+    corpus_and_parity = int((copy + side * par) * 1.02) + 64 * mib
+    assert all(n >= copy + corpus_and_parity - 1 for n in asked[2:]), asked
+
+
+def test_a_late_copy_is_asked_for_the_corpus_volumes_and_the_parity_not_only_the_copy(
+    monkeypatch,
+):
+    """The measured case: 20 GB of corpus beside 300 GB of reused blobs asked for 20.0 GB, where 73.1 GB
+    is still to be written (the copy, the corpus volumes and the parity of the whole set)."""
+    asked: list[int] = []
+    monkeypatch.setattr(
+        "src.backup.artifact.preflight_free_space", lambda _d, n, what: asked.append(n)
+    )
+    gib = 1 << 30
+    copy, side, par = 20 * gib, 300 * gib, 0.1
+    sb._preflight_snapshot(Path("."), copy, side, par, side_written=True, credit=side)
+    assert asked[0] > 70 * gib, asked[0] / gib
 
 
 def test_after_a_copy_the_other_members_volumes_are_still_reused_and_credited(
@@ -307,8 +329,9 @@ def test_after_a_copy_the_other_members_volumes_are_still_reused_and_credited(
     dest = tmp_path / "dest"
     _backup(tmp_path, dest)
     man = load_manifest(dest)
+    # the old envelope (manifest.json) is re-emitted by every run: it earns no credit
     side_volumes = [
-        v for v in man["volumes"] if v["member"] != "corpus.db"
+        v for v in man["volumes"] if v["member"] not in ("corpus.db", "manifest.json")
     ]
     assert side_volumes, "the first run wrote no side member volume"
     expected = sum((dest / v["name"]).stat().st_size for v in side_volumes)
@@ -666,6 +689,55 @@ def test_a_leftover_of_this_very_process_goes_by_age_not_never(tmp_path):
     assert young.exists() and running.exists() and not old.exists()
 
 
+def test_this_processs_own_pid_with_another_start_time_is_a_dead_predecessor(tmp_path):
+    """The second read of #1313, B. A container (pid 1) or a service that is given the same pid at
+    every start finds its dead predecessor's marker naming THIS pid with another start time: that
+    is the crash the marker exists to clean up, not a live job of this process."""
+    root = tmp_path / "drive"
+    root.mkdir()
+    predecessor = _leftover(root, ".bak-build-predecessor", {"pid": os.getpid(), "started": 1.0})
+    assert sb._owner_state(predecessor) == "dead"
+    assert sb.sweep_stale_backup_temps(root) == 1 and not predecessor.exists()
+
+
+def test_the_machine_tag_tells_two_machines_with_one_name_apart(tmp_path, monkeypatch):
+    """The hostname alone is no identity (``raspberrypi``, ``ubuntu``): when both sides have a tag
+    and they differ, the marker is another machine's and only the age rule applies."""
+    root = tmp_path / "drive"
+    root.mkdir()
+    base = {"pid": _dead_pid(), "started": 1.0, "host": sb.platform.node()}
+    monkeypatch.setattr(sb, "_machine_tag", lambda: "aaaaaaaaaaaaaaaa")
+    mine = _leftover(root, ".bak-build-mine", {**base, "machine": "aaaaaaaaaaaaaaaa"})
+    theirs = _leftover(root, ".bak-build-theirs", {**base, "machine": "bbbbbbbbbbbbbbbb"})
+    no_tag = _leftover(root, ".bak-build-no-tag", base)
+    assert sb._owner_state(mine) == "dead"
+    assert sb._owner_state(theirs) == "unknown"
+    assert sb._owner_state(no_tag) == "dead", "a marker with no tag is judged by the hostname alone"
+    monkeypatch.setattr(sb, "_machine_tag", lambda: None)  # this side cannot read one
+    assert sb._owner_state(mine) == "unknown"
+
+
+def test_the_machine_tag_is_a_hash_never_the_raw_machine_id(monkeypatch):
+    """The marker is written to a drive that may be shared; a raw machine id stays on the machine."""
+    raw = "0123456789abcdef0123456789abcdef"
+
+    class _Fake:
+        def __init__(self, name):
+            self.name = name
+
+        def read_text(self, encoding=None):
+            if self.name == "/etc/machine-id":
+                return raw + "\n"
+            raise OSError(self.name)
+
+    monkeypatch.setattr(sb, "Path", _Fake)
+    tag = sb._machine_tag()
+    assert tag and len(tag) == 16 and tag not in raw and raw not in tag
+    assert sb._machine_tag() == tag, "stable"
+    monkeypatch.setattr(sb, "Path", lambda name: type("N", (), {"read_text": lambda *_a, **_k: (_ for _ in ()).throw(OSError())})())
+    assert sb._machine_tag() is None
+
+
 def test_a_removal_is_counted_only_when_the_directory_is_gone(tmp_path, monkeypatch):
     """A read-only drive removes nothing; the log line must not claim it did, every boot."""
     root = tmp_path / "drive"
@@ -775,6 +847,28 @@ def test_a_sweep_never_drops_a_destination_remembered_while_it_ran(live, tmp_pat
     assert kept == [str(fresh.resolve())], kept
 
 
+def test_a_destination_remembered_again_while_the_sweep_ran_keeps_its_entry(live, tmp_path, monkeypatch):
+    """The second read of #1313, nit 2. The sweep found drive ``a`` empty and moved on; an export then
+    made a new staging dir on ``a`` and remembered it again. Dropping ``a`` would leave that live dir
+    with no entry, and a crash would leave it there until the next export to ``a``."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    sb.remember_snapshot_destination(b)
+    sb.remember_snapshot_destination(a)  # newest first: the sweep visits a, then b
+    real = sb.sweep_stale_backup_temps
+
+    def slow(root, **kw):
+        if Path(root) == b.resolve():
+            sb.remember_snapshot_destination(a)  # an export, after the sweep emptied a
+        return real(root, **kw)
+
+    monkeypatch.setattr(sb, "sweep_stale_backup_temps", slow)
+    sb.sweep_remembered_destinations()
+    kept = json.loads((Path(os.environ["OO_DATA_DIR"]) / sb._DESTS_FILE).read_text("utf-8"))
+    assert kept == [str(a.resolve())], kept
+
+
 def test_remembering_from_many_threads_loses_no_entry(live, tmp_path):
     drives = [tmp_path / f"d{i}" for i in range(12)]
     threads = [threading.Thread(target=sb.remember_snapshot_destination, args=(d,)) for d in drives]
@@ -790,18 +884,67 @@ def test_the_newsletter_excluded_copy_is_remembered_and_its_note_is_true(
     live, tmp_path, monkeypatch
 ):
     """That path also copies the whole corpus onto the destination, so a crash there leaves the same
-    leftover: the destination is remembered for the boot sweep, and the note says what is true (the
-    corpus volumes are rewritten; the other members are still reused)."""
+    leftover: the destination is remembered for the boot sweep. On a plaintext store the corpus
+    volumes ARE reused (measured: 7 of 7 on two runs in a row), so the note must not say they are
+    rewritten, and the check credits them."""
     stage = tmp_path / "drive" / ".bak-build-x"
     stage.mkdir(parents=True)
     monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p: 0)
     notes: list[str] = []
     src = sb._live_corpus_source(stage, False, notes)
     assert src.path == stage / "corpus.db" and src.path.exists()
+    assert src.rewrites_corpus is False
     kept = json.loads((Path(os.environ["OO_DATA_DIR"]) / sb._DESTS_FILE).read_text("utf-8"))
     assert str(stage.parent.resolve()) in kept
-    assert [n for n in notes if "rewritten in full" in n]
-    assert not [n for n in notes if "reuse does not apply" in n]
+    assert [n for n in notes if "copied and filtered" in n]
+    assert not [n for n in notes if "rewritten" in n or "reuse does not apply" in n], notes
+
+
+def test_an_encrypted_newsletter_excluded_copy_says_it_is_rewritten_and_earns_no_corpus_credit(
+    live, tmp_path, monkeypatch
+):
+    stage = tmp_path / "drive" / ".bak-build-x"
+    stage.mkdir(parents=True)
+    monkeypatch.setattr(sb, "_drop_newsletters_in_file", lambda _p: 0)
+    monkeypatch.setattr(connect_mod, "is_encrypted_file", lambda _p: True)
+    # the live fixture is plaintext: a stand-in copy keeps the test on the path under test
+    monkeypatch.setattr(connect_mod, "snapshot_preserving", lambda src, dest, **_k: shutil.copy(src, dest))
+    notes: list[str] = []
+    src = sb._live_corpus_source(stage, False, notes)
+    assert src.rewrites_corpus is True
+    assert [n for n in notes if "re-encrypted by the copy, so its volumes are rewritten" in n], notes
+
+
+def test_the_newsletter_excluded_copy_is_refused_for_lack_of_room_before_it_is_made(
+    live, tmp_path, snap_calls, monkeypatch
+):
+    """The nit of the second read: that path had no check of its own before its copy."""
+    stage = tmp_path / "drive" / ".bak-build-x"
+    stage.mkdir(parents=True)
+    monkeypatch.setattr("src.backup.folder_backup.free_bytes", lambda _p: 1 << 20)
+    with pytest.raises(BackupSpaceError) as ei:
+        sb._live_corpus_source(stage, False, [])
+    assert "needs about" in str(ei.value) and snap_calls == [], "refused before a byte was copied"
+
+
+def test_the_credit_counts_only_the_members_this_run_carries(live, tmp_path, monkeypatch):
+    """A previous run's member that this run no longer has (a blob category turned off) is never
+    reused, so the check must not be credited its size; the old envelope is always re-emitted."""
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest)  # carries app_settings.json
+    seen: list[dict] = []
+    real = sb._preflight_snapshot
+    monkeypatch.setattr(
+        sb, "_preflight_snapshot", lambda *a, **kw: (seen.append(kw), real(*a, **kw))[1]
+    )
+    other = tmp_path / "other.json"
+    other.write_text('{"k": 2}', encoding="utf-8")
+    live.pin()
+    live.commit(200, 400)
+    write_stream_backup(
+        dest, "pw", side_members=[MemberFile("other.json", "state", other)], volume_size=VOL
+    )
+    assert seen and seen[0]["credit"] == 0, seen
 
 
 # --------------------------------------------------------------------------- #

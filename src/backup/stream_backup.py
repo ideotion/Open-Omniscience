@@ -163,6 +163,25 @@ _OWNER_MARKER = ".owner.json"
 _DESTS_FILE = "backup-temp-dests.json"
 _DESTS_KEEP = 16
 _DESTS_LOCK = threading.Lock()  # the export thread and the boot sweep both rewrite the file
+# How many times each destination has been remembered in this process (under ``_DESTS_LOCK``): a
+# sweep that found a drive empty drops it only if no export remembered it again since.
+_DESTS_SEQ: dict[str, int] = {}
+
+
+def _machine_tag() -> str | None:
+    """A stable tag of THIS machine, beside its hostname: two machines that share a default name
+    (``raspberrypi``, ``ubuntu``) and one backup folder on a NAS would otherwise judge each other's
+    pids. The machine id is hashed with this app's own label (a raw ``/etc/machine-id`` is meant to
+    stay on the machine, and the marker is written to a drive that may be shared); ``None`` where
+    the system keeps none (Windows, macOS), where the hostname alone applies."""
+    for name in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            raw = Path(name).read_text(encoding="ascii").strip()
+        except (OSError, ValueError):
+            continue
+        if raw:
+            return hashlib.sha256(f"open-omniscience-backup-owner:{raw}".encode()).hexdigest()[:16]
+    return None
 
 
 def _write_owner_marker(staging: Path) -> None:
@@ -181,6 +200,7 @@ def _write_owner_marker(staging: Path) -> None:
                     "pid": proc.pid,
                     "started": round(proc.create_time(), 3),
                     "host": platform.node(),
+                    "machine": _machine_tag(),
                 }
             ),
             encoding="utf-8",
@@ -192,22 +212,30 @@ def _write_owner_marker(staging: Path) -> None:
 def _owner_state(staging: Path) -> str:
     """``"alive"`` / ``"dead"`` for a dir whose marker names a process on THIS machine,
     ``"unknown"`` for a dir with no readable marker, a marker from another machine (a shared
-    drive: its pid means nothing here) or one of this very process that no live job owns
-    (then only the age rule applies). A recycled pid is told apart by the process start time
-    recorded beside it."""
+    drive: its pid means nothing here, and the hostname alone does not tell machines apart, so the
+    machine tag is compared too when both sides have one) or the marker of THIS process itself
+    (a live job of it is protected by the registry; then only the age rule applies). A recycled pid
+    is told apart by the process start time recorded beside it, and that includes this process's own
+    pid: a container or a service that is given the same pid at every start finds its dead
+    predecessor's marker naming the same pid with another start time, and that is a dead owner."""
     try:
         data = json.loads((staging / _OWNER_MARKER).read_text(encoding="utf-8"))
         pid, started = int(data["pid"]), float(data["started"])
         host = data.get("host")
+        machine = data.get("machine")
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return "unknown"
     if host is not None and str(host) != platform.node():
         return "unknown"  # another machine's job on a shared drive
-    if pid == os.getpid():
-        return "unknown"  # a live job of this process is protected by the registry, not here
+    if machine is not None and machine != _machine_tag():
+        return "unknown"  # the same name on another machine, or a tag this one cannot read
     try:
         import psutil
 
+        if pid == os.getpid():
+            if abs(psutil.Process().create_time() - started) < 1.0:
+                return "unknown"  # a live job of this process is protected by the registry, not here
+            return "dead"  # the same pid with another start time: this process's dead predecessor
         if not psutil.pid_exists(pid):
             return "dead"
         return "alive" if abs(psutil.Process(pid).create_time() - started) < 1.0 else "dead"
@@ -228,6 +256,7 @@ def remember_snapshot_destination(dest: Path | str) -> None:
             except (OSError, ValueError, TypeError):
                 known = []
             known = [d] + [x for x in known if x != d]
+            _DESTS_SEQ[d] = _DESTS_SEQ.get(d, 0) + 1
             _write_json_atomic(path, known[:_DESTS_KEEP])
     except Exception:  # noqa: BLE001 - a missed entry costs only the next-export sweep
         _LOG.debug("backup: could not remember the snapshot destination", exc_info=True)
@@ -243,11 +272,13 @@ def sweep_remembered_destinations() -> int:
         known = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
     except (OSError, ValueError, TypeError):
         return 0
-    removed, done = 0, set()
+    removed, done = 0, {}
     for d in known:
         root = Path(d)
         if not root.is_dir():
             continue  # an unmounted drive: kept, look again at the next boot
+        with _DESTS_LOCK:
+            seen_seq = _DESTS_SEQ.get(d, 0)
         removed += sweep_stale_backup_temps(root)
         try:
             left = any(
@@ -256,17 +287,19 @@ def sweep_remembered_destinations() -> int:
         except OSError:
             left = True
         if not left:
-            done.add(d)
+            done[d] = seen_seq
     if done:
         # Re-read under the lock and drop only what THIS sweep emptied: an export that remembered
-        # a new drive while the sweep ran (it can take minutes on a slow mount) keeps its entry.
+        # a new drive while the sweep ran (it can take minutes on a slow mount) keeps its entry,
+        # and so does a drive an export remembered AGAIN after the sweep had found it empty (its
+        # staging dir is live, and a crash would leave it with no entry to be swept from).
         try:
             with _DESTS_LOCK:
                 try:
                     now = [str(x) for x in json.loads(path.read_text(encoding="utf-8"))]
                 except (OSError, ValueError, TypeError):
                     now = []
-                keep = [x for x in now if x not in done]
+                keep = [x for x in now if x not in done or _DESTS_SEQ.get(x, 0) != done[x]]
                 if keep != now:
                     _write_json_atomic(path, keep)
         except Exception:  # noqa: BLE001
@@ -529,6 +562,9 @@ class CorpusSource:
     facts_key: str | None = None
     logical_bytes: int | None = None
     snapshot: SnapshotCopy | None = None
+    #: The corpus volumes are re-emitted in full whatever the destination already holds (a copy
+    #: re-encrypts an encrypted store with fresh IVs), so they earn no reuse credit in the check.
+    rewrites_corpus: bool = False
 
 
 def _noop(*_a: Any, **_k: Any) -> None:
@@ -590,9 +626,10 @@ def _wal_complete(db_path: Path, row: tuple[int, int, int] | None) -> bool | Non
     (frames remain only in the log) or ``None`` (cannot tell).
 
     The decision is the checkpoint's own row, not the size of the ``-wal`` file: a reader that
-    started after the last commit leaves ``(1, 104, 104)`` and a 428 KB ``-wal`` whose frames are
-    ALL in the main file (a main-file-only copy had every row), while a reader older than a later
-    commit leaves ``(1, 206, 104)`` and an unusable main file. A negative log count is a store
+    started after the last commit leaves ``(0, 104, 104)`` from a PASSIVE probe (``(1, 104, 104)``
+    from a TRUNCATE) and a 428 KB ``-wal`` whose frames are ALL in the main file (a main-file-only
+    copy had every row), while a reader older than a later commit leaves ``(0, 206, 104)`` (PASSIVE;
+    ``busy`` is 1 for a TRUNCATE) and an unusable main file. A negative log count is a store
     that is not in WAL mode ONLY WHEN ``busy`` is 0: ``(1, -1, -1)`` is what SQLite answers when
     ANOTHER connection holds the checkpoint lock (measured: a TRUNCATE busy-waiting on an old
     reader makes a PASSIVE probe and a second TRUNCATE both read it, while a main-file-only copy
@@ -852,15 +889,29 @@ def _live_corpus_source(
         notes.extend(early_notes)
         notes.append(_SNAPSHOT_NOTE)
         return CorpusSource(
-            path=copy.path, member_name=member, encrypted=enc, freeze=_no_freeze, snapshot=copy
+            path=copy.path,
+            member_name=member,
+            encrypted=enc,
+            freeze=_no_freeze,
+            snapshot=copy,
+            rewrites_corpus=True,
         )
 
     # Newsletter exclusion needs a modifiable copy: a DISPOSABLE snapshot that
     # PRESERVES the at-rest encryption state (never a plaintext staging), filtered
-    # in place, streamed instead of the live file. Snapshot pages are re-encrypted
-    # with fresh IVs, so incremental reuse does not apply to filtered runs.
+    # in place, streamed instead of the live file. An encrypted copy is re-encrypted with fresh
+    # IVs, so its corpus volumes are never reused; a plaintext one still is (the filtered copy of
+    # an unchanged corpus hashes the same), so only the encrypted case withholds the credit.
     from src.database.connect import snapshot_preserving
 
+    # Refused for lack of room BEFORE a byte is copied, like the other copy paths.
+    _preflight_snapshot(
+        tmp_dir.parent,
+        _logical_db_bytes(live),
+        hooks.side_bytes,
+        hooks.parity_fraction,
+        credit=hooks.reuse_credit(member),
+    )
     snap = tmp_dir / member
     # The copy is one read transaction (``snapshot_preserving`` without ``allow_file_copy``
     # takes NO write gate), so it gets the collection pause only. The filtering below works
@@ -870,10 +921,12 @@ def _live_corpus_source(
         snapshot_preserving(live, snap)
     _drop_newsletters_in_file(snap)
     notes.append(
-        "newsletters excluded: the corpus was copied and filtered, so the corpus "
-        "volumes are rewritten in full this run"
+        "newsletters excluded: the corpus was copied and filtered"
+        + (" (an encrypted corpus is re-encrypted by the copy, so its volumes are rewritten)" if enc else "")
     )
-    return CorpusSource(path=snap, member_name=member, encrypted=enc, freeze=_no_freeze)
+    return CorpusSource(
+        path=snap, member_name=member, encrypted=enc, freeze=_no_freeze, rewrites_corpus=enc
+    )
 
 
 def _drop_newsletters_in_file(db_path: Path) -> int:
@@ -1476,12 +1529,16 @@ def write_stream_backup(
                 if st.volumes:
                     st.save_building()
 
+            run_side_members = {m.name for m in side} | {m.name for m in blobs}
+
             def _reuse_credit(corpus_member: str) -> int:
-                """Bytes of existing volumes this run can reuse as they are: every pool entry that is
-                not a volume of the corpus member and whose file is still on the drive."""
+                """Bytes of existing volumes this run COULD reuse as they are: every pool entry of a
+                side member or blob this run carries (not the corpus, not a member it no longer
+                has, not the old envelope, which is always re-emitted) whose file is still on the
+                drive. A member that changed is counted and then re-emitted, so this is a bound."""
                 total = 0
                 for (member, _slice), v in pool.items():
-                    if member == corpus_member:
+                    if member == corpus_member or member not in run_side_members:
                         continue
                     try:
                         total += (dest / str(v.get("name", ""))).stat().st_size
@@ -1549,7 +1606,9 @@ def write_stream_backup(
                 # the volumes of every other member are reused as they are and still do.
                 reuse_possible=bool(pool),
                 credit_except_corpus=(
-                    _reuse_credit(src.member_name) if src.snapshot is not None else None
+                    _reuse_credit(src.member_name)
+                    if (src.snapshot is not None or src.rewrites_corpus)
+                    else None
                 ),
             )
 
@@ -1760,16 +1819,22 @@ def _preflight_snapshot(
     re-encrypts an encrypted store with fresh IVs, and the previous set stays on disk until the
     final swap), but the volumes of every OTHER member, which an incremental run reuses as they
     are, do: ``credit`` is their size, so a destination already holding hundreds of GB of reusable
-    blobs is not asked for them again. A LATE copy (``side_written``) is taken after the side
-    members and blobs are on the drive, so their bytes are not asked for again either. The message
+    blobs is not asked for them again (never more than the side members' own size). A LATE copy
+    (``side_written``) is taken after the side members and blobs are on the drive, so their bytes
+    are not asked for again either, and ``credit`` does not apply to it: it counts those same
+    bytes. The message
     is ``preflight_free_space``'s own shape: how much is needed, how much is free and where, and
     what to do (free space or choose another location)."""
     from src.backup.artifact import preflight_free_space
 
     need = _volumes_need(copy_bytes, side_bytes, parity_fraction)
-    if side_written:
-        need -= int(side_bytes * 1.02)
-    needed = max(copy_bytes + need - max(0, credit), copy_bytes)
+    side_part = int(side_bytes * 1.02)
+    # The side members and blobs are either already on the drive (a LATE copy: their bytes are
+    # written, and the old volumes that ``credit`` counts are those same bytes) or, early, are
+    # reused as they are up to their own size. One of the two, never both: taking both off asked
+    # for the copy alone, then the corpus volumes and the parity hit a full drive.
+    need -= side_part if side_written else min(max(0, credit), side_part)
+    needed = copy_bytes + need
     preflight_free_space(
         dest, needed, what="volume backup (it first makes a temporary copy of your data)"
     )

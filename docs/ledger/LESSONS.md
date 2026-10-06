@@ -13230,13 +13230,19 @@ every writer for minutes (the incident `tests/test_export_pauses_collection.py` 
 sizing is copied late inside the freeze, under the same pause. The copy goes in the export's staging directory on the
 DESTINATION drive, is refused for lack of room BEFORE a byte is written in `preflight_free_space`'s own words (how much
 is needed, how much is free and where, free space or choose another location; no "run it again", no plumbing; the other
-members' reusable volumes are credited and a LATE copy does not ask again for the side members and blobs already written),
-and is
-swept after a crash by its OWNER (a marker with the pid, the start time and the machine's name: a dead owner's directory
-goes at once, another live process's never, a recycled pid is a dead owner, and one from another machine on a shared drive,
-an unmarked one, or a leftover of the running process itself keeps the 24 h rule) because a crash left 8 to 40 GB on
+members' reusable volumes are credited, up to their own size, and a LATE copy does not ask again for the side members and
+blobs already written, and does not take the credit off as well: it counts those same bytes, and taking both off once asked
+for the copy alone while the corpus volumes and the parity were still to be written), and is
+swept after a crash by its OWNER (a marker with the pid, the start time, the machine's name and a hash of its machine id: a
+dead owner's directory goes at once, another live process's never, a recycled pid is a dead owner, including THIS process's own
+pid with another start time (a container or a service that is given the same pid at every start), and one from another
+machine on a shared drive, an unmarked one, or a live job of the running process itself keeps the 24 h rule) because a crash left 8 to 40 GB on
 the user's drive and the age rule refused the retry for the very space it held. The destinations that were ever given a
 copy are remembered in the data dir (newest 16) and swept at boot on a thread of their own, since asking a stale network
-mount whether it exists can block for minutes. Restore still reads a `corpus-wal` member, so an old archive restores. **A
+mount whether it exists can block for minutes. Restore still reads a `corpus-wal` member, so an old archive restores. The newsletter-excluded path is refused for room
+before its copy too, and says only what is true of it: an encrypted copy is re-encrypted, so its corpus volumes are rewritten
+and earn no credit; a plaintext one reuses them. A stop in the middle of a run still replaces the previous run's resume log with
+this run's entries (the guard covers only the run that emitted nothing; older than this PR, and reuse re-hashes every slice, so
+nothing wrong is reused). **A
 test of a WAL decision needs a real WAL**: the two reader cases look identical to any fake (both have a log and `busy=1`);
 only the real PRAGMA rows told them apart, which is why these tests run on real SQLite files behind the patched engine.
