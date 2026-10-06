@@ -789,6 +789,26 @@ def test_a_drive_with_room_for_the_archive_twice_over_is_not_refused(_diag_dir, 
     assert json.loads(bytes(d.all_diagnostics_volumes().body))["volume_count"] >= 1
 
 
+def test_a_drive_one_byte_short_of_the_archive_and_its_headroom_is_refused(_diag_dir, monkeypatch):
+    """The other side of the test above: the room check counts the ARCHIVE'S size (a check that counted
+    nothing would still refuse a nearly full drive and still pass the test of a roomy one)."""
+    from fastapi import HTTPException
+
+    from src.analytics.keyword_log_export import disk_reserve
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    need = src.stat().st_size
+    assert need > 1_000, "the archive is big enough for the headroom to be more than a byte"
+    src.rename(_diag_dir / "oo-all-diagnostics-20261001-110000.zip")
+    _fake_disk(monkeypatch, free=0)  # the reserve is a share of the drive: read it on the drive that is faked
+    _fake_disk(monkeypatch, free=int(need * 1.2) + disk_reserve(_diag_dir) - 1)
+    with pytest.raises(HTTPException) as exc:
+        d.all_diagnostics_volumes()
+    assert exc.value.status_code == 507
+    assert f"{need / 2**20:.0f} MiB" in exc.value.detail
+
+
 def test_publishing_moves_the_sidecar_last_and_retires_only_what_nothing_names(tmp_path, monkeypatch):
     """The sidecar is what makes a set exist: until it moves the old one still names old files."""
     src = _build_bundle(tmp_path)

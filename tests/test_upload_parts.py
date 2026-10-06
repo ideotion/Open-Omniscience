@@ -460,6 +460,31 @@ def test_one_incompressible_record_of_three_megabytes_goes_out_in_pieces_under_t
     assert max(p["bytes"] for p in manifest["parts"]) <= up.UPLOAD_PART_BYTES
     (rec,) = manifest["oversize_records"]
     assert len(rec["pieces"]) >= 4, "about 4 MB of text that does not shrink needs at least four pieces"
+    # what the 0.8 protects: a piece weighs at most four fifths of a part, so that a piece that does not
+    # shrink still fits a part with its own structure (at the real cap the room share, nine tenths of what
+    # a part has left, would allow more; the four fifths is the margin the set is documented by)
+    sizes = []
+    for p in _parts(tmp_path, manifest):
+        with zipfile.ZipFile(p) as z:
+            sizes += [i.file_size for i in z.infolist() if ".oversize" in i.filename]
+    assert len(sizes) == len(rec["pieces"])
+    assert max(sizes) <= int(up.UPLOAD_PART_BYTES * 0.8) and max(sizes) > 0.75 * up.UPLOAD_PART_BYTES
+
+
+@pytest.mark.parametrize("cap", [1_500, 2_000, 3_000])
+def test_an_oversize_piece_that_does_not_shrink_fits_a_part_that_is_barely_bigger_than_its_own_index(tmp_path, cap):
+    """What ``_PIECE_ROOM_SHARE`` protects: near the smallest cap a part allows, four fifths of the cap is
+    more than the part has left after its own index, and a piece of that weight would be the one that puts
+    a part over the cap (the writer's backstop raises then). The pieces take at most nine tenths of the
+    room that is left, whatever the compressor does with them."""
+    rnd = random.Random(cap)
+    big = _incompressible_records(rnd, 1, size=(60_000, 60_001))[0]
+    groups = {"en": [*_incompressible_records(rnd, 3, size=(20, 60)), big]}
+    _w, manifest = _write(tmp_path, groups, cap=cap)
+    assert max(p["bytes"] for p in manifest["parts"]) <= cap
+    (rec,) = manifest["oversize_records"]
+    assert len(rec["pieces"]) > 20
+    assert up.verify_parts(tmp_path / "set", manifest)["ok"]
 
 
 def test_a_set_of_more_than_ninety_nine_parts_is_numbered_in_a_width_that_sorts(tmp_path):
