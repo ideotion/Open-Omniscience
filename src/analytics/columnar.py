@@ -95,7 +95,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, passphrase_bytes
 
 _LOG = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ def _derive_key(passphrase: str, salt: bytes) -> str:
     work factor as the corpus (see the constants above).
     """
     return hashlib.pbkdf2_hmac(
-        "sha512", passphrase.encode("utf-8"), salt, _KDF_ITERATIONS, dklen=_KDF_KEY_BYTES
+        "sha512", passphrase_bytes(passphrase), salt, _KDF_ITERATIONS, dklen=_KDF_KEY_BYTES
     ).hex()
 
 

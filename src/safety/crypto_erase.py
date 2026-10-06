@@ -223,6 +223,17 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         _dispose_lanes()
     except Exception:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
         _LOG.warning("could not dispose the lane engines before the erase", exc_info=True)
+    # The columnar serves are the same kind of thing: a PERSISTED one keeps the cache's derived key inside DuckDB for the life of
+    # the process and goes on answering from a file step 3 is about to overwrite. Closed here, before a byte is touched and
+    # without waiting (a serve in use is left open and named: an erase is not held up behind a refresh).
+    try:
+        from src.scheduler.release import close_serves_for_cleared_key
+
+        _serves = close_serves_for_cleared_key()
+        if _serves.get("busy"):
+            _LOG.warning("a columnar serve was in use during the erase and was left open: %s", _serves["busy"])
+    except Exception:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
+        _LOG.warning("could not close the columnar serves before the erase", exc_info=True)
 
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None

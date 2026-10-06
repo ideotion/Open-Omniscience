@@ -21,7 +21,6 @@ machine or a copied file, never a compromised running session.
 
 from __future__ import annotations
 
-import hmac
 import logging
 import os
 import threading
@@ -35,6 +34,7 @@ from src.monitoring.secret_scrub import (
     UNREADABLE_TEXT,
     exception_text,
     log_failure,
+    same_passphrase,
     scrub_and_reraise,
 )
 
@@ -547,6 +547,15 @@ def _begin_recovery_notice(wal_state: dict | None) -> int | None:
         return None
 
 
+def _close_serves_of_the_cleared_key() -> None:
+    """The passphrase was just cleared after a failed unlock or create: close the columnar serve connections keyed by it (a
+    persisted serve keeps the derived key inside DuckDB), without waiting and never raising. Called AFTER the clearing, so a
+    refresh that starts now finds no passphrase and cannot reopen the store."""
+    from src.scheduler.release import close_serves_for_cleared_key
+
+    close_serves_for_cleared_key()
+
+
 def _close_after_checkpoint(conn, passphrase: str | None = None) -> None:
     """Close the verify connection, writing the recovered log back into the database FIRST, through
     ``execute``, and NEVER waiting for a reader.
@@ -654,13 +663,9 @@ def unlock(body: PassphraseBody) -> dict:
             from src.database.connect import get_passphrase
 
             held = get_passphrase()
-            # The typed key is not held yet: whatever this raises is converted with the key out of it (a key with a lone
-            # surrogate cannot be encoded, and the error names the character and its offset, a form no scrub knows).
-            with scrub_and_reraise(_LOG, "unlock failed", body.passphrase):
-                is_the_held_key = held is not None and hmac.compare_digest(
-                    _passphrase_bytes(body.passphrase), held.encode("utf-8")
-                )
-            if is_the_held_key:
+            # ``same_passphrase`` answers for every text (a lone surrogate included) and cannot raise, so the compare needs no
+            # scrubbing block and no refusal of its own.
+            if held is not None and same_passphrase(body.passphrase, held):
                 # The held key, submitted again (a stale tab, a double click that lands late): there is nothing to
                 # replace and nothing to run again (no engine disposal, no second start-up upkeep thread), so the
                 # file is only READ with it, read-only, so that the read cannot fold a leftover log into the file.
@@ -671,17 +676,6 @@ def unlock(body: PassphraseBody) -> dict:
             # Not the held key: ``_unlock_locked`` verifies it against the file too. A wrong one is refused there
             # (403), and the right one repairs an app that reads as open while it holds a wrong key.
         return _unlock_locked(body, p)
-
-
-def _passphrase_bytes(passphrase: str) -> bytes:
-    """The typed key as UTF-8, or the 400 a key that cannot be written as UTF-8 (a lone surrogate) is answered with, in fixed
-    words: the error Python raises names the character and its offset, which is a piece of the key."""
-    try:
-        return passphrase.encode("utf-8")
-    except UnicodeError:
-        raise HTTPException(
-            status_code=400, detail="the passphrase has a character that cannot be written as UTF-8"
-        ) from None
 
 
 def _file_opens_with(p: Path, passphrase: str) -> None:
@@ -754,6 +748,7 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             # that state without running anything, and the page waits on "opening the database" for ever. Back to
             # locked, as ``create_db`` does, so the retry is a real one.
             set_passphrase(None)
+            _close_serves_of_the_cleared_key()
             try:
                 # the pool keeps the connections init_db opened with the key; drop them with it
                 from src.database.session import dispose_engine
@@ -794,6 +789,7 @@ def create_db(body: CreateBody) -> dict:
             _finish_unlock()
         except Exception:
             set_passphrase(None)  # leave the fresh state intact on any failure
+            _close_serves_of_the_cleared_key()
             raise
         finally:
             # S3.6: the store file now exists (or the attempt touched it), so the

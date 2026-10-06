@@ -163,6 +163,45 @@ this section were still open.
   being written into the statement, whose text the engine quotes when it cannot parse it (measured: a path with an apostrophe
   made it quote the first 16 to 24 characters of the key), and the path's quotes are doubled. No shipped build opens the persisted
   store yet (its secure backend is not bundled), so nothing a user holds changes; the sidecar and the engine's log go with the cache on a crypto-erase and an uninstall, and a test now fails on any fast hash of a passphrase-like name under `src/` or `scripts/`.
+- A crash of the app leaves no core dump (#CCCC). Once the store is unlocked its passphrase and key are in the memory of
+  the process that opened it, and a native crash asks the kernel to write that memory out, to a file or to a program that
+  keeps it for weeks. Every place a process can come to hold the passphrase now sets its core-size limit to exactly 1
+  before the passphrase is read or given to the engine, in its own process and not through a launcher line (a shell cannot
+  set 1; `ulimit -c 0` leaves a piped handler a full dump, which was measured): the server, whether `_serve` starts it or
+  `uvicorn`'s own command line does (the encrypted click-through starts it that way), the restore child, the OSM scripts,
+  the encrypt command, and the store's own functions that hold a passphrase or give a key to the engine, so that a key typed
+  into a request is guarded before it reaches the engine and not after the process holds it; children inherit it. Where
+  the limit cannot be set (a launcher that
+  already set it to 0) the process asks the kernel not to dump it instead, which is weaker and which every session's boot
+  record says (`core_guard`). There is no option to turn it off. `python -m src.monitoring.core_guard` lists the crash
+  dumps and reports a machine already holds, by name, size and date, and opens none. The Ollama and vLLM servers, the
+  weights download, the Ollama installer script and the uninstall watcher (which outlives the app) that the app starts
+  inherit the limit and no longer inherit the passphrase (`OO_DB_PASSPHRASE`, and `OO_KEY_PASSPHRASE`, which wraps the signing keys, are dropped from the environment they are
+  given): they have no use for it, and a copy in their environment is in their memory, in `/proc/<pid>/environ` and in
+  anything a crash of theirs writes. A test walks `src/` and requires every call that starts a process to pass an
+  environment or to be listed with the reason it may inherit the server's (the fixed local read-only tools such as
+  `nvidia-smi` and `journalctl`, and the app's own code).
+- The passphrase is kept out of every log handler the app builds, the server's own included (a last check on each,
+  `SecretFilter`, which hands the handler a scrubbed copy of the record and leaves the record itself as it was, so the
+  error journal, which scrubs its own records and counts what it reads off the words as logged, is not behind it; every
+  handler that exists when a process first holds a passphrase or gives one to the engine carries it from then (the
+  last-resort one, which writes to `stderr` before the journal is installed, among them), and every handler built after,
+  whoever builds it: `dictConfig`, `fileConfig`, `basicConfig` and a library's own `addHandler`), out of
+  the run journal's error line (`runlog.run(secrets=...)`, the single-file restore hands it the passphrase it was typed),
+  out of the server's fatal-exception record in the crash trace and out of the newsletter import's journal line and
+  status; the error journal's records written before any of this existed are scrubbed when the debug bundle reads them
+  (the file is not rewritten); and a passphrase that holds a character that cannot be written as UTF-8 (a lone
+  surrogate, which a JSON body can carry) is refused with fixed words, at the key derivations, the store's key, the encrypt
+  tool and the release run's start, resume and hand-over of its passphrase to the child it restores in, because the error
+  Python raises for it names the character and holds the whole text. The server's access line is written by a formatter of
+  ours (`src/utils/access_log.py`): the server's own raised for the record the filter hands it when it withholds a line,
+  which printed `--- Logging error ---` for each such request and wrote no line. `tests/test_secret_filter.py` pins that
+  no module builds a log handler without the
+  filter, writes an exception that carries the key through every handler the app configures at boot, in the order the app
+  starts them (the server's logging configuration, then the journal, then a handler a library adds afterwards), and pins
+  that every interpreter the project names is Python 3.12 or later, the version from which a filter may hand a handler a
+  copy of the record. A failed unlock, a failed create and the crypto-erase also close the columnar cache's open connections,
+  which keep their key inside the engine until they are closed.
 
 ### Interface and translations
 

@@ -60,12 +60,13 @@ class _Probe(R.Probe):
 
 @pytest.fixture(autouse=True)
 def _core_limit(monkeypatch):
-    """The CLI sets RLIMIT_CORE to 1 in the process that runs it; here that process is pytest, so the real call is
-    replaced by a recorder (and what it was asked for is asserted in one test)."""
-    import resource
+    """The CLI engages the core-dump guard in the process that runs it; here that process is pytest, so the real call is
+    replaced by a recorder (what it was asked for is asserted in one test, and what the guard does with the limit in
+    ``tests/test_core_guard.py``, in real child processes)."""
+    from src.monitoring import core_guard
 
-    calls: list[tuple] = []
-    monkeypatch.setattr(resource, "setrlimit", lambda which, limits: calls.append((which, limits)))
+    calls: list[dict] = []
+    monkeypatch.setattr(core_guard, "engage", lambda **kw: calls.append(kw) or core_guard.status())
     return calls
 
 
@@ -1099,8 +1100,6 @@ def test_the_runner_failing_after_a_phase_keeps_the_phase_it_measured(tmp_path, 
 
 
 def test_the_command_switches_core_dumps_off_before_the_run_reads_the_passphrase(tmp_path, monkeypatch, _core_limit):
-    import resource
-
     at_run: list[list] = []
 
     def _run_stub(**kw):
@@ -1109,17 +1108,19 @@ def test_the_command_switches_core_dumps_off_before_the_run_reads_the_passphrase
 
     monkeypatch.setattr(R, "run", _run_stub)
     _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
-    assert at_run and (resource.RLIMIT_CORE, (1, 1)) in at_run[0]  # 1, not 0: a piped core handler ignores every other value
+    # STRICT: this run's children get the passphrase in their environment, so only the inherited limit will do (the
+    # value, 1 and not 0, is the guard's and is measured in tests/test_core_guard.py).
+    assert at_run == [[{"strict": True}]]
 
 
 def test_a_command_that_cannot_limit_core_dumps_refuses_before_reading_the_passphrase(tmp_path, monkeypatch, capsys):
-    import resource
+    from src.monitoring import core_guard
 
-    def _hard_zero(which, limits):
-        raise ValueError("current limit exceeds maximum limit")  # what a hard limit of 0 answers to (1, 1)
+    def _refused(**kw):
+        raise core_guard.CoreGuardError("fixed text")  # what a hard limit of 0 makes a strict engage answer
 
     ran: list = []
-    monkeypatch.setattr(resource, "setrlimit", _hard_zero)
+    monkeypatch.setattr(core_guard, "engage", _refused)
     monkeypatch.setattr(R, "run", lambda **kw: ran.append(kw) or ({}, None))
     code = CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")])
     assert code == 2 and not ran  # R.run (which reads the passphrase file) was never reached

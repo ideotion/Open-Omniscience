@@ -20,6 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def main() -> int:
+    # Before any prompt (2026-10-06): the passphrase typed below is in this process's memory from the moment it is read, and a
+    # crash while the corpus is exported would write that memory out as a core dump. The store's own key-handing functions guard
+    # the process too, but a key is read here before it reaches one.
+    from src.monitoring.secret_scrub import guard_process
+
+    guard_process()
+
     from src.api.unlock import main_db_path
     from src.database.connect import is_encrypted_file
     from src.database.encrypt_tool import EncryptToolError, encrypt_all

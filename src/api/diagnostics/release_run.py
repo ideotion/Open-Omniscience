@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, passphrase_bytes
 
 from ._base import router
 from .p0 import _p0_scrub
@@ -80,6 +80,10 @@ def release_run_start(body: ReleaseRunBody) -> JSONResponse:
 
     if not body.passphrase:
         raise HTTPException(status_code=400, detail="a backup passphrase is required")
+    try:
+        passphrase_bytes(body.passphrase)  # a lone surrogate: fixed words, before a job is made for it
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
     if body.profile not in PROFILES:
         raise HTTPException(status_code=400, detail=f"profile must be one of {PROFILES}")
     try:

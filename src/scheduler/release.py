@@ -38,6 +38,7 @@ freed nothing".
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from contextlib import suppress
 from typing import Any
@@ -104,17 +105,29 @@ def _shrink_sqlite() -> dict[str, Any]:
     return out
 
 
-def _close_serves() -> dict[str, Any]:
+def _close_serves(*, wait: bool = True) -> dict[str, Any]:
     """Close the columnar serve connections and mark them not-built.
 
     Both serves already fall back to live queries when nothing is built, so this
     costs query latency and never an answer.
+
+    A serve module that was never imported holds no connection and is not imported
+    here (the ladder runs when memory is short, which is no time to load a module).
+    ``wait=False`` is for a caller that must not wait: a serve whose lock is held (a
+    query, or a persisted refresh merging) is not closed, because closing a DuckDB
+    connection under a running statement is what the lock exists to prevent, and is
+    named in ``busy``.
     """
     out: dict[str, Any] = {"step": "close_serves", "closed": []}
     for name in ("rollup_serve", "map_serve"):
         try:
-            mod = __import__(f"src.analytics.{name}", fromlist=[name])
-            with mod._LOCK:
+            mod = sys.modules.get(f"src.analytics.{name}")
+            if mod is None:
+                continue
+            if not mod._LOCK.acquire(blocking=wait):
+                out.setdefault("busy", []).append(name)
+                continue
+            try:
                 con = mod._STATE.get("con")
                 if con is not None:
                     with suppress(Exception):
@@ -122,10 +135,25 @@ def _close_serves() -> dict[str, Any]:
                     mod._STATE["con"] = None
                     mod._STATE["built_at"] = 0.0
                     out["closed"].append(name)
+            finally:
+                mod._LOCK.release()
         except Exception as exc:  # noqa: BLE001
             out.setdefault("errors", {})[name] = f"{type(exc).__name__}: {exc}"[:120]
     out["ok"] = "errors" not in out
     return out
+
+
+def close_serves_for_cleared_key() -> dict[str, Any]:
+    """Close the columnar serve connections because the process no longer holds the passphrase they were keyed by.
+
+    A PERSISTED serve (the encrypted columnar cache) keeps the key it was opened with inside DuckDB for the life of the
+    process, and keeps answering with the rows it had. The three places that clear the session's passphrase call this right
+    after they do: a failed unlock (``src/api/unlock.py``), a failed create and the crypto-erase
+    (``src/safety/crypto_erase.py``, before a byte is touched, as the lane engines are disposed there). It never waits and
+    never raises (``wait=False``: an erase is not held up behind a refresh), so a serve that is in use at that moment is
+    left open and named in ``busy``, which the callers log.
+    """
+    return _close_serves(wait=False)
 
 
 def _collect_garbage(swapping: bool | None) -> dict[str, Any]:

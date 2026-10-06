@@ -47,6 +47,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from src.monitoring.secret_scrub import passphrase_bytes
+
 # --------------------------------------------------------------------------- #
 # Post-quantum backend (optional, import-guarded)
 # --------------------------------------------------------------------------- #
@@ -156,12 +158,15 @@ def _keys_dir() -> Path:
 def _passphrase() -> bytes | None:
     # OO_KEY_PASSPHRASE wins when set; otherwise THE database passphrase wraps
     # the signing keys too (design D6: one secret, no plaintext stragglers).
+    # A passphrase that cannot be written as UTF-8 (an environment variable of
+    # bytes that are not UTF-8 reads as a lone surrogate) is refused with fixed
+    # words: Python's own error names the character and its place.
     p = os.getenv("OO_KEY_PASSPHRASE")
     if not p:
         from src.database.connect import get_passphrase
 
         p = get_passphrase()
-    return p.encode("utf-8") if p else None
+    return passphrase_bytes(p, error=SigningError) if p else None
 
 
 def _wrap(plaintext: bytes, passphrase: bytes) -> bytes:

@@ -37,7 +37,6 @@ import logging
 import os
 import re
 import shutil
-import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
@@ -49,6 +48,7 @@ from src.monitoring.kernel_log import (
     journal_boot_arg,
     journal_notice,
 )
+from src.monitoring.secret_scrub import traceback_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -375,9 +375,13 @@ def note_fatal_exception(exc: BaseException) -> None:
 
     A Python-level death (a MemoryError in the event loop, say) is not a signal, so
     faulthandler never sees it, and its traceback otherwise goes only to the launcher
-    window. Best-effort and bounded."""
+    window. Best-effort and bounded.
+
+    The trace file is carried by the debug bundle, and an engine's error can quote the statement that held a key, so the
+    text is scrubbed of every passphrase the process holds BEFORE the cut (a text cut first can split a passphrase and
+    keep half of it), and when it cannot be checked the class is written and none of the exception's words."""
     try:
-        text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-8000:]
+        text = traceback_text(exc)[-8000:]
         with open(crash_trace_path(), "a", encoding="utf-8") as fh:
             fh.write(f"Uncaught exception ended the server at {_now()}:\n{text}\n")
     except Exception:  # noqa: BLE001 - never mask the exception being reported

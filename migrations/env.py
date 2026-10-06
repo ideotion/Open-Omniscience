@@ -20,6 +20,7 @@ from src.database import models  # noqa: F401  (needed so all tables register)
 from src.database.derived_views import drop_derived_views
 from src.database.models import Base
 from src.database.session import DATABASE_URL, engine
+from src.monitoring.secret_scrub import protect_handlers
 
 config = context.config
 if config.config_file_name is not None:
@@ -52,6 +53,10 @@ if config.config_file_name is not None:
     # a real boot-time migration self-heal would silently mute ordinary app logging
     # for the rest of the process. Never intentional here -- keep it off.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
+    # ``fileConfig`` replaced the root logger's handlers with its own console handler, which writes every WARNING and above
+    # of every logger to stderr as it is: behind the passphrase filter again (a filter attached before this call went with
+    # the handlers it replaced).
+    protect_handlers()
 
 target_metadata = Base.metadata
 

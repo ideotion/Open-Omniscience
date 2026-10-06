@@ -290,6 +290,96 @@ def test_a_record_written_before_the_flags_existed_is_still_counted_by_its_text(
 
 
 # --------------------------------------------------------------------------- #
+#  A journal outlives the build that wrote it
+# --------------------------------------------------------------------------- #
+def _written_by_an_older_build(tmp_path, **fields) -> None:
+    """One line of the journal as a build from before the scrub wrote it: the exception's words, as raised."""
+    entry = {"at": "2026-09-01T00:00:00+00:00", "level": "ERROR", "logger": "src.analytics.store", **fields}
+    with (tmp_path / "app_errors.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def test_a_record_an_older_build_wrote_is_read_with_the_passphrases_out_of_it_and_the_file_is_left_as_it_was(journal, tmp_path):
+    """MUTATION TARGET: ``recent_errors`` returning the file's records as they are. The debug bundle carries what it returns, and
+    the journal keeps up to 2,000 records from sessions that ran before the scrub existed."""
+    _written_by_an_older_build(
+        tmp_path,
+        message=f"the store refused {_sql(HELD)} ({ENV!r})",
+        traceback_tail=f"RuntimeError: near {_sql(HELD)}\n  args={(HELD,)!r}",
+        kind=f"error {ENV}",
+        source=f"app.js?k={ENV}",
+    )
+    (entry,) = errorlog.recent_errors()
+    raw = json.dumps(entry, ensure_ascii=False)
+    for secret in (HELD, ENV):
+        for shape in _shapes(secret):
+            assert shape not in raw, (shape, raw)
+    assert entry["message"] == "the store refused PRAGMA key = '***redacted***' ('***redacted***')"
+    assert "RuntimeError: near PRAGMA key = '***redacted***'" in entry["traceback_tail"]
+    assert entry["level"] == "ERROR" and entry["logger"] == "src.analytics.store" and entry["at"] == "2026-09-01T00:00:00+00:00"
+    assert HELD in (tmp_path / "app_errors.jsonl").read_text(encoding="utf-8"), "the file is read, never rewritten"
+
+
+@pytest.mark.parametrize("secret", ["POST", "/api/unlock", "HTTP", "http", "2026-09-01"])
+def test_the_structure_of_an_older_record_is_never_scrubbed(journal, monkeypatch, tmp_path, secret):
+    """MUTATION TARGET: a field taken out of ``_STRUCTURAL_FIELDS``: a passphrase that is a method, a route, a level, a logger or a
+    date would take the label out of the record it labels and leave it unreadable as an entry of the journal."""
+    monkeypatch.setattr(connect, "_passphrase", secret)
+    _written_by_an_older_build(
+        tmp_path, level="HTTP", logger="http", status=404, method="POST", path="/api/unlock", message="HTTP 404 POST /api/unlock"
+    )
+    (entry,) = errorlog.recent_errors()
+    assert (entry["method"], entry["path"], entry["status"], entry["level"], entry["logger"]) == ("POST", "/api/unlock", 404, "HTTP", "http")
+    assert entry["at"] == "2026-09-01T00:00:00+00:00"
+    assert entry["message"] == "HTTP 404 POST /api/unlock".replace(secret, "***redacted***")
+
+
+def test_the_summary_still_counts_an_older_record_by_its_text_when_a_passphrase_is_a_piece_of_the_phrase(journal, monkeypatch, tmp_path):
+    """MUTATION TARGET: the summary reading the scrubbed records. It publishes counts and times and no words, and a record written
+    before the flags existed is counted by what it said."""
+    monkeypatch.setattr(connect, "_passphrase", "is locked")
+    _written_by_an_older_build(tmp_path, message="sqlite3.OperationalError: database is locked")
+    assert errorlog.summary()["locked_errors_total"] == 1
+    (entry,) = errorlog.recent_errors()
+    assert entry["message"] == "sqlite3.OperationalError: database ***redacted***"
+
+
+def test_an_older_record_is_withheld_when_what_the_process_holds_cannot_be_read(journal, monkeypatch, tmp_path):
+    _written_by_an_older_build(tmp_path, message=f"the store refused {HELD}", traceback_tail=f"RuntimeError: {HELD}")
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    (entry,) = errorlog.recent_errors()
+    assert entry["message"] == ss.UNREADABLE_TEXT and entry["traceback_tail"] == ss.UNREADABLE_TEXT
+    assert entry["level"] == "ERROR" and entry["logger"] == "src.analytics.store"
+
+
+def test_an_older_record_that_holds_a_secret_under_the_floor_is_withheld_in_the_fields_that_hold_it_and_kept_in_the_others(
+    journal, monkeypatch, tmp_path
+):
+    """MUTATION TARGET: the read-scrub passing a text that holds a secret too short to take out (``secret_scrub.MIN_SECRET_CHARS``).
+    The journal outlives the build that wrote it, and a store whose short passphrase the unlock accepted holds it for the session:
+    a field that holds it is withheld whole, one that does not is kept as it was, and the structure is never touched."""
+    monkeypatch.setattr(connect, "_passphrase", "xK7")
+    _written_by_an_older_build(
+        tmp_path, message="the store refused xK7", traceback_tail="RuntimeError: near the file", kind="error", source="app.js"
+    )
+    (entry,) = errorlog.recent_errors()
+    assert entry["message"] == ss.UNREADABLE_TEXT
+    assert entry["traceback_tail"] == "RuntimeError: near the file" and entry["kind"] == "error" and entry["source"] == "app.js"
+    assert entry["level"] == "ERROR" and entry["logger"] == "src.analytics.store" and entry["at"] == "2026-09-01T00:00:00+00:00"
+
+
+def test_the_records_a_diagnostics_bundle_reads_are_the_scrubbed_ones():
+    """The three readers of the journal (the bundle's ``errors`` member and its frontend-error report, and the summary) are the
+    whole list: a new one is a place the older records reach, and has to choose between this and ``scrub=False``."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "src"
+    readers = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py") if "recent_errors(" in p.read_text(encoding="utf-8"))
+    assert readers == ["api/diagnostics/bundle.py", "api/diagnostics/system.py", "monitoring/errorlog.py"], readers
+    assert "recent_errors(300)" in (root / "api/diagnostics/bundle.py").read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- #
 #  The browser's words are sent whole and cut by the server after the scrub
 # --------------------------------------------------------------------------- #
 

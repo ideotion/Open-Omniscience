@@ -71,7 +71,7 @@ from src.database.session import dispose_engine, get_db, init_db, session_scope
 from src.monitoring.secret_scrub import log_failure, scrubbed, unicode_note
 
 # Configure logging using shared config
-from src.utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging, uvicorn_log_config
 
 # Import security utilities
 
@@ -439,6 +439,15 @@ async def lifespan(app: FastAPI):
     LOCKED: only the unlock flow is served; the deferred startup runs the
     moment the operator supplies THE passphrase. A plaintext store boots
     exactly as before — never a lock screen over a plaintext file."""
+    # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app``, which
+    # the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
+    # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
+    try:
+        from src.monitoring.secret_scrub import guard_process
+
+        guard_process()
+    except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
+        logger.debug("could not engage the core-dump guard", exc_info=True)
     from src.api.unlock import app_lock_state
 
     # Clean-shutdown sentinel (session forensics, 2026-07-09): stamp 'running' now,
@@ -3323,9 +3332,22 @@ def _run_ephemeral(argv: list[str]) -> None:
 
 
 def _serve() -> None:
+    # Hold this process's core dumps to nothing BEFORE anything else (2026-10-06): the key of an unlocked store is in this
+    # process's memory, and a native crash writes that memory out as a dump, to a file or a handler that keeps it. Not an
+    # option and not a launcher line (a shell cannot set the one value that works); ``src/monitoring/core_guard.py``
+    # says what the limit is, why, and what it does not cover. The boot record names the mechanism that held. In the same
+    # call, every log handler that exists (the last-resort one, which writes to ``stderr`` until the error journal is
+    # installed, included) is put behind the passphrase filter, and every one built afterwards.
+    try:
+        from src.monitoring.secret_scrub import guard_process
+
+        guard_process()
+    except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
+        logger.debug("could not engage the core-dump guard", exc_info=True)
+
     import uvicorn
 
-    # Arm the native crash trace FIRST (2026-09-26): a SIGSEGV/SIGABRT anywhere from
+    # Arm the native crash trace next (2026-09-26): a SIGSEGV/SIGABRT anywhere from
     # here on -- the startup seeding included -- leaves every thread's stack in
     # diagnostics/crash_trace.log for the next boot to report. Best-effort by design.
     try:
@@ -3411,7 +3433,7 @@ def _serve() -> None:
     # boot. 30 s is long enough for an ordinary request and short enough to lose the
     # race with nothing.
     try:
-        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30)
+        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config())
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException as exc:

@@ -26,7 +26,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, scrubbed, unicode_withheld_traceback
+from src.monitoring.secret_scrub import (
+    TRACEBACK_ATTRIBUTE,
+    protect_handlers,
+    scrubbed,
+    unicode_withheld_traceback,
+)
 from src.paths import data_dir
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
@@ -152,7 +157,13 @@ class _JsonlErrorHandler(logging.Handler):
     passphrase and keep half of it. It is the net under the per-site scrubs (``log_failure`` and the handlers the static guard
     reads), and it knows only the passphrases the process holds: one typed into a request being served, or a backup's, is the
     site's to take out. When what the process holds cannot be read the entry carries ``secret_scrub.UNREADABLE_TEXT`` where the
-    message and the traceback would be: the record is still counted, and nothing it said is kept."""
+    message and the traceback would be: the record is still counted, and nothing it said is kept.
+
+    It is the one handler that stands behind no ``SecretFilter`` (``scrubs_its_own_records``: ``protect_handlers`` leaves it
+    alone), because the counts the summary reports are read off the words AS LOGGED, and a filter in front would take a
+    passphrase that is a piece of ``database is locked`` out of them first."""
+
+    scrubs_its_own_records = True  # the name is ``secret_scrub.SCRUBS_ITS_OWN_RECORDS``
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
         try:
@@ -314,21 +325,44 @@ def install() -> None:
         _lg = logging.getLogger(_name)
         if not any(isinstance(f, _ThirdPartyCacheNoiseFilter) for f in _lg.filters):
             _lg.addFilter(_ThirdPartyCacheNoiseFilter())
+    # Every handler that exists at boot (a library's ``basicConfig`` console among them) behind the passphrase filter, as the
+    # handlers the app builds are. The handler above scrubs its own records; this is for the ones that write them as they are.
+    protect_handlers()
     _installed = True
     if not handler_present:
         note_boot()
 
 
-def recent_errors(limit: int = 300) -> list[dict]:
+#: The fields of a journal record that are structure and never the exception's words (the request an HTTP entry is about is the
+#: route and its method, which carry no query): a passphrase that is a level, a logger's name or a route must not take it out
+#: of the record it labels.
+_STRUCTURAL_FIELDS = frozenset({"at", "level", "logger", "method", "path"})
+
+
+def _scrubbed_entry(entry: dict) -> dict:
+    """``entry`` with the passphrases the process holds taken out of every text field that is not structure."""
+    return {k: scrubbed(v) if isinstance(v, str) and k not in _STRUCTURAL_FIELDS else v for k, v in entry.items()}
+
+
+def recent_errors(limit: int = 300, *, scrub: bool = True) -> list[dict]:
+    """The newest ``limit`` records of the journal, oldest first.
+
+    The journal is a file that outlives the build that wrote it, and a record written before the scrub existed holds whatever its
+    exception said (the debug bundle carries what this returns). So what is READ has the passphrases the process holds taken out
+    again (:func:`secret_scrub.scrubbed`: free while none is held, and a text it cannot check is withheld), and the file is left as
+    it was. Only the passphrases held NOW can be taken out: a record that names one the process no longer holds is not recognised.
+    ``scrub=False`` is for the summary, which publishes counts and times and no words, and which counts a record written before
+    the flags existed by its text."""
     path = _log_path()
     if not path.exists():
         return []
     out = []
     for ln in path.read_text(encoding="utf-8").splitlines()[-limit:]:
         try:
-            out.append(json.loads(ln))
+            entry = json.loads(ln)
         except json.JSONDecodeError:
             continue
+        out.append(_scrubbed_entry(entry) if scrub and isinstance(entry, dict) else entry)
     return out
 
 
@@ -340,7 +374,7 @@ def summary() -> dict:
     and ``locked_errors_this_session`` count records SINCE the latest boot marker,
     so a clean current session reads zero even when the file still holds an old
     session's errors (which would otherwise look live)."""
-    records = recent_errors(limit=_CAP)
+    records = recent_errors(limit=_CAP, scrub=False)  # counts and times, no words: see ``recent_errors``
     if not records:
         return {
             "records": 0,

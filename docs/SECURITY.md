@@ -205,6 +205,52 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   wrong-passphrase rate-limiting: an attacker who can brute-force already has the file and
   works offline, so backoff would only punish the honest fat-finger user; the honest lever
   is passphrase length, which the create flow guides.
+- **A crash of the running app leaves no core dump** (2026-10-06). Once the store is unlocked its passphrase and key are in
+  the memory of the process that opened it, and a native crash (SIGSEGV, SIGABRT, SIGBUS) asks the kernel to write that
+  memory out as a core dump, to a file or to a program that keeps it for weeks (systemd-coredump, apport, abrt). So every
+  place a process can come to hold the passphrase (the server, whether `_serve` starts it or the uvicorn command line does,
+  through the application's start; the restore child; the OSM scripts; the encrypt command; and the store's own functions
+  that hold a passphrase or give a key to the engine, which a key typed into a request reaches before anything holds it)
+  sets `RLIMIT_CORE` to **exactly 1**, soft and hard, in its own process, before the passphrase is read or given to the
+  engine (`src/monitoring/core_guard.py`); every child inherits it. The value is 1 and not 0 for a measured reason: the kernel
+  ignores the limit for a piped handler except at exactly 1, so `ulimit -c 0`, the usual advice, leaves a full dump in
+  the handler's hands. There is no option and no launcher line to turn it off. Where the hard limit is already 0 (a
+  launcher that ran `ulimit -c 0`) the limit cannot be set, and the process asks the kernel not to dump it
+  (`PR_SET_DUMPABLE 0`): weaker, because `exec` resets it and a child is dumpable until it asks too, and the boot record
+  names which mechanism a session ran under (`core_guard`), so "no dump" is never read as "no crash". The Ollama and
+  vLLM servers, the weights download, the Ollama installer script and the uninstall watcher inherit the limit like any
+  child, and are NOT handed the passphrase (`OO_DB_PASSPHRASE` and `OO_KEY_PASSPHRASE` are dropped from the environment they are given,
+  `model_store.child_env`; the restore child and the OSM reference run, which need it, are given it by name; the fixed
+  local read-only tools the app runs for seconds, such as `nvidia-smi` and `journalctl`, and the app's own code inherit
+  the server's environment, each listed with its reason in `tests/test_child_env_passphrase.py`): a crash of one of them
+  leaves no dump to examine either (the kernel's log and the launcher's exit record still say a process died of a signal). What this does not cover: a dump the OS kept before this version ran (`python -m src.monitoring.core_guard` lists the names, sizes
+  and dates of what the machine holds and opens nothing), a hibernation image, swap, a crash kernel's capture, a
+  hypervisor's snapshot, root raising the limit, and a process that holds a passphrase and reaches none of the places above
+  (a script of an operator's own that reads one and never gives it to the store).
+- **The passphrase is kept out of the records the app writes.** Every place an exception becomes a text a file keeps (a
+  log record, the error journal, a job's status, a run journal, the crash trace) takes the passphrases the process holds
+  out of it where the text is made, in every shape the code writes one in (as typed, as an SQL literal holds it, as `repr`
+  and as JSON write it), BEFORE the cut that keeps the first or last part of it, and writes the exception's class and none
+  of its words when the scrub cannot run (`src/monitoring/secret_scrub.py`). A passphrase too short to take out of a text without
+  taking the text with it (under four characters, whitespace not counted; an older store's passphrase, which the unlock accepts
+  and holds, can be one) makes every record that holds it withheld whole, in every helper and in the filter. A last check stands in front of every log
+  handler the app builds, the server's own included (`SecretFilter`: it hands the handler a scrubbed copy of the record and
+  leaves the record as it was; the error journal's handler scrubs its own records and stands beside it, and the journal's
+  records from before any of this existed are scrubbed when the debug bundle reads them). It knows only the passphrases the
+  process holds: a passphrase typed into a request being served is the call site's to take out
+  (`tests/test_p0_validation.py` reads the functions that hold one). It stands in front of the handlers that exist when a
+  process first holds a passphrase or gives one to the engine (the last-resort one, which writes to `stderr` before the
+  journal is installed, among them) and of every handler built after that, a library's included (the constructor of
+  `logging.Handler` is replaced once for the purpose); a handler built before then that no logger holds is not covered. The
+  server's access line is written by a formatter of ours (`src/utils/access_log.py`), because the server's own raised for
+  the record the filter hands it when it withholds a line. The
+  copy it hands a handler needs Python 3.12, which the project's floor (3.13) is above and a test pins; below it the filter
+  writes the scrubbed words into the record itself. A passphrase that cannot be written as UTF-8 (a lone surrogate) is
+  refused with fixed words at every place the code turns one into bytes or hands one to something that does (the key
+  derivations, the store's key, the encrypt tool's `ATTACH`, the release run's hand-over to its child), because the error
+  Python raises for it names the character and holds the whole text. A failed unlock,
+  a failed create and the crypto-erase also close the columnar cache's open connections, which keep their key inside the engine
+  until they are closed (one in use at that moment is left open and named in the log).
 - **Airplane mode is a socket-level kill switch, not just a per-call convention.** When
   offline is engaged, `src/ingest/airplane.py` installs a process-wide guard over
   `socket.getaddrinfo` / `create_connection` / `socket.connect(_ex)` — and, since

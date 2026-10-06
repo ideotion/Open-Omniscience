@@ -116,6 +116,12 @@ def _result_text(result: dict, passphrase: str) -> str:
 
 
 def main() -> int:
+    # This process is handed the passphrase in its environment, so a crash of it must leave no dump of it either. The
+    # limit it inherits from the app covers it already; the fallback (not dumpable) does not survive the ``exec`` that
+    # started this process, so it is asked for again here, before anything is imported or read.
+    from src.monitoring.core_guard import engage
+
+    engage()
     from src.monitoring.p0_validation import _RssSampler
 
     backup = Path(os.environ["OO_RELEASE_RUN_BACKUP"])

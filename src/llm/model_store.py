@@ -44,6 +44,7 @@ import os
 import shutil
 from pathlib import Path
 
+from src.monitoring.secret_scrub import HELD_ENV_VARS
 from src.paths import data_dir
 
 _LOG = logging.getLogger("llm.model_store")
@@ -58,6 +59,27 @@ _BLOBS = "blobs"
 # chose, which they keep. A test ties the launcher's spelling of it to this one.
 ARENA_DEFAULT_MARKER = "OO_ARENA_MAX_DEFAULTED"
 _ARENA_VAR = "MALLOC_ARENA_MAX"
+
+#: The variable that hands the app its passphrase (``src.database.connect`` reads it at import, and a scripted or headless start
+#: sets it). It and the variable that wraps the signing keys (``OO_KEY_PASSPHRASE``) are the secrets the server's environment can
+#: hold, and no child that is not the app's own code has a use for either: ``secret_scrub.HELD_ENV_VARS`` lists both, and
+#: :func:`child_env` leaves both out.
+PASSPHRASE_ENV = "OO_DB_PASSPHRASE"
+
+
+def child_env(base: dict | None = None) -> dict:
+    """A copy of the environment (``base``, default ``os.environ``) for a child that is not the app's own code, WITHOUT the
+    passphrases (:data:`~src.monitoring.secret_scrub.HELD_ENV_VARS`: the store's, :data:`PASSPHRASE_ENV`, and the signing keys').
+
+    The engines the app starts (Ollama, vLLM), their weights download and the installer script are third-party programs that
+    run for a long time and can reach the network. An environment variable is in the memory of the process that holds it, in
+    ``/proc/<pid>/environ`` and in anything a crash of it writes, and none of them can open the corpus or has a reason to try:
+    the passphrase stays in the one process that opens it. The children the app starts that DO need it (the restore child and
+    the OSM reference run) are given it by name, and not by inheritance."""
+    env = dict(base if base is not None else os.environ)
+    for name in HELD_ENV_VARS:
+        env.pop(name, None)
+    return env
 
 
 def app_models_root() -> Path:
@@ -133,9 +155,10 @@ def launch_env(base: dict | None = None) -> dict:
     The marker itself means nothing to a child and is never passed on. Every spawner of an engine
     or of a download (Ollama, the vLLM server, the weights and installs) builds its environment here;
     the Ollama install SCRIPT (``installer.run_installer``) is deliberately not one: a short shell, not
-    an engine, which inherits the server's environment as it is.
+    an engine, which inherits the server's environment as it is, less the passphrase (:func:`child_env`,
+    which every environment built here starts from: no child has a use for the passphrase).
     """
-    env = dict(base if base is not None else os.environ)
+    env = child_env(base)
     if env.pop(ARENA_DEFAULT_MARKER, None) == "1":
         env.pop(_ARENA_VAR, None)
     try:

@@ -147,6 +147,11 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "cleans an engine's error TEXT of the passphrase before it is stored or logged; it runs "
         "only on a failure and never changes the rows a pass writes"
     ),
+    "src/monitoring/secret_scrub.py": (
+        "takes the passphrase out of the text a log record, a report or a journal line is made of, and is the filter the logging "
+        "setup (src/utils/logging_config.py, itself exempt) puts in front of its handlers; it never sees a keyword row and "
+        "never changes one a pass writes"
+    ),
     "src/services/duckduckgo.py": "imported by the services package; makes no call in a pass",
     "src/utils/logging_config.py": "log formatting only",
 }

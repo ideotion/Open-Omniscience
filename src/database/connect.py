@@ -131,7 +131,26 @@ _lock = threading.Lock()
 # deliberately expensive — ~173 ms, CLAUDE.md's rate-limiting-is-a-
 # deliberate-omission entry).
 _last_good_page_size: dict[str, int | None] = {}
+
+
+def _guard_the_key() -> None:
+    """What this process does before it holds a passphrase or hands one to the engine (2026-10-06): hold its core dumps to
+    nothing and put every log handler behind the passphrase filter (``secret_scrub.guard_process``; ``src.monitoring.core_guard``
+    explains the limit and what it cannot cover). The net under every entry point that forgot to say so first, and it is called
+    at EVERY place this module hands a key to the engine (the store's key, the encrypt tool's ``ATTACH ... KEY``) and where a
+    process first holds one (the environment at import, ``set_passphrase``): a key typed into a request is given to the engine
+    before it is held, so "when it is held" is too late for a server that was not started by ``_serve`` (the uvicorn command
+    line), and for a command line tool that reads one. Never raises and never blocks an open: where the guard cannot be engaged
+    the boot record says so, and a store that will not open helps no one."""
+    with contextlib.suppress(Exception):
+        from src.monitoring.secret_scrub import guard_process
+
+        guard_process()
+
+
 _passphrase: str | None = os.environ.get("OO_DB_PASSPHRASE") or None
+if _passphrase:
+    _guard_the_key()
 
 
 class DatabaseLockedError(RuntimeError):
@@ -145,6 +164,8 @@ class WrongPassphraseError(RuntimeError):
 
 def set_passphrase(p: str | None) -> None:
     global _passphrase
+    if p:
+        _guard_the_key()  # before the process holds the key, not after
     with _lock:
         _passphrase = p or None
     # The scrub keeps ONE cache entry: the passphrases it last took out of a text and the shapes it made of them. A failed
@@ -200,6 +221,12 @@ def _sql_literal_escape(value: str) -> str:
 
 
 def _apply_key(conn, key: str) -> None:
+    # A key with a lone surrogate in it cannot be written into a statement, and the error the driver raises for it names the
+    # character and its place in the key: refused first with fixed words (``secret_scrub.passphrase_bytes``).
+    from src.monitoring.secret_scrub import passphrase_bytes
+
+    _guard_the_key()  # the key is about to go to the engine, and a process that was only handed it has not held it yet
+    passphrase_bytes(key)
     cur = conn.cursor()
     try:
         # The key never reaches any log.
@@ -614,6 +641,13 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
         raise DatabaseLockedError("sqlcipher3 driver unavailable")
     from sqlcipher3 import dbapi2 as sqc
 
+    from src.monitoring.secret_scrub import passphrase_bytes
+
+    # The source is plaintext, so no ``_apply_key`` has looked at this key yet: the process is guarded here, as there, and the
+    # key goes into the ATTACH statement as text that the driver encodes by itself, so a lone surrogate fails there with the
+    # character, its place in the statement and the statement (with the key in it) held. Refused first, with fixed words.
+    _guard_the_key()
+    passphrase_bytes(key)
     src_p, dest_p = Path(src_plain), Path(dest)
     dest_p.parent.mkdir(parents=True, exist_ok=True)
     dest_p.unlink(missing_ok=True)

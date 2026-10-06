@@ -441,6 +441,21 @@ def _boot_allocator() -> dict[str, Any]:
         return {"error": type(exc).__name__}
 
 
+def _boot_core_guard() -> dict[str, Any]:
+    """Which guard against a core dump this process runs under (``src/monitoring/core_guard.py``), compactly: the mechanism
+    (``rlimit``, ``dumpable``, ``none`` or ``unsupported``), the soft and hard limit it reads, whether a child is covered,
+    and which handler the machine sends a dump to. Written on the boot record so a session that ended in a native crash
+    says whether it could have left a dump holding the passphrase: a crash with no dump is not a crash that did not
+    happen, and a dump on a machine whose record says ``none`` is not a surprise."""
+    try:
+        from src.monitoring.core_guard import status
+
+        got = status()
+        return {k: got.get(k) for k in ("mechanism", "soft", "hard", "dumpable", "inherited_by_children", "handler")}
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
 def _boot_rollup_mode() -> str | None:
     """``auto``, ``forced-on`` or ``forced-off``: whether an operator's own
     ``OO_COLUMNAR_SERVE`` is in play beside the tier's default. A rollup that is off
@@ -486,6 +501,7 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "memory_budget": _boot_memory_budget(),
         "allocator": _boot_allocator(),
         "rollup_serve_mode": _boot_rollup_mode(),
+        "core_guard": _boot_core_guard(),
     }
     _append(rec)
     compact_if_needed()

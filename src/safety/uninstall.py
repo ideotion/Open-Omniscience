@@ -260,10 +260,14 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "passes": plan.get("passes"),  # optional defence-in-depth free-space scrub (1/3/8)
         "audit_log": plan.get("audit_log"),
     }
+    # The watcher outlives the app and has no use for the passphrase: it is not handed the server's copy (``child_env``).
+    from src.llm.model_store import child_env
+
     subprocess.Popen(
         [_system_python(), "-c", _WATCHER_SRC, str(server_pid), json.dumps(payload)],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         start_new_session=True,           # detach: surviving our own shutdown
+        env=child_env(),
     )
 
 

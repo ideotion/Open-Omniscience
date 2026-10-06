@@ -351,7 +351,7 @@ def test_the_walk_reads_the_real_key_derivation_and_the_real_modules_that_hash_f
     derive = hash_calls((ROOT / "src/analytics/columnar.py").read_text(encoding="utf-8"))
     stretching = [h for h in derive if h.stretching and h.mention is not None]
     assert [h.label for h in stretching] == ["hashlib.pbkdf2_hmac"], derive
-    assert stretching[0].mention == "passphrase"
+    assert stretching[0].mention == "passphrase_bytes", "the call takes the passphrase through the one encoder of it"
     fast = [h for found in _tree()[0].values() for h in found if not h.stretching]
     assert len(fast) > 40, f"the walk saw {len(fast)} fast hashes in the tree; there are dozens"
     assert not [h for h in fast if h.mention is not None]
@@ -362,7 +362,7 @@ def test_the_walk_flags_the_shape_the_finding_named_in_the_real_module():
     ``_derive_key`` is restructured so that the text below is not found, this fails loudly and is rewritten with it.)"""
     path = ROOT / "src/analytics/columnar.py"
     source = path.read_text(encoding="utf-8")
-    stretched = 'hashlib.pbkdf2_hmac(\n        "sha512", passphrase.encode("utf-8"), salt, _KDF_ITERATIONS, dklen=_KDF_KEY_BYTES\n    ).hex()'
+    stretched = 'hashlib.pbkdf2_hmac(\n        "sha512", passphrase_bytes(passphrase), salt, _KDF_ITERATIONS, dklen=_KDF_KEY_BYTES\n    ).hex()'
     assert stretched in source, "_derive_key moved: update the replacement below to its new text"
     assert fast_hashes_of_the_passphrase(source) == []
     before = source.replace(stretched, 'hashlib.sha256(("oo-columnar-v1:" + passphrase).encode("utf-8")).hexdigest()')

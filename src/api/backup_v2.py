@@ -221,7 +221,8 @@ def restore_legacy_path(
         from src.backup.volume_job import defer_reindex, hand_off_reindex
 
         try:
-            with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
+            # The run journal keeps the error that ends the block; ``secrets`` has it taken out of the words first.
+            with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True, secrets=(passphrase,)):
                 report = run_restore(
                     staged,
                     commit=True,
