@@ -302,6 +302,11 @@ def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = 
         # serving the pre-restore counts. It is dropped by name for that reason,
         # never left to a probe that cannot see the write.
         invalidate_served_counts()
+    # The swap happened: whatever the corpus latch said about the file that was live (database/damage.py)
+    # was about a file that no longer is. The first failed read of the new one puts it back.
+    from src.database import damage
+
+    damage.registry.retry(reason="the corpus file was replaced", files=(damage.FILE_CORPUS,))
 
 
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a

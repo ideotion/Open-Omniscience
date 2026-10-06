@@ -28,6 +28,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
+from src.database import damage
 from src.database.query import capped
 from src.ingest.tor_throughput import KindLadder
 from src.scheduler import storage_guard
@@ -1529,6 +1530,12 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
         step = _LANE_STEPS.get(kind)
         if step is None:
             continue  # a reserved-but-not-yet-runnable kind (e.g. "crawl" pre-C3)
+        if kind == "law" and damage.registry.latched("law"):
+            # The law lane's FILE was reported damaged: its writer waits, the other steps do not
+            # (database/damage.py -- the latch is per file).
+            out[kind] = {"skipped": "database-damaged"}
+            _activity(f"lane:{kind}", out[kind], settings)  # said, not silent
+            continue
         try:
             out[kind] = step(session, fetcher, settings)
             _activity(f"lane:{kind}", out[kind], settings)
@@ -1852,19 +1859,31 @@ class BackgroundScheduler:
             kind = g.admit()
             if kind is None:
                 break
-            phase = storage_guard.PHASE_DISK if kind == "disk" else storage_guard.PHASE_WAL
+            phase = {
+                "disk": storage_guard.PHASE_DISK,
+                "damage": storage_guard.PHASE_DAMAGE,
+            }.get(kind, storage_guard.PHASE_WAL)
             if not waited:
                 waited = True
                 # No pass will start while paused: a stale next_run would render as a
                 # live countdown in the UI (honesty).
                 with self._state_lock:
                     self._next_run = None
-                _LOG.warning(
-                    "collection paused (storage, %s): %s -- resumes by itself, or on operator "
-                    "action",
-                    kind,
-                    storage_guard.storage_guard.state().get("reason") or "storage pressure",
-                )
+                if kind == "damage":
+                    # Not a reading that clears: the latch is the database's own report of a damaged
+                    # file, and only starting collection again releases it (database/damage.py).
+                    _LOG.warning(
+                        "collection paused (database damage): %s -- it resumes when collection is "
+                        "started again",
+                        storage_guard.storage_guard.state().get("reason") or "the database reported damage",
+                    )
+                else:
+                    _LOG.warning(
+                        "collection paused (storage, %s): %s -- resumes by itself, or on operator "
+                        "action",
+                        kind,
+                        storage_guard.storage_guard.state().get("reason") or "storage pressure",
+                    )
             # Re-asserted EVERY iteration: a concurrently finishing run-now pass clears the
             # phase in its finally, which would otherwise leave an hours-long pause
             # looking like idle (the memory pause's own lesson).
@@ -2006,6 +2025,11 @@ class BackgroundScheduler:
                 # work that must not start (they append to the file the guard is bounding),
                 # even while the operator's override lets collection itself continue.
                 self._note_maint_skip("storage_pressure")
+                return False
+            if damage.registry.corpus_latched():
+                # The database reported the corpus file damaged: vacuum, cleanup and checkpoints
+                # rewrite pages of exactly the file that cannot be read in full.
+                self._note_maint_skip("database_damage")
                 return False
         except Exception:  # noqa: BLE001 - guard read must never block maintenance
             pass
@@ -2731,6 +2755,11 @@ def resume_after_exclusive_operation(
     immediately: a single backup finishing inside a multi-backup import run must
     not put collection back on the machine for the rest of the run (field ruling
     item 10). Only the window itself resumes, once, at the end.
+
+    A COURTESY, NOT THE OPERATOR TRYING AGAIN: this and the pending-resume watcher below put back a
+    collector that an exclusive operation (a backup, a restore) stopped, so they do NOT go through
+    ``damage.retry_for_collection_start``: a file the database reported damaged stays paused across them,
+    and only the operator's own start releases it (``tests/test_database_damage.py``).
     """
     if exclusive_window_open():
         return
@@ -2766,6 +2795,8 @@ def resume_after_exclusive_operation(
 # --------------------------------------------------------------------------- #
 #  The pending resume (SCHED-1, 2026-09-24)
 # --------------------------------------------------------------------------- #
+#
+# Like :func:`resume_after_exclusive_operation` it is a courtesy and never releases a database-damage latch.
 #
 # One watcher at a time, keyed by a GENERATION so a cancel (a shutdown) or a newer
 # watcher retires an older one without either racing on shared state. It never starts

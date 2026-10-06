@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.config.machine_floor import machine_floor
+from src.database import damage
 from src.database.models import Source
 from src.database.session import get_db
 from src.monitoring.server_load import server_load
@@ -397,6 +398,9 @@ def scheduler_start() -> dict:
     # needed (its cause is still over the limit, or cannot be read against it) is left alone:
     # collection runs under it and there is nothing to retry.
     storage_guard.storage_guard.reset(reason="operator started collection")
+    # And the database-damage latch (database/damage.py): a RETRY too. The record of the incident
+    # stays, and the first failed read puts the pause back.
+    damage.retry_for_collection_start("operator started collection")
     started = get_scheduler().start()
     _resume_wiki_lane()
     return {"started": started, **_status_payload()}
@@ -424,6 +428,7 @@ def scheduler_run_now() -> dict:
     # A user-triggered run releases a paused-low-memory latch (see /start).
     memguard.memory_guard.reset(reason="operator ran collection now")
     storage_guard.storage_guard.reset(reason="operator ran collection now")
+    damage.retry_for_collection_start("operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""
     started = get_scheduler().run_now()
     _resume_wiki_lane()
