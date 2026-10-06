@@ -361,8 +361,9 @@ def _resume_wiki_lane() -> None:
 
     ``/start`` and ``/run-now`` clear the kill switch exactly as the airplane button does, so
     they owe the lane the same thing: when its switch says running, it runs again. Without it a
-    lane that the kill switch had ended stayed dead after Start (measured on a real instance:
-    collection stopped, started, and no lane row for the next nine hours). It never brings the
+    lane that the kill switch had ended stayed dead after Start (one instance in the October
+    bundles shows collection stopped and started and no lane row afterwards; what had ended
+    that lane could not be read from them). It never brings the
     app online -- the caller has just done that on the operator's click -- and
     ``start_wiki_lane`` refuses unless the setting says running. Never raises.
     """

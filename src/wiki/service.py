@@ -42,8 +42,10 @@ from typing import Any
 _LOG = logging.getLogger("wiki.service")
 
 _LOCK = threading.RLock()
-# Held across a whole stop (detach AND join) and taken first by a start, so a start never builds
-# a runner beside the tail of the one a stop is still joining. Always taken before ``_LOCK``.
+# Held across a whole stop (detach AND join) and taken first by a start, so a start does not build
+# a runner while a stop is still joining the old one. The join is bounded, so a drain already in
+# progress (it is not interruptible: up to its fetch bound plus a request timeout) can still
+# outlive it; the old thread then ends at its next stop check. Always taken before ``_LOCK``.
 _STOP_LOCK = threading.RLock()
 _RUNNER: Any = None
 _DRAIN_THREAD: threading.Thread | None = None
@@ -322,7 +324,7 @@ def start_wiki_lane() -> bool:
 
     Returns whether a runner is streaming afterwards. Never raises.
 
-    EVERY WAY OF GOING ONLINE CALLS THIS (the airplane button, the collection Start and
+    EVERY WAY THE UI GOES ONLINE CALLS THIS (the airplane button, the collection Start and
     Run-now buttons, a settings write), so it has to be right for a lane in any state: not
     built (build it), streaming (nothing to do), built with its drain loop alive but its
     stream ended (start the stream again, keeping the loop and its counters), or built with
@@ -336,9 +338,13 @@ def start_wiki_lane() -> bool:
                 _LOG.info("the Wikipedia lane is not started: its setting does not say running")
                 return False
             if _RUNNER is not None:
-                if _RUNNER.streaming:
+                drain_alive = _DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive()
+                # A live stream beside a DEAD drain loop is not a healthy lane: the stream fills
+                # its bounded buffer and nothing stores it. It falls through to the teardown and
+                # the rebuild below, with a fresh drain thread.
+                if _RUNNER.streaming and drain_alive:
                     return True
-                if _DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive():
+                if drain_alive:
                     if _RUNNER.revive_stream():
                         return True
                     # Its loop is alive but it would not restart the stream (it was stopped,

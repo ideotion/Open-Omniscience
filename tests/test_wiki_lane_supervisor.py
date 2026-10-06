@@ -285,6 +285,82 @@ def test_a_long_wait_ends_early_when_the_runner_is_stopped():
     assert len(slept) == 2, "a stop is noticed within a slice, not after the whole wait"
 
 
+def test_the_retry_wait_never_overflows_however_long_a_lane_keeps_failing():
+    """A float interval times ``2 ** 1024`` raises OverflowError (about 85 h of failing drains at
+    the ceiling), inside the except handler, which would end the drain thread silently."""
+    runner, _stream = _runner({"value": "running"})
+    runner._interval = 30.0
+    for failures in (MAX_CONSECUTIVE_FAILURES + 1025, 1026, 5000, 10**6):
+        runner.consecutive_failures = failures
+        assert runner._failure_wait() == FAILING_RETRY_CEILING_S
+
+
+def test_a_stop_that_lands_inside_a_revive_is_not_erased():
+    """``start`` clears the stop flag; a stop ordered before it used to be lost, leaving a stream
+    nobody held. ``stop`` now waits for the revive and then ends what it started."""
+    import time
+
+    state = {"value": "running"}
+    runner, stream = _runner(state, _Stream(die=True))
+    runner.start()
+    _join(runner)
+    stream.die = False
+    real = runner._state_of
+
+    def slow_state():
+        time.sleep(0.1)  # widen the window inside revive_stream
+        return real()
+
+    runner._state_of = slow_state  # type: ignore[assignment]
+    reviver = threading.Thread(target=runner.revive_stream)
+    reviver.start()
+    time.sleep(0.03)  # the revive is inside its first state read
+    stream.release.set()
+    runner.stop(timeout=5.0)
+    reviver.join(timeout=5)
+    assert runner.stopped is True, "the stop survived the revive"
+    assert not runner.streaming, "no stream thread was left running after the stop"
+
+
+def test_the_reason_a_stream_ended_and_a_failed_restart_are_on_the_status():
+    class Dying:
+        counters = None
+
+        def run(self, *a, **k):
+            raise ConnectionResetError("peer reset")
+
+    runner, _ = _runner({"value": "running"}, Dying())
+    runner.start()
+    _join(runner)
+    status = runner.drain_status()
+    assert "ConnectionResetError" in status["last_stream_end"] and status["last_stream_end_at"]
+    runner.revive_stream = lambda: (_ for _ in ()).throw(OSError("busy"))  # type: ignore[method-assign]
+    runner.drain = lambda: None  # type: ignore[method-assign]
+    runner.refresh_one_pageview_top = lambda: None  # type: ignore[method-assign]
+    runner.idle = lambda _s: None  # type: ignore[method-assign]
+    runner.run_until_stopped(max_drains=1)
+    assert "OSError" in runner.drain_status()["last_restart_error"]
+
+
+def test_an_unreadable_setting_ends_the_loop_but_says_why():
+    def unreadable():
+        raise OSError("settings unreadable")
+
+    runner, _ = _runner({"value": "running"})
+    runner._state_of = unreadable  # type: ignore[assignment]
+    assert runner._should_stop() is True
+    assert "could not be read" in runner.drain_status()["last_error"]
+
+
+def test_a_failed_drain_says_when_and_when_the_next_try_is_due():
+    state = {"value": "running"}
+    runner, waits, _calls = _failing(state, MAX_CONSECUTIVE_FAILURES + 1)
+    runner.run_until_stopped()
+    status = runner.drain_status()
+    assert status["last_error_at"] and status["retry_due_at"] and status["degraded"] is True
+    assert "not a countdown" in status["retry_in_s_note"]
+
+
 # --------------------------------------------------------------------------- #
 # The service: every way of going online gives the lane its go, whatever state it is in.
 # --------------------------------------------------------------------------- #
@@ -406,6 +482,67 @@ def test_the_release_run_pauses_a_lane_whose_drain_loop_is_alive_even_with_the_s
     monkeypatch.setattr(svc, "stop_wiki_lane", lambda **k: stopped.append(k))
     out = release_run._pause_collection()
     assert out["wiki_lane_was_streaming"] is True and stopped
+
+
+def test_start_rebuilds_a_lane_whose_stream_is_alive_but_whose_drain_loop_died(service):
+    """A live stream over a dead drain loop fills a bounded buffer nobody stores."""
+    svc, built = service
+    svc.start_wiki_lane()
+    first = built[0]
+    first.block.set()  # the drain loop ends; the stream thread (the fake) still says streaming
+    svc._DRAIN_THREAD.join(timeout=5)
+    assert first.streaming is True
+    assert svc.start_wiki_lane() is True
+    assert len(built) == 2 and first.stopped is True, "torn down and rebuilt, not reported healthy"
+
+
+def test_the_service_state_names_the_setting_and_the_kill_switch_and_never_raises(service, monkeypatch):
+    from src.monitoring import soak_window as sw
+
+    svc, _built = service
+    out = sw._wiki_service()
+    assert out["state"] == "running" and "online" in out
+    monkeypatch.setattr(svc, "lane_service_status", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    bad = sw._wiki_service()
+    assert bad["measured"] is False and "RuntimeError" in bad["reason"]
+
+
+def test_a_lane_with_no_file_still_carries_its_service_state(tmp_path, monkeypatch):
+    """Drains that fail before they create wiki.db leave their reason ONLY in the service block."""
+    from src.monitoring import soak_window as sw
+    from src.versioned.store import dispose_all
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    dispose_all()
+    try:
+        out = sw._wiki_lane(72.0)
+    finally:
+        dispose_all()
+    assert out["measured"] is False and "service" in out and out["service"]["runner"] is False
+
+
+def test_a_lane_file_with_a_header_but_no_tables_is_unread_with_its_service_state(tmp_path, monkeypatch):
+    import sqlite3
+
+    from src.monitoring import soak_window as sw
+    from src.versioned.store import dispose_all, lane_path
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    dispose_all()
+    try:
+        path = lane_path("wiki")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(path)
+        conn.execute("PRAGMA user_version = 1")
+        conn.execute("CREATE TABLE unrelated (x INTEGER)")
+        conn.commit()
+        conn.close()
+        out = sw._wiki_lane(72.0)
+    finally:
+        dispose_all()
+    assert out["measured"] is False and "service" in out, out
 
 
 def test_the_soak_window_carries_the_service_state(service):
