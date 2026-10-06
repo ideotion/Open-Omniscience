@@ -16392,7 +16392,7 @@ any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will o
   the read that touched it** (the read returns the right length with wrong tail bytes and no error, measured), so the first thing that fails is the NEXT statement on that connection, once, with an empty `MemoryError`
   (discarded, never latched: it names no file); only `cipher_integrity_check` (E2's page pass) names the page, and a corpus whose only damage is such a tail reads wrong bytes until a check runs. (b) **The
   raw driver statements that need no guard:** `PRAGMA shrink_memory` (`src/scheduler/release.py`, `_shrink_sqlite`), `set_progress_handler` (`src/database/maintenance.py`) and the function registration in
-  `src/database/fts.py` and `fts_reindex.py` read no page, so none can raise code 11. **`PRAGMA data_version` (`src/api/insights.py`, `_data_version`) DOES read page 1 and can raise it** (corrected 2026-10-06; this
+  `src/database/fts.py` and `fts_reindex.py` read no page, so none can raise code 11. **`PRAGMA data_version` (`src/api/insights.py`, `_data_version`) DOES read page 1 and can fail** (damage to page 1 reads as code 26, the blind spot `damage.py` states; corrected 2026-10-06, this
   entry first said it read none). It is left unguarded for another reason: its probe connection is DETACHED from the pool (`insights.py` 674-679, for the queue and null pools the app builds) and is dropped and rebuilt on
   ANY exception (690-699), so it never goes back to the pool poisoned, which is what the guard is for. What it does not do is name a file: the error is swallowed there and the probe rebuilt. The raw connections that are NOT
   pooled (stream backup, the artifact and merge readers) open their own file and close it. Whoever adds a raw cursor on a pooled connection that reads pages goes through the guard. (c) An error
@@ -16400,3 +16400,6 @@ any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will o
   (d) **E1's in-app latch pauses collection on the first code 11 it sees, from one read on one connection (the coordinator's ruling of 2026-10-06: build the re-read).** A code 11 that a fresh read would not
   repeat (the concern is memory pressure; NOT measured) would pause an unattended machine until someone starts collection again. The follow-up is its OWN small PR after E2 and E2b land, with one read of its final head: before
   the pause, re-read the incident's table on a fresh connection, reusing the second-read helper E2's fold 3 adds to `src/database/verify.py`; when that re-read is clean, record that it read differently and do not pause.
+  (e) **`note_raw_driver_error` can skip the latch for a CLOSED SQLAlchemy `Connection`:** the latch sits behind `_dbapi_of(handle)` in the same `try`, and asking a closed `Connection` for its `.connection` raises
+  `ResourceClosedError`, which the `except` swallows before `registry.note` runs. Unreachable at the three guarded sites today (each passes a live connection). The E1 latch PR picks it up: read the driver connection in its own
+  `try`, so a handle that cannot answer still gets its error latched against the attached file.

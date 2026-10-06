@@ -757,7 +757,7 @@ def test_the_incremental_vacuum_goes_through_the_guard(tmp_path, registry, monke
     _build(path, incremental=True)
     eng, opened = _engine(path, observed=True, pool_size=1, url=True, faulty="incremental_vacuum")
     try:
-        with caplog.at_level(logging.WARNING, logger="src.database.maintenance"):
+        with caplog.at_level(logging.WARNING, logger="database.maintenance"):
             report = maybe_incremental_vacuum(eng)
         assert report == {"skipped": "error"}, report
         # The error the pass reports is the corruption error. The cursor is closed while its connection is still
