@@ -403,7 +403,8 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
     table = {
         "name": _TABLE,
         # LOW is a packed page. HIGH allows the holes a partial re-index leaves (it deletes
-        # the rows that are gone and updates or adds the ones that changed) and the page header and reserve, by the same fill.
+        # the rows that are gone and updates or adds the ones that changed) and the page header
+        # and reserve, by the same fill.
         "bytes_low": int(rows_low * table_cell),
         "bytes_high": int(rows_high * table_cell / _RANDOM_FILL),
     }

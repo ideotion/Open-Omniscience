@@ -52,6 +52,7 @@ from pathlib import Path
 from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
+from src.monitoring.engine_text import engine_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -6165,8 +6166,9 @@ def _backlog_engine() -> str:
         from src.analytics.engine_identity import baseline_engine_id
 
         return baseline_engine_id()
-    except Exception:  # noqa: BLE001 - an unknown engine certifies nothing
-        _LOG.warning("could not compute the engine identity for the backlog", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
+        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
+        _LOG.warning("could not compute the engine identity for the backlog: %s", engine_text(exc))
         return "<unknown>"
 
 
@@ -6197,8 +6199,9 @@ def pending_reindex_batches() -> list[dict]:
              "certified": int(r[3])}
             for r in rows
         ]
-    except Exception:  # noqa: BLE001
-        _LOG.warning("could not read the re-index backlog", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
+        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc))
         return []
 
 
@@ -6225,11 +6228,11 @@ def reindex_backlog() -> dict:
                 text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
-        _LOG.warning("could not read the re-index backlog", exc_info=True)
-        from src.monitoring.engine_text import engine_text
-
-        # the reason is copied into a drain's result and from there into diagnostics
-        return {"available": False, "reason": engine_text(exc)}
+        # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
+        # because the root error handler writes the traceback, which ends with the engine's own words
+        reason = engine_text(exc)
+        _LOG.warning("could not read the re-index backlog: %s", reason)
+        return {"available": False, "reason": reason}
     owed = [int(r[2]) - int(r[3]) for r in rows]
     certified = [int(r[3]) for r in rows]
     batches = [

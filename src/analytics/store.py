@@ -32,6 +32,7 @@ from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
 from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
+from src.monitoring.engine_text import engine_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -2767,8 +2768,6 @@ def _skip_error(exc: BaseException) -> dict:
     (``pass_journal.phase.__exit__``'s ``f"{type(e).__name__}: {e}"`` convention, so the
     bundle has one exception-string shape, not two), truncated like every other
     exception string this module records into a report dict."""
-    from src.monitoring.engine_text import engine_text
-
     # The engine's words can carry the statement it failed on, and this record reaches the
     # diagnostics bundle: the passphrase is taken out of the whole text before it is cut.
     return {"skipped": f"{type(exc).__name__}: {engine_text(exc)}"[:200]}
@@ -2821,8 +2820,8 @@ def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
             tally["prune"] = prune_orphan_keywords(session)
         except Exception as exc:  # noqa: BLE001 - a background safety net must never break the pass
             session.rollback()
-            _LOG.warning("automatic orphan-keyword prune resume failed", exc_info=True)
             tally["prune"] = _skip_error(exc)
+            _LOG.warning("automatic orphan-keyword prune resume failed: %s", tally["prune"]["skipped"])
         tally["language"] = {"skipped": "ran this cycle"}
         tally["entity_status"] = {"skipped": "ran this cycle"}
     else:
@@ -2831,20 +2830,20 @@ def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
             tally["prune"] = prune_orphan_keywords(session)
         except Exception as exc:  # noqa: BLE001 - a background safety net must never break the pass
             session.rollback()
-            _LOG.warning("automatic orphan-keyword prune failed", exc_info=True)
             tally["prune"] = _skip_error(exc)
+            _LOG.warning("automatic orphan-keyword prune failed: %s", tally["prune"]["skipped"])
         try:
             tally["language"] = reconcile_keyword_language(session)
         except Exception as exc:  # noqa: BLE001
             session.rollback()
-            _LOG.warning("automatic keyword-language reconcile failed", exc_info=True)
             tally["language"] = _skip_error(exc)
+            _LOG.warning("automatic keyword-language reconcile failed: %s", tally["language"]["skipped"])
         try:
             tally["entity_status"] = reconcile_keyword_entity_status(session)
         except Exception as exc:  # noqa: BLE001 - a background safety net must never break the pass
             session.rollback()
-            _LOG.warning("automatic keyword-entity-status reconcile failed", exc_info=True)
             tally["entity_status"] = _skip_error(exc)
+            _LOG.warning("automatic keyword-entity-status reconcile failed: %s", tally["entity_status"]["skipped"])
 
     # Record the marker (freshness + the diagnostics log). Best-effort.
     try:

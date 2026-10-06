@@ -1212,16 +1212,17 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         # run with no batch to walk and so no bump of its own. It is lost by a hard kill between
         # the last batch's completion stamp and this line, and equally by a bump that FAILS
         # (``_bump`` and ``bump_corpus_epoch`` swallow their errors, by design: a coordination
-        # write may not break the drain). A second window mirrors it: ``finish_deferral`` closes
-        # the marker (store.py, ``close_deferral``) a moment before the reconciled bump below.
+        # write may not break the drain). A second window mirrors it: ``finish_deferral``
+        # (store.py) calls ``close_deferral`` (counter_deferral.py), which closes the marker a
+        # moment before the reconciled bump below.
         # What is exposed is a rollup built from the middle of the run, and not only to counts:
         # an attribution change (country, language, source, extractor), a deleted row and a row
         # missing from the snapshot the build read are all invisible to an id-tail refresh.
         # Today that is bounded by the serving layers' backstop rebuilds
         # (``rollup_serve._BACKSTOP_S`` and ``map_serve._BACKSTOP_S``, one hour each), which
         # rebuild regardless of the token. THAT HOLDS ONLY FOR THE IN-MEMORY SERVE: with the
-        # persisted store active, ``_refresh_persisted_build`` merges only the tail while the epoch is
-        # unchanged, so a lost bump would be UNBOUNDED there. The persisted store is off today
+        # persisted store active, ``_refresh_persisted_build`` merges only the tail while the
+        # epoch is unchanged, so a lost bump would be UNBOUNDED there. The persisted store is off today
         # only because the httpfs pins in ``configs/external_artifacts.yml`` are blank
         # (``tests/test_reindex_drain_settings.py`` fails the day they are filled, pointing
         # here). A persisted "bump owed" marker is the fix that day, not before: it would add a

@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import threading
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -114,12 +115,18 @@ def test_a_failing_reindex_job_keeps_no_secret_in_its_error(tmp_path, monkeypatc
     assert SECRET not in repr(st) and SECRET not in (tmp_path / "state.json").read_text(encoding="utf-8")
 
 
-def test_the_cleanup_skip_record_and_the_backlog_reason_do_not_carry_the_secret(monkeypatch):
-    from src.analytics.store import _skip_error
+def _no_secret_anywhere(caplog, *values):
+    assert SECRET not in caplog.text, "a log line (or its traceback) carries the passphrase"
+    for v in values:
+        assert SECRET not in repr(v)
 
-    assert SECRET not in repr(_skip_error(RuntimeError(f"failed [SQL: PRAGMA key='{SECRET}']")))
+
+def test_the_backlog_reads_keep_the_secret_out_of_their_reason_and_their_log(monkeypatch, caplog):
+    import logging
 
     from src.backup import merge
+
+    caplog.set_level(logging.DEBUG)
 
     class _Boom:
         def __enter__(self):
@@ -130,7 +137,63 @@ def test_the_cleanup_skip_record_and_the_backlog_reason_do_not_carry_the_secret(
 
     monkeypatch.setattr("src.database.session.session_scope", lambda *a, **k: _Boom())
     out = merge.reindex_backlog()
-    assert out["available"] is False and SECRET not in repr(out)
+    assert out["available"] is False and "cannot read" in out["reason"]
+    assert merge.pending_reindex_batches() == []
+
+    def _identity_fails():
+        raise RuntimeError(f"no identity [SQL: PRAGMA key='{SECRET}']")
+
+    monkeypatch.setattr("src.analytics.engine_identity.baseline_engine_id", _identity_fails)
+    assert merge._backlog_engine() == "<unknown>"
+    assert "could not read the re-index backlog" in caplog.text
+    _no_secret_anywhere(caplog, out)
+
+
+def test_the_cleanup_skip_records_and_their_log_lines_keep_the_secret_out(monkeypatch, tmp_path, caplog):
+    import logging
+
+    from src.analytics import store
+
+    caplog.set_level(logging.DEBUG)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError(f"failed [SQL: PRAGMA key='{SECRET}']")
+
+    monkeypatch.setattr(store, "prune_orphan_keywords", _boom)
+    monkeypatch.setattr(store, "reconcile_keyword_language", _boom)
+    monkeypatch.setattr(store, "reconcile_keyword_entity_status", _boom)
+    monkeypatch.setattr(store, "_cleanup_marker_path", lambda: tmp_path / "keyword_cleanup.json")
+    session = _empty_session()
+    tally = store.maybe_cleanup_keywords(session)
+    for key in ("prune", "language", "entity_status"):
+        assert tally[key]["skipped"].startswith("RuntimeError: failed")
+    # the resumed-prune arm: a fresh marker whose prune sweep was not complete
+    stamp = datetime.now().isoformat(timespec="seconds")
+    (tmp_path / "keyword_cleanup.json").write_text(
+        f'{{"last_run": "{stamp}", "last_tally": {{"prune": {{"complete": false}}}}}}',
+        encoding="utf-8",
+    )
+    resumed = store.maybe_cleanup_keywords(session)
+    assert resumed.get("resumed_prune") is True and "RuntimeError: failed" in resumed["prune"]["skipped"]
+    marker = (tmp_path / "keyword_cleanup.json").read_text(encoding="utf-8")
+    assert SECRET not in marker
+    _no_secret_anywhere(caplog, tally, resumed)
+
+
+def test_the_unreadable_arm_of_the_write_cost_member_keeps_the_secret_out(monkeypatch, caplog):
+    import logging
+
+    from src.monitoring import keyword_write_cost as kwc
+
+    caplog.set_level(logging.DEBUG)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError(f"disk image is malformed [SQL: PRAGMA key='{SECRET}']")
+
+    monkeypatch.setattr(kwc, "_sample_rows", _boom)
+    out = kwc.keyword_write_cost(_empty_session())
+    assert out["available"] is False and "disk image is malformed" in out["reason"]
+    _no_secret_anywhere(caplog, out)
 
 
 def _empty_factory():
@@ -149,62 +212,108 @@ def _empty_session():
     return _empty_factory()()
 
 
-# ---- no raw engine text may come back: an AST check over the two files ----------------------
+# ---- no raw engine text may come back: an AST check over the sinks -------------------------
 
-_FILES = ("src/monitoring/keyword_write_cost.py", "src/analytics/reindex_job.py")
-_ALLOWED_HELPERS = {"_cut_reason"}
+# (file, the functions scanned, or None for the whole file, the least engine_text() calls inside)
+_SCOPES = (
+    ("src/monitoring/keyword_write_cost.py", None, 5),
+    ("src/analytics/reindex_job.py", None, 1),
+    ("src/analytics/store.py", ("_skip_error", "maybe_cleanup_keywords"), 1),
+    ("src/backup/merge.py", ("reindex_backlog", "pending_reindex_batches", "_backlog_engine"), 3),
+)
+_ALLOWED_HELPERS = {"_cut_reason", "_skip_error"}  # each routes its argument through engine_text
+#: An attribute with one of these names reads or prints the exception's traceback or text.
+_TRACEBACK_NAMES = {
+    "exception", "format_exc", "print_exc", "exc_info", "format_exception", "print_exception",
+}
+_LOG_METHODS = {"debug", "info", "warning", "error", "critical", "exception", "log", "warn"}
 
 
 def _is_call_to(node: ast.AST, names: set[str]) -> bool:
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in names
 
 
-def _uses_of(name: str, body: list[ast.stmt]):
-    for stmt in body:
-        for node in ast.walk(stmt):
-            if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load):
-                yield node
-
-
 def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
 
 
-@pytest.mark.parametrize("rel", _FILES)
-def test_a_handler_never_uses_its_exception_except_through_engine_text(rel):
-    """The bound name of every ``except ... as exc`` appears only as ``engine_text``'s first
-    argument, inside ``type()``/``isinstance()``, or handed by name to an allowed helper; no
-    ``exc_info`` other than False/None and no ``.exception()`` call (both print the traceback,
-    which carries the statement)."""
-    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-    parent = _parents(tree)
-    problems: list[str] = []
-    handlers = [n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler) and n.name]
-    for h in handlers:
-        for use in _uses_of(h.name, h.body):
-            call = parent.get(use)
-            ok = (
-                isinstance(call, ast.Call)
-                and (
+def _scope_nodes(tree: ast.AST, functions):
+    """The nodes the rules apply to: the whole file, or the named functions' bodies."""
+    if functions is None:
+        yield tree
+        return
+    found = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in functions}
+    assert found == set(functions), f"a scanned function moved or was renamed: {set(functions) - found}"
+    for n in ast.walk(tree):
+        if isinstance(n, ast.FunctionDef) and n.name in functions:
+            yield n
+
+
+def _problems(rel: str, tree: ast.AST, scope: ast.AST, parent) -> list[str]:
+    out: list[str] = []
+    for h in (n for n in ast.walk(scope) if isinstance(n, ast.ExceptHandler) and n.name):
+        for stmt in h.body:
+            for use in ast.walk(stmt):
+                if not (isinstance(use, ast.Name) and use.id == h.name and isinstance(use.ctx, ast.Load)):
+                    continue
+                call = parent.get(use)
+                ok = isinstance(call, ast.Call) and (
                     (_is_call_to(call, {"engine_text"}) and call.args and call.args[0] is use)
                     or _is_call_to(call, {"type", "isinstance"} | _ALLOWED_HELPERS)
                 )
-            )
-            if not ok:
-                problems.append(f"{rel}:{use.lineno} uses {h.name!r} outside engine_text()")
-    for node in ast.walk(tree):
-        if isinstance(node, ast.keyword) and node.arg == "exc_info":
-            if not (isinstance(node.value, ast.Constant) and node.value.value in (False, None)):
-                problems.append(f"{rel}:{node.value.lineno} logs a traceback (exc_info)")
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "exception":
-            problems.append(f"{rel}:{node.lineno} calls .exception()")
+                if not ok:
+                    out.append(f"{rel}:{use.lineno} uses {h.name!r} outside engine_text()")
+    for node in ast.walk(scope):
+        if (
+            isinstance(node, ast.keyword)
+            and node.arg == "exc_info"
+            and not (isinstance(node.value, ast.Constant) and node.value.value in (False, None))
+        ):
+            out.append(f"{rel}:{node.value.lineno} logs a traceback (exc_info)")
+        if isinstance(node, ast.Attribute) and node.attr in _TRACEBACK_NAMES:
+            out.append(f"{rel}:{node.lineno} reaches the traceback through .{node.attr}")
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _LOG_METHODS
+            and any(k.arg is None for k in node.keywords)
+        ):
+            out.append(f"{rel}:{node.lineno} passes ** to a log call (it can carry exc_info)")
+        if isinstance(node, ast.Call) and _is_call_to(node, {"getattr"}):
+            out.append(f"{rel}:{node.lineno} calls getattr (a logger method can be reached by name)")
+    return out
+
+
+@pytest.mark.parametrize("rel,functions,floor", _SCOPES, ids=[s[0] for s in _SCOPES])
+def test_a_handler_never_uses_its_exception_except_through_engine_text(rel, functions, floor):
+    """The bound name of every ``except ... as exc`` appears only as ``engine_text``'s first
+    argument, inside ``type()``/``isinstance()``, or handed by name to an allowed helper; nothing
+    reaches the traceback (``exc_info`` other than False/None, ``.exception``, ``format_exc``,
+    ``print_exc``, ``sys.exc_info()`` and the rest, as a call or not), no log call takes ``**``,
+    and no ``getattr``. The files bind ``engine_text`` only by importing it, and define nothing
+    named ``engine_text``, ``type`` or ``isinstance``. Each scope calls it at least ``floor`` times."""
+    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+    parent = _parents(tree)
+    problems: list[str] = []
+    calls = 0
+    for scope in _scope_nodes(tree, functions):
+        problems += _problems(rel, tree, scope, parent)
+        calls += sum(1 for n in ast.walk(scope) if _is_call_to(n, {"engine_text"}))
     assert not problems, "\n".join(problems)
+    assert calls >= floor, f"{rel}: {calls} engine_text() calls, expected at least {floor}"
 
-
-def test_the_helper_is_actually_called_where_the_sinks_are():
-    counts = {}
-    for rel in _FILES:
-        tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-        counts[rel] = sum(1 for n in ast.walk(tree) if _is_call_to(n, {"engine_text"}))
-    assert counts["src/monitoring/keyword_write_cost.py"] >= 5, counts
-    assert counts["src/analytics/reindex_job.py"] >= 1, counts
+    imports = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom) and n.module == "src.monitoring.engine_text"
+        and [a.name for a in n.names] == ["engine_text"] and n.names[0].asname is None
+    ]
+    assert imports, f"{rel} must bind engine_text with `from src.monitoring.engine_text import engine_text`"
+    rebound = []
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name in {"engine_text", "type", "isinstance"}:
+            rebound.append(f"def {n.name} at {n.lineno}")
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store) and n.id in {"engine_text", "type", "isinstance"}:
+            rebound.append(f"assignment to {n.id} at {n.lineno}")
+        if isinstance(n, ast.alias) and n.asname in {"engine_text", "type", "isinstance"}:
+            rebound.append(f"import as {n.asname}")
+    assert not rebound, f"{rel} rebinds a name the ban relies on: {rebound}"

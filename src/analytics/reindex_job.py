@@ -501,8 +501,8 @@ class ReindexJobManager:
             # rows the articles this run finished NOW HOLD over the same window (rows a re-index
             # found unchanged and left alone are counted: this is NOT a write rate, which is
             # the drain's mentions_updated + mentions_added + mentions_removed). A real
-            # measurement of the same work, not the article rate multiplied by an assumed average. Both
-            # over THIS run only (a resume's prior progress would inflate them), and both
+            # measurement of the same work, not the article rate multiplied by an assumed average.
+            # Both over THIS run only (a resume's prior progress would inflate them), and both
             # None until there is something real to divide -- never a fabricated 0/h.
             articles_per_hour = keywords_per_hour = None
             if elapsed_run is not None and recent > 0:

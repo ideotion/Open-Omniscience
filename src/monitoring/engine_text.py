@@ -4,7 +4,11 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHERE IT RUNS: the places in the analytics code that keep an engine's failure text in a status
-the interface reads or a diagnostics member (the write-rate reading, the re-index job's error). The
+the interface reads or a diagnostics member (the write-rate reading, the re-index job's error,
+the keyword cleanup's skip record in ``store.py``, the re-index backlog's reason in ``merge.py``).
+Those sites also log the cleaned text with ``%s`` and never with ``exc_info``: the root error
+handler writes a traceback's last lines to a file that rides the diagnostics bundle, and a
+traceback ends with the engine's own words. The
 engine's own words can carry the statement it failed on (SQLAlchemy puts ``[SQL: ...]`` in an
 exception's text). No statement there is built from the passphrase and the key is applied through
 the driver, not through SQLAlchemy, so this is the net beneath that, at the place the text is made.
