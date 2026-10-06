@@ -92,7 +92,7 @@ def _persisted_stub(store_path):
     serve concurrency/incremental/durability logic under test is crypto-independent."""
     import duckdb
 
-    def _connect(passphrase=None):
+    def _connect(passphrase=None, **_kw):
         if passphrase:
             return duckdb.connect(str(store_path))
         return duckdb.connect(":memory:")

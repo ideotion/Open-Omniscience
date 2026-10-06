@@ -35,11 +35,24 @@ the mode + build state so the self-optimisation is observable. SAFE BY CONSTRUCT
     — the caller attaches a ``basis`` disclosure stating the source + as-of.
 
 In-memory only (never a plaintext file). The canonical SQLCipher store is always the
-source of truth.
+source of truth. THE ONE EXCEPTION IS DUCKDB'S OWN OFFLOAD, and it is decided by the corpus: with
+an ENCRYPTED corpus the engine is given no temporary directory, so a build that outgrows its memory
+limit is declined instead of writing derived counts to disk; with a plaintext corpus (nothing on
+that disk is secret) it may offload into ``<data dir>/duckdb_tmp/<pid>``, which the next start sweeps
+when that process is gone.
+
+THE BUILD NEVER TAKES MORE MEMORY THAN THE MACHINE HAS (diagnostics of 2026-10-06: eight 4.81 GiB
+VMs killed 12 times inside this build). Four layers, each measured and none a fixed cap: a start
+check (the limit DuckDB may use, one batch, and the guard's floor, against what is available now);
+the guard polled after every batch; the last build's in-progress marker (``rollup_marker``), so a
+build that was killed is not started again identically at every boot; and DuckDB's own memory limit
+from the machine's budget. Any of them stops the build as a DECLINE: nothing is swapped in, the serve
+keeps what it had, queries fall back to live ones.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -183,25 +196,51 @@ def status() -> dict:
     }
 
 
-def _build_inmemory_and_swap() -> None:
+def _build_inmemory_and_swap() -> dict | None:
     """Build a FRESH in-memory rollup on its own session/connection, then swap it in (a serve
     never touches a half-built store). The in-memory store is rebuilt per process, so a FULL
     build is used (always correct -- no incremental double-count trap). Raises on error (the
-    dispatcher logs + releases the build lock)."""
-    from src.analytics import columnar, serve_gate
+    dispatcher logs + releases the build lock).
+
+    Returns ``None`` when the rollup was built and swapped in, or a skip record when the build was
+    STOPPED part-way (the memory guard engaged, or DuckDB reached its own limit with no offload
+    allowed): nothing is swapped in and the previous rollup keeps serving."""
+    from src.analytics import columnar, rollup_marker, serve_gate
     from src.database.session import session_scope
 
-    con = columnar.connect(passphrase=None)  # no passphrase -> in-memory (never a file)
+    # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
+    con = columnar.connect(passphrase=None, spill=_spill_setting())
     if con is None:
-        return
-    with session_scope() as s:
-        # Token BEFORE the build (conservative: rows landing DURING the build make the
-        # recorded token compare "changed" next check -> one extra rebuild, never a
-        # silently-missed one).
-        token = serve_gate.change_token(s)
-        columnar.build_keyword_daily(con, s)
-        rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
-        built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+        return None
+    r = _readings()
+    rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
+    try:
+        with session_scope() as s:
+            # Token BEFORE the build (conservative: rows landing DURING the build make the
+            # recorded token compare "changed" next check -> one extra rebuild, never a
+            # silently-missed one).
+            token = serve_gate.change_token(s)
+            skip: dict | None
+            try:
+                columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
+            except columnar.BuildDeclined as stop:
+                skip = {"reason": stop.reason, "at": time.time(), **stop.detail}
+            except Exception as exc:  # noqa: BLE001
+                if type(exc).__name__ != "OutOfMemoryException":
+                    raise
+                # DuckDB reached its memory limit and may not offload: the bound held, so decline.
+                skip = {"reason": "duckdb-limit", "at": time.time(),
+                        "duckdb_limit_mb": _duckdb_limit_mb(), "error": str(exc)[:200]}
+            else:
+                skip = None
+            if skip is not None:
+                with contextlib.suppress(Exception):
+                    con.close()
+                return skip
+            rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+            built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+    finally:
+        rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
     with _LOCK:
         old = _STATE["con"]
         _STATE["con"] = con
@@ -217,6 +256,7 @@ def _build_inmemory_and_swap() -> None:
             except Exception:  # noqa: BLE001
                 pass
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
+    return None
 
 
 def _refresh_persisted_build() -> None:
@@ -269,6 +309,153 @@ def _refresh_persisted_build() -> None:
                 pass
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
+
+
+#: What one batch of the build costs in Python while it is being bound, in bytes per row. Measured
+#: on the 50,000-row batches of both streams (tuples, the JSON text and the parameters together, short
+#: terms): about 300 to 450; 600 leaves room for longer terms. It sizes the start check only.
+_CHUNK_ROW_BYTES = 600
+
+
+def _readings() -> dict:
+    """This process's resident size and the machine's available memory, in MB (None where unread)."""
+    out: dict = {"rss_mb": None, "avail_mb": None}
+    try:
+        import psutil
+
+        out["avail_mb"] = round(psutil.virtual_memory().available / (1024 * 1024), 1)
+        out["rss_mb"] = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
+    except Exception:  # noqa: BLE001 - a missing reading is "no information", never a verdict
+        pass
+    return out
+
+
+def _guard_floor_mb() -> float:
+    try:
+        from src.scheduler.memguard import memory_guard
+
+        return float(memory_guard.avail_floor_mb)
+    except Exception:  # noqa: BLE001
+        return 256.0
+
+
+def _duckdb_limit_mb() -> float:
+    from src.config.memory_budget import budget
+
+    return float(budget()["duckdb_memory_limit_mb"])
+
+
+def _affordability_verdict() -> dict | None:
+    """Decline a build the machine cannot afford at ITS START, from what is measured now.
+
+    The most the build can add is what DuckDB may take (its memory limit, from the machine's own
+    budget; a serving rollup's resident size is already inside the available figure), one batch in
+    Python, and the margin the memory guard itself keeps. If that is more than is available the build
+    does not start; the readings are returned. Unreadable memory is no evidence: the build proceeds,
+    and the guard polled after every batch is the net beneath."""
+    try:
+        from src.analytics import columnar
+
+        avail = _readings()["avail_mb"]
+        if avail is None:
+            return None
+        limit = _duckdb_limit_mb()
+        chunk = columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
+        floor = _guard_floor_mb()
+        need = limit + chunk + floor
+        if avail >= need:
+            return None
+        return {
+            "reason": "mem-short",
+            "at": time.time(),
+            "needs_available_mb": round(need, 1),
+            "available_mb": avail,
+            "duckdb_limit_mb": limit,
+            "batch_mb": round(chunk, 1),
+            "guard_floor_mb": floor,
+        }
+    except Exception:  # noqa: BLE001 - an unreadable budget must not block the build
+        return None
+
+
+def _last_build_verdict() -> dict | None:
+    """Decline while the machine does not have what a KILLED earlier build held (see rollup_marker)."""
+    try:
+        from src.analytics import rollup_marker
+
+        return rollup_marker.retry_verdict(_readings()["avail_mb"], _guard_floor_mb())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _corpus_encrypted() -> bool:
+    """True when the corpus is unlocked under a passphrase (the encrypted-at-rest case)."""
+    try:
+        from src.database.connect import get_passphrase
+
+        return bool(get_passphrase())
+    except Exception:  # noqa: BLE001 - any doubt -> treat as encrypted (the stricter reading)
+        return True
+
+
+def _spill_setting() -> str:
+    """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else
+    a per-process folder under the data directory, after sweeping the folders of processes that are gone."""
+    if _corpus_encrypted():
+        return ""
+    try:
+        import shutil
+
+        from src.paths import data_dir
+
+        root = data_dir() / "duckdb_tmp"
+        root.mkdir(parents=True, exist_ok=True)
+        try:
+            import psutil
+
+            for child in root.iterdir():
+                if (
+                    child.is_dir() and child.name.isdigit() and int(child.name) != os.getpid()
+                    and not psutil.pid_exists(int(child.name))
+                ):
+                    shutil.rmtree(child, ignore_errors=True)
+        except ImportError:
+            pass  # no way to tell a live process from a dead one: leave them
+        mine = root / str(os.getpid())
+        mine.mkdir(exist_ok=True)
+        return str(mine)
+    except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
+        return ""
+
+
+def _make_on_batch():
+    """The per-batch hook of the build: refresh the in-progress marker, then ask the memory guard."""
+
+    def _on_batch(stage: str, rows_done: int) -> None:
+        from src.analytics import columnar, rollup_marker
+
+        r = _readings()
+        rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
+        try:
+            from src.scheduler.memguard import memory_guard
+
+            poll = getattr(memory_guard, "poll", None)
+            if poll is None or not poll():
+                return
+            st = memory_guard.state()
+        except Exception:  # noqa: BLE001 - an unreadable guard must not stop the build
+            return
+        raise columnar.BuildDeclined("mem-low", {
+            "stage": stage,
+            "rows_done": rows_done,
+            "guard_reason": st.get("reason"),
+            "last_reading": st.get("last_reading"),
+            "readings_available": st.get("readings_available"),
+            "rss_mb": r["rss_mb"],
+            "available_mb": r["avail_mb"],
+        })
+
+    return _on_batch
 
 
 def _memory_verdict() -> dict | None:
@@ -351,7 +538,10 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip = exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
+        skip = (
+            exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
+            or _last_build_verdict() or _affordability_verdict()
+        )
         if skip is not None:
             with _LOCK:
                 _STATE["last_skip"] = skip
@@ -364,7 +554,16 @@ def _build_and_swap() -> str:
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:
-            _build_inmemory_and_swap()
+            stopped = _build_inmemory_and_swap()
+            if stopped is not None:
+                with _LOCK:
+                    _STATE["last_skip"] = stopped
+                _LOG.warning(
+                    "rollup serve: build stopped part-way (%s); the previous rollup keeps serving",
+                    stopped.get("guard_reason") or stopped.get("reason"),
+                )
+                outcome = "declined"
+                return outcome
         outcome = "built"
         return outcome
     except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
@@ -380,7 +579,15 @@ def _trigger_build_async() -> None:
     """Kick a background build if one is not already running (non-blocking)."""
     if not _BUILD_LOCK.acquire(blocking=False):
         return  # a build is already in flight
-    threading.Thread(target=_build_and_swap, name="rollup-build", daemon=True).start()
+    thread = threading.Thread(target=_build_and_swap, name="rollup-build", daemon=True)
+    try:
+        thread.start()
+    except Exception:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
+        # The thread that would have released the lock never ran: release it here, or every later
+        # build (and the boot sequence's wait for this one) blocks on it forever.
+        _LAST_OUTCOME["value"] = "failed"
+        _BUILD_LOCK.release()
+        _LOG.warning("rollup serve: could not start the build thread", exc_info=True)
 
 
 def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:

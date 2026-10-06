@@ -114,19 +114,30 @@ def heavy_step_verdict() -> dict | None:
     return None
 
 
+def _warn_still_running(name: str, holds: str) -> None:
+    _LOG.warning(
+        "boot step %s is still running after %.0f s; %s waiting behind it", name, SLOW_STEP_S, holds
+    )
+
+
 def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
     mono = time.monotonic()
     with _LOCK:
         _STEPS[name].update(state="running", started_at=time.time())
-    state = "done"
+    state = "failed"  # until the step returns: a BaseException that ends it must not read as done
+    # The warning is logged WHILE a step is still running, so one that never ends is on record too.
+    slow = threading.Timer(SLOW_STEP_S, _warn_still_running, args=(name, holds))
+    slow.daemon = True
+    slow.start()
     try:
         step()
+        state = "done"
     except _Skipped as skipped:
         state = skipped.state
     except Exception:  # noqa: BLE001 - a start-up step must never take the others down
-        state = "failed"
         _LOG.warning("boot step %s failed; the next step still runs", name, exc_info=True)
     finally:
+        slow.cancel()
         took = time.monotonic() - mono
         with _LOCK:
             _STEPS[name].update(state=state, seconds=round(took, 1))

@@ -114,9 +114,14 @@ def duckdb_available() -> bool:
         return False
 
 
-def _offline_config() -> dict:
+def _offline_config(spill=None) -> dict:
     """DuckDB config that guarantees no network on open: extension autoload/autoinstall
     DISABLED and external access OFF. The columnar engine is local-first by construction.
+
+    ``spill`` is where DuckDB may offload blocks once it reaches its memory limit: ``None``
+    leaves DuckDB's own default (``.tmp`` beside the working directory), a path names the
+    directory, and ``""`` turns offloading OFF, so a build that outgrows its limit fails
+    with an out-of-memory error rather than writing derived data to disk.
     """
     # S1.1: memory_limit and threads were set NOWHERE, so DuckDB used its documented
     # default of 80% of system RAM and one thread per core — a promise a laptop cannot
@@ -126,13 +131,16 @@ def _offline_config() -> dict:
     from src.config.memory_budget import budget
 
     b = budget()
-    return {
+    cfg = {
         "autoinstall_known_extensions": False,
         "autoload_known_extensions": False,
         "enable_external_access": False,
         "memory_limit": f"{int(b['duckdb_memory_limit_mb'])}MB",
         "threads": int(b["duckdb_threads"]),
     }
+    if spill is not None:
+        cfg["temp_directory"] = str(spill)
+    return cfg
 
 
 def _persisted_config() -> dict:
@@ -506,7 +514,7 @@ def status(passphrase: str | None = None) -> dict:
     }
 
 
-def connect(passphrase: str | None = None):
+def connect(passphrase: str | None = None, *, spill=None):
     """Open the derived columnar engine — a persisted ENCRYPTED store when that is
     securely possible offline, else an in-memory store. NEVER a plaintext file on disk.
 
@@ -520,6 +528,8 @@ def connect(passphrase: str | None = None):
     via its format marker and REBUILT, and ANY open failure (corrupt / unreadable file)
     deletes the file and falls back to in-memory — never a crash, because the canonical
     SQLCipher store is always the source of truth.
+
+    ``spill`` applies to the in-memory store only; see :func:`_offline_config`.
     """
     if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
         return None
@@ -556,7 +566,7 @@ def connect(passphrase: str | None = None):
             _LOG.warning("columnar engine: persisted open failed; in-memory", exc_info=True)
 
     # In-memory fallback — rebuilt lazily on use; writes NO file (never plaintext).
-    con = duckdb.connect(database=":memory:", config=_offline_config())
+    con = duckdb.connect(database=":memory:", config=_offline_config(spill))
     ensure_store_meta(con)
     _LOG.info("columnar engine: in-memory store (no secure persisted encryption offline)")
     return con
@@ -744,7 +754,58 @@ def _get_meta(con, key: str) -> str | None:
         return None
 
 
-def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
+#: Rows per batch of the full build's two streams (mentions, keywords).
+BUILD_BATCH_ROWS = 50_000
+
+
+class BuildDeclined(Exception):
+    """A whole-corpus build stopped on purpose, part-way, because the machine ran short of memory.
+
+    Raised by the ``on_batch`` hook a caller hands to :func:`build_keyword_daily`; nothing is
+    swapped in, so the serve keeps answering from what it had (or from live queries). ``reason`` is
+    a short machine word, ``detail`` the readings that decided it."""
+
+    def __init__(self, reason: str, detail: dict | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.detail = detail or {}
+
+
+def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> int:
+    """Insert ``rows`` into ``table`` in ONE statement, columns passed as JSON arrays.
+
+    ``executemany`` runs one prepared-statement round trip per row: 1.1 thousand rows/s measured
+    on the 50,000-row batches this build uses, against about 560 thousand rows/s for one
+    ``INSERT ... SELECT unnest(from_json(...))`` over the same batch (DuckDB 1.5.6, same machine).
+    The data goes in as parameters, so nothing is written to disk and no dependency is added
+    (Arrow measured 830 thousand rows/s but is not an app dependency). A batch the JSON path
+    refuses falls back to ``executemany`` for that batch alone, so no row is ever dropped.
+    ``types`` are DuckDB type names, one per column, in column order."""
+    if not rows:
+        return 0
+    import json
+
+    columns = list(zip(*rows, strict=True))
+    try:
+        selects = ", ".join(
+            f"unnest(from_json(?::JSON, '[\"{t}\"]'))" for t in types
+        )
+        con.execute(
+            f"INSERT INTO {table} SELECT {selects}",  # nosec B608 - table and types are constants chosen by the callers in this module; every value is a bound parameter
+            [json.dumps(c) for c in columns],
+        )
+    except Exception:  # noqa: BLE001 - any JSON-path refusal -> the slow path for this batch only
+        marks = ", ".join("?" for _ in types)
+        con.executemany(f"INSERT INTO {table} VALUES ({marks})", rows)  # nosec B608 - constants, as above
+    return len(rows)
+
+
+# Column types of the two tables the build fills in bulk.
+_STAGE_TYPES = ("BIGINT", "VARCHAR", "BIGINT", "BIGINT")
+_META_TYPES = ("BIGINT", "VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN", "VARCHAR", "VARCHAR")
+
+
+def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_batch=None) -> dict:
     """(Re)build ``keyword_daily`` + ``keyword_meta`` — the FULL streamed build (D2).
 
     Streams canonical mention rows out of the app's SQLite/SQLCipher connection in
@@ -759,6 +820,14 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     watermark (see the PR-D / W2 correction below), so ``last_mention_id`` never
     under-reports the table's true max id. Returns a small tally. The canonical store is
     unchanged; this is a disposable table.
+
+    MEMORY (2026-10-06, the VMs' crash loop): nothing here may grow with the corpus. Mentions
+    stage ``batch_size`` rows at a time, and the keyword projection is read the same way (a
+    keyset over ``keywords.id``, column-projected, no ORM entity), where it used to build one
+    list of every keyword with its ORM entity first (about 2,000 bytes a keyword, 7.5 to 8.8 GB
+    for 3.8 to 4.4 million keywords). Both go into DuckDB through :func:`_bulk_insert`.
+    ``on_batch(stage, rows_done)``, when given, is called after every batch and may raise
+    :class:`BuildDeclined` to stop the build part-way (the caller's memory check).
 
     PR-D / W1 (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_
     COMPARISON.md §1; the single highest-value fix in that brief): this streamed scan
@@ -868,8 +937,7 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     """
     from sqlalchemy import text as _sql
 
-    from src.analytics.queries import kind_of
-    from src.database.models import Keyword
+    from src.analytics.queries import kind_from
 
     ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
 
@@ -890,10 +958,7 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
             (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
             for r in chunk if r[2] is not None
         ]
-        if dated_rows:
-            con.executemany(
-                "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)", dated_rows
-            )
+        _bulk_insert(con, "keyword_daily_stage", _STAGE_TYPES, dated_rows)
         streamed += len(dated_rows)
         # The watermark tracks the MAX id seen across the WHOLE batch (dated or
         # not) -- ordering is by (created_at, id), so the LAST row in a batch is
@@ -914,6 +979,8 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
             if not chunk:
                 break
             _absorb(chunk)
+            if on_batch is not None:
+                on_batch("mentions", streamed)
             params = {**params, **advance(chunk[-1])}
             # Release the transaction this batch's read+insert opened before the next
             # (already-closed) batch query -- the keyset-pagination fix (see docstring).
@@ -961,20 +1028,41 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     daily_rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
 
     # -- keyword metadata projection (for the windowed serve's JOIN) --------------------- #
+    # Same keyset shape and the same close-then-commit as the mention loops above, for the same
+    # reason: one cursor open over millions of keywords would pin the WAL read mark for the whole scan.
     con.execute(_KEYWORD_META_DDL)
-    meta = [
-        (int(kw.id), kw.normalized_term, kw.term, kind_of(kw),
-         bool(kw.is_entity), kw.entity_type, kw.language)
-        for kw in session.query(Keyword).filter(Keyword.mention_count > 0)
-    ]
-    if meta:
-        con.executemany("INSERT INTO keyword_meta VALUES (?, ?, ?, ?, ?, ?, ?)", meta)
+    meta_rows = 0
+    cursor_id = 0
+    while True:
+        result = session.execute(
+            _sql(
+                "SELECT id, normalized_term, term, is_entity, entity_type, language "
+                "FROM keywords WHERE mention_count > 0 AND id > :cursor_id "
+                "ORDER BY id LIMIT :batch_size"
+            ),
+            {"cursor_id": cursor_id, "batch_size": batch_size},
+        )
+        chunk = result.fetchall()
+        result.close()
+        if not chunk:
+            break
+        meta_rows += _bulk_insert(
+            con, "keyword_meta", _META_TYPES,
+            [
+                (int(r[0]), r[1], r[2], kind_from(r[3], r[4]), bool(r[3]), r[4], r[5])
+                for r in chunk
+            ],
+        )
+        cursor_id = int(chunk[-1][0])
+        session.commit()
+        if on_batch is not None:
+            on_batch("keywords", meta_rows)
 
     _set_meta(con, "keyword_daily.last_mention_id", max_streamed_id)
     return {
         "streamed_mentions": streamed,
         "keyword_daily_rows": int(daily_rows),
-        "keyword_meta_rows": len(meta),
+        "keyword_meta_rows": meta_rows,
         "last_mention_id": max_streamed_id,
     }
 

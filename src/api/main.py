@@ -115,12 +115,13 @@ def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
     Q203's "a durable cursor resumes stages 3-4 on the next boot" is the promise the
     dialog now makes on the app's behalf.
 
-    OFF THE STARTUP PATH, in a thread. The drain is the heaviest writer this process
-    runs; blocking boot on it would make a large backlog an app that will not start
-    (the recorded forensic-reader lesson: the worse the incident, the more likely the
-    boot path is what pays for it). ``BackgroundJob.start`` returns immediately, but
-    the import it may have to wait behind and the backlog read before it do not, so
-    the thread is not a micro-optimisation.
+    OFF THE STARTUP PATH. The drain is the heaviest writer this process runs; blocking
+    boot on it would make a large backlog an app that will not start (the recorded
+    forensic-reader lesson: the worse the incident, the more likely the boot path is
+    what pays for it). This function therefore only RECORDS the request with
+    ``boot_sequence``, whose own thread runs the drain as the last of the three heavy
+    start-up steps (the cache warm-up, the rollup's first build, then this), so that
+    the three never begin within the same minute.
 
     ``OO_REINDEX_AUTORESUME=0`` declines it for one process. The caller has already
     gated on ``OO_NO_SCHEDULER`` for the surrounding block? No -- it has not, and
