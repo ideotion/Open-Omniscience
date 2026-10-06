@@ -403,3 +403,86 @@ def test_the_diagnostics_route_returns_the_same_history(lane):
         buf.flush(db)
     body = TestClient(app).get("/api/diagnostics/wiki-lane-history").json()
     assert body["measured"] is True and body["rows"][0]["metric"] in {"drain"}
+
+
+# --------------------------------------------------------------------------- #
+# The coordinator-side Opus read of #1314 (2026-10-06): four defects, each pinned.
+# --------------------------------------------------------------------------- #
+def test_a_flush_that_fails_at_the_commit_keeps_its_rows_and_its_prune(lane):
+    """The lane's sessions do not autoflush: the INSERTs only reach the database at flush and
+    commit, so a failure THERE used to look like success (rows dropped, flush_failures 0)."""
+    buf = H.HistoryBuffer(now=lambda: NOW)
+    buf.note("tick", kind="drain", ms=29_000)
+    buf.note("drain", kind="ok", ms=100)
+
+    with lane_session("wiki") as db:
+        class CommitFails:
+            def __getattr__(self, name):
+                return getattr(db, name)
+
+            def commit(self):
+                db.rollback()
+                raise RuntimeError("database or disk is full")
+
+        with pytest.raises(RuntimeError):
+            buf.flush(CommitFails())
+    assert buf.pending() == 2 and buf.flush_failures == 1 and "full" in buf.last_flush_error
+    assert buf._last_prune_hour is None, "a rolled-back prune is tried again, not skipped for an hour"
+    assert _rows() == []
+    with lane_session("wiki") as db:
+        assert buf.flush(db) == 2
+    assert _rows(metric="tick", kind="drain")[0].sum_ms == 29_000
+    assert len(_rows()) == 2
+
+
+def test_a_retry_after_made_of_unicode_digits_is_absent_not_a_crash():
+    resp = requests.Response()
+    resp.status_code = 429
+    resp.headers["Retry-After"] = "²"  # a superscript two: str.isdigit() is True, int() raises
+    assert H.retry_after_of(requests.HTTPError("429", response=resp)) is None
+
+
+def test_a_drain_that_dies_building_its_hot_sets_is_booked_there_not_as_corpus_time(lane):
+    clock = _Clock()
+    runner = _runner(clock)
+
+    def hot():
+        clock.t += 30.0
+        raise RuntimeError("database is locked")
+
+    runner._hot_sets = hot
+    with pytest.raises(RuntimeError):
+        runner.drain()
+    d = runner.drain_status()["drain_duration"]
+    assert d["stage_totals_s"] == {"feeds": 0.0, "hot-sets": 30.0}
+
+
+def test_a_lane_that_keeps_failing_writes_its_history_while_it_is_failing(lane):
+    clock = _Clock()
+    state = {"value": "running"}
+    runner = WikiLaneRunner(
+        adapter=SimpleNamespace(offer=lambda _c: None, note_position=lambda *_a: None),
+        stream=SimpleNamespace(run=lambda *a, **k: None, counters=None),
+        lane_session=lambda: lane_session("wiki"),
+        state_of=lambda: state["value"],
+        hot_sets=dict,
+        budget=lambda: None,
+        sleep=lambda s: setattr(clock, "t", clock.t + s),
+        monotonic=clock,
+    )
+    calls = {"n": 0}
+
+    def failing_drain():
+        calls["n"] += 1
+        clock.t += 2.0
+        runner._note_drain(False, 2000, 0, None)
+        if calls["n"] >= 2:
+            state["value"] = "halted"
+        raise RuntimeError("busy")
+
+    runner.drain = failing_drain  # type: ignore[method-assign]
+    runner.run_until_stopped()
+    failed = _rows(metric="drain", kind="failed")
+    assert failed and failed[0].n == 2, "both failed drains reached the file before any recovery"
+    waits = _rows(metric="tick", kind="failure-wait")
+    assert waits and waits[0].sum_ms > 0, "the failure waits are recorded, not lost"

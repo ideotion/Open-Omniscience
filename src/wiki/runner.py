@@ -728,9 +728,14 @@ class WikiLaneRunner:
                         )
             ok = True
         finally:
+            # A drain that failed while still building its hot sets spent that time THERE, not
+            # holding the corpus connection: the stage it died in says where the time went.
+            died_in_hot_sets = not ok and self.drain_stage == "hot-sets"
             self.drain_stage, self.drain_feed = "idle", None
             self._drain_since = None
             total_ms = self._ms_since(started)
+            if died_in_hot_sets:
+                hot_ms = total_ms
             self._note_drain(ok, total_ms, hot_ms, report if ok else None)
         self._last_drain_ended = self._monotonic()
         self.last_drain = report.as_dict()
@@ -959,7 +964,13 @@ class WikiLaneRunner:
                 self._retry_due_at = (
                     (datetime.now(UTC) + timedelta(seconds=wait)).isoformat() if degraded else None
                 )
+                wait_t0 = self._monotonic()
                 self._wait(wait)
+                # A lane that keeps failing is the one whose record matters most: close the
+                # tick here too, so its drains and its waits reach the history while it is
+                # still failing, not only after it recovers.
+                self._tick_part("failure-wait", self._ms_since(wait_t0))
+                self._close_tick()
                 continue
             # AFTER the drain, deliberately. The drain is the lane's job; the attention
             # signal is a top-up for the NEXT one, and running it first would delay
@@ -970,8 +981,10 @@ class WikiLaneRunner:
             self._tick_part("pageviews", self._ms_since(pageviews_t0))
             done += 1
             if self._should_stop():
+                self._close_tick()
                 break
             if max_drains is not None and done >= max_drains:
+                self._close_tick()
                 break
             self.idle(self._interval)
         return done

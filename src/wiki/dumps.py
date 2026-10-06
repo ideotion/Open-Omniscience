@@ -34,6 +34,7 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
+
 # Module scope on purpose: ``except NetworkBlocked`` is EVALUATED when an
 # exception propagates, so binding the name inside the guarded ``try`` would
 # turn any earlier failure into a NameError from the handler.

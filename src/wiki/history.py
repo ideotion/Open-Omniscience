@@ -101,7 +101,8 @@ def retry_after_of(exc: BaseException) -> int | None:
     if raw is None:
         return None
     text = str(raw).strip()
-    if not text.isdigit():
+    # ``isdigit`` alone accepts superscripts and other Unicode digits that ``int`` rejects.
+    if not (text.isascii() and text.isdigit()):
         return None
     return min(int(text), RETRY_AFTER_MAX_S)
 
@@ -257,7 +258,9 @@ class HistoryBuffer:
 
         The aggregates are taken out of the buffer FIRST and put back (merged) when the write
         fails, so a failed flush loses nothing and a concurrent ``note`` is never blocked behind
-        the database.
+        the database. The lane's sessions do not autoflush, so the statements only reach the
+        database at ``flush()`` and ``commit()``: both run INSIDE the guard, because a failure
+        there is exactly the failure this has to survive.
         """
         with self._lock:
             taken, self._rows = self._rows, {}
@@ -266,7 +269,11 @@ class HistoryBuffer:
         try:
             for key, agg in taken.items():
                 write_agg(lane, key, agg)
-            self._prune(lane)
+            pruned_at = self._prune(lane)
+            lane.flush()
+            lane.commit()
+            if pruned_at is not None:
+                self._last_prune_hour = pruned_at
         except Exception as exc:  # noqa: BLE001 - kept for the next flush
             with self._lock:
                 for key, agg in taken.items():
@@ -280,18 +287,22 @@ class HistoryBuffer:
             raise
         return len(taken)
 
-    def _prune(self, lane: Any) -> None:
-        """Delete rows past the retention window, at most once an hour."""
+    def _prune(self, lane: Any) -> datetime | None:
+        """Delete rows past the retention window, at most once an hour.
+
+        Returns the hour to remember AFTER the commit succeeds (``None`` when nothing was done),
+        so a rolled-back prune is tried again at the next flush rather than skipped for an hour.
+        """
         from sqlalchemy import delete
 
         from src.wiki.lane_models import WikiLaneHour
 
         hour = hour_of(self._now())
         if self._last_prune_hour == hour:
-            return
+            return None
         cutoff = hour - timedelta(days=RETENTION_DAYS)
         lane.execute(delete(WikiLaneHour).where(WikiLaneHour.hour_start < cutoff))
-        self._last_prune_hour = hour
+        return hour
 
 
 def snapshot(lane: Any, *, days: int = RETENTION_DAYS) -> dict:
