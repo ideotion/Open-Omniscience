@@ -10496,3 +10496,16 @@ marker, and an operator's own value, which carries none, still reaches the engin
 deliberate non-member of the three spawners (a short shell, not an engine, which inherits the server's environment; the daemon it installs is
 started by the service manager), said so in the code, in `launch_env`'s docstring and in the spawner test. Recorded in the R114 row and queue entry
 as a session decision under `16c`. Lesson: `LESSONS.md`, the entry "A DEFAULT RULED AND MEASURED FOR ONE PROCESS IS GIVEN TO THAT PROCESS'S COMMAND, NOT EXPORTED TO EVERYTHING IT STARTS".
+
+- **2026-10-06 · backup/snapshot-instead-of-wal-member (WAL / disk thread).**
+A volume backup no longer carries a residual write-ahead log. A free PASSIVE probe decides from the checkpoint's own row: a
+reader that started after the last commit costs nothing; a reader older than a later commit makes the backup copy the corpus
+through one read transaction into its staging directory on the destination drive, under the collection pause and without the
+write gate, instead of streaming the `-wal` as a member. The space check and the volume sizing count the store through the log
+(`page_count` x `page_size`), refuse before any byte is copied in the standard free-space words, and a reader that appears after
+the sizing is copied late inside the same pause. A stop interrupts an encrypted copy within seconds and a plaintext copy ends
+first; a crash's leftover copy is swept by its owner (dead at once, live never, unmarked by age) and the destinations ever given
+a copy are swept at boot on a thread of their own. The summary reports `snapshot_s` and `snapshot_bytes` beside `gate_held_s`
+(which now means the deciding window only); the progress label is "Making a temporary copy of your data..." in 12 languages.
+Restore still reads an old archive's `corpus-wal` member. Lesson: `LESSONS.md`, the entry "A BACKUP THAT CANNOT FOLD THE LOG INTO
+THE MAIN FILE COPIES THE CORPUS".
