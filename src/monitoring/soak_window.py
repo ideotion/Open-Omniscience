@@ -455,6 +455,18 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
                 "This is not a reading of zero."
             ),
         }
+    if not lane_file_bytes("wiki"):
+        # A zero-byte file is a lane that was opened and never given its tables (an
+        # interrupted first start): reading it raised "no such table" and the whole block
+        # reported a crash on a bundle from an instance whose lane had simply never stored.
+        return {
+            "measured": False,
+            "reason": (
+                "the Wikipedia lane file is empty -- it has never stored anything. "
+                "This is not a reading of zero."
+            ),
+            "service": _wiki_service(),
+        }
     from src.versioned.store import lane_session
     from src.wiki.counters import lane_counters
 
@@ -468,7 +480,25 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
     # one verdict here is what would let an absent growth series hide behind a present
     # row count.
     out["measured"] = True
+    out["service"] = _wiki_service()
     return out
+
+
+def _wiki_service() -> dict[str, Any]:
+    """What this process is doing about the lane RIGHT NOW: the reason a quiet lane is quiet.
+
+    The run clock says WHEN the lane showed no sign of life; only the process can say whether
+    its stream thread and its drain loop are alive, how many drains failed in a row and why,
+    and whether the loop has had to start the stream again. Measured at read time, so it
+    describes this process and nothing older: ``runner: false`` is a lane that was never
+    started since boot (the app starts offline), which is not a lane that died.
+    """
+    from src.wiki.service import lane_service_status
+
+    status = lane_service_status()
+    status["runner"] = status.get("drain") is not None
+    status["basis"] = "this process, at the moment of the read"
+    return status
 
 
 def _block(name: str, fn: Any) -> dict[str, Any]:

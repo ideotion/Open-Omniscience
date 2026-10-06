@@ -356,6 +356,28 @@ def scheduler_equilibrium(db: Session = Depends(get_db)) -> dict:
     }
 
 
+def _resume_wiki_lane() -> None:
+    """Resume the Wikipedia run after the operator went online by THIS route (R117).
+
+    ``/start`` and ``/run-now`` clear the kill switch exactly as the airplane button does, so
+    they owe the lane the same thing: when its switch says running, it runs again. Without it a
+    lane that the kill switch had ended stayed dead after Start (measured on a real instance:
+    collection stopped, started, and no lane row for the next nine hours). It never brings the
+    app online -- the caller has just done that on the operator's click -- and
+    ``start_wiki_lane`` refuses unless the setting says running. Never raises.
+    """
+    import os
+
+    if os.getenv("OO_NO_SCHEDULER", "0") == "1":
+        return
+    try:
+        from src.wiki.service import start_wiki_lane
+
+        start_wiki_lane()
+    except Exception:  # noqa: BLE001 - a lane hiccup must never fail the start
+        _LOG.warning("could not resume the Wikipedia lane after the start", exc_info=True)
+
+
 @router.post("/start")
 def scheduler_start() -> dict:
     """Start the background ingestion loop (the first run begins immediately)."""
@@ -375,6 +397,7 @@ def scheduler_start() -> dict:
     # collection runs under it and there is nothing to retry.
     storage_guard.storage_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
+    _resume_wiki_lane()
     return {"started": started, **_status_payload()}
 
 
@@ -402,6 +425,7 @@ def scheduler_run_now() -> dict:
     storage_guard.storage_guard.reset(reason="operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""
     started = get_scheduler().run_now()
+    _resume_wiki_lane()
     return {"started": started, **_status_payload()}
 
 

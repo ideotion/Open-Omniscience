@@ -318,6 +318,13 @@ def start_wiki_lane() -> bool:
     """Start the lane if the operator's setting says ``running``. Idempotent.
 
     Returns whether a runner is streaming afterwards. Never raises.
+
+    EVERY WAY OF GOING ONLINE CALLS THIS (the airplane button, the collection Start and
+    Run-now buttons, a settings write), so it has to be right for a lane in any state: not
+    built (build it), streaming (nothing to do), built with its drain loop alive but its
+    stream ended (start the stream again, keeping the loop and its counters), or built with
+    nothing alive (tear the leftover down, then build). A second call that built a new runner
+    beside a live drain thread would put two writers on one lane.
     """
     global _RUNNER, _DRAIN_THREAD
     with _LOCK:
@@ -325,8 +332,17 @@ def start_wiki_lane() -> bool:
             if _state_of() != "running":
                 _LOG.info("the Wikipedia lane is not started: its setting does not say running")
                 return False
-            if _RUNNER is not None and _RUNNER.streaming:
-                return True
+            if _RUNNER is not None:
+                if _RUNNER.streaming:
+                    return True
+                if _DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive():
+                    if _RUNNER.revive_stream():
+                        return True
+                    # Its loop is alive but it would not restart the stream (it was stopped,
+                    # or the kill switch is engaged): rebuild only when it was stopped.
+                    if not _RUNNER.stopped:
+                        return False
+                _finish(*_detach_locked(), 5.0)
             _RUNNER = _build()
             if not _RUNNER.start():
                 return False
@@ -341,12 +357,16 @@ def start_wiki_lane() -> bool:
             return False
 
 
-def stop_wiki_lane(*, timeout: float = 5.0) -> None:
-    """Stop the lane and forget the runner. Idempotent, and never raises."""
+def _detach_locked() -> tuple[Any, threading.Thread | None]:
+    """Forget the runner and its drain thread, returning them. The caller holds ``_LOCK``."""
     global _RUNNER, _DRAIN_THREAD
-    with _LOCK:
-        runner, _RUNNER = _RUNNER, None
-        thread, _DRAIN_THREAD = _DRAIN_THREAD, None
+    runner, _RUNNER = _RUNNER, None
+    thread, _DRAIN_THREAD = _DRAIN_THREAD, None
+    return runner, thread
+
+
+def _finish(runner: Any, thread: threading.Thread | None, timeout: float) -> None:
+    """Stop a detached runner and wait briefly for its drain thread. Never raises."""
     if runner is not None:
         try:
             runner.stop(timeout=timeout)
@@ -357,6 +377,17 @@ def stop_wiki_lane(*, timeout: float = 5.0) -> None:
         # runner's own stop event. Joining briefly keeps a restart from overlapping
         # with the tail of the previous drain.
         thread.join(timeout=timeout)
+
+
+def stop_wiki_lane(*, timeout: float = 5.0) -> None:
+    """Stop the lane and forget the runner. Idempotent, and never raises.
+
+    The lock is held only to detach: the join can take seconds and a status read must not
+    wait behind it.
+    """
+    with _LOCK:
+        runner, thread = _detach_locked()
+    _finish(runner, thread, timeout)
 
 
 def lane_runner() -> Any:

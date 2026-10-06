@@ -44,6 +44,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from src.versioned.adapters.base import ReadBudget
@@ -71,6 +72,16 @@ DRAIN_LIMIT: int = 2000
 #: loses the lane to a moment's contention. Three is enough to ride out a lock and few
 #: enough that a real breakage is reported while anyone is still watching.
 MAX_CONSECUTIVE_FAILURES: int = 3
+
+#: The longest the loop waits between two tries once MAX_CONSECUTIVE_FAILURES drains have
+#: failed in a row (the wait doubles from one drain interval up to this). The lane no longer
+#: ENDS there -- an ended loop left the setting saying ``running`` over a lane that collected
+#: nothing, with no way back short of a restart. The ceiling protects two things at once: how
+#: long a lane whose cause has cleared (a lock, WAL pressure, a full disk freed) can sit idle
+#: before its next try, and how long the corpus's single writer is left alone by a lane that
+#: keeps failing against it. Five minutes is the stream buffer's own scale: the buffer is
+#: bounded, a lane that waits longer starts to lose the oldest changes to a published gap.
+FAILING_RETRY_CEILING_S: float = 300.0
 
 #: Seconds one drain may spend FETCHING page texts, shared out between the feeds. The drain
 #: records every change first and then fetches one polite request per touched page; behind a
@@ -382,6 +393,14 @@ class WikiLaneRunner:
         #: rather than only in the log, because a status surface cannot read a log.
         self.consecutive_failures = 0
         self.last_error: str | None = None
+        #: The wait the loop chose after its latest failure once it is past
+        #: MAX_CONSECUTIVE_FAILURES, else ``None``; for a status surface.
+        self._retry_wait_s: float | None = None
+        #: How many times the loop started the stream thread again after it ended without
+        #: the operator asking (the kill switch refused a reconnect and was cleared since,
+        #: or the thread died), and when the last one was.
+        self.stream_restarts = 0
+        self.last_stream_restart_at: str | None = None
         #: WHERE THE DRAIN IS, for a status surface. A status that said only ``drains: 0``
         #: could not tell a drain that had not started from one stuck in its first hot-set
         #: read, or fetching texts behind a backlog, or failing and retrying: four different
@@ -410,6 +429,18 @@ class WikiLaneRunner:
             "consecutive_failures": self.consecutive_failures,
             "last_error": self.last_error,
             "stopped": self._stop.is_set(),
+            # PAST MAX_CONSECUTIVE_FAILURES THE LOOP KEEPS TRYING, and says so. ``retry_in_s``
+            # is the wait it chose after the latest failure; the ceiling and what it protects
+            # travel with it so a reader of the status needs no source to interpret the number.
+            "degraded": self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES,
+            "retry_in_s": self._retry_wait_s,
+            "retry_ceiling_s": FAILING_RETRY_CEILING_S,
+            "retry_ceiling_protects": (
+                "how long a lane whose cause has cleared can sit idle before its next try, and how "
+                "long the corpus's single writer is left alone by a lane that keeps failing"
+            ),
+            "stream_restarts": self.stream_restarts,
+            "last_stream_restart_at": self.last_stream_restart_at,
         }
 
     # -- the stream half ---------------------------------------------------- #
@@ -461,6 +492,44 @@ class WikiLaneRunner:
         self._thread.start()
         return True
 
+    def revive_stream(self) -> bool:
+        """Start the stream thread again when it ended and nobody asked it to. ``True`` if started.
+
+        The stream thread ends for good on any refusal by the kill switch (the Stop button,
+        airplane mode) and on any unforeseen death, and NOTHING started it again: the drain
+        loop beside it kept running over a lane that no longer listened, the setting still
+        said ``running``, and the only ways back were the airplane button, a settings write
+        or a restart (measured on a 14 GB corpus: no lane row for 40 hours with the app
+        online). The drain loop calls this each tick and the collection Start button calls it
+        through the service, so ONE rule decides: the setting says running, the kill switch is
+        clear, the operator did not stop this runner, and a thread that was started is dead.
+
+        It never starts a runner that was never started (that is ``start``'s, behind the one
+        consent), never overrides ``stop()``, and does nothing for a bounded run
+        (``max_connections``), whose stream ends on purpose.
+        """
+        from src.ingest import kill_switch_active
+
+        if self._max_connections is not None:
+            return False
+        if self._stop.is_set() or self._thread is None or self.streaming:
+            return False
+        try:
+            if self._state_of() != "running" or kill_switch_active():
+                return False
+        except Exception:  # noqa: BLE001 - an unreadable setting is a lane that stays down
+            return False
+        self._thread = None
+        if not self.start():
+            return False
+        self.stream_restarts += 1
+        self.last_stream_restart_at = datetime.now(UTC).isoformat()
+        _LOG.warning(
+            "the Wikipedia stream had ended without being stopped; started it again (restart %d)",
+            self.stream_restarts,
+        )
+        return True
+
     def stop(self, *, timeout: float = 5.0) -> None:
         """Ask the stream thread to end and wait briefly. Idempotent."""
         self._stop.set()
@@ -468,6 +537,11 @@ class WikiLaneRunner:
         if thread is not None and thread.is_alive():
             thread.join(timeout=timeout)
         self._thread = None
+
+    @property
+    def stopped(self) -> bool:
+        """Whether this runner was told to stop (by ``stop`` or by its own loop)."""
+        return self._stop.is_set()
 
     @property
     def streaming(self) -> bool:
@@ -640,6 +714,25 @@ class WikiLaneRunner:
             _LOG.debug("could not read the status of fetching other changed pages", exc_info=True)
             return None
 
+    def _failure_wait(self) -> float:
+        """Seconds to wait after a failed drain: one interval for the first two, then doubling, capped."""
+        over = self.consecutive_failures - MAX_CONSECUTIVE_FAILURES
+        if over < 0:
+            return float(self._interval)
+        return float(min(self._interval * (2 ** (over + 1)), max(FAILING_RETRY_CEILING_S, self._interval)))
+
+    def _wait(self, seconds: float) -> None:
+        """Wait in one-second slices, ending early when the runner is stopped.
+
+        One uninterrupted sleep of up to FAILING_RETRY_CEILING_S would leave a stopped runner's
+        drain thread alive for minutes, beside the next runner's.
+        """
+        remaining = float(seconds)
+        while remaining > 0 and not self._stop.is_set():
+            step = min(1.0, remaining)
+            self._sleep(step)
+            remaining -= step
+
     def run_until_stopped(self, *, max_drains: int | None = None) -> int:
         """Drain every ``drain_interval_s`` until the setting stops saying ``running``.
 
@@ -650,32 +743,36 @@ class WikiLaneRunner:
         while not self._should_stop():
             if max_drains is not None and done >= max_drains:
                 break
+            self.revive_stream()
             try:
                 self.drain()
                 self.consecutive_failures = 0
+                self._retry_wait_s = None
             except Exception as exc:  # noqa: BLE001 - one bad drain must not end the lane
                 # A LOOP THAT LETS ONE FAILURE END THE THREAD stops collecting for the
                 # rest of the process with no record anywhere -- measured: an absent
                 # lane file killed this thread and the stream kept filling a buffer
-                # nobody was draining. Named, counted, and retried.
+                # nobody was draining.
                 self.consecutive_failures += 1
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 _LOG.warning(
                     "the wiki lane drain failed (%d in a row): %s",
                     self.consecutive_failures, exc, exc_info=True,
                 )
-                if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    # AND A LOOP THAT RETRIES FOREVER is the same failure wearing the
-                    # opposite face: it burns a core on an error that is not going to
-                    # clear and buries the one log line that said why. Stopping with the
-                    # reason on the runner is what a status surface can show.
+                if self.consecutive_failures == MAX_CONSECUTIVE_FAILURES:
                     _LOG.error(
-                        "the wiki lane stopped after %d consecutive failed drains: %s",
-                        self.consecutive_failures, self.last_error,
+                        "the wiki lane has failed %d drains in a row (%s); it keeps trying, "
+                        "waiting up to %d s between tries",
+                        self.consecutive_failures, self.last_error, int(FAILING_RETRY_CEILING_S),
                     )
-                    self._stop.set()
-                    break
-                self._sleep(self._interval)
+                # AND A LOOP THAT ENDS AT THREE IS THE OPPOSITE FAULT: three failed drains
+                # are about two minutes of contention, and the lane then stayed dead for the
+                # rest of the process with its setting still saying ``running``. Past three
+                # the wait doubles up to FAILING_RETRY_CEILING_S: not a spin, and not an end.
+                wait = self._failure_wait()
+                degraded = self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES
+                self._retry_wait_s = wait if degraded else None
+                self._wait(wait)
                 continue
             # AFTER the drain, deliberately. The drain is the lane's job; the attention
             # signal is a top-up for the NEXT one, and running it first would delay
