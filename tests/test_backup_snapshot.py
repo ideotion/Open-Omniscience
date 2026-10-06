@@ -963,8 +963,8 @@ def test_a_source_that_rewrites_the_corpus_earns_the_other_members_credit_only_i
 
 
 def test_the_destination_check_never_credits_more_than_the_other_members_own_size(tmp_path, monkeypatch):
-    """The coordinator's nit on #1313: a member that shrank leaves old volumes the new run will not
-    reuse, so the credit after a copy is capped at the side members' size (as the snapshot check does)."""
+    """A member that shrank leaves old volumes the new run will not reuse, so the credit after a copy
+    is capped at the side members' size (as the snapshot check does)."""
     seen: list[int] = []
     monkeypatch.setattr(
         "src.backup.artifact.preflight_free_space", lambda dest, needed, what="": seen.append(needed)

@@ -831,13 +831,26 @@ def test_cpu_is_read_for_the_working_threads_only(monkeypatch):
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc is Linux's")
-def test_a_threads_cpu_is_read_from_the_right_proc_fields():
+def test_a_threads_cpu_is_read_from_the_right_proc_fields(monkeypatch):
+    """The /proc parse (``utime`` + ``stime``, fields 14 and 15 of proc(5)) is the fallback for a thread the
+    clock refuses and for platforms without it, so the kernel clock is made unavailable here (as it is
+    on macOS and Windows) and the comparison measures /proc: a wrong field index fails it."""
+    monkeypatch.delattr(time, "clock_gettime")
     t0 = time.thread_time()
     while time.thread_time() - t0 < 0.3:
         sum(range(10000))
     got = session_hwm._thread_cpu([threading.get_native_id()])[threading.get_native_id()]
     assert abs(got - time.thread_time()) < 0.2, (got, time.thread_time())
     assert session_hwm._thread_cpu([]) == {} and session_hwm._thread_cpu([2**30]) == {}
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the kernel's thread clocks are Linux's")
+def test_a_threads_cpu_is_read_from_the_kernel_clock_and_agrees_with_thread_time():
+    t0 = time.thread_time()
+    while time.thread_time() - t0 < 0.3:
+        sum(range(10000))
+    got = session_hwm._thread_cpu([threading.get_native_id()])[threading.get_native_id()]
+    assert abs(got - time.thread_time()) < 0.2, (got, time.thread_time())
 
 
 def test_only_the_apps_own_directory_is_app_code():
@@ -997,7 +1010,9 @@ def test_the_first_seconds_after_the_machines_boot_are_recorded(hwm, monkeypatch
     burst for five whole minutes (two burst tests failed on a 284 s host, 2026-09-27)."""
     clock, blocks = [1.0], [5_000_000]
     avail = [3000.0]
-    monkeypatch.setattr(session_hwm, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(
+        session_hwm, "time", types.SimpleNamespace(monotonic=lambda: clock[0], perf_counter=time.perf_counter)
+    )
     monkeypatch.setattr(sys, "getallocatedblocks", lambda: blocks[0])
     monkeypatch.setattr(session_hwm, "_readings",
                         lambda: {"avail_mb": avail[0], "total_mb": 4000.0, "rss_mb": 900.0})
