@@ -16394,7 +16394,10 @@ maintainer as a card.
   check that was DUE (an unclean end, or an entry left `running` or `owed`) is written down as `owed`, so the session that could not read it ending cleanly does not cancel the check. (F7) The stopped note
   is set in the latch's own lock block, so a release that lands between two blocks cannot leave it on an unlatched file for the next latch to inherit. (F8) CI asserts a SQLite that runs the 3.44 full-text
   integrity tests. STATED LIMITS: a table that is absent from the file still counts as read (see (k)); a skipped check that has no earlier finding behind it is still never said in the UI; the re-read of a
-  held file covers the reported tables only, not the whole file.
+  held file covers the reported tables only, not the whole file. (F5, the price of `mode=ro`, a NIT, unrun) `connect.py`'s read-only open needs a directory the process can write to (SQLite makes the log
+  and shared-memory files beside the file), and a failed open reads as a wrong key, so a read-only folder or a file on a drive that cannot hold them records the file as `unchecked` with the reason "the passphrase did not
+  open the file", which misleads; the direction is safe (`unchecked` keeps a latch). And `Path.resolve().as_uri()` on a UNC path gives `file://server/share/...`, whose authority SQLite probably rejects: a library on a
+  network share would be `unchecked` at every start. NEITHER IS CHANGED OR RUN HERE.
   (m) STATED LIMIT, PRE-EXISTING (the coordinator's F9): an unreadable or malformed `database-damage.json` (`DamageRegistry._ensure_loaded`: an `OSError` or a `ValueError` on the read, or a
   document of the wrong shape) is now the one way a finding is lost without a read of the file it described. The record is what carries a finding across a restart, so when it cannot be parsed the
   next start sees no earlier finding and, unless the stop was unclean, does not read the file; the failure is said (`prior_record_unreadable`) and the NEXT incident or verification write REPLACES the
