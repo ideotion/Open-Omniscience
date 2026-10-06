@@ -101,14 +101,17 @@ def switch_on() -> bool:
 
 def _open(path: Path):
     """A read-only connection through the ONE factory every engine uses (SQLCipher, the search index's
-    functions). ``query_only``: nothing on it can ever write."""
+    functions), opened ``mode=ro``: the last connection to close a file with a leftover write-ahead log folds the
+    log into it and deletes it, and ``query_only`` does not prevent that, so a check that only reads must not be
+    the thing that does it (see ``connect.connect``'s ``read_only``, whose price is a directory its process can
+    write to). ``query_only`` stays on as well: nothing on it can ever write."""
     from src.database.connect import connect
 
     if not Path(path).is_file():
         # ``connect`` CREATES a missing file (plaintext under OO_DB_PLAINTEXT=1, encrypted when a key is held):
         # a check must never be the thing that makes a data file exist.
         raise FileNotFoundError(f"{Path(path).name} does not exist")
-    con = connect(str(path), check_same_thread=False, timeout=30)
+    con = connect(str(path), check_same_thread=False, timeout=30, read_only=True)
     try:
         con.execute("PRAGMA query_only=ON")
     except Exception:
@@ -290,8 +293,12 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     end, ``None``, is not a reason), an earlier process left a check of that file unfinished, or an earlier
     process's check found it DAMAGED (the latch lives in memory and the ledger reads a clean end, so without this a
     restart would forget the finding; the file is read again at every start until it reads clean or is replaced). A file that
-    does not exist is not checked (and never created: ``connect`` would create it). A file whose check has
-    been left unfinished ``MAX_VERIFY_ATTEMPTS`` starts in a row is SKIPPED, and said."""
+    does not exist is not checked (and never created: ``connect`` would create it); a file that cannot even be examined
+    (an I/O error from ``stat``) is UNCHECKED, not absent. A file whose check has been left unfinished
+    ``MAX_VERIFY_ATTEMPTS`` starts in a row is SKIPPED, and said: the cap stops re-running the check, and a finding
+    an earlier check made for that file (or for a file that could not be examined) is NOT given up with it: such a file is
+    listed in ``skipped`` with its ``tables`` and :func:`arm_at_boot` latches it from them. The record an earlier
+    process left is carried through every entry that replaces it (``damage.carried_damage``)."""
     if not switch_on():
         return None
     prev = previous_end if previous_end is not None else damage._previous_end()
@@ -301,26 +308,37 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     any_unfinished = False
     for key in damage.PAUSED_FILES:
         path = _path_of(key)
+        if path is None:
+            continue
+        last = damage.registry.previous_verification(key)
+        carried = damage.carried_damage(last)
         try:
-            if path is None or not path.is_file() or path.stat().st_size == 0:
+            if not path.is_file() or path.stat().st_size == 0:
                 continue
         except OSError:
+            # Could not tell whether there is a file: UNCHECKED, never "nothing to read". An earlier finding stands.
+            if carried:
+                skipped.append(
+                    {"file": key, "path": path, "attempts": _attempts_of(last or {}), "tables": carried,
+                     "reason": "the file could not be examined (an I/O error), so the check of it was not run"}
+                )
             continue
         if damage.registry.checked_by_this_process(key):
             continue
-        last = damage.registry.previous_verification(key)
         # "running": a check began and the process ended before it finished. "owed": a check was due and the process
-        # ended before it began (a boot that stayed locked, or a quit between arming and the first table).
-        unfinished = last is not None and last.get("state") in ("running", "owed")
-        damaged_before = last is not None and last.get("state") == "done" and last.get("verdict") == VERDICT_DAMAGED
-        if not (unclean or unfinished or damaged_before):
+        # ended before it began (a boot that stayed locked, or a quit between arming and the first table). The ``owed``
+        # entry THIS process wrote at a locked boot is the same process unlocking: due, not unfinished, and its own
+        # trigger names why (an "unfinished check" label for a file damaged before was untrue).
+        own_owed = last is not None and bool(last.get("own")) and last.get("state") == "owed"
+        unfinished = last is not None and (last.get("state") == "running" or (last.get("state") == "owed" and not own_owed))
+        if not (unclean or unfinished or own_owed or carried):
             continue
-        attempts = _attempts_of(last) if (last is not None and unfinished) else 0
+        attempts = _attempts_of(last) if (last is not None and (unfinished or own_owed)) else 0
         if attempts >= damage.MAX_VERIFY_ATTEMPTS:
-            skipped.append({"file": key, "path": path, "attempts": attempts})
+            skipped.append({"file": key, "path": path, "attempts": attempts, **({"tables": carried} if carried else {})})
             continue
         files.append((key, path, attempts))
-        any_unfinished = any_unfinished or unfinished
+        any_unfinished = any_unfinished or unfinished or (own_owed and last is not None and last.get("trigger") == TRIGGER_UNFINISHED)
     if not files and not skipped:
         return None
     if unclean:
@@ -366,6 +384,21 @@ def arm_at_boot() -> bool:
         if plan is None:
             return False
         for sk in plan["skipped"]:
+            tables = sk.get("tables")
+            if tables:
+                # The cap stops re-running the check; it does not give up what an earlier check found. The file is
+                # latched from the record, says so (``FRAME_CHECK_STOPPED``), and is released only by a re-read of those
+                # tables that comes back clean (a start of collection) or by a replacement of the file.
+                reason = sk.get("reason") or (
+                    f"the check of the {sk['file']} file was left unfinished on the last {sk['attempts']} starts, so it is "
+                    "not run again; an earlier check found damage in it, so its writers stay paused until the part that was "
+                    "reported reads clean"
+                )
+                _LOG.warning("database check not run, file held on an earlier finding: %s", reason)
+                damage.registry.verification_file_held(
+                    sk["file"], path=sk["path"], attempts=sk["attempts"], reason=reason, tables=list(tables)
+                )
+                continue
             reason = (
                 f"the check of the {sk['file']} file was left unfinished on the last {sk['attempts']} starts, so it is "
                 "not tried again until the next unexpected stop"
@@ -464,6 +497,7 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                 "verdict": verdict,
                 "tables": schema_tables,
                 "tables_total": 0,
+                "listed": False,  # the table list could not be read: no table was, and no earlier finding is cleared
                 "reason": None if verdict == VERDICT_DAMAGED else reason,
                 "seconds": round(time.monotonic() - t0, 2),
             }
@@ -510,8 +544,8 @@ def recheck(files: dict[str, list[str]], *, reason: str, claims: dict[str, int] 
     * ``started``: a thread is reading it; it ends the claim itself (``recheck_finished`` or ``recheck_abandoned``).
     * ``nothing-to-read``: the check is switched off (``OO_BOOT_VERIFY=0``) or the file is not there; the caller
       releases the latch as a plain retry does.
-    * ``kept``: the start-up check is armed or still reading (it decides), or the thread could not be started; the
-      latch stays.
+    * ``kept``: the start-up check is armed or still reading (it decides), the file could not be examined (an I/O error
+      is "unchecked", never "nothing to read"), or the thread could not be started; the latch stays.
     """
     out: dict[str, str] = {}
     reg = damage.registry
@@ -522,7 +556,11 @@ def recheck(files: dict[str, list[str]], *, reason: str, claims: dict[str, int] 
             try:
                 readable = switch_on() and path is not None and path.is_file() and path.stat().st_size > 0
             except OSError:
-                readable = False
+                # Could not tell whether there is a file to read: that is UNCHECKED, never "nothing to read" (which
+                # releases the latch). The latch stays and the next start of collection asks again.
+                _LOG.warning("database check: could not examine the %s file for the re-read", key, exc_info=True)
+                out[key] = "kept"
+                continue
             if not readable or path is None:
                 out[key] = "nothing-to-read"
             else:
