@@ -123,9 +123,10 @@ def main() -> int:
 
     engage()
     from src.monitoring.p0_validation import _RssSampler
+    from src.monitoring.secret_scrub import env_secret
 
     backup = Path(os.environ["OO_RELEASE_RUN_BACKUP"])
-    passphrase = os.environ.get("OO_DB_PASSPHRASE") or ""
+    passphrase = env_secret("OO_DB_PASSPHRASE") or ""
     out_path = Path(os.environ.get("OO_RELEASE_RUN_OUT") or (Path(os.environ["OO_DATA_DIR"]) / "result.json"))
     t0 = time.monotonic()
     result: dict = {"backup": str(backup), "data_dir": os.environ.get("OO_DATA_DIR")}

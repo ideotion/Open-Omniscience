@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import traceback
@@ -26,7 +27,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.request_label import PATH_WITHHELD, safe_method
+from src.monitoring.request_label import (
+    OTHER_METHOD,
+    PATH_WITHHELD,
+    STANDARD_METHODS,
+    UNMATCHED_ROUTE,
+    safe_method,
+)
 from src.monitoring.secret_scrub import (
     TRACEBACK_ATTRIBUTE,
     protect_handlers,
@@ -250,6 +257,11 @@ def note_http_error(method: str, path: str, status: int) -> None:
         return
 
 
+def _without_query(url: str | None) -> str | None:
+    """``url`` up to its first ``?`` or ``#``."""
+    return None if url is None else re.split(r"[?#]", str(url), maxsplit=1)[0]
+
+
 def note_frontend_error(
     kind: str,
     message: str,
@@ -276,6 +288,10 @@ def note_frontend_error(
             split a passphrase and keep half of it (the browser sends its words whole for the same reason)."""
             return scrubbed(str(value))[:cut]
 
+        # The URL a failed fetch names, and the script a browser error came from, without the query or the fragment: what a
+        # person typed into the page's address bar travels in them, and the report is a file the debug bundle carries.
+        source = _without_query(source)
+        endpoint = _without_query(endpoint)
         k = (clean(kind, 40), clean(message, 200), clean(source or "", 200))
         now = time.monotonic()
         with _LOCK:
@@ -336,9 +352,10 @@ def install() -> None:
         note_boot()
 
 
-#: The fields of a journal record that are structure and never the exception's words (the request an HTTP entry is about is the
-#: route and its method, which carry no query): a passphrase that is a level, a logger's name or a route must not take it out
-#: of the record it labels.
+#: The fields of a journal record that are structure and never the exception's words (``path_kind: "route"`` marks an HTTP entry
+#: that names the request by its route template and a standard method, which carry no query; an entry without it is an older one
+#: and is read with its path withheld): a passphrase that is a level, a logger's name or a route must not take it out of the
+#: record it labels.
 _STRUCTURAL_FIELDS = frozenset({"at", "level", "logger", "path_kind"})
 
 
@@ -356,10 +373,42 @@ def _http_entry_without_raw_request(entry: dict) -> dict:
     return out
 
 
+_STD = "|".join(sorted(STANDARD_METHODS)) + "|" + re.escape(OTHER_METHOD)
+#: How a rate-limit line names the request since 2026-10-07: a standard method and a route template (or the fixed label).
+_RATE_NEW = re.compile(rf"^(?:{_STD}) (?:/\S*|{re.escape(UNMATCHED_ROUTE)})$")
+_RATE_LINE = re.compile(r"^(Rate limit exceeded for \S+): (.*)$", re.DOTALL)
+_UNHANDLED = "unhandled error on "
+#: What the ``slowapi`` logger wrote and this app no longer lets it write: ``ratelimit <limit> (<key>) exceeded at endpoint: <path>``.
+_SLOWAPI_MARK = " exceeded at endpoint: "
+
+
+def _message_without_raw_request(message: str) -> str:
+    """The message of a line written before the app named a request by its route, with the path (and the query) the client typed
+    withheld; a line that names the request by its route, and every other line, as it was. Three shapes carried it: the
+    unhandled-error line (``unhandled error on <method> <path>: ...``: the new wording says ``route``), the rate-limit line (its
+    URL in full, query included) and the ``slowapi`` library's own warning (which names the path and is now dropped at the
+    source, so any such line is an old one)."""
+    if message.startswith(_UNHANDLED) and not message.startswith(_UNHANDLED + "route "):
+        parts = message[len(_UNHANDLED):].split(None, 2)
+        rest = f" {parts[2]}" if len(parts) == 3 else ""
+        return f"{_UNHANDLED}{PATH_WITHHELD}:{rest}"
+    rate = _RATE_LINE.match(message)
+    if rate is not None and not _RATE_NEW.match(rate.group(2).strip()):
+        return f"{rate.group(1)}: {PATH_WITHHELD}"
+    if message.startswith("ratelimit ") and _SLOWAPI_MARK in message:
+        return message.split(_SLOWAPI_MARK, 1)[0] + _SLOWAPI_MARK + PATH_WITHHELD
+    return message
+
+
 def _scrubbed_entry(entry: dict) -> dict:
     """``entry`` with the passphrases the process holds taken out of every text field that is not structure."""
     if entry.get("logger") == "http":
         entry = _http_entry_without_raw_request(entry)
+    elif entry.get("logger") == "frontend":
+        # A report written before the query was dropped at the source: the URL of a failed fetch carried it.
+        entry = {**entry, **{k: _without_query(entry[k]) for k in ("endpoint", "source") if isinstance(entry.get(k), str)}}
+    elif isinstance(entry.get("message"), str):
+        entry = {**entry, "message": _message_without_raw_request(entry["message"])}
     return {k: scrubbed(v) if isinstance(v, str) and k not in _STRUCTURAL_FIELDS else v for k, v in entry.items()}
 
 

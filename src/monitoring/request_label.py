@@ -31,9 +31,33 @@ def route_template(scope: Any) -> str | None:
     """The template of the route routing put in the ASGI ``scope``, or ``None`` while there is none. Never raises."""
     try:
         template = getattr(scope.get("route"), "path", None)
+        if not (isinstance(template, str) and template):
+            template = _mount_path(scope)
     except Exception:  # noqa: BLE001 - an instrument must never break a request
         return None
     return template if isinstance(template, str) and template else None
+
+
+def _mount_path(scope: Any) -> str | None:
+    """The path of the ``Mount`` that is serving the request, when routing put no route in the scope (Starlette's ``Mount`` never
+    sets ``scope["route"]``: it sets ``scope["endpoint"]`` to the mounted app). Found as the mount of the app's own routes whose
+    ``.app`` is that endpoint, so what is named is the prefix the code mounted (``/static``, ``/metrics``) and never the rest of the
+    path the caller typed under it."""
+    endpoint = scope.get("endpoint")
+    if endpoint is None:
+        return None
+    routes = getattr(scope.get("app"), "routes", None) or []
+    for route in routes:
+        if getattr(route, "app", None) is endpoint and isinstance(getattr(route, "path", None), str):
+            return route.path
+    return None
+
+
+#: The one place a log line names a request: the route (never the path) and a standard method.
+def request_phrase(method: object, scope: Any) -> str:
+    """``route GET /api/x/{id}``: how a log line of this app names the request it is about (the word ``route`` is what tells a
+    line written by this wording from one written before it, whose path is the client's)."""
+    return f"route {safe_method(method)} {safe_route(scope)}"
 
 
 def safe_route(scope: Any) -> str:

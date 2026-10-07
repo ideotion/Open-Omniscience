@@ -35,9 +35,10 @@ _LOCK = threading.Lock()
 _RES_CAP = 512  # recent durations kept per route (the percentile reservoir)
 _EVENTS_CAP = 100  # loop-block events kept
 # Distinct route keys kept. This is the ONE bound on the published lists, and what it protects
-# is memory (and the size of the export): route templates are few, but a request no route matched
-# is keyed by its own path, so a scan of the loopback server could otherwise mint keys without
-# limit. The lists themselves are NOT cut below it (see ``summary``); a request for a NEW key once
+# is memory (and the size of the export): the keys are route templates the code wrote, and every
+# request no route matched shares ONE fixed label (``request_label.UNMATCHED_ROUTE``), so a scan of
+# the loopback server mints no keys; the cap is the bound that would hold if a route table ever
+# did. The lists themselves are NOT cut below it (see ``summary``); a request for a NEW key once
 # the keyspace is full is counted in ``_KEYSPACE_DROPPED`` and published, never silently lost.
 _ROUTES_CAP = 2048
 _KEYSPACE_DROPPED = 0
@@ -63,7 +64,8 @@ _REFUSAL_STATUSES = frozenset({423, 429, 503})
 # "max_ms": float, "statuses": {code: n}, "first": call | None, "slowest": call | None}
 # where a ``call`` is {ms, status, ended_at, started_after_unlock_s}.
 _ROUTES: dict[str, dict[str, Any]] = {}
-# in-flight requests: id -> {"route": str, "started": float}
+# in-flight requests: id -> {"route": str (a route template or a fixed label), "started": float, "scope": the request's ASGI
+# scope (routing fills in the route template, which is read when the record is made), "method": a standard method or a fixed label}
 _INFLIGHT: dict[int, dict[str, Any]] = {}
 _EVENTS: deque[dict[str, Any]] = deque(maxlen=_EVENTS_CAP)
 

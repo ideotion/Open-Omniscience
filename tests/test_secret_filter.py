@@ -795,7 +795,7 @@ def test_a_module_loggers_warning_before_the_error_journal_installs_is_written_w
 def test_a_process_that_holds_the_key_from_the_environment_guards_its_log_handlers_when_the_store_module_is_imported(tmp_path):
     """MUTATION TARGET: ``connect``'s import-time guard. Nothing but the import of the store module runs before the record."""
     out = _child(
-        "import logging, os\nfrom src.database import connect\nkey = os.environ['OO_DB_PASSPHRASE']\n"
+        "import logging, os\nfrom src.database import connect\nfrom src.monitoring.secret_scrub import env_secret\nkey = env_secret('OO_DB_PASSPHRASE')\n"
         "logging.getLogger('database.session').warning('the store refused %s', key)\n",
         tmp_path,
     )

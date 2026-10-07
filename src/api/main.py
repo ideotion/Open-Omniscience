@@ -1047,9 +1047,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     handler has answered, and a passphrase that is typed into the request being served (the unlock screen's) is not held yet,
     so this handler does not know it: the routes that take one convert what escapes them (``secret_scrub.scrub_and_reraise``)."""
     try:
-        from src.monitoring.request_label import safe_method, safe_route
+        from src.monitoring.request_label import request_phrase
 
-        what = scrubbed(f"unhandled error on {safe_method(request.method)} {safe_route(request.scope)}")
+        what = scrubbed(f"unhandled error on {request_phrase(request.method, request.scope)}")
         log_failure(logger, what, exc)
         note = unicode_note(exc)  # a UnicodeError names a character and its offset: the class and a fixed note instead
         detail = (

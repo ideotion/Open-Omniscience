@@ -282,7 +282,12 @@ def _restart_process() -> None:
     argv = list(getattr(sys, "orig_argv", [sys.executable, *sys.argv]))
     sys.stdout.flush()
     sys.stderr.flush()
-    os.execv(sys.executable, [sys.executable, *argv[1:]])
+    # The passphrases this process was started with left its environment at start (``take_from_environment``), and the process
+    # that replaces it needs them to open the corpus as this one did: exactly those, handed to the program that IS this one and
+    # to no other. (A key typed into the unlock page is not among them: it is in memory, and a restart asks for it again.)
+    from src.monitoring.secret_scrub import taken_environment
+
+    os.execve(sys.executable, [sys.executable, *argv[1:]], {**os.environ, **taken_environment()})
 
 
 def _locale_map(accept: str) -> tuple[str, dict[str, str]]:

@@ -26,17 +26,15 @@ caller that wrote ``without(text) or text`` would fail OPEN.
 
 from __future__ import annotations
 
-import os
-
 
 def _without_the_passphrase(text: str) -> str | None:
     """``text`` with the passphrase this process holds, and the one in its environment, taken out;
     ``None`` when that could not be done (the caller then withholds the text)."""
     try:
         from src.database.connect import get_passphrase
-        from src.monitoring.secret_scrub import scrub_text
+        from src.monitoring.secret_scrub import env_secret, scrub_text
 
-        for needle in dict.fromkeys(filter(None, (get_passphrase(), os.environ.get("OO_DB_PASSPHRASE")))):
+        for needle in dict.fromkeys(filter(None, (get_passphrase(), env_secret("OO_DB_PASSPHRASE")))):
             text = scrub_text(text, needle)
     except Exception:  # noqa: BLE001 - failing CLOSED: the caller withholds what it could not scrub
         return None

@@ -782,7 +782,7 @@ def test_the_encrypt_tools_attach_key_is_given_to_the_engine_only_after_the_proc
 
 def test_the_restore_child_engages_the_guard_before_it_reads_the_passphrase():
     main = python_function_source(_source("src/monitoring/release_run_fresh_restore.py"), "main")
-    assert main.index("engage()") < main.index('os.environ.get("OO_DB_PASSPHRASE")')
+    assert main.index("engage()") < main.index('env_secret("OO_DB_PASSPHRASE")')
 
 
 def test_the_osm_reference_run_requires_the_inherited_limit_before_the_run_reads_the_passphrase():

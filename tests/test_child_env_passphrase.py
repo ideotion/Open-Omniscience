@@ -59,7 +59,7 @@ def test_the_names_are_the_ones_the_store_and_the_signing_keys_read():
     source = (ROOT / "src" / "database" / "connect.py").read_text(encoding="utf-8")
     assert f'os.environ.get("{model_store.PASSPHRASE_ENV}")' in source, "the store no longer reads the variable by this name"
     signing = (ROOT / "src" / "custody" / "signing.py").read_text(encoding="utf-8")
-    assert 'os.getenv("OO_KEY_PASSPHRASE")' in signing, "the signing keys no longer read the variable by this name"
+    assert 'env_secret("OO_KEY_PASSPHRASE")' in signing, "the signing keys no longer read the variable by this name"
 
 
 def test_child_env_drops_the_passphrase_and_nothing_else_and_leaves_the_servers_environment_as_it_is(engine_env):
@@ -241,7 +241,7 @@ _INHERITS = {
     "monitoring/kernel_log.py": "`journalctl`, `dmesg` and `systemctl`, which `exit_evidence` reaches through the same helper: fixed local reads, each under a hard timeout, whose output the app reads",
     "monitoring/llm_throughput.py": "`nvidia-smi`: a fixed local read of the GPU's use, for under five seconds, whose output the app reads",
     "monitoring/windows_locks.py": "one read-only PowerShell cmdlet, bounded by a timeout, whose output the app reads",
-    "safety/data_volume.py": "`os.execv` of this same program: it IS the app, which holds the passphrase by design and engages the core guard again at its start",
+    "safety/data_volume.py": "`os.execve` of this same program (a restart onto another data drive): it IS the app, so it is handed the passphrases the app took out of its environment at start (`taken_environment`), and no other process is; it engages the core guard again at its start",
     "safety/uninstall.py": "`xdg-user-dir DESKTOP`: a fixed local read, for under three seconds (the detached watcher beside it is given `child_env()`)",
 }
 

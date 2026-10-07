@@ -196,6 +196,8 @@ def _held() -> dict[str, Any]:
         out["win_abort_reportfault"] = None if abort is None else bool(abort & _CALL_REPORTFAULT)
         if out["win_nogpfault"] is True and out["win_abort_reportfault"] is False:
             out["mechanism"] = "error-mode"
+            # A child inherits the process error mode (``CreateProcess``) and NOT the C runtime's abort flag, which is a variable
+            # of this process's own runtime: a Python child clears it itself when it engages the guard at its start.
             out["inherited_by_children"] = True
     return out
 

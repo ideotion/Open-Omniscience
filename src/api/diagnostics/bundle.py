@@ -1475,9 +1475,9 @@ def _without_the_passphrase(text: str) -> str | None:
     install with no passphrase has nothing to scrub."""
     try:
         from src.database.connect import get_passphrase
-        from src.monitoring.secret_scrub import scrub_text
+        from src.monitoring.secret_scrub import env_secret, scrub_text
 
-        secrets = dict.fromkeys(filter(None, (get_passphrase(), os.environ.get("OO_DB_PASSPHRASE"))))
+        secrets = dict.fromkeys(filter(None, (get_passphrase(), env_secret("OO_DB_PASSPHRASE"))))
         needles = sorted({form for secret in secrets for form in _passphrase_forms(secret)}, key=lambda f: (-len(f), f))
         for needle in needles:
             text = scrub_text(text, needle)

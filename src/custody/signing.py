@@ -47,7 +47,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from src.monitoring.secret_scrub import passphrase_bytes
+from src.monitoring.secret_scrub import env_secret, passphrase_bytes
 
 # --------------------------------------------------------------------------- #
 # Post-quantum backend (optional, import-guarded)
@@ -161,7 +161,7 @@ def _passphrase() -> bytes | None:
     # A passphrase that cannot be written as UTF-8 (an environment variable of
     # bytes that are not UTF-8 reads as a lone surrogate) is refused with fixed
     # words: Python's own error names the character and its place.
-    p = os.getenv("OO_KEY_PASSPHRASE")
+    p = env_secret("OO_KEY_PASSPHRASE")
     if not p:
         from src.database.connect import get_passphrase
 

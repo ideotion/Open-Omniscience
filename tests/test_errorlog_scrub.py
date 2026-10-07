@@ -125,9 +125,9 @@ def test_a_record_written_through_log_failure_keeps_the_frames_in_the_tail_and_t
     try:
         where_it_failed()
     except ValueError as exc:
-        ss.log_failure(journal, "unhandled error on GET /api/x", exc, HELD)
+        ss.log_failure(journal, "unhandled error on route GET /api/x", exc, HELD)
     (entry,) = errorlog.recent_errors()
-    assert entry["message"].startswith("unhandled error on GET /api/x: ValueError: the key ***redacted*** did not open")
+    assert entry["message"].startswith("unhandled error on route GET /api/x: ValueError: the key ***redacted*** did not open")
     tail = entry["traceback_tail"]
     assert "in where_it_failed" in tail, "the frame of the failure is in the tail"
     assert "ValueError: the key ***redacted*** did not open the header" in tail
@@ -189,7 +189,7 @@ def test_a_browser_error_has_the_passphrases_out_of_every_field_and_the_cut_come
     (entry,) = errorlog.recent_errors()
     assert entry["logger"] == "frontend" and entry["kind"] == "error"
     assert len(entry["message"]) == 500 and HELD[:5] not in entry["message"] and entry["message"].endswith("***re")
-    assert entry["source"] == "app.js?k=***redacted***" and entry["endpoint"] == "/api/unlock/***redacted***"
+    assert entry["source"] == "app.js" and entry["endpoint"] == "/api/unlock/***redacted***"
     assert entry["ui_lang"] == "***redacted***"
     raw = json.dumps(entry, ensure_ascii=False)
     for secret in (HELD, ENV):

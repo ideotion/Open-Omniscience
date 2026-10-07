@@ -151,6 +151,14 @@ def _guard_the_key() -> None:
 _passphrase: str | None = os.environ.get("OO_DB_PASSPHRASE") or None
 if _passphrase:
     _guard_the_key()
+# The passphrases this process was started with leave its environment now, before anything starts a child: a process started by
+# ``exec`` with the parent's environment (the standard library's resource tracker, the forkserver) holds a copy no code of ours
+# has run in to guard. The app reads them from the scrub module from here on (``env_secret``), and a child that must have one is
+# handed it by name.
+with contextlib.suppress(Exception):
+    from src.monitoring.secret_scrub import take_from_environment
+
+    take_from_environment()
 
 
 class DatabaseLockedError(RuntimeError):
@@ -428,7 +436,10 @@ def _connect(
             conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
             conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
         except BaseException:
-            conn.close()  # an engine that refuses the key or a page setting must not leave its connection open
+            # An engine that refuses the key or a page setting must not leave its connection open; a close that fails too
+            # must not replace the error being raised.
+            with contextlib.suppress(Exception):
+                conn.close()
             raise
         return conn
     if create_encrypted is False or (create_encrypted is None and plaintext_mode()):
@@ -448,7 +459,10 @@ def _connect(
             conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
             conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
         except BaseException:
-            conn.close()  # an engine that refuses the key or a page setting must not leave its connection open
+            # An engine that refuses the key or a page setting must not leave its connection open; a close that fails too
+            # must not replace the error being raised.
+            with contextlib.suppress(Exception):
+                conn.close()
             raise
         return conn
     raise DatabaseLockedError(

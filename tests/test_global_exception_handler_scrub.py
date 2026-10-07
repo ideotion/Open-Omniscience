@@ -85,11 +85,11 @@ def test_the_response_and_the_log_have_every_passphrase_out_in_every_shape_and_k
     )
     assert json.loads(resp.body) == {"detail": expected}
 
-    records = [r for r in caplog.records if r.name == "api" and r.getMessage().startswith("unhandled error on GET /api/whatever/{id}")]
+    records = [r for r in caplog.records if r.name == "api" and r.getMessage().startswith("unhandled error on route GET /api/whatever/{id}")]
     assert len(records) == 1 and records[0].levelno == logging.ERROR
     record = records[0]
     assert record.getMessage().startswith(
-        "unhandled error on GET /api/whatever/{id}: RuntimeError: near PRAGMA key = '***redacted***': syntax error"
+        "unhandled error on route GET /api/whatever/{id}: RuntimeError: near PRAGMA key = '***redacted***': syntax error"
     )
     assert record.exc_info is None, "a record carrying exc_info prints the exception as it was raised"
     tail = getattr(record, ss.TRACEBACK_ATTRIBUTE)
@@ -105,7 +105,7 @@ def test_an_exception_that_holds_no_passphrase_is_written_as_it_always_was(both_
     caplog.set_level(logging.DEBUG, logger="api")
     resp = _call(ValueError("kaboom"))
     assert json.loads(resp.body) == {"detail": "internal error: kaboom"}
-    assert "unhandled error on GET /api/whatever/{id}: ValueError: kaboom" in caplog.text
+    assert "unhandled error on route GET /api/whatever/{id}: ValueError: kaboom" in caplog.text
     assert "the-raw-value" not in caplog.text
 
 

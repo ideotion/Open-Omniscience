@@ -155,10 +155,41 @@ CARRIER_DEPTH = 3
 HELD_ENV_VARS: tuple[str, ...] = ("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
 
 
+#: What :func:`take_from_environment` took out of ``os.environ``: name -> value. The process keeps the passphrases it was started
+#: with in ONE place that is not its environment, because the environment is what every process it starts is given (the standard
+#: library's resource tracker and its forkserver are started by ``exec`` with the parent's environment, and no code of ours runs
+#: in them before they hold it).
+_TAKEN: dict[str, str] = {}
+
+
+def take_from_environment(names: tuple[str, ...] = HELD_ENV_VARS) -> None:
+    """Move the passphrases the process was started with out of ``os.environ`` into this module (called by
+    ``src/database/connect.py`` once it has read ``OO_DB_PASSPHRASE``, so every child started afterwards, however it is started,
+    begins without one). :func:`env_secret` is how the app reads them from then on; :func:`taken_environment` is what a child
+    that must have them is handed by name. Never raises."""
+    for name in names:
+        with contextlib.suppress(Exception):
+            value = os.environ.pop(name, None)
+            if value:
+                _TAKEN[name] = value
+
+
+def env_secret(name: str) -> str | None:
+    """The value of the passphrase variable ``name``: the environment's when it holds one now (a test, or an operator's code that
+    set it after start), else the one :func:`take_from_environment` took. ``None`` when neither holds one."""
+    return os.environ.get(name) or _TAKEN.get(name) or None
+
+
+def taken_environment() -> dict[str, str]:
+    """The passphrases :func:`take_from_environment` took, as the variables to hand a process that is this program again
+    (``os.execve`` of the app itself on a data-drive restart); a process that is not must not be handed them."""
+    return dict(_TAKEN)
+
+
 def held_passphrases() -> tuple[str, ...] | None:
     """Every passphrase this process holds right now, for a scrub made where a text is written (a log record, the error
     journal, a job's error line, a response): the one the unlocked session keeps (``src.database.connect._passphrase``), the
-    one the environment hands the app (``OO_DB_PASSPHRASE``, which stays in the environment after a lock) and the one that wraps
+    one the environment handed the app (``OO_DB_PASSPHRASE``: taken out of the environment at start, :func:`take_from_environment`, and kept after a lock) and the one that wraps
     the signing keys (``OO_KEY_PASSPHRASE``, ``src/custody/signing.py``: a passphrase the process holds like the others). Read
     when asked and never kept: the shapes the scrub made of them (:func:`_held_forms`) stay in ONE cache entry, which clearing the
     session's passphrase empties (a failed unlock or create, the crypto-erase: :func:`forget_held`, called by
@@ -175,7 +206,7 @@ def held_passphrases() -> tuple[str, ...] | None:
     try:
         store = sys.modules.get("src.database.connect")
         session = None if store is None else vars(store).get("_passphrase")
-        found = tuple(dict.fromkeys(p for p in (session, *(os.environ.get(name) for name in HELD_ENV_VARS)) if p))
+        found = tuple(dict.fromkeys(p for p in (session, *(env_secret(name) for name in HELD_ENV_VARS)) if p))
         return found if all(isinstance(p, str) for p in found) else None
     except Exception:  # noqa: BLE001 - what is held could not be read: the callers withhold
         return None

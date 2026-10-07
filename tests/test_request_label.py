@@ -78,7 +78,7 @@ def test_a_method_the_client_made_up_is_never_written(client):
     assert "ZQTYPED" not in _journal(tmp_path) and "ZQTYPED" not in _metrics_labels()
 
 
-def test_the_unhandled_error_line_and_the_rate_limit_line_name_the_route_and_not_the_path(client, caplog, monkeypatch):
+def test_the_unhandled_error_line_and_its_500_label_name_the_route_and_not_the_path(client, caplog):
     c, _ = client
     from src.api import main
 
@@ -86,11 +86,18 @@ def test_the_unhandled_error_line_and_the_rate_limit_line_name_the_route_and_not
     async def boom(value: str):  # pragma: no cover - raises
         raise RuntimeError("boom")
 
-    with caplog.at_level(logging.DEBUG):
-        assert c.get(f"/_test_boom/{TYPED}").status_code == 500
+    added = main.app.router.routes[-1]  # the route above: taken out again below, so it outlives no test
+    try:
+        with caplog.at_level(logging.DEBUG):
+            assert c.get(f"/_test_boom/{TYPED}").status_code == 500
+    finally:
+        main.app.router.routes.remove(added)
     # (the test client's own httpx logger names the URL it asked for: that is the caller's side, not the app's)
     app_text = "\n".join(r.getMessage() for r in caplog.records if not r.name.startswith("httpx"))
-    assert TYPED not in app_text and "unhandled error on GET /_test_boom/{value}" in app_text
+    assert TYPED not in app_text and "unhandled error on route GET /_test_boom/{value}" in app_text
+    labels = _metrics_labels()
+    assert TYPED not in labels and '"endpoint": "/_test_boom/{value}"' in labels and '"http_status": "500"' in labels
+    assert all(r.path != "/_test_boom/{value}" for r in main.app.router.routes if hasattr(r, "path"))
 
 
 def test_the_in_flight_list_names_the_template_once_routing_has_set_it():
