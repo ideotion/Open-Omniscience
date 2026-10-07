@@ -211,6 +211,7 @@ def test_a_failure_that_quotes_the_key_reaches_no_log_note_or_exception(corpus, 
     shown = str(hit.value) + " " + " ".join(notes) + " " + "".join(traceback.format_exception(hit.value))
     assert _KEY not in caplog.text and _KEY not in shown
     assert "RuntimeError" in str(hit.value), "the notice names the class"
+    assert _KEY not in hit.value.served_text and hit.value.served_text == str(hit.value), "the sentence the job serves is the producer's own"
     assert hit.value.__cause__ is None and hit.value.__suppress_context__, "the driver's text is not chained"
     assert caplog.text, "the failure was logged at all"
     assert not any(r.exc_info for r in caplog.records), "a traceback was logged"

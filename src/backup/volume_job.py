@@ -488,7 +488,7 @@ class VolumeBackupManager:
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
-                self._state, self._error = "error", exception_text(exc, passphrase, typed=False)
+                self._state, self._error = "error", exception_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
@@ -907,7 +907,7 @@ class VolumeBackupManager:
                             )
                             report["file_members"] = {
                                 "placed": 0,
-                                "error": exception_text(exc, passphrase, corpus_passphrase, typed=False),
+                                "error": exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
                                 "method": (
                                     "The corpus restored; putting the large public files "
                                     "back did not. They are re-downloadable, and the "
@@ -967,7 +967,7 @@ class VolumeBackupManager:
             # actionable sentence ("another job is still writing to your corpus (...)",
             # naming the holder) was dropped on the way to the UI and the operator got
             # a bare "cancelled".
-            said = exception_text(exc, passphrase, corpus_passphrase, typed=False)
+            said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
             runlog.end("refused", detail=said[:500])
             with self._lock:
@@ -978,7 +978,7 @@ class VolumeBackupManager:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
-            said = exception_text(exc, passphrase, corpus_passphrase, typed=False)
+            said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.info("volume restore stopped by the operator: %s", said)
             runlog.end("stopped-by-operator", detail=said[:500])
             with self._lock:
@@ -1064,7 +1064,7 @@ class VolumeBackupManager:
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             log_failure(_LOG, "volume verify failed", exc, passphrase)
             with self._lock:
-                self._state, self._error = "error", exception_text(exc, passphrase, typed=False)
+                self._state, self._error = "error", exception_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:
