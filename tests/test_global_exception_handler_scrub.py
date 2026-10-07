@@ -268,3 +268,16 @@ def test_a_unicode_error_in_the_chain_is_answered_by_class_and_a_fixed_note(both
     body = response.body.decode()
     assert response.status_code == 500 and "UnicodeEncodeError" in body, body
     assert "udcff" not in body and "position" not in body and "udcff" not in caplog.text and "position" not in caplog.text
+
+
+def test_a_response_for_the_encode_error_itself_is_its_class_and_a_fixed_note(both_held, caplog):
+    """The shape that leaked: the handler's exception is the ``UnicodeError`` (its text names the character and the offset).
+    MUTATION TARGET: the response text built without the note."""
+    caplog.set_level(logging.DEBUG)
+    try:
+        ("held" + chr(0xDCFF)).encode()  # the frames print this line: no escape in the source
+    except UnicodeError as exc:
+        response = _call(exc)
+    body = response.body.decode()
+    assert response.status_code == 500 and "UnicodeEncodeError" in body, body
+    assert "udcff" not in body and "position" not in body and "udcff" not in caplog.text and "position" not in caplog.text

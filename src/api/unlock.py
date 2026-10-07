@@ -31,7 +31,12 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.monitoring.secret_scrub import log_failure, scrub_and_reraise, scrubbed
+from src.monitoring.secret_scrub import (
+    UNREADABLE_TEXT,
+    exception_text,
+    log_failure,
+    scrub_and_reraise,
+)
 
 # Re-exported so the first-launch page and the module that creates the folder cannot
 # disagree about the subfolder's name (the maintainer named it; see data_location.py).
@@ -241,7 +246,7 @@ def encrypt_db(body: EncryptBody) -> dict:
         try:
             reports = encrypt_all(body.passphrase)
         except EncryptToolError as exc:
-            raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
         set_passphrase(body.passphrase)
         dispose_engine()  # next connection opens through the keyed factory
     _LOG.info("store encrypted in place")
@@ -583,7 +588,7 @@ def _close_after_checkpoint(conn, passphrase: str | None = None) -> None:
         # the notice ends -- and the next thing the person meets is init_db on the same drive.
         # The driver's own message only (no SQL runs here, so it carries no statement), with the typed key out of
         # it BEFORE the first line is taken and cut: a driver's error can still quote what it was handed.
-        said = scrubbed(str(exc), passphrase, withheld="its text is withheld")
+        said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")
         _LOG.warning(
             "the recovered log could not be written back into the database before the verify "
             "connection closed (%s: %s); close() will try again",
@@ -697,7 +702,9 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     except WrongPassphraseError as exc:
         raise HTTPException(
             status_code=403,
-            detail=scrubbed(str(exc), passphrase, withheld="the passphrase does not open this file (or the file is damaged)"),
+            detail=exception_text(
+                exc, passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
+            ),
         ) from exc
     conn.close()
 
@@ -731,8 +738,8 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             # the scrub's "text withheld" notice: a mistyped short key is the lock screen's commonest answer.
             raise HTTPException(
                 status_code=403,
-                detail=scrubbed(
-                    str(exc), body.passphrase, withheld="the passphrase does not open this file (or the file is damaged)"
+                detail=exception_text(
+                    exc, body.passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
                 ),
             ) from exc
         finally:

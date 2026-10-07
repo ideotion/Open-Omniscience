@@ -789,6 +789,7 @@ def test_a_unicode_error_inside_an_exception_group_is_withheld_too(caplog, monke
     from src.monitoring import secret_scrub as ss
 
     group = _group_with_encode_error()
+    assert ss.unicode_note(group) is not None, "the note the handlers write reaches a group's member too"
     with caplog.at_level(logging.DEBUG):
         ss.log_failure(logging.getLogger("t"), "failed", group)
     logged = [f"{r.getMessage()}{getattr(r, ss.TRACEBACK_ATTRIBUTE, '')}" for r in caplog.records]
@@ -820,6 +821,7 @@ def test_the_walk_ignores_suppress_context_and_follows_an_implicit_context():
     except ValueError as exc:
         assert ss.unicode_error_in(exc) is not None
         assert "UnicodeEncodeError" in ss.exception_text(exc)
+        assert ss.unicode_note(exc) is not None, "the note reaches a context that was suppressed too"
     try:
         try:
             "held\udcffkey".encode()
@@ -827,6 +829,7 @@ def test_the_walk_ignores_suppress_context_and_follows_an_implicit_context():
             raise ValueError("implicit")  # noqa: B904 - the implicit context is the case
     except ValueError as exc:
         assert ss.unicode_error_in(exc) is not None
+        assert ss.unicode_note(exc) is not None, "the note reaches an implicit context as well"
 
 
 def test_defang_empties_the_error_in_place_one_field_at_a_time():

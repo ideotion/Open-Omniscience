@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import scrubbed
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text
 
 from ._base import router
 from .p0 import _p0_scrub
@@ -85,7 +85,7 @@ def release_run_start(body: ReleaseRunBody) -> JSONResponse:
     try:
         validate_dest_dir(body.dest_dir)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
     try:
         job = _RELEASE_RUN_JOB.start(**body.model_dump())
         return JSONResponse({"started": True, "job": _p0_scrub(job)})
@@ -177,7 +177,7 @@ def release_run_resume(body: ResumeBody | None = None) -> JSONResponse:
     try:
         plan = resume_preflight(passphrase)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=scrubbed(str(exc), passphrase)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
     try:
         job = _RELEASE_RUN_JOB.start(resume=True, passphrase=passphrase)
         return JSONResponse({"started": True, "resume": _p0_scrub(plan), "job": _p0_scrub(job)})

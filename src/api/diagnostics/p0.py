@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import scrubbed
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text
 
 from ._base import router
 
@@ -80,7 +80,7 @@ def p0_validation_start(body: P0ValidationBody) -> JSONResponse:
     try:
         validate_dest_dir(body.dest_dir)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
     try:
         job = _P0_VALIDATION_JOB.start(
             dest_dir=body.dest_dir,

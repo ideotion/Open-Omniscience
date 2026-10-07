@@ -532,15 +532,23 @@ def _defang(exc: BaseException | None) -> None:
             cur.reason = "withheld"  # type: ignore[attr-defined]
 
 
-def exception_text(exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = True) -> str:
+def exception_text(
+    exc: BaseException,
+    *secrets: str | None,
+    limit: int | None = None,
+    typed: bool = True,
+    withheld: str | None = None,
+) -> str:
     """What a handler writes for a caught exception: ``Name: its words`` (``typed=False``: the words alone, where the class is
     named elsewhere in the record) with every secret handed in AND every passphrase the process holds taken out of it
     (:func:`scrubbed`), and THEN cut to ``limit`` characters when one is given (a cut text can split a secret; the cut comes
     after). A text that cannot be checked, or whose ``str()`` raises, is the class and none of its words (``Name: its text is
-    withheld``). It never raises. THE ONE CALL every handler of the release run, the P0 check and the restore child writes a
+    withheld``, or ``withheld`` when the caller gives its own words for it: the words of a text the scrub cannot make clean, never of
+    a ``UnicodeError``, whose note is fixed). It never raises. THE ONE CALL every handler of the release run, the P0 check and the restore child writes a
     caught exception through, so that no handler is a place that makes the text by hand; ``tests/test_p0_validation.py`` reads
     those modules for any handler that does."""
-    withheld = _class_only(exc)
+    if withheld is None:
+        withheld = _class_only(exc)
     try:
         fixed = _unicode_withheld(exc)
         if fixed is not None:

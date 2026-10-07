@@ -235,3 +235,17 @@ def test_a_crash_with_a_unicode_error_in_its_chain_is_published_by_class_and_a_f
     assert st["state"] == "error"
     assert "UnicodeEncodeError" in st["error"] and "udcff" not in st["error"] and "position" not in st["error"], st["error"]
     assert "udcff" not in caplog.text and "position" not in caplog.text, caplog.text
+
+
+def test_a_crash_that_is_the_encode_error_itself_is_published_by_class_and_a_fixed_note(both_held, caplog):
+    """The shape that leaked: the worker's own exception is the ``UnicodeError`` (its text names the character and the offset),
+    not the cause of another. MUTATION TARGET: the published text going through ``exception_text``."""
+    caplog.set_level(logging.DEBUG, logger="jobs.background")
+
+    def boom(ctx):
+        ("held" + chr(0xDCFF)).encode()  # the frames print this line: no escape in the source
+
+    st = _run(boom)
+    assert st["state"] == "error"
+    assert st["error"].startswith("UnicodeEncodeError: ") and "udcff" not in st["error"] and "position" not in st["error"], st["error"]
+    assert "udcff" not in caplog.text and "position" not in caplog.text, caplog.text
