@@ -84,6 +84,7 @@ import os
 import shutil
 import sys
 import traceback
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal, TypeGuard
 
@@ -448,39 +449,78 @@ def _class_only(exc: BaseException) -> str:
 UNICODE_WITHHELD = "a character the text codec cannot handle (its text is withheld: it names the character and its offset)"
 
 
-def unicode_error_in(exc: BaseException | None) -> UnicodeError | None:
-    """The first ``UnicodeError`` among ``exc``, its causes and its contexts, or ``None``. Its text names a character and
-    its offset, which is a piece of a key that no scrub knows (one character matches no held shape), so a record of any
-    exception that has one in its chain carries the class and a fixed note, never the text."""
+def _reachable(exc: BaseException | None) -> Iterator[BaseException]:
+    """``exc`` and every exception a traceback print can reach from it: its cause, its context (the walk ignores
+    ``__suppress_context__``, which only stops the print and not a reader of the attribute: fail closed) and the members of an
+    exception group (``traceback.format_exception`` prints each of them)."""
+    work: list[BaseException] = [] if exc is None else [exc]
     seen: set[int] = set()
-    while exc is not None and id(exc) not in seen:
-        if isinstance(exc, UnicodeError):
-            return exc
-        seen.add(id(exc))
-        exc = exc.__cause__ or exc.__context__
+    while work:
+        cur = work.pop()
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        yield cur
+        for nxt in (cur.__cause__, cur.__context__):
+            if nxt is not None:
+                work.append(nxt)
+        if isinstance(cur, BaseExceptionGroup):
+            work.extend(cur.exceptions)
+
+
+def unicode_error_in(exc: BaseException | None) -> UnicodeError | None:
+    """The first ``UnicodeError`` among ``exc``, its causes, its contexts and the members of an exception group, or ``None``. Its
+    text names a character and its offset, which is a piece of a key that no scrub knows (one character matches no held
+    shape), so a record of any exception that has one in its chain or group carries the class and a fixed note, never the text."""
+    for cur in _reachable(exc):
+        if isinstance(cur, UnicodeError):
+            return cur
     return None
 
 
 def _unicode_withheld(exc: BaseException) -> str | None:
-    """The fixed record of an exception whose chain holds a ``UnicodeError`` (``None`` when it holds none)."""
+    """The fixed record of an exception whose chain or group holds a ``UnicodeError`` (``None`` when it holds none)."""
     bad = unicode_error_in(exc)
     return None if bad is None else f"{type(bad).__name__}: {UNICODE_WITHHELD}"
 
 
+def _withheld_traceback(exc: BaseException, note: str) -> str:
+    """The fixed ``note`` and the frames of ``exc``'s traceback (the file, the line and the code of each: no message), so that a
+    record that withholds the text still says where the error happened."""
+    try:
+        frames = "".join(traceback.format_tb(exc.__traceback__))
+    except Exception:  # noqa: BLE001 - frames that cannot be made are not kept
+        frames = ""
+    return f"{note}\n{frames}" if frames else note
+
+
+def unicode_withheld_traceback(exc: BaseException | None) -> str | None:
+    """What a record keeps instead of the traceback of ``exc`` when a ``UnicodeError`` is reachable from it (the class, the fixed
+    note and the frames), else ``None``. Never raises."""
+    try:
+        if exc is None:
+            return None
+        fixed = _unicode_withheld(exc)
+        return None if fixed is None else _withheld_traceback(exc, fixed)
+    except Exception:  # noqa: BLE001 - an exception that cannot be read is withheld whole
+        return None if exc is None else _class_only(exc)
+
+
 def _defang(exc: BaseException | None) -> None:
-    """Take the character and the offset out of every ``UnicodeError`` in ``exc``'s chain, in place, so that a consumer that
+    """Take the character and the offset out of every ``UnicodeError`` reachable from ``exc``, in place, so that a consumer that
     reads ``__context__`` (the interpreter sets it when a handler raises another error) finds the fixed words and no piece
-    of a key. Best effort: an error whose fields cannot be set keeps them, and the records never read them."""
-    seen: set[int] = set()
-    while exc is not None and id(exc) not in seen:
-        seen.add(id(exc))
-        if isinstance(exc, UnicodeError):
-            with contextlib.suppress(Exception):
-                exc.args = (UNICODE_WITHHELD,)
-                exc.object = b"" if isinstance(getattr(exc, "object", None), bytes) else ""  # type: ignore[attr-defined]
-                exc.start = exc.end = 0  # type: ignore[attr-defined]
-                exc.reason = "withheld"  # type: ignore[attr-defined]
-        exc = exc.__cause__ or exc.__context__
+    of a key. Best effort, one field at a time: an error whose fields cannot be set keeps them, and the records never read them."""
+    for cur in _reachable(exc):
+        if not isinstance(cur, UnicodeError):
+            continue
+        with contextlib.suppress(Exception):
+            cur.args = (UNICODE_WITHHELD,)
+        with contextlib.suppress(Exception):
+            cur.object = b"" if isinstance(getattr(cur, "object", None), bytes) else ""  # type: ignore[attr-defined]
+        with contextlib.suppress(Exception):
+            cur.start = cur.end = 0  # type: ignore[attr-defined]
+        with contextlib.suppress(Exception):
+            cur.reason = "withheld"  # type: ignore[attr-defined]
 
 
 def exception_text(exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = True) -> str:
@@ -491,11 +531,11 @@ def exception_text(exc: BaseException, *secrets: str | None, limit: int | None =
     withheld``). It never raises. THE ONE CALL every handler of the release run, the P0 check and the restore child writes a
     caught exception through, so that no handler is a place that makes the text by hand; ``tests/test_p0_validation.py`` reads
     those modules for any handler that does."""
-    fixed = _unicode_withheld(exc)
-    if fixed is not None:
-        return fixed if limit is None else fixed[:limit]
     withheld = _class_only(exc)
     try:
+        fixed = _unicode_withheld(exc)
+        if fixed is not None:
+            return fixed if limit is None else fixed[:limit]
         text = f"{type(exc).__name__}: {exc}" if typed else f"{exc}"
     except Exception:  # noqa: BLE001 - a ``str()`` that raises: the class is all there is to write
         return withheld if limit is None else withheld[:limit]
@@ -509,10 +549,10 @@ def traceback_text(exc: BaseException, *secrets: str | None) -> str:
     message that names the secret. Scrubbed as ONE text, so a secret that an exception's message and its cause's message split
     between them is still found (it is in the text as written), and any cut the caller makes (``[-8000:]``) comes after. When
     the scrub cannot run it is the exception's class and none of its words."""
-    fixed = _unicode_withheld(exc)
-    if fixed is not None:
-        return fixed
     try:
+        fixed = _unicode_withheld(exc)
+        if fixed is not None:
+            return _withheld_traceback(exc, fixed)
         text = "".join(traceback.format_exception(exc))
     except Exception:  # noqa: BLE001 - a traceback that cannot be made is not kept
         return _class_only(exc)
@@ -535,17 +575,17 @@ def log_failure(
     the exception. When the scrub cannot run the record carries the exception's class and none of its words."""
     head: str | None
     tb: str | None
-    fixed = _unicode_withheld(exc)
-    if fixed is not None:
-        head = tb = fixed
-    else:
-        try:
+    try:
+        fixed = _unicode_withheld(exc)
+        if fixed is not None:
+            head, tb = fixed, _withheld_traceback(exc, fixed)
+        else:
             head = _checked("".join(traceback.format_exception_only(exc)).strip(), secrets)
             tb = _checked("".join(traceback.format_exception(exc)), secrets)
-        except Exception:  # noqa: BLE001 - the text could not be made: the class says what failed
-            head = tb = None
-        if head is None or tb is None:
-            head = tb = _class_only(exc)
+    except Exception:  # noqa: BLE001 - the text could not be made: the class says what failed
+        head = tb = None
+    if head is None or tb is None:
+        head = tb = _class_only(exc)
     log.log(level, "%s: %s\n%s", what, head[:300], tb, extra={TRACEBACK_ATTRIBUTE: tb})
 
 
@@ -593,7 +633,10 @@ class scrub_and_reraise:  # noqa: N801 - read as a statement: ``with scrub_and_r
             return False
         with contextlib.suppress(Exception):  # a log that cannot be written must not replace the conversion
             log_failure(self._log, self._what, exc, *self._secrets)
-        fixed = _unicode_withheld(exc)
+        try:
+            fixed = _unicode_withheld(exc)
+        except Exception:  # noqa: BLE001 - an exception that cannot be read is withheld whole
+            fixed = _class_only(exc)
         if fixed is not None:
             # A UnicodeError's text names a character and its offset, a piece of a key that no held shape matches: the
             # class and a fixed note are all that is kept, and the error itself (which the interpreter sets as the new

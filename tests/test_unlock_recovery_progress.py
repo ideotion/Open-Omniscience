@@ -866,6 +866,8 @@ def test_a_held_key_with_a_lone_surrogate_leaves_the_compare_as_a_class_and_a_fi
     # and not the offset (the key's lone surrogate is at 4).
     context = str(err.value.__context__)
     assert "udcff" not in context and "surrogate" not in context and "position 4" not in context, context
+    # In place, field by field: the repr and the object hold no piece of the key either (MUTATION TARGET: _defang).
+    assert "long-enough" not in repr(err.value.__context__) and err.value.__context__.object == "", repr(err.value.__context__)
     assert "UnicodeEncodeError" in str(err.value), err.value
     assert err.value.__cause__ is None and err.value.__suppress_context__
 
@@ -889,7 +891,7 @@ def test_the_unlock_compare_is_inside_the_scrubbing_block(held_key, monkeypatch)
     assert typed not in str(err.value) and "ValueError" in str(err.value), err.value
 
 
-def test_the_held_key_question_with_a_wrong_short_key_is_answered_in_the_fixed_403_words(tmp_path):
+def test_the_held_key_question_with_a_wrong_short_key_is_answered_in_the_fixed_403_words(tmp_path, monkeypatch):
     """``_file_opens_with`` passes the same withheld words as ``_unlock_locked``: a key under the scrub's floor gets the fixed
     sentence, not the long withheld notice."""
     from fastapi import HTTPException
@@ -902,12 +904,29 @@ def test_the_held_key_question_with_a_wrong_short_key_is_answered_in_the_fixed_4
 
     import src.database.connect as connect_mod
 
-    original = connect_mod.connect
-    connect_mod.connect = refuses
-    try:
-        with pytest.raises(HTTPException) as err:
-            unlock_mod._file_opens_with(tmp_path / "x.db", "ab")
-    finally:
-        connect_mod.connect = original
+    monkeypatch.setattr(connect_mod, "connect", refuses)
+    with pytest.raises(HTTPException) as err:
+        unlock_mod._file_opens_with(tmp_path / "x.db", "ab")
     assert err.value.status_code == 403
     assert err.value.detail == "the passphrase does not open this file (or the file is damaged)", err.value.detail
+
+
+def test_an_implicit_unicode_context_is_withheld_and_emptied_too(held_key, monkeypatch):
+    """The error raised inside an ``except UnicodeError`` has the first one as its context with no ``from``: the walk finds it
+    there, and the converted error carries neither the character nor the key."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    held_key.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+
+    def encodes_then_fails(passphrase):
+        try:
+            "typed\udcffkey-long-enough".encode()
+        except UnicodeError:
+            raise ValueError("could not encode")  # noqa: B904 - the implicit context is the case
+
+    monkeypatch.setattr(unlock_mod, "_passphrase_bytes", encodes_then_fails)
+    with pytest.raises(RuntimeError) as err:
+        unlock(PassphraseBody(passphrase="typed-key-fine"))
+    assert "UnicodeEncodeError" in str(err.value) and "udcff" not in str(err.value) and "position" not in str(err.value)

@@ -727,7 +727,7 @@ def test_scrubbed_value_checks_a_leaf_that_is_not_a_string_as_the_text_it_is_wri
 def _unicode_error_chain():
     try:
         try:
-            "held\udcffkey".encode("utf-8")
+            "held\udcffkey".encode()
         except UnicodeError as inner:
             raise ValueError("wrapped") from inner
     except ValueError as exc:
@@ -764,3 +764,81 @@ def test_the_error_journal_keeps_a_unicode_error_by_class_only(tmp_path, monkeyp
     errorlog._JsonlErrorHandler().emit(record)
     tail = seen[-1]["traceback_tail"]
     assert "udcff" not in tail and "position" not in tail and "UnicodeEncodeError" in tail, tail
+
+
+def _group_with_encode_error():
+    """A group whose member is NOT its context: the member is made first, then the group is raised outside any ``except``."""
+    try:
+        "held\udcffkey".encode()
+    except UnicodeError as caught:
+        inner = caught
+    try:
+        raise ExceptionGroup("g", [ValueError("other"), inner])
+    except ExceptionGroup as group:
+        assert group.__context__ is None
+        return group
+
+
+def test_a_unicode_error_inside_an_exception_group_is_withheld_too(caplog):
+    """``traceback.format_exception`` prints every member of an exception group, so a member's UnicodeError (its character and
+    offset) must be found there as in a chain, by every writer and the error journal; the frames stay, so the record still says
+    where it happened. MUTATION TARGET: the walk that does not read ``exceptions``."""
+    import logging
+
+    from src.monitoring import errorlog
+    from src.monitoring import secret_scrub as ss
+
+    group = _group_with_encode_error()
+    outputs = [ss.exception_text(group), ss.traceback_text(group)]
+    with caplog.at_level(logging.DEBUG):
+        ss.log_failure(logging.getLogger("t"), "failed", group)
+    outputs += [f"{r.getMessage()}{getattr(r, ss.TRACEBACK_ATTRIBUTE, '')}" for r in caplog.records]
+    seen: list[dict] = []
+    original = errorlog._append
+    errorlog._append = seen.append
+    try:
+        record = logging.LogRecord("t", logging.ERROR, __file__, 1, "failed", None, (type(group), group, group.__traceback__))
+        errorlog._JsonlErrorHandler().emit(record)
+    finally:
+        errorlog._append = original
+    outputs.append(seen[-1]["traceback_tail"])
+    for shown in outputs:
+        assert "udcff" not in shown and "position" not in shown and "surrogate" not in shown, shown
+        assert "UnicodeEncodeError" in shown, shown
+    assert "test_secret_scrub_floor_and_forms.py" in outputs[1], "the frames of the traceback are kept"
+
+
+def test_the_walk_ignores_suppress_context_and_follows_an_implicit_context():
+    """``from None`` only stops the print: the attribute is still there, so the walk reads it (fail closed), and an error raised
+    inside an ``except`` has the first as its context without any ``from``."""
+    from src.monitoring import secret_scrub as ss
+
+    try:
+        try:
+            "held\udcffkey".encode()
+        except UnicodeError:
+            raise ValueError("later") from None
+    except ValueError as exc:
+        assert ss.unicode_error_in(exc) is not None
+        assert "UnicodeEncodeError" in ss.exception_text(exc)
+    try:
+        try:
+            "held\udcffkey".encode()
+        except UnicodeError:
+            raise ValueError("implicit")  # noqa: B904 - the implicit context is the case
+    except ValueError as exc:
+        assert ss.unicode_error_in(exc) is not None
+
+
+def test_defang_empties_the_error_in_place_one_field_at_a_time():
+    from src.monitoring import secret_scrub as ss
+
+    try:
+        "held\udcffkey-long-enough".encode()
+    except UnicodeError as exc:
+        err = exc
+    try:
+        raise ExceptionGroup("g", [err])
+    except ExceptionGroup as group:
+        ss._defang(group)
+    assert err.object == "" and err.start == 0 and err.end == 0 and "long-enough" not in repr(err) and "udcff" not in repr(err), repr(err)

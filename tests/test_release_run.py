@@ -2960,6 +2960,7 @@ def test_a_key_the_locale_cannot_hand_to_the_child_is_recorded_by_class_alone(fa
     rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
     phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
     assert phase["status"] == "error" and "UnicodeEncodeError" in phase["detail"], phase
+    assert "restore child" in phase["detail"], phase  # the handler's own reason, not the writers' generic note
     shown = json.dumps(rep)
     assert "\\xe9" not in shown and "u00e9" not in shown and "\\u0416" not in shown, shown
     assert "can't encode character" not in shown, shown

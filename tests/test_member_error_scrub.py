@@ -180,7 +180,7 @@ def _under_the_floor(secret: str) -> bool:
     withholds the text whole instead (src/monitoring/secret_scrub.py)."""
     from src.monitoring.secret_scrub import MIN_SECRET_CHARS
 
-    return len(secret) < MIN_SECRET_CHARS
+    return sum(1 for ch in secret if not ch.isspace()) < MIN_SECRET_CHARS  # counted the way the scrub counts
 
 
 def _assert_withheld_whole(out: str) -> None:

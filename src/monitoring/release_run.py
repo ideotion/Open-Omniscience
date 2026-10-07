@@ -1206,6 +1206,7 @@ def _fresh_install_restore(
     t0 = time.monotonic()
     kept_scrub: dict[str, list[str]] | None = None
     fresh.mkdir(parents=True, exist_ok=False)
+    spawn_refused: str | None = None
     try:
         proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
             [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
@@ -1220,9 +1221,9 @@ def _fresh_install_restore(
         # form of the key no scrub knows, so only the class is recorded.
         with contextlib.suppress(OSError):
             fresh.rmdir()
-        raise RuntimeError(
+        spawn_refused = (
             f"{type(exc).__name__}: the passphrase or a path has a character this process's locale cannot hand to the restore child"
-        ) from None
+        )
     except BaseException:
         # No child ran, so nothing wrote into the directory just made: take it away, kept install or
         # not (an empty one is nothing to look at later), rather than leave it in a destination nothing
@@ -1231,6 +1232,10 @@ def _fresh_install_restore(
         with contextlib.suppress(OSError):
             fresh.rmdir()
         raise
+    if spawn_refused is not None:
+        # Raised outside the handler, so that the error has no context: the scrubbing writers withhold any exception that has a
+        # ``UnicodeError`` in its chain, and would replace this reason with their fixed note.
+        raise RuntimeError(spawn_refused)
     try:
         said: tuple[bytes, bytes] | None = None
         while proc.poll() is None:
