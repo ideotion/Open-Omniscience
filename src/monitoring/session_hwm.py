@@ -1387,6 +1387,28 @@ def _fit_newest(items: list[Any], budget: int) -> tuple[list[Any], int]:
     return kept, len(items) - len(kept)
 
 
+def _previous_for_member() -> tuple[dict[str, Any], str | None]:
+    """The previous session's marks as the member may copy them: only when they carry the ledger's id for that session (the way the end
+    record and ``forensics._previous_peaks`` decide), and with every release-ladder record rebuilt from the allow-list. ``({}, why)`` where
+    they are not that session's: ``no identity`` or ``another session``. Never raises."""
+    try:
+        from src.monitoring.release_view import scrub_marks
+        from src.monitoring.session_history import previous_session_id
+
+        prev = previous()
+        if not prev:
+            return {}, None
+        ident, want = prev.get("session_id"), previous_session_id()
+        if not isinstance(ident, str) or not ident or not want:
+            return {}, "no identity"
+        if ident != want:
+            return {}, "another session"
+        scrubbed, failed = scrub_marks(prev)
+        return (scrubbed, None) if scrubbed is not None else ({}, f"scrub failed ({failed})")
+    except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
+        return {}, f"unreadable ({type(exc).__name__})"
+
+
 def diagnostics_member(max_bytes: int) -> dict[str, Any]:
     """The pressure TAIL as one diagnostics-bundle member (the slot contract planned for the single
     Diagnostics zip of R119: ``(max_bytes) -> dict``, never raises, keeps the newest, names the cut).
@@ -1404,7 +1426,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
     locations only."""
     try:
         budget = int(max_bytes)
-        prev = previous() or {}
+        prev, withheld = _previous_for_member()
         now = current()
         out: dict[str, Any] = {
             "method": _LIGHT_METHOD,
@@ -1421,6 +1443,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                 "dropped_oldest_to_fit": 0,
                 "started_at": prev.get("started_at"),
                 "found": bool(prev),
+                **({"withheld": withheld} if withheld else {}),
             },
         }
         fixed = len(json.dumps(out, separators=(",", ":"), default=str))

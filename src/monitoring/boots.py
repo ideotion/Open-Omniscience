@@ -29,6 +29,7 @@ _ERROR_TEXT_MAX = 160
 _BOOT_FIELDS = (
     "session_id", "at", "pid", "app_version", "build", "previous_sentinel_state", "previous_closed_by_this_boot",
     "clocks", "ledger_features", "memory_budget", "allocator", "rollup_serve_mode", "core_guard",
+    "env_take",  # names of variables and classes of failures only: a failed take must not read as a clean one
 )
 _END_FIELDS = (
     "at", "clean", "written_by", "basis", "uptime_s", "span_s", "sentinel_state", "reason", "exit", "source",

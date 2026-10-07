@@ -78,10 +78,11 @@ def allow_listed(record: Any) -> dict[str, Any] | None:
         return None
 
 
-def scrub_marks(marks: Any) -> Any:
+def scrub_marks(marks: Any) -> tuple[dict[str, Any] | None, str | None]:
     """A copy of a session's high-water marks with every release-ladder record in them (``guard.last_release`` of each heavy and light
     snapshot) rebuilt from the allow-list, and dropped where it is not a record: a reader that copies the marks of an earlier session
-    into a report must not copy an engine's text with them. Never raises."""
+    into a report must not copy an engine's text with them. ``(marks, None)``, or ``(None, <class of the failure>)`` when it could not be
+    done: the caller says the scrub failed, never that the record is absent. Never raises."""
     try:
         out = dict(marks)
         for key in ("pressure", "pressure_light"):
@@ -98,6 +99,6 @@ def scrub_marks(marks: Any) -> Any:
                     snap = {**snap, "guard": guard}
                 clean.append(snap)
             out[key] = clean
-        return out
-    except Exception:  # noqa: BLE001 - a diagnostic never fails its caller
-        return {}
+        return out, None
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never fails its caller
+        return None, type(exc).__name__

@@ -208,9 +208,10 @@ def test_before_routing_the_stamps_are_the_fixed_label(journal_file):
 def _mounted_app() -> FastAPI:
     """A small app with the app's own request monitor (``main.monitor_requests``, the middleware that feeds the latency summary and the
     metrics labels) and two mounts. NOT the shared ``src.api.main.app``: CLAUDE.md's rule (Lessons that cost a bug) forbids a test
-    reading that process-global singleton's ``.routes``, which made the additive-restore guard flaky in CI. The real app's
-    ``/metrics`` mount is skipped by the request monitor itself, and what only the real app reaches (the journal's 404 entry written by its
-    exception handlers) is pinned by ``test_request_label.py``."""
+    reading that process-global singleton's ``.routes``, which made the additive-restore guard flaky in CI. The mounts are ``/static`` and
+    ``/assets`` here for that reason alone. What only the real app reaches (its exception handlers' 404 entry in the journal, the real
+    ``/metrics`` mount) is pinned by ``test_request_label.py``; the journal assertion below holds on the small app too, because
+    ``monitor_requests`` calls ``note_http_error`` itself."""
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import PlainTextResponse
 
@@ -240,6 +241,7 @@ def test_a_request_a_mounted_app_answers_is_named_by_the_mount_and_not_by_the_pa
     labels = _metrics_labels()
     assert f'"endpoint": "{mount}"' in labels and TYPED not in labels
     assert TYPED not in _text(journal_file)
+    assert f'"path": "{mount}"' in _text(journal_file), "the journal's 404 entry names the mount (``monitor_requests`` calls ``note_http_error``)"
 
 
 def test_route_template_falls_back_to_the_mount_whose_app_is_the_endpoint():

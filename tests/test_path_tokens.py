@@ -75,10 +75,10 @@ def known_home(monkeypatch):
     return use
 
 
-@pytest.mark.parametrize("tail", ["+ice/x", "@corp/x", ".ice/x", "-ice/x", "_ice/x", "ice/x", ":x"])
+@pytest.mark.parametrize("tail", ["+ice/x", "@corp/x", ".ice/x", "-ice/x", "_ice/x", "ice/x"])
 def test_the_rest_of_another_users_name_does_not_survive_a_known_posix_home(known_home, tail):
-    """A quote and a colon END a known root on purpose (``cwd='/home/al'``, ``/home/al:12`` are how a root is followed in a text), so
-    ``/home/al'ice`` reads ``<home>'ice``; a name that goes on with any other character is another user's."""
+    """A colon ENDS a known root on purpose (``/home/al:12`` is how a root is followed in a text), and so does a quote that no word
+    character follows (``cwd='/home/al'``); a name that goes on with any other character is another user's."""
     known_home("/home/al")
     got = tokenise_paths(f"open /home/al{tail} failed")
     assert "ice" not in got and "corp" not in got, got
@@ -120,3 +120,64 @@ def test_a_directory_only_path_under_an_unknown_root_keeps_its_last_segment_and_
     from src.monitoring import path_tokens
 
     assert "keeps its last segment" in path_tokens.__doc__
+
+
+# --------------------------------------------------------------------------- #
+#  An apostrophe inside a name, and a long run of backslashes
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "text",
+    [
+        r"C:\Users\O'Brien\Documents\x.py",
+        r"\\fileserver\Users\o'brien\x.doc",
+        r"\\fs\Users\o'brien\x",
+        "/Users/O'Brien/Library/x.db",
+        "/home/o'brien/x.py",
+        "/var/home/o'brien/x.py",
+    ],
+)
+def test_an_apostrophe_inside_a_profile_name_leaves_no_part_of_it(text):
+    got = tokenise_paths(f"File {text}, line 3")
+    assert "rien" not in got and "Brien" not in got and "brien" not in got, got
+
+
+def test_an_apostrophe_inside_a_known_home_name_is_another_users_name(known_home):
+    known_home("/home/al")
+    got = tokenise_paths("open /home/al'ice/x failed")
+    assert "ice" not in got, got
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("cwd='/home/al'", "cwd='<home>'"),
+        ("cwd='C:\\Users\\Al'", "cwd='<home>'"),
+        ("['/home/al', '/x']", "['<home>', '…/x']"),
+        ("('C:\\Users\\Al', 'x')", "('<home>', 'x')"),
+        ("/home/al:12", "<home>:12"),
+    ],
+)
+def test_a_quote_or_colon_that_ends_a_path_still_ends_it(known_home, text, expected):
+    known_home("/home/al")
+    assert tokenise_paths(text) == expected
+
+
+@pytest.mark.parametrize("run", [8_000, 20_000])
+def test_a_long_run_of_backslashes_is_read_in_linear_time(run):
+    """Timing-free: the patterns bound the run (an unbounded run restarts the match at every backslash, the square of its length), so
+    the work is checked by the bound itself and the long text must come back unchanged in shape."""
+    from src.monitoring import path_tokens
+
+    assert path_tokens._UNC_LEAD == r"\\{2,8}"
+    for pattern in (path_tokens._ABS, path_tokens._PROFILE_UNC):
+        assert r"\\{2,}" not in pattern.pattern, "an unbounded run of backslashes"
+    for root in ("/home/al", "C:\\Users\\Al", "\\\\server\\share"):
+        assert path_tokens._root_pattern(root).pattern.startswith("(?<![\\w.<>~$…\\\\/])"), "a root starts at the first separator of a run"
+    for text in ("\\" * run + "x", "/" * run + "x"):
+        got = tokenise_paths(text)
+        assert isinstance(got, str) and got.endswith("x")
+
+
+def test_a_non_profile_extended_unc_path_keeps_only_its_file_name():
+    """Pins the extended-prefix branch of the generic rule (no profile directory in it)."""
+    assert tokenise_paths(r"open \\?\UNC\fileserver\share\data\file.txt now") == "open …/file.txt now"

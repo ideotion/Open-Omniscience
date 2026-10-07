@@ -57,10 +57,10 @@ def test_the_app_attaches_the_filter_to_the_access_logger_itself():
     assert len(logging.getLogger("uvicorn.access").filters) == before, "and adds none"
 
 
-def test_an_unmatched_path_and_its_query_never_reach_the_line(written):
+def test_an_unmatched_path_and_its_query_never_reach_the_line(small):
     """MUTATION TARGET: the filter taken off, or the path or the query passed through again."""
     _serve_line("GET", f"/api/{MARK}?token={MARK}&x=1")
-    line = written.getvalue()
+    line = small.getvalue()
     assert MARK not in line and "token" not in line and "?" not in line, line
     assert 'GET (no route matched) HTTP/1.1" 404' in line and "127.0.0.1:5000" in line
 
@@ -292,9 +292,10 @@ def test_another_line_of_the_servers_logger_passes_unchanged(ws_written):
     assert ws_written.getvalue().strip() == "Application startup complete."
 
 
-def test_the_nginx_samples_keep_no_access_log_and_only_critical_errors():
+def test_the_nginx_samples_keep_no_access_log_and_no_error_log():
     """MUTATION TARGET: the http-level ``access_log off;`` (a location's own ``access_log off;`` further down must not stand in for it),
-    and the ``error_log`` level (nginx writes the request line, upstream and referrer on every error-level line)."""
+    and every ``error_log`` going to /dev/null (nginx appends the request line to ANY line raised while a request is served, at every
+    level, so a level only narrows the path)."""
     from pathlib import Path
 
     for name in ("nginx.conf", "nginx.production.conf"):
@@ -306,8 +307,8 @@ def test_the_nginx_samples_keep_no_access_log_and_only_critical_errors():
         first_access = next(i for i, ln in enumerate(lines) if ln.startswith("access_log"))
         assert first_access < first_server, f"{name}: the access_log off; must be set at http level, before the first server block"
         errors = [ln for ln in lines if ln.startswith("error_log")]
-        assert errors and all(ln.rstrip(";").split()[-1] == "crit" for ln in errors), (name, errors)
-        assert "The app writes its own access line" in text and "Only a critical error is logged" in text
+        assert errors and set(errors) == {"error_log /dev/null;"}, (name, errors)
+        assert "The app writes its own access line" in text and "The proxy writes no request line at any level" in text
 
 
 # 26: the formats and ws="none", pinned to what is installed
@@ -388,3 +389,20 @@ def test_the_real_configuration_labels_the_line_in_either_import_order(order):
     assert done.returncode == 0, out
     assert "zq-typed-77" not in out, out
     assert "GET (no route matched)" in out, out
+
+
+def test_two_apps_never_share_an_entry_of_the_route_cache():
+    """MUTATION TARGET: the cache key (an entry keyed by anything but the app itself would answer one app's routes for another's)."""
+    from fastapi import FastAPI
+
+    access_log._CONTEXTS.clear()
+    one, two = FastAPI(), FastAPI()
+    one.add_api_route("/only-in-one", lambda: {}, methods=["GET"])
+    two.add_api_route("/only-in-two", lambda: {}, methods=["GET"])
+    for _ in range(2):
+        assert access_log._route_of("/only-in-one", "GET", one) == "/only-in-one"
+        assert access_log._route_of("/only-in-two", "GET", two) == "/only-in-two"
+        assert access_log._route_of("/only-in-two", "GET", one) == access_log.UNMATCHED_ROUTE
+        assert access_log._route_of("/only-in-one", "GET", two) == access_log.UNMATCHED_ROUTE
+    assert len(access_log._CONTEXTS) == 2
+    access_log._CONTEXTS.clear()

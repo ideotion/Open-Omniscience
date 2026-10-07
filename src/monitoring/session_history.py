@@ -285,14 +285,17 @@ def read_liveness() -> dict[str, Any] | None:
 
 
 def previous_session_id() -> str | None:
-    """The ledger's id of the session that came before this one (the last boot that is not the current session's), or ``None`` when
-    the ledger names none. What a reader of the previous session's marks compares the marks' own ``session_id`` with
-    (:func:`_hwm_last_seen` does the same at the end record). Never raises."""
+    """The ledger's id of the session that came before this one, by the rule ``_close_previous`` uses: the nearest boot BEFORE this
+    session's own boot record, else (this session's boot was never appended) the last boot of the ledger; ``None`` when the ledger
+    names none. A boot written LATER by another instance does not win (a second instance that fails to bind still boots: the
+    server runs its lifespan startup before it binds). What a reader of the previous session's marks compares the marks' own
+    ``session_id`` with (:func:`_hwm_last_seen` does the same at the end record). Never raises."""
     try:
-        now = (current_session() or {}).get("session_id")
-        ids = [r.get("session_id") for r in read_records() if r.get("kind") == "boot" and isinstance(r.get("session_id"), str)]
-        ids = [i for i in ids if i != now]
-        return ids[-1] if ids else None
+        now = current_session().get("session_id")
+        boots = [r.get("session_id") for r in read_records() if r.get("kind") == "boot" and isinstance(r.get("session_id"), str)]
+        if now in boots:
+            boots = boots[: boots.index(now)]
+        return boots[-1] if boots else None
     except Exception:  # noqa: BLE001 - a nicety on a record, never load-bearing
         return None
 
@@ -629,15 +632,23 @@ def _boot_core_guard() -> dict[str, Any]:
 def _boot_env_take() -> dict[str, Any]:
     """Whether the passphrases this process was started with left its environment (``secret_scrub.take_from_environment``): the
     NAMES of the variables still there (never a value) and the CLASS of any failure of the take. A take that failed leaves the value
-    in the environment every child inherits, and a record that said nothing would read as a take that worked."""
+    in the environment every child inherits, and a record that said nothing would read as a take that worked. The take runs at the
+    first import of ``src.database.connect``: where that has not happened yet the names are still there for the first import to
+    take, so the record says the store is not imported and names none (a name reported then would read as a failed take)."""
     try:
+        if "src.database.connect" not in sys.modules:
+            return {"store_imported": False, "still_in_environment": [], "take_failed": []}
         from src.monitoring import secret_scrub
 
         failed = secret_scrub.take_failed()
         connect_failed = getattr(sys.modules.get("src.database.connect"), "_TAKE_FAILED", None)
         if connect_failed:
             failed.append(str(connect_failed))
-        return {"still_in_environment": [n for n in secret_scrub.HELD_ENV_VARS if os.environ.get(n)], "take_failed": failed}
+        return {
+            "store_imported": True,
+            "still_in_environment": [n for n in secret_scrub.HELD_ENV_VARS if os.environ.get(n)],
+            "take_failed": failed,
+        }
     except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
         return {"error": type(exc).__name__}
 

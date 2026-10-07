@@ -21,6 +21,7 @@ import types
 import pytest
 
 from src.monitoring import forensics, session_history, session_hwm
+from tests import previous_identity
 
 TOTAL = 5000.0
 FLOOR, SHARE = 256.0, 85.0
@@ -504,13 +505,14 @@ def test_the_bundles_method_text_says_what_the_light_snapshots_are(dd, monkeypat
 # --- the one bundle member (the slot contract of the single Diagnostics zip) ---------------------------
 
 
-def test_the_member_carries_this_sessions_tail_and_the_previous_ones_with_the_method(rig, no_heavy, dd):
+def test_the_member_carries_this_sessions_tail_and_the_previous_ones_with_the_method(rig, no_heavy, dd, monkeypatch):
     rig.state["readings"] = dict(NEAR_AVAIL)
     rig(5.0)
     rig(15.0)
     # the next boot (a new process has loaded nothing yet): this session's file becomes the previous tail
     session_hwm._PREV_LOADED, session_hwm._PREV = False, None
     session_hwm.capture_previous()
+    previous_identity.claim(monkeypatch)
     rig.state["readings"] = dict(NEAR_AVAIL)
     rig(5.0)
     out = session_hwm.diagnostics_member(200_000)
@@ -561,6 +563,7 @@ def test_the_previous_sessions_tail_is_cut_oldest_first_too_and_the_whole_member
     # the next boot: this session's tail becomes the previous one's
     session_hwm._PREV_LOADED, session_hwm._PREV = False, None
     session_hwm.capture_previous()
+    previous_identity.claim(monkeypatch)
     one = _compact(ring[-1])
     fixed = session_hwm.diagnostics_member(10**7)
     assert fixed["previous_session"]["found"] and len(fixed["previous_session"]["snapshots"]) == 6
@@ -584,6 +587,7 @@ def test_with_both_rings_full_each_is_cut_to_its_half_and_the_whole_member_still
         rig(15.0)
     session_hwm._PREV_LOADED, session_hwm._PREV = False, None
     session_hwm.capture_previous()  # the first six are now the previous session's tail
+    previous_identity.claim(monkeypatch)
     for _ in range(6):
         rig(15.0)
     mine = session_hwm.current()["pressure_light"]

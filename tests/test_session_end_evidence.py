@@ -531,5 +531,73 @@ def test_forensics_copies_a_release_record_only_through_the_allow_list(monkeypat
 
 
 def test_the_session_hwm_member_says_only_the_class_of_a_failure(monkeypatch):
-    monkeypatch.setattr(session_hwm, "previous", lambda: (_ for _ in ()).throw(RuntimeError(f"/home/alice/{PASS}")))
+    monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError(f"/home/alice/{PASS}")))
     assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError"}
+
+
+def test_a_previous_ring_that_cannot_be_read_is_withheld_by_class_only(monkeypatch):
+    monkeypatch.setattr(session_hwm, "previous", lambda: (_ for _ in ()).throw(RuntimeError(f"/home/alice/{PASS}")))
+    got = session_hwm.diagnostics_member(50_000)
+    assert got["previous_session"]["withheld"] == "unreadable (RuntimeError)"
+    _assert_clean(got)
+
+
+# --------------------------------------------------------------------------- #
+#  previous_session_id on a real ledger (every other test stubs it)
+# --------------------------------------------------------------------------- #
+def test_the_previous_session_id_is_the_boot_before_this_ones_on_a_real_ledger(ledger, monkeypatch):
+    """MUTATION TARGET: ``previous_session_id`` (a version that returned the current session's id, or the last boot of the ledger, would
+    turn every real report into "another session" with every stubbed test green)."""
+    _boot(monkeypatch, T0, None)
+    first = _sid()
+    assert sh.previous_session_id() is None, "one boot, and it is this session's own"
+    _boot(monkeypatch, T0 + 1000, None, {"state": "running", "pid": PID})
+    second = _sid()
+    assert second != first and sh.previous_session_id() == first
+
+
+def test_a_boot_another_instance_wrote_later_does_not_become_the_previous_session(ledger, monkeypatch):
+    """A second instance that fails to bind still boots: its record is LATER than this session's, and is not the session before it."""
+    _boot(monkeypatch, T0, None)
+    first = _sid()
+    _boot(monkeypatch, T0 + 1000, None, {"state": "running", "pid": PID})
+    mine = _sid()
+    sh._append({"kind": "boot", "session_id": "later-instance", "at": "2023-11-15T00:00:00Z", "pid": PID + 1})
+    assert [r["session_id"] for r in sh.read_records() if r["kind"] == "boot"][-1] == "later-instance"
+    assert _sid() == mine and sh.previous_session_id() == first
+
+
+def test_when_this_sessions_boot_was_never_appended_the_previous_is_the_last_boot(ledger, monkeypatch):
+    _boot(monkeypatch, T0, None)
+    first = _sid()
+    sh._reset_for_tests()  # a process that has not booted the ledger yet
+    assert sh.current_session()["session_id"] is None and sh.previous_session_id() == first
+
+
+def test_the_session_hwm_member_copies_the_previous_ring_only_for_the_previous_session_and_through_the_scrub(monkeypatch):
+    """MUTATION TARGET: ``_previous_for_member`` (the member copied the previous session's light ring raw, with no identity and no scrub)."""
+    hwm = _hwm(900.0, "s-prev", release=_OLD_RECORD)
+    hwm["pressure_light"] = [{"at": "t", "guard": {"engaged": True, "last_release": _OLD_RECORD}}]
+    hwm["pressure_light_taken"] = 1
+    monkeypatch.setattr(session_hwm, "previous", lambda: hwm)
+    monkeypatch.setattr(sh, "previous_session_id", lambda: "s-prev")
+    got = session_hwm.diagnostics_member(200_000)
+    assert len(got["previous_session"]["snapshots"]) == 1 and "withheld" not in got["previous_session"]
+    _assert_clean(got["previous_session"]["snapshots"])
+    for ledger_says, why in (("s-other", "another session"), (None, "no identity")):
+        monkeypatch.setattr(sh, "previous_session_id", lambda v=ledger_says: v)
+        got = session_hwm.diagnostics_member(200_000)
+        assert got["previous_session"]["snapshots"] == [] and got["previous_session"]["withheld"] == why
+
+
+def test_a_failed_scrub_is_named_and_is_not_read_as_an_absent_record(monkeypatch):
+    """MUTATION TARGET: ``scrub_marks`` returning an empty record on failure (forensics then said "absent / predates this instrument")."""
+    from src.monitoring import release_view
+
+    hwm = _hwm(900.0, "s-prev", release=_OLD_RECORD)
+    monkeypatch.setattr(release_view, "allow_listed", lambda rec: (_ for _ in ()).throw(RuntimeError(f"{PASS}")))
+    got = _forensics_with(monkeypatch, hwm)
+    assert got["available"] is False and "could not be scrubbed (RuntimeError)" in got["reason"] and "predates" not in got["reason"]
+    assert PASS not in repr(got)
+    monkeypatch.setattr(session_hwm, "previous", lambda: hwm)
+    assert session_hwm.diagnostics_member(50_000)["previous_session"]["withheld"] == "scrub failed (RuntimeError)"

@@ -173,7 +173,7 @@ def test_the_boot_record_names_a_failed_take_and_the_variables_still_in_the_envi
     monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
     monkeypatch.setattr("src.database.connect._TAKE_FAILED", "ImportError")
     got = session_history._boot_env_take()
-    assert got == {"still_in_environment": ["OO_DB_PASSPHRASE"], "take_failed": ["PermissionError", "ImportError"]}
+    assert got == {"store_imported": True, "still_in_environment": ["OO_DB_PASSPHRASE"], "take_failed": ["PermissionError", "ImportError"]}
     assert PASS not in repr(got)
 
 
@@ -184,7 +184,7 @@ def test_the_boot_record_of_a_clean_take_says_so(monkeypatch):
     monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
     monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
     monkeypatch.setattr("src.database.connect._TAKE_FAILED", None)
-    assert session_history._boot_env_take() == {"still_in_environment": [], "take_failed": []}
+    assert session_history._boot_env_take() == {"store_imported": True, "still_in_environment": [], "take_failed": []}
 
 
 def test_a_value_set_in_the_environment_later_hides_neither_it_nor_the_taken_one(taken, monkeypatch):
@@ -210,3 +210,78 @@ def test_the_ephemeral_child_is_handed_what_was_taken(taken, monkeypatch):
     main._run_ephemeral(["serve"])
     assert seen["env"]["OO_DB_PASSPHRASE"] == PASS and seen["env"]["OO_KEY_PASSPHRASE"] == KEY_PASS
     assert seen["env"]["OO_EPHEMERAL"] == "0"
+
+
+def test_before_the_store_is_imported_no_name_is_reported_as_a_failed_take(monkeypatch):
+    """The take runs at the first import of the store: until then the names are still there for it to take, and a record that
+    named them would read as a take that failed."""
+    import sys
+
+    from src.monitoring import session_history
+
+    monkeypatch.delitem(sys.modules, "src.database.connect", raising=False)
+    monkeypatch.setenv("OO_DB_PASSPHRASE", PASS)
+    assert session_history._boot_env_take() == {"store_imported": False, "still_in_environment": [], "take_failed": []}
+
+
+def test_the_ledger_boot_record_carries_env_take_and_so_does_boots_json(tmp_path, monkeypatch):
+    """MUTATION TARGET: ``"env_take"`` in ``record_boot`` and in ``boots._BOOT_FIELDS`` (either can go with every other test green, and a
+    failed take then reads as a clean one in the bundle)."""
+    from src.monitoring import boots, session_history
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    session_history._reset_for_tests()
+    rec = session_history.record_boot(None)
+    assert set(rec["env_take"]) >= {"still_in_environment", "take_failed"}
+    on_disk = [r for r in session_history.read_records() if r["kind"] == "boot"][-1]
+    assert on_disk["env_take"] == rec["env_take"]
+    member = boots.diagnostics_member()
+    assert member["boots"][-1]["env_take"] == rec["env_take"]
+    session_history._reset_for_tests()
+
+
+_FAILED_TAKE_CHILD = """
+import os, sys
+sys.modules['src.monitoring.secret_scrub'] = None          # the import inside connect.py fails
+from src.database import connect
+assert connect._TAKE_FAILED == 'ModuleNotFoundError', connect._TAKE_FAILED
+assert os.environ.get('OO_DB_PASSPHRASE') == {passphrase!r}, 'a failed take leaves it where it was'
+del sys.modules['src.monitoring.secret_scrub']
+from src.monitoring import session_history
+got = session_history._boot_env_take()
+assert got == {{'store_imported': True, 'still_in_environment': ['OO_DB_PASSPHRASE', 'OO_KEY_PASSPHRASE'], 'take_failed': ['ModuleNotFoundError']}}, got
+assert {passphrase!r} not in repr(got)
+print('ok')
+"""
+
+
+def test_a_failed_import_of_the_take_leaves_a_record_end_to_end(tmp_path):
+    """MUTATION TARGET: the record of the failure in ``connect.py`` (it was a bare suppress: the passphrase stayed in the environment with
+    no trace). A real process, with the scrub module's import made to fail."""
+    proc = _run(_FAILED_TAKE_CHILD.format(passphrase=PASS), tmp_path)
+    assert proc.returncode == 0 and proc.stdout.strip() == "ok", proc.stderr[-1500:]
+
+
+_FORKSERVER_ONLY = """
+{prelude}
+import os
+from src.database import connect
+from multiprocessing import forkserver
+forkserver.ensure_running()
+fpid = forkserver._forkserver._forkserver_pid
+environ = open(f'/proc/{{fpid}}/environ', 'rb').read()
+print('forkserver-holds-it' if b'PASSPHRASE' in environ or {passphrase!r}.encode() in environ else 'forkserver-clean')
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc/<pid>/environ")
+def test_the_forkserver_check_has_a_control_of_its_own(tmp_path):
+    """The forkserver's environment is read the same way with the take REPLACED (the control: it must say the forkserver holds the
+    passphrase), and with it in place (it must say clean): so the forkserver lines of ``_CHILD`` cannot pass by reading nothing."""
+    control = _run(
+        _FORKSERVER_ONLY.format(prelude="from src.monitoring import secret_scrub as S\nS.take_from_environment = lambda *a, **k: None", passphrase=PASS),
+        tmp_path,
+    )
+    assert control.returncode == 0 and control.stdout.strip() == "forkserver-holds-it", control.stderr[-1500:]
+    real = _run(_FORKSERVER_ONLY.format(prelude="", passphrase=PASS), tmp_path)
+    assert real.returncode == 0 and real.stdout.strip() == "forkserver-clean", real.stderr[-1500:]

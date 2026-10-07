@@ -737,7 +737,9 @@ def _previous_peaks() -> dict[str, Any] | None:
             elif ident != want:
                 got, why = None, "another session"
             else:
-                got = scrub_marks(got)
+                got, failed = scrub_marks(got)
+                if got is None:
+                    why = f"scrub failed ({failed})"
     except Exception:  # noqa: BLE001 - forensics degrades, never raises
         return None
     if not got:
@@ -747,7 +749,11 @@ def _previous_peaks() -> dict[str, Any] | None:
                 "no per-session high-water record from the previous run (it predates "
                 "this instrument, or the file was removed) — unmeasured, not zero"
                 if why in (None, "absent")
-                else f"the high-water record on disk is not this run's previous session's ({why}) — unmeasured, not zero"
+                else (
+                    f"the previous session's high-water record was read and could not be scrubbed ({why[len('scrub failed ('):-1]}) — unmeasured, not zero"
+                    if why.startswith("scrub failed (")
+                    else f"the high-water record on disk is not this run's previous session's ({why}) — unmeasured, not zero"
+                )
             ),
         }
     out = dict(got)
