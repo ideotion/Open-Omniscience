@@ -1851,6 +1851,8 @@ def test_a_schema_that_is_damaged_when_the_start_re_reads_it_is_recorded_and_the
     assert _by_table(entry)[verify.SCHEMA_ENTRY]["verdict"] == VERDICT_DAMAGED and "articles" in _by_table(entry), (
         "a table the first list lacked was dropped from the record instead of being added"
     )
+    # ``inspect_confirmed`` answers damaged only when a second read agreed, and the entry says so
+    assert _by_table(entry)[verify.SCHEMA_ENTRY]["second_read"] == verify.SECOND_READ_AGREED
 
 
 def test_a_table_that_could_not_be_read_stays_in_the_set_beside_one_that_reads_damaged(tmp_path, damaged, files, monkeypatch):
@@ -2956,3 +2958,69 @@ def test_a_re_read_whose_second_read_is_clean_does_not_release_the_latch_or_repl
     # a read that settled nothing never replaces a finding two reads agreed on earlier (R100: a measured verdict does not give way)
     table = _by_table(damage.registry.state(detail=True)["verification"][FILE_CORPUS])["articles"]
     assert table["verdict"] == VERDICT_DAMAGED and table["second_read"] == verify.SECOND_READ_AGREED
+
+
+def test_a_re_read_whose_listing_reads_as_damage_once_and_as_a_list_next_does_not_release_a_schema_latch(tmp_path, files, healthy, monkeypatch):
+    """The coordinator's block: a list two connections disagree about settled nothing about the schema. The boot path and the manual call file the
+    ``(schema)`` entry ``unchecked``; the re-read filed it clean (``gone``) and released a latch whose only entry was ``(schema)``."""
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed(opener=_opens(_corrupt("malformed database schema (x)"))) is True  # the start-up check: (schema) damaged, latched
+    assert _file_state()["check_tables"] == [verify.SCHEMA_ENTRY]
+    real = verify.inspect_file
+    lists: list[int] = []
+
+    def flaky(p, **kw):
+        lists.append(1)
+        if len(lists) == 1:
+            return {"error": (VERDICT_DAMAGED, "malformed database schema (x)")}
+        return real(p, **kw)
+
+    monkeypatch.setattr(verify, "inspect_file", flaky)
+    seen = _reads_every_table(monkeypatch)
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert len(lists) == 2, "the list was not read on a second connection"
+    assert sorted(seen) == ["articles", "notes"], "every table of the list is read, as for any (schema) latch"
+    assert damage.registry.latched(FILE_CORPUS), "a list two connections disagreed about released a (schema) latch"
+    assert _file_state()["check_tables"] == [verify.SCHEMA_ENTRY]
+    # and the record keeps the finding two reads agreed on at start-up: "the table list read clean" never replaces it (R100)
+    schema = _by_table(damage.registry.state(detail=True)["verification"][FILE_CORPUS])[verify.SCHEMA_ENTRY]
+    assert schema["verdict"] == VERDICT_DAMAGED and schema["second_read"] == verify.SECOND_READ_AGREED, schema
+    # and the next re-read, whose list reads the same on both connections, is the one that releases it
+    damage.retry_for_collection_start("t")
+    _join_rechecks()
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_the_schema_entry_filed_for_a_failed_page_pass_carries_the_page_passs_confirmation_not_the_lists(tmp_path, healthy, files, monkeypatch):
+    files[FILE_CORPUS] = healthy
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    monkeypatch.setattr(
+        verify,
+        "inspect_confirmed",
+        lambda p, **kw: {
+            "error": (VERDICT_UNCHECKED, "the table list could not be read"),
+            "sqlite_code": 1,
+            "second_read": verify.SECOND_READ_UNAVAILABLE,  # the LIST's second read could not be made...
+            "first_read": ["malformed database schema (x)"],
+            "second_detail": ["the file was busy"],
+        },
+    )
+    pages = {
+        "table": verify.PAGES_ENTRY,
+        "verdict": VERDICT_DAMAGED,
+        "seconds": 0.0,
+        "detail": ["page 3 failed its check"],
+        "second_read": verify.SECOND_READ_AGREED,  # ...and the PAGE pass's second read agreed
+    }
+    monkeypatch.setattr(verify, "page_check", lambda *a, **kw: pages)
+    assert verify.arm_at_boot() is True
+    assert verify.run_armed() is True
+    tables = _by_table(_record(tmp_path)["verification"][FILE_CORPUS])
+    assert tables[verify.SCHEMA_ENTRY]["verdict"] == VERDICT_DAMAGED
+    assert tables[verify.SCHEMA_ENTRY]["second_read"] == verify.SECOND_READ_AGREED, "the list's label was filed on the page pass's finding"
+    assert tables[verify.PAGES_ENTRY]["second_read"] == verify.SECOND_READ_AGREED
+    assert damage.registry.latched(FILE_CORPUS)
+

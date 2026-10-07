@@ -1026,7 +1026,8 @@ def _run_plan(plan: dict[str, Any], *, opener: Opener | None) -> None:
                             "verdict": VERDICT_DAMAGED,
                             "seconds": 0.0,
                             "detail": [f"the table list could not be read ({reason}); see {PAGES_ENTRY}"[:DETAIL_CHARS]],
-                            "second_read": info.get("second_read", SECOND_READ_AGREED),
+                            # The damage here is the PAGE pass's finding, so its confirmation is the page pass's, not the list's.
+                            "second_read": pages["second_read"],
                         }
                     ]
                 schema_tables = [*schema_tables, pages]
@@ -1159,7 +1160,15 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
                 verdict, why = info["error"]
                 # A schema that cannot be read as damage is damage; anything else is no answer about the tables.
                 answers = (
-                    [{"table": SCHEMA_ENTRY, "verdict": VERDICT_DAMAGED, "seconds": 0.0, "detail": [why[:DETAIL_CHARS]]}]
+                    [
+                        {
+                            "table": SCHEMA_ENTRY,
+                            "verdict": VERDICT_DAMAGED,
+                            "seconds": 0.0,
+                            "detail": [why[:DETAIL_CHARS]],
+                            "second_read": SECOND_READ_AGREED,  # ``inspect_confirmed`` answers damaged only when a second read agreed
+                        }
+                    ]
                     if verdict == VERDICT_DAMAGED
                     else []
                 )
@@ -1172,6 +1181,10 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
             # list alone released a file whose tables were never read).
             everything = SCHEMA_ENTRY in wanted
             present = [n for n in info["names"] if everything or n in wanted]
+            # A list that read as damage on one connection and as a list on the next settled nothing about the schema: the entry is
+            # ``unchecked`` with both reads named (the boot path and the manual call file it the same way), and a latch whose entry is
+            # "(schema)" stays, however clean the tables beside it read.
+            disagreed = info.get("second_read") == SECOND_READ_CLEAN
             # A table that is no longer in the file has nothing in it to be damaged. ``(pages)`` is no table of the list:
             # it is answered by the page pass below, never by its absence from the list.
             gone = [
@@ -1182,10 +1195,14 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
                     "detail": ["the table list read clean" if n == SCHEMA_ENTRY else "the table is no longer in the file"],
                 }
                 for n in wanted
-                if n not in info["names"] and n != PAGES_ENTRY
+                if n not in info["names"] and n != PAGES_ENTRY and not (disagreed and n == SCHEMA_ENTRY)
             ]
             reg.recheck_total(key, len(present), token)
-            answers = []
+            answers = (
+                [_not_concluded({"table": SCHEMA_ENTRY, "seconds": 0.0, "detail": info.get("first_read")}, SECOND_READ_CLEAN)]
+                if disagreed
+                else []
+            )
             stopped = False
             for i, name in enumerate(present, 1):
                 if _CANCEL.is_set():

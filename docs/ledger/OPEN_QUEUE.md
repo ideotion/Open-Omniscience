@@ -16442,3 +16442,5 @@ maintainer as a card.
   `agreed`, `clean` or `unavailable` on the entry). **Left, on purpose:** (a) the second read is not independent of the machine (a pressure that lasts through both reads fails both): it guards against a read that differs, and the record says what each read said; (b) the page pass of a large encrypted file is
   read twice when it reports damage (about a second per 230 MB each, only on a damaged file); (c) a re-read whose second read differs leaves the older confirmed entry as it was (the registry's merge rule: only `rechecked_at` moves), so the record does not say that a re-read disagreed; (d) E1's in-app latch
   (a first failed read pauses collection) is not covered here: its follow-up is its own small PR, in the poisoned-connection entry's (d).
+  FOLD 4 (the coordinator's check): the re-read files a listing two connections disagreed about as `(schema)` `unchecked`, as the start-up check and the manual call do, so a `(schema)` latch stays; the `(schema)` entry filed for a failed
+  page pass carries the PAGE pass's `second_read`, and a re-read's confirmed schema damage says `agreed`.
