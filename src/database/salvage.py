@@ -105,10 +105,12 @@ STAND_IN_NOTE = (
     "in each parent table, so that a row saved later is not handed the number of a lost one and does not seem to own the rows that "
     "belong to it. A stand-in that has a parent of its own (a stand-in article has a source) belongs to a stand-in parent that is "
     "marked as lost too, never to a real row. A stand-in article is quarantined, with the reason \"stand-in for a lost row\": it is not in "
-    "the search, the article list, the export or the analyses, and not in the advanced search that includes quarantined articles; a "
-    "stand-in source is not enabled and is not in the source lists, the qualification passes or the exports, so it is never collected or "
-    "qualified. The rows that were kept for a lost parent stay in the library, are counted in this report, and show the lost parent's "
-    "name. A stand-in is a row like any other: if it is deleted, its number may be handed out again."
+    "the search, the article list, the export, the analyses, the reader or a signed evidence bundle, and not in the advanced search that "
+    "includes quarantined articles; a stand-in source is not enabled and is not in the source lists, the groups, the qualification passes "
+    "or the exports, and no source route finds it by its number, so it is never collected or qualified. The rows that were kept for a lost "
+    "parent stay in the library, are counted in this report, and show the lost parent's name. A stand-in is a row like any other: if it is "
+    "deleted, its number may be handed out again. The plain counts of the articles and sources tables (the totals in the summaries, the "
+    "disabled-source count, the snapshots) still include it, and so does a raw export of either table."
 )
 
 #: The columns of a table the search index reads (``fts.rebuild_index``: ``SELECT id, title, content FROM articles``). A stand-in row of such a

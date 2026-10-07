@@ -1012,37 +1012,39 @@ def _int(value: Any) -> int:
         return 0
 
 
-def _written_at(sidecar: Path | None) -> datetime | None:
-    """When the sidecar FILE was written, by the file system's own word (its modification time), or ``None`` when that cannot be read."""
-    if sidecar is None:
+def _written_at(path: Path | None) -> datetime | None:
+    """When a FILE was written, by the file system's own word (its modification time), or ``None`` when that cannot be read."""
+    if path is None:
         return None
     try:
-        return datetime.fromtimestamp(sidecar.stat().st_mtime, UTC)
+        return datetime.fromtimestamp(path.stat().st_mtime, UTC)
     except (OSError, OverflowError, ValueError):
         return None
 
 
-def _made_time(doc: dict[str, Any], written: datetime | None) -> datetime:
-    """When the sidecar was made: the LATER of its own ``created_at`` and the time the file was written, leaving out any of the two that lies
-    after now (past :data:`SIDECAR_TIME_SLACK_S`, for a clock a little ahead), and now when neither is left. A sidecar value is believed only
-    once it is checked, and a time can fail the check in both directions: a ``created_at`` far in the future would keep the copy for ever
-    and is dropped; a file time far in the past (a drive without a clock reports 1970) would date the removal in the past and remove the kept
-    copy at once, and it loses to a ``created_at`` that is later and not in the future. The later time only ever makes the kept file live
-    longer, and now is the answer when both are in doubt."""
+def _made_time(doc: dict[str, Any], written: datetime | None, floor: datetime | None = None) -> datetime:
+    """When the sidecar was made: the LATER of its own ``created_at``, the time the sidecar file was written and ``floor`` (the damaged
+    file's own modification time), leaving out any of them that lies after now (past :data:`SIDECAR_TIME_SLACK_S`, for a clock a little
+    ahead), and now when none is left. A sidecar value is believed only once it is checked, and a time can fail the check in both
+    directions: a ``created_at`` far in the future would keep the copy for ever and is dropped; a file time far in the past (a drive without
+    a clock reports 1970, or a clock that was wrong at the repair) would date the removal in the past and remove the kept copy at once, and
+    it loses to a time that is later and not in the future. The damaged file was last written before the repair that made the sidecar began,
+    so a sidecar dated EARLIER than the file's own time is dated by a clock that was wrong: the file's time is the floor under both of the
+    sidecar's. The later time only ever makes the kept file live longer, and now is the answer when all are in doubt."""
     now = datetime.now(UTC)
     limit = now + timedelta(seconds=SIDECAR_TIME_SLACK_S)
-    seen = [when for when in (_parse_time(doc.get("created_at")), written) if when is not None and when <= limit]
+    seen = [when for when in (_parse_time(doc.get("created_at")), written, floor) if when is not None and when <= limit]
     return max(seen) if seen else now
 
 
-def _clean_read_time(doc: dict[str, Any], written: datetime | None = None) -> str:
+def _clean_read_time(doc: dict[str, Any], written: datetime | None = None, floor: datetime | None = None) -> str:
     """When the repaired file first read clean, as the sidecar says it, when that is a time the repair can have had: not after the sidecar
     was made and not earlier than the repair had been running when it was made (the clean read happens in between). R129's thirty days
     run from it, so a value outside that (a past one would remove the kept copy at once, a future one would keep it for ever) is not
     believed and the time the sidecar was made is used instead, which only ever makes the file live longer (the deep read of E3). The time
-    the sidecar was made is itself checked against the file's own time (:func:`_made_time`), and a ``run_seconds`` above
-    :data:`MAX_RUN_SECONDS` is not a run the repair can have had (it counts as none)."""
-    created = _made_time(doc, written)
+    the sidecar was made is itself checked against the file's own time and the damaged file's (:func:`_made_time`), and a ``run_seconds``
+    above :data:`MAX_RUN_SECONDS` is not a run the repair can have had (it counts as none)."""
+    created = _made_time(doc, written, floor)
     run = _int(doc.get("run_seconds"))
     if run > MAX_RUN_SECONDS:
         run = 0
@@ -1052,7 +1054,7 @@ def _clean_read_time(doc: dict[str, Any], written: datetime | None = None) -> st
     return created.isoformat(timespec="seconds")
 
 
-def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidecar: Path | None = None) -> None:
+def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidecar: Path | None = None, damaged: Path | None = None) -> None:
     """What the start that made the copy measured, read back from its sidecar for the start that finishes the switch: every number and
     list the record needs (``_CARRIED``: the deep read of E3 found the orphans, the search index and the encryption flag dropped), the
     first clean read (R129's clock runs from it, not from the start that finished the swap), and what the drive could not read. A
@@ -1070,7 +1072,7 @@ def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
     measured = doc.get("disk_unread_pages")
     report["disk_unread_pages"] = measured if type(measured) is int and measured >= 0 else None
     report["page_size"] = doc["page_size"] if type(doc.get("page_size")) is int and doc["page_size"] > 0 else None
-    report["clean_at"] = _clean_read_time(doc, _written_at(sidecar))
+    report["clean_at"] = _clean_read_time(doc, _written_at(sidecar), _written_at(damaged))
 
 
 def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None) -> str:
@@ -1079,7 +1081,7 @@ def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None
     target: Path = work["target"]
     if ctx is not None:
         ctx.set_progress(detail=_frame(FRAME_SWITCHING))
-    _carry_from(report, doc, target, resume["sidecar"])
+    _carry_from(report, doc, target, resume["sidecar"], damaged=target)  # the live file is the damaged one until the switch
     # What this start's own check could not read counts beside what the start that made the copy found: a resume after a start whose
     # check found unreadable pages must not decide on that start's figure alone (the deep read of E3, NEW-3).
     report["check_pages_unread"] = max(_int(report.get("check_pages_unread")), _int(work.get("pages_unread")))
@@ -1101,7 +1103,7 @@ def _kept_facts(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
     taken now, on the kept file, as the resume takes it; when it cannot be taken the kept file gets NO removal date
     (:func:`_note_what_was_set_aside`), because a removal must never rest on a measurement nobody made."""
     damaged = target.parent / str(doc["damaged"])
-    _carry_from(report, doc, target, sidecar)
+    _carry_from(report, doc, target, sidecar, damaged=damaged)
     if report["disk_unread_pages"] is None:
         try:
             report["disk_unread_pages"], report["disk_unread_first"] = _disk_unread_pages(

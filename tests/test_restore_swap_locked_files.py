@@ -218,10 +218,14 @@ def test_an_error_that_is_not_a_lock_is_not_retried(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_a_checkpoint_that_completes_reports_true(monkeypatch):
+def test_a_checkpoint_that_completes_reports_true(monkeypatch, tmp_path):
+    import src.backup.sqlite_backup as sqlite_backup
     import src.scheduler.hygiene as hygiene
 
-    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: None)
+    # The live file is a path of this test's own: the answer of a checkpoint that gave none depends on the log beside the live file, and the
+    # shared default location holds whatever an earlier test of the run left there (this failed in a full run and passed alone).
+    monkeypatch.setattr(sqlite_backup, "live_db_path", lambda: tmp_path / "live.db")
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: {"busy": 0, "log_frames": 0, "checkpointed_frames": 0})
     assert _checkpoint_before_swap(2.0) is True
 
 
@@ -266,6 +270,61 @@ def test_a_checkpoint_that_ran_nowhere_vouches_for_a_log_only_when_there_is_none
     assert _checkpoint_before_swap(2.0) is False, "a log with content and no answer from a checkpoint was vouched for"
 
 
+def _non_empty_live_log(monkeypatch, tmp_path):
+    import src.backup.sqlite_backup as sqlite_backup
+
+    monkeypatch.setattr(sqlite_backup, "live_db_path", lambda: tmp_path / "live.db")
+    (tmp_path / "live.db-wal").write_bytes(b"frames" * 100)
+
+
+@pytest.mark.parametrize(
+    ("record", "env", "reason", "says", "never_says"),
+    [
+        # the checkpoint is switched off: nothing ran, and the refusal does not claim a writer or a reader is active
+        (None, "0", "switched-off", ("OO_WAL_CHECKPOINT=0", "Turn it back on"), ("being written to or read", "completely within")),
+        # it was on and gave no answer (it failed, or the database is not SQLite)
+        (None, "1", "no-answer", ("did not answer", "Import again"), ("being written to or read", "OO_WAL_CHECKPOINT")),
+        # it answered that frames are still only in the log, or that it could not take the gate: a reader or a writer is active
+        ({"busy": 1, "log_frames": 10, "checkpointed_frames": 4}, "1", "blocked", ("being written to or read", "completely within", "Let the running job finish"), ("OO_WAL_CHECKPOINT",)),
+        ({"skipped": "gate busy"}, "1", "blocked", ("being written to or read",), ("OO_WAL_CHECKPOINT",)),
+    ],
+)
+def test_the_restore_refusal_says_what_is_true_for_the_reason_the_log_was_not_folded(monkeypatch, tmp_path, record, env, reason, says, never_says):
+    """The coordinator's check of E3 fold 4, item 5: with the checkpoint switched off and a log that holds saves, the refusal said the corpus
+    was «still being written to or read», which is untrue then."""
+    import src.scheduler.hygiene as hygiene
+    from src.backup.merge import _swap_refusal
+
+    _non_empty_live_log(monkeypatch, tmp_path)
+    monkeypatch.setenv("OO_WAL_CHECKPOINT", env)
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: None if record is None else dict(record))
+    why: list[str] = []
+    assert _checkpoint_before_swap(2.0, why=why) is False
+    assert why == [reason], why
+    text = _swap_refusal(why[0])
+    assert all(phrase in text for phrase in says), text
+    assert not any(phrase in text for phrase in never_says), text
+    assert "nothing was written to your corpus" in text
+
+
+def test_a_checkpoint_that_does_not_finish_in_time_is_a_timed_out_refusal_and_a_folded_one_gives_no_reason(monkeypatch, tmp_path):
+    import src.scheduler.hygiene as hygiene
+    from src.backup.merge import _swap_refusal
+
+    _non_empty_live_log(monkeypatch, tmp_path)
+    release = threading.Event()
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: release.wait(30))
+    why: list[str] = []
+    try:
+        assert _checkpoint_before_swap(0.3, why=why) is False
+    finally:
+        release.set()
+    assert why == ["timed-out"] and "being written to or read" in _swap_refusal(why[0])
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: {"busy": 0, "log_frames": 0, "checkpointed_frames": 0})
+    why = []
+    assert _checkpoint_before_swap(2.0, why=why) is True and why == []
+
+
 def test_the_restore_refuses_when_the_checkpoint_did_not_fold_the_log():
     """The call site: a False answer is a refusal before anything is written, and the swap (which unlinks the log) comes after it."""
     import inspect
@@ -273,9 +332,9 @@ def test_the_restore_refuses_when_the_checkpoint_did_not_fold_the_log():
     from src.backup import merge
 
     source = inspect.getsource(merge)
-    gate = source.index("if not _checkpoint_before_swap():")
-    refusal = source[gate : gate + 700]
-    assert "raise RestoreRefused" in refusal and "completely" in refusal
+    gate = source.index("if not _checkpoint_before_swap(why=why):")
+    refusal = source[gate : gate + 300]
+    assert "raise RestoreRefused(_swap_refusal(why[0] if why else" in refusal, refusal  # the refusal names the reason the checkpoint gave
     assert gate < source.index("swap_in_corpus(working, target)", gate)
 
 

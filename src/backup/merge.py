@@ -117,10 +117,40 @@ def _log_is_folded(record: Any, wal: Path | None) -> bool:
         return False
 
 
-def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
+#: Why the checkpoint before the swap did not fold the log (what :func:`_checkpoint_before_swap` appends to its ``why`` list): the words of
+#: the refusal differ, because only the first two are about a writer or a reader that is active.
+_CKPT_TIMED_OUT = "timed-out"  # it did not finish within the budget
+_CKPT_BLOCKED = "blocked"  # it answered that a reader, a writer or the checkpoint lock kept it from moving every frame
+_CKPT_SWITCHED_OFF = "switched-off"  # OO_WAL_CHECKPOINT=0: nothing ran, and the log is not empty
+_CKPT_NO_ANSWER = "no-answer"  # nothing answered (the checkpoint failed, or the database is not SQLite) and the log is not empty
+
+
+def _swap_refusal(why: str) -> str:
+    """The restore's refusal when the log could not be folded into the file, in the words that are TRUE for the reason."""
+    nothing_written = "nothing was written to your corpus. "
+    if why == _CKPT_SWITCHED_OFF:
+        return (
+            "the write-ahead log of your corpus still holds saves that are not in the file, and moving them in before the switch "
+            "is turned off on this computer (the OO_WAL_CHECKPOINT=0 setting) — " + nothing_written +
+            "Turn it back on (remove that setting) and import again."
+        )
+    if why == _CKPT_NO_ANSWER:
+        return (
+            "the write-ahead log of your corpus still holds saves that are not in the file, and the step that moves them in "
+            "did not answer (the log says why) — " + nothing_written + "Import again."
+        )
+    return (
+        "your corpus is still being written to or read, so its write-ahead log "
+        f"could not be moved into the file completely within {_SWAP_CHECKPOINT_S:.0f}s — " + nothing_written +
+        "Let the running job finish, and import again."
+    )
+
+
+def _checkpoint_before_swap(timeout_s: float | None = None, why: list[str] | None = None) -> bool:
     """Flush the live WAL into the database file. True only if the checkpoint COMPLETED and its answer shows every frame of the log in the
     file (:func:`_log_is_folded`): the swap unlinks the log, and a log that still holds frames would take the old library's last saves
-    with it if the replace then failed.
+    with it if the replace then failed. When it returns False and ``why`` is a list, the reason (one of the ``_CKPT_*`` names) is appended
+    to it, for :func:`_swap_refusal`.
 
     Bounded on purpose. ``checkpoint_wal`` takes the single-writer gate. That wait is bounded
     now (``OO_CKPT_GATE_TIMEOUT_S``, 30 s, ``0`` waits for ever), but the BACKFILL it then runs
@@ -154,11 +184,23 @@ def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
         finally:
             done.set()
 
+    def _because(reason: str) -> bool:
+        if why is not None:
+            why.append(reason)
+        return False
+
     threading.Thread(target=_run, name="oo-swap-checkpoint", daemon=True).start()
     if not done.wait(budget):
-        return False
+        return _because(_CKPT_TIMED_OUT)
     live = live_db_path()
-    return _log_is_folded(answer.get("record"), Path(str(live) + "-wal") if live else None)
+    record = answer.get("record")
+    if _log_is_folded(record, Path(str(live) + "-wal") if live else None):
+        return True
+    if record is None:  # no answer at all: switched off, or it failed (the checkpoint never raises), and the log has content
+        from src.scheduler.hygiene import wal_checkpoint_enabled
+
+        return _because(_CKPT_NO_ANSWER if wal_checkpoint_enabled() else _CKPT_SWITCHED_OFF)
+    return _because(_CKPT_BLOCKED)
 
 
 def _file_is_locked(exc: BaseException) -> bool:
@@ -7244,13 +7286,9 @@ def run_restore(
             # other. Both said "cancelled" until the slice that changes them BOTH
             # (2026-09-07) gave the refusal its own class -- the operator cancelled
             # nothing, and the honest reason is the actionable half of the message.
-            if not _checkpoint_before_swap():
-                raise RestoreRefused(
-                    "your corpus is still being written to or read, so its write-ahead log "
-                    f"could not be moved into the file completely within {_SWAP_CHECKPOINT_S:.0f}s — nothing "
-                    "was written to your corpus. Let the running job finish, and "
-                    "import again."
-                )
+            why: list[str] = []
+            if not _checkpoint_before_swap(why=why):
+                raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
             try:
                 # The engine is disposed, the live log names cleared and the file replaced inside ONE window (swap_in_corpus), in
                 # which no connection is being opened and every connection made before it is refused: a save that waited out the

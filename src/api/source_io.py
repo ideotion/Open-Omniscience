@@ -160,7 +160,7 @@ def list_sources(
     for f in filters:
         base = base.filter(f)
 
-    total = db.query(func.count(Source.id))
+    total = db.query(func.count(Source.id)).filter(not_a_stand_in_source())  # the same rows the list above holds
     for f in filters:
         total = total.filter(f)
     total_n = total.scalar() or 0

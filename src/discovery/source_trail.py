@@ -116,8 +116,9 @@ def source_provenance(session, source_id: int) -> dict:
     provenance panel is exactly where "is this admitted yet" belongs).
     """
     from src.database.models import ExternalSource, Source, SourceCandidate
+    from src.database.stand_in import not_a_stand_in_source
 
-    source = session.query(Source).filter_by(id=source_id).first()
+    source = session.query(Source).filter_by(id=source_id).filter(not_a_stand_in_source()).first()  # a repair's stand-in is not a source
     if source is None:
         return {"found": False}
 
@@ -248,6 +249,7 @@ def source_citation_tally(session, source_id: int) -> dict:
     """
     from src.catalog.normalize import is_social, registrable_domain
     from src.database.models import Article, ArticleLink, Source
+    from src.database.stand_in import not_a_stand_in_source
     from src.discovery.channels import is_commerce_domain, is_infrastructure_domain
 
     # Domains are returned as dicts everywhere (never a bare string) so EVERY class
@@ -256,7 +258,7 @@ def source_citation_tally(session, source_id: int) -> dict:
     # citing articles) applies uniformly, not only to domains that matched a Source.
     _ARTICLE_SAMPLE_CAP = 10
 
-    source = session.query(Source).filter_by(id=source_id).first()
+    source = session.query(Source).filter_by(id=source_id).filter(not_a_stand_in_source()).first()  # a repair's stand-in is not a source
     if source is None:
         return {"found": False}
 

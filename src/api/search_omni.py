@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from src.database.fts import MAX_CANDIDATES, SearchQueryError, search_ids, search_total
 from src.database.models import Article, Keyword, LawDocument, Source, WikiPage
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_source
 
 _LOG = logging.getLogger(__name__)
 
@@ -220,7 +221,8 @@ def _keywords_group(db: Session, q: str, expand: object | None = None) -> dict:
 def _sources_group(db: Session, q: str) -> dict:
     pat = "%" + _like_escape(q) + "%"
     base = db.query(Source).filter(
-        or_(Source.name.ilike(pat, escape="\\"), Source.domain.ilike(pat, escape="\\"))
+        or_(Source.name.ilike(pat, escape="\\"), Source.domain.ilike(pat, escape="\\")),
+        not_a_stand_in_source(),  # a repair's stand-in source is a place-holder, never a source to open
     )
     total = base.count()
     rows = base.order_by(Source.name).limit(_PER_GROUP).all()

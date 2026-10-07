@@ -104,7 +104,7 @@ def test_a_stand_in_article_is_quarantined_and_a_stand_in_source_is_not_enabled_
         src = con.execute("SELECT enabled, name, domain, status FROM sources WHERE id = 13").fetchone()
         assert src[0] == 0 and src[1] == LOST_SOURCES_DOMAIN and src[2] == LOST_SOURCES_DOMAIN and src[2].startswith(stand_in.SOURCE_DOMAIN_PREFIX), src
         # the note the report carries says what holds (the OPEN_QUEUE entry says the same)
-        for claim in ("quarantined", "stand-in for a lost row", "source lists", "never collected or qualified", "deleted"):
+        for claim in ("quarantined", "stand-in for a lost row", "source lists", "never collected or qualified", "deleted", "signed evidence bundle", "finds it by its number", "still include it"):
             assert claim in salvage.STAND_IN_NOTE, f"the report's note does not say {claim!r}"
         # the real rows carry none of these marks
         assert con.execute("SELECT count(*) FROM articles WHERE quarantine_reason = ?", (stand_in.ARTICLE_REASON,)).fetchone()[0] == 1
@@ -116,8 +116,6 @@ def test_a_stand_in_article_is_quarantined_and_a_stand_in_source_is_not_enabled_
 def test_the_text_a_stand_in_source_carries_starts_with_the_prefix_the_readers_leave_out():
     """The copy writes ``(lost sources 13)`` through ``stand_in.lost_text`` and the readers leave out by ``SOURCE_DOMAIN_PREFIX``: two names for one fact."""
     assert stand_in.lost_text("sources", 13).startswith(stand_in.SOURCE_DOMAIN_PREFIX)
-    assert stand_in.is_stand_in_source_domain(stand_in.lost_text("sources", 7)) and not stand_in.is_stand_in_source_domain("example.org")
-    assert not stand_in.is_stand_in_source_domain(None) and not stand_in.is_stand_in_source_domain("")
 
 
 def test_a_table_without_the_mark_columns_is_given_none_of_them(tmp_path):
@@ -245,6 +243,159 @@ def test_the_facets_do_not_count_a_stand_in_source_that_carries_facet_values(cli
     assert after == before, "a stand-in source carrying facet values was counted by the facets"
     assert "lostkind" not in str(after) and "losttag" not in str(after)
     assert before["types"] == [{"key": "news", "n": 12}], before  # positive control: the real sources are counted
+
+
+def _give_the_stand_in_what_its_kept_children_leave_behind(session) -> int:
+    """The kept children of a lost source (a group membership, a metadata row) and the values a copy or an edit could give its stand-in: a
+    group of one real source and the stand-in, metadata for both, a tag, a country and a region on the stand-in. Returns the group's id."""
+    from src.database.models import Source, SourceGroup, SourceMetadata
+
+    lost = session.query(Source).filter(Source.domain == LOST_SOURCES_DOMAIN).one()
+    real = session.query(Source).filter(Source.id == 1).one()
+    group = SourceGroup(name="g1")
+    session.add(group)
+    session.flush()
+    group.sources.append(real)
+    group.sources.append(lost)
+    session.add(SourceMetadata(source_id=lost.id, language="xx", country="zz", robots_allowed=True))
+    session.add(SourceMetadata(source_id=real.id, language="en", country="fr", robots_allowed=True))
+    lost.tags, real.tags = "losttag", "realtag"
+    lost.country, lost.region = "zz", "lostregion"
+    session.commit()
+    return int(group.id)
+
+
+def _api_session(client):
+    """A session on the very store the client reads (the dependency override the fixture installed)."""
+    from src.api.main import app
+    from src.database.session import get_db
+
+    return next(app.dependency_overrides[get_db]())
+
+
+def test_the_source_manager_leaves_the_stand_in_out_of_every_reader_the_counts_and_the_export(db, tmp_path):
+    from src.database.models import Source
+    from src.database.source_manager import SourceManager
+
+    gid = _give_the_stand_in_what_its_kept_children_leave_behind(db)
+    with SourceManager(session=db) as m:
+        assert len(m.get_all_sources()) == 12 and all(s.domain != LOST_SOURCES_DOMAIN for s in m.get_all_sources())
+        assert [s.id for s in m.get_sources_by_tags(["realtag"])] == [1]  # the positive control: the same call finds a real source
+        assert m.get_sources_by_tags(["losttag"]) == [] and m.get_sources_by_tags(["losttag"], match_all=True) == []
+        assert [s.id for s in m.get_sources_by_group(gid)] == [1] and [s.id for s in m.get_sources_by_group_name("g1")] == [1]
+        assert [s.id for s in m.get_sources_by_country("FR")] == [1] and m.get_sources_by_country("zz") == []
+        assert m.get_sources_by_language("xx") == [] and [s.id for s in m.get_sources_by_language("en")] == [1]
+        assert [s.id for s in m.get_sources_robots_allowed(True)] == [1]
+        assert m.get_source_by_id(1) is not None and m.get_source_by_id(13) is None
+        assert m.get_metadata(1) is not None and m.get_metadata(13) is None
+        stats = m.get_source_statistics()
+        # 12 real sources and the stand-in (not enabled): the stand-in would be a 13th source, a disabled one, a tag, a metadata row
+        assert stats["total_sources"] == 12 and stats["disabled_sources"] == 0 and stats["enabled_sources"] == 12, stats
+        assert "losttag" not in stats["tag_counts"] and stats["tag_counts"] == {"realtag": 1}, stats
+        assert stats["with_metadata"] == 1 and stats["with_country"] == 1 and stats["with_language"] == 1, stats
+        out = tmp_path / "sources.yml"
+        assert m.export_sources_to_yaml(str(out)) == 12 and "(lost" not in out.read_text(encoding="utf-8")
+        assert m.export_sources_to_yaml(str(out), group_id=gid) == 1
+        # a bulk change by group never enables, or changes, the stand-in
+        assert m.enable_groups([gid]) == 1 and m.disable_groups([gid]) == 1
+        assert m.set_group_priority([gid], 3) == 1 and m.set_group_rate_limit([gid], 5000) == 1
+    assert db.query(Source).filter(Source.domain == LOST_SOURCES_DOMAIN).one().enabled in (0, False)
+
+
+def test_a_source_is_not_found_by_the_id_of_the_stand_in_in_any_of_its_routes(client):
+    _give_the_stand_in_what_its_kept_children_leave_behind(_api_session(client))
+    for suffix in ("", "/metadata", "/observed-ips", "/provenance", "/citation-tally"):
+        lost = client.get(f"/api/sources/13{suffix}")
+        assert lost.status_code == 404, (suffix, lost.status_code, lost.text)
+        real = client.get(f"/api/sources/1{suffix}")  # the positive control: the same route answers for a real source
+        assert real.status_code == 200, (suffix, real.status_code, real.text)
+
+
+def test_the_groups_count_and_list_real_sources_only(client):
+    gid = _give_the_stand_in_what_its_kept_children_leave_behind(_api_session(client))
+    listed = client.get("/api/sources/groups/").json()
+    assert [g["source_count"] for g in listed if g["id"] == gid] == [1], listed
+    one = client.get(f"/api/sources/groups/{gid}").json()
+    assert one["source_count"] == 1 and [s["id"] for s in one["sources"]] == [1], one
+
+
+def test_the_catalogue_total_counts_the_rows_it_lists_and_no_stand_in(client):
+    listed = client.get("/api/catalog/sources", params={"limit": 1000}).json()
+    assert listed["total"] == 12 and len(listed["sources"]) == 12, listed["total"]
+    # the stand-in is the one source that is not enabled: the filter that asks for exactly that finds none
+    assert client.get("/api/catalog/sources", params={"enabled": "false"}).json()["total"] == 0
+    assert client.get("/api/catalog/sources", params={"q": "lost"}).json()["total"] == 0
+
+
+def test_the_advanced_search_facets_offer_no_stand_in_source_country_or_region(client):
+    _give_the_stand_in_what_its_kept_children_leave_behind(_api_session(client))
+    facets = client.get("/api/search/facets").json()
+    assert len(facets["sources"]) == 12 and all(s["domain"] != LOST_SOURCES_DOMAIN and s["id"] != 13 for s in facets["sources"]), facets["sources"]
+    assert "zz" not in [c["code"] for c in facets["countries"]] and "lostregion" not in str(facets["regions"]), (facets["countries"], facets["regions"])
+    assert any(r["region"] == "global" for r in facets["regions"]), facets["regions"]  # the positive control: the real sources' region is offered
+
+
+# --------------------------------------------------------------------------- #
+#  the signed outputs
+# --------------------------------------------------------------------------- #
+def _bundle_ids(response) -> list[int]:
+    assert response.status_code == 200, response.text
+    return [int(i["id"]) for i in response.json()["manifest"]["items"]]
+
+
+def test_a_signed_evidence_bundle_never_holds_the_stand_in_by_id_or_by_query(client):
+    assert _bundle_ids(client.post("/api/reports/evidence", json={"article_ids": [1, STAND_IN_ARTICLE]})) == [1]  # the control: the real one is there
+    assert client.post("/api/reports/evidence", json={"article_ids": [STAND_IN_ARTICLE]}).status_code == 404
+    # a field filter finds the stand-in by its address while nothing excludes it: the query path must not reach it
+    assert client.post("/api/reports/evidence", json={"query": "url:lost"}).status_code == 404
+
+
+def test_the_evidence_plan_and_the_methods_appendix_never_count_or_list_the_stand_in(client, salvaged):
+    plan = client.post("/api/reports/evidence/plan", json={"article_ids": [1, STAND_IN_ARTICLE]}).json()
+    assert plan["articles"] == 1 and plan["sources"] == 1, plan
+    assert client.post("/api/reports/evidence/plan", json={"article_ids": [STAND_IN_ARTICLE]}).status_code == 404
+    assert client.post("/api/reports/evidence/plan", json={"query": "url:lost"}).status_code == 404
+    methods = client.post("/api/reports/methods", json={"article_ids": [1, STAND_IN_ARTICLE], "include_bundle": True})
+    assert methods.status_code == 200, methods.text
+    out = methods.json()
+    assert out["article_count"] == 1 and "lost articles" not in out["markdown"], out["article_count"]
+    assert [int(i["id"]) for i in out["bundle"]["manifest"]["items"]] == [1]
+    # the corpus total the appendix states is the real articles: the stand-in is no article of the corpus
+    assert f"**Corpus at generation time:** {_real_articles(salvaged)} stored articles" in out["markdown"], out["markdown"]
+    assert client.post("/api/reports/methods", json={"query": "url:lost"}).status_code == 404
+
+
+def test_each_selection_of_a_signed_output_asks_the_search_for_articles_that_are_not_quarantined_and_drops_a_stand_in_it_is_handed(client, monkeypatch):
+    """Two layers, each checked alone: the search is asked to leave out quarantined articles, and a stand-in id the search hands over
+    anyway is left out by the article query."""
+    import src.api.reporting as reporting
+
+    seen: list[object] = []
+
+    def handing_over_the_stand_in(db, query, *a, **kw):
+        seen.append(kw.get("exclude_quarantined"))
+        return [1, STAND_IN_ARTICLE]
+
+    monkeypatch.setattr(reporting, "search_ids", handing_over_the_stand_in)
+    assert _bundle_ids(client.post("/api/reports/evidence", json={"query": "anything"})) == [1]
+    assert client.post("/api/reports/evidence/plan", json={"query": "anything"}).json()["articles"] == 1
+    methods = client.post("/api/reports/methods", json={"query": "anything"}).json()
+    assert methods["article_count"] == 1
+    assert seen == [True, True, True], seen
+
+
+def test_the_reader_answers_the_stand_in_article_as_not_found(client):
+    assert client.get(f"/api/articles/{STAND_IN_ARTICLE}/view").status_code == 404
+    assert client.get("/api/articles/1/view").status_code == 200  # the positive control: the reader answers for a real article
+
+
+def test_the_omnibar_finds_no_stand_in_source_by_its_name(client):
+    def sources(q):
+        groups = client.get("/api/search/omni", params={"q": q}).json()["groups"]
+        return next(g for g in groups if g["kind"] == "sources")
+
+    assert sources("lost")["total"] == 0 and sources("lost")["items"] == [], sources("lost")
+    assert sources("s0.example")["total"] >= 1  # the positive control: the same box finds a real source
 
 
 def test_the_source_counts_do_not_count_the_stand_in_source(client):

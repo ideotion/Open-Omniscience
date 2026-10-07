@@ -1173,6 +1173,8 @@ def list_groups(
     """
     logger.info(f"List groups request: tag_based={tag_based}")
 
+    from src.database.stand_in import not_a_stand_in_source
+
     with SourceManager(session=db) as manager:
         groups = manager.get_all_groups()
 
@@ -1190,7 +1192,7 @@ def list_groups(
                 "priority": g.priority,
                 "rate_limit_ms": g.rate_limit_ms,
                 "enabled": g.enabled,
-                "source_count": len(g.sources.all()) if g.sources else 0,
+                "source_count": g.sources.filter(not_a_stand_in_source()).count() if g.sources else 0,  # a stand-in source is no member
                 "created_at": g.created_at.isoformat() if g.created_at else None,
                 "updated_at": g.updated_at.isoformat() if g.updated_at else None,
             }
@@ -1208,12 +1210,14 @@ def get_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     logger.info(f"Get group request: group_id={group_id}")
 
+    from src.database.stand_in import not_a_stand_in_source
+
     with SourceManager(session=db) as manager:
         group = manager.get_group_by_id(group_id)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
 
-        sources = group.sources.all() if group.sources else []
+        sources = group.sources.filter(not_a_stand_in_source()).all() if group.sources else []
 
         result = {
             "id": group.id,

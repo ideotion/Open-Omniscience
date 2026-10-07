@@ -35,11 +35,6 @@ def lost_text(table: str, row_id: int) -> str:
     return LOST_TEXT.format(table=table, row_id=int(row_id))
 
 
-def is_stand_in_source_domain(domain: str | None) -> bool:
-    """True for the domain a stand-in source carries (for a row already in memory)."""
-    return bool(domain) and str(domain).startswith(SOURCE_DOMAIN_PREFIX)
-
-
 def not_a_stand_in_source() -> Any:
     """The SQL condition that leaves stand-in sources out of a list, a count, a qualification pass or an export (``Source`` rows)."""
     from src.database.models import Source

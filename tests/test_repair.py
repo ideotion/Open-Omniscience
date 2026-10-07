@@ -421,6 +421,8 @@ def test_a_cut_before_the_replace_is_finished_at_the_next_start_with_the_same_se
     from src.backup import merge
 
     live = _live(tmp_path, monkeypatch, reg)
+    last_written = datetime(2026, 9, 1, 0, 0, tzinfo=UTC).timestamp() - 3600
+    os.utime(live, (last_written, last_written))  # the damaged file was last written before the (past) start the sidecar will state
     real_replace = _cut_before_the_replace(monkeypatch)
     before_cut = H.sha(live)
     with pytest.raises(OSError):
@@ -1122,8 +1124,10 @@ def test_the_notes_say_what_the_repair_is_doing_in_every_state(tmp_path, monkeyp
     reg.repair_upsert("a", state="done", reason=None, kept_file=kept.name, kept_rows=12345, unreadable_ids=7, folder=str(tmp_path))
     reg.retry(reason="replaced", files=(FILE_CORPUS,), file_replaced=True)
     done = [n for n in reg.notes() if n["kind"] == "repaired"]
-    assert [n["frame"] for n in done] == [damage.FRAME_REPAIRED], "no removal date recorded: nothing is promised about one"
+    # no removal date recorded (E3 fold 4, item 5): nothing is promised about one, and the notice says the kept file stays until it is removed
+    assert [n["frame"] for n in done] == [damage.FRAME_REPAIRED, damage.FRAME_KEPT_UNDATED]
     assert done[0]["vars"] == {"kept": 12345, "lost": 7}
+    assert done[1]["vars"] == {"name": kept.name, "size": damage._size_words(kept), "folder": str(tmp_path)}
     reg.repair_upsert("a", open_ended=True, kept_file_removal_after="2026-11-05T03:00:00+00:00")
     done = [n for n in reg.notes() if n["kind"] == "repaired"]
     assert [n["frame"] for n in done] == [damage.FRAME_REPAIRED_OPEN, damage.FRAME_KEPT_UNTIL]
@@ -1842,6 +1846,54 @@ def test_a_time_in_the_future_is_not_believed_and_a_made_time_is_never_made_up_f
     assert abs((got - now).total_seconds()) < 60
     got = repair._made_time({"created_at": "yesterday"}, None)
     assert abs((got - now).total_seconds()) < 60
+
+
+def test_a_clock_that_was_wrong_in_the_past_at_the_repair_cannot_make_the_kept_copy_due_at_once():
+    """The coordinator's check of E3 fold 4, item 4: with both of the sidecar's times in the past (a clock that was wrong when the repair ran),
+    the removal was dated in the past + 30 days and the kept copy was due at once. The damaged file's own modification time is the floor."""
+    now = datetime.now(UTC)
+    wrong = datetime(2001, 1, 1, tzinfo=UTC)
+    last_write = now - timedelta(days=1)
+    assert repair._made_time({"created_at": wrong.isoformat()}, wrong, last_write) == last_write
+    # a floor that is older than the sidecar's own times never shortens anything, and one in the future is not believed
+    made = now - timedelta(hours=1)
+    assert repair._made_time({"created_at": made.isoformat()}, made, now - timedelta(days=9)) == made
+    assert repair._made_time({"created_at": wrong.isoformat()}, wrong, now + timedelta(days=9)) == wrong
+    assert repair._clean_read_time({"created_at": wrong.isoformat()}, wrong, last_write) == last_write.isoformat(timespec="seconds")
+
+
+def _wrongly_dated_sidecar(tmp_path):
+    """A sidecar whose two times are in 2001, beside a damaged file that was last written a day ago."""
+    now = datetime.now(UTC)
+    wrong = datetime(2001, 1, 1, tzinfo=UTC)
+    sidecar = tmp_path / "repair.json"
+    sidecar.write_text("{}", encoding="utf-8")
+    os.utime(sidecar, (wrong.timestamp(), wrong.timestamp()))
+    last_write = (now - timedelta(days=1)).replace(microsecond=0)
+    damaged = tmp_path / "corpus.damaged.db"
+    damaged.write_bytes(b"x")
+    os.utime(damaged, (last_write.timestamp(), last_write.timestamp()))
+    doc = {"created_at": wrong.isoformat(), "damaged": damaged.name, "source": "x", "disk_unread_pages": 0, "page_size": 4096}
+    return doc, sidecar, damaged, last_write
+
+
+def test_the_kept_file_the_switch_left_dates_its_removal_from_its_own_modification_time_when_the_sidecar_clock_was_wrong(tmp_path):
+    doc, sidecar, damaged, last_write = _wrongly_dated_sidecar(tmp_path)
+    report: dict = {}
+    repair._kept_facts(report, doc, tmp_path / "corpus.db", sidecar)
+    assert report["clean_at"] == last_write.isoformat(timespec="seconds"), report["clean_at"]
+
+
+def test_a_resume_dates_its_removal_from_the_damaged_files_own_modification_time_when_the_sidecar_clock_was_wrong(tmp_path, monkeypatch):
+    doc, sidecar, damaged, last_write = _wrongly_dated_sidecar(tmp_path)
+    live = tmp_path / "corpus.db"  # until the switch the live file IS the damaged one
+    live.write_bytes(b"x")
+    os.utime(live, (last_write.timestamp(), last_write.timestamp()))
+    monkeypatch.setattr(repair, "_swap", lambda *a, **k: None)
+    report: dict = {}
+    work = {"resume": {"doc": doc, "sidecar": sidecar, "finished": tmp_path / "corpus.repaired.db"}, "target": live, "pages_unread": 0}
+    assert repair._resume(work, report, None) == "repaired"
+    assert report["clean_at"] == last_write.isoformat(timespec="seconds"), report["clean_at"]
 
 
 def test_a_run_longer_than_a_repair_can_take_is_not_believed():

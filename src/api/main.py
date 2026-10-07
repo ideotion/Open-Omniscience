@@ -2252,9 +2252,11 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     from sqlalchemy import func
 
     from src.database.models import ArticleLink
+    from src.database.stand_in import not_a_stand_in_article
     from src.utils.security import safe_href
 
-    a = db.query(Article).filter_by(id=article_id).first()
+    # A repair's stand-in article is a place-holder for a lost row, not an article that was stored: not found, as any unknown id is.
+    a = db.query(Article).filter_by(id=article_id).filter(not_a_stand_in_article()).first()
     if a is None:
         raise HTTPException(status_code=404, detail="Article not found.")
     content = a.get_content() if hasattr(a, "get_content") else (a.content or "")
