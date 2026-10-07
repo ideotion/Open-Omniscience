@@ -64,6 +64,7 @@ def _first_citing_article(session, domain: str) -> dict | None:
     from src.catalog.normalize import registrable_domain
     from src.database.models import Article, ArticleLink, Source
     from src.database.query import keyset_scan
+    from src.database.stand_in import not_a_stand_in_article_id
     from src.utils.url_utils import is_equivalent_domain
 
     dom = domain.lower()
@@ -72,7 +73,11 @@ def _first_citing_article(session, domain: str) -> dict | None:
     rows = keyset_scan(
         session.query(
             ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id
-        ).filter(ArticleLink.link_type == "external"),
+        ).filter(
+            ArticleLink.link_type == "external",
+            # the links kept for a lost article: its stand-in has no date and would sort first as "the first article that cited" the domain
+            not_a_stand_in_article_id(ArticleLink.article_id),
+        ),
         ArticleLink.id,
     )
     matching_ids: set[int] = set()

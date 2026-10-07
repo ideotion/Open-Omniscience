@@ -109,6 +109,7 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
     """
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword
+    from src.database.stand_in import not_a_stand_in_article_id
 
     rows_in = [t for t in (terms or []) if t.get("normalized")]
     if not rows_in:
@@ -172,6 +173,8 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
             KeywordMentionRead.keyword_id.in_(list(by_id)),
             KeywordMentionRead.observed_on >= lo,
             KeywordMentionRead.observed_on < hi,
+            # a mention kept for a lost article is no sighting: its source would be credited as the first channel to carry a concept
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
         )
         .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.source_id)
         .all()

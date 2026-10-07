@@ -14,6 +14,14 @@ from typing import Any
 #: The text a stand-in row carries in a text column that must not be NULL: ``(lost <table> <id>)``.
 LOST_TEXT = "(lost {table} {row_id})"
 
+#: The start of a stand-in ARTICLE's hash: ``LOST_TEXT`` for the ``articles`` table, which fills the column the table keeps unique and indexes
+#: (``idx_article_hash``). A real hash is a hex digest, so none starts with a parenthesis. :func:`stand_in_article_ids` and
+#: :func:`not_a_stand_in_article_id` read the mark through that index as the RANGE ``ARTICLE_HASH_PREFIX <= hash < ARTICLE_HASH_END``: the
+#: end is the prefix and the character that follows ``9``, so every ``(lost articles <digits>)`` is inside it and nothing else is. ``LIKE`` and
+#: ``substr()`` do not seek an index (measured on SQLite 3.45.1: a scan of the table), a range does.
+ARTICLE_HASH_PREFIX = "(lost articles "
+ARTICLE_HASH_END = ARTICLE_HASH_PREFIX + ":"
+
 #: The start of a stand-in SOURCE's domain (and name): ``LOST_TEXT`` for the ``sources`` table. A real domain cannot start with a parenthesis.
 SOURCE_DOMAIN_PREFIX = "(lost sources "
 
@@ -66,19 +74,28 @@ def is_a_stand_in_article(session: Any, article_id: int) -> bool:
     return session.query(Article.id).filter(Article.id == article_id, ~not_a_stand_in_article()).first() is not None
 
 
-#: How many ids one ``IN (...)`` list holds (the same bound the corpus resolver clamps to), so a long list never hits SQLite's variable limit.
-_IN_CHUNK = 900
+def _stand_in_article_id_select() -> Any:
+    """``SELECT id FROM articles WHERE hash >= :prefix AND hash < :end``: every stand-in article's id, read from the hash index alone (``id`` is the
+    row id, which every index entry carries), so no article row page is read whatever the size of the table. Never correlated to an enclosing
+    query, so the same condition also leaves the stand-ins out of a scan of ``articles`` itself (``Article.id``)."""
+    from sqlalchemy import select
 
-
-def stand_in_article_ids(session: Any, article_ids: Any) -> set[int]:
-    """The ids among ``article_ids`` that name a stand-in article, for a reader that is handed a list of article numbers (a query or body
-    field) and loads no article from it itself. The complement of :func:`not_a_stand_in_article`, asked in chunks."""
     from src.database.models import Article
 
-    ids = [int(i) for i in article_ids]
-    found: set[int] = set()
-    for start in range(0, len(ids), _IN_CHUNK):
-        chunk = ids[start : start + _IN_CHUNK]
-        rows = session.query(Article.id).filter(Article.id.in_(chunk), ~not_a_stand_in_article()).all()
-        found.update(int(r[0]) for r in rows)
-    return found
+    return select(Article.id).where(Article.hash >= ARTICLE_HASH_PREFIX, Article.hash < ARTICLE_HASH_END).correlate(None)
+
+
+def not_a_stand_in_article_id(column: Any) -> Any:
+    """The SQL condition that leaves out the rows of a CHILD table (a link, a mention, a date tag, an entity) whose ``article_id`` names a
+    stand-in article, without a JOIN to ``articles``: ``column NOT IN (SELECT id FROM articles WHERE hash >= :prefix AND hash < :end)``. A join
+    drags whole article rows through the codec (measured 807 to 4,860 MiB on a large store); this asks the hash index only (0.03 MiB per call
+    whatever the size of the set, +0.01 MiB on a 200,000-row scan). A child row whose column is NULL names no article and is kept."""
+    from sqlalchemy import or_
+
+    return or_(column.is_(None), column.not_in(_stand_in_article_id_select()))
+
+
+def stand_in_article_ids(session: Any) -> set[int]:
+    """Every stand-in article's id, in ONE index-only read (:func:`_stand_in_article_id_select`) whose cost does not depend on the set a caller
+    holds: the caller subtracts them from its own ids in Python. Asking per id costs a row page each (the reason sits after the article text)."""
+    return {int(r[0]) for r in session.execute(_stand_in_article_id_select())}

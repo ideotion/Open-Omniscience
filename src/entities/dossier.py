@@ -201,6 +201,7 @@ def _route_selects(session, qid: str) -> tuple[dict, list]:
     """Each route's SELECT of article ids, and what it matched on."""
     from src.database.derived_views import KeywordMentionRead, require_mentions_view
     from src.database.models import ArticleEntity, ArticleMentionedPlace
+    from src.database.stand_in import not_a_stand_in_article_id
 
     terms = item_terms(qid)
     names = _entity_names(session, terms, qid)
@@ -209,7 +210,8 @@ def _route_selects(session, qid: str) -> tuple[dict, list]:
     routes: dict = {}
     if names:
         routes["entities"] = (
-            select(ArticleEntity.article_id).where(ArticleEntity.name.in_(names)), names)
+            select(ArticleEntity.article_id).where(
+                ArticleEntity.name.in_(names), not_a_stand_in_article_id(ArticleEntity.article_id)), names)
     if kw_ids:
         # The mentions table is where indexing writes an article's keywords; article_keywords is
         # a legacy link table nothing but a backup restore fills, so joining through it found
@@ -218,10 +220,12 @@ def _route_selects(session, qid: str) -> tuple[dict, list]:
         # have to touch this file again.
         require_mentions_view(session)
         routes["keywords"] = (
-            select(KeywordMentionRead.article_id).where(KeywordMentionRead.keyword_id.in_(kw_ids)), kw_terms)
+            select(KeywordMentionRead.article_id).where(
+                KeywordMentionRead.keyword_id.in_(kw_ids), not_a_stand_in_article_id(KeywordMentionRead.article_id)), kw_terms)
     if places:
         routes["places"] = (
-            select(ArticleMentionedPlace.article_id).where(_place_clause(places)),
+            select(ArticleMentionedPlace.article_id).where(
+                _place_clause(places), not_a_stand_in_article_id(ArticleMentionedPlace.article_id)),
             [p.name for p in places])
     return routes, places
 

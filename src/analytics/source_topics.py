@@ -31,6 +31,8 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 
+from src.database.stand_in import is_a_stand_in_source, not_a_stand_in_source
+
 
 def aggregate_source_topics(
     rows: Iterable[tuple[str, str, int]],
@@ -84,6 +86,7 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
 
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import KeywordTag, Source
+    from src.database.stand_in import not_a_stand_in_article_id
 
     stmt = (
         select(
@@ -93,7 +96,8 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
         )
         .join(KeywordTag, KeywordTag.keyword_id == KeywordMentionRead.keyword_id)
         .join(Source, Source.id == KeywordMentionRead.source_id)
-        .where(KeywordTag.axis == "topic")
+        # a mention kept for a lost article is no article of the source: it would count toward the source's floor and its topic ranking
+        .where(KeywordTag.axis == "topic", not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .group_by(Source.domain, KeywordTag.tag)
     )
     rows = session.execute(stmt).all()  # Row objects unpack as (domain, tag, count)
@@ -130,7 +134,7 @@ def source_topic_candidates(session, *, min_articles: int = 5, top_n: int = 4) -
     candidates: list[dict] = []
     for i in range(0, len(domains), 900):
         batch = domains[i : i + 900]
-        rows = session.query(Source.id, Source.domain).filter(Source.domain.in_(batch))
+        rows = session.query(Source.id, Source.domain).filter(Source.domain.in_(batch), not_a_stand_in_source())  # a stand-in is given no tags
         for sid, domain in rows:
             candidates.append({"id": sid, "topics": proposed[domain]})
     return {"candidates": candidates}
@@ -158,7 +162,7 @@ def _apply_source_topics_on_a_shared_session(session, *, min_articles: int, top_
         }
         if not proposed:
             return {"sources_updated": 0, "tags_added": 0}
-        for src in session.query(Source).all():
+        for src in session.query(Source).filter(not_a_stand_in_source()).all():
             topics = proposed.get(src.domain)
             if not topics:
                 continue
@@ -223,8 +227,8 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
     with write_lock():
         for cand in candidates:
             src = session.get(Source, cand["id"])
-            if src is None:
-                continue  # the row vanished between decide and apply; skip honestly
+            if src is None or is_a_stand_in_source(src):
+                continue  # the row vanished between decide and apply (skip honestly), or is a stand-in source: tags are never written onto one
             # Re-derive `fresh` against Source.tags AS IT IS NOW, not the decide-phase
             # snapshot -- the row could have been curated in the gap between the read
             # and the gate, and recomputing here means that edit is never clobbered.

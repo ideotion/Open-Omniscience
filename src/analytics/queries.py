@@ -32,6 +32,7 @@ from src.database.models import (
     KeywordFamilyOverride,
     Source,
 )
+from src.database.stand_in import not_a_stand_in_article_id
 
 # Chunk size for id IN(...) queries -- stay under SQLite's historical ~999
 # bound-variable ceiling, the same repo-wide invariant as latest.py:_SQL_IN_CHUNK
@@ -1209,17 +1210,21 @@ def trend_range_article_ids(
     )
 
     # Bounded quarantine removal, chunked under SQLite's variable ceiling via the
-    # module's own _IN_CHUNK rather than a second copy of the same 900.
+    # module's own _IN_CHUNK rather than a second copy of the same 900. It asks for the
+    # ids that ARE quarantined (``IS 1`` seeks the covering index whether or not the
+    # table was ever analysed) and subtracts them: ``IS NOT 1`` probes one article row
+    # per id until the first ANALYZE (12.8 MiB per 900 ids, measured). A stand-in
+    # article is quarantined, so it is subtracted here with the rest.
     openable: list[int] = []
     for i in range(0, len(ids), _IN_CHUNK):
         chunk = ids[i : i + _IN_CHUNK]
         rows = (
             session.query(Article.id)
-            .filter(Article.id.in_(chunk), Article.quarantined.isnot(True))
+            .filter(Article.id.in_(chunk), Article.quarantined.is_(True))
             .all()
         )
-        keep = {r[0] for r in rows}
-        openable.extend(aid for aid in chunk if aid in keep)
+        held = {r[0] for r in rows}
+        openable.extend(aid for aid in chunk if aid not in held)
 
     excluded = len(ids) - len(openable)
     capped = len(openable) > cap
@@ -1623,7 +1628,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         )
         .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMentionRead.keyword_id.in_(kw_ids))
+        .filter(KeywordMentionRead.keyword_id.in_(kw_ids), not_a_stand_in_article_id(KeywordMentionRead.article_id))
     )
     if days and days > 0:
         cutoff = date.today() - timedelta(days=days)
@@ -1731,7 +1736,7 @@ def ring_country_article_ids(
         session.query(KeywordMentionRead.article_id)
         .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMentionRead.keyword_id.in_(list(kw_ids)))
+        .filter(KeywordMentionRead.keyword_id.in_(list(kw_ids)), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .distinct()
     )
     q = q.filter(Source.country.is_(None)) if country is None else q.filter(Source.country == country)
@@ -3405,7 +3410,7 @@ def context(
     rows = (
         session.query(KeywordMentionRead, Article)
         .join(Article, Article.id == KeywordMentionRead.article_id)
-        .filter(KeywordMentionRead.keyword_id.in_(_concept_seed_ids(concept, kw)))
+        .filter(KeywordMentionRead.keyword_id.in_(_concept_seed_ids(concept, kw)), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .order_by(KeywordMentionRead.observed_on.desc(), KeywordMentionRead.id.desc())
         .limit(limit)
         .all()
@@ -3756,7 +3761,7 @@ def _article_set(session, normalized_terms: list[str], *, cap: int = 4000) -> se
     rows = (
         session.query(KeywordMentionRead.article_id)
         .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
-        .filter(Keyword.normalized_term.in_(normalized_terms))
+        .filter(Keyword.normalized_term.in_(normalized_terms), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .distinct()
         .limit(cap)
         .all()

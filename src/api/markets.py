@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import CommodityPrice, MarketExtractionRule, Source
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.safety.fetcher import following_fetcher
 
@@ -114,8 +115,8 @@ def list_rules(category: str | None = None, db: Session = Depends(get_db)) -> di
 def create_rule(payload: RuleCreate, db: Session = Depends(get_db)) -> dict:
     """Create a price-extraction rule for a source."""
     _validate_category(payload.category)
-    if not db.query(Source.id).filter_by(id=payload.source_id).first():
-        raise HTTPException(status_code=404, detail=f"Source {payload.source_id} not found.")
+    if not db.query(Source.id).filter_by(id=payload.source_id).filter(not_a_stand_in_source()).first():
+        raise HTTPException(status_code=404, detail=f"Source {payload.source_id} not found.")  # a stand-in source is no source
     if not payload.symbol.strip() or not payload.url.strip() or not payload.selector.strip():
         raise HTTPException(status_code=400, detail="symbol, url and selector are required.")
     rule = MarketExtractionRule(**payload.model_dump())

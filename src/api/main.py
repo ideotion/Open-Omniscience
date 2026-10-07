@@ -2709,7 +2709,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             if ranked:
                 # The keyword mentions kept for a lost article stay in the table, so the stand-in (the place-holder a salvage copy writes at
                 # its id) would be offered as an article that shares keywords with this one: it is no article, and a link to it is not found.
-                _lost = stand_in_article_ids(db, [rid for rid, _shared in ranked])
+                _lost = stand_in_article_ids(db)
                 ranked = [row for row in ranked if row[0] not in _lost]
             if ranked:
                 _rel_titles = {
@@ -2792,7 +2792,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             else []
         )
         if _cand:
-            _lost = stand_in_article_ids(db, _cand)  # the same kept mentions, the same place-holder: never one of the "copies"
+            _lost = stand_in_article_ids(db)  # the same kept mentions, the same place-holder: never one of the "copies"
             _cand = [rid for rid in _cand if rid not in _lost]
         if _cand:
             docs = {str(a.id): ((a.title or "") + "\n" + (a.get_content() or ""))}

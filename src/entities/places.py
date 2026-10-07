@@ -454,6 +454,7 @@ def mention_count(session, place) -> int:
     from sqlalchemy import func, select
 
     from src.database.models import ArticleMentionedPlace
+    from src.database.stand_in import not_a_stand_in_article_id
 
     names = {place.name}
     n = session.execute(
@@ -461,6 +462,8 @@ def mention_count(session, place) -> int:
             ArticleMentionedPlace.name.in_(names),
             ArticleMentionedPlace.country == place.country,
             ArticleMentionedPlace.kind != "country",
+            # the mentions kept for a lost article: a stand-in is no article that names the place
+            not_a_stand_in_article_id(ArticleMentionedPlace.article_id),
         )
     ).scalar()
     return int(n or 0)
@@ -472,12 +475,14 @@ def mention_article_ids(session, place, *, cap: int = 20_000) -> tuple[list[int]
     from sqlalchemy import select
 
     from src.database.models import ArticleMentionedPlace
+    from src.database.stand_in import not_a_stand_in_article_id
 
     ids = session.execute(
         select(ArticleMentionedPlace.article_id).where(
             ArticleMentionedPlace.name.in_({place.name}),
             ArticleMentionedPlace.country == place.country,
             ArticleMentionedPlace.kind != "country",
+            not_a_stand_in_article_id(ArticleMentionedPlace.article_id),
         ).distinct().order_by(ArticleMentionedPlace.article_id)
     ).scalars().all()
     ids = [int(i) for i in ids]

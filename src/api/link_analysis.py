@@ -29,7 +29,7 @@ from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
 from src.database.session import get_db
-from src.database.stand_in import stand_in_article_ids
+from src.database.stand_in import not_a_stand_in_article_id, stand_in_article_ids
 
 router = APIRouter(prefix="/api/links", tags=["links"])
 
@@ -292,7 +292,7 @@ def articles_by_link(
 
         # The links a salvage copy kept for a lost article stay in the table, so the stand-in (the place-holder it writes at that id) would be
         # listed as an article that cites the link: it is no article, and the count and the list both leave it out.
-        lost = stand_in_article_ids(db, ids)
+        lost = stand_in_article_ids(db)
         if lost:
             ids = [i for i in ids if i not in lost]
         total = len(ids)
@@ -347,7 +347,14 @@ def _citation_graph(db, *, min_citations: int = 1, max_nodes: int = 2000) -> dic
 
 
 def _citation_graph_compute(db, *, min_citations: int = 1, max_nodes: int = 2000) -> dict:
-    pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct().all()
+    # The links kept for a lost article stay in the table; the condition is on the child row (a join to ``articles`` would read whole article
+    # rows), BEFORE the per-domain sets and both caps, so a stand-in neither takes a node nor counts toward ``min_citations``.
+    pairs = (
+        db.query(ArticleLink.normalized_url, ArticleLink.article_id)
+        .filter(not_a_stand_in_article_id(ArticleLink.article_id))
+        .distinct()
+        .all()
+    )
     by_domain: dict[str, set[int]] = defaultdict(set)
     for nu, aid in pairs:
         dom = registrable_domain(nu)
@@ -464,7 +471,11 @@ def shared_links(
         return {"resolved": None, "shared": [], "members": 0}
     member_ids = [
         r[0]
-        for r in db.query(KeywordMentionRead.article_id).filter_by(keyword_id=kw.id).all()
+        for r in db.query(KeywordMentionRead.article_id)
+        .filter_by(keyword_id=kw.id)
+        # the mentions kept for a lost article: a stand-in is no member, no citer, and its placeholder source no "citing source"
+        .filter(not_a_stand_in_article_id(KeywordMentionRead.article_id))
+        .all()
     ]
     if not member_ids:
         return {"resolved": {"term": kw.term}, "shared": [], "members": 0}

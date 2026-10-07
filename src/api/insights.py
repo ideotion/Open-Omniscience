@@ -33,7 +33,11 @@ from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.session import get_db
-from src.database.stand_in import not_a_stand_in_article, stand_in_article_ids
+from src.database.stand_in import (
+    not_a_stand_in_article,
+    not_a_stand_in_article_id,
+    stand_in_article_ids,
+)
 from src.jobs.background import BackgroundJob, register_job
 from src.utils.cache import SimpleCache
 
@@ -451,7 +455,7 @@ def _resolve_corpus(
                     ids.append(v)
         # A stand-in (the place-holder a salvage copy writes at a lost id) is no article of the set it was named in: dropped before the cap and the
         # total, so every corpus-* analysis, the link graph and the source coverage leave it (and its "(lost sources N)" source) out.
-        lost = stand_in_article_ids(db, ids)
+        lost = stand_in_article_ids(db)
         if lost:
             ids = [v for v in ids if v not in lost]
         return ids[:cap], len(ids)
@@ -3574,7 +3578,7 @@ def insights_supergroup_articles(
     for chunk in _chunks(sorted(keyword_ids)):
         for (aid,) in (
             db.query(KeywordMentionRead.article_id)
-            .filter(KeywordMentionRead.keyword_id.in_(chunk))
+            .filter(KeywordMentionRead.keyword_id.in_(chunk), not_a_stand_in_article_id(KeywordMentionRead.article_id))
             .distinct()
             .all()
         ):

@@ -508,7 +508,8 @@ class SourceManager:
             logger.warning(f"Group with ID {group_id} not found")
             return 0
 
-        sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        # A stand-in source (the place-holder a salvage copy writes for a lost one) is put in no group.
+        sources = self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
         # Get current sources in group
         current_sources = group.sources.all()
@@ -541,7 +542,9 @@ class SourceManager:
             return 0
 
         # Get sources to remove
-        sources_to_remove = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        sources_to_remove = (
+            self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
+        )
         source_ids_to_remove = {s.id for s in sources_to_remove}
 
         # Get current sources in group
@@ -913,12 +916,15 @@ class SourceManager:
         Returns:
             List of sources with discovered RSS feeds
         """
+        # A stand-in source is never probed: its "domain" is the text "(lost sources N)", and a request would be made for https://(lost sources N).
         if source_ids:
-            sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+            sources = (
+                self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
+            )
         else:
             sources = (
                 self.session.query(Source)
-                .filter(or_(Source.rss_url == None, Source.rss_url == ""))
+                .filter(or_(Source.rss_url == None, Source.rss_url == ""), not_a_stand_in_source())
                 .all()
             )
 

@@ -60,12 +60,14 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
     from sqlalchemy import or_
 
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
     from src.database.writer import write_lock
 
     getter = get or _default_getter
     todo = (
         session.query(Source)
-        .filter(or_(Source.source_type.is_(None), Source.source_type == "news"))
+        # a stand-in source is no outlet: no lookup is made by its placeholder name, and no type is written onto it
+        .filter(or_(Source.source_type.is_(None), Source.source_type == "news"), not_a_stand_in_source())
         .limit(limit)
         .all()
     )

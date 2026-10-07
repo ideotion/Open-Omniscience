@@ -10,6 +10,7 @@ control (the same call shows real rows), so a reader that stopped answering at a
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -706,6 +707,13 @@ def test_an_article_the_app_judged_not_an_article_is_still_reached_by_its_id_in_
     assert facets["corpus_n"] == 1 and facets["corpus_total"] == 1, facets
     link = client.get("/api/links/articles-by-link", params={"url": "https://l.example/2"}).json()
     assert [a["id"] for a in link["articles"]] == [2], link
+    # and so does the agenda's deduced-events layer: a date two articles mention, one of them a link list, is still an event of the two
+    from datetime import date
+
+    from src.timemap import datestore
+
+    agenda = datestore.upcoming_deduced(db, today=date(2026, 3, 1), min_articles=2)["events"]
+    assert [(e["date"], e["n_articles"], e["n_sources"], e["article_ids"]) for e in agenda] == [("2026-03-05", 2, 2, [1, 2])], agenda
 
 
 def test_the_kept_children_of_the_stand_in_are_not_listed_by_the_routes_that_read_them_by_the_stand_ins_id(client, fake_llm):
@@ -861,11 +869,73 @@ def test_an_explicit_id_set_of_the_corpus_analyses_never_holds_the_stand_in_nor_
     assert links["n_articles"] == 2 and links["total_matched"] == 2, links
 
 
-def test_the_ids_a_list_names_are_asked_in_chunks_and_only_the_stand_ins_come_back(db):
-    ids = list(range(1, 1501)) + list(range(2000, 4000))  # 3,500 ids: the stand-in sits in the second chunk, so a first-chunk-only read misses it
-    assert stand_in.stand_in_article_ids(db, ids) == {STAND_IN_ARTICLE}
-    assert stand_in.stand_in_article_ids(db, []) == set() and stand_in.stand_in_article_ids(db, [1, 2, 3]) == set()
-    assert stand_in.stand_in_article_ids(db, (str(STAND_IN_ARTICLE),)) == {STAND_IN_ARTICLE}
+def test_the_hash_range_finds_the_stand_in_a_salvage_copy_wrote_and_no_real_quarantined_article(db):
+    """The helper reads the mark through the hash index (the placeholder text IS the stand-in's hash): it finds what the copy wrote, never an
+    article the app only judged not to be one, and it names the same articles as the reason the copy also wrote."""
+    from src.database.models import Article
+
+    assert stand_in.stand_in_article_ids(db) == {STAND_IN_ARTICLE}
+    real = db.get(Article, 3)
+    real.quarantined, real.quarantine_reason = True, "judged not an article"
+    db.commit()
+    assert stand_in.stand_in_article_ids(db) == {STAND_IN_ARTICLE}, "a real quarantined article is found as a stand-in"
+    by_reason = {int(i) for (i,) in db.query(Article.id).filter(~stand_in.not_a_stand_in_article())}
+    assert by_reason == stand_in.stand_in_article_ids(db) == {STAND_IN_ARTICLE}
+    assert db.get(Article, STAND_IN_ARTICLE).hash == stand_in.lost_text("articles", STAND_IN_ARTICLE)
+
+
+def test_the_hash_range_holds_every_placeholder_text_of_the_articles_table_and_no_hex_digest():
+    assert stand_in.ARTICLE_HASH_END == stand_in.ARTICLE_HASH_PREFIX + ":" and ord(":") == ord("9") + 1
+    for row_id in (0, 1, 9, 10, 99, 1500, 123456789, 99999999999999999999):
+        text = stand_in.lost_text("articles", row_id)
+        assert text.startswith(stand_in.ARTICLE_HASH_PREFIX)
+        assert stand_in.ARTICLE_HASH_PREFIX <= text < stand_in.ARTICLE_HASH_END, text
+    for outside in ("0" * 64, "f" * 64, "(lost sources 13)", "(lost articles", "(lost articles :", "(lost articles ;"):
+        assert not (stand_in.ARTICLE_HASH_PREFIX <= outside < stand_in.ARTICLE_HASH_END), outside
+
+
+def test_the_condition_for_a_child_table_leaves_out_the_stand_ins_rows_and_keeps_a_row_that_names_no_article(db):
+    """``child.article_id NOT IN (the stand-in ids)`` without a join: the kept links of the stand-in go, the rows of real articles stay, and
+    a child row whose column is NULL names no article and stays."""
+    from sqlalchemy import column, select, table, text
+
+    from src.database.models import ArticleLink
+
+    kept = db.query(ArticleLink).filter(stand_in.not_a_stand_in_article_id(ArticleLink.article_id)).count()
+    assert kept == 1499 and db.query(ArticleLink).count() == 1500
+    assert db.query(ArticleLink).filter(ArticleLink.article_id == STAND_IN_ARTICLE, stand_in.not_a_stand_in_article_id(ArticleLink.article_id)).count() == 0
+    db.execute(text("CREATE TEMP TABLE kept_rows (article_id INTEGER)"))
+    db.execute(text("INSERT INTO kept_rows VALUES (1), (NULL), (:lost)"), {"lost": STAND_IN_ARTICLE})
+    rows = table("kept_rows", column("article_id"))
+    left = [r[0] for r in db.execute(select(rows.c.article_id).where(stand_in.not_a_stand_in_article_id(rows.c.article_id)).order_by(rows.c.article_id))]
+    assert left == [None, 1], left
+
+
+def _plan(db, statement) -> list[str]:
+    from sqlalchemy import text
+
+    sql = str(statement.compile(dialect=db.get_bind().dialect, compile_kwargs={"literal_binds": True}))
+    return [str(r[-1]) for r in db.execute(text("EXPLAIN QUERY PLAN " + sql))]
+
+
+def test_both_forms_of_the_helper_seek_the_hash_index_and_read_no_article_row(db):
+    """The point of the range is the plan: a SEARCH on the unique hash index, covering (the id is the row id), for the enumerator and for the
+    condition inside a child scan, never a scan of ``articles``, a lookup of an article row, or a join to it (which reads whole rows)."""
+    from sqlalchemy import func, select, text
+
+    from src.database.models import ArticleLink
+
+    plans = {
+        "the enumerator": _plan(db, stand_in._stand_in_article_id_select()),
+        "the child condition": _plan(db, select(func.count()).select_from(ArticleLink).where(stand_in.not_a_stand_in_article_id(ArticleLink.article_id))),
+    }
+    for form, plan in plans.items():
+        about_articles = [line for line in plan if "articles" in line and "article_links" not in line]
+        assert about_articles == ["SEARCH articles USING COVERING INDEX idx_article_hash (hash>? AND hash<?)"], (form, plan)
+        assert not any("SCAN articles" in line or "PRIMARY KEY" in line for line in plan), (form, plan)
+    for decoy in ("hash LIKE '(lost articles %'", "substr(hash, 1, 15) = '(lost articles '"):  # why the helper is a range: neither of these seeks the index
+        decoy_plan = [str(r[-1]) for r in db.execute(text(f"EXPLAIN QUERY PLAN SELECT id FROM articles WHERE {decoy}"))]
+        assert not any("SEARCH articles USING COVERING INDEX idx_article_hash" in line for line in decoy_plan), (decoy, decoy_plan)
 
 
 def test_the_python_reading_of_the_stand_in_source_mark_agrees_with_the_sql_condition_on_every_source(db):
@@ -948,6 +1018,19 @@ def test_the_qualification_integrity_report_and_repair_never_judge_or_rewrite_th
     assert db.query(Source).filter(Source.id == 1).one().status == "qualified"  # the positive control: the same repair restored the real source
 
 
+def test_the_integrity_report_and_the_repair_read_one_candidate_join():
+    """The two were verbatim copies of one join: a gate added to one would leave the other naming (or fixing) what the first leaves out."""
+    import inspect
+
+    from src.catalog import qualification_integrity as qi
+
+    for fn in (qi.qualification_integrity_report, qi.repair_inversions):
+        body = inspect.getsource(fn)
+        assert "_inversion_candidates(session)" in body, fn.__name__
+        assert "newest_at" not in body, f"{fn.__name__} holds a copy of the candidate join"
+    assert "not_a_stand_in_source()" in inspect.getsource(qi._inversion_candidates)
+
+
 def test_the_archive_backfill_queue_skips_the_stand_in_whether_it_is_queued_or_already_active(db, tmp_path):
     from src.ingest import clear_kill_switch
     from src.ingest.archive_backfill import advance_backfill, enqueue_source, load_state
@@ -970,7 +1053,7 @@ def test_the_archive_backfill_queue_skips_the_stand_in_whether_it_is_queued_or_a
         assert out["skipped"] == "source no longer exists" and out["source_id"] == 13, out
         assert load_state(queued)["queue"] == [] and seen == []  # nothing was enumerated for it
         active = tmp_path / "active.json"
-        active.write_text('{"active": {"source_id": 13, "urls": ["https://x.example/a"], "cursor": 0, "full_history": false, "tally": {}}}')
+        active.write_text('{"active": {"source_id": 13, "urls": ["https://x.example/a"], "cursor": 0, "full_history": false, "tally": {}}}', encoding="utf-8")
         out = advance_backfill(db, fetcher=object(), per_pass=5, state_path=active, ingest_fn=ingest, discover_fn=discover)
         assert out["skipped"] == "source no longer exists" and out["done"] is True and seen == [], (out, seen)
         assert load_state(active)["active"] is None
@@ -1163,3 +1246,774 @@ def test_the_real_articles_kept_for_a_lost_source_stay_in_the_list_and_name_the_
     finally:
         app.dependency_overrides.clear()
         engine.dispose()
+
+
+# --------------------------------------------------------------------------- #
+#  E3 fold 9: the source writers and lists the fold 7 sweep had not reached
+# --------------------------------------------------------------------------- #
+def test_the_manager_puts_many_sources_in_one_group_without_the_stand_in_and_takes_it_out_of_none(db):
+    """The id-list twins of ``add_source_to_groups``: one group, many sources. The stand-in is neither added to the group nor removed from it."""
+    from sqlalchemy import select
+
+    from src.database.models import source_group_association
+    from src.database.source_manager import SourceManager
+
+    gid = _give_the_stand_in_what_its_kept_children_leave_behind(db)  # a group of source 1 and the stand-in
+
+    def members(group_id):
+        db.expire_all()
+        return sorted(db.execute(select(source_group_association.c.source_id).where(source_group_association.c.group_id == group_id)).scalars())
+
+    with SourceManager(session=db) as m:
+        other = m.create_group("g2")
+        assert m.add_sources_to_group(other.id, [1, 13]) == 1 and members(other.id) == [1], "the stand-in was put in a group"
+        assert m.remove_sources_from_group(gid, [13]) == 0 and members(gid) == [1, 13], "the stand-in was taken out of a group"
+        assert m.remove_sources_from_group(gid, [1]) == 1 and members(gid) == [13]  # the twin: the same call acts on a real source
+
+
+def test_the_feed_discovery_never_probes_for_the_stand_in_in_either_branch(db, monkeypatch):
+    """Its "domain" is the text ``(lost sources N)``: a request would be made for https://(lost sources N). Asked by id and asked for every
+    source without a feed, no probe is built for it."""
+    from src.database.source_manager import SourceManager
+
+    asked: list[list[int]] = []
+
+    def fake_find(sources, timeout=10):
+        asked.append(sorted(s["id"] for s in sources))
+        return []
+
+    monkeypatch.setattr("src.database.source_manager.DuckDuckGoSearch.find_missing_rss_feeds", staticmethod(fake_find))
+    with SourceManager(session=db) as m:
+        m.discover_rss_feeds([1, 13])
+        m.discover_rss_feeds()
+    assert asked == [[1], list(range(1, 13))], asked  # by id: the real source only; for all: the twelve real sources, never 13
+
+
+def test_a_market_rule_is_not_created_for_the_stand_in_source(client):
+    body = {"symbol": "AAA", "url": "https://s0.example.org/p", "selector": ".p"}
+    lost = client.post("/api/markets/rules", json={**body, "source_id": 13})
+    assert lost.status_code == 404, (lost.status_code, lost.text)
+    real = client.post("/api/markets/rules", json={**body, "source_id": 1})  # the positive control
+    assert real.status_code == 200, (real.status_code, real.text)
+    assert [r["source_id"] for r in client.get("/api/markets/rules").json()["rules"]] == [1]
+
+
+def test_the_qualification_assist_run_answers_the_stand_in_as_not_found_and_runs_nothing_for_it(client, monkeypatch):
+    """The id comes from the body, not the path, so it is a by-id route all the same: no run is made, no proposals artifact is written."""
+    ran: list[int] = []
+
+    def fake_run(session, source_id, client=None, *, model=None, max_articles=20):
+        ran.append(source_id)
+        return {"source_id": source_id, "proposals": []}
+
+    monkeypatch.setattr("src.ai_layer.qualification_assist.run_and_persist_qualification_assist", fake_run)
+    lost = client.post("/api/diagnostics/qualification-assist/run", json={"source_id": 13})
+    assert lost.status_code == 404 and ran == [], (lost.status_code, lost.text, ran)
+    real = client.post("/api/diagnostics/qualification-assist/run", json={"source_id": 1})  # the positive control
+    assert real.status_code == 200 and ran == [1], (real.status_code, real.text, ran)
+
+
+def test_the_wikidata_type_pass_looks_up_no_name_for_the_stand_in_and_writes_no_type_on_it(db, monkeypatch):
+    """The stand-in has no source type, which is what the pass looks for, and its name is the placeholder: a lookup (a network request) by that
+    name is pointless, and a type written onto it would make it look like a reconciled source."""
+    from src.catalog import wikidata_apply
+
+    monkeypatch.setattr(wikidata_apply, "kill_switch_active", lambda: False)
+    asked: list[str] = []
+
+    class _Empty:
+        def json(self):
+            return {}
+
+    def getter(url):
+        asked.append(url)
+        return _Empty()
+
+    wikidata_apply.apply_source_types(db, limit=50, get=getter)
+    assert asked, "the positive control: the real sources were looked up"
+    assert not any("lost" in u for u in asked), [u for u in asked if "lost" in u]
+
+
+def test_the_topic_tags_are_proposed_for_and_written_onto_real_sources_only(db, monkeypatch):
+    """``source_topic_candidates`` (decide), the shared-session fallback and ``apply_source_topics`` (apply) each leave the stand-in out."""
+    from src.analytics import source_topics
+    from src.database.models import Source
+
+    monkeypatch.setattr(source_topics, "derive_source_topics", lambda session, **kw: [
+        {"domain": "s0.example.org", "topics": ["politics"]},
+        {"domain": "(lost sources 13)", "topics": ["politics"]},
+    ])
+    decided = source_topics.source_topic_candidates(db)
+    assert decided == {"candidates": [{"id": 1, "topics": ["politics"]}]}, decided
+    shared = source_topics._apply_source_topics_on_a_shared_session(db, min_articles=1, top_n=4)
+    assert shared["sources_updated"] == 1, shared
+    db.rollback()
+    db.expire_all()
+    assert (db.get(Source, 13).tags or "") == "" and "politics" in (db.get(Source, 1).tags or "")
+    db.get(Source, 1).tags = None
+    db.commit()
+    # the apply phase re-reads each candidate row: a stand-in handed over by the decide phase is skipped there too
+    monkeypatch.setattr(source_topics, "source_topic_candidates", lambda session, **kw: {"candidates": [{"id": 13, "topics": ["politics"]}, {"id": 1, "topics": ["politics"]}]})
+    applied = source_topics.apply_source_topics(db, min_articles=1, top_n=4)
+    assert applied["sources_updated"] == 1, applied
+    db.expire_all()
+    assert (db.get(Source, 13).tags or "") == "" and "politics" in (db.get(Source, 1).tags or "")
+
+
+def test_the_two_source_diagnostics_leave_the_stand_in_out_of_their_lists(client):
+    observed = client.get("/api/sources/official-instruments").json()
+    assert 1 in [r["source_id"] for r in observed["sources"]] and 13 not in [r["source_id"] for r in observed["sources"]], observed
+    audit = client.get("/api/sources/country-domain-audit").json()
+    assert audit["examined"] == 12, audit  # the twelve real sources; the stand-in is not examined
+
+
+def test_the_tag_proposals_never_offer_the_stand_in_source_whatever_mentions_were_kept_for_it(db):
+    """Mentions carry the source id of their article, so the stand-in source (which owns real articles kept for a lost source) has mentions and
+    an article count; it would be proposed for tagging, and the tags applied onto it."""
+    from datetime import UTC, datetime
+
+    from src.ai_layer.source_tags import select_source_tag_candidates
+    from src.database.models import Keyword, KeywordMention
+
+    kw = Keyword(term="housing", normalized_term="housing", language="en")
+    db.add(kw)
+    db.flush()
+    for aid, sid in ((1, 1), (2, 13), (3, 13), (4, 13)):
+        db.add(KeywordMention(keyword_id=kw.id, article_id=aid, count=3, observed_on=datetime.now(UTC).date(), source_id=sid, language="en"))
+    db.commit()
+    items, skipped = select_source_tag_candidates(db, min_articles=1, min_mentions=1)[:2]
+    domains = [i.domain for i in items] + [s.domain for s in skipped]
+    assert "s0.example.org" in domains, domains  # the positive control: the real source is visited
+    assert not any("lost" in d for d in domains), domains
+
+
+# --------------------------------------------------------------------------- #
+#  E3 fold 9: a row kept for a lost article never makes a stand-in an article, a source or an independent outlet
+#
+#  A salvage copy keeps the child rows of an article it could not read (its links, its date tags, its places, its entities, its keyword
+#  mentions) and writes ONE stand-in article at the lost id so those rows still name a row. A reader that goes from such a kept row to "an
+#  article", to "the article's source" or to a count of articles must leave the stand-in out, or a placeholder (whose source is a placeholder
+#  too) is listed, ranked, promoted, or counted as an independent outlet. Each reader is asked twice, on the real salvage copy above (article
+#  1500 is the stand-in, under the stand-in source 13): once with ONE real article and the stand-in (the placeholder would make the pair, and
+#  the reader must see one article), and once with two real articles (the positive control), so a reader that stopped answering cannot pass for
+#  one that leaves the stand-in out. The condition is asked on the CHILD row (``stand_in.not_a_stand_in_article_id``), never through a join.
+# --------------------------------------------------------------------------- #
+LOST_SOURCE = 13
+DAY = date(2026, 3, 5)
+
+
+def _links(session, article_ids, normalized, *, link_type="external") -> None:
+    from src.database.models import ArticleLink
+
+    for aid in article_ids:
+        session.add(ArticleLink(article_id=aid, url=f"https://{normalized}", normalized_url=normalized, link_type=link_type))
+    session.commit()
+
+
+def _places_and_dates(session, article_ids, *, place="Paris", country="fr", kind="city", on=DAY) -> None:
+    """A place tag and a date tag for each article (a date tag an article already has is left as it is: they are unique per day)."""
+    from src.database.models import ArticleMentionedDate, ArticleMentionedPlace
+
+    for aid in article_ids:
+        session.add(ArticleMentionedPlace(article_id=aid, name=place, country=country, kind=kind, mentions=1))
+        if not session.query(ArticleMentionedDate).filter_by(article_id=aid, mentioned_on=on, precision="day").first():
+            session.add(ArticleMentionedDate(article_id=aid, mentioned_on=on, precision="day", snippet="5 March 2026", confidence=0.9))
+    session.commit()
+
+
+# --------------------------------------------------------------------------- #
+#  the readers of the links kept for a lost article
+# --------------------------------------------------------------------------- #
+def test_a_domain_cited_by_one_real_article_and_the_stand_in_is_cited_by_one_outlet_not_two(db):
+    """``cited_domain_stats`` counts the DISTINCT sources that cite a domain, and promotion needs two: the stand-in's placeholder source would be the
+    second, and ``promote_cited_sources`` would register a new source from one real outlet and a placeholder."""
+    from src.database.models import Source
+    from src.discovery.cited_sources import cited_domain_stats, promote_cited_sources
+
+    _links(db, [1, STAND_IN_ARTICLE], "cited.example/story")
+    stats = cited_domain_stats(db)["cited.example"]
+    assert stats["sources"] == {1} and stats["articles"] == {1}, stats
+    plan = promote_cited_sources(db, min_source_citers=2, dry_run=True)
+    assert "cited.example" not in [c["domain"] for c in plan["candidates"]], plan
+    before = db.query(Source).count()
+    promote_cited_sources(db, min_source_citers=2)
+    db.commit()
+    assert db.query(Source).filter(Source.domain == "cited.example").count() == 0 and db.query(Source).count() == before
+
+
+def test_a_domain_cited_by_two_real_articles_of_two_sources_is_promoted(db):
+    from src.database.models import Source
+    from src.discovery.cited_sources import cited_domain_stats, promote_cited_sources
+
+    _links(db, [1, 2], "cited.example/story")
+    assert cited_domain_stats(db)["cited.example"]["sources"] == {1, 2}
+    plan = promote_cited_sources(db, min_source_citers=2, dry_run=True)
+    assert [c["domain"] for c in plan["candidates"] if c["domain"] == "cited.example"] == ["cited.example"], plan
+    promote_cited_sources(db, min_source_citers=2)
+    db.commit()
+    assert db.query(Source).filter(Source.domain == "cited.example").count() == 1
+
+
+def test_the_citation_channel_never_counts_the_stand_in_toward_a_domains_citations(db):
+    from src.discovery.channels import citation_candidates
+
+    _links(db, [1, STAND_IN_ARTICLE], "candidate.example/a")
+    _links(db, [1, 2], "candidate.example/b")
+    out = citation_candidates(db, cap=50, min_citations=2, budget_s=0)
+    by_domain = {d["domain"]: d for d in out["decisions"]} if "decisions" in out else {}
+    assert by_domain, out  # the positive control: the real pair is a candidate
+    assert by_domain["candidate.example"]["evidence"]["distinct_citing_articles"] == 2, by_domain["candidate.example"]
+    _links(db, [1, STAND_IN_ARTICLE], "lonely.example/a")
+    again = citation_candidates(db, cap=50, min_citations=2, budget_s=0)
+    assert "lonely.example" not in [d["domain"] for d in again["decisions"]], again
+
+
+def test_the_first_article_that_cited_a_domain_is_never_the_stand_in_whose_date_sorts_first(db):
+    """The stand-in has no creation date, which sorts first: it would be named as the real source's "first article that cited" the domain, and
+    counted in ``distinct_citing_articles``."""
+    from src.discovery.source_trail import _first_citing_article
+
+    _links(db, [1, STAND_IN_ARTICLE], "trail.example/x")
+    first = _first_citing_article(db, "trail.example")
+    assert first is not None and first["article_id"] == 1 and first["distinct_citing_articles"] == 1, first
+    assert first["citing_source_name"] == "s0"
+    _links(db, [2], "trail.example/y")
+    both = _first_citing_article(db, "trail.example")
+    assert both is not None and both["distinct_citing_articles"] == 2 and both["article_id"] in (1, 2), both
+    _links(db, [STAND_IN_ARTICLE], "only-lost.example/z")
+    assert _first_citing_article(db, "only-lost.example") is None  # nothing but the stand-in cites it: nothing real does
+
+
+def test_an_origin_cited_by_one_real_article_and_the_stand_in_is_no_laundering_cluster(db):
+    """``find_source_laundering`` is the apparent corroboration that is not: an origin cited by many DISTINCT sources. One real source plus the
+    stand-in's placeholder source passed the gate, and the card named "(lost sources 13)"."""
+    from src.analytics.laundering import find_source_laundering
+
+    _links(db, [1, STAND_IN_ARTICLE], "origin.example/report")
+    assert find_source_laundering(db, min_sources=2, min_articles=2)["clusters"] == []
+    _links(db, [1, 2], "origin2.example/report")
+    found = find_source_laundering(db, min_sources=2, min_articles=2)["clusters"]
+    assert [c["origin"] for c in found] == ["origin2.example/report"], found
+    assert found[0]["article_ids"] == [1, 2] and found[0]["source_names"] == ["s0", "s1"], found
+    # A cluster that passes on its real articles alone, which the stand-in also cites: the counts and the member list are two reads of the child
+    # rows, and each hides the other (the counts still pass whether or not the list is cleaned, and the list is whatever the counts selected).
+    _links(db, [1, 2, STAND_IN_ARTICLE], "origin3.example/report")
+    third = [c for c in find_source_laundering(db, min_sources=2, min_articles=2)["clusters"] if c["origin"] == "origin3.example/report"]
+    assert len(third) == 1 and (third[0]["n_articles"], third[0]["distinct_sources"]) == (2, 2), third
+    assert third[0]["article_ids"] == [1, 2] and third[0]["source_names"] == ["s0", "s1"], third
+
+
+def _graph(client, **params) -> dict:
+    response = client.get("/api/links/export.json", params=params)
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
+
+
+def test_the_citation_graph_export_never_holds_the_stand_in_and_min_citations_counts_real_articles_only(client):
+    """The pairs of the export come from ``article_links`` alone, so the links kept for the stand-in were nodes and edges of the graph, and the
+    stand-in counted toward a domain's ``min_citations``."""
+    session = _api_session(client)
+    _links(session, [1, 2, STAND_IN_ARTICLE], "graph.example/page")
+    graph = _graph(client, min_citations=1)
+    ids = {n["id"] for n in graph["nodes"]}
+    assert {"a:1", "a:2", "d:graph.example"} <= ids, ids  # the positive control: the real articles and their domain are in the graph
+    assert f"a:{STAND_IN_ARTICLE}" not in ids, "the stand-in is a node of the citation graph"
+    assert all(e["source"] != f"a:{STAND_IN_ARTICLE}" for e in graph["edges"])
+    ml = client.get("/api/links/export.graphml", params={"min_citations": 1})
+    assert ml.status_code == 200 and 'id="a:1"' in ml.text and f'id="a:{STAND_IN_ARTICLE}"' not in ml.text
+    # a domain only the stand-in cites is no node at all, and one real article beside the stand-in is ONE citation
+    _links(session, [STAND_IN_ARTICLE], "ghost.example/page")
+    _links(session, [1], "ghost.example/page2")
+    nodes = {n["id"] for n in _graph(client, min_citations=2)["nodes"]}
+    assert "d:graph.example" in nodes, nodes
+    assert "d:ghost.example" not in nodes, "min_citations counted the stand-in as a second citing article"
+    assert "d:ghost.example" in {n["id"] for n in _graph(client, min_citations=1)["nodes"]}  # one real citer is still a node
+
+
+def test_the_link_preview_never_lists_or_counts_the_stand_in_as_an_article_that_cites_the_link(client):
+    session = _api_session(client)
+    _links(session, [1, STAND_IN_ARTICLE], "preview.example/page")
+    lost = client.get("/api/links/preview", params={"url": "https://preview.example/page"})
+    assert lost.status_code == 200, lost.text
+    body = lost.json()
+    assert body["cited_by_articles"] == 1 and [c["article_id"] for c in body["citing_examples"]] == [1], body
+    _links(session, [2], "preview.example/page")
+    both = client.get("/api/links/preview", params={"url": "https://preview.example/page"}).json()
+    assert both["cited_by_articles"] == 2 and [c["article_id"] for c in both["citing_examples"]] == [1, 2], both
+    only_lost = client.get("/api/links/preview", params={"url": f"https://l.example/{STAND_IN_ARTICLE}"}).json()
+    assert only_lost["cited_by_articles"] == 0 and only_lost["citing_examples"] == [], only_lost
+
+
+# --------------------------------------------------------------------------- #
+#  the readers of the places, dates and entities kept for a lost article
+# --------------------------------------------------------------------------- #
+def test_one_real_article_and_the_stand_in_are_no_convergence_in_space_and_time(db):
+    """``find_convergences`` gates a span on distinct SOURCES: the stand-in's placeholder source made one real source pass, and the card said
+    "(lost sources 13)"."""
+    from src.analytics.convergence import find_convergences
+
+    _places_and_dates(db, [1, STAND_IN_ARTICLE])
+    none = find_convergences(db, min_articles=2, min_sources=2, today=date(2026, 3, 6))
+    assert none["clusters"] == [], none
+    _places_and_dates(db, [2, 1], place="Lyon")  # the positive control: two real articles of two sources are a convergence
+    found = find_convergences(db, min_articles=2, min_sources=2, today=date(2026, 3, 6))
+    assert [(c["place"], c["article_ids"], c["distinct_sources"], c["source_names"]) for c in found["clusters"]] == [("Lyon", [1, 2], 2, ["s0", "s1"])], found
+    assert "(lost sources" not in str(found["clusters"]), found
+
+
+def test_the_place_card_counts_and_lists_real_articles_only(db):
+    from types import SimpleNamespace
+
+    from src.entities.places import mention_article_ids, mention_count
+
+    _places_and_dates(db, [1, 2, STAND_IN_ARTICLE], place="Paris", country="fr", kind="city")
+    place = SimpleNamespace(name="Paris", country="fr")
+    assert mention_count(db, place) == 2
+    assert mention_article_ids(db, place) == ([1, 2], 2)
+    alone = SimpleNamespace(name="Atlantis", country="xx")
+    _places_and_dates(db, [STAND_IN_ARTICLE], place="Atlantis", country="xx", kind="city")
+    assert mention_count(db, alone) == 0 and mention_article_ids(db, alone) == ([], 0)
+
+
+def test_the_promised_dates_that_have_arrived_never_name_the_stand_in(db):
+    """A stand-in carries no publication date today; the card is for the day a copy or an edit gives it one."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.briefing.recipes import promises_due
+    from src.database.models import Article, ArticleMentionedDate
+
+    today = datetime.now(UTC).date()
+    for aid in (1, STAND_IN_ARTICLE):
+        db.get(Article, aid).published_at = datetime(2020, 1, 1)
+        db.add(ArticleMentionedDate(article_id=aid, mentioned_on=today - timedelta(days=1), precision="day", snippet="x", confidence=0.9))
+    db.commit()
+    cards = promises_due(db)
+    assert [c.article_ids for c in cards] == [[1]], [c.article_ids for c in cards]  # the real article's promise (the positive control), not the stand-in's
+
+
+# --------------------------------------------------------------------------- #
+#  the readers of the keyword mentions kept for a lost article
+# --------------------------------------------------------------------------- #
+def _mentions(session, term, article_ids, *, day=None, language="en", count=2, source_id=None) -> None:
+    """One keyword and a mention of it by each article (the rows a lost article's mentions leave in the table). The mention carries the
+    denormalised date and source of its article, as the indexer writes them; ``source_id`` names another source (a lost article's mentions keep
+    the source its REAL row had, which may be a source that is still there)."""
+    from datetime import UTC, datetime
+
+    from src.database.models import Article, Keyword, KeywordMention
+
+    kw = session.query(Keyword).filter_by(normalized_term=term, language=language).first()
+    if kw is None:
+        kw = Keyword(term=term, normalized_term=term, language=language)
+        session.add(kw)
+        session.flush()
+    for aid in article_ids:
+        session.add(KeywordMention(keyword_id=kw.id, article_id=aid, count=count, observed_on=day or datetime.now(UTC).date(), source_id=source_id or session.get(Article, aid).source_id))
+    session.commit()
+
+
+def _of_source(source: int, n: int, *, skip: int = 0) -> list[int]:
+    """The ids of ``n`` real articles of real source ``source`` (1 to 12): the fixture deals its articles to the twelve sources in turn."""
+    return [source + 12 * (skip + i) for i in range(n)]
+
+
+def _days_ago(n: int) -> date:
+    from datetime import UTC, datetime, timedelta
+
+    return datetime.now(UTC).date() - timedelta(days=n)
+
+
+def test_a_keyword_born_wide_in_one_real_article_and_the_stand_in_is_not_manufactured_emergence(db):
+    """``find_manufactured_emergence`` needs a keyword new in the period, in several articles across several distinct sources: the stand-in's
+    placeholder source made one real article pass both gates."""
+    from src.analytics.emergence import find_manufactured_emergence
+
+    gates = {"min_recent_articles": 2, "min_sources": 2}
+    _mentions(db, "novelterm", [1, STAND_IN_ARTICLE])
+    assert find_manufactured_emergence(db, **gates)["items"] == []
+    _mentions(db, "newterm", [1, 2])  # the positive control: two real articles of two sources are an item
+    items = find_manufactured_emergence(db, **gates)["items"]
+    assert [(i["term"], i["recent_articles"], i["recent_sources"], sorted(i["article_ids"])) for i in items] == [("newterm", 2, 2, [1, 2])], items
+
+
+def test_the_stand_in_neither_fills_the_recent_floor_of_an_emergence_nor_adds_the_second_source_of_one(db):
+    """The two gates of ``find_manufactured_emergence`` each read the child rows once (the recent count that makes a candidate, and the
+    articles and sources of a candidate), and each hides the other: with only one of them removed the stand-in is stopped by the other. So each
+    is asked on its own. The FLOOR: two real articles and the stand-in are three mentions, but the floor of three asks real articles. The
+    SOURCES: two real articles of ONE source and the stand-in pass the floor of two on the real ones alone, and it is the stand-in's placeholder
+    source that would make them two sources."""
+    from src.analytics.emergence import find_manufactured_emergence
+
+    _mentions(db, "floorterm", [1, 2, STAND_IN_ARTICLE])
+    assert find_manufactured_emergence(db, min_recent_articles=3, min_sources=2)["items"] == []
+    _mentions(db, "floorterm", [3])  # the positive control: three real articles reach the floor
+    items = find_manufactured_emergence(db, min_recent_articles=3, min_sources=2)["items"]
+    assert [(i["term"], i["recent_articles"], i["recent_sources"]) for i in items] == [("floorterm", 3, 3)], items
+
+    _mentions(db, "onesource", _of_source(1, 2) + [STAND_IN_ARTICLE])
+    lone = [i["term"] for i in find_manufactured_emergence(db, min_recent_articles=2, min_sources=2)["items"]]
+    assert "onesource" not in lone, lone
+    _mentions(db, "onesource", [2])  # the positive control: a real article of a second source is the second source
+    twin = {i["term"]: (i["recent_articles"], i["recent_sources"]) for i in find_manufactured_emergence(db, min_recent_articles=2, min_sources=2)["items"]}
+    assert twin["onesource"] == (3, 2), twin
+
+
+def test_a_story_of_one_real_article_and_the_stand_in_is_no_story_and_never_a_story_of_two_sources(db):
+    """The keyword sets of the period cluster articles into stories, and ``single_source`` reads the sources of the cluster: the stand-in made a
+    one-source cluster a pair of two sources."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.bulletin.period import Period
+    from src.bulletin.stories import build_stories
+
+    today = datetime.now(UTC).date()
+    period = Period(cadence="daily", start=today - timedelta(days=1), end=today + timedelta(days=1), baseline_start=today - timedelta(days=8))
+    for term in ("alpha", "beta", "gamma"):
+        _mentions(db, term, [1, STAND_IN_ARTICLE])
+    lone = build_stories(db, period)
+    assert lone["stories"] == [] and lone["articles_in_period"] == 1, lone
+    for term in ("alpha", "beta", "gamma"):
+        _mentions(db, term, [2])  # the positive control: two real articles of two sources are one story
+    pair = build_stories(db, period)
+    assert [(s["article_ids"], s["distinct_sources"], s["single_source"]) for s in pair["stories"]] == [([1, 2], 2, False)], pair
+    assert "(lost sources" not in str(pair)
+
+
+def test_the_shared_links_of_a_keywords_articles_never_count_the_stand_in_as_a_citer(client):
+    session = _api_session(client)
+    _mentions(session, "sharedterm", [1, STAND_IN_ARTICLE])
+    _links(session, [1, STAND_IN_ARTICLE], "shared.example/page")
+    lone = client.get("/api/links/shared", params={"term": "sharedterm"}).json()
+    assert lone["members"] == 1 and lone["shared"] == [], lone
+    _mentions(session, "sharedterm", [2])
+    _links(session, [2], "shared.example/page")
+    pair = client.get("/api/links/shared", params={"term": "sharedterm"}).json()  # the positive control
+    assert pair["members"] == 2 and [(s["url"], s["cited_by_articles"], s["citing_sources"]) for s in pair["shared"]] == [("shared.example/page", 2, 2)], pair
+    assert sorted(c["article_id"] for c in pair["shared"][0]["citers"]) == [1, 2], pair
+
+
+# --------------------------------------------------------------------------- #
+#  the brush over a keyword trend: the quarantined ids are asked for and subtracted
+# --------------------------------------------------------------------------- #
+def test_a_brushed_span_subtracts_the_quarantined_ids_it_asks_for_the_stand_in_among_them(db):
+    """``IS NOT 1`` per chunk probes an article row per id until the table was analysed (12.8 MiB per 900 ids); ``IS 1`` seeks the covering index
+    whether or not it was. The ids that ARE quarantined (the stand-in is) are asked for and subtracted, and the count that was excluded is exact."""
+    from sqlalchemy import event
+
+    from src.analytics.queries import trend_range_article_ids
+    from src.database.models import Article
+
+    _mentions(db, "brushterm", [1, 2, 3, STAND_IN_ARTICLE], day=DAY)
+    two = db.get(Article, 2)
+    two.quarantined, two.quarantine_reason = True, "link list"
+    db.commit()
+    seen: list[tuple[str, object]] = []
+    engine = db.get_bind()
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if "FROM articles" in statement and "quarantined" in statement:
+            seen.append((statement, parameters))
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        out = trend_range_article_ids(db, "brushterm", start=DAY, end=DAY)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert out["article_ids"] == [1, 3] and out["articles"] == 2 and out["quarantined_excluded"] == 2, out
+    assert seen and all("quarantined IS 1" in sql and "IS NOT 1" not in sql for sql, _ in seen), seen
+    for sql, params in seen:  # whatever the planner does, it does not probe an article row per id
+        plan = [str(r[-1]) for r in engine.connect().exec_driver_sql("EXPLAIN QUERY PLAN " + sql, params)]
+        assert not any("INTEGER PRIMARY KEY" in line for line in plan), plan
+
+
+# --------------------------------------------------------------------------- #
+#  the analyses that read the keyword mentions kept for a lost article by their own columns (E3 fold 9, item 5)
+#
+#  A mention keeps the source and the date its REAL article had, so the stand-in's mentions can name a source that is still there (the case the
+#  tests call ``source_id=1``) or the stand-in source (13). Each analysis is asked once with the stand-in's mention in the window (it must not
+#  change the answer) and once with a real twin of that mention (the positive control: the same answer a real article gives).
+# --------------------------------------------------------------------------- #
+def test_the_concept_views_never_count_list_or_head_with_the_stand_in_whose_mentions_were_kept(db, monkeypatch):
+    """``ring_country_split`` (a country's counts), ``ring_country_article_ids`` (its drill), ``context`` (the recent mentions) and the supergroup
+    overlap set each read the mentions of a concept: the stand-in's placeholder source made a country bucket, its id was drilled and listed."""
+    from datetime import timedelta
+
+    from src.analytics import equivalence
+    from src.analytics import queries as q
+
+    ring = equivalence.Ring(id="standinring", members=(("en", "ringterm"),))
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "standinring" else None)
+    monkeypatch.setattr(equivalence, "ring_of", lambda lang, norm: "standinring" if (lang, norm) in ring.members else None)
+    _mentions(db, "ringterm", [1], day=_days_ago(3))
+    _mentions(db, "ringterm", [STAND_IN_ARTICLE], day=_days_ago(1) + timedelta(days=0))  # the newest: it would head the recent mentions
+
+    def views():
+        split = {c["country"]: c for c in q.ring_country_split(db, ring_id="standinring")["countries"]}
+        drill = q.ring_country_article_ids(db, ring_id="standinring", country=None)["article_ids"]
+        recent = [m["article_id"] for m in q.context(db, "ringterm")["mentions"]]
+        return split[None]["articles"], split[None]["mentions"], drill, recent, q._article_set(db, ["ringterm"])
+
+    assert views() == (1, 2, [1], [1], {1}), views()
+    _mentions(db, "ringterm", [2], day=_days_ago(2))  # the positive control: a second real article is counted, drilled, listed and in the set
+    assert views() == (2, 4, [1, 2], [2, 1], {1, 2}), views()
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["listed", "floor of the week", "floor of the baseline", "floor of the term", "share of the baseline", "ubiquity"],
+)
+def test_a_source_is_flooded_by_its_real_articles_only_never_by_the_stand_in_whose_mentions_were_kept(db, case):
+    """Each read of ``find_flooded_topics`` is asked a question only the stand-in's mention could change: the articles it lists, the source's
+    articles this week, last month, the term's articles this week, the term's share last month, and the sources that carry the term. A case
+    that expects an item is the one a read ungated would have made impossible; a case that expects none is the one it would have made."""
+    from src.analytics.concentration import find_flooded_topics
+    from src.database.models import Source
+
+    recent, prior = _days_ago(1), _days_ago(30)
+    flood, filler, old, z_min = 3, 0, 3, 1.5  # real articles of source 1 that carry the term this week / something else this week / something else last month
+    ghost: list[tuple[str, object, int]] = []
+    expect_item = False
+    if case == "listed":
+        ghost, expect_item = [("floodterm", recent, 1)], True
+    elif case == "floor of the week":
+        flood, ghost = 2, [("sparetopic", recent, 1)]
+    elif case == "floor of the baseline":
+        flood, filler, old, ghost = 2, 1, 2, [("sparetopic", prior, 1)]
+    elif case == "floor of the term":
+        flood, filler, ghost = 1, 2, [("floodterm", recent, 1)]
+    elif case == "share of the baseline":
+        z_min, ghost, expect_item = 2.0, [("floodterm", prior, 1)], True
+    else:  # the term is carried by two of the three active sources only if the stand-in's mention names a second one
+        ghost, expect_item = [("floodterm", recent, 2)], True
+        db.query(Source).filter(Source.id.in_([1, 2, 3])).update({Source.language: "en"}, synchronize_session=False)
+        db.commit()
+        _mentions(db, "sparetopic", [2, 3], day=recent)  # sources 2 and 3 are active this week, so three en sources are the cohort
+    mine = _of_source(1, 40)
+    flood_ids = mine[10 : 10 + flood]
+    _mentions(db, "oldtopic", mine[:old], day=prior)
+    _mentions(db, "floodterm", flood_ids, day=recent)
+    for n, aid in enumerate(mine[20 : 20 + filler]):  # each filler article carries a topic of its own, so none is a flood
+        _mentions(db, f"filler{n}", [aid], day=recent)
+    for term, day, source in ghost:
+        _mentions(db, term, [STAND_IN_ARTICLE], day=day, source_id=source)
+    items = find_flooded_topics(db, min_recent_articles=3, min_recent_count=2, min_prior_articles=3, z_min=z_min)["items"]
+    if not expect_item:
+        assert items == [], (case, items)
+        return
+    assert [(i["term"], i["recent_articles"], i["recent_total"], i["baseline_share"]) for i in items] == [("floodterm", 3, 3, 0.0)], (case, items)
+    assert items[0]["article_ids"] == sorted(flood_ids), (case, items)
+
+
+def test_a_source_buried_below_its_peers_is_judged_on_real_articles_and_lists_real_articles_only(db):
+    """``find_buried_topics`` reads the corpus size, a source's total, a topic's breadth and the pairs from one window, and lists the topic's articles
+    from a second query: the stand-in's two mentions (kept under the buried source) were counted in all of them and listed."""
+    from src.analytics.concentration import find_buried_topics
+
+    day = _days_ago(3)
+    for source in range(2, 7):  # five sources whose thirty articles each cover the topic
+        _mentions(db, "burytopic", _of_source(source, 30), day=day)
+    _mentions(db, "sparetopic", _of_source(1, 30), day=day)  # the thirty articles of source 1 cover something else
+    _mentions(db, "burytopic", [STAND_IN_ARTICLE], day=day, source_id=1)
+    _mentions(db, "sparetopic", [STAND_IN_ARTICLE], day=day, source_id=1)
+    items = find_buried_topics(db, window_days=30)["items"]
+    assert [(i["term"], i["source"], i["source_total"], i["source_articles_on_topic"], i["corpus_articles_on_topic"]) for i in items] == [("burytopic", "s0", 30, 0, 150)], items
+    assert len(items[0]["article_ids"]) == 150 and STAND_IN_ARTICLE not in items[0]["article_ids"], items[0]["article_ids"][-3:]
+
+
+def test_a_story_spread_over_real_sources_never_counts_the_stand_in_as_a_source_nor_lists_it(db):
+    """``find_story_propagation`` needs three sources and a span: the stand-in's source (or the source its mention kept) was the first sighting or
+    the third source, and its id was listed."""
+    from datetime import UTC, datetime
+
+    from src.analytics.story_propagation import find_story_propagation
+
+    today = datetime.now(UTC).date()
+    _mentions(db, "spreadterm", [1], day=_days_ago(6))
+    _mentions(db, "spreadterm", [2], day=_days_ago(2))
+    _mentions(db, "spreadterm", [STAND_IN_ARTICLE], day=_days_ago(9))  # the stand-in source, earlier than both
+    assert find_story_propagation(db, today=today)["items"] == []
+    _mentions(db, "spreadterm", [3], day=_days_ago(1))  # the positive control: a third real source
+    items = find_story_propagation(db, today=today)["items"]
+    assert [(i["distinct_sources"], i["first_source"], i["article_ids"]) for i in items] == [(3, "s0", [1, 2, 3])], items
+
+
+def test_the_keyword_algebra_never_holds_or_counts_the_stand_in(db):
+    from src.analytics.conjunction import corpus_algebra
+
+    for term in ("algone", "algtwo"):
+        _mentions(db, term, [1, STAND_IN_ARTICLE])
+    out = corpus_algebra(db, ["algone", "algtwo"], op="intersection")
+    assert out["article_ids"] == [1] and out["n_combined"] == 1 and [t["n"] for t in out["terms"]] == [1, 1], out
+    for term in ("algone", "algtwo"):
+        _mentions(db, term, [2])  # the positive control
+    out = corpus_algebra(db, ["algone", "algtwo"], op="intersection")
+    assert out["article_ids"] == [1, 2] and [t["n"] for t in out["terms"]] == [2, 2], out
+
+
+def test_the_first_channel_to_carry_a_concept_is_never_credited_to_the_stand_in_whose_mention_was_kept(db):
+    from datetime import UTC, datetime, timedelta
+
+    from src.bulletin.period import Period
+    from src.bulletin.sections import across_channels
+
+    today = datetime.now(UTC).date()
+    period = Period(cadence="daily", start=today - timedelta(days=5), end=today + timedelta(days=1), baseline_start=today - timedelta(days=12))
+    terms = [{"normalized": "chanterm", "term": "chanterm"}]
+    _mentions(db, "chanterm", [STAND_IN_ARTICLE], day=_days_ago(4))  # the stand-in source would be the first channel
+    _mentions(db, "chanterm", [1], day=_days_ago(1))
+    first = [(t["term"], t["first_seen"]) for t in across_channels(db, period, terms=terms)["terms"]]
+    assert first == [("chanterm", _days_ago(1).isoformat())], first
+    _mentions(db, "chanterm", [2], day=_days_ago(3))  # the positive control: a real article that is earlier counts
+    first = [(t["term"], t["first_seen"]) for t in across_channels(db, period, terms=terms)["terms"]]
+    assert first == [("chanterm", _days_ago(3).isoformat())], first
+
+
+def test_a_weather_opportunity_never_counts_or_lists_the_stand_in_whose_place_and_mention_were_kept(db):
+    from src.analytics.corroboration import find_weather_opportunities
+    from src.database.models import ArticleMentionedPlace
+
+    def nairobi(ids):
+        for aid in ids:
+            db.add(ArticleMentionedPlace(article_id=aid, name="Nairobi", country="ke", kind="city", mentions=1, lat=-1.2864, lon=36.8172, extractor="lexical-v1"))
+        db.commit()
+
+    _mentions(db, "drought", [1, 2, STAND_IN_ARTICLE], day=_days_ago(5))
+    nairobi([1, 2, STAND_IN_ARTICLE])
+    lone = find_weather_opportunities(db, min_articles=3)
+    assert lone["clusters_total"] == 0 and lone["opportunities"] == [], lone
+    _mentions(db, "drought", [3], day=_days_ago(5))  # the positive control: three real articles
+    nairobi([3])
+    found = find_weather_opportunities(db, min_articles=3)
+    assert [(o["place"], o["article_ids"]) for o in found["opportunities"]] == [("Nairobi", [1, 2, 3])], found
+
+
+def test_the_supply_chain_ripple_counts_outlets_and_lists_articles_of_real_articles_only(db):
+    from src.analytics.supply_chain_ripple import _pair_article_ids, _source_counts
+    from src.database.models import Keyword
+
+    today = _days_ago(0)
+    for term in ("ripplea", "rippleb"):
+        _mentions(db, term, [1, STAND_IN_ARTICLE], day=_days_ago(2))
+    ids = {k.normalized_term: k.id for k in db.query(Keyword).filter(Keyword.normalized_term.in_(["ripplea", "rippleb"]))}
+    cutoff, hi = _days_ago(10), today.replace(year=today.year + 1)
+    assert _source_counts(db, [ids["ripplea"]], cutoff, hi) == {ids["ripplea"]: 1}  # the stand-in source is no second outlet
+    assert _pair_article_ids(db, ids["ripplea"], ids["rippleb"], cutoff, hi, 100) == [1]
+    _mentions(db, "ripplea", [2], day=_days_ago(2))
+    _mentions(db, "rippleb", [2], day=_days_ago(2))  # the positive control: a second real article of a second real source
+    assert _source_counts(db, [ids["ripplea"]], cutoff, hi) == {ids["ripplea"]: 2}
+    assert _pair_article_ids(db, ids["ripplea"], ids["rippleb"], cutoff, hi, 100) == [1, 2]
+
+
+def test_the_breadth_and_the_article_sets_of_a_supergroup_never_count_or_list_the_stand_in(client):
+    """``_distinct_source_count`` (the breadth every galaxy is ranked by), the rising pass's windowed source count and article set, and the route
+    that opens a group's articles."""
+    from datetime import timedelta
+
+    from src.analytics.supergroup_rising import _article_ids_windowed, _distinct_sources_windowed
+    from src.analytics.supergroup_stats import _distinct_source_count
+    from src.database.models import Keyword, KeywordSuperGroup, KeywordSuperGroupMember
+
+    session = _api_session(client)
+    _mentions(session, "groupterm", [1], day=_days_ago(2))
+    _mentions(session, "groupterm", [STAND_IN_ARTICLE], day=_days_ago(2))  # the stand-in source
+    kid = session.query(Keyword.id).filter(Keyword.normalized_term == "groupterm").scalar()
+    group = KeywordSuperGroup(name="a group")
+    session.add(group)
+    session.flush()
+    session.add(KeywordSuperGroupMember(supergroup_id=group.id, normalized_term="groupterm", ring_id=None))
+    session.commit()
+    lo, hi = _days_ago(10), _days_ago(0) + timedelta(days=1)
+
+    def measured():
+        route = client.get("/api/insights/supergroup-articles", params={"group_id": group.id}).json()
+        return _distinct_source_count(session, {kid}), _distinct_sources_windowed(session, {kid}, lo, hi), _article_ids_windowed(session, {kid}, lo, hi), route["article_ids"], route["total_articles"]
+
+    assert measured() == (1, 1, [1], [1], 1), measured()
+    _mentions(session, "groupterm", [2], day=_days_ago(2))  # the positive control: a second real source and article
+    assert measured() == (2, 2, [1, 2], [1, 2], 2), measured()
+
+
+def test_a_rising_group_is_not_diluted_by_a_source_only_the_stand_in_names(db):
+    """``find_rising_supergroups`` takes the sources active this week as the denominator of its ubiquity gate: a mention kept for a lost article
+    made a source that wrote nothing this week one of them, and a term carried by two of five sources (the gate's limit) by two of six."""
+    from datetime import date, timedelta
+
+    from src.analytics.supergroup_rising import find_rising_supergroups
+    from src.database.models import KeywordSuperGroup, KeywordSuperGroupMember, Source
+
+    today = date(2026, 7, 18)
+    w_start = today - timedelta(days=7)
+    b_start = w_start - timedelta(days=30)
+    db.query(Source).filter(Source.id.in_(range(1, 8))).update({Source.language: "en"}, synchronize_session=False)
+    for i in range(1, 6):  # five sources write every week, so they are the active ones
+        _mentions(db, "noise", [_of_source(i, 1)[0]], day=b_start + timedelta(days=1), count=50)
+        _mentions(db, "noise", [_of_source(i, 1, skip=1)[0]], day=w_start + timedelta(days=1), count=50)
+    _mentions(db, "risingterm", _of_source(1, 2, skip=5), day=b_start + timedelta(days=1), count=1)
+    _mentions(db, "risingterm", [_of_source(1, 1, skip=7)[0]], day=w_start + timedelta(days=1), count=15)
+    _mentions(db, "risingterm", [_of_source(2, 1, skip=7)[0]], day=w_start + timedelta(days=1), count=15)
+    group = KeywordSuperGroup(name="Test Group")
+    db.add(group)
+    db.flush()
+    db.add(KeywordSuperGroupMember(supergroup_id=group.id, normalized_term="risingterm", ring_id=None))
+    db.commit()
+    _mentions(db, "noise", [STAND_IN_ARTICLE], day=w_start + timedelta(days=1), count=2, source_id=7)  # source 7 wrote nothing this week
+    found = find_rising_supergroups(db, window_days=7, baseline_days=30, today=today)
+    assert found["count"] == 0 and found["tested"] >= 1, found  # two of the five active sources carry it: the gate's limit (0.40)
+    _mentions(db, "noise", [_of_source(7, 1, skip=1)[0]], day=w_start + timedelta(days=1), count=2)  # the positive control: source 7 really wrote
+    found = find_rising_supergroups(db, window_days=7, baseline_days=30, today=today)
+    assert found["count"] == 1 and found["items"][0]["name"] == "Test Group", found
+
+
+def test_a_source_gets_topics_and_tag_proposals_from_its_real_articles_only(db):
+    """``derive_source_topics`` and ``select_source_tag_candidates`` count a source's articles from mentions that keep the source of their real
+    article: the stand-in's mention (kept under source 1) was an article of source 1 that makes the evidence floor and tops the term list."""
+    from src.ai_layer.source_tags import select_source_tag_candidates
+    from src.analytics.source_topics import derive_source_topics
+    from src.database.models import Keyword, KeywordTag
+
+    _mentions(db, "housing", [1], count=3)
+    kid = db.query(Keyword.id).filter(Keyword.normalized_term == "housing").scalar()
+    db.add(KeywordTag(keyword_id=kid, axis="topic", tag="economy", source="baseline"))
+    db.commit()
+    _mentions(db, "housing", [STAND_IN_ARTICLE], count=3, source_id=1)
+    _mentions(db, "ghostterm", [STAND_IN_ARTICLE], count=99, source_id=1)
+    assert derive_source_topics(db, min_articles=2) == []  # one real article of source 1 is under the floor of two
+    items, skipped = select_source_tag_candidates(db, min_articles=2, min_mentions=1)[:2]
+    assert [s.article_count for s in skipped if s.domain == "s0.example.org"] == [1] and not [i for i in items if i.domain == "s0.example.org"]
+    _mentions(db, "housing", [13], count=3)  # the positive control: a second real article of source 1
+    topics = derive_source_topics(db, min_articles=2)
+    assert [(t["domain"], t["topics"]) for t in topics] == [("s0.example.org", ["economy"])], topics
+    items = select_source_tag_candidates(db, min_articles=2, min_mentions=1)[0]
+    mine = next(i for i in items if i.domain == "s0.example.org")
+    assert mine.article_count == 2 and "housing" in mine.top_terms and "ghostterm" not in mine.top_terms, mine
+
+
+def test_the_backfill_the_reindex_and_the_language_pass_never_touch_the_stand_in_and_its_kept_mentions_stay(db):
+    """A stand-in has no text, so indexing it finds no terms: the re-index would REPLACE the mentions the copy kept for the lost article with
+    none, and the backfill would stamp an attempt on a row that is not an article; the language pass would deduce one from its kept mentions."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import _unindexed_query, reconcile_article_language, reindex_articles
+    from src.database.models import Article, KeywordMention
+
+    # The backfill's worklist, asked BEFORE any mention is kept for the stand-in: once it has one the worklist leaves it out for that reason
+    # alone (it is no longer "unindexed"), and the gate would be hidden behind it.
+    waiting = {int(a.id) for a in _unindexed_query(db).with_entities(Article.id)}
+    assert 1 in waiting and STAND_IN_ARTICLE not in waiting, len(waiting)
+    for term in ("langa", "langb", "langc"):
+        _mentions(db, term, [STAND_IN_ARTICLE], source_id=1)
+    done = reindex_articles(db, extractor=get_extractor("baseline"), article_ids=[1, STAND_IN_ARTICLE])
+    assert done["reindexed"] == 1, done
+    assert db.query(KeywordMention).filter_by(article_id=STAND_IN_ARTICLE).count() == 3  # the kept mentions are still there
+    out = reconcile_article_language(db, limit=5, after_id=STAND_IN_ARTICLE - 1)
+    assert out["scanned"] == 0 and out["done"] is True, out
+    db.expire_all()
+    assert db.get(Article, STAND_IN_ARTICLE).detected_language is None
+    # The same pass with a real article still waiting: the candidate scan and the count of what REMAINS are two reads, and each hides the other
+    # (the stand-in as a candidate is scanned; the stand-in as a remainder keeps `done` false for ever).
+    db.query(Article).filter(Article.id != STAND_IN_ARTICLE).update({"language": "en", "detected_language": None}, synchronize_session=False)
+    db.query(Article).filter(Article.id == 1).update({"language": None}, synchronize_session=False)
+    db.commit()
+    out = reconcile_article_language(db, limit=5, after_id=0)
+    assert out["scanned"] == 1 and out["last_id"] == 1 and out["done"] is True, out
+    newest = [r[0] for r in db.query(Article.id).filter(Article.id >= 1495, stand_in.not_a_stand_in_article_id(Article.id)).order_by(Article.id)]
+    assert newest == [1495, 1496], newest  # the condition reads an article's own id too (the stand-in at 1500 is left out)

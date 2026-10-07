@@ -32,6 +32,7 @@ from pathlib import Path
 
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import ArticleMentionedPlace, Keyword
+from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -132,6 +133,8 @@ def find_weather_opportunities(
                        KeywordMentionRead.observed_on).filter(
         KeywordMentionRead.keyword_id.in_(list(kw_meta.keys())),
         KeywordMentionRead.observed_on.isnot(None),
+        # a mention kept for a lost article is no evidence member and no cluster article (its place and date tags were kept beside it)
+        not_a_stand_in_article_id(KeywordMentionRead.article_id),
     )
     if cutoff is not None:
         mq = mq.filter(KeywordMentionRead.observed_on >= cutoff)

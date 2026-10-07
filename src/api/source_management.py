@@ -337,10 +337,11 @@ def official_instruments_observable(
         observe_headlines,
     )
     from src.database.models import Article, Source
+    from src.database.stand_in import not_a_stand_in_source
 
     rows: list[dict] = []
     tally = {OBSERVED: 0, "none_observed": 0, NO_EVIDENCE: 0}
-    for source in db.query(Source).order_by(Source.id.asc()).limit(limit).all():
+    for source in db.query(Source).filter(not_a_stand_in_source()).order_by(Source.id.asc()).limit(limit).all():
         titles = [
             t for (t,) in db.query(Article.title)
             .filter(Article.source_id == source.id, Article.quarantined.isnot(True))
@@ -396,9 +397,11 @@ def country_domain_audit(
     """
     from src.catalog.country_domain_audit import audit_rows
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
     rows = (
         db.query(Source.id, Source.domain, Source.country)
+        .filter(not_a_stand_in_source())
         .order_by(Source.id.asc())
         .limit(limit)
         .all()

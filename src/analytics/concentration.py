@@ -92,7 +92,10 @@ def find_flooded_topics(
     """Sources flooding a single topic vs their own history (two-proportion z-test)."""
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, Source
+    from src.database.stand_in import not_a_stand_in_article_id
 
+    # A mention kept for a lost article names no article: it is no part of a source's coverage, a flood or a listed article (every read below).
+    kept = not_a_stand_in_article_id(KeywordMentionRead.article_id)
     today = date.today()
     r_start = today - timedelta(days=recent_days)
     b_start = r_start - timedelta(days=baseline_days)
@@ -105,6 +108,7 @@ def find_flooded_topics(
             KeywordMentionRead.observed_on >= r_start,
             KeywordMentionRead.observed_on < r_hi,
             KeywordMentionRead.source_id.isnot(None),
+            kept,
         )
         .group_by(KeywordMentionRead.source_id)
         .all()
@@ -174,6 +178,7 @@ def find_flooded_topics(
                     KeywordMentionRead.source_id.in_(chunk),
                     KeywordMentionRead.observed_on >= b_start,
                     KeywordMentionRead.observed_on < r_start,
+                    kept,
                 )
                 .group_by(KeywordMentionRead.source_id)
             ):
@@ -190,6 +195,7 @@ def find_flooded_topics(
                     KeywordMentionRead.source_id.in_(chunk),
                     KeywordMentionRead.observed_on >= r_start,
                     KeywordMentionRead.observed_on < r_hi,
+                    kept,
                 )
                 .group_by(KeywordMentionRead.source_id, KeywordMentionRead.keyword_id)
                 .having(func.count(distinct(KeywordMentionRead.article_id)) >= min_recent_count)
@@ -218,6 +224,7 @@ def find_flooded_topics(
                         KeywordMentionRead.keyword_id.in_(wanted_kids[j : j + 400]),
                         KeywordMentionRead.observed_on >= b_start,
                         KeywordMentionRead.observed_on < r_start,
+                        kept,
                     )
                     .group_by(KeywordMentionRead.source_id, KeywordMentionRead.keyword_id)
                 ):
@@ -260,6 +267,7 @@ def find_flooded_topics(
                         KeywordMentionRead.keyword_id == kid,
                         KeywordMentionRead.observed_on >= r_start,
                         KeywordMentionRead.observed_on < r_hi,
+                        kept,
                     )
                     .scalar()
                     or 0
@@ -274,6 +282,7 @@ def find_flooded_topics(
                     KeywordMentionRead.keyword_id == kid,
                     KeywordMentionRead.observed_on >= r_start,
                     KeywordMentionRead.observed_on < r_hi,
+                    kept,
                 )
                 .distinct()
             )
@@ -375,6 +384,7 @@ def find_buried_topics(
     from src.analytics.queries import _hidden_predicate
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, Source
+    from src.database.stand_in import not_a_stand_in_article_id
     from src.stats.fdr import benjamini_hochberg
 
     today = date.today()
@@ -385,10 +395,12 @@ def find_buried_topics(
         return {"items": [], "count": 0, "window_days": window_days, "z_min": z_min,
                 "fdr_q": fdr_q, "tests": 0, "note": note, "method": _METHOD, "caveat": BURY_CAVEAT}
 
+    # A mention kept for a lost article names no article: it is no part of the corpus size, a source's total, a topic's breadth or a listed article.
     win = [
         KeywordMentionRead.observed_on >= cutoff,
         KeywordMentionRead.observed_on < hi,
         KeywordMentionRead.source_id.isnot(None),
+        not_a_stand_in_article_id(KeywordMentionRead.article_id),
     ]
 
     # Corpus size N in the window (distinct sourced articles).
@@ -552,6 +564,7 @@ def find_buried_topics(
                 KeywordMentionRead.keyword_id == t["kid"],
                 KeywordMentionRead.observed_on >= cutoff,
                 KeywordMentionRead.observed_on < hi,
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .distinct()
         )

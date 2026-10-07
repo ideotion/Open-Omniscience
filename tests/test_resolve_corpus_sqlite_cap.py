@@ -63,7 +63,7 @@ def test_explicit_article_ids_under_the_safe_cap_are_unaffected(db):
 def test_a_stand_in_named_in_an_explicit_set_is_dropped_before_the_cap_and_the_total(db):
     """The stand-in is no article of the set: it takes no place under the cap and is not in the total (dropped after them it would leave the set
     one short of the cap and the total one too large)."""
-    db.add(Article(id=5, url="(lost articles 5)", canonical_url="(lost articles 5)", source_id=1, content="", hash="h5", quarantined=True, quarantine_reason=ARTICLE_REASON))
+    db.add(Article(id=5, url="(lost articles 5)", canonical_url="(lost articles 5)", source_id=1, content="", hash="(lost articles 5)", quarantined=True, quarantine_reason=ARTICLE_REASON))
     db.add(Article(id=6, url="https://e.org/6", canonical_url="https://e.org/6", source_id=1, content="", hash="h6", quarantined=True, quarantine_reason="link list"))
     db.commit()
     named = ",".join(str(i) for i in range(1, 1001))  # 1000 explicit ids, the fifth is the stand-in
