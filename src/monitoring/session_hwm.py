@@ -63,6 +63,7 @@ HONESTY RULES BAKED IN
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import json
 import logging
@@ -803,6 +804,77 @@ def _guard_view() -> dict[str, Any] | None:
     }
 
 
+def _release_view() -> dict[str, Any] | None:
+    """The guard's last release-ladder record (RSS before and after, each step's measured ``freed_mb``, whether the process was
+    swapping), as the guard holds it, or ``None`` when no engage has run one. One short lock hold inside the guard, no I/O."""
+    try:
+        from src.scheduler import memguard
+
+        rec = memguard.memory_guard.last_release()
+    except Exception:  # noqa: BLE001 - optional context, never a failure
+        return None
+    return dict(rec) if isinstance(rec, dict) else None
+
+
+#: What ``_holders_view`` reads of the pool: ``Pool`` methods that are plain counters, no connection and no lock of the app's.
+_POOL_COUNTERS = ("size", "checkedout", "checkedin", "overflow")
+
+
+def _sqlite_cache_mb() -> int | None:
+    """The per-connection SQLite page-cache setting, resolved as ``src/database/session.py`` resolves it for a new connection
+    (the operator's ``OO_SQLITE_CACHE_MB`` or power profile, else the memory budget's), or ``None`` when it cannot be read."""
+    try:
+        from src.config.memory_budget import budget
+        from src.config.power_profiles import sqlite_cache_mb
+
+        if os.getenv("OO_SQLITE_CACHE_MB") is not None:
+            return int(sqlite_cache_mb())
+        return int(budget()["sqlite_cache_mb"])
+    except Exception:  # noqa: BLE001 - optional context
+        return None
+
+
+def _holders_view() -> dict[str, Any]:
+    """What may be holding the memory, from PLAIN READS only: the pool's counters, whether each columnar serve holds a
+    connection and since when, and the most the SQLite page caches of the pooled connections can hold. It never opens a
+    connection, never takes the write gate or a serve's lock and never walks the heap, because it runs on a machine that is
+    short of memory. A figure that cannot be read is ABSENT, never 0. ``sqlite_cache_upper_bound_mb`` is the per-connection
+    cache setting times the connections the pool holds: an UPPER BOUND, labelled so, never a reading (SQLite's and DuckDB's own
+    byte counts need a connection and are not read)."""
+    out: dict[str, Any] = {}
+    with contextlib.suppress(Exception):  # an instrument never fails the snapshot
+        session = sys.modules.get("src.database.session")
+        pool = getattr(getattr(session, "engine", None), "pool", None)
+        counters: dict[str, int] = {}
+        for name in _POOL_COUNTERS:
+            read = getattr(pool, name, None)
+            if callable(read):
+                with contextlib.suppress(Exception):
+                    counters[name] = int(read())
+        if counters:
+            out["pool"] = counters
+            held = counters.get("checkedout", 0) + counters.get("checkedin", 0)
+            cache_mb = _sqlite_cache_mb()
+            if isinstance(cache_mb, (int, float)) and "checkedout" in counters and "checkedin" in counters:
+                out["sqlite_cache_upper_bound_mb"] = round(float(cache_mb) * held, 1)
+                out["sqlite_cache_basis"] = "the per-connection cache setting times the connections the pool holds: an upper bound, not a reading"
+    serves: dict[str, Any] = {}
+    for name in ("rollup_serve", "map_serve"):
+        try:
+            mod = sys.modules.get(f"src.analytics.{name}")
+            state = getattr(mod, "_STATE", None)
+            if isinstance(state, dict):
+                built = state.get("built_at")
+                serves[name] = {"connection": state.get("con") is not None}
+                if state.get("con") is not None and isinstance(built, (int, float)) and built:
+                    serves[name]["built_at_epoch"] = round(float(built), 1)
+        except Exception:  # noqa: BLE001
+            continue
+    if serves:
+        out["serves"] = serves
+    return out
+
+
 def _guard_rose(guard: dict[str, Any] | None) -> bool:
     """True when the memory guard has engaged since the previous liveness reading.
 
@@ -874,7 +946,10 @@ def _pressure_snapshot(
     SAME stamp for the same reading); without it, now."""
     snap: dict[str, Any] = {"at": at or _now(), "why": why}
     if guard and guard.get("engaged"):
-        snap["guard"] = guard
+        # The heavy snapshot's guard block also says what the release ladder returned (the light ring keeps the four fields):
+        # which step gave back the memory, and what took it back, was only inferable from the readings either side.
+        release = _release_view()
+        snap["guard"] = {**guard, **({"last_release": release} if release else {})}
     for key in ("avail_mb", "total_mb", "rss_mb", "swap_used_mb"):
         if readings.get(key) is not None:
             snap[key] = readings[key]
@@ -883,6 +958,7 @@ def _pressure_snapshot(
     # The kernel's counters only: the heap walk is exactly what a short machine must
     # not do (see _HEAP_WALK_MIN_AVAIL_SHARE).
     snap["memory"] = composition(walk_heap=False)
+    snap["holders"] = _holders_view()
     snap["threads"] = thread_snapshot()
     return snap
 

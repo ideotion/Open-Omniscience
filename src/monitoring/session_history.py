@@ -97,7 +97,7 @@ MAX_LINES = 4000
 #: What this build's records carry, written on every boot record, so a reader can tell
 #: "this session never started collection" (the feature is present and no event was
 #: recorded) from "this build did not record collection" (the feature is absent).
-LEDGER_FEATURES = ("collection", "clock-step", "span")
+LEDGER_FEATURES = ("collection", "clock-step", "span", "end-peaks")
 
 _LOCK = threading.Lock()
 _SESSION_ID: str | None = None
@@ -341,18 +341,127 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
     if hwm:
         # The marks AND when each was set: the chronology shows these beside the session's other dated
         # events, and a minimum with no time cannot be placed among them.
-        peaks = {
-            k: hwm[k]
-            for k in (
-                "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at",
-                "swap_used_max_mb", "swap_used_max_at", "phase",
-            )
-            if k in hwm
-        }
+        peaks = _peaks_of(hwm)
         if peaks:
             end["previous_peaks"] = peaks
     _append(end)
     return end
+
+
+#: The marks the memory high-water sidecar keeps, which an end record carries as ``previous_peaks`` (the seed and every unclean end).
+_PEAK_KEYS = (
+    "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at", "swap_used_max_mb", "swap_used_max_at", "phase",
+)
+#: The most one of the two memory records of an end may take (``previous_at_peak``, ``previous_pressure``), in bytes of JSON.
+END_RECORD_MAX_BYTES = 2048
+#: How many of the busiest threads of the newest heavy snapshot an end record names.
+_END_THREADS = 3
+
+
+def _json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _peaks_of(hwm: dict[str, Any]) -> dict[str, Any]:
+    return {k: hwm[k] for k in _PEAK_KEYS if k in hwm}
+
+
+def _scalars(source: Any) -> dict[str, Any]:
+    """The plain numbers and short texts of ``source``: what a record of the memory's makeup keeps of a nested reading."""
+    if not isinstance(source, dict):
+        return {}
+    return {k: v for k, v in source.items() if isinstance(v, (int, float, str, bool))}
+
+
+def _at_peak_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
+    """What the memory was made of at the session's RSS peak (``at_peak``: anonymous against file-backed, glibc's heap in
+    use against freed-but-held, CPython's blocks), its plain fields, cut to :data:`END_RECORD_MAX_BYTES` with the cut named."""
+    got = _scalars(hwm.get("at_peak"))
+    if not got:
+        return None
+    left_out: list[str] = []
+    while _json_size(got) > END_RECORD_MAX_BYTES and got:
+        left_out.append(got.popitem()[0])
+    if left_out:
+        got["cut"] = {"fields_left_out": len(left_out)}
+    return got
+
+
+def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
+    """The newest HEAVY snapshot of the session, as much of it as a crash needs: why it was taken and when, the memory
+    readings, CPython's blocks, the guard's block with the release ladder's last record, and the busiest threads by NAME and
+    innermost frame with every path in a frame tokenised (``path_tokens``: nothing under the home directory is written whole).
+    Cut to :data:`END_RECORD_MAX_BYTES`, and the cut says how many entries it left out (threads, then fields)."""
+    from src.monitoring.path_tokens import tokenise_paths
+
+    snaps = hwm.get("pressure")
+    snap = snaps[-1] if isinstance(snaps, list) and snaps and isinstance(snaps[-1], dict) else None
+    if snap is None:
+        return None
+    out: dict[str, Any] = {k: snap[k] for k in ("why", "at", "avail_mb", "total_mb", "rss_mb", "swap_used_mb") if k in snap}
+    blocks = (snap.get("memory") or {}).get("py_alloc_blocks") if isinstance(snap.get("memory"), dict) else None
+    if blocks is not None:
+        out["py_alloc_blocks"] = blocks
+    guard = snap.get("guard")
+    if isinstance(guard, dict):
+        out["guard"] = {k: v for k, v in guard.items() if k != "last_release"}
+        if isinstance(guard.get("last_release"), dict):
+            out["release"] = guard["last_release"]
+    threads = []
+    for t in snap.get("threads") or []:
+        if not isinstance(t, dict) or t.get("waiting") or t.get("sampler"):
+            continue
+        stack = t.get("stack") or []
+        threads.append({
+            "name": tokenise_paths(str(t.get("name") or "?"))[:80],
+            "frame": tokenise_paths(str(stack[0]))[:160] if stack else None,
+            **({"cpu_s": t["cpu_s"]} if "cpu_s" in t else {}),
+        })
+        if len(threads) == _END_THREADS:
+            break
+    if threads:
+        out["threads"] = threads
+    out["threads_in_snapshot"] = len([t for t in snap.get("threads") or [] if isinstance(t, dict)])
+    cut: dict[str, Any] = {}
+
+    def over() -> bool:
+        return _json_size({**out, "cut": {"threads_left_out": 999, "fields_left_out": ["release", "guard"]}} if cut else out) > END_RECORD_MAX_BYTES
+
+    # The cut's own text is part of the size it is cut to: it is counted before it is written.
+    cut["reserved"] = True
+    while over() and out.get("threads"):
+        out["threads"].pop()
+        cut["threads_left_out"] = cut.get("threads_left_out", 0) + 1
+    if not out.get("threads"):
+        out.pop("threads", None)
+    for field in ("release", "guard"):
+        if over() and field in out:
+            del out[field]
+            cut.setdefault("fields_left_out", []).append(field)
+    cut.pop("reserved")
+    if cut:
+        out["cut"] = cut
+    return out
+
+
+def _end_evidence(prev_state: dict[str, Any] | None) -> dict[str, Any]:
+    """What an UNCLEAN end carries of its own session (``end-peaks``): the marks with their times, what the memory was made
+    of at the peak and the newest heavy snapshot's essentials, read from the high-water sidecar of the session that died
+    (:func:`_hwm_last_seen`, which refuses another process's). Only the seed wrote ``previous_peaks`` before, so a crash
+    loop kept the evidence of its last crash only. Best-effort: a missing or unreadable sidecar is an absent field."""
+    hwm = _hwm_last_seen(prev_state or {})
+    if not hwm:
+        return {}
+    out: dict[str, Any] = {}
+    for name, build in (("previous_peaks", _peaks_of), ("previous_at_peak", _at_peak_record), ("previous_pressure", _pressure_record)):
+        try:
+            got = build(hwm)
+        except Exception:  # noqa: BLE001 - a record that cannot be built is absent, never a failed boot
+            _LOG.debug("end record: %s not built", name, exc_info=True)
+            continue
+        if got:
+            out[name] = got
+    return out
 
 
 def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -387,6 +496,7 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen
+        rec.update(_end_evidence(prev_state))
     _append(rec)
     return rec
 
@@ -471,6 +581,17 @@ def _boot_rollup_mode() -> str | None:
         return f"unreadable ({type(exc).__name__})"
 
 
+def _boot_build() -> dict[str, Any] | None:
+    """Which build this session ran (``build_id.build_identity``): the commit where there is a checkout, a hash of the source
+    files' bytes and the schema head, so an update reads as an update and not as a crash. Never raises."""
+    try:
+        from src.monitoring.build_id import build_identity
+
+        return build_identity()
+    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
+        return None
+
+
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
     """Called once per process from ``forensics.record_session_start`` (after the
     sentinel is read). Closes the previous session's record if it could not, appends
@@ -502,6 +623,7 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "allocator": _boot_allocator(),
         "rollup_serve_mode": _boot_rollup_mode(),
         "core_guard": _boot_core_guard(),
+        "build": _boot_build(),
     }
     _append(rec)
     compact_if_needed()
