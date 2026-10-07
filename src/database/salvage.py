@@ -72,7 +72,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.database import damage
+from src.database import damage, stand_in
 from src.database.article_indexes import RAM_BYTES_PER_ARTICLE
 
 _LOG = logging.getLogger(__name__)
@@ -104,8 +104,11 @@ STAND_IN_NOTE = (
     "A row whose parent row could not be read was kept, and a stand-in row, marked as lost, holds the place of the lost parents "
     "in each parent table, so that a row saved later is not handed the number of a lost one and does not seem to own the rows that "
     "belong to it. A stand-in that has a parent of its own (a stand-in article has a source) belongs to a stand-in parent that is "
-    "marked as lost too, never to a real row, and no stand-in is in the search results. A stand-in is a row like any other: if it is "
-    "deleted, its number may be handed out again."
+    "marked as lost too, never to a real row. A stand-in article is quarantined, with the reason \"stand-in for a lost row\": it is not in "
+    "the search, the article list, the export or the analyses, and not in the advanced search that includes quarantined articles; a "
+    "stand-in source is not enabled and is not in the source lists, the qualification passes or the exports, so it is never collected or "
+    "qualified. The rows that were kept for a lost parent stay in the library, are counted in this report, and show the lost parent's "
+    "name. A stand-in is a row like any other: if it is deleted, its number may be handed out again."
 )
 
 #: The columns of a table the search index reads (``fts.rebuild_index``: ``SELECT id, title, content FROM articles``). A stand-in row of such a
@@ -966,7 +969,7 @@ class Salvage:
             return "1970-01-01 00:00:00.000000"
         if "JSON" in kind:
             return "{}"
-        return f"(lost {table} {row_id})"
+        return stand_in.lost_text(table, row_id)
 
     def _stand_in(self, table: str, row_id: int, chain: tuple[str, ...] = ()) -> bool:
         """Write ONE row at ``row_id`` into ``table``, marked as lost: every NOT NULL column without a default is given a value
@@ -987,6 +990,11 @@ class Salvage:
                 return False
             columns.append(str(name))
             values.append(value)
+        present = {str(r[1]) for r in info if r[6] == 0}
+        for name, value in stand_in.MARKS.get(table, {}).items():  # the marks every reader leaves a stand-in out by (stand_in.py)
+            if name in present and name not in columns:
+                columns.append(name)
+                values.append(value)
         try:
             self.dst.execute(
                 f"INSERT INTO {_ident(table)} ({', '.join(_ident(c) for c in columns)}) VALUES ({', '.join('?' for _ in columns)})",

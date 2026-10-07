@@ -710,6 +710,131 @@ def test_a_log_a_reader_holds_for_a_moment_is_folded_on_the_next_try_and_not_ref
     assert Slow.calls == 2, "the fold was not tried again"
 
 
+class _FakeCheckpointConnection:
+    """What ``_Probe.fold`` runs its pragmas on: answers the checkpoint with a row of the test's choosing."""
+
+    def __init__(self, row):
+        self.row = row
+
+    def execute(self, sql):
+        class _Cursor:
+            def __init__(self, row):
+                self._row = row
+
+            def fetchone(self):
+                return self._row
+
+        if sql.startswith("PRAGMA wal_checkpoint"):
+            return _Cursor(self.row)
+        if sql == "PRAGMA busy_timeout":
+            return _Cursor((30000,))
+        return _Cursor(None)
+
+
+@pytest.mark.parametrize(
+    ("row", "answer"),
+    [
+        ((0, 0, 0), (0, 0)),  # a truncate that ran: the log is empty
+        ((0, -1, -1), (-1, -1)),  # no log at all
+        ((1, 10, 10), (10, 10)),  # a reader kept the truncate from running, every frame is in the file
+        ((1, 10, 4), (10, 4)),  # held back: the numbers say how many are still in the log
+        ((1, -1, -1), None),  # another connection holds the checkpoint lock: NOTHING ran, so nothing is known to be in the file
+        ((1, -1, 3), (-1, 3)),  # busy with only one count missing is not the lock-held answer
+        (("x", 1, 2), None),
+        ((), None),
+    ],
+)
+def test_the_fold_answers_none_when_it_did_not_run_and_the_counts_when_it_did(row, answer):
+    """The coordinator's check of E3 fold 3, item 7: ``(1, -1, -1)`` is the checkpoint of a connection that was refused the checkpoint lock;
+    nothing ran, so the log was NOT folded. It used to read as "no log" and be accepted, and an unfolded log plus a replace that failed after
+    the log names were removed left the live file without its saves."""
+    probe = repair._Probe.__new__(repair._Probe)
+    probe._con = _FakeCheckpointConnection(row)
+    assert probe.fold(100) == answer
+
+
+def test_a_checkpoint_another_connection_holds_the_lock_for_is_measured_as_not_run_on_a_real_file(tmp_path, monkeypatch, reg):
+    """The premise of the row above, measured: a TRUNCATE another connection is still running (it waits for a reader) holds the checkpoint
+    lock, and the probe's own checkpoint then answers busy with nothing counted."""
+    import sqlite3
+    import threading
+    import time
+
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    holder = _wal_save(live, "first")
+    watch = repair._Probe(live)
+    reader = sqlite3.connect(live, check_same_thread=False)
+    other = sqlite3.connect(live, check_same_thread=False)
+    started, finished = threading.Event(), threading.Event()
+    try:
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM sources").fetchone()
+        holder.execute("INSERT INTO sources (name, domain) VALUES ('later', 'later.example.org')")
+        holder.commit()  # a frame the reader's snapshot does not include: a truncate has to wait for the reader
+
+        def checkpoint() -> None:
+            other.execute("PRAGMA busy_timeout=6000")
+            started.set()
+            try:
+                other.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            finally:
+                finished.set()
+
+        thread = threading.Thread(target=checkpoint, daemon=True)
+        thread.start()
+        assert started.wait(5)
+        time.sleep(0.5)
+        assert not finished.is_set(), "the premise failed: the other checkpoint did not wait for the reader"
+        assert watch.fold(100) is None, "a checkpoint that could not take the checkpoint lock was read as a fold"
+    finally:
+        reader.close()  # lets the other checkpoint finish
+        finished.wait(10)
+        other.close()
+        watch.close()
+        holder.close()
+
+
+def test_a_log_nothing_could_fold_because_the_checkpoint_lock_was_held_is_tried_again_and_then_refused_not_accepted(tmp_path, monkeypatch, reg):
+    live = _live(tmp_path, monkeypatch, reg, damage_it=False)
+    monkeypatch.setattr(repair, "FOLD_RETRY_S", 0.6)
+    Path(str(live) + "-wal").write_bytes(b"\0" * 64)  # a log with frames the checkpoint did not move
+
+    class Refused:
+        calls = 0
+
+        def fold(self, wait_ms):
+            Refused.calls += 1
+            return None  # busy, nothing counted
+
+    with pytest.raises(repair.Declined) as refusal:
+        _REAL_EMPTY_THE_LOG(live, Refused())
+    assert refusal.value.code == "writer-busy" and Refused.calls >= 2, "it was not tried again before it was refused"
+    # and once the lock is free the same log is folded and accepted
+    answers = [None, (10, 10)]
+
+    class FreeAtLast:
+        def fold(self, wait_ms):
+            return answers.pop(0)
+
+    monkeypatch.setattr(repair, "FOLD_RETRY_S", 10.0)
+    _REAL_EMPTY_THE_LOG(live, FreeAtLast())
+    assert answers == []
+
+
+def test_a_record_with_no_measurement_of_the_drive_at_all_sets_no_removal_date(tmp_path):
+    """The coordinator's check of E3 fold 3, item 6: a report that never carried ``disk_unread_pages`` (the key is missing, not None) is an
+    unmeasured file too; it used to get a removal date as if the drive had read every page."""
+    damaged = tmp_path / "live.damaged-20261006T030000Z.db"
+    damaged.write_bytes(b"x" * 100)
+    report: dict = {"clean_at": "2026-10-06T03:00:00+00:00"}
+    repair._note_what_was_set_aside(report, damaged)
+    assert report.get("kept_file_removal_undated") == "disk-not-measured", report
+    assert "kept_file_removal_after" not in report and "kept_file_removal_withheld" not in report
+    measured: dict = {"clean_at": "2026-10-06T03:00:00+00:00", "disk_unread_pages": 0}
+    repair._note_what_was_set_aside(measured, damaged)
+    assert measured.get("kept_file_removal_after") and "kept_file_removal_undated" not in measured
+
+
 def test_a_file_put_under_the_library_name_during_the_swap_is_not_replaced_by_the_copy(tmp_path, monkeypatch, reg, engine_calls):
     """The data version belongs to the inode the probe opened, so a DIFFERENT file under the name moves nothing it can see; the file's
     identity, compared inside the window, is what catches it. Without that compare the copy of the old file replaces the new one."""
@@ -1679,25 +1804,53 @@ def test_a_finish_whose_sidecar_dates_are_a_lie_does_not_date_the_removal_in_the
     assert repair.sweep_kept_copies(now=datetime.now(UTC)) == [] and kept.exists()
 
 
-def test_the_time_a_sidecar_says_it_was_made_is_believed_only_near_the_time_the_file_was_written():
+def test_the_time_a_sidecar_was_made_is_the_later_of_its_own_word_and_the_files_and_never_one_that_is_in_the_future():
     made = "2026-10-06T03:00:00+00:00"
     written = datetime(2026, 10, 6, 3, 0, 5, tzinfo=UTC)
     clean = "2026-10-06T02:59:30+00:00"
     assert repair._clean_read_time({"created_at": made, "run_seconds": 60, "clean_at": clean}, written) == clean
     own = written.isoformat(timespec="seconds")
-    for lie in ("2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00+00:00", "yesterday", None, 7, "2026-10-06T01:00:00+00:00", "2026-10-06T05:00:00+00:00"):
+    for lie in ("2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00+00:00", "yesterday", None, 7, "2026-10-06T01:00:00+00:00"):
         got = repair._clean_read_time({"created_at": lie, "run_seconds": 60, "clean_at": lie}, written)
         assert got == own, f"{lie!r} was believed as the time the sidecar was made: {got}"
     # no file time to check it against: its own word, as before
     assert repair._clean_read_time({"created_at": made, "run_seconds": 60, "clean_at": clean}, None) == clean
 
 
+def test_a_drive_without_a_clock_never_dates_the_removal_in_the_past():
+    """The coordinator's check of E3 fold 3, item 6: a file time of 1970 (a drive that has no clock) used to win over a ``created_at`` that was
+    far from it, and the removal of the kept copy was then dated in 1970 + 30 days, which is due at once. The later of the two is used."""
+    made = datetime(2026, 10, 6, 3, 0, 0, tzinfo=UTC)
+    no_clock = datetime(1970, 1, 1, tzinfo=UTC)
+    assert repair._made_time({"created_at": made.isoformat()}, no_clock) == made
+    assert repair._made_time({"created_at": made.isoformat()}, made - timedelta(days=400)) == made
+    # the file's time is the later one: it is used, as a created_at far in the past always lost to it
+    assert repair._made_time({"created_at": "2000-01-01T00:00:00+00:00"}, made) == made
+
+
+def test_a_time_in_the_future_is_not_believed_and_a_made_time_is_never_made_up_from_two_of_them():
+    now = datetime.now(UTC)
+    ahead = (now + timedelta(days=5)).isoformat()
+    # one of the two in the future: the other is used
+    assert repair._made_time({"created_at": ahead}, now - timedelta(days=2)) == now - timedelta(days=2)
+    assert repair._made_time({"created_at": (now - timedelta(days=3)).isoformat()}, now + timedelta(days=5)) == now - timedelta(days=3)
+    # a clock a little fast (inside the slack) is believed
+    near = now + timedelta(seconds=repair.SIDECAR_TIME_SLACK_S / 2)
+    assert repair._made_time({"created_at": near.isoformat()}, None) == near
+    # both in the future, or neither believable: now, which keeps the kept copy for the full thirty days
+    got = repair._made_time({"created_at": ahead}, now + timedelta(days=9))
+    assert abs((got - now).total_seconds()) < 60
+    got = repair._made_time({"created_at": "yesterday"}, None)
+    assert abs((got - now).total_seconds()) < 60
+
+
 def test_a_run_longer_than_a_repair_can_take_is_not_believed():
     made = "2026-10-06T03:00:00+00:00"
     written = datetime(2026, 10, 6, 3, 0, 5, tzinfo=UTC)
     long_ago = "2000-01-01T00:00:00+00:00"
+    own = written.isoformat(timespec="seconds")  # the later of the two times is the made time
     for run in (repair.MAX_RUN_SECONDS + 1, 10**12, 10**30, "never"):
-        assert repair._clean_read_time({"created_at": made, "run_seconds": run, "clean_at": long_ago}, written) == made, f"run_seconds {run!r} was believed"
+        assert repair._clean_read_time({"created_at": made, "run_seconds": run, "clean_at": long_ago}, written) == own, f"run_seconds {run!r} was believed"
     # a long but possible run still widens what is believed, as it always did
     week = repair._clean_read_time({"created_at": made, "run_seconds": repair.MAX_RUN_SECONDS, "clean_at": "2026-10-01T03:00:00+00:00"}, written)
     assert week == "2026-10-01T03:00:00+00:00"

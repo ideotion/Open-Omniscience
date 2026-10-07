@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
+from typing import Any
 
 from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
@@ -91,8 +92,35 @@ _SWAP_HANDLE_WAIT_S = float(os.environ.get("OO_SWAP_HANDLE_WAIT_S", "300") or 30
 _SWAP_CHECKPOINT_S = float(os.environ.get("OO_SWAP_CHECKPOINT_S", "60") or 60)
 
 
+def _log_is_folded(record: Any, wal: Path | None) -> bool:
+    """Does the checkpoint's answer show that EVERY frame the live log held is now in the database file? That is the one condition under
+    which the log can be unlinked and nothing be lost, even if the replace then fails and the old file stays the library (the coordinator's
+    check of E3 fold 3, item 8: this used to return True whenever the checkpoint THREAD ended, whatever the checkpoint answered).
+
+    ``record`` is what :func:`checkpoint_wal` returned: ``busy`` 0 is a truncate that ran (the log is empty); ``busy`` 1 is a truncate a reader
+    kept from running, which is still all right when ``checkpointed_frames`` reached ``log_frames`` (every frame is in the file; only the
+    reset was blocked) and not otherwise; ``(-1, -1)`` is no log, or, with ``busy`` 1, a checkpoint lock another connection holds and
+    nothing ran. ``{"skipped": ...}`` is a checkpoint that could not take the write gate. ``None`` is a checkpoint that was disabled, was for
+    another kind of database or failed: nothing is known, so the log is accepted only if the file that would be unlinked is absent or empty."""
+    if isinstance(record, dict) and "skipped" not in record:
+        busy, logged, moved = record.get("busy"), record.get("log_frames"), record.get("checkpointed_frames")
+        if isinstance(busy, int) and isinstance(logged, int) and isinstance(moved, int):
+            if logged < 0 or moved < 0:
+                return not busy
+            return not busy or moved >= logged
+        return False
+    if record is not None:
+        return False
+    try:
+        return wal is None or not wal.exists() or wal.stat().st_size == 0
+    except OSError:
+        return False
+
+
 def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
-    """Flush the live WAL into the database file. True if it completed.
+    """Flush the live WAL into the database file. True only if the checkpoint COMPLETED and its answer shows every frame of the log in the
+    file (:func:`_log_is_folded`): the swap unlinks the log, and a log that still holds frames would take the old library's last saves
+    with it if the replace then failed.
 
     Bounded on purpose. ``checkpoint_wal`` takes the single-writer gate. That wait is bounded
     now (``OO_CKPT_GATE_TIMEOUT_S``, 30 s, ``0`` waits for ever), but the BACKFILL it then runs
@@ -112,19 +140,25 @@ def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
     with a later retry -- that retry runs THIS function first, and cannot succeed
     until the gate is free, which is only true once the stray one has finished.
     """
+    from src.backup.sqlite_backup import live_db_path
+
     budget = _SWAP_CHECKPOINT_S if timeout_s is None else timeout_s
     done = threading.Event()
+    answer: dict[str, Any] = {}
 
     def _run() -> None:
         try:
             from src.scheduler.hygiene import checkpoint_wal
 
-            checkpoint_wal(force=True)  # never raises, by its own contract
+            answer["record"] = checkpoint_wal(force=True)  # never raises, by its own contract
         finally:
             done.set()
 
     threading.Thread(target=_run, name="oo-swap-checkpoint", daemon=True).start()
-    return done.wait(budget)
+    if not done.wait(budget):
+        return False
+    live = live_db_path()
+    return _log_is_folded(answer.get("record"), Path(str(live) + "-wal") if live else None)
 
 
 def _file_is_locked(exc: BaseException) -> bool:
@@ -7212,8 +7246,8 @@ def run_restore(
             # nothing, and the honest reason is the actionable half of the message.
             if not _checkpoint_before_swap():
                 raise RestoreRefused(
-                    "your corpus is still being written to, so its write-ahead log "
-                    f"could not be flushed within {_SWAP_CHECKPOINT_S:.0f}s — nothing "
+                    "your corpus is still being written to or read, so its write-ahead log "
+                    f"could not be moved into the file completely within {_SWAP_CHECKPOINT_S:.0f}s — nothing "
                     "was written to your corpus. Let the running job finish, and "
                     "import again."
                 )

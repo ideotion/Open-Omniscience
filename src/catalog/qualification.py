@@ -57,6 +57,7 @@ from sqlalchemy import func
 
 from src.config.machine_floor import scan_budget
 from src.database.models import Article
+from src.database.stand_in import not_a_stand_in_source
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -420,7 +421,7 @@ def select_unqualified(session: Session, *, limit: int) -> list[Source]:
     return (
         session.query(Source)
         .outerjoin(last_attempt, last_attempt.c.source_id == Source.id)
-        .filter(Source.status == STATUS_UNQUALIFIED)
+        .filter(Source.status == STATUS_UNQUALIFIED, not_a_stand_in_source())  # a repair's stand-in source is never judged
         .order_by(last_attempt.c.last_at.asc().nullsfirst(), Source.id.asc())
         .limit(limit)
         .all()
@@ -830,7 +831,7 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
 
     now = now or datetime.now(UTC)
     attempted = session.query(SourceQualificationAttempt.source_id).distinct().subquery()
-    unq = session.query(Source).filter(Source.status == STATUS_UNQUALIFIED)
+    unq = session.query(Source).filter(Source.status == STATUS_UNQUALIFIED, not_a_stand_in_source())
     new_total = int(unq.count())
     new_untried = int(
         unq.filter(~Source.id.in_(session.query(attempted.c.source_id))).count()

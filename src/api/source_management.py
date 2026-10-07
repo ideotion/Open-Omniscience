@@ -698,7 +698,9 @@ def list_sources(
             if priority is not None:
                 sources = [s for s in sources if s.priority == priority]
         else:
-            query = db.query(Source)
+            from src.database.stand_in import not_a_stand_in_source
+
+            query = db.query(Source).filter(not_a_stand_in_source())  # a repair's stand-in source is never listed
             if enabled is not None:
                 query = query.filter(Source.enabled.is_(enabled))
             if priority is not None:
@@ -805,8 +807,9 @@ def source_facets(
     no score. `enabled_only` restricts to the active set (the default shows everything so
     a user can find a disabled source to enable)."""
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
-    q = db.query(Source.language, Source.country, Source.source_type, Source.tags)
+    q = db.query(Source.language, Source.country, Source.source_type, Source.tags).filter(not_a_stand_in_source())
     if enabled_only:
         q = q.filter(Source.enabled.is_(True))
     lang_n: dict[str, int] = {}
@@ -1983,8 +1986,11 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
     # reads as a contradiction rather than as two different questions.
     counts = {"qualified": 0, "disqualified": 0, "unqualified": 0, "enabled": 0}
     collecting = 0
+    from src.database.stand_in import not_a_stand_in_source
+
     for status, enabled, n in (
         db.query(Source.status, Source.enabled, func.count())
+        .filter(not_a_stand_in_source())  # a repair's stand-in source is not a source the user saved
         .group_by(Source.status, Source.enabled)
         .all()
     ):

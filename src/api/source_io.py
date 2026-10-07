@@ -28,6 +28,7 @@ from src.catalog.csv_io import (
 )
 from src.database.models import Article, Source
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_source
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
@@ -124,7 +125,7 @@ def list_sources(
         return [v.strip() for v in (raw or "").split(",") if v.strip()]
 
     # S6: read the MAINTAINED per-source counter instead of an O(articles) join.
-    base = db.query(Source)
+    base = db.query(Source).filter(not_a_stand_in_source())  # a repair's stand-in source is not a source the user saved
 
     # The list mixes BinaryExpression, BooleanClauseList and ColumnElement -- every
     # SQLAlchemy filter shape. ColumnElement[bool] is their common supertype; the
@@ -241,7 +242,7 @@ def columns() -> dict:
 @router.get("/export.csv")
 def export_csv(db: Session = Depends(get_db)) -> StreamingResponse:
     """Download the entire source catalog as CSV (round-trips with import)."""
-    rows = [_source_to_row(s) for s in db.query(Source).order_by(Source.name).all()]
+    rows = [_source_to_row(s) for s in db.query(Source).filter(not_a_stand_in_source()).order_by(Source.name).all()]
     csv_text = write_csv(rows)
     return StreamingResponse(
         iter([csv_text]),

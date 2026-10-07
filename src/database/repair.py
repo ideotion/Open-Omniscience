@@ -104,11 +104,11 @@ STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 #: and says the date wherever it says the file exists. The number itself is ``damage.KEPT_COPY_DAYS`` (the notices need it).
 KEPT_COPY_DAYS = damage.KEPT_COPY_DAYS
 
-#: How far a sidecar's own ``created_at`` may be from the time the sidecar FILE was written (seconds, the file's modification time). WHAT IT
-#: PROTECTS: R129's thirty days run from a time the sidecar states, and a sidecar is untrusted input: a ``created_at`` far in the past would
-#: have the kept copy removed at once, one far in the future would keep it for ever. The write is one atomic replace a moment after the time is
-#: taken, so a slow drive is seconds; an hour is a drive that is not the problem. Outside it the file's own time is used, which is never earlier
-#: than the write.
+#: How far AHEAD of now a time may be and still be believed (seconds): the sidecar's own ``created_at`` and the time its file was written both
+#: date R129's thirty days, a sidecar is untrusted input and a drive's clock is not always right. WHAT IT PROTECTS: a time far in the future
+#: would keep the kept copy for ever, so a time more than this ahead of now is not believed (the other time, or now, is used instead); a
+#: clock a little fast, which an hour covers and a slow drive does not come near, is. The later of the two believed times is used (a drive
+#: without a clock reports 1970 for the file, and must not date the removal in the past).
 SIDECAR_TIME_SLACK_S = 3600.0
 
 #: The longest repair run a sidecar's ``run_seconds`` is believed to report (seconds). WHAT IT PROTECTS: the clean-read time is accepted when
@@ -316,8 +316,8 @@ class _Probe:
 
     def fold(self, wait_ms: int) -> tuple[int, int] | None:
         """One TRUNCATE checkpoint of the live log ON THIS CONNECTION: ``(frames in the log, frames moved into the file)`` as the checkpoint
-        answers (``(-1, -1)`` when there is no log, and also when another connection holds the checkpoint lock: measured, the answer is then
-        ``(1, -1, -1)``, busy first, and nothing ran), or ``None`` when the answer could not be read. It runs here and nowhere else because a
+        answers (``(-1, -1)`` when there is no log), or ``None`` when the answer could not be read OR when another connection holds the checkpoint lock
+        (measured: the answer is then ``(1, -1, -1)``, busy first, and nothing ran, so the log was not folded and :func:`_empty_the_log` tries again). It runs here and nowhere else because a
         TRUNCATE checkpoint made by ANY OTHER connection moves this connection's data version, even with nothing in the log (measured on
         plaintext and on SQLCipher), so the repair's own fold would read as a save made by someone else; the connection's own does not."""
         con = self._con
@@ -329,9 +329,12 @@ class _Probe:
             with contextlib.suppress(Exception):
                 con.execute(f"PRAGMA busy_timeout={int(previous[0]) if previous else 30000}")
         try:
-            return int(row[1]), int(row[2])
+            busy, logged, moved = int(row[0]), int(row[1]), int(row[2])
         except (TypeError, ValueError, IndexError):
             return None
+        if busy and logged < 0 and moved < 0:
+            return None  # busy with nothing counted: another connection holds the checkpoint lock and NOTHING ran, so the log was not folded
+        return logged, moved
 
     def moved(self) -> bool:
         self._con.execute("BEGIN IMMEDIATE")
@@ -1020,12 +1023,16 @@ def _written_at(sidecar: Path | None) -> datetime | None:
 
 
 def _made_time(doc: dict[str, Any], written: datetime | None) -> datetime:
-    """When the sidecar was made: its own ``created_at`` when that is within :data:`SIDECAR_TIME_SLACK_S` of the time the file was written,
-    otherwise the file's. A sidecar value is believed only once it is checked."""
-    created = _parse_time(doc.get("created_at"))
-    if written is not None and (created is None or abs((created - written).total_seconds()) > SIDECAR_TIME_SLACK_S):
-        return written
-    return created or datetime.now(UTC)
+    """When the sidecar was made: the LATER of its own ``created_at`` and the time the file was written, leaving out any of the two that lies
+    after now (past :data:`SIDECAR_TIME_SLACK_S`, for a clock a little ahead), and now when neither is left. A sidecar value is believed only
+    once it is checked, and a time can fail the check in both directions: a ``created_at`` far in the future would keep the copy for ever
+    and is dropped; a file time far in the past (a drive without a clock reports 1970) would date the removal in the past and remove the kept
+    copy at once, and it loses to a ``created_at`` that is later and not in the future. The later time only ever makes the kept file live
+    longer, and now is the answer when both are in doubt."""
+    now = datetime.now(UTC)
+    limit = now + timedelta(seconds=SIDECAR_TIME_SLACK_S)
+    seen = [when for when in (_parse_time(doc.get("created_at")), written) if when is not None and when <= limit]
+    return max(seen) if seen else now
 
 
 def _clean_read_time(doc: dict[str, Any], written: datetime | None = None) -> str:
@@ -1165,7 +1172,8 @@ def _empty_the_log(target: Path, watch: _Probe) -> None:
 
     A log that is still not EMPTY afterwards is accepted when every frame in it was moved into the file (the checkpoint says how many
     there are and how many it moved): a reader that is still reading keeps the log from being truncated, not from being folded, and a
-    log whose frames are all in the file loses nothing when it is unlinked. Otherwise the fold is tried again, with the gate held (no
+    log whose frames are all in the file loses nothing when it is unlinked. A checkpoint that did not run at all because another connection
+    holds the checkpoint lock is not an answer (nothing is known to be in the file), so it is tried again like a partial one. Otherwise the fold is tried again, with the gate held (no
     gated save can add frames), for :data:`FOLD_RETRY_S`; then it is refused, with every file as it was and the numbers in the text
     (the deep read of E3, NEW-11: a reader that held the log for two seconds threw away a whole copy, and the text claimed unsaved
     bytes where the checkpoint had copied every frame and only the truncate was blocked)."""
@@ -1181,9 +1189,7 @@ def _empty_the_log(target: Path, watch: _Probe) -> None:
         if not left:
             return
         if frames is not None and (frames[0] < 0 or frames[1] >= frames[0]):
-            # ``frames[0] < 0`` is no log, or a checkpoint lock another connection holds (nothing could be counted): accepted either way, because
-            # what the log holds from before the copy is in the copy (it was read through the log) and a save since the copy moves the
-            # data version, which the switch reads inside the window and refuses on.
+            # ``frames[0] < 0`` is no log (a checkpoint lock another connection holds is ``None`` above, never this): nothing to fold.
             return
         if _CANCEL.is_set():
             raise salvage.SalvageStopped
@@ -1349,9 +1355,9 @@ def _note_what_was_set_aside(report: dict[str, Any], damaged: Path) -> None:
     clean = _parse_time(report.get("clean_at")) or datetime.now(UTC)
     report["clean_at"] = clean.isoformat(timespec="seconds")
     unread = max(int(report.get("disk_unread_pages") or 0), int(report.get("check_pages_unread") or 0))
-    if "disk_unread_pages" in report and report["disk_unread_pages"] is None:
-        # What the drive could not give was never measured (the sidecar did not carry it and the kept file could not be read now): that is not
-        # "none", so no date is set and the sweep, which needs one, never removes this file.
+    if report.get("disk_unread_pages") is None:
+        # What the drive could not give was never measured (the sidecar did not carry it, the kept file could not be read now, or no
+        # measurement was made at all): that is not "none", so no date is set and the sweep, which needs one, never removes this file.
         report["kept_file_removal_undated"] = "disk-not-measured"
     elif unread:
         # A file the drive could not read is kept, not removed after the thirty days: no date is recorded, the record says why, and

@@ -216,6 +216,40 @@ def test_the_notice_does_not_promise_a_date_the_switched_off_sweep_will_never_ke
     assert [n for n in world.reg.notes() if n["kind"] == "repaired"][-1]["frame"] == damage.FRAME_KEPT_UNTIL
 
 
+def test_a_kept_copy_with_no_removal_date_is_named_in_the_notice_with_its_file_size_and_folder(world):
+    """The coordinator's check of E3 fold 3, item 5: a kept file whose drive reading was never measured gets NO removal date (the sweep never
+    removes it), and R129's promise of a removal after 30 days lapsed without a word while a second full copy of the library stayed on the
+    drive. The notice now names the file, its size and its folder and says it stays until the person removes it."""
+    world.record(world.kept, kept_file_removal_after=None, kept_file_removal_undated="disk-not-measured")
+    notes = [n for n in world.reg.notes() if n["kind"] == "repaired"]
+    last = notes[-1]
+    assert last["frame"] == damage.FRAME_KEPT_UNDATED, notes
+    assert last["vars"]["name"] == KEPT_NAME and last["vars"]["folder"] == str(world.folder) and last["vars"]["size"], last
+    assert all(f"{{{k}}}" in damage.FRAME_KEPT_UNDATED for k in ("name", "size", "folder"))
+    assert "{date}" not in damage.FRAME_KEPT_UNDATED and "yourself" in damage.FRAME_KEPT_UNDATED
+    # the sweep agrees with the notice: a far future day removes nothing
+    assert repair.sweep_kept_copies(now=DUE + timedelta(days=36500)) == [] and world.kept.exists()
+
+
+def test_a_kept_copy_with_a_removal_date_is_not_given_the_undated_frame(world):
+    notes = [n for n in world.reg.notes() if n["kind"] == "repaired"]
+    assert notes[-1]["frame"] == damage.FRAME_KEPT_UNTIL, notes
+    assert all(n["frame"] != damage.FRAME_KEPT_UNDATED for n in notes)
+
+
+def test_the_undated_notice_is_translated_into_every_language():
+    import json
+
+    locales = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
+    files = sorted(locales.glob("*.json"))
+    assert len(files) == 12
+    for path in files:
+        entry = json.loads(path.read_text(encoding="utf-8")).get(damage.FRAME_KEPT_UNDATED)
+        assert entry, f"{path.name} has no translation of the undated notice"
+        for name in ("{name}", "{size}", "{folder}"):
+            assert name in entry, f"{path.name} lost the {name} slot"
+
+
 def test_nothing_is_removed_while_the_live_library_is_latched_damaged_again_and_it_goes_at_the_start_after(world):
     """The copy may hold rows the live file lost; a library that is damaged again is exactly when it matters. The copy waits, and
     nothing is recorded, so the next start tries again."""

@@ -225,6 +225,60 @@ def test_a_checkpoint_that_completes_reports_true(monkeypatch):
     assert _checkpoint_before_swap(2.0) is True
 
 
+@pytest.mark.parametrize(
+    ("record", "folded"),
+    [
+        ({"busy": 0, "log_frames": 0, "checkpointed_frames": 0}, True),  # a truncate that ran: the log is empty
+        ({"busy": 0, "log_frames": -1, "checkpointed_frames": -1}, True),  # no log
+        ({"busy": 1, "log_frames": 10, "checkpointed_frames": 10}, True),  # a reader kept the truncate from running; every frame is in the file
+        ({"busy": 1, "log_frames": 10, "checkpointed_frames": 4}, False),  # six frames are still only in the log: unlinking it loses them
+        ({"busy": 1, "log_frames": -1, "checkpointed_frames": -1}, False),  # another connection held the checkpoint lock: nothing ran
+        ({"busy": 1, "log_frames": 10, "checkpointed_frames": -1}, False),
+        ({"busy": None, "log_frames": None, "checkpointed_frames": None}, False),  # the row could not be read
+        ({"skipped": "gate busy", "detail": "a writer holds the gate"}, False),  # the checkpoint could not take the write gate
+        ({"skipped": "gate busy", "busy": 0, "log_frames": 0, "checkpointed_frames": 0}, False),  # a skip is never a fold, whatever else it carries
+        ({}, False),
+    ],
+)
+def test_the_checkpoint_before_the_swap_reports_the_answer_of_the_checkpoint_not_that_its_thread_ended(monkeypatch, tmp_path, record, folded):
+    """The coordinator's check of E3 fold 3, item 8: this returned True once the checkpoint THREAD ended, whatever the checkpoint answered,
+    and the swap then unlinked the log: an old library whose replace then failed lost the last saves that sat only in the log."""
+    import src.backup.sqlite_backup as sqlite_backup
+    import src.scheduler.hygiene as hygiene
+
+    monkeypatch.setattr(sqlite_backup, "live_db_path", lambda: tmp_path / "live.db")
+    (tmp_path / "live.db-wal").write_bytes(b"frames" * 100)  # a log that is not empty: only the answer can vouch for it
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: dict(record))
+    assert _checkpoint_before_swap(2.0) is folded
+
+
+def test_a_checkpoint_that_ran_nowhere_vouches_for_a_log_only_when_there_is_none_to_lose(monkeypatch, tmp_path):
+    import src.backup.sqlite_backup as sqlite_backup
+    import src.scheduler.hygiene as hygiene
+
+    monkeypatch.setattr(sqlite_backup, "live_db_path", lambda: tmp_path / "live.db")
+    monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: None)  # disabled, another kind of database, or it failed
+    wal = tmp_path / "live.db-wal"
+    assert _checkpoint_before_swap(2.0) is True, "no log file: nothing can be lost"
+    wal.write_bytes(b"")
+    assert _checkpoint_before_swap(2.0) is True, "an empty log: nothing can be lost"
+    wal.write_bytes(b"frames" * 100)
+    assert _checkpoint_before_swap(2.0) is False, "a log with content and no answer from a checkpoint was vouched for"
+
+
+def test_the_restore_refuses_when_the_checkpoint_did_not_fold_the_log():
+    """The call site: a False answer is a refusal before anything is written, and the swap (which unlinks the log) comes after it."""
+    import inspect
+
+    from src.backup import merge
+
+    source = inspect.getsource(merge)
+    gate = source.index("if not _checkpoint_before_swap():")
+    refusal = source[gate : gate + 700]
+    assert "raise RestoreRefused" in refusal and "completely" in refusal
+    assert gate < source.index("swap_in_corpus(working, target)", gate)
+
+
 def test_a_checkpoint_blocked_behind_a_writer_is_bounded(monkeypatch):
     """The reason this is bounded at all.
 

@@ -1510,6 +1510,11 @@ class DamageRegistry:
                             "vars": {**where, "date": str(last["kept_file_removal_after"])[:10]},
                         }
                     )
+                else:
+                    # No date was set (``kept_file_removal_undated``: the drive's reading of that file was never measured), so the sweep never
+                    # removes it: said, because R129's promise of a removal after 30 days would otherwise lapse without a word while a second
+                    # full copy of the library stays on the drive (the coordinator's check of E3 fold 3, item 5).
+                    out.append({"kind": "repaired", "file": FILE_CORPUS, "frame": FRAME_KEPT_UNDATED, "vars": where})
         return out
 
     # -- what a surface shows -------------------------------------------------------------------
@@ -1871,6 +1876,11 @@ FRAME_KEPT_DISK = (
 FRAME_KEPT_SWITCH = (
     "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. Removing it by itself is switched off on "
     "this machine (OO_BOOT_REPAIR=0), so it stays until you remove it yourself."
+)
+FRAME_KEPT_UNDATED = (
+    "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. The app could not work out the date to "
+    "remove it (it could not check whether the drive reads that file without errors), so it will not remove it: it stays "
+    "until you remove it yourself."
 )
 FRAME_REPAIRED_ORPHANS = (
     "{count} saved rows ({tables}) belong to rows that could not be read. They were kept, and none was removed."
