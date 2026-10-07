@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure, scrubbed
+from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, scrubbed_value
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -674,7 +674,7 @@ class ImportQueueManager:
                     # ``import_queue.json``) and a log record. A single-file restore raises the route layer's own
                     # ``HTTPException``, whose text can name the exception that caused it, and the queue is the
                     # recorder of that text, so it is taken out of the passphrase here, where the text is made.
-                    said = scrubbed(str(exc), self._passphrase)
+                    said = exception_text(exc, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)  # scrubbed, THEN cut
                     if stopped_here:
                         _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), said)
                     else:
@@ -695,7 +695,7 @@ class ImportQueueManager:
                     # of the group carries it.
                     self._discard_group(
                         f"the import of {item.get('label') or item.get('id')} "
-                        + ("was stopped" if stopped_here else f"failed ({detail})")
+                        + ("was stopped" if stopped_here else f"failed ({said})")
                         + ", so the shared working copy was thrown away and the backups merged "
                         "into it before this one were NOT written to your corpus; "
                         "importing them again is safe"
@@ -892,14 +892,14 @@ class ImportQueueManager:
     def _scrubbed(self, value: Any) -> Any:
         """``value`` (a string, or a report) with the backup's passphrase and the corpus passphrase taken
         out in every form, checked once more, and withheld whole on any failure
-        (``runlog.scrub_secrets``)."""
-        from src.backup.runlog import scrub_secrets
+        (``secret_scrub.scrubbed_value``)."""
+        return scrubbed_value(value, self._passphrase)
 
-        return scrub_secrets(value, self._passphrase)
-
-    def _failure_text(self, exc: BaseException | str) -> str:
+    def _failure_text(self, failure: BaseException | str) -> str:
         """The failure's text for the queue file and the status: scrubbed first, THEN cut."""
-        return str(self._scrubbed(str(exc)))[: self._FAILURE_TEXT_KEEP]
+        if isinstance(failure, BaseException):
+            return exception_text(failure, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)
+        return scrubbed(failure, self._passphrase)[: self._FAILURE_TEXT_KEEP]
 
     def _discard_group(self, reason: str) -> None:
         """Throw the carried working copy away and SAY which items went with it."""

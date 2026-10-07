@@ -23,10 +23,11 @@ from typing import Any
 # a large import), and even a sys.modules lookup does not belong on that path.
 # runlog imports nothing but stdlib at module scope, so this cannot cycle.
 from src.backup import runlog
+from src.backup.newsletter_export import NewsletterFilterRefused
 
 # The passphrase never reaches a status, a log record or the run journal through a caught exception: every
 # handler below writes its text through these (stdlib only, so this cannot cycle either).
-from src.monitoring.secret_scrub import log_failure, scrubbed, traceback_text
+from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, traceback_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -276,7 +277,7 @@ class VolumeBackupManager:
                 destp.mkdir(parents=True, exist_ok=True)
             except OSError as exc:
                 # the passphrase is in scope: scrubbed where the text is made, and the cause is not carried on
-                reason = scrubbed(str(exc), passphrase)
+                reason = exception_text(exc, passphrase, typed=False)
                 raise ValueError(f"Cannot use destination {destp}: {reason}") from None
             if not destp.is_dir():
                 raise ValueError(f"{destp} is not a folder.")
@@ -460,6 +461,21 @@ class VolumeBackupManager:
                 with self._lock:
                     self._state = "cancelled"
                 runlog.end("cancelled")
+        except NewsletterFilterRefused as refused:
+            # A stopped newsletter-free backup is served as it is: its text is one of two fixed
+            # sentences whose only slot holds this module's own text or a class name, and the page
+            # matches it whole (a passphrase that is a word in it would otherwise redact the match).
+            # The log and the journal are written as for any failure below.
+            log_failure(_LOG, "volume backup failed", refused, passphrase)
+            runlog.milestone(
+                "error",
+                cls=type(refused).__name__,
+                msg=exception_text(refused, passphrase, typed=False, limit=2000),
+                traceback=traceback_text(refused, passphrase)[-8000:],
+            )
+            runlog.end("error", cls=type(refused).__name__)
+            with self._lock:
+                self._state, self._error = "error", refused.served_text
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             # The passphrase is in scope: what the exception says is scrubbed where it is made, for the log, the
             # journal and the status an endpoint serves (the cut comes after the scrub, never before it).
@@ -467,18 +483,12 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=scrubbed(str(exc), passphrase)[:2000],
+                msg=exception_text(exc, passphrase, typed=False, limit=2000),
                 traceback=traceback_text(exc, passphrase)[-8000:],
             )
             runlog.end("error", cls=type(exc).__name__)
-            from src.backup.newsletter_export import NewsletterFilterRefused
-
-            # A stopped newsletter-free backup is served as it is: its text is one of two fixed
-            # sentences whose only slot holds this module's own text or a class name, and the page
-            # matches it whole (a passphrase that is a word in it would otherwise redact the match).
-            served = str(exc) if isinstance(exc, NewsletterFilterRefused) else scrubbed(str(exc), passphrase)
             with self._lock:
-                self._state, self._error = "error", served
+                self._state, self._error = "error", exception_text(exc, passphrase, typed=False)
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
@@ -897,7 +907,7 @@ class VolumeBackupManager:
                             )
                             report["file_members"] = {
                                 "placed": 0,
-                                "error": scrubbed(str(exc), passphrase, corpus_passphrase),
+                                "error": exception_text(exc, passphrase, corpus_passphrase, typed=False),
                                 "method": (
                                     "The corpus restored; putting the large public files "
                                     "back did not. They are re-downloadable, and the "
@@ -957,7 +967,7 @@ class VolumeBackupManager:
             # actionable sentence ("another job is still writing to your corpus (...)",
             # naming the holder) was dropped on the way to the UI and the operator got
             # a bare "cancelled".
-            said = scrubbed(str(exc), passphrase, corpus_passphrase)
+            said = exception_text(exc, passphrase, corpus_passphrase, typed=False)
             _LOG.warning("volume restore refused before the swap: %s", said)
             runlog.end("refused", detail=said[:500])
             with self._lock:
@@ -968,7 +978,7 @@ class VolumeBackupManager:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
-            said = scrubbed(str(exc), passphrase, corpus_passphrase)
+            said = exception_text(exc, passphrase, corpus_passphrase, typed=False)
             _LOG.info("volume restore stopped by the operator: %s", said)
             runlog.end("stopped-by-operator", detail=said[:500])
             with self._lock:
@@ -998,7 +1008,7 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=scrubbed(str(exc), passphrase, corpus_passphrase)[:2000],
+                msg=exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=2000),
                 traceback=traceback_text(exc, passphrase, corpus_passphrase)[-8000:],
             )
             runlog.end("error", cls=type(exc).__name__)
@@ -1058,7 +1068,7 @@ class VolumeBackupManager:
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             log_failure(_LOG, "volume verify failed", exc, passphrase)
             with self._lock:
-                self._state, self._error = "error", scrubbed(str(exc), passphrase)
+                self._state, self._error = "error", exception_text(exc, passphrase, typed=False)
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:

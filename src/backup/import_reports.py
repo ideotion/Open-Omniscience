@@ -43,15 +43,15 @@ def _short_id() -> str:
 
 def _scrubbed(report: dict[str, Any], secrets: tuple[str | None, ...]) -> dict[str, Any]:
     """``report`` with the passphrases taken out of every string in it, in every form the code writes
-    them (``runlog.scrub_secrets``: the process's own passphrase always, ``secrets`` besides, checked
-    again after the scrub, the whole report withheld on any error). A report carries the engine's own
+    them (``secret_scrub.scrubbed_value``: the process's own passphrase always, ``secrets`` besides, checked
+    again after the scrub, a string withheld on any error). A report carries the engine's own
     check text (``verification``, ``problems``, a ``refused`` reason), which can quote what the engine
     was handed, and the file rides the debug bundle and the backup export. Applied here, where every
     report is written, so no caller has to remember it."""
-    from src.backup import runlog
+    from src.monitoring.secret_scrub import UNREADABLE_TEXT, scrubbed_value
 
-    out = runlog.scrub_secrets(report, *secrets)
-    return out if isinstance(out, dict) else {"withheld": runlog.FAILURE_WITHHELD}
+    out = scrubbed_value(report, *secrets)
+    return out if isinstance(out, dict) else {"withheld": UNREADABLE_TEXT}
 
 
 def persist_import_report(

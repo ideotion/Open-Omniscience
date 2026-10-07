@@ -9728,13 +9728,17 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
 
 
 #: Files that still pass a caught exception's text to ``scrubbed()`` by hand, with how many sites each holds. It may only SHRINK
-#: (the test asks for the exact count, so a swap that is not entered here fails too): the sites are in #1334's files, and whichever
-#: of #1334 and #1336 lands second ports them to ``secret_scrub.exception_text`` and empties it.
+#: (the test asks for the exact count, so a swap that is not entered here fails too). A caught exception's text goes to
+#: ``secret_scrub.exception_text``, which walks the chain for a ``UnicodeError``; #1334's and #1336's sites were ported to it when
+#: the two were merged together. What stays: the global handler, which asks ``unicode_note`` first so that its own words stay in
+#: the response (``tests/test_global_exception_handler_scrub.py`` pins its shape), and the two places that scrub the sentence
+#: ``classify_restore_error`` makes out of ``str(exc)`` (``_restore_error`` and the volume restore's detail): that function
+#: still writes the exception's own words, so a ``UnicodeError`` in a restore failure reaches the response as its text, scrubbed of
+#: the passphrase but not withheld. Making ``classify_restore_error`` withhold it is the next change to ``merge.py``.
 _SCRUBBED_EXC_ALLOWANCE = {
-    "src/api/backup_v2.py": 13,
-    "src/api/main.py": 1,  # the global handler, which asks ``unicode_note`` first (its own words stay in the response)
-    "src/backup/import_queue.py": 1,
-    "src/backup/volume_job.py": 9,
+    "src/api/backup_v2.py": 1,
+    "src/api/main.py": 1,
+    "src/backup/volume_job.py": 1,
 }
 
 

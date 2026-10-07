@@ -840,69 +840,6 @@ def end(outcome: str, **fields: Any) -> dict | None:
 #: frames, which are the ones that say where it failed. Both cuts are made AFTER the scrub.
 FAILURE_MSG_KEEP = 2000
 FAILURE_TRACEBACK_KEEP = 8000
-FAILURE_WITHHELD = "withheld: this text could not be checked for a passphrase"
-
-
-def secret_forms(*secrets: str | None) -> list[str]:
-    """Each secret in every form this code writes it: as typed, SQL ''-doubled, JSON-escaped, repr. The
-    corpus passphrase held by this process is always among them."""
-    from src.database.connect import get_passphrase
-
-    out: list[str] = []
-    for secret in (*secrets, get_passphrase()):
-        if secret:
-            out += [secret, secret.replace("'", "''"), json.dumps(secret)[1:-1], repr(secret)[1:-1]]
-    return [f for f in dict.fromkeys(out) if f]
-
-
-def _string_values(value: Any) -> Iterator[str]:
-    """Every string VALUE of what ``scrub_value`` walks (dicts, lists, tuples, strings), the same walk
-    it scrubs: keys and numbers are not text a secret is written into, and a recheck that read them
-    (``json.dumps``) would blank a good report whose key or count happens to contain a short secret."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _string_values(v)
-    elif isinstance(value, (list, tuple)):
-        for v in value:
-            yield from _string_values(v)
-
-
-def scrub_secrets(value: Any, *secrets: str | None) -> Any:
-    """``value`` (a string, or the dicts, lists and strings of a report) with the secrets taken out in
-    every form, then CHECKED once more (over the string values only) so that fail-closed holds by
-    construction: a result that still holds a form, or any error at all, gives ``FAILURE_WITHHELD`` for a string and ``{"withheld": ...}``
-    for a report. Never a value that still holds a form in its strings. Only str, dict, list and tuple
-    are walked: bytes, sets and other objects pass through unchanged, and a report or journal field
-    holds none of them."""
-    try:
-        from src.monitoring.secret_scrub import scrub_value
-
-        forms = secret_forms(*secrets)
-        out = value
-        for form in forms:
-            out = scrub_value(out, form)
-        if any(f in text for text in _string_values(out) for f in forms):
-            raise ValueError("a form of a secret survived the scrub")
-        return out
-    except Exception:  # noqa: BLE001 - fail closed
-        return FAILURE_WITHHELD if isinstance(value, str) else {"withheld": FAILURE_WITHHELD}
-
-
-def failure_fields(exc: BaseException, *secrets: str | None) -> dict[str, Any]:
-    """``cls``, ``msg`` and ``traceback`` for a failed run's journal line (and for the log line written
-    beside it), each scrubbed of ``secrets`` and the process's own passphrase BEFORE it is cut. A
-    traceback ends with the message and every chained message, so it is scrubbed as a whole."""
-    import traceback
-
-    return {
-        "cls": type(exc).__name__,
-        "msg": str(scrub_secrets(str(exc), *secrets))[:FAILURE_MSG_KEEP],
-        "traceback": str(scrub_secrets("".join(traceback.format_exception(exc)), *secrets))[
-            -FAILURE_TRACEBACK_KEEP:
-        ],
-    }
 
 
 def milestone(ev: str, *, durable: bool = True, **fields: Any) -> None:
@@ -959,7 +896,17 @@ def run(
     try:
         yield rl
     except BaseException as exc:
-        milestone("error", **failure_fields(exc, *secrets))
+        from src.monitoring.secret_scrub import exception_text, traceback_text
+
+        # Written through the one scrub (``secret_scrub``): the secrets the block holds and the process's own are taken out
+        # BEFORE the cut, a ``UnicodeError`` anywhere in the chain is recorded by class only, and a text that cannot be
+        # checked is withheld.
+        milestone(
+            "error",
+            cls=type(exc).__name__,
+            msg=exception_text(exc, *secrets, typed=False, limit=FAILURE_MSG_KEEP),
+            traceback=traceback_text(exc, *secrets)[-FAILURE_TRACEBACK_KEEP:],
+        )
         end("error", cls=type(exc).__name__)
         raise
     else:

@@ -662,6 +662,11 @@ _RESPONSE_BUILDERS = frozenset({"HTTPException", "_restore_error"})
 #: class (``type(exc)``).
 _PLAIN_FIELDS = frozenset({"status", "partial"})
 
+#: The exception classes whose handler may read the one field that holds the code's OWN fixed sentence (never an engine's words),
+#: because the page matches that sentence whole and a scrub would redact it: class name -> field. Read as the phase-error fields are:
+#: the handler catches the class by that name alone.
+_FIXED_TEXT_FIELDS = {"NewsletterFilterRefused": "served_text"}
+
 
 #: Helpers a handler may hand the exception to because they read its CLASS and answer a question about it, never its words:
 #: name -> the module under ``src/`` that defines it. A test below reads each one's body, so a helper that starts to read the
@@ -861,7 +866,10 @@ def _caught_exception_leaks(
                             allowed |= {id(n) for n in ast.walk(node.args[many[0]])}
                     elif (node.func.id == "type" or node.func.id in _CLASSIFIERS) and len(node.args) == 1:
                         allowed.add(id(node.args[0]))
-                elif isinstance(node, ast.Attribute) and node.attr in _PLAIN_FIELDS and _is_a_phase_error_handler(handler):
+                elif isinstance(node, ast.Attribute) and (
+                    (node.attr in _PLAIN_FIELDS and _is_a_phase_error_handler(handler))
+                    or (isinstance(handler.type, ast.Name) and _FIXED_TEXT_FIELDS.get(handler.type.id) == node.attr)
+                ):
                     allowed.add(id(node.value))
                 elif (
                     responses

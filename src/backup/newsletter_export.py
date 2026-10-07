@@ -78,6 +78,15 @@ class NewsletterFilterRefused(RuntimeError):
         self.reason, self.space = reason, space
         super().__init__(MESSAGE_SPACE if space else MESSAGE_OTHER.format(reason=reason))
 
+    @property
+    def served_text(self) -> str:
+        """The sentence a stopped newsletter-free backup is served as. It is this module's own fixed text (its only slot holds
+        this module's own words or a class name), so it is served whole and never scrubbed: a passphrase that is a word in it
+        would otherwise redact the match the page makes. A handler that catches this class by name may read it
+        (``tests/test_p0_validation.py``, ``_FIXED_TEXT_FIELDS``), which is the one place a handler reads the words of its own
+        exception."""
+        return MESSAGE_SPACE if self.space else MESSAGE_OTHER.format(reason=self.reason)
+
 
 class _ExportRefused(Exception):
     """The export did not produce a file that may replace the copy. Its message is fixed text and

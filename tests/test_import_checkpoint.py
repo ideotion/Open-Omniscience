@@ -36,7 +36,6 @@ from pathlib import Path
 import pytest
 
 from src.backup import import_queue as iq
-from src.backup import runlog as ss_runlog
 from src.backup.import_queue import (
     CHECKPOINT_K_DEFAULT,
     CHECKPOINT_K_MAX,
@@ -378,7 +377,7 @@ def test_a_failure_text_that_cannot_be_scrubbed_is_withheld_whole(tmp_path, monk
     def boom(*_a, **_k):
         raise RuntimeError("scrub broke")
 
-    monkeypatch.setattr(ss, "scrub_text", boom)
+    monkeypatch.setattr(ss, "_forms_now", boom)
     q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
     q._passphrase = _PW
     out = q._failure_text(RuntimeError(f"the key was {_PW}"))
@@ -510,11 +509,11 @@ def test_a_scrub_that_leaves_a_form_behind_withholds_the_text(tmp_path, monkeypa
     """Fail-closed by construction: even when the scrub 'succeeds' but a form is still there."""
     import src.monitoring.secret_scrub as ss
 
-    monkeypatch.setattr(ss, "scrub_value", lambda value, needle: value)
+    monkeypatch.setattr(ss, "_forms_now", lambda secrets: None)  # what the process holds cannot be read
     q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
     q._passphrase = _PW
     assert "withheld" in q._failure_text(RuntimeError(f"key {_PW}"))
-    assert q._scrubbed({"report": f"key {_PW}"}) == {"withheld": ss_runlog.FAILURE_WITHHELD}
+    assert q._scrubbed({"report": f"key {_PW}"}) == {"report": ss.UNREADABLE_TEXT}
 
 
 def test_a_refused_verification_discards_the_group_rather_than_carrying_it_on(tmp_path):

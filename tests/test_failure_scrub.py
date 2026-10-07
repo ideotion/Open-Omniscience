@@ -6,7 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 THE SINKS. A failed run writes the exception's text and its traceback into its run journal
 (``data/run_logs/*.jsonl``) and logs it (``data/app_errors.jsonl`` rides the debug bundle), and
 stores the text as the job's ``error`` (served by the status endpoint). The text is the engine's
-own and may quote what it was handed, so every writer goes through ``runlog.failure_fields``: the
+own and may quote what it was handed, so every writer goes through ``secret_scrub`` (``exception_text``, ``traceback_text``, ``scrubbed_value``): the
 secrets are taken out in every form the code writes (as typed, SQL ''-doubled, JSON-escaped, repr)
 BEFORE the cut, the result is checked once more, and a text that cannot be checked is withheld whole.
 The log lines are written from those fields, never with ``exc_info`` or ``_LOG.exception``.
@@ -55,47 +55,54 @@ def _quoting(secret: str, *more: str) -> RuntimeError:
 @pytest.fixture(autouse=True)
 def _own_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("src.database.connect.get_passphrase", lambda: _CORPUS_PW)
+    monkeypatch.setattr("src.database.connect._passphrase", _CORPUS_PW)  # the passphrase the unlocked session holds
 
 
 # ---------------------------------------------------------------------------------------------- #
 #  the helper
 # ---------------------------------------------------------------------------------------------- #
+def _fields(exc, *secrets):
+    """What ``runlog.run`` journals for a failure: the one scrub (``secret_scrub``), then the cut."""
+    from src.monitoring.secret_scrub import exception_text, traceback_text
+
+    return {
+        "cls": type(exc).__name__,
+        "msg": exception_text(exc, *secrets, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+        "traceback": traceback_text(exc, *secrets)[-runlog.FAILURE_TRACEBACK_KEEP :],
+    }
+
+
 def test_every_form_is_scrubbed_before_the_cut_and_the_cuts_say_what_they_protect():
     straddle = "x" * (runlog.FAILURE_MSG_KEEP - len(_PW) // 2) + _PW + " and more"
-    out = runlog.failure_fields(RuntimeError(straddle), _PW)
+    out = _fields(RuntimeError(straddle), _PW)
     assert not _leaks(out["msg"] + out["traceback"], _PW, _CORPUS_PW)
     assert len(out["msg"]) <= runlog.FAILURE_MSG_KEEP and len(out["traceback"]) <= runlog.FAILURE_TRACEBACK_KEEP
     assert out["cls"] == "RuntimeError"
     # the process's own passphrase is always scrubbed, with or without being named
-    out = runlog.failure_fields(_quoting(_CORPUS_PW))
+    out = _fields(_quoting(_CORPUS_PW))
     assert not _leaks(out["msg"] + out["traceback"], _CORPUS_PW)
 
 
-def test_a_scrub_that_fails_or_leaves_a_form_withholds_the_text(monkeypatch):
+def test_a_scrub_that_cannot_run_withholds_the_text(monkeypatch):
     import src.monitoring.secret_scrub as ss
 
-    monkeypatch.setattr(ss, "scrub_value", lambda value, needle: value)  # "succeeds", scrubs nothing
-    out = runlog.failure_fields(_quoting(_PW), _PW)
-    assert out["msg"] == runlog.FAILURE_WITHHELD and not _leaks(out["traceback"], _PW)
-
-    def broken(*_a, **_k):
-        raise RuntimeError("scrub broke")
-
-    monkeypatch.setattr(ss, "scrub_value", broken)
-    assert runlog.failure_fields(_quoting(_PW), _PW)["msg"] == runlog.FAILURE_WITHHELD
-    assert runlog.scrub_secrets({"report": _PW}, _PW) == {"withheld": runlog.FAILURE_WITHHELD}
+    monkeypatch.setattr(ss, "_forms_now", lambda secrets: None)  # what the process holds cannot be read
+    out = _fields(_quoting(_PW), _PW)
+    assert "withheld" in out["msg"] and not _leaks(out["msg"] + out["traceback"], _PW)
+    assert ss.scrubbed_value({"report": _PW}, _PW) == {"report": ss.UNREADABLE_TEXT}
 
 
-def test_the_recheck_reads_string_values_only_so_a_good_report_is_not_blanked(monkeypatch):
+def test_a_report_is_scrubbed_in_its_string_values_only_so_a_good_report_is_not_blanked(monkeypatch):
     """A passphrase form inside a report KEY, or a short numeric one that equals a count, is not text a
-    secret was written into: ``scrub_value`` leaves both alone, and a recheck over ``json.dumps`` would
-    turn the whole report into ``{"withheld": ...}`` and lose it."""
-    monkeypatch.setattr("src.database.connect.get_passphrase", lambda: None)
+    secret was written into: the walk leaves both alone, and it would not turn the whole report into a
+    withheld marker and lose it."""
+    from src.monitoring.secret_scrub import scrubbed_value
+
+    monkeypatch.setattr("src.database.connect._passphrase", None)
     report = {"batch_id": 7, f"k{_PW}": 1, "imported": 12, "problems": ["fine"], "nested": {"n": 12}}
-    assert runlog.scrub_secrets(report, _PW, "12") == report
+    assert scrubbed_value(report, _PW, "12") == report
     # and a string VALUE that holds the secret is still scrubbed, not withheld
-    out = runlog.scrub_secrets({"a": f"x {_PW} y"}, _PW)
+    out = scrubbed_value({"a": f"x {_PW} y"}, _PW)
     assert _PW not in json.dumps(out) and out["a"].startswith("x ")
 
 
@@ -230,7 +237,7 @@ def test_a_report_that_cannot_be_checked_is_withheld_not_written(monkeypatch):
     import src.monitoring.secret_scrub as ss
     from src.backup.import_reports import persist_import_report
 
-    monkeypatch.setattr(ss, "scrub_value", lambda value, needle: value)  # "succeeds", scrubs nothing
+    monkeypatch.setattr(ss, "_forms_now", lambda secrets: None)  # what the process holds cannot be read
     path = persist_import_report("restore", _report_quoting(_PW), run_id="r4", secrets=(_PW,))
     text = path.read_text(encoding="utf-8")
     assert not _leaks(text, _PW) and "withheld" in text
