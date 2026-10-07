@@ -976,9 +976,9 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
-    from src.monitoring.request_label import safe_method, safe_route
+    from src.monitoring.request_label import safe_client, safe_method, safe_route
 
-    logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {safe_method(request.method)} {safe_route(request.scope)}")
+    logger.warning(f"Rate limit exceeded for {safe_client(get_remote_address(request))}: {safe_method(request.method)} {safe_route(request.scope)}")
     REQUEST_COUNT.labels(method=safe_method(request.method), endpoint=safe_route(request.scope), http_status=429).inc()
     # slowapi's RateLimitExceeded does not expose a public `retry_after`, AND
     # slowapi's own auto-header-injection (`Limiter._inject_headers`, which would
@@ -3446,7 +3446,7 @@ def _serve() -> None:
     # boot. 30 s is long enough for an ordinary request and short enough to lose the
     # race with nothing.
     try:
-        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config())
+        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config(), ws="none")
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException as exc:

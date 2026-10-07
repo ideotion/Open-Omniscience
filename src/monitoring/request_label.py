@@ -63,3 +63,31 @@ def request_phrase(method: object, scope: Any) -> str:
 def safe_route(scope: Any) -> str:
     """The route template of the request, or :data:`UNMATCHED_ROUTE`."""
     return route_template(scope) or UNMATCHED_ROUTE
+
+
+#: What a log line says for a client field that is not an address: ``X-Forwarded-For``, which a proxy-trusted server writes into
+#: the client, is free text the caller typed.
+UNKNOWN_CLIENT = "(client)"
+
+
+def safe_client(value: object) -> str:
+    """``value`` when it is an IP address (``1.2.3.4``, ``1.2.3.4:5``, ``::1``, ``[::1]:5``), else :data:`UNKNOWN_CLIENT`. A port is
+    kept only as digits. Never raises."""
+    import ipaddress
+
+    try:
+        text = str(value)
+        host, port = text, ""
+        if text.startswith("["):
+            host, _, rest = text[1:].partition("]")
+            port = rest[1:] if rest.startswith(":") else rest
+            if rest and not rest.startswith(":"):
+                return UNKNOWN_CLIENT
+        elif text.count(":") == 1:
+            host, _, port = text.partition(":")
+        ipaddress.ip_address(host)
+        if port and not (port.isascii() and port.isdigit() and len(port) <= 5):
+            return UNKNOWN_CLIENT
+        return text
+    except Exception:  # noqa: BLE001
+        return UNKNOWN_CLIENT

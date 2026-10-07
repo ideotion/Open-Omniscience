@@ -247,6 +247,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `logging.Handler` is replaced once for the purpose); a handler built before then that no logger holds is not covered. The
   server's access line is written by a formatter of ours (`src/utils/access_log.py`), because the server's own raised for
   the record the filter hands it when it withholds a line. The
+  server's access line and its WebSocket lines name a request by a standard method and the route template, never the path or the query the client typed, and the client only when it is an address (`src/utils/access_log.py`, `src/monitoring/request_label.py`); the same wording is used by every diagnostic that names a request. The
   copy it hands a handler needs Python 3.12, which the project's floor (3.13) is above and a test pins; below it the filter
   writes the scrubbed words into the record itself. A passphrase that cannot be written as UTF-8 (a lone surrogate) is
   refused with fixed words at every place the code turns one into bytes or hands one to something that does (the key
