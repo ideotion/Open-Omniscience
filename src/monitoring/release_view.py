@@ -76,3 +76,28 @@ def allow_listed(record: Any) -> dict[str, Any] | None:
         return out
     except Exception:  # noqa: BLE001 - a diagnostic never fails its caller
         return None
+
+
+def scrub_marks(marks: Any) -> Any:
+    """A copy of a session's high-water marks with every release-ladder record in them (``guard.last_release`` of each heavy and light
+    snapshot) rebuilt from the allow-list, and dropped where it is not a record: a reader that copies the marks of an earlier session
+    into a report must not copy an engine's text with them. Never raises."""
+    try:
+        out = dict(marks)
+        for key in ("pressure", "pressure_light"):
+            snaps = out.get(key)
+            if not isinstance(snaps, list):
+                continue
+            clean = []
+            for snap in snaps:
+                if isinstance(snap, dict) and isinstance(snap.get("guard"), dict) and "last_release" in snap["guard"]:
+                    guard = {k: v for k, v in snap["guard"].items() if k != "last_release"}
+                    rebuilt = allow_listed(snap["guard"].get("last_release"))
+                    if rebuilt is not None:
+                        guard["last_release"] = rebuilt
+                    snap = {**snap, "guard": guard}
+                clean.append(snap)
+            out[key] = clean
+        return out
+    except Exception:  # noqa: BLE001 - a diagnostic never fails its caller
+        return {}

@@ -2,7 +2,7 @@
 
 The guard sets ``RLIMIT_CORE`` to 1, which a child inherits. Where the hard limit is already 0 it cannot, and makes the process
 non-dumpable instead, a flag that does not survive an ``exec``: the forkserver is started by exec and the keyword workers are
-forked from it with the environment, which holds ``OO_DB_PASSPHRASE`` on a scripted or headless start. A piped core handler is
+forked from it (a scripted or headless start's environment held ``OO_DB_PASSPHRASE`` before the take at the store's first import). A piped core handler is
 handed a dump at limit 0. So the forkserver engages the guard when it starts (a preload module) and each worker engages it first
 in its initializer (``spawn``'s workers are exec'd too).
 

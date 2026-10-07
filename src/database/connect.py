@@ -155,10 +155,14 @@ if _passphrase:
 # ``exec`` with the parent's environment (the standard library's resource tracker, the forkserver) holds a copy no code of ours
 # has run in to guard. The app reads them from the scrub module from here on (``env_secret``), and a child that must have one is
 # handed it by name.
-with contextlib.suppress(Exception):
+#: The class of a failure to import the scrub module or to take (never its text); the boot record names it (``env_take``).
+_TAKE_FAILED: str | None = None
+try:
     from src.monitoring.secret_scrub import take_from_environment
 
     take_from_environment()
+except Exception as _take_exc:  # noqa: BLE001 - never blocks an open; the class is recorded
+    _TAKE_FAILED = type(_take_exc).__name__
 
 
 class DatabaseLockedError(RuntimeError):

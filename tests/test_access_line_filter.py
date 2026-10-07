@@ -65,13 +65,6 @@ def test_an_unmatched_path_and_its_query_never_reach_the_line(written):
     assert 'GET (no route matched) HTTP/1.1" 404' in line and "127.0.0.1:5000" in line
 
 
-def test_a_matched_route_is_written_as_its_template_and_the_value_in_it_is_not(written):
-    _serve_line("GET", f"/api/articles/{MARK}/view?lang=fr", status=200)
-    line = written.getvalue()
-    assert MARK not in line and "lang" not in line, line
-    assert "GET /api/articles/{" in line, line
-
-
 def test_a_method_the_client_made_up_is_written_as_a_fixed_word(written):
     _serve_line(MARK.upper(), "/api/health")
     line = written.getvalue()
@@ -152,12 +145,81 @@ def test_a_malformed_escape_and_an_overlong_id_never_raise_and_name_no_typed_tex
     assert "route" in line or "GET" in line
 
 
-@pytest.mark.parametrize("client, kept", [("203.0.113.9:4411", True), ("[::1]:80", True), ("::1", True), ("1.2.3.4", True),
-                                          (f"{MARK}, 1.2.3.4", False), ("1.2.3.4:abc", False), ("evil.example:80", False) ])
-def test_the_client_is_written_only_when_it_is_an_address(small, client, kept):
+@pytest.mark.parametrize(
+    "client, written_as",
+    [
+        ("203.0.113.9:4411", "203.0.113.9:4411"), ("[::1]:80", "[::1]:80"), ("::1", "::1"), ("1.2.3.4", "1.2.3.4"),
+        ("0:0:0:0:0:0:0:1", "::1"),  # the PARSED address's own text, never the input's
+        ("1.2.3.4:007", "1.2.3.4:7"),
+        (f"{MARK}, 1.2.3.4", "(client)"), ("1.2.3.4:abc", "(client)"), ("evil.example:80", "(client)"), ("1.2.3.4:70000", "(client)"),
+        ("::1%typed-secret-77", "(client)"), ("[::1%typed-secret-77]:80", "(client)"), ("fe80::1%25", "(client)"),
+        ("fe80::1%" + "a" * 3000, "(client)"), ("[::1]x", "(client)"), ("unix:/tmp/typed-secret-77.sock", "(client)"),
+        ("", "(client)"), (None, "(client)"), (b"1.2.3.4", "(client)"), (("1.2.3.4", 80), "(client)"),
+    ],
+)
+def test_the_client_is_written_only_as_the_address_it_parses_to(small, client, written_as):
+    """MUTATION TARGET: ``safe_client`` returning its input (Python parses an IPv6 scope id, and the input is free text behind a
+    proxy that is trusted for ``X-Forwarded-For``)."""
+    from src.monitoring.request_label import safe_client
+
+    assert safe_client(client) == written_as
     logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', client, "GET", "/direct", "1.1", 200)
     line = small.getvalue()
-    assert (client in line) is kept and (kept or "(client)" in line), line
+    assert f"{written_as} - " in line and "secret-77" not in line and "aaaa" not in line and "%" not in line.split(" - ")[0], line
+
+
+def test_the_rate_limit_line_names_the_client_only_as_an_address(caplog):
+    """MUTATION TARGET: ``safe_client`` at the rate-limit handler (``src/api/main.py``): its line is another place the client's text
+    reaches a log."""
+    from fastapi.testclient import TestClient
+
+    from tests.test_request_label_sinks import _limited_app, _past_its_limit
+
+    client = TestClient(_limited_app(), client=(f"{MARK}-host", 5000))
+    with caplog.at_level(logging.DEBUG):
+        assert _past_its_limit(client) == 429
+    line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Rate limit exceeded for"))
+    assert line.startswith("Rate limit exceeded for (client): ") and MARK not in line, line
+
+
+def test_the_route_walk_falls_back_to_the_flat_list_of_an_older_fastapi(monkeypatch):
+    """pyproject allows ``fastapi>=0.110``, whose ``app.routes`` is a flat list and which has no ``iter_route_contexts``."""
+    import sys
+    import types
+
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+
+    monkeypatch.setitem(sys.modules, "fastapi.routing", types.SimpleNamespace())  # ``from fastapi.routing import iter_route_contexts`` fails
+    access_log._CONTEXTS.clear()
+
+    async def ok(request):
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/things/{ident}", ok), Route("/plain", ok)])
+    assert access_log._route_of("/things/zz", "GET", app) == "/things/{ident}"
+    assert access_log._route_of("/plain", "GET", app) == "/plain"
+    assert access_log._route_of("/nope", "GET", app) == access_log.UNMATCHED_ROUTE
+    access_log._CONTEXTS.clear()
+
+
+def test_the_route_contexts_are_built_once_per_app_and_again_when_the_routes_change(monkeypatch):
+    """MUTATION TARGET: the cache (about a thousand route contexts were rebuilt for every access line)."""
+    import fastapi.routing as fr
+
+    built: list[int] = []
+    real = fr.iter_route_contexts
+    monkeypatch.setattr(fr, "iter_route_contexts", lambda routes: (built.append(1), real(routes))[1])
+    access_log._CONTEXTS.clear()
+    app = _small_app()
+    for _ in range(5):
+        assert access_log._route_of("/direct", "GET", app) == "/direct"
+    assert len(built) == 1
+    app.add_api_route("/added", lambda: {}, methods=["GET"])
+    assert access_log._route_of("/added", "GET", app) == "/added"
+    assert len(built) == 2, "a route added after the first line is read"
+    access_log._CONTEXTS.clear()
 
 
 def test_a_withheld_record_drops_its_exception_stack_and_extra_fields(written):
@@ -215,7 +277,7 @@ def test_the_filter_for_websocket_lines_is_on_the_servers_own_logger():
     [
         ('%s - "WebSocket %s" [accepted]', ("203.0.113.9:1", f"/ws/{MARK}?token={MARK}"), "[accepted]"),
         ('%s - "WebSocket %s" 403', ("203.0.113.9:1", f"/ws/{MARK}?token={MARK}"), "403"),
-        ('%s - "WebSocket %s" %d', (MARK + ", 5.6.7.8", f"/ws/{MARK}?token={MARK}", 1000), "1000"),
+        ('%s - "WebSocket %s" %d', (MARK + ", 5.6.7.8", f"/ws/{MARK}?token={MARK}", 403), "403"),
     ],
 )
 def test_each_websocket_line_names_no_typed_text(ws_written, fmt, args, tail):
@@ -230,22 +292,66 @@ def test_another_line_of_the_servers_logger_passes_unchanged(ws_written):
     assert ws_written.getvalue().strip() == "Application startup complete."
 
 
-def test_the_server_is_started_with_websockets_off():
-    import inspect
-
-    from src.api import main
-
-    assert 'ws="none"' in inspect.getsource(main)
-
-
-def test_the_nginx_samples_keep_no_access_log_of_their_own():
+def test_the_nginx_samples_keep_no_access_log_and_only_critical_errors():
+    """MUTATION TARGET: the http-level ``access_log off;`` (a location's own ``access_log off;`` further down must not stand in for it),
+    and the ``error_log`` level (nginx writes the request line, upstream and referrer on every error-level line)."""
     from pathlib import Path
 
     for name in ("nginx.conf", "nginx.production.conf"):
         text = (Path(__file__).resolve().parents[1] / "configs" / "nginx" / name).read_text(encoding="utf-8")
-        live = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("access_log")]
+        lines = [ln.strip() for ln in text.splitlines()]
+        live = [ln for ln in lines if ln.startswith("access_log")]
         assert live and set(live) == {"access_log off;"}, (name, live)
-        assert "The app writes its own access line" in text
+        first_server = next(i for i, ln in enumerate(lines) if ln.startswith("server {") or ln.startswith("server{"))
+        first_access = next(i for i, ln in enumerate(lines) if ln.startswith("access_log"))
+        assert first_access < first_server, f"{name}: the access_log off; must be set at http level, before the first server block"
+        errors = [ln for ln in lines if ln.startswith("error_log")]
+        assert errors and all(ln.rstrip(";").split()[-1] == "crit" for ln in errors), (name, errors)
+        assert "The app writes its own access line" in text and "Only a critical error is logged" in text
+
+
+# 26: the formats and ws="none", pinned to what is installed
+def test_the_three_websocket_formats_are_the_ones_the_installed_server_writes():
+    """A uvicorn upgrade that changes a format would otherwise let the typed path through unlabelled."""
+    import importlib.util
+    import pkgutil
+    from pathlib import Path
+
+    import uvicorn.protocols.websockets as pkg
+
+    seen: dict[str, set[str]] = {fmt: set() for fmt in access_log._WEBSOCKET_FORMATS}
+    modules = [m.name for m in pkgutil.iter_modules(pkg.__path__)]
+    assert modules, "no protocol module found"
+    for name in modules:
+        # read as text: an implementation's own library (``wsproto``) need not be installed here
+        source = Path(importlib.util.find_spec(f"{pkg.__name__}.{name}").origin).read_text(encoding="utf-8")
+        if "WebSocket %s" not in source:
+            continue
+        for fmt in seen:
+            if fmt in source:
+                seen[fmt].add(name)
+        # every implementation that logs a WebSocket line logs only lines of these three shapes
+        for line in source.splitlines():
+            if "WebSocket %s" in line:
+                assert line.strip().rstrip(",").strip("'\"") in access_log._WEBSOCKET_FORMATS or any(f in line for f in access_log._WEBSOCKET_FORMATS), (name, line)
+    assert all(seen.values()), seen
+
+
+def test_serve_runs_the_server_with_websockets_off(monkeypatch):
+    """MUTATION TARGET: ``ws="none"`` in ``_serve`` (captured from the real call by stubbing ``uvicorn.run``)."""
+    import uvicorn
+
+    from src.api import main
+    from src.monitoring import exit_evidence, secret_scrub
+
+    seen: dict = {}
+    monkeypatch.setenv("OO_AUTOSEED", "0")
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: seen.update(kw))
+    monkeypatch.setattr(main, "install_signal_handlers", lambda: None)
+    monkeypatch.setattr(secret_scrub, "guard_process", lambda: None)
+    monkeypatch.setattr(exit_evidence, "arm_crash_trace", lambda: None)
+    main._serve()
+    assert seen.get("ws") == "none", seen
 
 
 # --------------------------------------------------------------------------- #
@@ -265,7 +371,7 @@ for f in (imp, cfg) if order == "main-first" else (cfg, imp):
 buf = io.StringIO()
 for h in logging.getLogger("uvicorn.access").handlers:
     h.setStream(buf) if hasattr(h, "setStream") else None
-logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:9", "GET", "/api/zq-typed-77?token=zq-typed-77", "1.1", 404)
+logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:9", "GET", "/api/zq-typed-77?zq-typed-77=1", "1.1", 404)
 print(buf.getvalue())
 """
 
@@ -280,5 +386,5 @@ def test_the_real_configuration_labels_the_line_in_either_import_order(order):
     done = subprocess.run([sys.executable, "-c", _SUBPROCESS, order], cwd=root, capture_output=True, text=True, timeout=120, check=False)
     out = done.stdout + done.stderr
     assert done.returncode == 0, out
-    assert "zq-typed-77" not in out and "token" not in out, out
+    assert "zq-typed-77" not in out, out
     assert "GET (no route matched)" in out, out

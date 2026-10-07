@@ -42,8 +42,8 @@ instant, and a virtual machine whose memory is ballooned can resolve one tier at
 another at the next, so a death is read against the tier THAT session ran under.
 
 Since 2026-10-01 a machine that STAYS short is recorded too. The crash that began 091717's
-last night was a plateau of about 17 minutes at 64 MB available or less (43.6 to 67.7 MB over it, 105 of the pass's 186 samples at
-64 MB or less: the recount of 2026-10-07) with the memory guard engaged: the
+last night was a plateau of about 17 minutes with available memory at 64 MB or less in 105 of the pass's 186 samples (under 100 MB in 122; the
+recount of 2026-10-07, ``diagnostics-2026-09-30/crash-091717/FINDINGS.md`` item B) and with the memory guard engaged: the
 slide into it was snapshotted (one per new low), the plateau -- where whatever was holding
 the memory could be read -- was not, by design ("none while memory sits on a plateau"). So
 the moment the memory guard engages is its own snapshot, and a machine that is still below
@@ -1436,7 +1436,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             out[key]["snapshots"], out[key]["dropped_oldest_to_fit"] = ring, cut
         return out
     except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
-        return {"error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:160] if str(exc) else ''}"}
+        return {"error": type(exc).__name__}  # the class alone: an engine's text can hold what the member must not
 
 
 def reset_for_tests() -> None:

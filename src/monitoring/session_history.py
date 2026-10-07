@@ -68,6 +68,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from datetime import UTC, datetime
@@ -283,6 +284,19 @@ def read_liveness() -> dict[str, Any] | None:
 # --------------------------------------------------------------------------- #
 
 
+def previous_session_id() -> str | None:
+    """The ledger's id of the session that came before this one (the last boot that is not the current session's), or ``None`` when
+    the ledger names none. What a reader of the previous session's marks compares the marks' own ``session_id`` with
+    (:func:`_hwm_last_seen` does the same at the end record). Never raises."""
+    try:
+        now = (current_session() or {}).get("session_id")
+        ids = [r.get("session_id") for r in read_records() if r.get("kind") == "boot" and isinstance(r.get("session_id"), str)]
+        ids = [i for i in ids if i != now]
+        return ids[-1] if ids else None
+    except Exception:  # noqa: BLE001 - a nicety on a record, never load-bearing
+        return None
+
+
 def _hwm_last_seen(prev_state: dict[str, Any] | None, sid: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
     """``(marks, why_not)``: the memory high-water sidecar's record of the session that died, and when there is none to trust, why
     (``"absent"``, ``"unreadable"``, ``"another session"`` or ``"no identity"``). Read before ``capture_previous()`` resets it (the
@@ -441,7 +455,6 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
         release = allow_listed(guard.get("last_release"))
         if release is not None:
             out["release"] = release
-    texts_cut = 0
     threads = []
     for t in snap.get("threads") or []:
         if not isinstance(t, dict) or t.get("waiting") or t.get("sampler"):
@@ -449,7 +462,6 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
         stack = t.get("stack") or []
         name = tokenise_paths(str(t.get("name") or "?"))
         frame = tokenise_paths(str(stack[0])) if stack else None
-        texts_cut += len(name) > _THREAD_NAME_MAX or (frame is not None and len(frame) > _FRAME_MAX)
         threads.append({
             "name": _cut_text(name, _THREAD_NAME_MAX),
             "frame": None if frame is None else _cut_text(frame, _FRAME_MAX),
@@ -460,9 +472,14 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
     if threads:
         out["threads"] = threads
     out["threads_in_snapshot"] = len([t for t in snap.get("threads") or [] if isinstance(t, dict)])
-    cut: dict[str, Any] = {"texts_cut": texts_cut} if texts_cut else {}
+
+    def texts_cut() -> int:
+        """How many TEXTS (a name or a frame) of the threads still in the record were cut: counted from what is in it."""
+        return sum(1 for t in out.get("threads", []) for k in ("name", "frame") if isinstance(t.get(k), str) and t[k].endswith(_CUT_MARK))
+
+    cut: dict[str, Any] = {"texts_cut": texts_cut()} if texts_cut() else {}
     # The largest cut text this record can carry, reserved while anything is being cut: the size is the line as written.
-    reserve = {"texts_cut": _END_THREADS, "threads_left_out": _END_THREADS, "fields_left_out": ["release", "guard"]}
+    reserve = {"texts_cut": 2 * _END_THREADS, "threads_left_out": _END_THREADS, "fields_left_out": ["release", "guard"]}
 
     def over() -> bool:
         return _json_size({**out, "cut": reserve}) > END_RECORD_MAX_BYTES
@@ -477,6 +494,10 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
             if over() and field in out:
                 del out[field]
                 cut.setdefault("fields_left_out", []).append(field)
+    if texts_cut():  # after the loop: a thread the size loop left out takes its cut texts with it
+        cut["texts_cut"] = texts_cut()
+    else:
+        cut.pop("texts_cut", None)
     if cut:
         out["cut"] = cut
     return out
@@ -605,6 +626,22 @@ def _boot_core_guard() -> dict[str, Any]:
         return {"error": type(exc).__name__}
 
 
+def _boot_env_take() -> dict[str, Any]:
+    """Whether the passphrases this process was started with left its environment (``secret_scrub.take_from_environment``): the
+    NAMES of the variables still there (never a value) and the CLASS of any failure of the take. A take that failed leaves the value
+    in the environment every child inherits, and a record that said nothing would read as a take that worked."""
+    try:
+        from src.monitoring import secret_scrub
+
+        failed = secret_scrub.take_failed()
+        connect_failed = getattr(sys.modules.get("src.database.connect"), "_TAKE_FAILED", None)
+        if connect_failed:
+            failed.append(str(connect_failed))
+        return {"still_in_environment": [n for n in secret_scrub.HELD_ENV_VARS if os.environ.get(n)], "take_failed": failed}
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
 def _boot_rollup_mode() -> str | None:
     """``auto``, ``forced-on`` or ``forced-off``: whether an operator's own
     ``OO_COLUMNAR_SERVE`` is in play beside the tier's default. A rollup that is off
@@ -672,6 +709,7 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "allocator": _boot_allocator(),
         "rollup_serve_mode": _boot_rollup_mode(),
         "core_guard": _boot_core_guard(),
+        "env_take": _boot_env_take(),
         "build": _boot_build(),
     }
     _append(rec)

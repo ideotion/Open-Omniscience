@@ -387,6 +387,26 @@ def test_each_engagement_stamps_its_own_release_record():
     assert g.last_release() == {"freed_mb": 2.0, "engagement": 2}
 
 
+def test_the_stamp_is_the_engagement_that_tripped_not_the_count_when_the_ladder_finishes():
+    """MUTATION TARGET: the ``engagement`` argument ``observe`` hands ``_run_release`` (without it the stamp falls back to the CURRENT
+    count, which a release that re-enters ``observe`` has moved on: a slow ladder would carry the next engagement's number)."""
+    calls: list[int] = []
+    holder: dict = {}
+
+    def ladder():
+        calls.append(1)
+        if len(calls) == 1:  # while the first ladder runs, the guard resumes and engages again: the count moves to 2
+            holder["g"].observe(rss_mb=100.0, mem_avail_mb=900.0, mem_total_mb=1000.0)
+            holder["g"].observe(rss_mb=900.0, mem_avail_mb=10.0, mem_total_mb=1000.0)
+            return {"freed_mb": 1.0}
+        return {"freed_mb": 2.0}
+
+    g = holder["g"] = MemoryGuard(trip_after=1, resume_after=1, release_fn=ladder)
+    assert g.observe(rss_mb=900.0, mem_avail_mb=10.0, mem_total_mb=1000.0) is True
+    assert len(calls) == 2, "the nested engagement ran its own ladder"
+    assert g.last_release() == {"freed_mb": 1.0, "engagement": 1}, "the outer ladder is stamped with the engagement it was run for"
+
+
 def test_a_failing_release_never_breaks_the_pause():
     def _boom():
         raise RuntimeError("no")

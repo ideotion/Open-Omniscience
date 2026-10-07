@@ -41,15 +41,32 @@ from src.monitoring.request_label import UNMATCHED_ROUTE, safe_client, safe_meth
 ACCESS_LINE_WITHHELD = "access line withheld: its shape is not the server's"
 
 
-def _route_contexts(routes: Any) -> list[Any]:
+#: ``id(app) -> (app, ids of its routes when read, the route contexts)``: ``iter_route_contexts`` builds about a thousand objects, once
+#: per access line otherwise. The ids of the app's routes are compared on every line, so a route added or removed (or a router
+#: included) after the first line rebuilds the entry. A handful of apps at most (a test builds its own); the oldest is dropped.
+_CONTEXTS: dict[int, tuple[Any, tuple[int, ...], list[Any]]] = {}
+_CONTEXTS_KEPT = 8
+
+
+def _route_contexts(app: Any) -> list[Any]:
     """The app's routes as the router matches them. FastAPI from 0.138 keeps an included router as one object that has no ``.path``
     (its routes are reached through ``fastapi.routing.iter_route_contexts``, each with its EFFECTIVE path, prefixes included); an
-    older FastAPI keeps a flat list that carries the path itself."""
+    older FastAPI keeps a flat list that carries the path itself. Cached per app (see ``_CONTEXTS``)."""
+    routes = app.routes
+    signature = tuple(id(r) for r in routes)
+    cached = _CONTEXTS.get(id(app))
+    if cached is not None and cached[0] is app and cached[1] == signature:
+        return cached[2]
     try:
         from fastapi.routing import iter_route_contexts
     except ImportError:
-        return list(routes)
-    return list(iter_route_contexts(routes))
+        built = list(routes)
+    else:
+        built = list(iter_route_contexts(routes))
+    if len(_CONTEXTS) >= _CONTEXTS_KEPT:
+        _CONTEXTS.pop(next(iter(_CONTEXTS)))
+    _CONTEXTS[id(app)] = (app, signature, built)
+    return built
 
 
 def _route_of(path: str, method: str, app: Any = None) -> str:
@@ -64,7 +81,7 @@ def _route_of(path: str, method: str, app: Any = None) -> str:
             app = the_app
         scope = {"type": "http", "path": unquote(path), "method": method, "root_path": "", "headers": []}
         partial = None
-        for route in _route_contexts(app.routes):
+        for route in _route_contexts(app):
             match, _ = route.matches(scope)
             template = str(getattr(route, "path", "") or "")
             if match == Match.FULL and template:
@@ -114,7 +131,8 @@ class AccessLineFilter(logging.Filter):
 
 
 #: The three lines the server writes for a WebSocket upgrade, on ``uvicorn.error`` at INFO, each with the client and the FULL path
-#: and query the client typed: accepted, refused with 403, and closed with a code.
+#: and query the client typed: accepted, refused with 403, and the third, which carries the HTTP status of a denial response (the
+#: installed uvicorn has no close-code line; ``tests/test_access_line_filter.py`` pins all three to its source).
 _WEBSOCKET_FORMATS = ('%s - "WebSocket %s" [accepted]', '%s - "WebSocket %s" 403', '%s - "WebSocket %s" %d')
 #: What a WebSocket line names instead of the path: this app serves no WebSocket route, so none is ever matched.
 WEBSOCKET_ROUTE = UNMATCHED_ROUTE

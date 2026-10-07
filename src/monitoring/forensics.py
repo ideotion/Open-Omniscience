@@ -721,11 +721,23 @@ def previous_session_report() -> dict[str, Any]:
 
 
 def _previous_peaks() -> dict[str, Any] | None:
-    """The previous session's own high-water marks, or a stated absence."""
+    """The previous session's own high-water marks, or a stated absence. The marks are the previous SESSION's only when they carry the
+    ledger's id for it (the way the ledger's end record decides, ``session_history._hwm_last_seen``): a sidecar of another session, or
+    one that names none, is no evidence, and what is copied has every release-ladder record rebuilt from the allow-list."""
     try:
-        from src.monitoring.session_hwm import previous
+        from src.monitoring.release_view import scrub_marks
+        from src.monitoring.session_history import previous_session_id
+        from src.monitoring.session_hwm import previous_why
 
-        got = previous()
+        got, why = previous_why()
+        if got:
+            ident, want = got.get("session_id"), previous_session_id()
+            if not isinstance(ident, str) or not ident or not want:
+                got, why = None, "no identity"
+            elif ident != want:
+                got, why = None, "another session"
+            else:
+                got = scrub_marks(got)
     except Exception:  # noqa: BLE001 - forensics degrades, never raises
         return None
     if not got:
@@ -734,6 +746,8 @@ def _previous_peaks() -> dict[str, Any] | None:
             "reason": (
                 "no per-session high-water record from the previous run (it predates "
                 "this instrument, or the file was removed) — unmeasured, not zero"
+                if why in (None, "absent")
+                else f"the high-water record on disk is not this run's previous session's ({why}) — unmeasured, not zero"
             ),
         }
     out = dict(got)

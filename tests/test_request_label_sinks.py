@@ -137,7 +137,7 @@ def test_the_rate_limit_line_and_its_429_label_name_the_route(root_journal, capl
     with caplog.at_level(logging.DEBUG):
         assert _past_its_limit(client) == 429
     line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Rate limit exceeded for"))
-    assert TYPED not in line and line.endswith(("GET /things/{ident}", f"GET {request_label.UNMATCHED_ROUTE}"))
+    assert TYPED not in line and line.endswith("GET /things/{ident}"), line
     labels = _metrics_labels()
     assert TYPED not in labels and '"http_status": "429"' in labels
 
@@ -205,21 +205,41 @@ def test_before_routing_the_stamps_are_the_fixed_label(journal_file):
 # --------------------------------------------------------------------------- #
 #  Mounted apps
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("mount", ["/static", "/metrics"])
+def _mounted_app() -> FastAPI:
+    """A small app with the app's own request monitor (``main.monitor_requests``, the middleware that feeds the latency summary and the
+    metrics labels) and two mounts. NOT the shared ``src.api.main.app``: CLAUDE.md's rule (Lessons that cost a bug) forbids a test
+    reading that process-global singleton's ``.routes``, which made the additive-restore guard flaky in CI. The real app's
+    ``/metrics`` mount is skipped by the request monitor itself, and what only the real app reaches (the journal's 404 entry written by its
+    exception handlers) is pinned by ``test_request_label.py``."""
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import PlainTextResponse
+
+    from src.api import main
+
+    def bare_app():  # a bare ASGI app (no routing of its own, as ``StaticFiles`` is) that answers 404; one object per mount
+        async def nothing(scope, receive, send):
+            await PlainTextResponse("nope", status_code=404)(scope, receive, send)
+
+        return nothing
+
+    app = FastAPI()
+    app.add_middleware(BaseHTTPMiddleware, dispatch=main.monitor_requests)
+    for name in ("static", "assets"):
+        app.mount(f"/{name}", bare_app(), name=name)
+    return app
+
+
+@pytest.mark.parametrize("mount", ["/static", "/assets"])
 def test_a_request_a_mounted_app_answers_is_named_by_the_mount_and_not_by_the_path_under_it(journal_file, mount):
     """MUTATION TARGET: ``request_label._mount_path``. Starlette's ``Mount`` sets ``scope["endpoint"]`` and never ``scope["route"]``."""
-    from src.api.main import app
-
-    client = TestClient(app, raise_server_exceptions=False)
-    status = client.get(f"{mount}/{TYPED}").status_code
-    assert status in (200, 404)
+    client = TestClient(_mounted_app(), raise_server_exceptions=False)
+    assert client.get(f"{mount}/{TYPED}").status_code == 404
     summary = repr(latency.summary())
-    assert f"GET {mount}" in summary and TYPED not in summary
+    assert TYPED not in summary
+    assert f"GET {mount}" in summary
     labels = _metrics_labels()
     assert f'"endpoint": "{mount}"' in labels and TYPED not in labels
     assert TYPED not in _text(journal_file)
-    if status == 404:
-        assert f'"path": "{mount}"' in _text(journal_file)
 
 
 def test_route_template_falls_back_to_the_mount_whose_app_is_the_endpoint():
@@ -253,8 +273,8 @@ def test_every_older_line_that_names_a_path_is_read_with_it_withheld(journal_fil
     entries = errorlog.recent_errors()
     assert TYPED not in json.dumps(entries)
     messages = [e["message"] for e in entries]
-    assert messages[0].startswith("unhandled error on " + request_label.PATH_WITHHELD + ": ValueError: x")
-    assert messages[1].startswith("unhandled error on " + request_label.PATH_WITHHELD)
+    assert messages[0] == "unhandled error on " + request_label.PATH_WITHHELD, "no tail: no split can tell a spaced path from it"
+    assert messages[1] == "unhandled error on " + request_label.PATH_WITHHELD
     assert messages[2] == "Rate limit exceeded for 203.0.113.9: " + request_label.PATH_WITHHELD
     assert messages[3] == "Rate limit exceeded for ::1: " + request_label.PATH_WITHHELD
     assert messages[4] == "ratelimit 5 per 1 minute (203.0.113.9) exceeded at endpoint: " + request_label.PATH_WITHHELD
@@ -290,3 +310,61 @@ def test_the_page_drops_the_query_before_it_posts_the_report():
 
     js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     assert 'split(/[?#]/)[0]' in js and "body.endpoint = noQuery(endpoint)" in js and "body.source = noQuery(source)" in js
+
+
+SECRET_WORDS = "correct horse battery staple"
+
+
+def test_an_older_unhandled_line_with_a_spaced_path_keeps_no_word_of_it(journal_file):
+    """MUTATION TARGET: the reader's whole-head match (a split that wrote back everything after the path's first space)."""
+    _write(
+        journal_file,
+        {"logger": "api", "message": f"unhandled error on GET /{SECRET_WORDS}: ValueError: boom"},
+        {"logger": "api", "message": f"unhandled error on route /{SECRET_WORDS}: ValueError: boom"},  # a method token the client chose
+        {"logger": "api", "message": f"unhandled error on route GET /{SECRET_WORDS}: ValueError: boom"},
+    )
+    for entry in errorlog.recent_errors():
+        assert "horse" not in json.dumps(entry) and "staple" not in json.dumps(entry), entry
+        assert entry["message"] == "unhandled error on " + request_label.PATH_WITHHELD
+
+
+def test_a_new_unhandled_line_is_kept_whole_and_so_is_one_with_a_converter_template(journal_file):
+    _write(
+        journal_file,
+        {"logger": "api", "message": "unhandled error on route GET /api/articles/{article_id}: ValueError: boom"},
+        {"logger": "api", "message": "unhandled error on route GET /files/{p:path}: ValueError: boom"},
+        {"logger": "api", "message": "unhandled error on route (other method) (no route matched): ValueError: boom"},
+    )
+    assert [e["message"].split(": ", 1)[1] for e in errorlog.recent_errors()] == ["ValueError: boom"] * 3
+
+
+def test_an_older_rate_limit_line_whose_client_text_holds_a_space_is_withheld_whole(journal_file):
+    """(a) The client is an address or a fixed word; anything else is no address, and what follows it may be the URL."""
+    _write(
+        journal_file,
+        {"logger": "api", "message": f"Rate limit exceeded for 1.2.3.4 evil: http://127.0.0.1:8000/{TYPED}"},
+        {"logger": "api", "message": f"Rate limit exceeded for {TYPED} x: GET /api/{TYPED}"},
+    )
+    entries = errorlog.recent_errors()
+    assert TYPED not in json.dumps(entries) and "evil" not in json.dumps(entries)
+    assert all(e["message"] == "Rate limit exceeded for (client): " + request_label.PATH_WITHHELD for e in entries)
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [f"GET /{SECRET_WORDS}", f"route /{TYPED}", f"{TYPED} /x", f"GET /x?k={TYPED}", f"GET /x extra {TYPED}", f"post /{TYPED}"],
+)
+def test_a_rate_limit_line_is_kept_only_when_it_is_a_standard_method_and_a_template(journal_file, tail):
+    """(b) The word ``route`` and a ``/``-path after a method are the client's to send through a custom method."""
+    _write(journal_file, {"logger": "api", "message": f"Rate limit exceeded for 203.0.113.9: {tail}"})
+    got = errorlog.recent_errors()[0]["message"]
+    assert TYPED not in got and "horse" not in got and got == "Rate limit exceeded for 203.0.113.9: " + request_label.PATH_WITHHELD
+
+
+def test_a_new_rate_limit_line_is_kept_whole(journal_file):
+    _write(journal_file, {"logger": "api", "message": "Rate limit exceeded for 203.0.113.9: GET /api/articles/{article_id}"},
+           {"logger": "api", "message": "Rate limit exceeded for (client): POST (no route matched)"})
+    assert [e["message"] for e in errorlog.recent_errors()] == [
+        "Rate limit exceeded for 203.0.113.9: GET /api/articles/{article_id}",
+        "Rate limit exceeded for (client): POST (no route matched)",
+    ]

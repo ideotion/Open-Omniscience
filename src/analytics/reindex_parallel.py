@@ -408,8 +408,8 @@ _worker_extractor: Any = None  # process-local global, set by _worker_init
 
 def _worker_init(extractor_name: str, gazetteer: dict[str, str] | None) -> None:
     global _worker_extractor
-    # FIRST: a worker is exec'd (``forkserver``'s server, ``spawn``), the environment it inherits holds the passphrase on a scripted
-    # start, and where the hard core limit is 0 the non-dumpable flag the parent set does not survive that exec.
+    # FIRST: a worker is exec'd (``forkserver``'s server, ``spawn``), the environment it inherits held the passphrase on a scripted
+    # start before the take (``connect.py`` removes it at import), and where the hard core limit is 0 the non-dumpable flag the parent set does not survive that exec.
     from src.monitoring import core_guard
 
     core_guard.engage()

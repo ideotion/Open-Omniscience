@@ -2385,3 +2385,4 @@ fixes). See [HISTORY.md](HISTORY.md). 400+ tests, all green.
 
 Early concept releases (forked from HTTrack). Largely non-functional / design-only;
 superseded by the 0.4 rebuild. Retained only in git history.
+- A passphrase that cannot be taken out of the environment at start is recorded on the boot record by the class of the failure (`env_take`), a value set in the environment later no longer hides the one taken, the ephemeral relaunch is handed what was taken, an older unhandled-error or rate-limit journal line is kept only when its whole head is the new shape (a path with spaces keeps no word), the client is written only as the address it parses to (an IPv6 scope id is not one), the nginx samples log only critical errors, a diagnostic path rewrite replaces `/var/home/<name>` and UNC profile directories too, and the previous session's marks reach `session-forensics.json` only through the ledger's session id and the release allow-list.

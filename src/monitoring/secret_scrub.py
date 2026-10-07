@@ -160,6 +160,9 @@ HELD_ENV_VARS: tuple[str, ...] = ("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
 #: library's resource tracker and its forkserver are started by ``exec`` with the parent's environment, and no code of ours runs
 #: in them before they hold it).
 _TAKEN: dict[str, str] = {}
+#: The class of each failure of :func:`take_from_environment` (never its text, which could hold the value): a passphrase that was
+#: not taken is still in the environment every child inherits, and the boot record says so (``env_take``).
+_TAKE_FAILED: list[str] = []
 
 
 def take_from_environment(names: tuple[str, ...] = HELD_ENV_VARS) -> None:
@@ -168,10 +171,18 @@ def take_from_environment(names: tuple[str, ...] = HELD_ENV_VARS) -> None:
     begins without one). :func:`env_secret` is how the app reads them from then on; :func:`taken_environment` is what a child
     that must have them is handed by name. Never raises."""
     for name in names:
-        with contextlib.suppress(Exception):
+        try:
             value = os.environ.pop(name, None)
             if value:
                 _TAKEN[name] = value
+        except Exception as exc:  # noqa: BLE001 - never raises; the class is recorded
+            _TAKE_FAILED.append(type(exc).__name__)
+
+
+def take_failed() -> list[str]:
+    """The class of every failure of :func:`take_from_environment` so far (empty when none): the passphrase of a failed take stays in
+    the process's environment, and a record that says nothing would read as a take that worked."""
+    return list(_TAKE_FAILED)
 
 
 def env_secret(name: str) -> str | None:
@@ -206,7 +217,9 @@ def held_passphrases() -> tuple[str, ...] | None:
     try:
         store = sys.modules.get("src.database.connect")
         session = None if store is None else vars(store).get("_passphrase")
-        found = tuple(dict.fromkeys(p for p in (session, *(env_secret(name) for name in HELD_ENV_VARS)) if p))
+        # BOTH values of a name: one set in the environment after the take (a test, an operator's code) must not hide the one taken
+        values = (session, *(v for name in HELD_ENV_VARS for v in (os.environ.get(name), _TAKEN.get(name))))
+        found = tuple(dict.fromkeys(p for p in values if p))
         return found if all(isinstance(p, str) for p in found) else None
     except Exception:  # noqa: BLE001 - what is held could not be read: the callers withhold
         return None

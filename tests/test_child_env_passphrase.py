@@ -231,7 +231,8 @@ def test_the_spawn_walk_reads_each_shape_of_a_call_that_starts_a_process(case):
 
 
 #: Modules of ``src/`` with a call that starts a process and names no ``env``: the child inherits the server's environment, which
-#: holds the passphrase on a scripted or headless start. Each says why that is right for it. Held to zero slack both ways.
+#: held the passphrase on a scripted or headless start before the take at the store's first import (it no longer does, and a child that
+#: must have it is handed it by name). Each says why that is right for it. Held to zero slack both ways.
 _INHERITS = {
     "analytics/reindex_parallel.py": "the keyword workers of a re-index: the app's own code, which never opens the corpus (it extracts from the text it is handed), started by the standard library; they hold the inherited core limit, and where the hard limit is 0 the forkserver they are forked from engages the guard when it starts (`core_guard_preload`) and each worker engages it first in `_worker_init`",
     "api/diagnostics/bundle.py": "`sysctl -n machdep.cpu.brand_string`: a fixed local read of the processor's name, for under two seconds, whose output the app reads",
@@ -248,7 +249,7 @@ _INHERITS = {
 
 def test_every_process_the_app_starts_is_given_an_environment_or_inherits_one_for_a_written_reason():
     """MUTATION TARGET: a spawner added without ``env=`` and without a place in ``_INHERITS``, or the watcher's ``env=`` taken out.
-    The passphrase is in the server's environment on a scripted or headless start, and a child that was never asked whether it
+    The passphrase was in the server's environment on a scripted or headless start before the take, and a child that was never asked whether it
     needs it is where a copy of it comes to be kept (``child_env`` says what a child has no use for)."""
     without: dict[str, list[str]] = {}
     given: set[str] = set()

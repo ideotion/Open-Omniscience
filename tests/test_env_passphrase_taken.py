@@ -38,6 +38,12 @@ if sys.platform.startswith('linux'):
     pid = resource_tracker._resource_tracker._pid
     environ = open(f'/proc/{{pid}}/environ', 'rb').read()
     assert b'PASSPHRASE' not in environ and {passphrase!r}.encode() not in environ, 'the resource tracker holds it'
+    from multiprocessing import forkserver
+    forkserver.ensure_running()
+    fpid = forkserver._forkserver._forkserver_pid
+    assert fpid and fpid != pid
+    fenv = open(f'/proc/{{fpid}}/environ', 'rb').read()
+    assert b'PASSPHRASE' not in fenv and {passphrase!r}.encode() not in fenv, 'the forkserver holds it'
 print('ok')
 """
 
@@ -140,3 +146,67 @@ def test_the_windows_calls_themselves_return_none_and_never_raise_where_there_is
     assert core_guard._win_abort_flags() is None
     assert core_guard._win_abort_flags(0, 0x3) is None
     assert core_guard._win_set_error_mode(0x2) is None
+
+
+# --------------------------------------------------------------------------- #
+#  A take that fails leaves a record, and a value set later hides no taken one
+# --------------------------------------------------------------------------- #
+def test_a_pop_that_raises_is_recorded_by_its_class_and_never_by_its_text(monkeypatch):
+    """MUTATION TARGET: ``take_from_environment``'s recording (it was a bare suppress: the passphrase stayed in the environment with
+    no trace)."""
+    class Env(dict):
+        def pop(self, *a, **k):
+            raise PermissionError(f"cannot pop {PASS}")
+
+    monkeypatch.setattr(S, "_TAKE_FAILED", [])
+    monkeypatch.setattr(S.os, "environ", Env(OO_DB_PASSPHRASE=PASS))
+    S.take_from_environment()
+    assert S.take_failed() == ["PermissionError", "PermissionError"]
+    assert PASS not in repr(S.take_failed())
+
+
+def test_the_boot_record_names_a_failed_take_and_the_variables_still_in_the_environment(monkeypatch):
+    from src.monitoring import session_history
+
+    monkeypatch.setattr(S, "_TAKE_FAILED", ["PermissionError"])
+    monkeypatch.setenv("OO_DB_PASSPHRASE", PASS)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    monkeypatch.setattr("src.database.connect._TAKE_FAILED", "ImportError")
+    got = session_history._boot_env_take()
+    assert got == {"still_in_environment": ["OO_DB_PASSPHRASE"], "take_failed": ["PermissionError", "ImportError"]}
+    assert PASS not in repr(got)
+
+
+def test_the_boot_record_of_a_clean_take_says_so(monkeypatch):
+    from src.monitoring import session_history
+
+    monkeypatch.setattr(S, "_TAKE_FAILED", [])
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    monkeypatch.setattr("src.database.connect._TAKE_FAILED", None)
+    assert session_history._boot_env_take() == {"still_in_environment": [], "take_failed": []}
+
+
+def test_a_value_set_in_the_environment_later_hides_neither_it_nor_the_taken_one(taken, monkeypatch):
+    """MUTATION TARGET: ``held_passphrases`` reading one value per name (the environment's, when set, over the taken one)."""
+    later = "set-later-by-an-operators-code-55"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", later)
+    held = S.held_passphrases() or ()
+    assert PASS in held and later in held
+    text = S.scrubbed(f"a {PASS} and a {later}")
+    assert PASS not in text and later not in text
+
+
+def test_the_ephemeral_child_is_handed_what_was_taken(taken, monkeypatch):
+    """MUTATION TARGET: ``**taken_environment()`` in ``_run_ephemeral`` (``src/api/main.py``), which starts a process that is this
+    program again, as the data-volume restart does. A no-op today (nothing imports the store before it), and pinned for the day
+    something does."""
+    import subprocess as sp
+
+    from src.api import main
+
+    seen: dict = {}
+    monkeypatch.setattr(sp, "run", lambda *a, **k: seen.update(env=k["env"]))
+    main._run_ephemeral(["serve"])
+    assert seen["env"]["OO_DB_PASSPHRASE"] == PASS and seen["env"]["OO_KEY_PASSPHRASE"] == KEY_PASS
+    assert seen["env"]["OO_EPHEMERAL"] == "0"

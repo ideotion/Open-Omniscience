@@ -1,7 +1,7 @@
 """A machine that STAYS short is recorded, not only the slide into it.
 
-The 091717 instance sat at 64 MB available or less for about 17 minutes (105 of the pass's 186 samples; 43.6 to 67.7 MB over the
-plateau, as recounted on 2026-10-07) with the memory guard engaged
+The 091717 instance sat at 64 MB available or less for about 17 minutes (105 of the pass's 186 samples; under 100 MB in 122; the
+recount of 2026-10-07, FINDINGS.md item B) with the memory guard engaged
 and was then killed. The slide into it had been snapshotted (one per new low); the plateau,
 where whatever held the memory could still be read, was not, by design. Two more triggers:
 the moment the memory guard engages, and a re-snapshot every ``_PLATEAU_INTERVAL_S`` while the

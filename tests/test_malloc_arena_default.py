@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 from src.database.models import Base
 from src.monitoring import forensics, session_hwm
 from src.monitoring import soak_window as sw
+from tests import previous_identity
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -1087,6 +1088,7 @@ def test_a_session_record_carries_the_setting_it_started_with_into_the_next_boot
     prev = session_hwm.capture_previous()
     assert prev is not None and prev["allocator"] == _UNCAPPED, "the previous session's, not ours"
     assert session_hwm.current()["allocator"] == _CAPPED
+    previous_identity.claim(monkeypatch)
     peaks = forensics._previous_peaks()
     assert peaks is not None and peaks["allocator"] == _UNCAPPED
     assert "allocator" in peaks["method"] and "R114" in peaks["method"]

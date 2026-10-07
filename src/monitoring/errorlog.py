@@ -374,27 +374,38 @@ def _http_entry_without_raw_request(entry: dict) -> dict:
 
 
 _STD = "|".join(sorted(STANDARD_METHODS)) + "|" + re.escape(OTHER_METHOD)
+#: A route template as the app writes one: ``/`` and segments with no space, and no colon outside a ``{param:converter}``.
+_TEMPLATE = rf"(?:/(?:[^\s:?{{}}]|\{{[^{{}}\s]*\}})*|{re.escape(UNMATCHED_ROUTE)})"
 #: How a rate-limit line names the request since 2026-10-07: a standard method and a route template (or the fixed label).
-_RATE_NEW = re.compile(rf"^(?:{_STD}) (?:/\S*|{re.escape(UNMATCHED_ROUTE)})$")
-_RATE_LINE = re.compile(r"^(Rate limit exceeded for \S+): (.*)$", re.DOTALL)
+_RATE_NEW = re.compile(rf"^(?:{_STD}) {_TEMPLATE}$")
+#: A client as ``safe_client`` writes it (an address, or the fixed word), and as ``get_remote_address`` wrote one before.
+_CLIENT = r"(?:[0-9A-Fa-f:.\[\]]{1,60}|\(client\)|unknown)"
+_RATE_LINE = re.compile(rf"^Rate limit exceeded for ({_CLIENT}): (.*)$", re.DOTALL)
+_RATE_PREFIX = "Rate limit exceeded for "
 _UNHANDLED = "unhandled error on "
+#: The whole head of the new unhandled-error line: ``route <standard method> <template>:``. A line that does not match it IN FULL is an
+#: older one, or one a client shaped (a method token of ``route`` is its own to send): nothing after the prefix is kept, because no
+#: split can tell a path with a space in it from the text that follows.
+_UNHANDLED_NEW = re.compile(rf"^route (?:{_STD}) {_TEMPLATE}: ")
 #: What the ``slowapi`` logger wrote and this app no longer lets it write: ``ratelimit <limit> (<key>) exceeded at endpoint: <path>``.
 _SLOWAPI_MARK = " exceeded at endpoint: "
 
 
 def _message_without_raw_request(message: str) -> str:
     """The message of a line written before the app named a request by its route, with the path (and the query) the client typed
-    withheld; a line that names the request by its route, and every other line, as it was. Three shapes carried it: the
-    unhandled-error line (``unhandled error on <method> <path>: ...``: the new wording says ``route``), the rate-limit line (its
-    URL in full, query included) and the ``slowapi`` library's own warning (which names the path and is now dropped at the
-    source, so any such line is an old one)."""
-    if message.startswith(_UNHANDLED) and not message.startswith(_UNHANDLED + "route "):
-        parts = message[len(_UNHANDLED):].split(None, 2)
-        rest = f" {parts[2]}" if len(parts) == 3 else ""
-        return f"{_UNHANDLED}{PATH_WITHHELD}:{rest}"
-    rate = _RATE_LINE.match(message)
-    if rate is not None and not _RATE_NEW.match(rate.group(2).strip()):
-        return f"{rate.group(1)}: {PATH_WITHHELD}"
+    withheld; a line that names the request by its route IN FULL (a standard method, then a template or the fixed label, and nothing
+    else), and every other line, as it was. Three shapes carried it: the unhandled-error line (``unhandled error on <method>
+    <path>: ...``: the new wording says ``route``), the rate-limit line (its URL in full, query included) and the ``slowapi``
+    library's own warning (which names the path and is now dropped at the source, so any such line is an old one)."""
+    if message.startswith(_UNHANDLED) and not _UNHANDLED_NEW.match(message[len(_UNHANDLED):]):
+        return f"{_UNHANDLED}{PATH_WITHHELD}"
+    if message.startswith(_RATE_PREFIX):
+        rate = _RATE_LINE.match(message)
+        if rate is None:  # a client text that is not an address or the fixed word: the whole remainder is withheld
+            return f"{_RATE_PREFIX}(client): {PATH_WITHHELD}"
+        if not _RATE_NEW.match(rate.group(2).strip()):
+            return f"{rate.group(0).split(': ', 1)[0]}: {PATH_WITHHELD}"
+        return message
     if message.startswith("ratelimit ") and _SLOWAPI_MARK in message:
         return message.split(_SLOWAPI_MARK, 1)[0] + _SLOWAPI_MARK + PATH_WITHHELD
     return message

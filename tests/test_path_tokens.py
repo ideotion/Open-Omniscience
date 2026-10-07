@@ -60,3 +60,63 @@ def test_a_text_with_no_path_is_unchanged():
 
 def test_the_ellipsis_is_not_doubled(homes):
     assert "……" not in tokenise_paths(f"{homes}/a/b.py and …/c.py")
+
+
+# --------------------------------------------------------------------------- #
+#  A known root ends where a name cannot go on; the forms a diagnostic can write beside it
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def known_home(monkeypatch):
+    def use(path: str) -> None:
+        monkeypatch.setenv("HOME", path)
+        for name in ("USERPROFILE", "HOMEDRIVE", "HOMEPATH"):
+            monkeypatch.delenv(name, raising=False)
+
+    return use
+
+
+@pytest.mark.parametrize("tail", ["+ice/x", "@corp/x", ".ice/x", "-ice/x", "_ice/x", "ice/x", ":x"])
+def test_the_rest_of_another_users_name_does_not_survive_a_known_posix_home(known_home, tail):
+    """A quote and a colon END a known root on purpose (``cwd='/home/al'``, ``/home/al:12`` are how a root is followed in a text), so
+    ``/home/al'ice`` reads ``<home>'ice``; a name that goes on with any other character is another user's."""
+    known_home("/home/al")
+    got = tokenise_paths(f"open /home/al{tail} failed")
+    assert "ice" not in got and "corp" not in got, got
+
+
+@pytest.mark.parametrize("tail", [" Ice\\x.py", ".DOMAIN\\x.py", "x\\y.py", "+Ice\\y.py"])
+def test_the_rest_of_another_users_name_does_not_survive_a_known_windows_home(known_home, tail):
+    known_home("C:\\Users\\Al")
+    got = tokenise_paths(f"File C:\\Users\\Al{tail}")
+    assert "Ice" not in got and "DOMAIN" not in got and "Alx" not in got, got
+
+
+def test_a_known_windows_home_is_still_replaced_when_a_separator_follows(known_home):
+    known_home("C:\\Users\\Al")
+    assert tokenise_paths("File C:\\Users\\Al\\proj\\x.py, line 3") == "File <home>/…/x.py, line 3"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        r"\\?\UNC\fileserver\home\alice\x.py",
+        r"\\?\UNC\fileserver\Users\alice",
+        r"\\fileserver\Users\alice\Desktop\x.py",
+        r"\\fileserver\share\home\alice",
+    ],
+)
+def test_a_unc_path_in_its_extended_forms_keeps_no_user_name(text):
+    got = tokenise_paths(f"error at {text} here")
+    assert "alice" not in got and "fileserver" not in got, got
+
+
+@pytest.mark.parametrize("text", ["/var/home/alice", "/var/home/alice/proj/x.py", "cwd=/var/home/alice"])
+def test_fedora_atomic_homes_are_tokenised_too_even_for_a_directory_only_path(text):
+    assert "alice" not in tokenise_paths(text)
+
+
+def test_a_directory_only_path_under_an_unknown_root_keeps_its_last_segment_and_that_is_stated():
+    assert tokenise_paths("cwd=/srv/projects/team") == "cwd=…/team"
+    from src.monitoring import path_tokens
+
+    assert "keeps its last segment" in path_tokens.__doc__

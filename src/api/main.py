@@ -3333,7 +3333,10 @@ def _run_ephemeral(argv: list[str]) -> None:
     import tempfile
 
     tmp = tempfile.mkdtemp(prefix="oo-ephemeral-")
-    env = {**os.environ, "OO_DATA_DIR": tmp, "OO_EPHEMERAL": "0"}
+    from src.monitoring.secret_scrub import taken_environment
+
+    # a process that is this program again: the passphrases taken out of this environment at start are handed over by name
+    env = {**os.environ, **taken_environment(), "OO_DATA_DIR": tmp, "OO_EPHEMERAL": "0"}
     print(f"Ephemeral mode: data in {tmp} (wiped on exit). Ctrl-C to stop.")
     try:
         subprocess.run([sys.executable, "-m", "src.api.main", *(argv or ["serve"])], env=env)

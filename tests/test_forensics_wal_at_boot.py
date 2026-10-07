@@ -30,6 +30,7 @@ import sys
 import pytest
 
 from src.monitoring import forensics, session_hwm
+from tests import previous_identity
 
 
 @pytest.fixture()
@@ -329,7 +330,7 @@ def test_absent_peaks_are_stated_not_silently_dropped(dd):
     assert "unmeasured" in peaks["reason"]
 
 
-def test_render_text_prints_the_boot_wal_and_the_previous_peaks(dd):
+def test_render_text_prints_the_boot_wal_and_the_previous_peaks(dd, monkeypatch):
     """S0.4's own note: a fix invisible in the .txt the maintainer sends is not a fix."""
     db = dd / "open_omniscience.db"
     _leave_a_wal(db)
@@ -347,6 +348,7 @@ def test_render_text_prints_the_boot_wal_and_the_previous_peaks(dd):
     forensics._PREV_AT_BOOT = None
     forensics.record_session_start()  # session 2 sees an unclean end
     session_hwm.capture_previous()
+    previous_identity.claim(monkeypatch)
 
     txt = forensics.render_text()
     assert "-wal at this boot: present" in txt

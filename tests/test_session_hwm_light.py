@@ -20,7 +20,7 @@ import types
 
 import pytest
 
-from src.monitoring import forensics, session_hwm
+from src.monitoring import forensics, session_history, session_hwm
 
 TOTAL = 5000.0
 FLOOR, SHARE = 256.0, 85.0
@@ -495,7 +495,8 @@ def test_the_report_names_them_and_says_the_pairing_is_an_inference(rig, no_heav
 
 
 def test_the_bundles_method_text_says_what_the_light_snapshots_are(dd, monkeypatch):
-    monkeypatch.setattr(session_hwm, "previous", lambda: {"pid": 1, "pressure_light": []})
+    monkeypatch.setattr(session_hwm, "previous_why", lambda: ({"pid": 1, "session_id": "s-prev", "pressure_light": []}, None))
+    monkeypatch.setattr(session_history, "previous_session_id", lambda: "s-prev")
     out = forensics._previous_peaks()
     assert "pressure_light" in out["method"] and "inference" in out["method"]
 
@@ -669,4 +670,4 @@ def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(mon
     assert out["previous_session"]["found"] is False and out["previous_session"]["snapshots"] == []
     assert "omitted" in session_hwm.diagnostics_member(-5), "a nonsense budget is named, not an error"
     monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError("boom\nsecond line")))
-    assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError: boom"}
+    assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError"}

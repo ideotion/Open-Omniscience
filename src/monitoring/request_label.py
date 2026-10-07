@@ -71,8 +71,9 @@ UNKNOWN_CLIENT = "(client)"
 
 
 def safe_client(value: object) -> str:
-    """``value`` when it is an IP address (``1.2.3.4``, ``1.2.3.4:5``, ``::1``, ``[::1]:5``), else :data:`UNKNOWN_CLIENT`. A port is
-    kept only as digits. Never raises."""
+    """The address ``value`` names, written from the PARSED address and never from the input (``1.2.3.4``, ``1.2.3.4:5``, ``::1``,
+    ``[::1]:5``), else :data:`UNKNOWN_CLIENT`. An IPv6 scope id (``fe80::1%eth0``) is a name the client types and Python parses, so
+    a host with a ``%`` is not an address here; a port is kept only as a number up to 65535. Never raises."""
     import ipaddress
 
     try:
@@ -80,14 +81,22 @@ def safe_client(value: object) -> str:
         host, port = text, ""
         if text.startswith("["):
             host, _, rest = text[1:].partition("]")
-            port = rest[1:] if rest.startswith(":") else rest
             if rest and not rest.startswith(":"):
                 return UNKNOWN_CLIENT
+            port = rest[1:]
         elif text.count(":") == 1:
             host, _, port = text.partition(":")
-        ipaddress.ip_address(host)
-        if port and not (port.isascii() and port.isdigit() and len(port) <= 5):
+        if "%" in host or len(host) > 45:
             return UNKNOWN_CLIENT
-        return text
+        ip = ipaddress.ip_address(host)
+        if "%" in str(ip):
+            return UNKNOWN_CLIENT
+        number = ""
+        if port:
+            if not (port.isascii() and port.isdigit() and len(port) <= 5 and int(port) <= 65535):
+                return UNKNOWN_CLIENT
+            number = str(int(port))
+        shown = f"[{ip}]" if number and ip.version == 6 else str(ip)
+        return f"{shown}:{number}" if number else shown
     except Exception:  # noqa: BLE001
         return UNKNOWN_CLIENT

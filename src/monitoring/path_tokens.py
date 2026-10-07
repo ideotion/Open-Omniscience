@@ -12,9 +12,12 @@ the backslash doubled (the form ``repr`` and JSON write), and without regard to 
 the app's directory, the data directory and EVERY home directory the process can name (``HOME``, ``USERPROFILE``,
 ``HOMEDRIVE``+``HOMEPATH``, ``expanduser("~")``, ``Path.home()`` and the account database's), so a home that is not the one
 ``HOME`` says is still the one that is replaced, and a user name with a space in it is inside the root and not a stopping place.
-THEN the shapes any user's profile takes (``C:\Users\<name with spaces>``, ``/home/<name>``, ``/Users/<name>``, ``~name``) and
-UNC paths, and then every other absolute path. The three roots are read when it is called, so a changed ``HOME`` or data
-directory is followed. Never raises. WHAT IT DOES NOT DO: a path written relative, or a user name written with no path around it.
+THEN the shapes any user's profile takes (``C:\Users\<name with spaces>``, ``/home/<name>``, ``/var/home/<name>`` (Fedora's atomic desktops), ``/Users/<name>``, a profile directory on a UNC share,
+``~name``) and UNC paths (``\\?\UNC\...`` too), and then every other absolute path. A known root ends only where a name cannot go on
+(a space ends a POSIX one; a Windows one ends at a separator or a quote, because a Windows name holds spaces and dots). The three roots are read when it is called, so a changed ``HOME`` or data
+directory is followed. Never raises. WHAT IT DOES NOT DO: a path written relative, or a user name written with no path around it; a directory-only
+path under a root the process does not know, that is no profile shape, keeps its last segment, and a UNC directory with a space in its
+name is partly kept (the generic rule stops at the space).
 """
 
 from __future__ import annotations
@@ -29,12 +32,16 @@ _SEG = r"[^\s\\/:'\"<>|*?]+"
 _SEP = r"[\\/]+"
 #: An absolute path of at least two segments: POSIX, a Windows drive, or UNC (``\\server\share\...``, in either slash and
 #: with the backslashes doubled as ``repr`` and JSON write them).
-_ABS = re.compile(rf"(?<![\w.<>~$…])(?:[A-Za-z]:{_SEP}|\\{{2,}}|/)(?:{_SEG}{_SEP})*{_SEG}")
+_ABS = re.compile(rf"(?<![\w.<>~$…])(?:[A-Za-z]:{_SEP}|\\{{2,}}(?:[?.]\\+)?|/)(?:{_SEG}{_SEP})*{_SEG}")
 #: ``<tok>`` and what follows it.
 _TOKENISED = re.compile(rf"<(app|data|home)>((?:{_SEP}{_SEG})*)")
 #: A user's profile directory, whoever's, with the name taken up to the next separator (a Windows name may hold spaces).
 _PROFILE_WIN = re.compile(rf"(?i)(?<![\w.<>~$…])[A-Za-z]:{_SEP}(?:Users|Documents and Settings){_SEP}[^\\/\r\n:'\"<>|*?]+")
-_PROFILE_POSIX = re.compile(rf"(?<![\w.<>~$…])/(?:home|Users){_SEP}{_SEG}")
+_PROFILE_POSIX = re.compile(rf"(?<![\w.<>~$…])/(?:var/home|home|Users){_SEP}{_SEG}")
+#: A profile directory on a UNC share: ``\\server\Users\name``, ``\\server\share\home\name``, ``\\?\UNC\server\home\name``.
+_PROFILE_UNC = re.compile(
+    rf"(?i)(?<![\w.<>~$…])\\{{2,}}(?:[?.]\\+(?:UNC\\+)?)?{_SEG}{_SEP}(?:{_SEG}{_SEP})?(?:Users|home|Documents and Settings){_SEP}[^\\/\r\n:'\"<>|*?]+"
+)
 #: ``~`` and ``~name``, when a path follows or the text ends.
 _TILDE = re.compile(r"(?<![\w.$])~[\w.-]*(?=[\\/]|$)")
 
@@ -85,7 +92,11 @@ def _root_pattern(root: str) -> re.Pattern[str]:
     lead = r"(?:\\{2,}|[\\/]+)" if root.startswith(("\\\\", "//")) else ("" if re.match(r"^[A-Za-z]:", root) else r"[\\/]+")
     body = _SEP.join(re.escape(p) for p in parts)
     # the root ends where its last segment does: not inside a longer name
-    return re.compile(rf"(?<![\w.<>~$…]){lead}{body}(?![\w\-])", re.IGNORECASE if windows else 0)
+    # The root ends only where a name cannot go on: the complement of a segment's characters for a POSIX root (a space ends it), and a
+    # separator, a quote or the end for a Windows one, whose profile names hold spaces and dots (``Al Ice``, ``Al.DOMAIN``): a
+    # longer name is another user's, and ``_PROFILE_WIN`` takes it whole.
+    end = r"(?![^\s\\/:'\"<>|*?])" if not windows else r"(?![^\\/:'\"<>|*?])"
+    return re.compile(rf"(?<![\w.<>~$…]){lead}{body}{end}", re.IGNORECASE if windows else 0)
 
 
 def _collapse(match: re.Match[str]) -> str:
@@ -102,6 +113,7 @@ def tokenise_paths(text: str) -> str:
         for root, how in _roots():
             text = _root_pattern(root).sub(f"<{how}>", text)
         text = _TOKENISED.sub(_collapse, text)
+        text = _PROFILE_UNC.sub("<home>", text)
         text = _PROFILE_WIN.sub("<home>", text)
         text = _PROFILE_POSIX.sub("<home>", text)
         text = _TILDE.sub("<home>", text)

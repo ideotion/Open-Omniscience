@@ -137,7 +137,9 @@ def test_the_real_sidecar_round_trip_in_either_order_of_boot(ledger, monkeypatch
     Both orders of the two boot calls (ledger first, sidecar first) leave the sidecar with the ledger's id."""
     monkeypatch.setattr(session_hwm, "_readings", lambda: {"rss_mb": 1234.0, "avail_mb": 321.0, "total_mb": 4000.0})
     monkeypatch.setattr(session_hwm, "composition", lambda walk_heap=False: {})
-    for ledger_first in (True, False):
+    sids: list[str] = []
+    for n, ledger_first in enumerate((True, False)):
+        monkeypatch.setattr(sh.time, "time", lambda n=n: T0 + 1000.0 * n)  # a session id is minted from the clock and the pid
         sh._reset_for_tests()
         session_hwm.reset_for_tests()
         if ledger_first:
@@ -147,14 +149,17 @@ def test_the_real_sidecar_round_trip_in_either_order_of_boot(ledger, monkeypatch
             session_hwm.capture_previous()
             sh.record_boot(None)
         sid = _sid()
+        assert sid not in sids, "each iteration is a session of its own (a frozen clock and one pid mint one id)"
+        sids.append(sid)
         assert session_hwm._read()["session_id"] == sid, f"ledger_first={ledger_first}"
         session_hwm.observe()
         # the process dies: nothing is reset by a clean path; the next process boots
         sh._reset_for_tests()
         session_hwm.reset_for_tests()
         sh.record_boot({"state": "running", "pid": os.getpid()})
-        end = [e for e in _ends() if e["session_id"] == sid][-1]
-        assert end["previous_peaks"]["rss_max_mb"] == 1234.0 and "previous_evidence_missing" not in end
+        ends = [e for e in _ends() if e["session_id"] == sid]
+        assert len(ends) == 1, "this iteration's own end, not an earlier one's"
+        assert ends[0]["previous_peaks"]["rss_max_mb"] == 1234.0 and "previous_evidence_missing" not in ends[0]
 
 
 @pytest.mark.parametrize("content, why", [(b"\xff\xfe not json", "unreadable"), (b"[1, 2]", "unreadable"), (None, "absent")])
@@ -199,6 +204,20 @@ def test_a_cut_that_leaves_threads_out_counts_them_and_the_size_includes_the_cou
     assert got["cut"]["threads_left_out"] >= 1 and got["threads_in_snapshot"] == 3
     shown = len(got.get("threads", []))
     assert shown + got["cut"]["threads_left_out"] == 3
+
+
+def test_texts_cut_counts_texts_and_only_those_of_the_threads_that_stayed():
+    """MUTATION TARGET: the count (it counted threads, and was not taken again after the size loop left threads out)."""
+    hwm = _hwm(900.0, "s", threads=3, frame="f" * 300)
+    for t in hwm["pressure"][0]["threads"]:
+        t["name"] = "n" * 200
+    got = sh._pressure_record(hwm)
+    assert got["cut"]["texts_cut"] == 6, "a name and a frame in each of three threads"
+    hwm["pressure"][0]["guard"]["pad"] = "p" * (sh.END_RECORD_MAX_BYTES - 700)
+    got = sh._pressure_record(hwm)
+    kept = got.get("threads", [])
+    assert got["cut"]["threads_left_out"] >= 1 and len(kept) < 3
+    assert got["cut"].get("texts_cut", 0) == 2 * len(kept), "the threads left out take their cut texts with them"
 
 
 @pytest.mark.parametrize("pad", range(0, 2100, 37))
@@ -475,3 +494,42 @@ def test_the_boots_member_scrubs_and_tokenises_an_ordinary_error(ledger, monkeyp
 
 def test_data_dir_env_is_isolated(ledger):
     assert os.environ["OO_DATA_DIR"].endswith("data")
+
+
+# --------------------------------------------------------------------------- #
+#  forensics copies the previous session's marks only when they are that session's, through the allow-list
+# --------------------------------------------------------------------------- #
+def _forensics_with(monkeypatch, marks, ledger_says="s-prev"):
+    from src.monitoring import forensics
+
+    monkeypatch.setattr(session_hwm, "previous_why", lambda: (marks, None if marks else "absent"))
+    monkeypatch.setattr(sh, "previous_session_id", lambda: ledger_says)
+    return forensics._previous_peaks()
+
+
+@pytest.mark.parametrize("ident, why", [("s-other", "another session"), (None, "no identity")])
+def test_forensics_takes_no_marks_of_another_session_or_of_none(monkeypatch, ident, why):
+    """MUTATION TARGET: the identity match in ``forensics._previous_peaks``."""
+    got = _forensics_with(monkeypatch, _hwm(900.0, ident))
+    assert got["available"] is False and why in got["reason"] and "rss_max_mb" not in got
+
+
+def test_forensics_takes_no_marks_when_the_ledger_names_no_previous_session(monkeypatch):
+    got = _forensics_with(monkeypatch, _hwm(900.0, "s-prev"), ledger_says=None)
+    assert got["available"] is False
+
+
+def test_forensics_copies_a_release_record_only_through_the_allow_list(monkeypatch):
+    """MUTATION TARGET: ``release_view.scrub_marks`` (the marks were copied whole, a ladder's error text included)."""
+    hwm = _hwm(900.0, "s-prev", release=_OLD_RECORD)
+    hwm["pressure_light"] = [{"at": "t", "guard": {"engaged": True, "last_release": _OLD_RECORD}}]
+    got = _forensics_with(monkeypatch, hwm)
+    assert got["available"] is True and got["rss_max_mb"] == 900.0
+    _assert_clean(got["pressure"])
+    _assert_clean(got["pressure_light"])
+    assert got["pressure"][0]["guard"]["last_release"]["steps"][0]["error"] == "OperationalError"
+
+
+def test_the_session_hwm_member_says_only_the_class_of_a_failure(monkeypatch):
+    monkeypatch.setattr(session_hwm, "previous", lambda: (_ for _ in ()).throw(RuntimeError(f"/home/alice/{PASS}")))
+    assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError"}
