@@ -8346,7 +8346,7 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
 #: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
 #: appended a lesson raised this number in the same diff; since 2026-10-06 (rule (5a)(b)) a lesson is a
 #: file under docs/ledger/lessons.d/ and only `scripts/ledger_fold.py fold` moves this number.
-_LESSONS_LINE_CEILING = 13770
+_LESSONS_LINE_CEILING = 13777
 
 
 def _lessons_md_lines() -> int:
@@ -9725,3 +9725,55 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
     # And the app folder is still named, labelled for what it is — hiding it would
     # trade one confusion for another (where SHOULD they be?).
     assert "r.ollama.configured" in body
+
+
+#: Files that still pass a caught exception's text to ``scrubbed()`` by hand, with how many sites each holds. It may only SHRINK
+#: (the test asks for the exact count, so a swap that is not entered here fails too): the sites are in #1334's files, and whichever
+#: of #1334 and #1336 lands second ports them to ``secret_scrub.exception_text`` and empties it.
+_SCRUBBED_EXC_ALLOWANCE = {
+    "src/api/backup_v2.py": 13,
+    "src/api/main.py": 1,  # the global handler, which asks ``unicode_note`` first (its own words stay in the response)
+    "src/backup/import_queue.py": 1,
+    "src/backup/volume_job.py": 9,
+}
+
+
+def _scrubbed_exception_sites(tree: ast.AST) -> list[int]:
+    """Lines of every ``scrubbed(...)`` call whose first argument builds its text from a name an ``except ... as`` binds
+    (``str(exc)``, an f-string of it). Such a call has no walk of the exception's chain, so a ``UnicodeError`` in it still prints
+    its character and offset (a piece of a key that no scrub knows): ``secret_scrub.exception_text`` is the call that has one."""
+    bound = {n.name for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler) and n.name}
+    lines: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        if getattr(func, "id", getattr(func, "attr", None)) != "scrubbed":
+            continue
+        if any(isinstance(x, ast.Name) and x.id in bound for x in ast.walk(node.args[0])):
+            lines.append(node.lineno)
+    return lines
+
+
+def test_no_source_file_hands_a_caught_exceptions_text_to_scrubbed_by_hand():
+    """MUTATION TARGET: a ``scrubbed(str(exc), secret)`` in any file outside the allowance."""
+    root = Path(__file__).resolve().parent.parent
+    found: dict[str, int] = {}
+    for path in sorted((root / "src").rglob("*.py")):
+        count = len(_scrubbed_exception_sites(ast.parse(path.read_text(encoding="utf-8"))))
+        if count:
+            found[path.relative_to(root).as_posix()] = count
+    assert found == _SCRUBBED_EXC_ALLOWANCE, (
+        "a caught exception's text goes to secret_scrub.exception_text(exc, secret), which walks the chain for a UnicodeError; "
+        f"found {found}, allowed {_SCRUBBED_EXC_ALLOWANCE}"
+    )
+
+
+def test_the_scrubbed_exception_guard_finds_the_shapes_that_leak():
+    for source, hits in (
+        ("try:\n    pass\nexcept Exception as exc:\n    scrubbed(str(exc), k)\n", 1),
+        ("try:\n    pass\nexcept Exception as exc:\n    scrubbed(f'x: {exc}', k)\n", 1),
+        ("try:\n    pass\nexcept Exception as e:\n    exception_text(e, k)\n", 0),
+        ("scrubbed('a fixed text', k)\n", 0),
+    ):
+        assert len(_scrubbed_exception_sites(ast.parse(source))) == hits, source

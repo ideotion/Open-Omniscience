@@ -6440,6 +6440,7 @@
   "the name of the signature scheme, ed25519": "اسم مخطط التوقيع، ed25519",
   "the newest held version": "أحدث إصدار محفوظ",
   "the next one rejoins the line on {when}": "يعود التالي إلى الطابور في {when}",
+  "the passphrase has a character that cannot be written as UTF-8": "عبارة المرور تحتوي على حرف لا يمكن كتابته بترميز UTF-8",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "تمتد الفترة على {days} يومًا؛ وبعد {max} لا تعود عدسة «الأيام نفسها في السنوات السابقة» عدسةً — بل تصبح سنة سابقة كاملة، وهو ما تعرضه المجموعة في مكان آخر بالفعل",
   "the period's concepts resolved to no plain keywords": "لم تُطابق مفاهيم الفترة أي كلمة مفتاحية بسيطة",
   "the published default": "القيمة الافتراضية المنشورة",

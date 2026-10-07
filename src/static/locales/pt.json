@@ -6440,6 +6440,7 @@
   "the name of the signature scheme, ed25519": "o nome do esquema de assinatura, ed25519",
   "the newest held version": "a versão conservada mais recente",
   "the next one rejoins the line on {when}": "a próxima volta à fila em {when}",
+  "the passphrase has a character that cannot be written as UTF-8": "a frase secreta tem um caractere que não pode ser escrito em UTF-8",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "o período abrange {days} dias; acima de {max}, a lente «os mesmos dias em anos anteriores» deixa de ser uma lente — torna-se um ano anterior inteiro, que o corpus já mostra em outro lugar",
   "the period's concepts resolved to no plain keywords": "os conceitos do período não corresponderam a nenhuma palavra-chave simples",
   "the published default": "o padrão publicado",

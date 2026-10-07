@@ -22,6 +22,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -339,7 +340,9 @@ def test_a_crash_inside_the_connect_leaves_no_record_behind(crashed_store, monke
         raise OSError("disk unplugged")
 
     monkeypatch.setattr(connect_mod, "connect", boom)
-    with pytest.raises(OSError):
+    # the key is typed, so an unexpected failure leaves the unlock scrubbed and as a RuntimeError
+    # that names the class it was; the record still ends
+    with pytest.raises(RuntimeError, match=r"OSError: disk unplugged"):
         unlock(PassphraseBody(passphrase=_KEY))
     assert ss.get_recovery() == {"active": False}
 
@@ -734,7 +737,7 @@ def test_the_right_passphrase_repairs_an_open_app_that_holds_a_wrong_key(held_ke
     connect_mod.set_passphrase("a-wrong-key-from-the-environment")
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
     monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: calls.append(("connect", k.get("key"))))
-    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: calls.append("close"))
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase=None: calls.append("close"))
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
     assert calls == [("connect", _KEY), "close", "finish"], calls
@@ -775,7 +778,8 @@ def test_a_finish_that_fails_returns_the_app_to_locked_so_the_retry_is_a_real_re
         monkeypatch.setattr(unlock_mod, "_finish_unlock", finish)
         connect_mod.set_passphrase(None)
         assert unlock_mod.app_lock_state() == "locked"
-        with pytest.raises(type(failure)):
+        # the typed key is scrubbed on the way out, so the failure leaves as a RuntimeError naming its class
+        with pytest.raises(RuntimeError, match=type(failure).__name__):
             unlock(PassphraseBody(passphrase=_KEY))
         assert connect_mod.get_passphrase() is None and unlock_mod.app_lock_state() == "locked", repr(failure)
         assert disposed, "the pool keeps the connections init_db opened with the key; they go with it"
@@ -820,3 +824,112 @@ def test_an_upkeep_thread_that_cannot_start_does_not_send_a_usable_app_back_to_t
 def test_a_size_that_is_not_a_real_positive_number_is_no_estimate(dd, bad):
     forensics.record_unlock_timing(_record(2 * _GIB, 80_000.0))
     assert forensics.recovery_estimate(bad) == (None, None)
+
+
+def test_a_key_with_a_lone_surrogate_is_refused_in_fixed_words_where_the_held_key_is_compared(held_key, monkeypatch, caplog):
+    """The typed key is compared with the held one as UTF-8 bytes, and a lone surrogate cannot be encoded: Python's error names
+    the character and its offset, a piece of the key no scrub knows, and it used to leave the route as it was raised. It is a 400 in
+    fixed words that name no character. MUTATION TARGET: the encode outside the helper or outside the scrubbing block."""
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    held_key.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    typed = "ab\ud800cd-typed-key"
+    with caplog.at_level(logging.DEBUG), pytest.raises(HTTPException) as err:
+        unlock(PassphraseBody(passphrase=typed))
+    assert err.value.status_code == 400 and "UTF-8" in err.value.detail
+    written = err.value.detail + "\n".join(f"{r.getMessage()}\n{r.exc_text or ''}" for r in caplog.records)
+    assert "ud800" not in written and "position" not in written and "surrogate" not in written, written
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_a_held_key_with_a_lone_surrogate_leaves_the_compare_as_a_class_and_a_fixed_note(held_key, monkeypatch, caplog):
+    """The held key can carry a lone surrogate too (the environment's bytes decoded with ``surrogateescape``), and the error that
+    encoding it raises names that character and its offset: one character matches no held shape, so scrubbing cannot take it out.
+    ``scrub_and_reraise`` records any ``UnicodeError`` as its class and a fixed note, and the error it raises, and the one
+    Python keeps as its context, carry neither. MUTATION TARGETS: the encode outside the block; the class-only rule."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    held_key.set_passphrase("held\udcffkey-long-enough")
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    with caplog.at_level(logging.DEBUG), pytest.raises(RuntimeError) as err:
+        unlock(PassphraseBody(passphrase="typed-key-fine"))
+    written = str(err.value) + "".join(
+        f"{r.getMessage()}\n{r.exc_text or ''}\n{getattr(r, 'scrubbed_traceback', '')}" for r in caplog.records
+    )
+    assert "udcff" not in written and "position" not in written and "surrogate" not in written, written
+    # The error Python keeps as the context is emptied in place: its text still has the codec's frame, with no character
+    # and not the offset (the key's lone surrogate is at 4).
+    context = str(err.value.__context__)
+    assert "udcff" not in context and "surrogate" not in context and "position 4" not in context, context
+    # In place, field by field: the repr and the object hold no piece of the key either (MUTATION TARGET: _defang).
+    assert "long-enough" not in repr(err.value.__context__) and err.value.__context__.object == "", repr(err.value.__context__)
+    assert "UnicodeEncodeError" in str(err.value), err.value
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_the_unlock_compare_is_inside_the_scrubbing_block(held_key, monkeypatch):
+    """An error the helper raises is converted with the typed key out of it. MUTATION TARGET: the compare outside the block
+    (an ``HTTPException`` passes the block, so only another error type shows it)."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    held_key.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+
+    def names_the_key(passphrase):
+        raise ValueError(f"cannot read {passphrase}")
+
+    monkeypatch.setattr(unlock_mod, "_passphrase_bytes", names_the_key)
+    typed = "typed-key-needs-no-secret"
+    with pytest.raises(RuntimeError) as err:
+        unlock(PassphraseBody(passphrase=typed))
+    assert typed not in str(err.value) and "ValueError" in str(err.value), err.value
+
+
+def test_the_held_key_question_with_a_wrong_short_key_is_answered_in_the_fixed_403_words(tmp_path, monkeypatch):
+    """``_file_opens_with`` passes the same withheld words as ``_unlock_locked``: a key under the scrub's floor gets the fixed
+    sentence, not the long withheld notice."""
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.database.connect import WrongPassphraseError
+
+    def refuses(*a, **k):
+        raise WrongPassphraseError("file is not a database: ab")
+
+    import src.database.connect as connect_mod
+
+    monkeypatch.setattr(connect_mod, "connect", refuses)
+    with pytest.raises(HTTPException) as err:
+        unlock_mod._file_opens_with(tmp_path / "x.db", "ab")
+    assert err.value.status_code == 403
+    assert err.value.detail == "the passphrase does not open this file (or the file is damaged)", err.value.detail
+
+
+def test_an_implicit_unicode_context_is_withheld_and_emptied_too(held_key, monkeypatch):
+    """The error raised inside an ``except UnicodeError`` has the first one as its context with no ``from``: the walk finds it
+    there, and the converted error carries neither the character nor the key."""
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    held_key.set_passphrase(_KEY)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+
+    def encodes_then_fails(passphrase):
+        try:
+            "typed\udcffkey-long-enough".encode()
+        except UnicodeError:
+            raise ValueError("could not encode")  # noqa: B904 - the implicit context is the case
+
+    monkeypatch.setattr(unlock_mod, "_passphrase_bytes", encodes_then_fails)
+    with pytest.raises(RuntimeError) as err:
+        unlock(PassphraseBody(passphrase="typed-key-fine"))
+    assert "UnicodeEncodeError" in str(err.value) and "udcff" not in str(err.value) and "position" not in str(err.value)
+    # The first error is two links down (the converted error's context is the ValueError, whose context it is): emptied in place.
+    first = err.value.__context__.__context__
+    assert isinstance(first, UnicodeError) and first.object == "" and "long-enough" not in repr(first) and "udcff" not in repr(first), repr(first)

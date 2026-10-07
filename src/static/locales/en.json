@@ -6440,6 +6440,7 @@
   "the name of the signature scheme, ed25519": "the name of the signature scheme, ed25519",
   "the newest held version": "the newest held version",
   "the next one rejoins the line on {when}": "the next one rejoins the line on {when}",
+  "the passphrase has a character that cannot be written as UTF-8": "the passphrase has a character that cannot be written as UTF-8",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere",
   "the period's concepts resolved to no plain keywords": "the period's concepts resolved to no plain keywords",
   "the published default": "the published default",

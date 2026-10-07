@@ -175,10 +175,25 @@ def _engine_text(secret: str) -> str:
     )
 
 
+def _under_the_floor(secret: str) -> bool:
+    """A key shorter than ``MIN_SECRET_CHARS`` cannot be taken out of a text (one letter is in every sentence), so the scrub
+    withholds the text whole instead (src/monitoring/secret_scrub.py)."""
+    from src.monitoring.secret_scrub import MIN_SECRET_CHARS
+
+    return sum(1 for ch in secret if not ch.isspace()) < MIN_SECRET_CHARS  # counted the way the scrub counts
+
+
+def _assert_withheld_whole(out: str) -> None:
+    assert "withheld" in out and "PRAGMA" not in out and "syntax error" not in out and "near" not in out, out
+
+
 @pytest.mark.parametrize("secret", TRICKY)
 def test_every_form_the_passphrase_is_written_in_is_taken_out(monkeypatch, secret):
     monkeypatch.setattr(_connect, "_passphrase", secret)
     out = _bundle._all_diag_err_str(RuntimeError(_engine_text(secret)))
+    if _under_the_floor(secret):
+        _assert_withheld_whole(out)
+        return
     for form in _forms_of(secret):
         assert form not in out, f"the form {form!r} is still in {out!r}"
     assert "withheld" not in out, "the scrub ran: the text is changed, not withheld"
@@ -188,6 +203,9 @@ def test_every_form_the_passphrase_is_written_in_is_taken_out(monkeypatch, secre
 def test_the_environments_copy_is_taken_out_in_every_form_too(monkeypatch, secret):
     monkeypatch.setenv("OO_DB_PASSPHRASE", secret)
     out = _bundle._all_diag_err_str(RuntimeError(_engine_text(secret)))
+    if _under_the_floor(secret):
+        _assert_withheld_whole(out)
+        return
     for form in _forms_of(secret):
         assert form not in out
 

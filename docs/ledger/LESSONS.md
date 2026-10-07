@@ -13302,13 +13302,18 @@ those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
-holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py`, to using the caught exception
+holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #1336,
+`stream_backup.py`, `volume_job.py`, `import_queue.py`, the route layer's `backup_v2.py` and the lock screen's `unlock.py`), to using the caught exception
 only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
-`_log_phase_failure`; a missing, empty or other second argument does not count), as its class, or as a phase error's `status`
-and `partial`, and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`_log_phase_failure`, and `secret_scrub`'s `scrubbed`, `traceback_text` and `log_failure`, which must be given EVERY secret the
+function holds; a missing, empty or other secret argument does not count, read at the second place, and from the fourth for
+`_log_phase_failure` and `log_failure`; a helper that takes ONE secret counts only in a function that holds that one secret), as its class, or as a `_PhaseError`'s `status` and `partial` (read by name only in an `except _PhaseError`:
+`status` goes through the closed vocabulary `PHASE_STATUSES`, and `partial` is scrubbed where the restore makes it while the other
+two phases never hold the secret), and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
 `sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
 a parameter, reads a local or reads an attribute named `passphrase` (the release run holds it as `run.params.passphrase`), or
-takes or reads one named `secret` or `needle`. The test reads those three modules' syntax and follows no call, so this stays
+takes or reads one named `secret`, `needle` or `corpus_passphrase` (or, as an attribute, `_passphrase`, which the import queue
+keeps for the length of a run). The test reads those modules' syntax and follows no call, so this stays
 outside it: a secret held under another name or route (a parameter named `pw`, `**kwargs`, a closure or a global; the job
 worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` of a network call into their result and are
 handed no secret); a helper the handler calls that reads the exception for itself, a bare re-raise or a raise without `from`
@@ -13317,8 +13322,9 @@ tb`, `from sys import exc_info as ei`) and `repr(locals())`; the engine's own fa
 (`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed where the engine makes the
 line, so that every consumer of the report gets it clean (the P0 check, the volume-verify job whose status an endpoint serves, the
 dev bench), and again line by line where the P0 check copies the lines, each pinned by its own test), and a phase error's
-`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every other module (the endpoint that
-receives the passphrase, the engines it is handed to; the volume job's own error handlers are one, recorded in `OPEN_QUEUE.md`).
+`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every module the coverage test names as
+not guarded (the engines the passphrase is handed to, the columnar store's three records among them, recorded in `OPEN_QUEUE.md`;
+the entry at the end of this file says what the guard now holds beyond the release run).
 **A scrub of a value code compares changes the value: scrub the text a person reads at the place it is made, and leave the fields
 a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
@@ -13542,6 +13548,7 @@ the previous session's, so a death is read against the tier THAT session ran und
 carry it once and the boot event does not repeat it; only the soak window carries `reading_vs_now()`, the machine's reading of now beside it, once per export and for the process that was running. Thirty-four tests, with fifty mutations each caught, pin the rest as negative space: the budget resolves once however often it is
 looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
 record and never a failed boot.
+
 ### AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT, AND WHAT PINS IT IS A LONG BACKGROUND READ (WAL / disk thread, 2026-10-06)
 
 The 10-06 bundles' `wal_history` carried maxima of 43, 36, 29, 26 and 23 GB (OOS-3, Asus, OOS-7, OOS-8, NUC), and a relay asked whether the log was still

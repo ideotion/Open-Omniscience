@@ -6440,6 +6440,7 @@
   "the name of the signature scheme, ed25519": "签名方案的名称，ed25519",
   "the newest held version": "所存最新版本",
   "the next one rejoins the line on {when}": "下一个将于 {when} 重新排入队列",
+  "the passphrase has a character that cannot be written as UTF-8": "口令短语中有无法用 UTF-8 写出的字符",
   "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "该时段跨越 {days} 天；超过 {max} 天后，“往年同日”这一视角便不再是视角——它会变成整整一个往年，而语料库已在别处展示",
   "the period's concepts resolved to no plain keywords": "本期的概念未能对应到任何普通关键词",
   "the published default": "已发布的默认值",

@@ -2058,10 +2058,13 @@ def verify_stream_backup(
                     # The report goes back to every caller that holds the passphrase (the volume-verify
                     # job serves it on an endpoint, the P0 check writes it into a file the debug bundle
                     # carries), and this line holds the exception's own words, so they are scrubbed where
-                    # the line is made. The member's name and the sentence around them stay as they are.
-                    from src.monitoring.secret_scrub import scrub_text
+                    # the line is made: of the passphrase handed in AND of every one the process holds
+                    # (the corpus's, which a backup under another key does not name), and a text that
+                    # cannot be checked is the exception's class and none of its words. The member's
+                    # name and the sentence around them stay as they are.
+                    from src.monitoring.secret_scrub import exception_text
 
-                    reason = scrub_text(str(exc), passphrase)
+                    reason = exception_text(exc, passphrase, typed=False)
                     _fail(f"member {mm['name']} failed to decrypt: {reason}")
                     continue
                 if h.hexdigest() != mm.get("plaintext_sha256"):

@@ -169,6 +169,7 @@ from .performance import (
     source_coverage_benchmark,
 )
 from .system import (
+    _FRONTEND_TEXT_MAX,
     _FrontendError,
     _p0_validation_last,
     _session_forensics_text,
@@ -460,6 +461,7 @@ __all__ = [
     "_PARTS_SET_RE",
     "_SET_LISTING",
     "_ENRICH_JOB",
+    "_FRONTEND_TEXT_MAX",
     "_FrontendError",
     "_GoldBuilderSaveBody",
     "_KEYWORD_TRIAGE_JOB",

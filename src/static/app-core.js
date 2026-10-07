@@ -459,7 +459,9 @@
     function _ooReportError(kind, message, source, endpoint, lineno) {
       try {
         if (!_ooRawFetch) return;
-        const msg = String(message == null ? "" : message).slice(0, 500);
+        // The words are sent WHOLE: the server takes the passphrases out of them and only then cuts (a text cut here can
+        // split a passphrase, and the half that is left is no shape of it the scrub recognises).
+        const msg = String(message == null ? "" : message);
         const sig = kind + "|" + msg.slice(0, 120) + "|" + (source || "");
         const now = Date.now();
         const last = _ooErrSeen.get(sig);
@@ -469,8 +471,8 @@
         let lang = null;
         try { lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || null; } catch (e) {}
         const body = {kind: String(kind).slice(0, 40), message: msg};
-        if (source) body.source = String(source).slice(0, 300);
-        if (endpoint) body.endpoint = String(endpoint).slice(0, 300);
+        if (source) body.source = String(source);
+        if (endpoint) body.endpoint = String(endpoint);
         if (lineno != null) body.lineno = lineno | 0;
         if (lang) body.ui_lang = String(lang).slice(0, 16);
         // Use the RAW fetch so the wrapper below can't recurse on this very POST.

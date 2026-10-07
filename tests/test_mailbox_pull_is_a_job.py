@@ -71,12 +71,11 @@ def test_the_password_is_scrubbed_where_the_error_is_captured():
     import src.api.ingestion as ing
 
     worker = inspect.getsource(ing._mailbox_pull_worker)
-    assert "_scrub(" in worker, (
+    assert "exception_text(" in worker, (
         "a mail library's exception is the server's own chatter; /api/jobs is "
         "unauthenticated, so scrub at capture rather than trust the message"
     )
-    assert ing._scrub("LOGIN me s3cret", "s3cret") == "LOGIN me ***"
-    assert ing._scrub("nothing to hide", "") == "nothing to hide"
+    assert not hasattr(ing, "_scrub"), "the raw replace is gone: ``scrubbed`` takes the password out in every shape it is written in"
 
 
 def test_the_frontend_reads_the_tally_from_the_status_not_the_start_response():

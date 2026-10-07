@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure, scrubbed
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -596,10 +597,15 @@ class ImportQueueManager:
                 # never be able to cost an import, and False is today's behaviour.
                 try:
                     hold = self._decide_hold(idx, item)
-                except Exception:  # noqa: BLE001
-                    _LOG.warning(
-                        "the checkpoint hold decision for %s failed; committing this "
-                        "item on its own", item.get("id"), exc_info=True,
+                except Exception as exc:  # noqa: BLE001
+                    # The queue holds the run's passphrase, so every record it writes about a failure is written
+                    # with it taken out, where the text is made (``log_failure``, ``scrubbed``).
+                    log_failure(
+                        _LOG,
+                        f"the checkpoint hold decision for {item.get('id')} failed; committing this item on its own",
+                        exc,
+                        self._passphrase,
+                        level=logging.WARNING,
                     )
                     hold = False
                 with self._lock:
@@ -648,10 +654,13 @@ class ImportQueueManager:
                     # fault, the run's own finally still discards whatever is open.
                     try:
                         self._after_item(item, summary)
-                    except Exception:  # noqa: BLE001
-                        _LOG.warning(
-                            "checkpoint-group bookkeeping failed after item %s",
-                            item.get("id"), exc_info=True,
+                    except Exception as exc:  # noqa: BLE001
+                        log_failure(
+                            _LOG,
+                            f"checkpoint-group bookkeeping failed after item {item.get('id')}",
+                            exc,
+                            self._passphrase,
+                            level=logging.WARNING,
                         )
                 except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
                     # A Stop pressed mid-merge unwinds the item through an exception (the
@@ -661,20 +670,18 @@ class ImportQueueManager:
                     # group is discarded exactly as for a failure -- a half-merged copy
                     # is unsafe whatever interrupted it.
                     stopped_here = self._stop.is_set()
-                    # The exception's own text and its traceback (which ends with it, and with every
-                    # chained message) are a sink, and ``data/app_errors.jsonl`` rides the debug
-                    # bundle: the log names the CLASS only. The scrubbed text is in the item's
-                    # ``error`` (the queue state) and, for the run, in its journal.
-                    detail = self._failure_text(exc)
+                    # What the item raised is the item's error (served by the status route and persisted in
+                    # ``import_queue.json``) and a log record. A single-file restore raises the route layer's own
+                    # ``HTTPException``, whose text can name the exception that caused it, and the queue is the
+                    # recorder of that text, so it is taken out of the passphrase here, where the text is made.
+                    said = scrubbed(str(exc), self._passphrase)
                     if stopped_here:
-                        _LOG.info("import item %s stopped mid-merge", item.get("id"))
+                        _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), said)
                     else:
-                        _LOG.warning(
-                            "import item %s failed (%s)", item.get("id"), type(exc).__name__
-                        )
+                        log_failure(_LOG, f"import item {item.get('id')} failed", exc, self._passphrase)
                     with self._lock:
                         item["state"] = "stopped" if stopped_here else "error"
-                        item["error"] = detail
+                        item["error"] = said
                     # A failure ANYWHERE in an item that had an open group taints the
                     # group: windowed merge steps commit mid-merge, so the working
                     # copy may carry a half-merged artifact, and a half-merged copy
