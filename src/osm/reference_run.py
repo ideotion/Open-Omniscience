@@ -226,6 +226,15 @@ def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = N
 
 #: How much of a failing child's stderr the report keeps: the last 12 lines (a traceback's tail, where the
 #: cause is) and 600 characters of stdout. They bound the REPORT's size and what an operator pastes.
+def _exc_text(exc: BaseException) -> str:
+    """``Type: message`` for a report -- except for a UnicodeError, whose message NAMES the character it could not encode
+    and its offset (a passphrase letter, when the passphrase file holds one this locale cannot carry): the exact-match
+    scrub cannot recognise a letter plus an offset, so such an error is recorded by its class alone."""
+    if isinstance(exc, UnicodeError):
+        return f"{type(exc).__name__} (its message is not recorded: it would name a character of the text being encoded)"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _tail(path: Path, lines: int = 12, *, secrets_: tuple[str, ...], run_dir: Path,
           roots: tuple[tuple[str, str], ...] = ()) -> str:
     try:
@@ -573,9 +582,9 @@ def run_phase(
             # PDEATHSIG is the backstop for the runner being KILLED (no handler runs on SIGKILL).
             proc = subprocess.Popen(spec.argv, env=env, stdout=fo, stderr=fe, cwd=str(ROOT),  # noqa: S603
                                     start_new_session=True, preexec_fn=_pdeathsig_preexec())  # noqa: PLW1509
-        except (OSError, subprocess.SubprocessError) as exc:
+        except (OSError, subprocess.SubprocessError, UnicodeError) as exc:  # UnicodeError: an env value the locale cannot encode
             res.status, res.reason = "failed", scrub(
-                f"the phase could not be started ({type(exc).__name__}: {exc})", secrets_=secrets_, run_dir=run_dir, roots=roots)
+                f"the phase could not be started ({_exc_text(exc)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
             res.wall_seconds = round(time.monotonic() - t0, 3)
             res.disk_free_after_bytes = probe.free_disk(run_dir)
             return res
@@ -1055,7 +1064,7 @@ def _run(
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
     except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
-        note = scrub(f"the runner itself failed: {type(exc).__name__}: {exc}", secrets_=secrets_, run_dir=run_dir, roots=roots)
+        note = scrub(f"the runner itself failed: {_exc_text(exc)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
         if report["status"] == "ok":
             report["status"], report["reason"] = "failed", note
         else:  # what happened first (a signal, a guard's stop) stays the status; this is added to it

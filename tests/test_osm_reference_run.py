@@ -1146,6 +1146,32 @@ def test_a_plan_never_opens_the_passphrase_file(tmp_path, monkeypatch, _core_lim
     assert report["status"] == "plan"
 
 
+def _encode_error(key: str) -> UnicodeEncodeError:
+    """What Popen raises for an env value a POSIX locale cannot encode: its text names the letter and its offset."""
+    at = key.index("é")
+    return UnicodeEncodeError("ascii", key, at, at + 1, "ordinal not in range(128)")
+
+
+@pytest.mark.parametrize("where", ["popen", "runner"])
+def test_a_key_letter_the_locale_cannot_encode_is_never_named_in_the_report(tmp_path, monkeypatch, where):
+    key_text = "passphrase-with-é-in-it"
+    key = tmp_path / "key"
+    key.write_text(key_text, encoding="utf-8")
+    err = _encode_error(key_text)
+    assert "é" in str(err) or "xe9" in str(err)  # the premise: the engine's text does name the letter and an offset
+    if where == "popen":
+        monkeypatch.setattr(R.subprocess, "Popen", lambda *a, **kw: (_ for _ in ()).throw(err))
+    else:
+        monkeypatch.setattr(R, "run_phase", lambda *a, **kw: (_ for _ in ()).throw(err))
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "failed"
+    text = json.dumps(report, ensure_ascii=False) + json.dumps(report)
+    assert "UnicodeEncodeError" in report["reason"]  # the class survives
+    for leaked in ("é", "xe9", "u00e9", "position", "ordinal", "range(128)", str(key_text.index("é"))):
+        assert leaked not in report["reason"], leaked
+    assert key_text not in text
+
+
 def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):
     report = {"status": "interrupted", "reason": "x", "phases": [], "store": {"deleted": True}}
     monkeypatch.setattr(R, "run", lambda **kw: (report, None))

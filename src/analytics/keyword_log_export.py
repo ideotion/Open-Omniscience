@@ -32,8 +32,10 @@ from sqlalchemy import text
 
 from src.analytics.families import build_families
 from src.analytics.keyword_log_scan import (
+    FAMILY_ROW_BYTES,
     IN_LIST_IDS,
     MENTIONS_TABLE,
+    MIN_FAMILY_ROWS,
     SPILL_PREFIX,
     ArticleMaps,
     ExportRefused,
@@ -469,7 +471,7 @@ class ZipJob:
                 "sorted_by": "mentions (desc)",
                 # What the grouping was given, and what limits it. The limit is MEMORY, not time:
                 # the grouping is linear in its input (a token index, not a pairwise comparison),
-                # and its working set is about 2 KB per keyword, so the window it may hold is
+                # and its working set is about 2.5 KB per keyword, so the window it may hold is
                 # sized from the memory available when the export started.
                 "basis_per_language": self.basis_per_language,
                 "basis_keywords": sum(self.basis_counts.values()),
@@ -490,8 +492,9 @@ class ZipJob:
                         "the window is in the shards but not in a family. "
                     )
                     + "The budget is a tenth of the memory available when the export started, "
-                    "at about 2 KB per keyword: it protects the machine, and a machine with "
-                    "more free memory groups more."
+                    f"at about {FAMILY_ROW_BYTES / 1000:.1f} KB per keyword, or "
+                    f"{MIN_FAMILY_ROWS} keywords when that is more: it protects the machine, "
+                    "and a machine with more free memory groups more."
                 ),
             },
             "overrides": [

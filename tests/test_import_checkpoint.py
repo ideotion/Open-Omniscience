@@ -281,6 +281,241 @@ def test_a_failing_item_discards_the_group_and_names_what_went_with_it(tmp_path)
     assert q._group is None and not gdir.exists()
 
 
+class _FakeVolumeManager:
+    """Answers ``start_restore``/``status`` from a script: one outcome per call to ``start_restore``."""
+
+    def __init__(self, outcomes):
+        self.outcomes, self.cur, self.calls = list(outcomes), {}, []
+
+    def start_restore(self, path, _passphrase, **kw):
+        self.calls.append((path, kw))
+        self.cur = self.outcomes.pop(0)
+
+    def status(self):
+        return self.cur
+
+    def cancel(self):
+        pass
+
+
+def test_a_memory_refusal_on_the_last_item_discards_the_whole_group_and_names_each_as_not_merged(
+    tmp_path, monkeypatch
+):
+    """The pre-staging memory gate refuses item 3 of a K = 3 group: items 1 and 2 had merged into the
+    shared working copy and nothing is durable until the swap, so they go with it. Every one of the
+    three is reported as NOT merged (the two discarded, the third an error carrying the refusal), no
+    commit is recorded for any, and the discarded reason says what stopped the run, not that a copy
+    could not be trusted."""
+    refusal = (
+        "This merge needs about 6.2 GB of free memory and this machine has 1.9 GB. "
+        "Nothing was written to your corpus."
+    )
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d", "report": {"held": True}}}
+    mgr = _FakeVolumeManager(
+        [
+            {**held, "summary": {**held["summary"], "source_digest": "d1"}},
+            {**held, "summary": {**held["summary"], "source_digest": "d2"}},
+            {"state": "error", "error": refusal},
+        ]
+    )
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
+    group_dir = tmp_path / "grp"
+
+    def _new_dir():
+        group_dir.mkdir(exist_ok=True)
+        return group_dir
+
+    monkeypatch.setattr(iq, "_new_group_dir", _new_dir)
+    _no_lookahead(monkeypatch, True)
+    persisted: list[dict] = []
+    monkeypatch.setattr(ImportQueueManager, "_persist_held_report", lambda self, it, by: persisted.append(it))
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 3, k=3)
+    q._drive()
+
+    states = [it["state"] for it in q._items]
+    assert states == ["discarded", "discarded", "error"], states
+    assert refusal in q._items[2]["error"]
+    for it in q._items[:2]:
+        assert "NOT written to your corpus" in it["discarded_reason"]
+        assert "1.9 GB" in it["discarded_reason"], "what stopped the run is named"
+        assert "could not be trusted" not in it["discarded_reason"]
+    assert persisted == [], "no commit was recorded for any item of the group"
+    assert q._group is None and not group_dir.exists()
+
+
+_PW = "pa'ss\"w;rd\\x"
+
+
+def _forms(secret: str) -> list[str]:
+    return [secret, secret.replace("'", "''"), json.dumps(secret)[1:-1], repr(secret)[1:-1]]
+
+
+def test_the_failure_text_is_scrubbed_in_every_form_before_the_cut(tmp_path):
+    """The reason is saved for every item of the group and the failure text is the engine's own, which
+    may quote what it was handed. The scrub comes BEFORE the 600-character cut, or a passphrase that
+    straddles the cut would survive as a half that no scrub can match."""
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
+    q._passphrase = _PW
+    keep = ImportQueueManager._FAILURE_TEXT_KEEP
+    for form in _forms(_PW):
+        # the secret sits across the cut: the first half is inside the kept part, the rest is not
+        text = "x" * (keep - len(form) // 2) + form + " and more"
+        out = q._failure_text(RuntimeError(text))
+        assert _PW not in out and form not in out and len(out) <= keep
+        assert form[: len(form) // 2] not in out or len(form) // 2 < 3, "half a secret survived the cut"
+    out = q._failure_text(RuntimeError("refused: " + " | ".join(_forms(_PW))))
+    assert not any(f in out for f in _forms(_PW)), out
+
+
+def test_a_failure_text_that_cannot_be_scrubbed_is_withheld_whole(tmp_path, monkeypatch):
+    import src.monitoring.secret_scrub as ss
+
+    def boom(*_a, **_k):
+        raise RuntimeError("scrub broke")
+
+    monkeypatch.setattr(ss, "_forms_now", boom)
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
+    q._passphrase = _PW
+    out = q._failure_text(RuntimeError(f"the key was {_PW}"))
+    assert _PW not in out and "withheld" in out
+
+
+def test_the_saved_discard_reason_and_item_error_carry_no_passphrase(tmp_path, monkeypatch):
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d", "report": {"held": True}}}
+    mgr = _FakeVolumeManager([held, {"state": "error", "error": f"driver said KEY '{_PW}' failed"}])
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
+    gdir = tmp_path / "grp"
+    monkeypatch.setattr(iq, "_new_group_dir", lambda: (gdir.mkdir(exist_ok=True), gdir)[1])
+    _no_lookahead(monkeypatch, True)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=3)
+    q._passphrase = _PW
+    q._drive()
+    saved = json.dumps(q._items) + (tmp_path / "queue.json").read_text(encoding="utf-8")
+    assert [it["state"] for it in q._items] == ["discarded", "error"]
+    assert not any(f in saved for f in _forms(_PW)), "the passphrase reached the saved queue"
+
+
+def _run_two(tmp_path, monkeypatch, outcome):
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d", "report": {"held": True}}}
+    mgr = _FakeVolumeManager([held, outcome])
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
+    gdir = tmp_path / "grp"
+    monkeypatch.setattr(iq, "_new_group_dir", lambda: (gdir.mkdir(exist_ok=True), gdir)[1])
+    _no_lookahead(monkeypatch, True)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=3)
+    q._passphrase = _PW
+    q._drive()
+    return q, json.dumps(q._items) + (tmp_path / "queue.json").read_text(encoding="utf-8")
+
+
+def test_a_refusal_the_restore_returns_is_scrubbed_in_the_item_error_and_the_saved_report(
+    tmp_path, monkeypatch
+):
+    """A refused restore RETURNS (it does not raise): its ``refused`` text and the whole report are
+    saved to the queue file, and the report's problem lines can quote what the engine said."""
+    report = {"refused": f"verification refused: KEY '{_PW}'", "problems": [f"row said {_PW}"]}
+    q, saved = _run_two(
+        tmp_path, monkeypatch, {"state": "done", "summary": {"report": report, "held": False}}
+    )
+    assert [it["state"] for it in q._items] == ["discarded", "error"]
+    assert not any(f in saved for f in _forms(_PW)), "the passphrase reached the saved queue"
+    assert "verification refused" in q._items[1]["error"], "the refusal still reads"
+
+
+def test_the_log_lines_for_a_failed_item_carry_no_passphrase_and_no_raw_traceback(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    mgr_outcome = {"state": "error", "error": f"driver said KEY '{_PW}'"}
+    with caplog.at_level(logging.DEBUG, logger="src.backup.import_queue"):
+        _run_two(tmp_path, monkeypatch, mgr_outcome)
+    text = caplog.text + "".join(str(r.exc_info) for r in caplog.records if r.exc_info)
+    assert "import item" in caplog.text and "failed" in caplog.text
+    assert not any(f in text for f in _forms(_PW)), "a log line carried the passphrase"
+    assert not any(r.exc_info for r in caplog.records), "a raw traceback was logged"
+
+
+def test_the_log_line_for_an_item_stopped_mid_merge_carries_no_passphrase(tmp_path, monkeypatch, caplog):
+    import logging
+
+    class _StoppingManager(_FakeVolumeManager):
+        def __init__(self, queue):
+            super().__init__([{"state": "error", "error": f"interrupted at KEY '{_PW}'"}])
+            self.queue = queue
+
+        def start_restore(self, path, pw, **kw):
+            super().start_restore(path, pw, **kw)
+            self.queue._stop.set()  # the Stop lands while the item is in flight
+
+        def cancel(self):
+            pass
+
+    import src.backup.volume_job as vj
+
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=1)
+    q._passphrase = _PW
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: _StoppingManager(q))
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "1")
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    with caplog.at_level(logging.DEBUG, logger="src.backup.import_queue"):
+        q._drive()
+    assert q._items[0]["state"] == "stopped"
+    assert "stopped mid-merge" in caplog.text
+    assert not any(f in caplog.text for f in _forms(_PW)), "the stop line carried the passphrase"
+
+
+def test_a_held_success_whose_report_holds_a_passphrase_form_in_a_key_still_persists_its_report(
+    tmp_path, monkeypatch
+):
+    """The recheck must not blank a GOOD report: ``_persist_held_report`` finds no report and writes no
+    history entry for a held backup whose summary became ``{"withheld": ...}``."""
+    odd = {"held": True, f"k{_PW}": 1, "imported": 12}
+    held = {"state": "done", "summary": {"held": True, "source_digest": "d1", "report": odd}}
+    commit = {"state": "done", "summary": {"held": False, "report": {"committed": True}}}
+    mgr = _FakeVolumeManager([held, commit])
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "get_volume_manager", lambda: mgr)
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "2")
+    gdir = tmp_path / "grp"
+    monkeypatch.setattr(iq, "_new_group_dir", lambda: (gdir.mkdir(exist_ok=True), gdir)[1])
+    _no_lookahead(monkeypatch, True)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    monkeypatch.setattr(ImportQueueManager, "_stamp_persisted_report", lambda self, it, rep: None)
+    persisted: list[dict] = []
+    monkeypatch.setattr(ImportQueueManager, "_persist_held_report", lambda self, it, by: persisted.append(it))
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=2)
+    q._passphrase = _PW
+    q._drive()
+    assert [it["state"] for it in q._items] == ["done", "done"]
+    assert len(persisted) == 1
+    assert persisted[0]["summary"]["report"] == odd, "the held report was blanked by the recheck"
+
+
+def test_a_scrub_that_leaves_a_form_behind_withholds_the_text(tmp_path, monkeypatch):
+    """Fail-closed by construction: even when the scrub 'succeeds' but a form is still there."""
+    import src.monitoring.secret_scrub as ss
+
+    monkeypatch.setattr(ss, "_forms_now", lambda secrets: None)  # what the process holds cannot be read
+    q = _queue(tmp_path, [{"kind": "corpus"}], k=3)
+    q._passphrase = _PW
+    assert "withheld" in q._failure_text(RuntimeError(f"key {_PW}"))
+    assert q._scrubbed({"report": f"key {_PW}"}) == {"report": ss.UNREADABLE_TEXT}
+
+
 def test_a_refused_verification_discards_the_group_rather_than_carrying_it_on(tmp_path):
     q, gdir = _with_open_group(tmp_path)
     q._after_item(

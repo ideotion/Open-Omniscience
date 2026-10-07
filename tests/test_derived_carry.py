@@ -732,3 +732,134 @@ def test_carried_timestamps_are_stored_in_the_orms_own_format(backup, tmp_path, 
             assert not bad, f"{table}.{col} holds a second timestamp format: {bad[:3]}"
     finally:
         con.close()
+
+
+def _put_done(path: Path, fingerprint: str) -> None:
+    con = sqlite3.connect(path)
+    try:
+        con.execute("INSERT OR REPLACE INTO derived_meta (key, value, updated_at) VALUES (?, ?, ?)",
+                    ("stoplist_recompute_done", fingerprint, "2026-10-06 00:00:00"))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _put_cursor(path: Path, value: str) -> None:
+    con = sqlite3.connect(path)
+    try:
+        con.execute("INSERT OR REPLACE INTO derived_meta (key, value, updated_at) VALUES (?, ?, ?)",
+                    ("stoplist_recompute_cursor", value, "2026-10-06 00:00:00"))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _cursor(path: Path):
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute(
+            "SELECT value FROM derived_meta WHERE key = 'stoplist_recompute_cursor'"
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
+
+
+def _done(path: Path):
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute("SELECT value FROM derived_meta WHERE key = 'stoplist_recompute_done'").fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
+
+
+def test_a_carry_forgets_the_finished_stoplist_run_and_its_cursor(
+    backup, tmp_path, monkeypatch
+):
+    """R111 step T3: carried tops come from the incoming mentions with no stoplist filter, so after a
+    merge that carried articles the live corpus must no longer read as 'finished under this list'
+    (the next window walks every hidden word, once)."""
+    target = tmp_path / "t.db"
+    _schema(target)
+    _put_done(target, "finished-before")
+    _put_cursor(target, "finished-before.abc:1:1")  # a pass in flight when the corpus was copied
+    carried = _restore(backup, target, tmp_path / "carry.db", carry=True, monkeypatch=monkeypatch)
+    assert carried["counts"]["_derived_carry"]["carried"]["articles"] > 0, "the scenario must carry"
+    assert _done(tmp_path / "carry.db") is None
+    assert _cursor(tmp_path / "carry.db") is None, "a cursor would resume past the carried articles"
+    # nothing carried, nothing forgotten: the switch off leaves the record where it was
+    off = _restore(backup, target, tmp_path / "off.db", carry=False, monkeypatch=monkeypatch)
+    assert "carried" not in off["counts"]["_derived_carry"]
+    assert _done(tmp_path / "off.db") == "finished-before"
+    assert _cursor(tmp_path / "off.db") == "finished-before.abc:1:1"
+
+
+def _encrypted_copy(tmp_path: Path, monkeypatch, *, drop_meta: bool):
+    from src.database import connect as dbc
+
+    key = "carry-forget-test-1"
+    target = tmp_path / "t.db"
+    _schema(target)
+    _put_done(target, "finished-before")
+    _put_cursor(target, "finished-before.abc:1:1")
+    if drop_meta:
+        con = sqlite3.connect(target)
+        try:
+            con.execute("DROP TABLE derived_meta")
+            con.commit()
+        finally:
+            con.close()
+    enc = tmp_path / "enc.db"
+    dbc.reencrypt_plain_to(target, enc, key)
+    assert dbc.is_encrypted_file(enc)
+    monkeypatch.setattr(dbc, "_passphrase", key)
+    monkeypatch.setenv("OO_CARRY_DERIVED", "1")
+    return dbc, key, enc
+
+
+def test_the_forget_also_runs_on_an_encrypted_working_copy(backup, tmp_path, monkeypatch):
+    """The carry's DELETE works on an encrypted working copy, where derived_meta exists."""
+    pytest.importorskip("sqlcipher3")
+    dbc, key, enc = _encrypted_copy(tmp_path, monkeypatch, drop_meta=False)
+    counts, _batch = merge_corpus(backup, enc, _BATCH_META)
+    assert counts["_derived_carry"]["carried"]["articles"] > 0
+    con = dbc.connect(enc, key=key)
+    try:
+        left = con.execute(
+            "SELECT key FROM derived_meta WHERE key LIKE 'stoplist_recompute_%'"
+        ).fetchall()
+    finally:
+        con.close()
+    assert left == []
+
+
+def test_a_working_copy_without_derived_meta_merges_on_the_encrypted_driver(backup, tmp_path, monkeypatch):
+    """merge.py documents a cross-driver trap: sqlcipher3 raises its own exception class, so a
+    `suppress(sqlite3.OperationalError)` around the DELETE would let the 'no such table' error escape
+    and fail the merge on an encrypted copy. The guard asks `_local_has_table` instead, and the DELETE
+    names `main.`: an unqualified name would fall through to the attached backup's own table and make
+    this test pass for the wrong reason. The copy has no derived_meta table, so only the guard keeps
+    the merge alive (mutation-checked: `suppress` in its place fails this test)."""
+    pytest.importorskip("sqlcipher3")
+    dbc, key, enc = _encrypted_copy(tmp_path, monkeypatch, drop_meta=True)
+    counts, _batch = merge_corpus(backup, enc, _BATCH_META)
+    assert counts["_derived_carry"]["carried"]["articles"] > 0
+
+
+def test_a_carry_that_carried_nothing_leaves_the_stoplist_run_alone(backup, tmp_path, monkeypatch):
+    """The same backup restored a second time into its own result carries no article (every one is
+    already local), so the finished run, which carried tops would have outdated, is still true and
+    stays. (The carry returns early on an empty plan; `if ids:` after it cannot be reached empty by a
+    merge, so this pins the observable behaviour and not that line.)"""
+    target = tmp_path / "t.db"
+    _schema(target)
+    first = _restore(backup, target, tmp_path / "first.db", carry=True, monkeypatch=monkeypatch)
+    assert first["counts"]["_derived_carry"]["carried"]["articles"] > 0, "the scenario must carry"
+    _put_done(tmp_path / "first.db", "finished-after-first")
+    _put_cursor(tmp_path / "first.db", "finished-after-first.abc:1:1")
+    again = _restore(backup, tmp_path / "first.db", tmp_path / "second.db", carry=True,
+                     monkeypatch=monkeypatch)
+    assert "carried" not in again["counts"]["_derived_carry"], "the second restore must carry nothing"
+    assert _done(tmp_path / "second.db") == "finished-after-first"
+    assert _cursor(tmp_path / "second.db") == "finished-after-first.abc:1:1"

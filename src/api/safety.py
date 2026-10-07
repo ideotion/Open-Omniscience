@@ -12,12 +12,16 @@ protection it provides — we never imply anonymity or at-rest secrecy we cannot
 from __future__ import annotations
 
 import io
+import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, scrub_and_reraise
 from src.safety import settings as safety_settings
+
+_LOG = logging.getLogger("api.safety")
 
 router = APIRouter(prefix="/api/safety", tags=["safety"])
 
@@ -113,13 +117,16 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
 
     if not body.passphrase:
         raise HTTPException(status_code=400, detail="a passphrase is required")
-    try:
-        blob = make_encrypted_backup(body.passphrase)
-    except (EncryptionError, BackupError) as exc:
-        # BackupError includes the encrypted-store refusal (an encrypted corpus
-        # must use the streaming encrypted backup, not this decrypt-to-plaintext
-        # path) — surface it as a clean 400, never an ungraceful 500.
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # The passphrase typed into this request is not held by the process, so the nets that read what it holds cannot know it, and
+    # an engine's error can quote the statement that carried it: what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "encrypted backup failed", body.passphrase):
+        try:
+            blob = make_encrypted_backup(body.passphrase)
+        except (EncryptionError, BackupError) as exc:
+            # BackupError includes the encrypted-store refusal (an encrypted corpus
+            # must use the streaming encrypted backup, not this decrypt-to-plaintext
+            # path) — surface it as a clean 400, never an ungraceful 500.
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
     return StreamingResponse(
         io.BytesIO(blob),
         media_type="application/octet-stream",

@@ -14,14 +14,14 @@
 > Most of what is recorded here was found the expensive way, and several entries are about the
 > exact class of change a session is likely to be asked to make, so before touching one, look
 > for it: `python scripts/lessons.py <words>` lists the entries that contain every word,
-> `python scripts/lessons.py --index` lists every title, `--show LINE` prints one entry. The
-> index is generated on the spot, never committed. A size ratchet
-> (`tests/test_repo_invariants.py::test_lessons_md_stays_within_its_ratchet`) fails when this
-> file grows past its recorded line ceiling: raise the ceiling in the PR that appends a lesson.
+> `python scripts/lessons.py --index` lists every title, `--show LINE` (an archive entry) or `--show FILE-NAME.md` (a fragment) prints one. The
+> index is generated, never committed. A size ratchet (`test_lessons_md_stays_within_its_ratchet`) caps this file.
 >
-> **Appending:** a new reusable lesson or empirical fact is appended HERE per `CLAUDE.md`
-> THE PROTOCOL rule (5a)(b), alongside its verbatim entry in
-> [`SHIPPED_LOG.md`](SHIPPED_LOG.md) and its row in [`shipped.csv`](shipped.csv).
+> **Appending (amended 2026-10-06):** a new lesson is a NEW FILE, `lessons.d/<date>-<slug>.md` (`python scripts/lessons.py --new SLUG`), never a paragraph appended here (that moved one shared ceiling, so every landing conflicted the others). FORMAT: first line `## <date> — title` (the date is the file's), no second heading outside a code fence, UTF-8, LF, a trailing newline, no `#NNNN`/`PR pending`, a unique title;
+> one entry may run to `LESSON_FRAGMENT_MAX_LINES` = 200 lines (it bounds one entry's size; a longer lesson is two lessons, or a design note the lesson points to). `python scripts/ledger_fold.py check` validates every fragment and the tests run it.
+> `lessons.py` searches both; `python scripts/ledger_fold.py fold` merges them in at a release (it alone moves the ceiling). Its shipped-log entry is a file under `shipped_log.d/` (`ledger_fold.py new-log SLUG`;
+> [`SHIPPED_LOG.md`](SHIPPED_LOG.md)), its row one under `shipped.d/`, per rule (5a)(b).
+> Never append to either archive.
 >
 > **Eight more lessons are NOT here yet.** They were recorded in the Open queue by the
 > sessions that earned them and could not be moved verbatim on 2026-09-07 without editing
@@ -13302,13 +13302,18 @@ those hold the VERDICTS the restore gate reads (`p0_1_verify` is `pass`), and an
 run puts no minimum on its length) turns every verdict into the marker and a good backup into one that did not verify, so the
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
-holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py`, to using the caught exception
+holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #1336,
+`stream_backup.py`, `volume_job.py`, `import_queue.py`, the route layer's `backup_v2.py` and the lock screen's `unlock.py`), to using the caught exception
 only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
-`_log_phase_failure`; a missing, empty or other second argument does not count), as its class, or as a phase error's `status`
-and `partial`, and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
+`_log_phase_failure`, and `secret_scrub`'s `scrubbed`, `traceback_text` and `log_failure`, which must be given EVERY secret the
+function holds; a missing, empty or other secret argument does not count, read at the second place, and from the fourth for
+`_log_phase_failure` and `log_failure`; a helper that takes ONE secret counts only in a function that holds that one secret), as its class, or as a `_PhaseError`'s `status` and `partial` (read by name only in an `except _PhaseError`:
+`status` goes through the closed vocabulary `PHASE_STATUSES`, and `partial` is scrubbed where the restore makes it while the other
+two phases never hold the secret), and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
 `sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
 a parameter, reads a local or reads an attribute named `passphrase` (the release run holds it as `run.params.passphrase`), or
-takes or reads one named `secret` or `needle`. The test reads those three modules' syntax and follows no call, so this stays
+takes or reads one named `secret`, `needle` or `corpus_passphrase` (or, as an attribute, `_passphrase`, which the import queue
+keeps for the length of a run). The test reads those modules' syntax and follows no call, so this stays
 outside it: a secret held under another name or route (a parameter named `pw`, `**kwargs`, a closure or a global; the job
 worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` of a network call into their result and are
 handed no secret); a helper the handler calls that reads the exception for itself, a bare re-raise or a raise without `from`
@@ -13317,8 +13322,9 @@ tb`, `from sys import exc_info as ei`) and `repr(locals())`; the engine's own fa
 (`verify_stream_backup`'s `problems`, one of which carries a decrypt failure's own words: scrubbed where the engine makes the
 line, so that every consumer of the report gets it clean (the P0 check, the volume-verify job whose status an endpoint serves, the
 dev bench), and again line by line where the P0 check copies the lines, each pinned by its own test), and a phase error's
-`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every other module (the endpoint that
-receives the passphrase, the engines it is handed to; the volume job's own error handlers are one, recorded in `OPEN_QUEUE.md`).
+`partial` (what a phase measured before it failed, scrubbed where the phase makes it); and every module the coverage test names as
+not guarded (the engines the passphrase is handed to, the columnar store's three records among them, recorded in `OPEN_QUEUE.md`;
+the entry at the end of this file says what the guard now holds beyond the release run).
 **A scrub of a value code compares changes the value: scrub the text a person reads at the place it is made, and leave the fields
 a program reads alone.** A failure that wraps another carries
 the passphrase in the cause the traceback prints under a clean message, so the log record is judged on the whole formatted
@@ -13542,6 +13548,7 @@ the previous session's, so a death is read against the tier THAT session ran und
 carry it once and the boot event does not repeat it; only the soak window carries `reading_vs_now()`, the machine's reading of now beside it, once per export and for the process that was running. Thirty-four tests, with fifty mutations each caught, pin the rest as negative space: the budget resolves once however often it is
 looked at, an older record's absence is not filled in, an unmeasured machine is not a small one, and a reading that cannot be taken is the error in the
 record and never a failed boot.
+
 ### AFTER THE 10-01 UPDATE THE BIG LOG IS THE GUARD'S LIMIT, AND WHAT PINS IT IS A LONG BACKGROUND READ (WAL / disk thread, 2026-10-06)
 
 The 10-06 bundles' `wal_history` carried maxima of 43, 36, 29, 26 and 23 GB (OOS-3, Asus, OOS-7, OOS-8, NUC), and a relay asked whether the log was still
@@ -13768,23 +13775,3 @@ check of the premise belongs in the suite, not in the comment**: `test_merge_enc
 store builds an index under FILE (the control, which must leak, and goes red the day the driver stops, which is the cue to re-read the decision) and under MEMORY (which must not). **Two
 other places that look the same are not**: the other merge connections never set `temp_store` (the bundled driver's default is MEMORY, TEMP_STORE=2), and `merge_diag._probe_arm` sorts
 synthetic rows only. The two design notes that say "set `temp_store=FILE` on its own connection" for the future derived-index and GC passes now carry the caveat: not on an encrypted connection.
-
-## 2026-10-06 — ONE READ OF A DAMAGED PAGE POISONS AN ENCRYPTED CONNECTION, AND THE LOG THEN SAYS «OUT OF MEMORY» (the poisoned-connection fix, #1333)
-
-(1) **On SQLCipher a read of a page that fails its check (`SQLITE_CORRUPT`, code 11, «database disk image is malformed») leaves THAT connection answering `MemoryError`, with no message, to every later page read, healthy tables included.** `rollback`, `commit`,
-`shrink_memory`, `cache_size` and a second `PRAGMA key` do not clear it; only a new connection does. A plain `sqlite3` connection is not affected. A pool hands the poisoned connection to the next request, so one bad page reads as a process out of memory until it restarts. **An empty
-`MemoryError` means damage ONLY on a connection that already raised code 11 (the incident record shows it); by itself it is NEVER evidence of damage,** because a Python allocation failure and `SQLITE_NOMEM` raise the same empty `MemoryError` and field machines really do run out of memory. So nothing
-latches or records on it.
-(2) **The FIRST error is not always code 11 (measured on a real encrypted store: a value of 120,000 bytes, one leaf page holding the cell and a seven-page overflow chain, 16 KiB pages).** The leaf, the first overflow page and a middle one each raise code 11 on the read that touches them (the tests tell a leaf from an overflow page by what still reads: a key lookup reads the leaf and no overflow page; the first draft's «first» case damaged the leaf). **The LAST overflow page raises nothing:** the read returns the
-whole length with wrong bytes at the tail (16,245 of them) and the connection is poisoned for the NEXT statement. A fresh connection's `quick_check` on that table says only code 1 («SQL logic error»); `cipher_integrity_check` names the page («HMAC verification failed for page N»), which is what E2's page pass
-runs. So the premise «every connection that reads a damaged page fails first with code 11» was tested only on leaves and is false, and the observer discards on an empty `MemoryError` raised on a SQLCipher connection too (never on a plain SQLite one, never on a `MemoryError` with a message), and never latches on it.
-(3) **The fix discards only that connection.** The damage observer sets `is_disconnect = True` on the `handle_error` context and `invalidate_pool_on_disconnect = False`: SQLAlchemy's default would drop every pooled connection older than the moment, and each would pay a key derivation (0.2 to 0.4 s). A
-wrong key (code 26) and a plain SQLite file's corruption are never reclassified, and neither is a context whose connection is already CLOSED or absent (an error while connecting): SQLAlchemy's cleanup of a closed connection marked as a disconnect fails
-`assert dbapi_conn_wrapper is not None`, and that AssertionError replaces the real error.
-(4) **What the caller sees is a CLOSED connection, not a rollback.** What the session had flushed is gone with it; its next statement and its commit raise `PendingRollbackError` until it rolls back (and a failed commit leaves it `prepared`: more SQL raises `InvalidRequestError` «'prepared' state», `rollback()` clears it; measured and pinned in `test_a_session_that_flushed_before_the_bad_read_cannot_commit_and_loses_the_flush`), so a commit
-after a failed read persists nothing of that transaction. A docstring that says «the next statement checks a connection out again» is wrong: only after the rollback.
-(5) **A statement on the DRIVER's cursor over a pooled connection raises past `handle_error`, so (1) to (4) do not apply to it unless the site is guarded.** A code 11 there neither latched nor discarded, and the poisoned connection went back to the pool. The guard is ONE helper, `damage.guard_raw_driver`
-(`note_raw_driver_error` for a caller that holds the error), used by the country-code scan, the incremental vacuum and the WAL checkpoint; a site that adds a raw cursor that reads pages adds it. `PRAGMA shrink_memory`, `set_progress_handler` and function registration read no page and are not guarded. **`PRAGMA data_version` DOES read page 1** (an earlier draft of this entry said it did not); it is left unguarded because its probe connection is detached from the pool and dropped and rebuilt on any exception, so it never goes back poisoned (the queue names all of them).
-(6) **The test needs a REAL encrypted store, a canary and assertions that can fail.** Without the observer the poison must still be there, or the test keeps passing after SQLCipher stops doing it and the fix is dead code. The app's engines use the stdlib SQLite dialect over a SQLCipher `creator`, so the driver's exception arrives
-UNWRAPPED (`handle_error` still sees it); a driver SQLAlchemy knows would arrive wrapped, and the test accepts both. A count of every connection a creator ever opened only grows, so «at most N opened» says nothing about WHICH were replaced: hold the pool's connections at once and compare the driver connections'
-identity with the originals, and warm the pool first so that a pool-wide invalidation (three reconnects per bad read) shows. A site that reads its pages through a wrapper object is tested with a wrapper that performs a REAL damaged read, so the driver's real error and the real poison are what the guard meets.

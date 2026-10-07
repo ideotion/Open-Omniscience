@@ -41,9 +41,25 @@ def _short_id() -> str:
     return secrets.token_hex(4)
 
 
-def persist_import_report(kind: str, report: dict[str, Any], *, run_id: str | None = None) -> Path:
+def _scrubbed(report: dict[str, Any], secrets: tuple[str | None, ...]) -> dict[str, Any]:
+    """``report`` with the passphrases taken out of every string in it, in every form the code writes
+    them (``secret_scrub.scrubbed_value``: the process's own passphrase always, ``secrets`` besides, checked
+    again after the scrub, a string withheld on any error). A report carries the engine's own
+    check text (``verification``, ``problems``, a ``refused`` reason), which can quote what the engine
+    was handed, and the file rides the debug bundle and the backup export. Applied here, where every
+    report is written, so no caller has to remember it."""
+    from src.monitoring.secret_scrub import UNREADABLE_TEXT, scrubbed_value
+
+    out = scrubbed_value(report, *secrets)
+    return out if isinstance(out, dict) else {"withheld": UNREADABLE_TEXT}
+
+
+def persist_import_report(
+    kind: str, report: dict[str, Any], *, run_id: str | None = None, secrets: tuple[str | None, ...] = ()
+) -> Path:
     """Write ``report`` as a standalone JSON file under
     ``data_dir()/import_reports/<kind>-<UTC timestamp>-<run_id or a random short id>.json``.
+    ``secrets`` are passphrases to take out of the report's text besides the process's own.
 
     Atomic (temp file + ``os.replace``, mirroring ``src/backup/folder_backup.py``'s
     ``_atomic_copy`` / ``src/backup/volumes.py``'s reassembly pattern) so a crash mid-write
@@ -57,14 +73,16 @@ def persist_import_report(kind: str, report: dict[str, Any], *, run_id: str | No
     dest = d / name
     tmp = dest.with_name(dest.name + ".tmp")
     try:
-        tmp.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+        tmp.write_text(json.dumps(_scrubbed(report, secrets), indent=2, default=str), encoding="utf-8")
         os.replace(tmp, dest)
     finally:
         tmp.unlink(missing_ok=True)
     return dest
 
 
-def annotate_import_report(path: Path, fields: dict[str, Any]) -> None:
+def annotate_import_report(
+    path: Path, fields: dict[str, Any], *, secrets: tuple[str | None, ...] = ()
+) -> None:
     """Add ``fields`` to a report already on disk, atomically (the same temp file +
     ``os.replace`` as :func:`persist_import_report`), so a crash mid-write leaves the
     original report rather than half of one.
@@ -79,7 +97,7 @@ def annotate_import_report(path: Path, fields: dict[str, Any]) -> None:
     added = {k: v for k, v in fields.items() if k not in data}
     if not added:
         return
-    data.update(added)
+    data.update(_scrubbed(added, secrets))
     tmp = path.with_name(path.name + ".tmp")
     try:
         tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")

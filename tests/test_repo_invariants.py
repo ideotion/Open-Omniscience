@@ -8244,7 +8244,7 @@ def test_docs_index_covers_live_docs():
 #: docs/ledger/. Zero slack by design: a ratchet with room is a ratchet that does nothing.
 #:
 #: This file is expected to be STABLE. Rule (2) sends a new pending ruling to
-#: docs/ledger/OPEN_QUEUE.md and rule (5a)(b) sends a new lesson to docs/ledger/LESSONS.md,
+#: docs/ledger/OPEN_QUEUE.md and rule (5a)(b) sends a new lesson to a file under docs/ledger/lessons.d/,
 #: so the only things that legitimately grow CLAUDE.md are a new non-negotiable, a new UI
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
@@ -8295,7 +8295,9 @@ def test_docs_index_covers_live_docs():
 #: RAISED 2026-09-30 (PF11 = D07 = b): 785 -> 792, seven lines amending protocol rule (1) --
 #: LESSONS.md is consulted by grep through scripts/lessons.py instead of read in full. A protocol
 #: amendment is the growth the clause above calls normal.
-_CLAUDE_MD_LINE_CEILING = 792
+#: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
+#: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
+_CLAUDE_MD_LINE_CEILING = 796
 
 
 def _claude_md_lines() -> int:
@@ -8311,8 +8313,8 @@ def test_claude_md_stays_within_its_ratchet():
     reaches for in its best moments is mechanical enforcement, so here it is.
 
     If this fails: compress per rules (5) and (5a) -- a SHIPPED entry becomes a row in
-    docs/ledger/shipped.csv (plus a verbatim entry in SHIPPED_LOG.md and, if it carries a
-    reusable lesson, a copy in LESSONS.md). NEVER compress away a pending ruling, a
+    a file under docs/ledger/shipped.d/ (plus a verbatim entry as a file under shipped_log.d/
+    and, if it carries a reusable lesson, a file under lessons.d/). NEVER compress away a pending ruling, a
     contingency or a deliberate-omission note; those go to docs/ledger/OPEN_QUEUE.md and
     rule (5) protects them. If the growth IS a new non-negotiable or UI invariant, raise
     the ceiling in the same PR and say so."""
@@ -8320,8 +8322,8 @@ def test_claude_md_stays_within_its_ratchet():
     assert n <= _CLAUDE_MD_LINE_CEILING, (
         f"CLAUDE.md is {n} lines, over its ceiling of {_CLAUDE_MD_LINE_CEILING}. "
         "Compress per THE PROTOCOL rules (5)/(5a): shipped work goes to "
-        "docs/ledger/shipped.csv, a pending ruling to docs/ledger/OPEN_QUEUE.md, a lesson "
-        "to docs/ledger/LESSONS.md. Raise the ceiling for content that genuinely belongs "
+        "a file under docs/ledger/shipped.d/, a pending ruling to docs/ledger/OPEN_QUEUE.md, a lesson "
+        "to a file under docs/ledger/lessons.d/. Raise the ceiling for content that genuinely belongs "
         "here -- a non-negotiable, a UI invariant, an amendment to the protocol itself -- "
         "never to make room for content those rules route elsewhere."
     )
@@ -8342,9 +8344,9 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
 #: ratchet is not what keeps it readable -- it is what makes growth a decision that appears in a
 #: diff instead of a side effect: 1,078,082 bytes had accrued a lesson at a time, unseen. Zero
 #: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
-#: appends a lesson raises this number in the same diff (rule (5a)(b)); re-measure at the merge
-#: point if another PR appended first, the recorded 2026-09-08 precedent.
-_LESSONS_LINE_CEILING = 13790
+#: appended a lesson raised this number in the same diff; since 2026-10-06 (rule (5a)(b)) a lesson is a
+#: file under docs/ledger/lessons.d/ and only `scripts/ledger_fold.py fold` moves this number.
+_LESSONS_LINE_CEILING = 13777
 
 
 def _lessons_md_lines() -> int:
@@ -8352,14 +8354,19 @@ def _lessons_md_lines() -> int:
 
 
 def test_lessons_md_stays_within_its_ratchet():
-    """LESSONS.md may not grow past its recorded ceiling. If this fails because you appended a
-    lesson (rule (5a)(b)), raise _LESSONS_LINE_CEILING to the reported number in the same PR --
-    that IS the intended use. If the growth is not yours, compress per rule (5), never a pending
-    ruling."""
+    """LESSONS.md may not grow past its recorded ceiling. If this fails, a lesson was
+    appended to the archive (rule (5a)(b) forbids it) -- move it to a lessons.d/ file, never raise
+    _LESSONS_LINE_CEILING by hand. If the growth is not yours, compress per rule (5), never a pending
+    ruling.
+
+    AMENDED 2026-10-06: a new lesson is no longer appended here at all -- it is a new file under
+    docs/ledger/lessons.d/ (``python scripts/lessons.py --new SLUG``), and the ceiling moves only when
+    ``scripts/ledger_fold.py fold`` merges those at a release."""
     n = _lessons_md_lines()
     assert n <= _LESSONS_LINE_CEILING, (
-        f"LESSONS.md is {n} lines, over its ceiling of {_LESSONS_LINE_CEILING}. Raise "
-        "_LESSONS_LINE_CEILING to the real count in the PR that appended the lesson."
+        f"LESSONS.md is {n} lines, over its ceiling of {_LESSONS_LINE_CEILING}. Do not append a lesson to "
+        "LESSONS.md: write it as a new file with `python scripts/lessons.py --new SLUG` (it lands in "
+        "docs/ledger/lessons.d/ and never conflicts). Only a fold raises this number."
     )
 
 
@@ -9718,3 +9725,54 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
     # And the app folder is still named, labelled for what it is — hiding it would
     # trade one confusion for another (where SHOULD they be?).
     assert "r.ollama.configured" in body
+
+
+#: Files that still pass a caught exception's text to ``scrubbed()`` by hand, with how many sites each holds. It may only SHRINK
+#: (the test asks for the exact count, so a swap that is not entered here fails too). A caught exception's text goes to
+#: ``secret_scrub.exception_text`` (which walks the chain for a ``UnicodeError``), or for a restore failure to
+#: ``merge.restore_failure_text``. What stays: the global handler, which asks ``unicode_note`` first so that its own words stay in
+#: the response, and whose shape ``tests/test_global_exception_handler_scrub.py`` pins.
+_SCRUBBED_EXC_ALLOWANCE = {
+    "src/api/main.py": 1,
+}
+
+
+def _scrubbed_exception_sites(tree: ast.AST) -> list[int]:
+    """Lines of every ``scrubbed(...)`` call whose first argument builds its text from a name an ``except ... as`` binds
+    (``str(exc)``, an f-string of it). Such a call has no walk of the exception's chain, so a ``UnicodeError`` in it still prints
+    its character and offset (a piece of a key that no scrub knows): ``secret_scrub.exception_text`` is the call that has one."""
+    bound = {n.name for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler) and n.name}
+    lines: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        if getattr(func, "id", getattr(func, "attr", None)) != "scrubbed":
+            continue
+        if any(isinstance(x, ast.Name) and x.id in bound for x in ast.walk(node.args[0])):
+            lines.append(node.lineno)
+    return lines
+
+
+def test_no_source_file_hands_a_caught_exceptions_text_to_scrubbed_by_hand():
+    """MUTATION TARGET: a ``scrubbed(str(exc), secret)`` in any file outside the allowance."""
+    root = Path(__file__).resolve().parent.parent
+    found: dict[str, int] = {}
+    for path in sorted((root / "src").rglob("*.py")):
+        count = len(_scrubbed_exception_sites(ast.parse(path.read_text(encoding="utf-8"))))
+        if count:
+            found[path.relative_to(root).as_posix()] = count
+    assert found == _SCRUBBED_EXC_ALLOWANCE, (
+        "a caught exception's text goes to secret_scrub.exception_text(exc, secret), which walks the chain for a UnicodeError; "
+        f"found {found}, allowed {_SCRUBBED_EXC_ALLOWANCE}"
+    )
+
+
+def test_the_scrubbed_exception_guard_finds_the_shapes_that_leak():
+    for source, hits in (
+        ("try:\n    pass\nexcept Exception as exc:\n    scrubbed(str(exc), k)\n", 1),
+        ("try:\n    pass\nexcept Exception as exc:\n    scrubbed(f'x: {exc}', k)\n", 1),
+        ("try:\n    pass\nexcept Exception as e:\n    exception_text(e, k)\n", 0),
+        ("scrubbed('a fixed text', k)\n", 0),
+    ):
+        assert len(_scrubbed_exception_sites(ast.parse(source))) == hits, source

@@ -119,7 +119,9 @@ def validate_sqlite_file(path: Path) -> int:
         )
     try:
         # Read-only URI connection: never mutate the candidate file.
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        from src.database.read_only_uri import open_plain_read_only
+
+        conn = open_plain_read_only(path)
     except sqlite3.Error as exc:  # pragma: no cover - defensive
         raise BackupError(f"cannot open uploaded file as SQLite: {exc}") from exc
     try:

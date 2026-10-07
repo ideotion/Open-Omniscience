@@ -53,6 +53,7 @@ from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
 from src.monitoring.engine_text import engine_text
+from src.monitoring.secret_scrub import exception_text, scrubbed, unicode_note
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -408,7 +409,13 @@ def classify_restore_error(action: str, exc: Exception) -> str:
       * a constraint/integrity clash = a MERGE data conflict (a duplicate row), not a
         version problem;
       * a missing table/column = an actual schema/version gap (keep that wording);
-      * anything else = an honest, non-speculative "could not <action>"."""
+      * anything else = an honest, non-speculative "could not <action>".
+
+    A ``UnicodeError`` anywhere in the failure's chain names a character and its offset, which is a piece of a key that no
+    scrub knows, so such a failure is recorded by its class and a fixed note and never by its words."""
+    note = unicode_note(exc)
+    if note is not None:
+        return f"could not {action} this backup: {note}"
     msg = str(exc)
     low = msg.lower()
     # A real version/schema gap: a staged migration failed, or the corpus uses a
@@ -444,6 +451,15 @@ def classify_restore_error(action: str, exc: Exception) -> str:
     if is_version:
         return f"could not {action} this backup (it may be from an incompatible version): {msg}"
     return f"could not {action} this backup: {msg}"
+
+
+def restore_failure_text(action: str, failure: Exception, *secrets: str | None) -> str:
+    """The sentence a restore that failed is answered with (the legacy route's 500 and the volume job's status): a refusal
+    keeps its own message, anything else is classified (:func:`classify_restore_error`), and every secret handed in and every
+    passphrase the process holds is taken out of the result. The ONE call both writers use, so neither makes the text by hand."""
+    if isinstance(failure, MergeError):
+        return exception_text(failure, *secrets, typed=False)
+    return scrubbed(classify_restore_error(action, failure), *secrets)
 
 
 @dataclass
@@ -771,7 +787,9 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
     differently).
     A table the artifact does not carry counts as nothing: that is a measured zero. ANY other
     failure is a refusal, never a smaller need: a count that cannot be taken is not a reason to
-    ask for less memory, and a file that cannot be read would fail the merge a moment later anyway."""
+    ask for less memory, and a file that cannot be read would fail the merge a moment later anyway.
+    A missing file refuses too, and the message names only the exception's CLASS: the engine's own
+    text can quote the path, and on a damaged encrypted page more than that."""
     from src.database.connect import attach
 
     out: dict[str, int] = {}
@@ -779,7 +797,9 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
     try:
         if not Path(staged_corpus).is_file():
             # ATTACH would CREATE an empty database here and every COUNT would then say "no such
-            # table": a missing file must not read as a staged corpus with nothing in it.
+            # table": a missing file must not read as a staged corpus with nothing in it. Best effort
+            # by design: the staging directory is private to this restore, so nothing replaces the
+            # file between this look and the attach, and prepare_staged_corpus has already read it.
             raise FileNotFoundError("the staged file is missing")
         attach(con, staged_corpus, "cnt")
         try:
@@ -789,6 +809,8 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
                         con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 - fixed table names from this module's own map
                     )
                 except Exception as exc:  # noqa: BLE001 - only the one message that names THIS table is a zero
+                    # the keys of _ENCRYPTED_REP_BYTES_PER_ROW are lowercase, so the table name needs
+                    # no folding; the engine's message is folded once
                     if str(exc).lower() != f"no such table: cnt.{table}":
                         raise
         finally:
@@ -857,6 +879,27 @@ def check_memory_for_encrypted_merge(
             f"{human_bytes(need)}, only {human_bytes(int(avail * 1024 * 1024))} available. "
             "Close other programs and import again. Nothing was written to your corpus."
         )
+
+
+def check_memory_before_staging() -> None:
+    """The same memory refusal, asked BEFORE a backup is staged rather than after.
+
+    Staging is hours on a large import (verify, parity-recover, reassemble, extract, then a copy of
+    the whole working corpus), and :func:`merge_corpus`'s own check runs only once all of it is
+    done, so a machine that cannot hold an encrypted merge used to be told so at the end. Whether
+    the corpus is encrypted is known up front, so the part of the need that does not depend on the
+    backup's contents (the windowed steps and the guard's floor) is asked now; the part that does
+    (the incoming rows of the three grouping steps) stays in the merge's own check, which still
+    runs. A store whose state cannot be read is not refused: unknown is not a shortage."""
+    try:
+        from src.backup.sqlite_backup import live_db_path
+        from src.database.connect import is_encrypted_file
+
+        encrypted = is_encrypted_file(live_db_path())
+    except Exception:  # noqa: BLE001 - unknown is not a refusal (the memory guard's own rule)
+        return
+    if encrypted:
+        check_memory_for_encrypted_merge()
 
 
 #: Where a windowed insert's bound is spliced in. A caller that opts into
@@ -3643,6 +3686,24 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         (batch_id,),
     )
     ids = [int(r[0]) for r in _q(con, "SELECT old FROM temp.carry_ids ORDER BY old")]
+    if ids:
+        # R111 step T3 (src/analytics/stoplist_recompute.py): a carried article's top keyword was
+        # computed from the incoming mention rows with NO stoplist filter, so it can hold a word this
+        # corpus hides. Forget the finished stoplist run: the next maintenance window then walks every
+        # hidden word, once, and takes each one out of the tops. The working copy
+        # becomes the live corpus at the swap, so this is atomic with the tops it answers for. (The
+        # carry plan's own filter would be the fuller fix; it is recorded in OPEN_QUEUE.md.)
+        from src.analytics.stoplist_recompute import CURSOR_KEY, DONE_KEY
+
+        # Both keys: a cursor left in the working copy would resume a pass in flight past the carried
+        # articles. (No `suppress(sqlite3.OperationalError)`: sqlcipher3 raises its own class, so it
+        # would suppress nothing there and everything on a plaintext file, a full disk included.)
+        # `main.` is explicit: an unqualified name falls through to an ATTACHED schema, so a working
+        # copy without the table would otherwise delete from the INCOMING backup's own table.
+        if _local_has_table(con, "derived_meta"):
+            con.execute(
+                "DELETE FROM main.derived_meta WHERE key IN (?, ?)", (DONE_KEY, CURSOR_KEY)
+            )
     # The ORM's own storage form for a DateTime column -- naive UTC, space-separated,
     # microseconds -- so a carried row's timestamp is indistinguishable in shape from one
     # index_article wrote. (The first draft used isoformat(), whose "+00:00" suffix put a
@@ -5771,7 +5832,9 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
     its ancestors' chains, so on a 1-million-article backup that was gigabytes: two
     imports on a 7 GB machine were killed in this stage at 5.6 and 6.0 GB, after hours
     of merging, before the swap."""
-    src = sqlite3.connect(f"file:{staged_custody}?mode=ro", uri=True)
+    from src.database.read_only_uri import open_plain_read_only
+
+    src = open_plain_read_only(staged_custody)
     try:
         src_tables = {
             r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")

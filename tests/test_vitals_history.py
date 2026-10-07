@@ -662,7 +662,11 @@ def test_the_session_starts_are_kept_to_the_newest_thirty(hist):
         v.flush()
         v.reset_for_tests()
         v.start()
-    assert len(_member()["session_starts"]) == v.SESSIONS_KEEP
+    member = _member()
+    # One CI run kept 2 starts of 35: each restart read back nothing but the last two, so a write or a read failed
+    # for most of the loop. The recorder counts its own failed writes (``errors``); the message names them, so a
+    # second occurrence says which write failed instead of only that the count was short.
+    assert len(member["session_starts"]) == v.SESSIONS_KEEP, (member["session_starts"], member.get("errors"))
 
 
 def test_the_previous_sessions_tail_is_its_last_thirty_minutes(hist, monkeypatch):

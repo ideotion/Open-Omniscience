@@ -55,6 +55,7 @@ def _write_cache(cards: list, article_count) -> None:
         "version": service.CACHE_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "cards": cards,
+        "stoplist": service._stoplist_fingerprint(),  # a cache made under the current list
     }
     if article_count is not None:
         payload["article_count"] = article_count

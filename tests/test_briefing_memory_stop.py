@@ -131,7 +131,7 @@ def _cache(monkeypatch, tmp_path, cards):
     path = tmp_path / "briefing_cache.json"
     path.write_text(json.dumps({
         "version": service.CACHE_VERSION, "generated_at": "2026-01-01T00:00:00+00:00",
-        "article_count": 3, "cards": cards,
+        "article_count": 3, "stoplist": service._stoplist_fingerprint(), "cards": cards,
     }), encoding="utf-8")
     monkeypatch.setattr(service, "_cache_path", lambda: path)
     monkeypatch.setattr(service, "_article_count", lambda _s: 3)
@@ -225,6 +225,13 @@ def test_a_partial_run_stopped_by_a_spent_budget_is_not_widened_by_this_change(m
     out = service.refresh_briefing(object())
     assert [c["title"] for c in out["cards"]] == ["new"]
     assert out["incomplete_reason"] == "deadline", "a partial set from a spent budget is marked too"
+
+
+def test_a_refreshed_feed_records_the_shipped_stoplist_it_was_made_under(monkeypatch, tmp_path):
+    _cache(monkeypatch, tmp_path, [{"type": "x", "title": "a"}])
+    monkeypatch.setattr(service, "run_all_bounded", lambda *a, **k: ([_Card("new")], {"truncated": False}))
+    out = service.refresh_briefing(object())
+    assert out["stoplist"] == service._stoplist_fingerprint() and out["stoplist"]
 
 
 def test_a_completed_run_carries_no_stop_marker(monkeypatch, tmp_path):

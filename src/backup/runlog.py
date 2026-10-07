@@ -834,6 +834,14 @@ def end(outcome: str, **fields: Any) -> dict | None:
         return None
 
 
+#: What a run's failure record keeps. 2000 characters of the message: the longest message this code
+#: raises on purpose (a merge refusal with its numbers) is under 600, so this holds one in full and
+#: still bounds an engine message that quotes a statement. 8000 characters of the traceback: its LAST
+#: frames, which are the ones that say where it failed. Both cuts are made AFTER the scrub.
+FAILURE_MSG_KEEP = 2000
+FAILURE_TRACEBACK_KEEP = 8000
+
+
 def milestone(ev: str, *, durable: bool = True, **fields: Any) -> None:
     """Record a milestone on the ambient run. A no-op when there is none."""
     rl = _CURRENT
@@ -861,7 +869,14 @@ def statement(label: str | None) -> None:
 
 
 @contextmanager
-def run(kind: str, *, label: str = "", dest: str | None = None, **header: Any) -> Iterator[Any]:
+def run(
+    kind: str,
+    *,
+    label: str = "",
+    dest: str | None = None,
+    secrets: tuple[str | None, ...] = (),
+    **header: Any,
+) -> Iterator[Any]:
     """Open a run for the duration of a block, closing it however the block ends.
 
     This is what makes coverage a PROPERTY rather than a checklist. Hand-wiring
@@ -873,18 +888,24 @@ def run(kind: str, *, label: str = "", dest: str | None = None, **header: Any) -
     A block that wants a more specific outcome than "ok" simply calls
     :func:`end` itself; the exits here are no-ops once a run has been closed, so
     an explicit outcome always wins over the generic one.
+
+    ``secrets`` are passphrases the block holds besides the process's own; they are taken out of a
+    failure's text before it is journalled, and are never written to the header.
     """
     rl = begin(kind, label=label, dest=dest, **header)
     try:
         yield rl
     except BaseException as exc:
-        import traceback
+        from src.monitoring.secret_scrub import exception_text, traceback_text
 
+        # Written through the one scrub (``secret_scrub``): the secrets the block holds and the process's own are taken out
+        # BEFORE the cut, a ``UnicodeError`` anywhere in the chain is recorded by class only, and a text that cannot be
+        # checked is withheld.
         milestone(
             "error",
             cls=type(exc).__name__,
-            msg=str(exc)[:2000],
-            traceback="".join(traceback.format_exception(exc))[-8000:],
+            msg=exception_text(exc, *secrets, typed=False, limit=FAILURE_MSG_KEEP),
+            traceback=traceback_text(exc, *secrets)[-FAILURE_TRACEBACK_KEEP:],
         )
         end("error", cls=type(exc).__name__)
         raise

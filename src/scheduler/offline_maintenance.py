@@ -137,13 +137,25 @@ def prune_incomplete() -> bool:
         return False
 
 
-def _cleanup_stamp():
-    """When the cleanup last recorded a pass. A pass that could not write its marker leaves
-    this unchanged, and ``prune_incomplete`` would then stay true forever."""
+def recompute_incomplete() -> bool:
+    """Did the last stoplist recompute (R111 step T3) stop early on a list it has not finished?"""
     try:
+        from src.analytics.stoplist_recompute import incomplete
+
+        return incomplete()
+    except Exception:  # noqa: BLE001 - unreadable means "not known to be unfinished"
+        return False
+
+
+def _cleanup_stamp():
+    """When the cleanup AND the stoplist recompute last recorded a pass. A pass that could
+    not write its marker leaves this unchanged, and the sweep predicates would then stay true
+    forever."""
+    try:
+        from src.analytics.stoplist_recompute import state_stamp
         from src.analytics.store import keyword_cleanup_state
 
-        return (keyword_cleanup_state().get("last_tally") or {}).get("at")
+        return ((keyword_cleanup_state().get("last_tally") or {}).get("at"), state_stamp())
     except Exception:  # noqa: BLE001
         return None
 
@@ -177,13 +189,14 @@ def _run_window(sched, stop, *, continuation: bool) -> bool:
 
 
 def _continue_prune(sched, stop) -> int:
-    """Back-to-back prune passes while the sweep is unfinished and the machine is free.
+    """Back-to-back prune (or stoplist recompute) passes while a sweep is unfinished and the
+    machine is free.
 
     Returns how many ran. Stops at the first yield reason, stop request, failed pass,
     pass that recorded nothing (a marker that cannot be written would otherwise loop
     forever) or finished sweep, so it can never outlive the condition that justified it."""
     ran = 0
-    while not stop() and prune_incomplete():
+    while not stop() and (prune_incomplete() or recompute_incomplete()):
         reason = yield_reason(sched)
         if reason:
             sched._note_maint_skip(reason)
