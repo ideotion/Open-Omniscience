@@ -208,6 +208,6 @@ def test_the_generic_rule_keeps_an_apostrophe_inside_a_name():
 def test_only_roots_with_a_separator_lead_refuse_a_separator_before_them():
     from src.monitoring.path_tokens import _root_pattern
 
-    assert _root_pattern("/srv/app").search("x //srv/app/y").start() == 2  # the first separator of the run, never the second
+    assert _root_pattern("/srv/app").search("x//srv/app/y") is None  # a root never starts inside a run of separators
     assert _root_pattern("D:/Profiles/alice").search(r"\\?\D:\Profiles\alice\x") is not None
     assert _root_pattern("D:/Profiles/alice").search(r"xD:\Profiles\alice\x") is None  # a word character still refuses

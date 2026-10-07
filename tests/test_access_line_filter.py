@@ -294,7 +294,7 @@ def test_another_line_of_the_servers_logger_passes_unchanged(ws_written):
 
 def test_the_nginx_samples_keep_no_access_log_and_no_error_log():
     """MUTATION TARGET: the http-level ``access_log off;`` (a location's own ``access_log off;`` further down must not stand in for it),
-    and every ``error_log`` going to /dev/null (nginx appends the request line to ANY line raised while a request is served, at every
+    at most one ``pid`` line and the ``nginx -t`` sentence, and every ``error_log`` going to /dev/null (nginx appends the request line to ANY line raised while a request is served, at every
     level, so a level only narrows the path)."""
     from pathlib import Path
 
@@ -309,6 +309,9 @@ def test_the_nginx_samples_keep_no_access_log_and_no_error_log():
         errors = [ln for ln in lines if ln.startswith("error_log")]
         assert errors and set(errors) == {"error_log /dev/null;"}, (name, errors)
         assert "The app writes its own access line" in text and "The proxy writes no request line at any level" in text
+        pids = [ln for ln in lines if ln.startswith("pid ")]
+        assert len(pids) <= 1 and (name != "nginx.production.conf" or len(pids) == 1), (name, pids)  # nginx rejects a second ``pid``
+        assert "nginx -t" in text, f"{name}: a refused reload is not logged, so the comment must say to test before one"
 
 
 # 26: the formats and ws="none", pinned to what is installed

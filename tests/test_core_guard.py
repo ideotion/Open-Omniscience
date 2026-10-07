@@ -693,6 +693,16 @@ def test_a_server_not_started_by_serve_guards_the_process_when_its_lifespan_star
     assert "except Exception" in life[at:life.index("record_session_start()")], "a guard that cannot be engaged never blocks startup"
 
 
+def test_the_lifespan_takes_the_passphrases_after_the_guard_and_before_the_boot_record_and_any_child():
+    """MUTATION TARGET. Importing the app opens no store, so the import of ``connect`` in the lifespan is the only thing that takes the
+    passphrases out of the environment before the boot record names the take and before the kernel-log read starts a child."""
+    life = python_function_source(_source("src/api/main.py"), "lifespan")
+    take = life.index("from src.database import connect")
+    assert life.index("guard_process()") < take < life.index("record_session_start()")
+    assert take < life.index("start_kernel_evidence_read(")
+    assert "except Exception" in life[take:life.index("record_session_start()")], "a store that cannot be imported never blocks startup"
+
+
 def test_the_lifespan_calls_the_guard_before_the_boot_record_when_the_app_really_starts(monkeypatch, tmp_path):
     """The wiring above read off the source, run: the guard is called, and before the boot record is written."""
     from fastapi.testclient import TestClient

@@ -105,13 +105,10 @@ class OresClient:
     ):
         # Through the guarded factory: kill switch + protected-mode proxy apply
         # to ORES too. ``session`` stays injectable for the pure-parser tests.
-        if session is None:
-            from src.safety.fetcher import guarded_session
-
-            session = guarded_session(user_agent=user_agent)
-        else:
+        self._user_agent = user_agent
+        if session is not None:
             session.headers.update({"User-Agent": user_agent})
-        self.session = session
+        self._session = session
         self.timeout = timeout
         #: What the LAST attempt did, as one of :data:`OUTCOMES`. ``None`` before any
         #: attempt -- an absence, never "ok".
@@ -119,6 +116,20 @@ class OresClient:
         #: The detail behind a non-ok outcome, for a log or a status line. Never shown
         #: to an operator as prose in their own language; the UI composes that.
         self.last_detail: str | None = None
+
+    @property
+    def session(self):
+        """The HTTP session, built on first use: ``guarded_session`` reads the settings store, and a client built when this module is
+        imported would open the store before the app's lifespan can read the boot evidence (the ``-wal``) and take the passphrase."""
+        if self._session is None:
+            from src.safety.fetcher import guarded_session
+
+            self._session = guarded_session(user_agent=self._user_agent)
+        return self._session
+
+    @session.setter
+    def session(self, value) -> None:
+        self._session = value
 
     def _note(self, outcome: str, detail: str | None = None) -> None:
         self.last_outcome = outcome

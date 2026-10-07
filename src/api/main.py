@@ -452,10 +452,10 @@ async def lifespan(app: FastAPI):
         guard_process()
     except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
         logger.debug("could not engage the core-dump guard", exc_info=True)
-    # The take of the passphrases out of the environment happens at the first import of ``connect``, and it has to come before the boot
-    # record reads its outcome and before any child (the kernel-log read below) inherits the environment. Importing this module already
-    # does it (through ``src.database.session``), for ``_serve`` and for ``python -m uvicorn`` alike; this line keeps it true if those
-    # imports ever change, and ``tests/test_env_passphrase_taken.py`` pins the order. An import opens nothing.
+    # The take of the passphrases out of the environment happens at the first import of ``connect``: it has to come before the boot
+    # record reads its outcome and before any child (the kernel-log read below) inherits the environment. Importing this module opens
+    # no store (a test pins it: an open here would delete the leftover ``-wal`` the boot record is about to read), so this line is the
+    # guarantee. An import opens nothing.
     try:
         from src.database import connect  # noqa: F401 - the take
     except Exception:  # noqa: BLE001 - a store that cannot be imported is reported where it is opened, never here

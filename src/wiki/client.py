@@ -36,19 +36,30 @@ class WikiClient:
         # Route through the one guarded factory: the kill switch and the
         # protected-mode proxy now apply to MediaWiki API calls too. ``session``
         # stays injectable for tests (no network).
-        if session is None:
-            from src.safety.fetcher import guarded_session
-
-            session = guarded_session(user_agent=user_agent)
-        else:
+        self._user_agent = user_agent
+        if session is not None:
             session.headers.update({"User-Agent": user_agent})
-        self.session = session
+        self._session = session
         self.min_interval_s = min_interval_s
         self.timeout = timeout
         self.maxlag = maxlag
         self._last = 0.0
         self._sleep = time.sleep
         self._now = time.monotonic
+
+    @property
+    def session(self):
+        """The HTTP session, built on first use: ``guarded_session`` reads the settings store, and a client built when this module is
+        imported would open the store before the app's lifespan can read the boot evidence (the ``-wal``) and take the passphrase."""
+        if self._session is None:
+            from src.safety.fetcher import guarded_session
+
+            self._session = guarded_session(user_agent=self._user_agent)
+        return self._session
+
+    @session.setter
+    def session(self, value) -> None:
+        self._session = value
 
     def _respect_rate_limit(self) -> None:
         if self._last:

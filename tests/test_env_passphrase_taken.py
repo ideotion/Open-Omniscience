@@ -298,9 +298,8 @@ from src.monitoring import secret_scrub as S
 def refuse(*a, **k):
     raise PermissionError('text that must never be recorded')
 S.take_from_environment = refuse
-assert 'src.database.connect' not in sys.modules
 from src.api import main
-assert 'src.database.connect' in sys.modules, 'the take did not run before the lifespan'
+assert 'src.database.connect' not in sys.modules, 'importing the app opened the store'
 async def go():
     async with main.lifespan(main.app):
         from src.monitoring import session_history
@@ -315,11 +314,37 @@ print('ok')
 
 def test_the_take_comes_before_the_boot_record_on_a_server_started_by_uvicorn(tmp_path):
     """A server not started by ``_serve`` (``python -m uvicorn src.api.main:app``, or ``serve`` with OO_AUTOSEED=0) writes its boot
-    record from the lifespan: the take has run by then, a take that failed is read back from the ledger by its class, and the engine's
-    text is not in the record. MUTATION TARGET: the import of ``connect`` in ``lifespan`` and the one at the top of ``src.api.main``'s
-    chain (either, with the other gone, still passes: the test fails only when neither is left)."""
+    record from the lifespan: importing the app takes nothing (the store is not imported), the lifespan's import does, a take that
+    failed is read back from the ledger by its class, and the engine's text is not in the record. MUTATION TARGET: the import of
+    ``connect`` in ``lifespan`` (without it the record says the store is not imported and the passphrases stay in the environment)."""
     proc = _run(
         _LIFESPAN_CHILD.format(passphrase=PASS), tmp_path,
         OO_DB_PLAINTEXT="1", OO_NO_SCHEDULER="1", OO_AUTOSEED="0", OO_SESSION_LIVENESS="0",
     )
+    assert proc.returncode == 0 and proc.stdout.strip().endswith("ok"), (proc.stdout + proc.stderr)[-1500:]
+
+
+_IMPORT_OPENS_NOTHING = """
+import os, sys, subprocess
+db = os.path.join(os.environ['OO_DATA_DIR'], 'open_omniscience.db')
+os.makedirs(os.environ['OO_DATA_DIR'], exist_ok=True)
+subprocess.run([sys.executable, '-c',
+    "import sqlite3,os,sys\\nc=sqlite3.connect(sys.argv[1])\\nc.execute('PRAGMA journal_mode=WAL')\\nc.execute('CREATE TABLE t(x)')\\n"
+    "c.executemany('INSERT INTO t VALUES(?)',[(i,) for i in range(4000)])\\nc.commit()\\nos._exit(0)\\n", db], check=True)
+before = os.path.getsize(db + '-wal')
+assert before > 0
+from src.api import main
+assert 'src.database.connect' not in sys.modules, 'importing the app opened the store'
+assert os.path.exists(db + '-wal') and os.path.getsize(db + '-wal') == before, 'the leftover -wal was touched'
+print('ok')
+"""
+
+
+@pytest.mark.parametrize("env", [{}, {"OO_DB_PLAINTEXT": "1"}], ids=["passphrase-set", "plaintext"])
+def test_importing_the_app_opens_no_store_and_leaves_the_boot_wal_alone(tmp_path, env):
+    """The boot reading of the ``-wal`` (S0.1) is taken in the lifespan "before any connection can exist", and closing the last
+    connection deletes a leftover one: importing ``src.api.main`` used to build two wiki clients whose guarded session read the settings
+    store (``kv_store._open`` -> ``connect``), for a plaintext store and for an encrypted one with the passphrase in the environment.
+    MUTATION TARGET: the lazy ``session`` of ``WikiClient`` and ``OresClient`` (either, built at import, fails this)."""
+    proc = _run(_IMPORT_OPENS_NOTHING, tmp_path, **env)
     assert proc.returncode == 0 and proc.stdout.strip().endswith("ok"), (proc.stdout + proc.stderr)[-1500:]
