@@ -71,11 +71,15 @@ from src.database.session import dispose_engine, get_db, init_db, session_scope
 from src.monitoring.secret_scrub import log_failure, scrubbed, unicode_note
 
 # Configure logging using shared config
+from src.utils.access_log import install_access_line_filter
 from src.utils.logging_config import setup_logging, uvicorn_log_config
 
 # Import security utilities
 
 logger = setup_logging("api")
+# The server's access line names the request by its route template and a standard method, with no query: on the logger that makes
+# the record, so it holds however the server is started (``src/utils/access_log.py``).
+install_access_line_filter()
 
 # Single source of truth for the app version: the installed package metadata
 # (pyproject.toml). Falls back gracefully if running from an uninstalled tree.
