@@ -34,6 +34,7 @@ from src.database.models import (
     WikiPage,
     WikiRevision,
 )
+from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -659,7 +660,12 @@ def price_narrative(session) -> list[Card]:
             continue
         mentions = (
             session.query(KeywordMentionRead.article_id, KeywordMentionRead.observed_on)
-            .filter(KeywordMentionRead.keyword_id == kw.id, KeywordMentionRead.observed_on.isnot(None))
+            .filter(
+                KeywordMentionRead.keyword_id == kw.id,
+                KeywordMentionRead.observed_on.isnot(None),
+                # the mentions kept for a lost article: a stand-in is no article, and its date would feed the significance test that promotes the Lead
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            )
             .all()
         )
         article_dates = [d for _, d in mentions]

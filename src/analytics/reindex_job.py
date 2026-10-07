@@ -60,6 +60,14 @@ def _default_extractor():
     return get_extractor("baseline")
 
 
+def _articles_to_reindex(session, article_model) -> int:
+    """The articles a pass can finish: every article but the stand-ins (the place-holders a salvage copy writes at a lost id), which the pass
+    skips. A total that counted them would leave the progress one short of it for every stand-in, so it never reached 100 %."""
+    from src.database.stand_in import stand_in_article_ids
+
+    return max(0, int(session.query(article_model.id).count()) - len(stand_in_article_ids(session)))
+
+
 class ReindexJobManager:
     """ONE pausable server-side whole-corpus re-index at a time. Progress is a CURSOR
     (the last article id processed), persisted to ``data_dir()`` so a resume survives
@@ -153,7 +161,7 @@ class ReindexJobManager:
 
             sess = (session_factory or _default_session)()
             try:
-                return int(sess.query(Article.id).count())
+                return _articles_to_reindex(sess, Article)
             finally:
                 sess.close()
         except Exception:  # noqa: BLE001 - a count hiccup must never stop the re-index
@@ -248,7 +256,7 @@ class ReindexJobManager:
             try:
                 with self._lock:
                     if not self._total:
-                        self._total = int(session.query(Article.id).count())
+                        self._total = _articles_to_reindex(session, Article)
                     after = self._cursor
                     self._save()
                 # Phase 1.3: batch commits to cut fsyncs through the encrypted writer.

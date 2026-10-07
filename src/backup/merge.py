@@ -53,6 +53,7 @@ from typing import Any
 from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
+from src.database.stand_in import ARTICLE_HASH_END, ARTICLE_HASH_PREFIX
 from src.monitoring.engine_text import engine_text
 from src.paths import data_dir
 
@@ -6265,7 +6266,11 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: nothing, so the backlog is ``n - certified``. The join is on two narrow tables
 #: (merged_rows, article_index_stamps) and never touches an article row.
 _BACKLOG_SQL = (
-    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified"
+    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified,"
+    # A stand-in (the place-holder a salvage copy writes at a lost id, carried by a backup of that copy) is never re-indexed, so it never owes
+    # one: ``lost`` counts the unstamped ones and the owed count leaves them out. It reads the hash index only (stand_in.py), never an article row.
+    " COALESCE(SUM(st.article_id IS NULL AND m.row_id IN"
+    "   (SELECT id FROM articles WHERE hash >= '" + ARTICLE_HASH_PREFIX + "' AND hash < '" + ARTICLE_HASH_END + "')), 0) AS lost"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
     " FROM merge_batches b"
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
@@ -6315,7 +6320,7 @@ def pending_reindex_batches() -> list[dict]:
                 text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
             ).fetchall()
         return [
-            {"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2]) - int(r[3]),
+            {"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2]) - int(r[3]) - int(r[4]),
              "certified": int(r[3])}
             for r in rows
         ]
@@ -6353,7 +6358,7 @@ def reindex_backlog() -> dict:
         reason = engine_text(exc)
         _LOG.warning("could not read the re-index backlog: %s", reason)
         return {"available": False, "reason": reason}
-    owed = [int(r[2]) - int(r[3]) for r in rows]
+    owed = [int(r[2]) - int(r[3]) - int(r[4]) for r in rows]
     certified = [int(r[3]) for r in rows]
     batches = [
         {"batch_id": int(r[0]), "created_at": str(r[1]) if r[1] is not None else None,
@@ -6416,9 +6421,12 @@ def reindex_imported_articles(
     from src.analytics.extract import get_extractor
     from src.analytics.store import reindex_articles
     from src.database.session import session_scope
+    from src.database.stand_in import stand_in_article_ids
 
     if commit_batch is None:
         commit_batch = _default_reindex_commit_batch()
+    if stats is None:
+        stats = {}  # the count of ids that named no article comes back through it (below)
 
     with session_scope() as session:
         rows = session.execute(
@@ -6445,7 +6453,9 @@ def reindex_imported_articles(
                 {"b": batch_id, "e": _backlog_engine()},
             ).fetchall()
         }
-        all_ids = sorted(batch_ids - certified)
+        # A stand-in (the place-holder a salvage copy writes at a lost id, which a backup of that copy carries and the merge records here) is
+        # never re-indexed: asked for, it would leave the batch one short of its total for ever and the batch would never be stamped done.
+        all_ids = sorted(batch_ids - certified - stand_in_article_ids(session))
         if not all_ids:
             mark_reindex_complete(batch_id)
             out0: dict = {"reindexed": 0, "failed": 0}
@@ -6518,7 +6528,9 @@ def reindex_imported_articles(
         # Only a batch that reached the end is stamped done. Anything short of that
         # deliberately stays 'merged', so the backlog survives the interruption -- the
         # whole point of not merging the derived rows in the first place.
-        if int(result.get("reindexed", 0)) + int(result.get("failed", 0)) >= total:
+        # An id that named no article when its window was loaded (an imported article deleted before its batch drained: ``merged_rows`` has no
+        # cascade) is finished too: there is nothing to index, and counting it out is what lets such a batch ever be stamped done.
+        if int(result.get("reindexed", 0)) + int(result.get("failed", 0)) + int(stats.get("absent", 0)) >= total:
             mark_reindex_complete(batch_id)
         if already:
             result["resumed_already_done"] = already

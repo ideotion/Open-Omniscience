@@ -825,6 +825,25 @@ def test_the_readers_related_list_and_near_copies_never_offer_the_stand_in_whose
     assert 'class="dup-badge"' in page.text and "/api/articles/2/view" in page.text.split('class="dup-badge"', 1)[1], "the positive control: the real copy is named"
 
 
+def test_the_readers_related_list_and_the_copy_check_keep_their_length_when_the_stand_in_would_have_taken_a_place(client, monkeypatch):
+    """The two lists are ranked by shared keywords and bounded (8 related articles, 12 candidate copies). The stand-in keeps every mention its lost
+    original had, so it ranks FIRST (it shares both of article 1's keywords, a real neighbour shares one): taken out AFTER the bound the lists
+    would be one short, so it is left out before it."""
+    from src.signals import near_dup
+
+    session = _api_session(client)
+    _mentions(session, "readera", [1, STAND_IN_ARTICLE] + list(range(2, 14)))
+    _mentions(session, "readerb", [1, STAND_IN_ARTICLE])
+    handed: list[set[str]] = []
+    real = near_dup.near_duplicate_clusters
+    monkeypatch.setattr(near_dup, "near_duplicate_clusters", lambda docs, **kw: (handed.append(set(docs)), real(docs, **kw))[1])
+    page = client.get("/api/articles/1/view")
+    assert page.status_code == 200
+    related = page.text.split("Related in your corpus", 1)[1].split("</section>", 1)[0]
+    assert related.count("/view") == 8 and f"/api/articles/{STAND_IN_ARTICLE}/view" not in related, related.count("/view")
+    assert len(handed) == 1 and len(handed[0]) == 13 and str(STAND_IN_ARTICLE) not in handed[0], handed  # article 1 and the twelve real candidates
+
+
 def test_the_date_lists_and_the_agendas_deduced_events_never_hold_the_stand_in_whose_date_tag_was_kept(client, db):
     """The date tag a stand-in kept is in the table (nothing is deleted); the lists that join it to its article would show the stand-in as an
     article that mentions the date, count it in the agenda's articles and sources, and put its number in the set the agenda opens."""
@@ -931,7 +950,7 @@ def test_both_forms_of_the_helper_seek_the_hash_index_and_read_no_article_row(db
     }
     for form, plan in plans.items():
         about_articles = [line for line in plan if "articles" in line and "article_links" not in line]
-        assert about_articles == ["SEARCH articles USING COVERING INDEX idx_article_hash (hash>? AND hash<?)"], (form, plan)
+        assert len(about_articles) == 1 and "SEARCH articles USING COVERING INDEX idx_article_hash" in about_articles[0], (form, plan)  # the bounds' text is the engine's
         assert not any("SCAN articles" in line or "PRIMARY KEY" in line for line in plan), (form, plan)
     for decoy in ("hash LIKE '(lost articles %'", "substr(hash, 1, 15) = '(lost articles '"):  # why the helper is a range: neither of these seeks the index
         decoy_plan = [str(r[-1]) for r in db.execute(text(f"EXPLAIN QUERY PLAN SELECT id FROM articles WHERE {decoy}"))]
@@ -2017,3 +2036,346 @@ def test_the_backfill_the_reindex_and_the_language_pass_never_touch_the_stand_in
     assert out["scanned"] == 1 and out["last_id"] == 1 and out["done"] is True, out
     newest = [r[0] for r in db.query(Article.id).filter(Article.id >= 1495, stand_in.not_a_stand_in_article_id(Article.id)).order_by(Article.id)]
     assert newest == [1495, 1496], newest  # the condition reads an article's own id too (the stand-in at 1500 is left out)
+
+
+# --------------------------------------------------------------------------- #
+#  the restore's re-index: a batch holding a stand-in, or an article deleted since, must still end
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def restore_seams(db, tmp_path, monkeypatch):
+    """The two seams a restore's post-swap re-index reads the LIVE store and its watermark directory through, pointed at the copy."""
+    from contextlib import contextmanager
+
+    import src.backup.merge as merge_mod
+    import src.database.session as session_mod
+
+    @contextmanager
+    def _scope():
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+    monkeypatch.setattr(session_mod, "session_scope", _scope)
+    monkeypatch.setattr(merge_mod, "data_dir", lambda: tmp_path)
+    return db
+
+
+def _real_articles_above_the_stand_in(session, ids) -> None:
+    """Real articles whose ids are above the stand-in's (the fixture's stand-in is its newest article), so it can sit in the middle of a batch."""
+    from datetime import UTC, datetime
+
+    from src.database.models import Article
+
+    for aid in ids:
+        session.add(Article(id=aid, url=f"https://e.org/{aid}", canonical_url=f"https://e.org/{aid}", source_id=1, title=f"T{aid}", hash=f"h{aid}", language="en",
+                            content="Sanctions and an energy crisis hit the economy.", created_at=datetime.now(UTC)))
+    session.commit()
+
+
+def _merged_batch(session, article_ids) -> int:
+    """A backup's import batch as the merge records it: 'merged', with a ``merged_rows`` line for each article it inserted."""
+    from src.database.models import MergeBatch, MergedRow
+
+    batch = MergeBatch(artifact_kind="oo-backup-2", origin_fingerprint="unsigned", status="merged")
+    session.add(batch)
+    session.flush()
+    for aid in article_ids:
+        session.add(MergedRow(batch_id=batch.id, table_name="articles", row_id=aid))
+    session.commit()
+    return int(batch.id)
+
+
+def _batch_status(session, batch_id) -> str:
+    from sqlalchemy import text
+
+    return str(session.execute(text("SELECT status FROM merge_batches WHERE id = :b"), {"b": batch_id}).scalar())
+
+
+def test_a_restore_batch_holding_the_stand_in_ends_reindexed_whether_it_is_the_highest_id_or_a_middle_one(restore_seams):
+    """A backup of a salvage copy carries the stand-in and the merge records it in ``merged_rows``. A stand-in is never re-indexed, so the pass
+    came back one short per stand-in and the batch was never stamped done: the boot warning, a resumed drain on every start, the Diagnostics
+    backlog and a bulletin line saying articles await re-indexing, for ever. The stand-in is left out of what is asked, so the total, the
+    progress and the completion all agree."""
+    from src.backup.merge import pending_reindex_batches, reindex_backlog, reindex_imported_articles
+    from src.database.models import KeywordMention
+
+    db = restore_seams
+    _real_articles_above_the_stand_in(db, [1501, 1502])
+    _mentions(db, "keptterm", [STAND_IN_ARTICLE], source_id=1)
+    highest = _merged_batch(db, [1, 2, STAND_IN_ARTICLE])
+    middle = _merged_batch(db, [3, STAND_IN_ARTICLE, 1501])
+    twin = _merged_batch(db, [4, 5])  # the real twin: no stand-in
+    assert sorted(b["batch_id"] for b in pending_reindex_batches()) == sorted([highest, middle, twin])
+    assert reindex_backlog()["articles_pending"] == 6, reindex_backlog()  # 2 + 2 + 2: the stand-in owes nothing
+
+    progress: list[tuple[int, int]] = []
+    out = reindex_imported_articles(highest, workers=0, progress_cb=lambda d, t: progress.append((d, t)))
+    assert out["reindexed"] == 2 and out["failed"] == 0, out
+    assert progress[-1] == (2, 2), progress  # the stand-in is not in the total: the progress reaches it
+    assert _batch_status(db, highest) == "reindexed"
+    out = reindex_imported_articles(middle, workers=0)
+    assert out["reindexed"] == 2 and _batch_status(db, middle) == "reindexed", out
+    reindex_imported_articles(twin, workers=0)
+    assert _batch_status(db, twin) == "reindexed"
+    assert pending_reindex_batches() == [] and reindex_backlog()["articles_pending"] == 0
+    assert db.query(KeywordMention).filter_by(article_id=STAND_IN_ARTICLE).count() == 1  # what the copy kept for the lost article stays
+
+
+def test_a_restore_batch_of_nothing_but_the_stand_in_is_stamped_done_and_owes_nothing(restore_seams):
+    from src.backup.merge import pending_reindex_batches, reindex_backlog, reindex_imported_articles
+
+    db = restore_seams
+    only = _merged_batch(db, [STAND_IN_ARTICLE])
+    assert reindex_backlog()["articles_pending"] == 0 and [b["articles"] for b in pending_reindex_batches()] == [0]
+    assert reindex_imported_articles(only, workers=0) == {"reindexed": 0, "failed": 0}
+    assert _batch_status(db, only) == "reindexed" and pending_reindex_batches() == []
+
+
+def test_an_imported_article_deleted_before_its_batch_drained_does_not_hold_the_batch_open(restore_seams):
+    """``merged_rows`` has no cascade, so a batch can name an id that no longer names an article: the pass finds nothing to index, and that
+    id is finished too."""
+    from src.backup.merge import pending_reindex_batches, reindex_imported_articles
+    from src.database.models import Article
+
+    db = restore_seams
+    _real_articles_above_the_stand_in(db, [1501])
+    batch = _merged_batch(db, [1, 2, 1501])
+    db.query(Article).filter(Article.id == 2).delete(synchronize_session=False)
+    db.commit()
+    out = reindex_imported_articles(batch, workers=0)
+    assert out["reindexed"] == 2 and out["failed"] == 0, out
+    assert _batch_status(db, batch) == "reindexed" and pending_reindex_batches() == []
+
+
+def test_a_restore_batch_that_was_stopped_early_stays_merged_even_when_it_holds_a_stand_in(restore_seams):
+    """The completion count must not forgive what a Stop left unvisited: the stand-in is subtracted up front, and only ids of windows that were
+    walked are counted as finished."""
+    from src.backup.merge import reindex_imported_articles
+
+    db = restore_seams
+    batch = _merged_batch(db, [1, 2, STAND_IN_ARTICLE])
+    reindex_imported_articles(batch, workers=0, should_stop=lambda: True)
+    assert _batch_status(db, batch) == "merged"
+
+
+def test_the_settings_reindex_counts_the_articles_it_can_finish_and_not_the_stand_in(db):
+    """The job's total is what the percentage and the 'articles done' line divide by; the pass skips the stand-in, so a total that counted it
+    could never be reached."""
+    from src.analytics.reindex_job import _articles_to_reindex
+    from src.database.models import Article
+
+    assert _articles_to_reindex(db, Article) == db.query(Article.id).count() - 1
+
+
+def test_the_settings_reindex_job_carries_the_total_it_can_finish_from_its_first_status_and_from_its_worker(db, tmp_path, monkeypatch):
+    """The total is counted twice: up front (so the first status the screen reads carries it) and by the worker when that count came back empty.
+    Both leave the stand-in out."""
+    from sqlalchemy.orm import sessionmaker
+
+    from src.analytics.reindex_job import ReindexJobManager
+    from src.database.models import Article
+
+    expected = db.query(Article.id).count() - 1
+    factory = sessionmaker(bind=db.get_bind(), future=True)
+    mgr = ReindexJobManager(state_path=tmp_path / "state.json")
+    assert mgr._count_articles(factory) == expected
+    monkeypatch.setattr("src.analytics.store.reindex_all_batch", lambda *a, **k: {"last_id": 0, "reindexed": 0, "failed": 0, "done": True})
+    monkeypatch.setattr(mgr, "_count_articles", lambda _factory: 0)  # an up-front count that came back empty: the worker counts for itself
+    mgr.start(_session_factory=factory, _extractor=object())
+    assert mgr._thread is not None
+    mgr._thread.join(60)
+    assert mgr.status()["articles_total"] == expected, mgr.status()
+
+
+# --------------------------------------------------------------------------- #
+#  the reads of fold 10: the ones that feed a floor, a test or a worklist, and the claims the sweep makes about the ones left alone
+# --------------------------------------------------------------------------- #
+def test_the_price_narrative_correlates_the_dates_of_real_articles_only_never_the_one_whose_mention_was_kept(db, monkeypatch):
+    """The dates of a commodity's mentions feed a significance test that promotes the Lead, so the test is handed the dates and the test asks which
+    were handed. (The real correlation needs scipy, which is an extra: the module is stood in for, and what it is handed is read.)"""
+    import sys
+    import types
+
+    from src.briefing.producers import price_narrative
+    from src.database.models import CommodityPrice
+
+    handed: list[list[date]] = []
+
+    def correlate(points, article_dates, **_kw):
+        handed.append(sorted(article_dates))
+        return types.SimpleNamespace(insufficient_data=True, coefficient=None)
+
+    fake = types.ModuleType("src.commodity.correlation")
+    fake.correlate_price_with_news = correlate  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src.commodity.correlation", fake)
+    for i in range(5):
+        db.add(CommodityPrice(symbol="zqt", observed_on=_days_ago(5 - i), price=100.0 + i, market="lme"))
+    db.commit()
+    _mentions(db, "zqt", [1], day=_days_ago(3))
+    _mentions(db, "zqt", [STAND_IN_ARTICLE], day=_days_ago(2))
+    assert price_narrative(db) == []
+    assert handed == [[_days_ago(3)]], handed  # the stand-in's day is not a day of coverage
+    _mentions(db, "zqt", [2], day=_days_ago(2))  # the positive control: a real article on that day is one
+    handed.clear()
+    price_narrative(db)
+    assert handed == [[_days_ago(3), _days_ago(2)]], handed
+
+
+def test_a_concept_arm_counts_the_real_articles_of_its_language_and_the_stand_in_neither_fills_its_floor_nor_adds_an_article(db):
+    """An arm is a language's articles that carry a form of the concept, and the associations on it are co-occurrences counted over THOSE
+    articles against ``min_cooccur``: one real article beside the stand-in (which carries every term its lost original had) passed the floor."""
+    from types import SimpleNamespace
+
+    from src.analytics import queries as q
+    from src.database.models import Keyword
+
+    _mentions(db, "armterm", [1, STAND_IN_ARTICLE])
+    _mentions(db, "armco", [1, STAND_IN_ARTICLE])
+    ids = {k.normalized_term: k for k in db.query(Keyword).filter(Keyword.normalized_term.in_(["armterm", "armco"]))}
+    concept = SimpleNamespace(term="armterm", normalized="armterm", literals=("armterm",), expanded=False, expansion=SimpleNamespace(applied=None))
+    ck = q.ConceptKeywords(concept=concept, keywords=[ids["armterm"]], primary=ids["armterm"], by_language={"en": [ids["armterm"].id]}, missing=[])
+
+    def arm():
+        (only,) = q.concept_arms(db, ck, min_cooccur=2)["arms"]
+        return only["articles"], [(a["term"], a["articles"]) for a in only["associations"]]
+
+    assert arm() == (1, []), arm()
+    _mentions(db, "armterm", [2])
+    _mentions(db, "armco", [2])  # the positive control: a second real article is an article of the arm and makes the co-occurrence two
+    assert arm() == (2, [("armco", 2)]), arm()
+
+
+def test_a_keywords_days_and_the_days_of_all_keywords_are_counted_of_real_articles_only(db):
+    """``_daily_series`` is the series two keywords are correlated over and the days it holds count toward ``min_nonzero_days``; ``_daily_totals``
+    is the denominator of the share. A day whose only mention was kept for a lost article is no day of either."""
+    from src.analytics.supply_chain_ripple import _daily_series, _daily_totals
+    from src.database.models import Keyword
+
+    _mentions(db, "dayterm", [1], day=_days_ago(4))
+    _mentions(db, "dayterm", [STAND_IN_ARTICLE], day=_days_ago(3))  # a day only the stand-in carries
+    _mentions(db, "dayother", [STAND_IN_ARTICLE], day=_days_ago(4))  # and a second article on a day article 1 already carries
+    kid = db.query(Keyword.id).filter_by(normalized_term="dayterm").scalar()
+    cutoff, hi = _days_ago(10), _days_ago(0)
+    assert dict(_daily_series(db, [kid], cutoff, hi)) == {kid: {_days_ago(4): 1}}  # no day the stand-in alone carries
+    assert _daily_totals(db, cutoff, hi) == {_days_ago(4): 1}  # one article that day, not two
+    _mentions(db, "dayterm", [2], day=_days_ago(3))  # the positive control: a real article makes that day
+    assert dict(_daily_series(db, [kid], cutoff, hi)) == {kid: {_days_ago(4): 1, _days_ago(3): 1}}
+    assert _daily_totals(db, cutoff, hi) == {_days_ago(4): 1, _days_ago(3): 1}
+
+
+def test_the_associations_of_a_term_are_counted_over_its_real_articles_and_the_stand_in_neither_fills_the_floor_nor_the_total(db, monkeypatch):
+    """The article set of a term is the population its PMI is computed over, the floor ``min_cooccur`` is read off the co-occurrence over it, and
+    ``n_a`` and the corpus total are counts of it: the stand-in's kept mentions are none of them. (The co-keyword's own ``n_b`` is the maintained
+    counter and moves by at most one mention: stated beside the read, not gated.)"""
+    from src.analytics import queries as q
+    from src.analytics.queries import associations
+    from src.database.models import KeywordMention
+
+    _mentions(db, "assocterm", [1, STAND_IN_ARTICLE])
+    _mentions(db, "assocco", [1, STAND_IN_ARTICLE])
+    lone = associations(db, "assocterm", min_cooccur=2)
+    assert lone["n_articles_with_term"] == 1 and lone["corpus_articles"] == 1 and lone["pairs"] == [], lone
+    _mentions(db, "assocterm", [2])
+    _mentions(db, "assocco", [2])  # the positive control: two real articles make the co-occurrence two, and the corpus two
+    twin = associations(db, "assocterm", min_cooccur=2)
+    assert twin["n_articles_with_term"] == 2 and twin["corpus_articles"] == 2, twin
+    assert [(p["normalized"], p["cooccur"]) for p in twin["pairs"]] == [("assocco", 2)], twin
+    # The layered graph computes the same total ONCE and hands it to every call: it is asked what it handed.
+    handed: list[int] = []
+    real = q.associations
+    monkeypatch.setattr(q, "associations", lambda session, term, **kw: (handed.append(kw["corpus_total"]), real(session, term, **kw))[1])
+    db.query(KeywordMention).filter(KeywordMention.article_id == 2).delete(synchronize_session=False)
+    db.commit()
+    q.layered_graph(db, level="keyword", term="assocterm", hops=1, days=3650)
+    assert handed and set(handed) == {1}, handed  # one real article carries a mention; the stand-in's kept mentions are not a second
+
+
+def _only_the_stand_in_has_an_unknown_language(session) -> None:
+    from src.database.models import Article
+
+    session.query(Article).filter(Article.id != STAND_IN_ARTICLE).update({"language": "en", "detected_language": None}, synchronize_session=False)
+    session.query(Article).filter(Article.id == STAND_IN_ARTICLE).update({"language": None, "detected_language": None}, synchronize_session=False)
+    session.commit()
+
+
+def test_a_library_whose_only_unknown_language_article_is_the_stand_in_has_no_worklist_no_count_and_starts_no_job(db, monkeypatch):
+    """The detection job's worklist, the count the ride-along asks before it starts one, and the start itself: the stand-in has no text to read a
+    language from and is never labelled, so counted or listed it would restart the job after every scrape for ever."""
+    from src.ai_layer.langdetect_llm import unknown_language_work
+    from src.api import ai as A
+    from src.database.models import Article
+
+    _only_the_stand_in_has_an_unknown_language(db)
+    started: list[bool] = []
+    monkeypatch.setattr("src.config.app_settings.load_settings", lambda: type("S", (), {"ai_langdetect_auto": True, "llm_allow_impractical_hw": True})())
+    monkeypatch.setattr("src.ai_layer.coordinator.user_batch_active", lambda: {"held": False, "holders": []})
+    monkeypatch.setattr("src.llm.backend.inference_capability", lambda: {"practical": True, "reason": ""})
+    monkeypatch.setattr("src.llm.backend.get_client_with_name", lambda: ("fake", type("C", (), {"is_available": lambda self: True})()))
+    monkeypatch.setattr(A._LANGDETECT_JOB, "status", lambda: {"state": "idle"})
+    monkeypatch.setattr(A._LANGDETECT_JOB, "start", lambda **_kw: started.append(True))
+    assert unknown_language_work(db, limit=10) == []
+    assert A._langdetect_candidate_count(db) == 0
+    assert A.advance_langdetect_auto_start(db) == {"enabled": True, "skipped": "no unknown-language candidates"} and started == []
+    db.query(Article).filter(Article.id == 2).update({"language": None}, synchronize_session=False)  # the positive control: a real article is all three
+    db.commit()
+    assert [w.article_id for w in unknown_language_work(db, limit=10)] == [2]
+    assert A._langdetect_candidate_count(db) == 1
+    assert A.advance_langdetect_auto_start(db) == {"enabled": True, "started": True} and started == [True]
+
+
+def test_a_real_article_of_the_stand_in_source_is_still_re_indexed_backfilled_and_language_reconciled(db):
+    """The condition is on the ARTICLE (a placeholder), never on its source: real articles kept for a lost source are owned by the stand-in
+    source, and they are articles like any other for the passes that write."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import _unindexed_query, reconcile_article_language, reindex_articles
+    from src.database.models import Article, KeywordMention
+
+    assert _give_real_articles_to_the_stand_in_source(db) == 4  # the stand-in article and the three given
+    waiting = {int(a.id) for a in _unindexed_query(db).with_entities(Article.id)}
+    assert {2, 3, 4} <= waiting and STAND_IN_ARTICLE not in waiting
+    done = reindex_articles(db, extractor=get_extractor("baseline"), article_ids=[2, 3, 4, STAND_IN_ARTICLE])
+    assert done["reindexed"] == 3, done
+    assert db.query(KeywordMention.article_id).filter(KeywordMention.article_id.in_([2, 3, 4])).distinct().count() == 3
+    db.query(Article).filter(Article.id != STAND_IN_ARTICLE).update({"language": "en", "detected_language": None}, synchronize_session=False)
+    db.query(Article).filter(Article.id.in_([2, 3, 4])).update({"language": None}, synchronize_session=False)
+    db.commit()
+    out = reconcile_article_language(db, limit=10, after_id=0)
+    assert out["scanned"] == 3 and out["last_id"] == 4 and out["done"] is True, out
+
+
+def test_the_stand_in_is_in_no_latest_list_no_disputed_chronology_and_no_story_because_it_has_no_date_and_no_text(db, monkeypatch):
+    """Three readers the sweep leaves without a condition, each because a stand-in cannot pass a test of its own: ``latest_articles`` keeps the
+    articles made since a date (the stand-in has none), and the disputed chronology and the story prominence read 200 characters of text (the
+    stand-in has none). The reasons are the claim: each is asked, and each reader is asked to show it."""
+    from datetime import UTC, datetime
+
+    from src.analytics.disputed_chronology import find_disputed_chronology
+    from src.analytics.latest import latest_articles
+    from src.briefing.producers import lonely_signal
+    from src.database.models import Article
+    from src.integrity.collapse import story_prominence
+    from src.signals import near_dup
+
+    stand_in_row = db.get(Article, STAND_IN_ARTICLE)
+    assert stand_in_row.created_at is None and not (stand_in_row.content or "").strip() and not (stand_in_row.title or "").strip()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    for aid, word in ((2, "alpha"), (3, "bravo")):
+        db.query(Article).filter(Article.id == aid).update({"content": f"{word} " * 80, "title": f"T{aid}", "created_at": now, "published_at": now}, synchronize_session=False)
+    db.commit()
+
+    shown = latest_articles(db, limit=100, window_days=3650, scan_cap=2000, collapse=False, facets=False)
+    ids = [int(a["id"]) for a in shown["articles"]]
+    assert 2 in ids and 3 in ids and STAND_IN_ARTICLE not in ids, ids
+
+    seen: list[set[str]] = []
+    real = near_dup.near_duplicate_clusters
+    monkeypatch.setattr(near_dup, "near_duplicate_clusters", lambda texts, **kw: (seen.append(set(texts)), real(texts, **kw))[1])
+    find_disputed_chronology(db, lookback_days=3650)
+    assert len(seen) == 1 and {"2", "3"} <= seen[0] and str(STAND_IN_ARTICLE) not in seen[0], len(seen)
+
+    stories = story_prominence(db, days=3650)["stories"]
+    assert {2, 3} <= {int(s["representative"]) for s in stories} and STAND_IN_ARTICLE not in {int(s["representative"]) for s in stories}, len(stories)
+    assert all(STAND_IN_ARTICLE not in [int(i) for i in (c.article_ids or [])] for c in lonely_signal(db))

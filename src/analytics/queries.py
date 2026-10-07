@@ -551,7 +551,8 @@ def concept_arms(
         for i in range(0, len(kw_ids), _IN_CHUNK):
             rows = (
                 session.query(KeywordMentionRead.article_id)
-                .filter(KeywordMentionRead.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]))
+                # the mentions kept for a lost article: a stand-in is no article of this language, and one real article beside it would pass ``min_cooccur``
+                .filter(KeywordMentionRead.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]), not_a_stand_in_article_id(KeywordMentionRead.article_id))
                 .distinct()
                 .all()
             )
@@ -3025,7 +3026,11 @@ def associations(
         if corpus_total is not None
         else (
             _window_filter(
-                session.query(func.count(func.distinct(KeywordMentionRead.article_id))), start, end
+                session.query(func.count(func.distinct(KeywordMentionRead.article_id))).filter(
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id)
+                ),
+                start,
+                end,
             ).scalar()
             or 0
         )
@@ -3034,7 +3039,16 @@ def associations(
         a
         for (a,) in _window_filter(
             session.query(KeywordMentionRead.article_id).filter(
-                KeywordMentionRead.keyword_id.in_(seed_ids)
+                KeywordMentionRead.keyword_id.in_(seed_ids),
+                # The article set is the population the PMI is computed over, and the one the
+                # min_cooccur floor and n_a are read from (the corpus total above and in the
+                # layered graph leave a stand-in out the same way): a mention kept for a lost
+                # article is none of them. What this does NOT reach is n_b (below, the maintained
+                # ``article_count`` counter or one grouped count): a co-keyword mentioned at a
+                # stand-in is counted once more there, which moves a pair's PMI by at most
+                # log2((n_b + 1) / n_b) per such mention and never changes a floor, so it is
+                # left as documented rather than paid for with a join.
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             ),
             start,
             end,
@@ -3917,7 +3931,11 @@ def layered_graph(
         # The PMI corpus denominator, computed ONCE (was recomputed inside every call).
         corpus_total = (
             _window_filter(
-                session.query(func.count(func.distinct(KeywordMentionRead.article_id))), start, end
+                session.query(func.count(func.distinct(KeywordMentionRead.article_id))).filter(
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id)
+                ),
+                start,
+                end,
             ).scalar()
             or 0
         )

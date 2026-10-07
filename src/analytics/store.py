@@ -1067,6 +1067,10 @@ def reindex_articles(
     total = len(article_ids)
     reindexed = 0
     failed = 0
+    #: Ids of the windows this call walked that name no article it could load: an article deleted since the caller listed it, or a stand-in
+    #: (which is never re-indexed). Reported through ``stats["absent"]``: a caller that stamps a batch complete when ``reindexed + failed``
+    #: reaches its total must count them, or a batch holding one is never finished.
+    absent = 0
     # Bound HERE, above the nested helpers that declare them ``nonlocal``, not beside
     # the other timers further down. Python resolves a ``nonlocal`` to a binding
     # anywhere in the enclosing scope regardless of order, but mypy only walks
@@ -1358,6 +1362,7 @@ def reindex_articles(
             art = _by_id.get(aid)
             if art is not None:
                 articles.append(art)
+        absent += len(window_ids) - len(articles)
         _load_s += time.monotonic() - _t0
         if not articles:
             continue
@@ -1426,6 +1431,8 @@ def reindex_articles(
         elapsed = time.monotonic() - _t_all
         stats.update({
             "articles": done,
+            # Requested ids that named no article (deleted since, or a stand-in): not part of the return, which stays {"reindexed", "failed"}.
+            "absent": absent,
             "wall_s": round(elapsed, 3),
             "load_s": round(_load_s, 3),
             "precompute_s": round(_pre_s, 3),

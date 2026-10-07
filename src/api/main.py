@@ -2252,7 +2252,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     from sqlalchemy import func
 
     from src.database.models import ArticleLink
-    from src.database.stand_in import not_a_stand_in_article, stand_in_article_ids
+    from src.database.stand_in import not_a_stand_in_article, not_a_stand_in_article_id
     from src.utils.security import safe_href
 
     # A repair's stand-in article is a place-holder for a lost row, not an article that was stored: not found, as any unknown id is.
@@ -2700,17 +2700,16 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 .filter(
                     KeywordMentionRead.keyword_id.in_(my_kw),
                     KeywordMentionRead.article_id != a.id,
+                    # The keyword mentions kept for a lost article stay in the table, so the stand-in (the place-holder a salvage copy writes at
+                    # its id) would be offered as an article that shares keywords with this one: it is no article, and a link to it is not found.
+                    # The condition sits BEFORE the limit, so the list keeps its 8 whenever the corpus has 8 real neighbours.
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id),
                 )
                 .group_by(KeywordMentionRead.article_id)
                 .order_by(func.count(KeywordMentionRead.keyword_id).desc())
                 .limit(8)
                 .all()
             )
-            if ranked:
-                # The keyword mentions kept for a lost article stay in the table, so the stand-in (the place-holder a salvage copy writes at
-                # its id) would be offered as an article that shares keywords with this one: it is no article, and a link to it is not found.
-                _lost = stand_in_article_ids(db)
-                ranked = [row for row in ranked if row[0] not in _lost]
             if ranked:
                 _rel_titles = {
                     rid: rtitle
@@ -2782,6 +2781,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 .filter(
                     KeywordMentionRead.keyword_id.in_(_mk),
                     KeywordMentionRead.article_id != a.id,
+                    # the same kept mentions, the same place-holder: never one of the "copies", and left out before the limit so the 12 hold
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id),
                 )
                 .group_by(KeywordMentionRead.article_id)
                 .order_by(func.count(KeywordMentionRead.keyword_id).desc())
@@ -2791,9 +2792,6 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             if _mk
             else []
         )
-        if _cand:
-            _lost = stand_in_article_ids(db)  # the same kept mentions, the same place-holder: never one of the "copies"
-            _cand = [rid for rid in _cand if rid not in _lost]
         if _cand:
             docs = {str(a.id): ((a.title or "") + "\n" + (a.get_content() or ""))}
             titles: dict[str, str] = {}

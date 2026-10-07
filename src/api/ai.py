@@ -32,7 +32,11 @@ from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.api.llm import active_model, get_llm_client
 from src.database.models import AiCustomPrompt, Article
 from src.database.session import get_db
-from src.database.stand_in import is_a_stand_in_article, not_a_stand_in_article
+from src.database.stand_in import (
+    is_a_stand_in_article,
+    not_a_stand_in_article,
+    not_a_stand_in_article_id,
+)
 from src.llm.ollama import OllamaClient
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -532,7 +536,12 @@ def _langdetect_candidate_count(session) -> int:
     unset = lambda col: or_(col.is_(None), col == "")  # noqa: E731
     n = session.execute(
         select(func.count(Article.id)).where(
-            unset(Article.language), unset(Article.detected_language), ~_already_labelled()
+            unset(Article.language),
+            unset(Article.detected_language),
+            ~_already_labelled(),
+            # the count and the worklist read ONE predicate: a stand-in is in neither, so a
+            # library whose only unknown-language row is one starts no job after a scrape
+            not_a_stand_in_article_id(Article.id),
         )
     ).scalar() or 0
     return int(n)
