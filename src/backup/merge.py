@@ -771,7 +771,9 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
     differently).
     A table the artifact does not carry counts as nothing: that is a measured zero. ANY other
     failure is a refusal, never a smaller need: a count that cannot be taken is not a reason to
-    ask for less memory, and a file that cannot be read would fail the merge a moment later anyway."""
+    ask for less memory, and a file that cannot be read would fail the merge a moment later anyway.
+    A missing file refuses too, and the message names only the exception's CLASS: the engine's own
+    text can quote the path, and on a damaged encrypted page more than that."""
     from src.database.connect import attach
 
     out: dict[str, int] = {}
@@ -779,7 +781,9 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
     try:
         if not Path(staged_corpus).is_file():
             # ATTACH would CREATE an empty database here and every COUNT would then say "no such
-            # table": a missing file must not read as a staged corpus with nothing in it.
+            # table": a missing file must not read as a staged corpus with nothing in it. Best effort
+            # by design: the staging directory is private to this restore, so nothing replaces the
+            # file between this look and the attach, and prepare_staged_corpus has already read it.
             raise FileNotFoundError("the staged file is missing")
         attach(con, staged_corpus, "cnt")
         try:
@@ -789,6 +793,8 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
                         con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 - fixed table names from this module's own map
                     )
                 except Exception as exc:  # noqa: BLE001 - only the one message that names THIS table is a zero
+                    # the keys of _ENCRYPTED_REP_BYTES_PER_ROW are lowercase, so the table name needs
+                    # no folding; the engine's message is folded once
                     if str(exc).lower() != f"no such table: cnt.{table}":
                         raise
         finally:
@@ -857,6 +863,27 @@ def check_memory_for_encrypted_merge(
             f"{human_bytes(need)}, only {human_bytes(int(avail * 1024 * 1024))} available. "
             "Close other programs and import again. Nothing was written to your corpus."
         )
+
+
+def check_memory_before_staging() -> None:
+    """The same memory refusal, asked BEFORE a backup is staged rather than after.
+
+    Staging is hours on a large import (verify, parity-recover, reassemble, extract, then a copy of
+    the whole working corpus), and :func:`merge_corpus`'s own check runs only once all of it is
+    done, so a machine that cannot hold an encrypted merge used to be told so at the end. Whether
+    the corpus is encrypted is known up front, so the part of the need that does not depend on the
+    backup's contents (the windowed steps and the guard's floor) is asked now; the part that does
+    (the incoming rows of the three grouping steps) stays in the merge's own check, which still
+    runs. A store whose state cannot be read is not refused: unknown is not a shortage."""
+    try:
+        from src.backup.sqlite_backup import live_db_path
+        from src.database.connect import is_encrypted_file
+
+        encrypted = is_encrypted_file(live_db_path())
+    except Exception:  # noqa: BLE001 - unknown is not a refusal (the memory guard's own rule)
+        return
+    if encrypted:
+        check_memory_for_encrypted_merge()
 
 
 #: Where a windowed insert's bound is spliced in. A caller that opts into
@@ -5771,7 +5798,9 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
     its ancestors' chains, so on a 1-million-article backup that was gigabytes: two
     imports on a 7 GB machine were killed in this stage at 5.6 and 6.0 GB, after hours
     of merging, before the swap."""
-    src = sqlite3.connect(f"file:{staged_custody}?mode=ro", uri=True)
+    from src.database.read_only_uri import open_plain_read_only
+
+    src = open_plain_read_only(staged_custody)
     try:
         src_tables = {
             r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")

@@ -39,7 +39,9 @@ def file_revision(path: Path) -> str | None:
     """
     import sqlite3
 
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    from src.database.read_only_uri import open_plain_read_only
+
+    conn = open_plain_read_only(path)
     try:
         try:
             row = conn.execute("SELECT version_num FROM alembic_version LIMIT 1").fetchone()

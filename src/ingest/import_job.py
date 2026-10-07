@@ -388,16 +388,12 @@ class NewsletterImportManager:
             finally:
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            import traceback
-
-            runlog.milestone(
-                "error", cls=type(exc).__name__, msg=str(exc)[:2000],
-                traceback="".join(traceback.format_exception(exc))[-8000:],
-            )
+            fields = runlog.failure_fields(exc)
+            runlog.milestone("error", **fields)
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
+                self._error = fields["msg"]
                 self._save()
         finally:
             runlog.end("ended-without-a-recorded-outcome")

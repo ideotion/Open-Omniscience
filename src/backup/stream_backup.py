@@ -905,12 +905,17 @@ def _live_corpus_source(
     from src.database.connect import snapshot_preserving
 
     # Refused for lack of room BEFORE a byte is copied, like the other copy paths.
+    # An encrypted copy is filtered and rewritten in place (``newsletter_export``): its rollback
+    # journal holds at most the file again, the merged search index is added, and then the fresh file
+    # is written, all before the volumes exist. The extra is the copy plus its index, and the index is
+    # part of the copy, so it is at most two copies; the filter asks again, exactly, on the copy.
     _preflight_snapshot(
         tmp_dir.parent,
         _logical_db_bytes(live),
         hooks.side_bytes,
         hooks.parity_fraction,
         credit=hooks.reuse_credit(member),
+        transient_bytes=2 * _logical_db_bytes(live) if enc else 0,
     )
     snap = tmp_dir / member
     # The copy is one read transaction (``snapshot_preserving`` without ``allow_file_copy``
@@ -919,7 +924,7 @@ def _live_corpus_source(
     remember_snapshot_destination(tmp_dir.parent)  # a crash's leftover is swept at the next boot
     with _collection_paused(notes):
         snapshot_preserving(live, snap)
-    _drop_newsletters_in_file(snap)
+    _drop_newsletters_in_file(snap, notes)
     notes.append(
         "newsletters excluded: the corpus was copied and filtered"
         + (" (an encrypted corpus is re-encrypted by the copy, so its volumes are rewritten)" if enc else "")
@@ -929,12 +934,18 @@ def _live_corpus_source(
     )
 
 
-def _drop_newsletters_in_file(db_path: Path) -> int:
+def _drop_newsletters_in_file(db_path: Path, notes: list[str] | None = None) -> int:
     """Drop imported-newsletter articles from a DISPOSABLE snapshot, plaintext or
-    SQLCipher (opened through the one factory with the ambient key)."""
+    SQLCipher (opened through the one factory with the ambient key). An encrypted copy is not
+    vacuumed (VACUUM builds its new copy in memory under SQLCipher): it is rewritten into a fresh
+    file instead, see ``src/backup/newsletter_export.py``, which says in ``notes`` which path ran."""
     from src.backup.artifact import _drop_newsletter_rows
-    from src.database.connect import connect
+    from src.database.connect import connect, is_encrypted_file
 
+    if is_encrypted_file(db_path):
+        from src.backup.newsletter_export import drop_newsletters_encrypted
+
+        return drop_newsletters_encrypted(db_path, notes)
     con = connect(db_path, check_same_thread=False)
     try:
         return _drop_newsletter_rows(con)
@@ -1811,6 +1822,7 @@ def _preflight_snapshot(
     *,
     side_written: bool = False,
     credit: int = 0,
+    transient_bytes: int = 0,
 ) -> None:
     """Refuse loudly BEFORE the temporary copy of the corpus is made, so a drive that cannot hold
     it is told so now and not after twelve minutes of copying. The copy and the volume set exist
@@ -1833,7 +1845,10 @@ def _preflight_snapshot(
     # reused as they are up to their own size. One of the two, never both: taking both off asked
     # for the copy alone, then the corpus volumes and the parity hit a full drive.
     need -= side_part if side_written else min(max(0, credit), side_part)
-    needed = copy_bytes + need
+    # ``transient_bytes`` is room used beside the copy BEFORE the volumes exist (the encrypted
+    # newsletter filter's journal, merged index and rewrite), so the peak is the larger of the two
+    # moments, not their sum.
+    needed = copy_bytes + max(need, transient_bytes)
     preflight_free_space(
         dest, needed, what="volume backup (it first makes a temporary copy of your data)"
     )

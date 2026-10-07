@@ -1856,6 +1856,8 @@
       "volume backup (it first makes a temporary copy of your data)":
         "Volume backup (it first makes a temporary copy of your data)",
       "restore staging": "Unpacking the backup to restore it",
+      "newsletter filter and search-index merge (no backup was written)":
+        "Filtering the newsletters out of the backup copy (no backup was written yet)",
     };
     const _OO_SIZE_RE = "([0-9]+(?:\\.[0-9]+)?) (B|KB|MB|GB|TB)";
     const _OO_SPACE_RES = [
@@ -1889,6 +1891,15 @@
       // this backup: ". Both shapes, whole-message only, so nothing else is rewritten.
       if (/^(?:could not \w+ this backup: )?wrong passphrase or the file has been altered\.?$/i.test(s.trim())) {
         return t("Could not open this backup: the passphrase is wrong, or its files have been altered.");
+      }
+      // newsletter_export.py: a stopped newsletter-free backup. Two fixed sentences, whole-message
+      // only, the second carrying a reason that is the server's own fixed text or an exception class.
+      if (s.trim() === "The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.") {
+        return t("The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.");
+      }
+      const _nf = /^The backup without newsletters was stopped: the clean copy of your corpus could not be made \((.+)\)\. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead\.$/.exec(s.trim());
+      if (_nf) {
+        return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
       }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);

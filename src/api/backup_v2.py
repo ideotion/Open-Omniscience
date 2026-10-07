@@ -35,20 +35,22 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
-from src.backup.merge import MergeError, RestoreRefused, run_restore
+from src.backup.merge import MergeError, RestoreRefused, check_memory_before_staging, run_restore
 from src.jobs.background import BackgroundJob, Framed, register_job
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
 
 
-def _restore_error(action: str, exc: Exception) -> HTTPException:
+def _restore_error(action: str, exc: Exception, *secrets: str | None) -> HTTPException:
     """Wrap ``classify_restore_error``'s honest detail (P0-2) in a 500.
 
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
+    from src.backup import runlog
     from src.backup.merge import classify_restore_error
 
-    return HTTPException(status_code=500, detail=classify_restore_error(action, exc))
+    detail = str(runlog.scrub_secrets(classify_restore_error(action, exc), *secrets))
+    return HTTPException(status_code=500, detail=detail[: runlog.FAILURE_MSG_KEEP])
 
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
@@ -205,6 +207,12 @@ def restore_legacy_path(
     p = _Path(path)
     if not p.is_file():
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
+    # Before a byte is read or staged: an encrypted corpus that this machine cannot hold a merge
+    # for is told so now, not after the staging (see check_memory_before_staging).
+    try:
+        check_memory_before_staging()
+    except MergeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         data = p.read_bytes()
     except OSError as exc:
@@ -215,7 +223,9 @@ def restore_legacy_path(
     from src.backup.volume_job import defer_reindex, hand_off_reindex
 
     try:
-        with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
+        with runlog.run(
+            "import", label=p.name, dest=str(p), secrets=(passphrase,), legacy_single_file=True
+        ):
             report = run_restore(
                 staged,
                 commit=True,
@@ -247,8 +257,11 @@ def restore_legacy_path(
     except HTTPException:
         raise
     except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
-        _LOG.exception("legacy restore failed")
-        raise _restore_error("restore", exc) from exc
+        # Written from the scrubbed fields, never with exc_info: the engine's text can quote the
+        # passphrase in scope here, and the log rides the debug bundle.
+        fields = runlog.failure_fields(exc, passphrase)
+        _LOG.warning("legacy restore failed (%s); the run journal carries the scrubbed text", fields["cls"])
+        raise _restore_error("restore", exc, passphrase) from exc
     finally:
         cleanup_staging(staged)
 

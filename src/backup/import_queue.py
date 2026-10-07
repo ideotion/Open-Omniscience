@@ -631,11 +631,14 @@ class ImportQueueManager:
                         # operator trusting that label could delete the only copy of the
                         # one backup that actually failed.
                         state = "error"
+                    # The refusal and the report are the engine's own text and are saved to the
+                    # queue file, so they go through the same scrub as a raised failure's.
+                    safe_summary = self._scrubbed(summary)
                     with self._lock:
                         item["state"] = state
-                        item["summary"] = summary
+                        item["summary"] = safe_summary
                         if refusal and state == "error":
-                            item["error"] = refusal
+                            item["error"] = self._failure_text(refusal)
                     # OUTSIDE the item's own verdict. Every path in _after_item is
                     # already non-raising (rmtree ignores errors, _save swallows, the
                     # staging guard is wrapped), but it sits inside the try that
@@ -658,23 +661,37 @@ class ImportQueueManager:
                     # group is discarded exactly as for a failure -- a half-merged copy
                     # is unsafe whatever interrupted it.
                     stopped_here = self._stop.is_set()
+                    # The exception's own text and its traceback (which ends with it, and with every
+                    # chained message) are a sink, and ``data/app_errors.jsonl`` rides the debug
+                    # bundle: the log names the CLASS only. The scrubbed text is in the item's
+                    # ``error`` (the queue state) and, for the run, in its journal.
+                    detail = self._failure_text(exc)
                     if stopped_here:
-                        _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), exc)
+                        _LOG.info("import item %s stopped mid-merge", item.get("id"))
                     else:
-                        _LOG.exception("import item %s failed", item.get("id"))
+                        _LOG.warning(
+                            "import item %s failed (%s)", item.get("id"), type(exc).__name__
+                        )
                     with self._lock:
                         item["state"] = "stopped" if stopped_here else "error"
-                        item["error"] = str(exc)
+                        item["error"] = detail
                     # A failure ANYWHERE in an item that had an open group taints the
                     # group: windowed merge steps commit mid-merge, so the working
                     # copy may carry a half-merged artifact, and a half-merged copy
                     # must never become the live corpus. Discarding is the only safe
                     # answer, and it costs the group's other merges -- which is the
                     # durability half of the K trade, stated where it is paid.
+                    # The reason says WHAT stopped the item (its own text: a memory refusal
+                    # before staging is not a half-merged copy, and "could not be trusted"
+                    # would say it was), and that the group's earlier backups were not
+                    # written to the corpus and merge again next time. Every discarded item
+                    # of the group carries it.
                     self._discard_group(
                         f"the import of {item.get('label') or item.get('id')} "
-                        + ("was stopped" if stopped_here else "failed")
-                        + ", so the shared working copy could not be trusted"
+                        + ("was stopped" if stopped_here else f"failed ({detail})")
+                        + ", so the shared working copy was thrown away and the backups merged "
+                        "into it before this one were NOT written to your corpus; "
+                        "importing them again is safe"
                     )
                 finally:
                     with self._lock:
@@ -859,6 +876,24 @@ class ImportQueueManager:
                 _LOG.warning("releasing the checkpoint group's staging guard failed", exc_info=True)
         return group
 
+    #: How much of a failure's own text a discarded or errored item keeps (the discard reason and
+    #: ``item["error"]``). It protects the one sentence a refusal gives (the memory refusal runs to about
+    #: 250 characters) while the text is saved to the queue file for EVERY item of the group; the cut is
+    #: made AFTER the scrub, never before it.
+    _FAILURE_TEXT_KEEP = 600
+
+    def _scrubbed(self, value: Any) -> Any:
+        """``value`` (a string, or a report) with the backup's passphrase and the corpus passphrase taken
+        out in every form, checked once more, and withheld whole on any failure
+        (``runlog.scrub_secrets``)."""
+        from src.backup.runlog import scrub_secrets
+
+        return scrub_secrets(value, self._passphrase)
+
+    def _failure_text(self, exc: BaseException | str) -> str:
+        """The failure's text for the queue file and the status: scrubbed first, THEN cut."""
+        return str(self._scrubbed(str(exc)))[: self._FAILURE_TEXT_KEEP]
+
     def _discard_group(self, reason: str) -> None:
         """Throw the carried working copy away and SAY which items went with it."""
         group = self._release_group()
@@ -867,10 +902,10 @@ class ImportQueueManager:
         shutil.rmtree(group.dir, ignore_errors=True)
         if not group.item_ids:
             return
-        _LOG.warning(
-            "discarding %d staged import(s) with the checkpoint group: %s",
-            len(group.item_ids), reason,
-        )
+        # The reason can carry a failed item's scrubbed text, which a log does not repeat (CodeQL's
+        # clear-text-logging query cannot tell a scrubbed string from a secret); it is on each
+        # discarded item below.
+        _LOG.warning("discarding %d staged import(s) with the checkpoint group", len(group.item_ids))
         with self._lock:
             for it in self._items:
                 if it.get("id") in group.item_ids and it.get("state") == "staged":
@@ -942,12 +977,15 @@ class ImportQueueManager:
             )
             out["import_run"] = self._run_stamp(item)
             persist_import_report(
-                "restore", out, run_id=str(rep.get("batch_id") or item.get("id") or "")
+                "restore",
+                out,
+                run_id=str(rep.get("batch_id") or item.get("id") or ""),
+                secrets=(self._passphrase,),
             )
-        except Exception:  # noqa: BLE001 - a record must never cost the import it records
+        except Exception as exc:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
-                "could not persist the import report of held item %s", item.get("id"),
-                exc_info=True,
+                "could not persist the import report of held item %s (%s)", item.get("id"),
+                type(exc).__name__,
             )
 
     def _stamp_persisted_report(self, item: dict, report: dict) -> None:
@@ -959,10 +997,12 @@ class ImportQueueManager:
                 return
             from src.backup.import_reports import annotate_import_report
 
-            annotate_import_report(Path(str(path)), {"import_run": self._run_stamp(item)})
-        except Exception:  # noqa: BLE001 - a record must never cost the import it records
+            annotate_import_report(
+                Path(str(path)), {"import_run": self._run_stamp(item)}, secrets=(self._passphrase,)
+            )
+        except Exception as exc:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
-                "could not name the source on the report of %s", item.get("id"), exc_info=True
+                "could not name the source on the report of %s (%s)", item.get("id"), type(exc).__name__
             )
 
     def _after_item(self, item: dict, summary: dict) -> None:
