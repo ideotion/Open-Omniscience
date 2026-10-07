@@ -484,6 +484,15 @@ def _unicode_withheld(exc: BaseException) -> str | None:
     return None if bad is None else f"{type(bad).__name__}: {UNICODE_WITHHELD}"
 
 
+def unicode_note(exc: BaseException) -> str | None:
+    """The fixed words a handler that builds its own text writes for ``exc`` when a ``UnicodeError`` is reachable from it
+    (``Name: the note``), else ``None``; an exception that cannot be read is its class and none of its words. Never raises."""
+    try:
+        return _unicode_withheld(exc)
+    except Exception:  # noqa: BLE001 - an exception that cannot be read is withheld whole
+        return _class_only(exc)
+
+
 def _withheld_traceback(exc: BaseException, note: str) -> str:
     """The fixed ``note`` and the frames of ``exc``'s traceback (the file, the line and the code of each: no message), so that a
     record that withholds the text still says where the error happened."""
@@ -641,7 +650,8 @@ class scrub_and_reraise:  # noqa: N801 - read as a statement: ``with scrub_and_r
             # A UnicodeError's text names a character and its offset, a piece of a key that no held shape matches: the
             # class and a fixed note are all that is kept, and the error itself (which the interpreter sets as the new
             # error's ``__context__``) is emptied of them.
-            _defang(exc)
+            with contextlib.suppress(Exception):  # a walk that fails must not let the original out as the context
+                _defang(exc)
             raise RuntimeError(fixed) from None
         try:
             text = f"{type(exc).__name__}: {exc}"

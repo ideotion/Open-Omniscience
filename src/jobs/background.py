@@ -35,7 +35,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from src.monitoring.secret_scrub import log_failure, scrubbed
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger("jobs.background")
 
@@ -215,7 +215,9 @@ class BackgroundJob:
             name = type(exc).__name__
             try:
                 secrets = _job_secrets(kwargs)
-                error = scrubbed(f"{name}: {exc}", *secrets, withheld=f"{name}: its text is withheld")[:300]
+                # ``exception_text``: scrubbed, then cut, and the class and a fixed note when a ``UnicodeError`` is in the chain
+                # or group (its text names a character and its offset, a piece of a key that no scrub knows).
+                error = exception_text(exc, *secrets, limit=300)
             except Exception:  # noqa: BLE001 - the text could not be made or scrubbed: the class says what failed
                 secrets = None
                 error = f"{name}: its text is withheld"

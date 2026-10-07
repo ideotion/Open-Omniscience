@@ -2047,11 +2047,9 @@ def verify_stream_backup(
                     # (the corpus's, which a backup under another key does not name), and a text that
                     # cannot be checked is the exception's class and none of its words. The member's
                     # name and the sentence around them stay as they are.
-                    from src.monitoring.secret_scrub import scrubbed
+                    from src.monitoring.secret_scrub import exception_text
 
-                    reason = scrubbed(
-                        str(exc), passphrase, withheld=f"{type(exc).__name__}: its text is withheld"
-                    )
+                    reason = exception_text(exc, passphrase, typed=False)
                     _fail(f"member {mm['name']} failed to decrypt: {reason}")
                     continue
                 if h.hexdigest() != mm.get("plaintext_sha256"):

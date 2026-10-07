@@ -83,13 +83,13 @@ def test_the_error_is_scrubbed_through_the_helpers_of_secret_scrub(both_held, mo
     """MUTATION TARGET: the call. The scrub is the one the rest of the commit uses, not a copy of it, and it is handed no
     secret of its own when the job was started with none (the held ones it takes out itself)."""
     seen = []
-    real = ss.scrubbed
+    real = ss.exception_text
 
-    def spy(text, *secrets, **kwargs):
+    def spy(exc, *secrets, **kwargs):
         seen.append(secrets)
-        return real(text, *secrets, **kwargs)
+        return real(exc, *secrets, **kwargs)
 
-    monkeypatch.setattr("src.jobs.background.scrubbed", spy)
+    monkeypatch.setattr("src.jobs.background.exception_text", spy)
 
     def boom(ctx):
         raise RuntimeError("x")
@@ -135,19 +135,19 @@ def test_the_secrets_a_job_was_started_with_are_taken_out_of_its_error_and_its_l
 
 def test_a_secret_is_found_by_the_name_a_job_is_handed_it_under_and_a_string_that_is_not_one_is_left_alone(both_held):
     seen = []
-    real = ss.scrubbed
+    real = ss.exception_text
 
-    def spy(text, *secrets, **kwargs):
+    def spy(exc, *secrets, **kwargs):
         seen.append(secrets)
-        return real(text, *secrets, **kwargs)
+        return real(exc, *secrets, **kwargs)
 
     def boom(ctx, **kwargs):
         raise RuntimeError("x")
 
     import src.jobs.background as bg
 
-    original = bg.scrubbed
-    bg.scrubbed = spy
+    original = bg.exception_text
+    bg.exception_text = spy
     try:
         _run_with(
             boom,
@@ -161,7 +161,7 @@ def test_a_secret_is_found_by_the_name_a_job_is_handed_it_under_and_a_string_tha
             nested={"passphrase": "not read: only the top level is"},
         )
     finally:
-        bg.scrubbed = original
+        bg.exception_text = original
     assert [sorted(secrets) for secrets in seen] == [sorted((KEY, MAILBOX, "k-" + KEY))]
 
 
@@ -172,7 +172,7 @@ def test_an_error_whose_scrub_cannot_run_is_published_and_logged_as_its_class_al
     def broken(*args, **kwargs):
         raise ValueError("the scrub broke")
 
-    monkeypatch.setattr("src.jobs.background.scrubbed", broken)
+    monkeypatch.setattr("src.jobs.background.exception_text", broken)
     monkeypatch.setattr("src.jobs.background.log_failure", broken)
 
     def boom(ctx, passphrase):
@@ -218,3 +218,20 @@ def test_a_log_that_cannot_be_written_ends_the_job_as_an_error_and_never_reaches
     st = _run_with(boom, passphrase=KEY)
     assert st["state"] == "error" and KEY not in (st["error"] or "")
     assert hooked == [], "nothing was raised out of the job's thread"
+
+
+def test_a_crash_with_a_unicode_error_in_its_chain_is_published_by_class_and_a_fixed_note(both_held, caplog):
+    """The error a job publishes is the class and a fixed note when a ``UnicodeError`` (its text names a character and its offset)
+    is the cause. MUTATION TARGET: the published text going through ``exception_text``."""
+    caplog.set_level(logging.DEBUG, logger="jobs.background")
+
+    def boom(ctx):
+        try:
+            "held\udcffkey".encode()
+        except UnicodeError as inner:
+            raise RuntimeError("could not encode the key") from inner
+
+    st = _run(boom)
+    assert st["state"] == "error"
+    assert "UnicodeEncodeError" in st["error"] and "udcff" not in st["error"] and "position" not in st["error"], st["error"]
+    assert "udcff" not in caplog.text and "position" not in caplog.text, caplog.text

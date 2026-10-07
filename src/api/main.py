@@ -68,7 +68,7 @@ from src.catalog.provenance import (
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
-from src.monitoring.secret_scrub import log_failure, scrubbed
+from src.monitoring.secret_scrub import log_failure, scrubbed, unicode_note
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
@@ -1031,9 +1031,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     try:
         what = scrubbed(f"unhandled error on {request.method} {request.url.path}")
         log_failure(logger, what, exc)
-        detail = scrubbed(
-            f"internal error: {exc}",
-            withheld="internal error (its text is withheld: the scrub could not run, or could not take a passphrase out of it)",
+        note = unicode_note(exc)  # a UnicodeError names a character and its offset: the class and a fixed note instead
+        detail = (
+            f"internal error: {note}"
+            if note is not None
+            else scrubbed(
+                f"internal error: {exc}",
+                withheld="internal error (its text is withheld: the scrub could not run, or could not take a passphrase out of it)",
+            )
         )
     except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)

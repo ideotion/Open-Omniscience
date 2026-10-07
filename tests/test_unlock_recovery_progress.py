@@ -930,3 +930,6 @@ def test_an_implicit_unicode_context_is_withheld_and_emptied_too(held_key, monke
     with pytest.raises(RuntimeError) as err:
         unlock(PassphraseBody(passphrase="typed-key-fine"))
     assert "UnicodeEncodeError" in str(err.value) and "udcff" not in str(err.value) and "position" not in str(err.value)
+    # The first error is two links down (the converted error's context is the ValueError, whose context it is): emptied in place.
+    first = err.value.__context__.__context__
+    assert isinstance(first, UnicodeError) and first.object == "" and "long-enough" not in repr(first) and "udcff" not in repr(first), repr(first)

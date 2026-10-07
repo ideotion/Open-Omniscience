@@ -779,7 +779,7 @@ def _group_with_encode_error():
         return group
 
 
-def test_a_unicode_error_inside_an_exception_group_is_withheld_too(caplog):
+def test_a_unicode_error_inside_an_exception_group_is_withheld_too(caplog, monkeypatch):
     """``traceback.format_exception`` prints every member of an exception group, so a member's UnicodeError (its character and
     offset) must be found there as in a chain, by every writer and the error journal; the frames stay, so the record still says
     where it happened. MUTATION TARGET: the walk that does not read ``exceptions``."""
@@ -789,23 +789,22 @@ def test_a_unicode_error_inside_an_exception_group_is_withheld_too(caplog):
     from src.monitoring import secret_scrub as ss
 
     group = _group_with_encode_error()
-    outputs = [ss.exception_text(group), ss.traceback_text(group)]
     with caplog.at_level(logging.DEBUG):
         ss.log_failure(logging.getLogger("t"), "failed", group)
-    outputs += [f"{r.getMessage()}{getattr(r, ss.TRACEBACK_ATTRIBUTE, '')}" for r in caplog.records]
+    logged = [f"{r.getMessage()}{getattr(r, ss.TRACEBACK_ATTRIBUTE, '')}" for r in caplog.records]
     seen: list[dict] = []
-    original = errorlog._append
-    errorlog._append = seen.append
-    try:
-        record = logging.LogRecord("t", logging.ERROR, __file__, 1, "failed", None, (type(group), group, group.__traceback__))
-        errorlog._JsonlErrorHandler().emit(record)
-    finally:
-        errorlog._append = original
-    outputs.append(seen[-1]["traceback_tail"])
+    monkeypatch.setattr(errorlog, "_append", seen.append)
+    record = logging.LogRecord("t", logging.ERROR, __file__, 1, "failed", None, (type(group), group, group.__traceback__))
+    errorlog._JsonlErrorHandler().emit(record)
+    journal = seen[-1]["traceback_tail"]
+    traced = ss.traceback_text(group)
+    outputs = [ss.exception_text(group), traced, journal, *logged]
     for shown in outputs:
         assert "udcff" not in shown and "position" not in shown and "surrogate" not in shown, shown
         assert "UnicodeEncodeError" in shown, shown
-    assert "test_secret_scrub_floor_and_forms.py" in outputs[1], "the frames of the traceback are kept"
+    for frames in (traced, journal, *logged):  # the class-only tracebacks say where the error happened
+        assert "test_secret_scrub_floor_and_forms.py" in frames, frames
+    assert "test_secret_scrub_floor_and_forms.py" not in ss.exception_text(group), "exception_text is the class and the note only"
 
 
 def test_the_walk_ignores_suppress_context_and_follows_an_implicit_context():
@@ -842,3 +841,76 @@ def test_defang_empties_the_error_in_place_one_field_at_a_time():
     except ExceptionGroup as group:
         ss._defang(group)
     assert err.object == "" and err.start == 0 and err.end == 0 and "long-enough" not in repr(err) and "udcff" not in repr(err), repr(err)
+
+
+class _Unreadable(Exception):
+    """An exception whose links cannot be read: the walk, the traceback print and the text all hit it."""
+
+    @property
+    def __context__(self):  # type: ignore[override]
+        raise RuntimeError("held-secret-text-xyz")
+
+    @property
+    def __cause__(self):  # type: ignore[override]
+        raise RuntimeError("held-secret-text-xyz")
+
+
+def _unreadable():
+    try:
+        raise _Unreadable("held-secret-text-xyz")
+    except _Unreadable as exc:
+        return exc
+
+
+def test_an_exception_that_cannot_be_read_is_its_class_and_none_of_its_words_in_every_writer(caplog, monkeypatch):
+    """Every fallback of the class-only rule: a walk that raises is the class and none of the words, in each writer, the
+    journal and the block (which still raises ``from None``, with its error emptied if it can be). MUTATION TARGET: any one of
+    the fallbacks."""
+    import logging
+
+    from src.monitoring import errorlog
+    from src.monitoring import secret_scrub as ss
+
+    exc = _unreadable()
+    outputs = [ss.exception_text(exc), ss.traceback_text(exc), ss.unicode_note(exc) or ""]
+    with caplog.at_level(logging.DEBUG):
+        ss.log_failure(logging.getLogger("t"), "failed", exc)
+    outputs += [f"{r.getMessage()}{getattr(r, ss.TRACEBACK_ATTRIBUTE, '')}" for r in caplog.records]
+    seen: list[dict] = []
+    monkeypatch.setattr(errorlog, "_append", seen.append)
+    errorlog._JsonlErrorHandler().emit(
+        logging.LogRecord("t", logging.ERROR, __file__, 1, "failed", None, (type(exc), exc, None))
+    )
+    outputs.append(seen[-1]["traceback_tail"])
+    for shown in outputs:
+        assert "held-secret" not in shown and "_Unreadable" in shown, shown
+    with pytest.raises(RuntimeError) as err, ss.scrub_and_reraise(logging.getLogger("t"), "failed"):
+        raise _Unreadable("held-secret-text-xyz")
+    assert "held-secret" not in str(err.value) and err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_a_defang_that_fails_does_not_let_the_original_out_as_the_context(monkeypatch):
+    """The emptying runs under a suppress: a failure in it still raises the converted error ``from None``."""
+    import logging
+
+    from src.monitoring import secret_scrub as ss
+
+    def broken(exc):
+        raise RuntimeError("held-secret-text-xyz")
+
+    monkeypatch.setattr(ss, "_defang", broken)
+    with pytest.raises(RuntimeError) as err, ss.scrub_and_reraise(logging.getLogger("t"), "failed"):
+        "held\udcffkey".encode()
+    assert "udcff" not in str(err.value) and "held-secret" not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_a_defang_whose_one_field_cannot_be_set_still_empties_the_others():
+    from src.monitoring import secret_scrub as ss
+
+    class Odd(UnicodeEncodeError):
+        object = property(lambda self: "held-secret-text")  # type: ignore[assignment]
+
+    err = Odd("ascii", "held-secret-text", 0, 1, "ordinal not in range(128)")
+    ss._defang(err)
+    assert err.start == 0 and err.end == 0 and err.reason == "withheld" and err.args == (ss.UNICODE_WITHHELD,)
