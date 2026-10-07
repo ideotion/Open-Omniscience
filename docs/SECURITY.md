@@ -205,7 +205,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   wrong-passphrase rate-limiting: an attacker who can brute-force already has the file and
   works offline, so backoff would only punish the honest fat-finger user; the honest lever
   is passphrase length, which the create flow guides.
-- **A crash of the running app leaves no core dump** (2026-10-06). Once the store is unlocked its passphrase and key are in
+- **A crash of the running app leaves no core dump where the platform allows it** (2026-10-06; by platform below). Once the store is unlocked its passphrase and key are in
   the memory of the process that opened it, and a native crash (SIGSEGV, SIGABRT, SIGBUS) asks the kernel to write that
   memory out as a core dump, to a file or to a program that keeps it for weeks (systemd-coredump, apport, abrt). So every
   place a process can come to hold the passphrase (the server, whether `_serve` starts it or the uvicorn command line does,
@@ -217,13 +217,13 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   the handler's hands. There is no option and no launcher line to turn it off. Where the hard limit is already 0 (a
   launcher that ran `ulimit -c 0`) the limit cannot be set, and the process asks the kernel not to dump it
   (`PR_SET_DUMPABLE 0`): weaker, because `exec` resets it and a child is dumpable until it asks too, and the boot record
-  names which mechanism a session ran under (`core_guard`), so "no dump" is never read as "no crash". The Ollama and
+  names which mechanism a session ran under (`core_guard`), so "no dump" is never read as "no crash". The forkserver the keyword re-index workers are forked from engages the same guard when it starts, and each worker engages it first, so that case is covered too. **On Windows**, which has no per-process core limit, the guard sets `SEM_NOGPFAULTERRORBOX` in the process error mode (children inherit it) and clears the C runtime's report of an `abort()`, so a crash is not handed to Windows Error Reporting; those two settings were not measured against a real Windows crash (a fail-fast exit is Windows's to report, and a system-wide LocalDumps setting may still apply). **On macOS** the limit applies and the dumps would go to `/cores`; that was not measured here. The Ollama and
   vLLM servers, the weights download, the Ollama installer script and the uninstall watcher inherit the limit like any
   child, and are NOT handed the passphrase (`OO_DB_PASSPHRASE` and `OO_KEY_PASSPHRASE` are dropped from the environment they are given,
   `model_store.child_env`; the restore child and the OSM reference run, which need it, are given it by name; the fixed
   local read-only tools the app runs for seconds, such as `nvidia-smi` and `journalctl`, and the app's own code inherit
   the server's environment, each listed with its reason in `tests/test_child_env_passphrase.py`): a crash of one of them
-  leaves no dump to examine either (the kernel's log and the launcher's exit record still say a process died of a signal). What this does not cover: a dump the OS kept before this version ran (`python -m src.monitoring.core_guard` lists the names, sizes
+  leaves no dump to examine either (the kernel's log and the launcher's exit record still say a process died of a signal). What this does not cover: a dump taken by a debugger or a dump tool the user runs against the process (the limit stops the kernel's dump of a crash, not a tool that reads the process's memory), anything the limit of 1 leaves (the kernel aborts the dump itself and writes nothing, measured, but a platform without a limit is held only by the settings named above), a dump the OS kept before this version ran (`python -m src.monitoring.core_guard` lists the names, sizes
   and dates of what the machine holds and opens nothing), a hibernation image, swap, a crash kernel's capture, a
   hypervisor's snapshot, root raising the limit, and a process that holds a passphrase and reaches none of the places above
   (a script of an operator's own that reads one and never gives it to the store).

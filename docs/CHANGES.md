@@ -163,7 +163,7 @@ this section were still open.
   being written into the statement, whose text the engine quotes when it cannot parse it (measured: a path with an apostrophe
   made it quote the first 16 to 24 characters of the key), and the path's quotes are doubled. No shipped build opens the persisted
   store yet (its secure backend is not bundled), so nothing a user holds changes; the sidecar and the engine's log go with the cache on a crypto-erase and an uninstall, and a test now fails on any fast hash of a passphrase-like name under `src/` or `scripts/`.
-- A crash of the app leaves no core dump (#CCCC). Once the store is unlocked its passphrase and key are in the memory of
+- A crash of the app leaves no core dump where the platform allows it (#CCCC; Windows is held by two settings that were not measured on Windows, below). Once the store is unlocked its passphrase and key are in the memory of
   the process that opened it, and a native crash asks the kernel to write that memory out, to a file or to a program that
   keeps it for weeks. Every place a process can come to hold the passphrase now sets its core-size limit to exactly 1
   before the passphrase is read or given to the engine, in its own process and not through a launcher line (a shell cannot
@@ -173,7 +173,7 @@ this section were still open.
   into a request is guarded before it reaches the engine and not after the process holds it; children inherit it. Where
   the limit cannot be set (a launcher that
   already set it to 0) the process asks the kernel not to dump it instead, which is weaker and which every session's boot
-  record says (`core_guard`). There is no option to turn it off. `python -m src.monitoring.core_guard` lists the crash
+  record says (`core_guard`); the forkserver the keyword re-index workers are forked from and each worker engage it too. On Windows, which has no core limit, the process error mode gets `SEM_NOGPFAULTERRORBOX` and the C runtime stops reporting an `abort()`, so a crash is not handed to Windows Error Reporting (not measured against a real Windows crash). What stays outside: a dump a debugger or a dump tool the user runs takes, and whatever a limit of 1 leaves on a platform that has none. There is no option to turn it off. `python -m src.monitoring.core_guard` lists the crash
   dumps and reports a machine already holds, by name, size and date, and opens none. The Ollama and vLLM servers, the
   weights download, the Ollama installer script and the uninstall watcher (which outlives the app) that the app starts
   inherit the limit and no longer inherit the passphrase (`OO_DB_PASSPHRASE`, and `OO_KEY_PASSPHRASE`, which wraps the signing keys, are dropped from the environment they are
@@ -181,6 +181,7 @@ this section were still open.
   anything a crash of theirs writes. A test walks `src/` and requires every call that starts a process to pass an
   environment or to be listed with the reason it may inherit the server's (the fixed local read-only tools such as
   `nvidia-smi` and `journalctl`, and the app's own code).
+- A passphrase typed into the address bar no longer reaches a journal the bundle carries: the error journal's HTTP entries, the latency log, the pool's endpoint, the request metrics and the unhandled-error and rate-limit lines name the request by its route template (a fixed label where no route served it, as for the 503 a locked app answers before routing) and by a standard method only; a journal line written before has its path withheld when read. The server's own access line on the console is outside (listed in the ledger).
 - The passphrase is kept out of every log handler the app builds, the server's own included (a last check on each,
   `SecretFilter`, which hands the handler a scrubbed copy of the record and leaves the record itself as it was, so the
   error journal, which scrubs its own records and counts what it reads off the words as logged, is not behind it; every

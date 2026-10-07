@@ -373,3 +373,65 @@ def test_a_held_passphrase_with_a_lone_surrogate_is_still_recognised_when_typed_
     state["held"] = BAD_ENV
     assert U.unlock(U.PassphraseBody(passphrase=BAD_ENV)) == {"unlocked": True, "state": "unlocked-encrypted"}
     assert state["reached"] == [] and state["asked_of_file"] == [BAD_ENV]
+
+
+# --------------------------------------------------------------------------- #
+#  First launch: the create route
+# --------------------------------------------------------------------------- #
+def test_the_create_route_refuses_a_lone_surrogate_in_fixed_words_before_it_creates_or_holds_anything(monkeypatch, tmp_path):
+    """MUTATION TARGET: the check taken out. The passphrase went to ``init_db``, whose key step raised after the engine had
+    opened a connection that was never closed, and the route answered 500."""
+    from fastapi import HTTPException
+
+    from src.api import unlock as U
+    from src.database import connect as C
+
+    monkeypatch.setattr(U, "main_db_path", lambda: tmp_path / "oo.db")
+    monkeypatch.setattr(U, "app_lock_state", lambda: "fresh")
+    held: list = []
+    monkeypatch.setattr(C, "set_passphrase", lambda p: held.append(p))
+    monkeypatch.setattr(U, "_finish_unlock", lambda **kw: held.append("finish"))
+    typed = BAD + "-and-long-enough"
+    with pytest.raises(HTTPException) as err:
+        U.create_db(U.CreateBody(passphrase=typed, confirm=typed))
+    assert err.value.status_code == 400 and err.value.detail == S.UNENCODABLE_PASSPHRASE
+    assert err.value.__cause__ is None and held == [] and list(tmp_path.iterdir()) == []
+
+
+def test_a_fresh_encrypted_store_whose_key_the_engine_refuses_leaves_no_connection_open(monkeypatch, tmp_path):
+    """MUTATION TARGET: the close on the fresh-store paths of ``_connect``. ``_apply_key`` raised after ``sqc.connect`` had
+    opened the file and nothing closed it (a descriptor and a lock held on a store that does not exist yet)."""
+    from sqlcipher3 import dbapi2 as sqc
+
+    from src.database import connect as C
+
+    opened: list = []
+    real = sqc.connect
+
+    class Spy:
+        def __init__(self, conn):
+            self._conn, self.closed = conn, False
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def close(self):
+            self.closed = True
+            self._conn.close()
+
+    def spy_connect(*a, **k):
+        opened.append(Spy(real(*a, **k)))
+        return opened[-1]
+
+    monkeypatch.setattr(sqc, "connect", spy_connect)
+
+    def refuses(conn, key):
+        raise ValueError(S.UNENCODABLE_PASSPHRASE)
+
+    monkeypatch.setattr(C, "_apply_key", refuses)
+    for kwargs in ({"key": "a-fine-key-here"}, {"create_encrypted": True}):
+        opened.clear()
+        monkeypatch.setattr(C, "get_passphrase", lambda: "a-held-key-here")
+        with pytest.raises(ValueError):
+            C._connect(tmp_path / f"new-{len(kwargs)}.db", **kwargs)
+        assert len(opened) == 1 and opened[0].closed is True, kwargs

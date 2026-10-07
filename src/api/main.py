@@ -869,8 +869,11 @@ async def unlock_page():
 # Middleware for Prometheus metrics
 @app.middleware("http")
 async def monitor_requests(request: Request, call_next):
-    method = request.method
-    endpoint = request.url.path
+    # What the DIAGNOSTICS may name (``src/monitoring/request_label.py``): a standard method and the route's template, never the
+    # raw path (whoever calls typed it, and a locked app holds no key to scrub it with).
+    from src.monitoring.request_label import UNMATCHED_ROUTE, safe_method, safe_route
+
+    diag_method = safe_method(request.method)
 
     ACTIVE_REQUESTS.inc()
     start_time = time.time()
@@ -882,7 +885,7 @@ async def monitor_requests(request: Request, call_next):
     try:
         from src.monitoring import latency as _lat
 
-        _lat.note_start(req_id, f"{method} {endpoint}")
+        _lat.note_start(req_id, f"{diag_method} {UNMATCHED_ROUTE}", scope=request.scope, method=diag_method)
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _lat = None  # type: ignore[assignment]
 
@@ -893,7 +896,7 @@ async def monitor_requests(request: Request, call_next):
         from src.database import pool_watch as _pool_watch
 
         _ep_token = _pool_watch.set_endpoint(
-            f"{method} {endpoint}", method=method, scope=request.scope
+            f"{diag_method} {UNMATCHED_ROUTE}", method=diag_method, scope=request.scope
         )
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _pool_watch = None  # type: ignore[assignment]
@@ -909,7 +912,7 @@ async def monitor_requests(request: Request, call_next):
         ACTIVE_REQUESTS.dec()
         if _lat is not None:
             try:
-                _lat.record(req_id, f"{method} {endpoint}", 500, (time.time() - start_time) * 1000.0)
+                _lat.record(req_id, f"{diag_method} {safe_route(request.scope)}", 500, (time.time() - start_time) * 1000.0)
             except Exception:  # noqa: BLE001
                 pass
         raise e
@@ -917,18 +920,18 @@ async def monitor_requests(request: Request, call_next):
     process_time = time.time() - start_time
     status_code = response.status_code
 
-    REQUEST_COUNT.labels(method=method, endpoint=endpoint, http_status=status_code).inc()
-    REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(process_time)
+    # The route template and a standard method label the metrics too: the bundle carries the histogram (``diagnostics/performance.py``),
+    # and a raw path is whatever the caller typed (and an unbounded set of label values).
+    REQUEST_COUNT.labels(method=diag_method, endpoint=safe_route(request.scope), http_status=status_code).inc()
+    REQUEST_LATENCY.labels(method=diag_method, endpoint=safe_route(request.scope)).observe(process_time)
     ACTIVE_REQUESTS.dec()
 
     # Per-route latency percentiles (log #2). Key by the ROUTE TEMPLATE when routing
     # resolved one (so /api/articles/123/view aggregates under /api/articles/{id}/view),
-    # else the raw path. Best-effort; never affects the response.
+    # else a fixed label (never the raw path). Best-effort; never affects the response.
     if _lat is not None:
         try:
-            route_obj = request.scope.get("route")
-            tmpl = getattr(route_obj, "path", None) or endpoint
-            _lat.record(req_id, f"{method} {tmpl}", status_code, process_time * 1000.0)
+            _lat.record(req_id, f"{diag_method} {safe_route(request.scope)}", status_code, process_time * 1000.0)
         except Exception:  # noqa: BLE001
             pass
 
@@ -941,7 +944,7 @@ async def monitor_requests(request: Request, call_next):
         try:
             from src.monitoring.errorlog import note_http_error
 
-            note_http_error(method, endpoint, status_code)
+            note_http_error(diag_method, safe_route(request.scope), status_code)
         except Exception:  # noqa: BLE001 - diagnostics must never affect the response
             pass
 
@@ -969,8 +972,10 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
-    logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
-    REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, http_status=429).inc()
+    from src.monitoring.request_label import safe_method, safe_route
+
+    logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {safe_method(request.method)} {safe_route(request.scope)}")
+    REQUEST_COUNT.labels(method=safe_method(request.method), endpoint=safe_route(request.scope), http_status=429).inc()
     # slowapi's RateLimitExceeded does not expose a public `retry_after`, AND
     # slowapi's own auto-header-injection (`Limiter._inject_headers`, which would
     # otherwise add this) never runs on this path: SlowAPIMiddleware.dispatch returns
@@ -1038,7 +1043,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     handler has answered, and a passphrase that is typed into the request being served (the unlock screen's) is not held yet,
     so this handler does not know it: the routes that take one convert what escapes them (``secret_scrub.scrub_and_reraise``)."""
     try:
-        what = scrubbed(f"unhandled error on {request.method} {request.url.path}")
+        from src.monitoring.request_label import safe_method, safe_route
+
+        what = scrubbed(f"unhandled error on {safe_method(request.method)} {safe_route(request.scope)}")
         log_failure(logger, what, exc)
         note = unicode_note(exc)  # a UnicodeError names a character and its offset: the class and a fixed note instead
         detail = (
@@ -1053,8 +1060,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
         detail = "internal error (its text is withheld: the scrub could not run)"
     try:
+        from src.monitoring.request_label import safe_method, safe_route
+
         REQUEST_COUNT.labels(
-            method=request.method, endpoint=request.url.path, http_status=500
+            method=safe_method(request.method), endpoint=safe_route(request.scope), http_status=500
         ).inc()
     except Exception:  # noqa: BLE001 - metrics must never mask the original error
         pass

@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.monitoring import unlock_marker as _unlock
+from src.monitoring.request_label import route_template
 
 _LOCK = threading.Lock()
 _RES_CAP = 512  # recent durations kept per route (the percentile reservoir)
@@ -140,10 +141,18 @@ def _snappy_verdict(route: str, p95_ms: float, window_n: int, bar_ms: float) -> 
     return "pass" if p95_ms < bar_ms else "fail"
 
 
-def note_start(req_id: int, route: str) -> None:
+def note_start(req_id: int, route: str, *, scope: Any = None, method: str | None = None) -> None:
+    """Stamp a request as in flight. ``route`` is the label until routing names the route: the caller passes a fixed one, never the
+    raw path, and ``scope`` (the request's ASGI scope, which routing fills in) with ``method`` lets the stall record read the
+    route TEMPLATE when it is written."""
     with _LOCK:
         if len(_INFLIGHT) < 4096:
-            _INFLIGHT[req_id] = {"route": route, "started": time.monotonic()}
+            _INFLIGHT[req_id] = {"route": route, "started": time.monotonic(), "scope": scope, "method": method}
+
+
+def _inflight_route(v: dict[str, Any]) -> str:
+    template = route_template(v.get("scope"))
+    return f"{v['method']} {template}" if template and v.get("method") else str(v["route"])
 
 
 def _kind_of(status: int) -> str:
@@ -246,7 +255,7 @@ def _record_block(lag_ms: float) -> None:
         with _LOCK:
             now = time.monotonic()
             in_flight = [
-                {"route": v["route"], "elapsed_ms": round((now - v["started"]) * 1000.0, 1)}
+                {"route": _inflight_route(v), "elapsed_ms": round((now - v["started"]) * 1000.0, 1)}
                 for v in _INFLIGHT.values()
             ]
         # Sort so the longest-running in-flight request (the likely culprit) is first.

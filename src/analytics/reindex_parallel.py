@@ -74,6 +74,7 @@ SAFE BY CONSTRUCTION:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import multiprocessing as _mp
 import os
@@ -226,6 +227,11 @@ def _pool_timeout_s() -> float | None:
     return _POOL_TIMEOUT_S
 
 
+#: What the forkserver imports at its start (``src/monitoring/core_guard_preload.py``): it holds that process, and so every worker
+#: forked from it, to the core guard. The server swallows an ``ImportError``, so a test imports this name.
+_FORKSERVER_PRELOAD = "src.monitoring.core_guard_preload"
+
+
 def _noop_probe() -> bool:
     """Module-level (so it pickles) no-op used to prove a start method works."""
     return True
@@ -245,6 +251,10 @@ def _probe_context(method: str) -> Any:
         ctx = _mp.get_context(method)
     except (ValueError, RuntimeError):  # not supported on this platform
         return None
+    if method == "forkserver":
+        # Before the server starts: its import of this module is where the guard is engaged (see ``_FORKSERVER_PRELOAD``).
+        with contextlib.suppress(AttributeError, ValueError, RuntimeError):
+            ctx.set_forkserver_preload([_FORKSERVER_PRELOAD])
     probe: ProcessPoolExecutor | None = None
     try:
         probe = ProcessPoolExecutor(max_workers=1, mp_context=ctx)
@@ -398,6 +408,11 @@ _worker_extractor: Any = None  # process-local global, set by _worker_init
 
 def _worker_init(extractor_name: str, gazetteer: dict[str, str] | None) -> None:
     global _worker_extractor
+    # FIRST: a worker is exec'd (``forkserver``'s server, ``spawn``), the environment it inherits holds the passphrase on a scripted
+    # start, and where the hard core limit is 0 the non-dumpable flag the parent set does not survive that exec.
+    from src.monitoring import core_guard
+
+    core_guard.engage()
     from src.analytics.extract import get_extractor
 
     _worker_extractor = get_extractor(extractor_name, gazetteer=gazetteer)

@@ -225,6 +225,22 @@ def test_the_record_itself_is_left_as_it_was_for_the_handlers_after_this_one(hel
     assert record.exc_info is exc_info and PASS in record.getMessage()
 
 
+def test_a_cached_exception_text_of_a_unicode_error_is_still_recorded_by_its_class_only(held):
+    """An earlier handler with no filter has already formatted the record, so ``exc_text`` holds the traceback with the codec's
+    words (the character and its offset): the copy rebuilds the text from ``exc_info``, which applies the class-only rule.
+    MUTATION TARGET: the cached text taken through ``scrubbed`` alone, ahead of the ``exc_info`` branch."""
+    try:
+        ("pass" + chr(0xD800) + "word").encode()
+    except UnicodeEncodeError:
+        exc_info = sys.exc_info()
+    record = _record(f"the key {PASS} was refused", (), exc_info)
+    logging.Formatter().format(record)  # a handler ahead of this one caches the exception text on the shared record
+    assert record.exc_text and "position" in record.exc_text, "the control: the cached text carries the codec's words"
+    out = S.SecretFilter().filter(record)
+    assert isinstance(out, logging.LogRecord)
+    assert "UnicodeEncodeError" in out.exc_text and "position" not in out.exc_text and "ud800" not in out.exc_text.lower(), out.exc_text
+
+
 def test_a_record_that_cannot_be_checked_is_written_as_a_fixed_line_with_no_exception(held, monkeypatch):
     """MUTATION TARGET: the failure left to propagate (a record that logging could not write) or the words kept."""
     with _logger() as (log, stream):

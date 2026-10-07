@@ -153,12 +153,30 @@ def test_a_newsletter_import_error_that_cannot_be_checked_is_kept_as_its_class_a
     def broken(*args, **kwargs):
         raise RuntimeError("the scrub broke")
 
-    monkeypatch.setattr(import_job, "scrubbed", broken)
-    monkeypatch.setattr(runlog, "scrubbed", broken)
+    monkeypatch.setattr(S, "_forms_now", broken)  # the scrub cannot run, for ``exception_text`` and for the journal's own
     mgr, tmp_path = failed_import()
     assert mgr.status()["error"] == "RuntimeError: its text is withheld"
     for path in [tmp_path / "import_state.json", *(tmp_path / "run_logs").glob("*.jsonl")]:
         assert PASS not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_a_newsletter_import_that_fails_with_a_unicode_error_behind_it_keeps_its_class_only(failed_import, monkeypatch):
+    """MUTATION TARGET: ``scrubbed(str(exc))`` put back in ``import_job``'s failure handler: the status, the state file and the
+    journal would carry the codec's words, a character of a passphrase and its offset."""
+
+    def boom(*args, **kwargs):
+        try:
+            ("pass" + chr(0xD800) + "word").encode()
+        except UnicodeEncodeError as cause:
+            raise RuntimeError("could not encode") from cause
+
+    run = failed_import  # the fixture's own failing ingest is replaced before the run starts
+    monkeypatch.setattr(import_job, "ingest_emails", boom)
+    mgr, tmp_path = run()
+    assert mgr.status()["error"].startswith("UnicodeEncodeError: "), mgr.status()["error"]
+    for path in [tmp_path / "import_state.json", *(tmp_path / "run_logs").glob("*.jsonl")]:
+        text = path.read_text(encoding="utf-8").lower()
+        assert "ud800" not in text and "position" not in text and "surrogate" not in text, path.name
 
 
 # --------------------------------------------------------------------------- #

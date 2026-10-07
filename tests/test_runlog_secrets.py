@@ -127,6 +127,40 @@ def test_a_scrub_that_cannot_run_writes_the_class_and_none_of_the_words(tmp_path
     assert err["cls"] == "ValueError" and err["msg"] == "ValueError: its text is withheld" and err["traceback"] == ""
 
 
+def _unicode_cause():
+    """The ``UnicodeEncodeError`` a passphrase with a lone surrogate raises: its text names the character and its offset."""
+    try:
+        ("pass" + chr(0xD800) + "word").encode()
+    except UnicodeEncodeError as exc:
+        return exc
+
+
+def _no_codec_words(tmp_path) -> None:
+    journal = _journal(tmp_path)
+    assert "ud800" not in journal.lower() and "position" not in journal and "surrogate" not in journal, journal
+
+
+def test_an_error_that_has_a_unicode_error_behind_it_is_written_by_its_class_only(tmp_path):
+    """MUTATION TARGET: ``runlog.error_fields`` handing the text to ``scrubbed(str(exc))`` again. A ``UnicodeError``'s words name a
+    character of the passphrase and its place in it, which no scrub knows; the record names the class and a fixed note."""
+    cause = _unicode_cause()
+    with pytest.raises(RuntimeError), runlog.run("verify", label="unicode", secrets=(PASS,)):
+        raise RuntimeError("could not encode") from cause
+    err = _error(tmp_path)
+    assert err["msg"].startswith("UnicodeEncodeError: ") and "could not encode" not in err["msg"], err["msg"]
+    _no_codec_words(tmp_path)
+
+
+def test_the_same_when_the_unicode_error_is_a_member_of_an_exception_group(tmp_path):
+    """MUTATION TARGET: the walk that does not enter ``ExceptionGroup`` members."""
+    group = ExceptionGroup("several", [ValueError("fine"), _unicode_cause()])
+    with pytest.raises(ExceptionGroup), runlog.run("verify", label="group", secrets=(PASS,)):
+        raise group
+    err = _error(tmp_path)
+    assert err["msg"].startswith("UnicodeEncodeError: "), err["msg"]
+    _no_codec_words(tmp_path)
+
+
 def test_a_run_that_holds_no_passphrase_writes_the_error_as_it_was(tmp_path):
     _fails("boom")
     err = _error(tmp_path)

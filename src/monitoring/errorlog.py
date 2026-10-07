@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.request_label import PATH_WITHHELD, safe_method
 from src.monitoring.secret_scrub import (
     TRACEBACK_ATTRIBUTE,
     protect_handlers,
@@ -217,11 +218,12 @@ def note_http_error(method: str, path: str, status: int) -> None:
     Best-effort; never raises. Identical (method, path, status) is throttled to once
     per ``_HTTP_THROTTLE_S`` so a poll loop cannot flood the capped log. Level
     ``HTTP`` keeps these out of the problem/lock counts (a response code is not, by
-    itself, an app fault). It records the status, the method and the path and NEVER the
-    response's text (``tests/test_restore_paths_scrub_passphrase.py`` pins that it takes none):
-    the words of a response are the caller's own."""
+    itself, an app fault). It records the status, a standard method and the ROUTE TEMPLATE the caller names as ``path``
+    (never the raw path, which the caller typed: ``request_label``) and NEVER the response's text
+    (``tests/test_restore_paths_scrub_passphrase.py`` pins that it takes none): the words of a response are the caller's own."""
     try:
-        key = (str(method), str(path), int(status))
+        method = safe_method(method)  # a method is any token the client sends
+        key = (method, str(path), int(status))
         now = time.monotonic()
         with _LOCK:
             last = _http_last.get(key)
@@ -238,8 +240,9 @@ def note_http_error(method: str, path: str, status: int) -> None:
                 "level": _HTTP_LEVEL,
                 "logger": "http",
                 "status": status,
-                "method": str(method),
+                "method": method,
                 "path": str(path),
+                "path_kind": "route",
                 "message": msg,
             }
         )
@@ -336,11 +339,27 @@ def install() -> None:
 #: The fields of a journal record that are structure and never the exception's words (the request an HTTP entry is about is the
 #: route and its method, which carry no query): a passphrase that is a level, a logger's name or a route must not take it out
 #: of the record it labels.
-_STRUCTURAL_FIELDS = frozenset({"at", "level", "logger", "method", "path"})
+_STRUCTURAL_FIELDS = frozenset({"at", "level", "logger", "path_kind"})
+
+
+def _http_entry_without_raw_request(entry: dict) -> dict:
+    """An HTTP entry as it may be read. Since 2026-10-07 the entry names the route TEMPLATE (``path_kind`` says so) and a standard
+    method; a line written before holds the path and method exactly as the client sent them (a passphrase typed into the address
+    bar was on a 404), and a locked app holds no key to take it out, so its path is withheld and its message rebuilt from
+    what is left, whatever passphrases the process holds."""
+    out = dict(entry)
+    method = safe_method(out.get("method"))
+    out["method"] = method
+    if out.get("path_kind") != "route":
+        out["path"] = PATH_WITHHELD
+        out["message"] = f"HTTP {out.get('status')} {method} {PATH_WITHHELD}"
+    return out
 
 
 def _scrubbed_entry(entry: dict) -> dict:
     """``entry`` with the passphrases the process holds taken out of every text field that is not structure."""
+    if entry.get("logger") == "http":
+        entry = _http_entry_without_raw_request(entry)
     return {k: scrubbed(v) if isinstance(v, str) and k not in _STRUCTURAL_FIELDS else v for k, v in entry.items()}
 
 

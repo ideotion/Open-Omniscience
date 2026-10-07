@@ -414,18 +414,22 @@ def _connect(
         from sqlcipher3 import dbapi2 as sqc
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
-        _apply_key(conn, key)
-        # ORDER MATTERS (empirically verified, DB-10 §1b, 2026-07-17): on a fresh
-        # SQLCipher connection cipher_page_size MUST be set BEFORE auto_vacuum —
-        # setting auto_vacuum first corrupts page 1's HMAC once the schema is
-        # written, and the store then fails to reopen AT ALL, not merely at the
-        # wrong size. This was proven by the page-size A/B bench's own
-        # rebuild_at_pragmas; the bench was removed on 2026-07-31 (Settings review
-        # ruling 6) after delivering its verdict, so the ordering fact is recorded
-        # here — it is load-bearing for every encrypted store this factory creates.
-        page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
-        conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
-        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        try:
+            _apply_key(conn, key)
+            # ORDER MATTERS (empirically verified, DB-10 §1b, 2026-07-17): on a fresh
+            # SQLCipher connection cipher_page_size MUST be set BEFORE auto_vacuum —
+            # setting auto_vacuum first corrupts page 1's HMAC once the schema is
+            # written, and the store then fails to reopen AT ALL, not merely at the
+            # wrong size. This was proven by the page-size A/B bench's own
+            # rebuild_at_pragmas; the bench was removed on 2026-07-31 (Settings review
+            # ruling 6) after delivering its verdict, so the ordering fact is recorded
+            # here — it is load-bearing for every encrypted store this factory creates.
+            page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
+            conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
+            conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        except BaseException:
+            conn.close()  # an engine that refuses the key or a page setting must not leave its connection open
+            raise
         return conn
     if create_encrypted is False or (create_encrypted is None and plaintext_mode()):
         conn = sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
@@ -437,11 +441,15 @@ def _connect(
         from sqlcipher3 import dbapi2 as sqc
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
-        _apply_key(conn, use_key)
-        # Same ordering requirement as the explicit-key branch above.
-        page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
-        conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
-        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        try:
+            _apply_key(conn, use_key)
+            # Same ordering requirement as the explicit-key branch above.
+            page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
+            conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
+            conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        except BaseException:
+            conn.close()  # an engine that refuses the key or a page setting must not leave its connection open
+            raise
         return conn
     raise DatabaseLockedError(
         f"{p.name} does not exist yet: choose a passphrase (encrypted by default) "

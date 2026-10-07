@@ -72,7 +72,8 @@ def set_endpoint(
     so the request's ASGI ``scope`` (the dict routing fills in, shared with the endpoint's
     context) is kept with the ``method`` and the template is read from it at checkout. Without it
     the label stays the raw path, which would carry an article id or an edition's file name into
-    the bundle, where the latency log keys on the template."""
+    the bundle, where the latency log keys on the template. Since 2026-10-07 the caller passes a fixed label
+    (``request_label``), never the raw path: whoever calls typed it, and a passphrase typed into the address bar is a path."""
     return _ENDPOINT.set(None if label is None else (label, method, scope))
 
 

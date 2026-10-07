@@ -790,10 +790,12 @@ def _scrubbed_copy(record: logging.LogRecord) -> logging.LogRecord | None:
     if clean is None:
         return _withheld(record)
     exc_text, stack = record.exc_text, record.stack_info
-    if exc_text:
-        exc_text = scrubbed(exc_text)
-    elif record.exc_info and record.exc_info[1] is not None:
+    if record.exc_info and record.exc_info[1] is not None:
+        # FIRST, even when an earlier formatter cached ``exc_text``: that text has the words of a UnicodeError in it, and only
+        # ``traceback_text`` records such an error by its class (the cached text would be taken through ``scrubbed`` alone).
         exc_text = traceback_text(record.exc_info[1]).rstrip("\n")
+    elif exc_text:
+        exc_text = scrubbed(exc_text)
     if stack:
         stack = scrubbed(stack)
     if clean == text and exc_text == record.exc_text and stack == record.stack_info and not record.exc_info:

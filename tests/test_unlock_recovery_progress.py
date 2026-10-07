@@ -847,6 +847,46 @@ def test_a_key_with_a_lone_surrogate_typed_where_the_held_key_is_compared_is_a_w
     assert "ud800" not in written and "position" not in written and "surrogate" not in written, written
 
 
+def test_a_held_key_with_a_lone_surrogate_never_puts_a_character_or_the_key_in_an_answer_a_log_or_a_chain(held_key, crashed_store, monkeypatch, caplog):
+    """THE REAL ROUTE, THE REAL STORE. The held key can carry a lone surrogate (the environment's bytes decoded with
+    ``surrogateescape``), and the error a strict encode raises names that character and its offset: one character matches no held
+    shape, so no scrub could take it out. ``same_passphrase`` cannot raise, so: (b) the held key typed again is asked of the file,
+    read-only, and refused with the store's file and log bytes untouched, and (a) another key typed is verified against the
+    file (which a wrong key still pays for, as ``test_a_wrong_passphrase_leaves_no_record_behind`` says) and refused, each as the
+    fixed 403, and nothing the answer, the log records or the exception chain say holds a piece of the key or the
+    codec's words; then the right key repairs. MUTATION TARGET: a compare that encodes the held key strictly."""
+    import traceback
+
+    from fastapi import HTTPException
+
+    from src.api import unlock as unlock_mod
+    from src.api.unlock import PassphraseBody, unlock
+
+    db, wal = crashed_store
+    held = "held\udcffkey-long-enough"
+    held_key.set_passphrase(held)
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    before = (db.read_bytes(), wal.read_bytes())
+
+    def refused(typed):
+        with caplog.at_level(logging.DEBUG), pytest.raises(HTTPException) as err:
+            unlock(PassphraseBody(passphrase=typed))
+        assert err.value.status_code == 403, err.value.detail
+        records = "\n".join(
+            f"{r.getMessage()}\n{r.exc_text or ''}\n{getattr(r, 'scrubbed_traceback', '')}" for r in caplog.records
+        )
+        chain = "".join(traceback.format_exception(err.value))
+        for where in (err.value.detail, records, chain):
+            assert "udcff" not in where and "position" not in where and "long-enough" not in where, where
+        assert "surrogate" not in err.value.detail and "surrogate" not in records, (err.value.detail, records)
+
+    refused(held)  # (b) the held key again: asked of the file, read-only, through the real _file_opens_with
+    assert (db.read_bytes(), wal.read_bytes()) == before, "the read-only question folded nothing of the log into the store"
+    refused("typed-key-fine")  # (a) not the held key: verified against the file through the real _unlock_locked
+    assert unlock(PassphraseBody(passphrase=_KEY))["unlocked"] is True
+    assert held_key.get_passphrase() == _KEY
+
+
 def test_the_held_key_question_with_a_wrong_short_key_is_answered_in_the_fixed_403_words(tmp_path, monkeypatch):
     """``_file_opens_with`` passes the same withheld words as ``_unlock_locked``: a key under the scrub's floor gets the fixed
     sentence, not the long withheld notice."""

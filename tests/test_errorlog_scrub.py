@@ -320,18 +320,52 @@ def test_a_record_an_older_build_wrote_is_read_with_the_passphrases_out_of_it_an
     assert HELD in (tmp_path / "app_errors.jsonl").read_text(encoding="utf-8"), "the file is read, never rewritten"
 
 
-@pytest.mark.parametrize("secret", ["POST", "/api/unlock", "HTTP", "http", "2026-09-01"])
+@pytest.mark.parametrize("secret", ["HTTP", "http", "2026-09-01"])
 def test_the_structure_of_an_older_record_is_never_scrubbed(journal, monkeypatch, tmp_path, secret):
-    """MUTATION TARGET: a field taken out of ``_STRUCTURAL_FIELDS``: a passphrase that is a method, a route, a level, a logger or a
-    date would take the label out of the record it labels and leave it unreadable as an entry of the journal."""
+    """MUTATION TARGET: a field put back into ``_STRUCTURAL_FIELDS`` that is not structure, or one taken out that is: a passphrase
+    that is a level, a logger or a date would take the label out of the record it labels and leave it unreadable as an entry of
+    the journal. (The method and the path are NOT structure any more: see the two tests below.)"""
     monkeypatch.setattr(connect, "_passphrase", secret)
     _written_by_an_older_build(
         tmp_path, level="HTTP", logger="http", status=404, method="POST", path="/api/unlock", message="HTTP 404 POST /api/unlock"
     )
     (entry,) = errorlog.recent_errors()
-    assert (entry["method"], entry["path"], entry["status"], entry["level"], entry["logger"]) == ("POST", "/api/unlock", 404, "HTTP", "http")
+    assert (entry["status"], entry["level"], entry["logger"], entry["method"]) == (404, "HTTP", "http", "POST")
     assert entry["at"] == "2026-09-01T00:00:00+00:00"
-    assert entry["message"] == "HTTP 404 POST /api/unlock".replace(secret, "***redacted***")
+
+
+def test_an_older_http_line_is_read_with_its_raw_path_withheld_whether_or_not_a_passphrase_is_held(tmp_path, monkeypatch):
+    """MUTATION TARGET: the withholding. A line written before only route templates were recorded holds the path the client sent,
+    and a passphrase typed into the address bar is on it; a LOCKED app holds no key to take it out, so the path goes whole."""
+    monkeypatch.setattr(errorlog, "_log_path", lambda: tmp_path / "app_errors.jsonl")
+    monkeypatch.setattr(connect, "_passphrase", None)
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    typed = "my-typed-secret-77"
+    _written_by_an_older_build(
+        tmp_path, level="HTTP", logger="http", status=503, method=typed, path=f"/{typed}", message=f"HTTP 503 {typed} /{typed}"
+    )
+    _written_by_an_older_build(
+        tmp_path, level="HTTP", logger="http", status=404, method="GET", path=f"/api/{typed}", message=f"HTTP 404 GET /api/{typed}"
+    )
+    entries = errorlog.recent_errors()
+    assert typed not in json.dumps(entries)
+    assert [e["method"] for e in entries] == ["(other method)", "GET"]
+    assert all(e["path"].startswith("(path withheld") and e["message"].startswith(f"HTTP {e['status']} ") for e in entries)
+    assert typed in (tmp_path / "app_errors.jsonl").read_text(encoding="utf-8"), "the file is read, never rewritten"
+
+
+def test_a_line_written_now_names_the_route_template_and_is_read_as_it_is(journal, tmp_path):
+    errorlog.note_http_error("GET", "/api/articles/{id}/view", 404)
+    (entry,) = errorlog.recent_errors()
+    assert (entry["method"], entry["path"], entry["path_kind"]) == ("GET", "/api/articles/{id}/view", "route")
+    assert entry["message"] == "HTTP 404 GET /api/articles/{id}/view"
+
+
+def test_the_method_of_an_error_response_is_written_only_when_it_is_a_standard_one(journal):
+    """MUTATION TARGET: ``safe_method`` in ``note_http_error``. An HTTP method is any token the client sends."""
+    errorlog.note_http_error("zR4#nPt-typed", "(no route matched)", 404)
+    (entry,) = errorlog.recent_errors()
+    assert entry["method"] == "(other method)" and "zR4" not in json.dumps(entry)
 
 
 def test_the_summary_still_counts_an_older_record_by_its_text_when_a_passphrase_is_a_piece_of_the_phrase(journal, monkeypatch, tmp_path):

@@ -183,6 +183,80 @@ def test_strict_passes_where_the_limit_can_be_set(kernel):
     assert _ENGAGE(strict=True)["mechanism"] == "rlimit"
 
 
+@pytest.fixture
+def windows(monkeypatch):
+    """A fake Windows process: an error mode and the C runtime's abort flags that the three calls read and change, so the
+    logic runs in every CI job. ``state`` holds what the process has; ``calls`` what was asked of it."""
+    state = {"mode": 0, "abort": 0x3}  # default: the fault dialog is on and abort() reports (_WRITE_ABORT_MSG | _CALL_REPORTFAULT)
+    calls: list[tuple] = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(G, "_resource", lambda: None)
+    monkeypatch.setattr(G, "_prctl", lambda *a, **k: None)
+    monkeypatch.setattr(G, "_read_pattern", lambda: None)
+    monkeypatch.setattr(G, "_win_error_mode", lambda: state["mode"])
+
+    def set_mode(mode):
+        calls.append(("SetErrorMode", mode))
+        state["mode"] = mode
+
+    def abort_flags(flags=0, mask=0):
+        before = state["abort"]
+        if mask:
+            calls.append(("_set_abort_behavior", flags, mask))
+            state["abort"] = (before & ~mask) | (flags & mask)
+        return before
+
+    monkeypatch.setattr(G, "_win_set_error_mode", set_mode)
+    monkeypatch.setattr(G, "_win_abort_flags", abort_flags)
+    return state, calls
+
+
+def test_on_windows_engage_keeps_a_crash_from_windows_error_reporting_with_both_settings(windows):
+    """MUTATION TARGETS: either call removed. A process with no core limit to set is otherwise left to LocalDumps and the report
+    queue; the error mode is inherited by a child, the runtime's report of an abort() is not."""
+    state, calls = windows
+    state["mode"] = 0x8001  # another bit the process already had stays
+    out = _ENGAGE()
+    assert state["mode"] == 0x8001 | 0x0002, "SEM_NOGPFAULTERRORBOX is ORed in, nothing else is touched"
+    assert state["abort"] == 0x1, "_CALL_REPORTFAULT is cleared, the abort message stays"
+    assert out["mechanism"] == "error-mode" and out["inherited_by_children"] is True
+    assert out["win_nogpfault"] is True and out["win_abort_reportfault"] is False
+    assert [c[0] for c in calls] == ["SetErrorMode", "_set_abort_behavior"]
+
+
+def test_on_windows_status_says_which_of_the_two_settings_is_missing(windows):
+    state, _ = windows
+    assert G.status()["mechanism"] == "none"
+    state["mode"] = 0x0002
+    out = G.status()
+    assert out["mechanism"] == "none" and out["win_nogpfault"] is True and out["win_abort_reportfault"] is True
+    state["mode"], state["abort"] = 0, 0x1
+    out = G.status()
+    assert out["mechanism"] == "none" and out["win_nogpfault"] is False and out["win_abort_reportfault"] is False
+
+
+def test_on_windows_a_process_already_held_is_left_alone_and_strict_passes(windows):
+    state, calls = windows
+    _ENGAGE()
+    calls.clear()
+    assert _ENGAGE(strict=True)["mechanism"] == "error-mode" and calls == []
+
+
+def test_on_windows_strict_refuses_when_the_settings_cannot_be_made(windows, monkeypatch):
+    monkeypatch.setattr(G, "_win_set_error_mode", lambda mode: None)
+    with pytest.raises(G.CoreGuardError):
+        _ENGAGE(strict=True)
+    assert _ENGAGE()["mechanism"] == "none", "not strict: it never raises, and the status says nothing held"
+
+
+def test_the_windows_calls_are_nothing_off_windows():
+    if sys.platform == "win32":
+        pytest.skip("this is the control for the other systems")
+    assert G._win_error_mode() is None and G._win_abort_flags() is None
+    G._win_set_error_mode(2)  # never raises, touches nothing
+    assert "win_nogpfault" not in G.status()
+
+
 def test_a_system_that_refuses_both_says_none_and_raises_only_when_strict(kernel):
     kernel.soft = kernel.hard = 0
     kernel.can_set_dumpable = False  # a sandbox that filters prctl

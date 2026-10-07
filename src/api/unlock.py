@@ -31,9 +31,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.monitoring.secret_scrub import (
+    UNENCODABLE_PASSPHRASE,
     UNREADABLE_TEXT,
     exception_text,
     log_failure,
+    passphrase_bytes,
     same_passphrase,
     scrub_and_reraise,
 )
@@ -782,6 +784,12 @@ def create_db(body: CreateBody) -> dict:
         raise HTTPException(status_code=400, detail="passphrases do not match")
     if len(body.passphrase) < _MIN_PASSPHRASE:
         raise HTTPException(status_code=400, detail=f"use at least {_MIN_PASSPHRASE} characters")
+    # A lone surrogate cannot be written into the engine's statement: refused with fixed words BEFORE anything is created (as
+    # ``release_run`` does), not by ``init_db``'s key step after the engine has opened a connection for it.
+    try:
+        passphrase_bytes(body.passphrase)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=UNENCODABLE_PASSPHRASE) from None
     # As in ``_unlock_locked``: the key is not held until the store is created, so what escapes the block is converted.
     with scrub_and_reraise(_LOG, "create failed", body.passphrase):
         set_passphrase(body.passphrase)

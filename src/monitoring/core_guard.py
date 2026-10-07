@@ -71,6 +71,11 @@ _PR_GET_DUMPABLE = 3
 _PR_SET_DUMPABLE = 4
 _CORE_PATTERN = Path("/proc/sys/kernel/core_pattern")
 
+#: Windows: ``SetErrorMode``'s bit that keeps the system's fault dialog, and with it Windows Error Reporting's collection of a
+#: dump, away from a process that crashes; and the C runtime's ``abort()`` flag that sends an abort to that report.
+_SEM_NOGPFAULTERRORBOX = 0x0002
+_CALL_REPORTFAULT = 0x2
+
 _REFUSED = (
     "core dumps cannot be limited in this process (the hard core limit is already 0, or this system has no such limit)"
 )
@@ -102,6 +107,42 @@ def _prctl(option: int, arg: int = 0) -> int | None:
         libc.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
         libc.prctl.restype = ctypes.c_int
         return int(libc.prctl(option, arg, 0, 0, 0))
+    except (OSError, AttributeError, ImportError, ValueError):
+        return None
+
+
+def _win_error_mode() -> int | None:
+    """The process error mode (``GetErrorMode``), or ``None`` where it cannot be read (not Windows, no ctypes). A seam:
+    the tests stand in for the Windows calls, so the logic runs in every CI job."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        return int(ctypes.windll.kernel32.GetErrorMode())  # type: ignore[attr-defined,unused-ignore]
+    except (OSError, AttributeError, ImportError, ValueError):
+        return None
+
+
+def _win_set_error_mode(mode: int) -> None:
+    """``SetErrorMode(mode)``: a child process inherits it. Never raises."""
+    if sys.platform != "win32":
+        return
+    with contextlib.suppress(OSError, AttributeError, ImportError, ValueError):
+        import ctypes
+
+        ctypes.windll.kernel32.SetErrorMode(ctypes.c_uint(mode))  # type: ignore[attr-defined,unused-ignore]
+
+
+def _win_abort_flags(flags: int = 0, mask: int = 0) -> int | None:
+    """The C runtime's ``_set_abort_behavior(flags, mask)``: it changes the bits in ``mask`` to ``flags`` and returns the flags
+    as they were before, so ``(0, 0)`` reads them. ``None`` where there is no such function."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        return int(ctypes.cdll.ucrtbase._set_abort_behavior(ctypes.c_uint(flags), ctypes.c_uint(mask)))
     except (OSError, AttributeError, ImportError, ValueError):
         return None
 
@@ -147,8 +188,15 @@ def _held() -> dict[str, Any]:
         out["inherited_by_children"] = True
     elif out["dumpable"] == 0:
         out["mechanism"] = "dumpable"
-    elif resource is None and out["dumpable"] is None:
+    elif resource is None and out["dumpable"] is None and sys.platform != "win32":
         out["mechanism"] = "unsupported"
+    if sys.platform == "win32":
+        mode, abort = _win_error_mode(), _win_abort_flags()
+        out["win_nogpfault"] = None if mode is None else bool(mode & _SEM_NOGPFAULTERRORBOX)
+        out["win_abort_reportfault"] = None if abort is None else bool(abort & _CALL_REPORTFAULT)
+        if out["win_nogpfault"] is True and out["win_abort_reportfault"] is False:
+            out["mechanism"] = "error-mode"
+            out["inherited_by_children"] = True
     return out
 
 
@@ -157,12 +205,15 @@ def status() -> dict[str, Any]:
 
     * ``mechanism``: ``"rlimit"`` (``RLIMIT_CORE`` is exactly 1, soft and hard: no dump of this process or of any
       descendant, whatever the pattern), ``"dumpable"`` (the limit could not be set and this process asked the kernel
-      not to dump it: a descendant is not covered), ``"none"`` (neither), ``"unsupported"`` (no per-process core limit
-      here, and no other mechanism);
+      not to dump it: a descendant is not covered), ``"error-mode"`` (Windows: the process error mode carries
+      ``SEM_NOGPFAULTERRORBOX`` and the C runtime's ``abort()`` no longer reports the fault, so a crash is not handed to
+      Windows Error Reporting; a child inherits the error mode), ``"none"`` (neither), ``"unsupported"`` (no per-process
+      core limit here, and no other mechanism);
     * ``soft`` and ``hard``: the limit as the kernel holds it (a number of bytes or ``"unlimited"``), ``None`` where it
       cannot be read;
     * ``dumpable``: ``prctl(PR_GET_DUMPABLE)`` (0 not, 1 yes, 2 root only), ``None`` where it cannot be read;
     * ``inherited_by_children``: whether a process this one starts is covered with no code of its own;
+    * ``win_nogpfault`` and ``win_abort_reportfault`` (Windows only): the two settings above, each ``None`` where unread;
     * ``handler``: :func:`pattern_handler`; ``platform``: ``sys.platform``.
 
     Compact enough for the boot record, and never raises."""
@@ -183,10 +234,18 @@ def engage(*, strict: bool = False) -> dict[str, Any]:
 
     Not strict (the default), it never raises: it sets ``RLIMIT_CORE`` to ``(1, 1)``, and where that is refused it
     makes the process non-dumpable, and ``status()["mechanism"]`` says which of them held. Strict, it requires the
-    ``rlimit`` mechanism, because that is the one a child inherits: it raises :class:`CoreGuardError` otherwise,
+    ``rlimit`` mechanism (on Windows ``error-mode``), because those are the ones a child inherits: it raises :class:`CoreGuardError` otherwise,
     and tries nothing weaker."""
     now = _held()
-    if now["mechanism"] != "rlimit":
+    if now["mechanism"] not in ("rlimit", "error-mode") and sys.platform == "win32":
+        # Windows has no core limit: a native crash goes to Windows Error Reporting (LocalDumps, the report queue). Both
+        # settings keep it from collecting one: the error mode (inherited) and the runtime's report of an abort().
+        mode = _win_error_mode()
+        if mode is not None:
+            _win_set_error_mode(mode | _SEM_NOGPFAULTERRORBOX)
+        _win_abort_flags(0, _CALL_REPORTFAULT)
+        now = _held()
+    if now["mechanism"] not in ("rlimit", "error-mode"):
         resource = _resource()
         if resource is not None:
             # ValueError: "not allowed to raise maximum limit", the hard limit is already 0 (``ulimit -c 0``).
@@ -196,7 +255,7 @@ def engage(*, strict: bool = False) -> dict[str, Any]:
         if now["mechanism"] != "rlimit" and not strict:
             _prctl(_PR_SET_DUMPABLE, 0)
             now = _held()
-    if strict and now["mechanism"] != "rlimit":
+    if strict and now["mechanism"] not in ("rlimit", "error-mode"):
         raise CoreGuardError(_REFUSED)
     return status()
 

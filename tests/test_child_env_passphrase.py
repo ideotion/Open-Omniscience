@@ -233,7 +233,7 @@ def test_the_spawn_walk_reads_each_shape_of_a_call_that_starts_a_process(case):
 #: Modules of ``src/`` with a call that starts a process and names no ``env``: the child inherits the server's environment, which
 #: holds the passphrase on a scripted or headless start. Each says why that is right for it. Held to zero slack both ways.
 _INHERITS = {
-    "analytics/reindex_parallel.py": "the keyword workers of a re-index: the app's own code, which never opens the corpus (it extracts from the text it is handed), started by the standard library; they hold the inherited core limit, and a worker that imports the store engages the guard itself",
+    "analytics/reindex_parallel.py": "the keyword workers of a re-index: the app's own code, which never opens the corpus (it extracts from the text it is handed), started by the standard library; they hold the inherited core limit, and where the hard limit is 0 the forkserver they are forked from engages the guard when it starts (`core_guard_preload`) and each worker engages it first in `_worker_init`",
     "api/diagnostics/bundle.py": "`sysctl -n machdep.cpu.brand_string`: a fixed local read of the processor's name, for under two seconds, whose output the app reads",
     "llm/backend.py": "`nvidia-smi --query-gpu`: a fixed local read of the driver's report, for under five seconds, whose output the app reads",
     "llm/installer.py": "`sudo -n true`: a fixed local test of whether sudo asks for a password, for under five seconds (the install script beside it is given `child_env()`)",
