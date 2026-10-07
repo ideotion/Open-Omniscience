@@ -283,21 +283,32 @@ def read_liveness() -> dict[str, Any] | None:
 # --------------------------------------------------------------------------- #
 
 
-def _hwm_last_seen(prev_state: dict[str, Any]) -> dict[str, Any] | None:
-    """The memory high-water sidecar's record of the previous session, when it names the
-    same process as the sentinel. Read before ``capture_previous()`` resets it (the boot
-    calls this module first), so it still describes the session that died."""
-    try:
-        from src.monitoring.session_hwm import previous
+def _hwm_last_seen(prev_state: dict[str, Any] | None, sid: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    """``(marks, why_not)``: the memory high-water sidecar's record of the session that died, and when there is none to trust, why
+    (``"absent"``, ``"unreadable"``, ``"another session"`` or ``"no identity"``). Read before ``capture_previous()`` resets it (the
+    boot calls this module first), so it still describes the session that died.
 
-        got = previous()
-    except Exception:  # noqa: BLE001 - a nicety on a seeded record, never load-bearing
-        return None
+    WHOSE it is is decided by identity, never by a process id alone (the system reuses them): ``sid`` is the ledger's id for the
+    session that died, and the sidecar must carry the same one (``session_hwm`` writes it from the ledger at boot). A sidecar with
+    no id is no evidence, and so is a stale one a failed reset left behind, which names an older session. The SEED (no ``sid``: the
+    ledger holds no boot of that session) has only the sentinel's process id to go by, and refuses when either side lacks it."""
+    try:
+        from src.monitoring.session_hwm import previous_why
+
+        got, why = previous_why()
+    except Exception:  # noqa: BLE001 - a nicety on a record, never load-bearing
+        return None, "unreadable"
     if not isinstance(got, dict):
-        return None
-    if prev_state.get("pid") is not None and got.get("pid") is not None and got.get("pid") != prev_state.get("pid"):
-        return None
-    return got
+        return None, why or "absent"
+    if sid is not None:
+        ident = got.get("session_id")
+        if not isinstance(ident, str) or not ident:
+            return None, "no identity"
+        return (got, None) if ident == sid else (None, "another session")
+    want, have = (prev_state or {}).get("pid"), got.get("pid")
+    if not isinstance(want, int) or not isinstance(have, int):
+        return None, "no identity"
+    return (got, None) if want == have else (None, "another session")
 
 
 def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -324,7 +335,7 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
                            "source": "forensics-sentinel", "sentinel_state": state or None}
     ended = _norm_iso(prev_state.get("ended_at"))
     teardown = _norm_iso(prev_state.get("shutdown_phase_at"))
-    hwm = _hwm_last_seen(prev_state) if state != "clean" else None
+    hwm = _hwm_last_seen(prev_state)[0] if state != "clean" else None
     last_seen = _norm_iso((hwm or {}).get("last_ts"))
     if state == "clean" and ended:
         end.update({"at": ended, "clean": True, "basis": "the sentinel's clean-shutdown stamp"})
@@ -352,14 +363,31 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
 _PEAK_KEYS = (
     "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at", "swap_used_max_mb", "swap_used_max_at", "phase",
 )
-#: The most one of the two memory records of an end may take (``previous_at_peak``, ``previous_pressure``), in bytes of JSON.
+#: The most one of the two memory records of an end (``previous_at_peak``, ``previous_pressure``) may take, in bytes of the
+#: line as it is WRITTEN (ASCII-escaped JSON). WHAT IT PROTECTS: the ledger's size and the debug bundle's. A crash loop writes
+#: one end per boot, and ``boots.json`` carries ten of them inside its own 30 KiB share of the 4 MB zip; two records of 2,048
+#: bytes keep an end near 5 KiB, so the member's cut to its budget drops a few of the oldest boots and never a record in half.
+#: A cut says what it left out (``cut``); it never shrinks what is COUNTED (``threads_in_snapshot``).
 END_RECORD_MAX_BYTES = 2048
-#: How many of the busiest threads of the newest heavy snapshot an end record names.
+#: How many of the busiest threads of the newest heavy snapshot an end record names. WHAT IT PROTECTS: the record's size (about
+#: 150 bytes a thread): three innermost frames say where a crash loop sat, and a fourth seldom changes the answer. The count of
+#: threads in the snapshot is kept whole, and the cut counts the ones left out.
 _END_THREADS = 3
+#: The longest a thread's NAME and its innermost FRAME may be in an end record (after paths are tokenised). WHAT THEY PROTECT:
+#: the record's size against a name or a frame that carries a long text; a name or frame that is cut ends in :data:`_CUT_MARK`.
+_THREAD_NAME_MAX = 80
+_FRAME_MAX = 160
+_CUT_MARK = "…[cut]"
 
 
 def _json_size(value: Any) -> int:
-    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    """The size of ``value`` as the ledger WRITES it (``_append``: ASCII-escaped, no spaces), not as UTF-8 text: a letter outside
+    ASCII is six bytes in the file."""
+    return len(json.dumps(value, separators=(",", ":"), default=str).encode("ascii"))
+
+
+def _cut_text(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + _CUT_MARK
 
 
 def _peaks_of(hwm: dict[str, Any]) -> dict[str, Any]:
@@ -375,24 +403,29 @@ def _scalars(source: Any) -> dict[str, Any]:
 
 def _at_peak_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
     """What the memory was made of at the session's RSS peak (``at_peak``: anonymous against file-backed, glibc's heap in
-    use against freed-but-held, CPython's blocks), its plain fields, cut to :data:`END_RECORD_MAX_BYTES` with the cut named."""
+    use against freed-but-held, CPython's blocks), its plain fields, cut to :data:`END_RECORD_MAX_BYTES` with the cut named. The
+    cut's own text is counted before it is written."""
     got = _scalars(hwm.get("at_peak"))
     if not got:
         return None
-    left_out: list[str] = []
-    while _json_size(got) > END_RECORD_MAX_BYTES and got:
-        left_out.append(got.popitem()[0])
+    left_out = 0
+    while got and _json_size(got if not left_out else {**got, "cut": {"fields_left_out": len(got) + left_out}}) > END_RECORD_MAX_BYTES:
+        got.popitem()
+        left_out += 1
     if left_out:
-        got["cut"] = {"fields_left_out": len(left_out)}
+        got["cut"] = {"fields_left_out": left_out}
     return got
 
 
 def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
     """The newest HEAVY snapshot of the session, as much of it as a crash needs: why it was taken and when, the memory
-    readings, CPython's blocks, the guard's block with the release ladder's last record, and the busiest threads by NAME and
-    innermost frame with every path in a frame tokenised (``path_tokens``: nothing under the home directory is written whole).
-    Cut to :data:`END_RECORD_MAX_BYTES`, and the cut says how many entries it left out (threads, then fields)."""
+    readings, CPython's blocks, the guard's block with the release ladder's last record (rebuilt from the allow-list: numbers,
+    step names and the class of an error), and the busiest threads by NAME and innermost frame with every path tokenised
+    (``path_tokens``: nothing under the home directory is written whole). Cut to :data:`END_RECORD_MAX_BYTES` as the line is
+    written, and ``cut`` says what it left out (threads, then the release record, then the guard block, and how many names or
+    frames were cut short); the cut's own text is counted before it is written."""
     from src.monitoring.path_tokens import tokenise_paths
+    from src.monitoring.release_view import allow_listed
 
     snaps = hwm.get("pressure")
     snap = snaps[-1] if isinstance(snaps, list) and snaps and isinstance(snaps[-1], dict) else None
@@ -405,16 +438,21 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
     guard = snap.get("guard")
     if isinstance(guard, dict):
         out["guard"] = {k: v for k, v in guard.items() if k != "last_release"}
-        if isinstance(guard.get("last_release"), dict):
-            out["release"] = guard["last_release"]
+        release = allow_listed(guard.get("last_release"))
+        if release is not None:
+            out["release"] = release
+    texts_cut = 0
     threads = []
     for t in snap.get("threads") or []:
         if not isinstance(t, dict) or t.get("waiting") or t.get("sampler"):
             continue
         stack = t.get("stack") or []
+        name = tokenise_paths(str(t.get("name") or "?"))
+        frame = tokenise_paths(str(stack[0])) if stack else None
+        texts_cut += len(name) > _THREAD_NAME_MAX or (frame is not None and len(frame) > _FRAME_MAX)
         threads.append({
-            "name": tokenise_paths(str(t.get("name") or "?"))[:80],
-            "frame": tokenise_paths(str(stack[0]))[:160] if stack else None,
+            "name": _cut_text(name, _THREAD_NAME_MAX),
+            "frame": None if frame is None else _cut_text(frame, _FRAME_MAX),
             **({"cpu_s": t["cpu_s"]} if "cpu_s" in t else {}),
         })
         if len(threads) == _END_THREADS:
@@ -422,36 +460,37 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
     if threads:
         out["threads"] = threads
     out["threads_in_snapshot"] = len([t for t in snap.get("threads") or [] if isinstance(t, dict)])
-    cut: dict[str, Any] = {}
+    cut: dict[str, Any] = {"texts_cut": texts_cut} if texts_cut else {}
+    # The largest cut text this record can carry, reserved while anything is being cut: the size is the line as written.
+    reserve = {"texts_cut": _END_THREADS, "threads_left_out": _END_THREADS, "fields_left_out": ["release", "guard"]}
 
     def over() -> bool:
-        return _json_size({**out, "cut": {"threads_left_out": 999, "fields_left_out": ["release", "guard"]}} if cut else out) > END_RECORD_MAX_BYTES
+        return _json_size({**out, "cut": reserve}) > END_RECORD_MAX_BYTES
 
-    # The cut's own text is part of the size it is cut to: it is counted before it is written.
-    cut["reserved"] = True
-    while over() and out.get("threads"):
-        out["threads"].pop()
-        cut["threads_left_out"] = cut.get("threads_left_out", 0) + 1
-    if not out.get("threads"):
-        out.pop("threads", None)
-    for field in ("release", "guard"):
-        if over() and field in out:
-            del out[field]
-            cut.setdefault("fields_left_out", []).append(field)
-    cut.pop("reserved")
+    if _json_size({**out, **({"cut": cut} if cut else {})}) > END_RECORD_MAX_BYTES:
+        while over() and out.get("threads"):
+            out["threads"].pop()
+            cut["threads_left_out"] = cut.get("threads_left_out", 0) + 1
+        if not out.get("threads"):
+            out.pop("threads", None)
+        for field in ("release", "guard"):
+            if over() and field in out:
+                del out[field]
+                cut.setdefault("fields_left_out", []).append(field)
     if cut:
         out["cut"] = cut
     return out
 
 
-def _end_evidence(prev_state: dict[str, Any] | None) -> dict[str, Any]:
+def _end_evidence(prev_state: dict[str, Any] | None, sid: str | None) -> dict[str, Any]:
     """What an UNCLEAN end carries of its own session (``end-peaks``): the marks with their times, what the memory was made
     of at the peak and the newest heavy snapshot's essentials, read from the high-water sidecar of the session that died
-    (:func:`_hwm_last_seen`, which refuses another process's). Only the seed wrote ``previous_peaks`` before, so a crash
-    loop kept the evidence of its last crash only. Best-effort: a missing or unreadable sidecar is an absent field."""
-    hwm = _hwm_last_seen(prev_state or {})
+    (:func:`_hwm_last_seen`, which accepts it only when it carries ``sid``, the ledger's id for that session). An end that has
+    no evidence says why (``previous_evidence_missing``: ``absent``, ``unreadable``, ``another session`` or ``no identity``), so
+    a missing record is never read as a session that had nothing to report. Best-effort: nothing here fails a boot."""
+    hwm, why = _hwm_last_seen(prev_state, sid)
     if not hwm:
-        return {}
+        return {"previous_evidence_missing": why or "absent"}
     out: dict[str, Any] = {}
     for name, build in (("previous_peaks", _peaks_of), ("previous_at_peak", _at_peak_record), ("previous_pressure", _pressure_record)):
         try:
@@ -496,7 +535,7 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen
-        rec.update(_end_evidence(prev_state))
+        rec.update(_end_evidence(prev_state, sid))
     _append(rec)
     return rec
 
@@ -588,8 +627,18 @@ def _boot_build() -> dict[str, Any] | None:
         from src.monitoring.build_id import build_identity
 
         return build_identity()
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
+def _bind_hwm(sid: str) -> None:
+    """Give the memory high-water sidecar this session's ledger id, so the next boot can tell its marks from a stale file's."""
+    try:
+        from src.monitoring.session_hwm import bind_session
+
+        bind_session(sid)
     except Exception:  # noqa: BLE001 - the ledger never breaks a boot
-        return None
+        _LOG.debug("session ledger: the sidecar was not bound", exc_info=True)
 
 
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -626,6 +675,7 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "build": _boot_build(),
     }
     _append(rec)
+    _bind_hwm(sid)
     compact_if_needed()
     _write_liveness(now_wall, now_mono, now_bt)
     if os.getenv("OO_SESSION_LIVENESS", "1") != "0":

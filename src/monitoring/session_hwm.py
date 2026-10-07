@@ -42,7 +42,8 @@ instant, and a virtual machine whose memory is ballooned can resolve one tier at
 another at the next, so a death is read against the tier THAT session ran under.
 
 Since 2026-10-01 a machine that STAYS short is recorded too. The crash that began 091717's
-last night was a 17-minute plateau at 44-60 MB available with the memory guard engaged: the
+last night was a plateau of about 17 minutes at 64 MB available or less (43.6 to 67.7 MB over it, 105 of the pass's 186 samples at
+64 MB or less: the recount of 2026-10-07) with the memory guard engaged: the
 slide into it was snapshotted (one per new low), the plateau -- where whatever was holding
 the memory could be read -- was not, by design ("none while memory sits on a plateau"). So
 the moment the memory guard engages is its own snapshot, and a machine that is still below
@@ -200,6 +201,8 @@ _LAST_LIGHT = _NEVER
 _LIGHT_BASELINE: dict[str, Any] | None = None  # {"at", "blocks", "cpu": {tid: s}} of the last light one
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
+#: Why there is no previous record (``"absent"``, ``"unreadable"``), when there is none.
+_PREV_WHY: str | None = None
 
 # /proc/self/status fields -> the names the record uses (all in kB there).
 _STATUS_FIELDS = {
@@ -459,12 +462,38 @@ def _session_header() -> dict[str, Any]:
     process, when it began, the allocator setting it began with and the memory tier it was
     resolved to. A crashed session's record is read at the next boot, so a death is read
     against what THAT session ran under, not what the survivor runs under."""
-    return {
+    header: dict[str, Any] = {
         "pid": os.getpid(),
         "started_at": _now(),
         "allocator": allocator_setting(),
         "memory_budget": _memory_budget_reading(),
     }
+    sid = _ledger_session_id()
+    if sid:
+        header["session_id"] = sid
+    return header
+
+
+def _ledger_session_id() -> str | None:
+    """The session id the ledger gave THIS process, when it has been given one (``session_history.record_boot``). Looked up among the
+    modules already imported: the ledger may not have booted yet, and then :func:`bind_session` writes it when it does."""
+    try:
+        mod = sys.modules.get("src.monitoring.session_history")
+        cur = mod.current_session() if mod is not None else None
+        sid = cur.get("session_id") if isinstance(cur, dict) else None
+        return sid if isinstance(sid, str) and sid else None
+    except Exception:  # noqa: BLE001 - an identity that cannot be read is an absent one
+        return None
+
+
+def bind_session(session_id: str) -> None:
+    """Write the ledger's id for this session into the marks file's header, so the next boot can tell THIS session's marks from a
+    stale file whose process id the system reused (``previous(session_id)``). Called by ``session_history.record_boot``. Never raises."""
+    with contextlib.suppress(Exception), _LOCK:
+        if not _MARKS:
+            return  # capture_previous has not run; it will read the id from the ledger itself
+        _MARKS["session_id"] = session_id
+        _write(dict(_MARKS))
 
 
 def composition(*, walk_heap: bool = True) -> dict[str, Any]:
@@ -674,11 +703,24 @@ def _now() -> str:
 
 
 def _read(path: Path | None = None) -> dict[str, Any] | None:
+    return _read_why(path)[0]
+
+
+def _read_why(path: Path | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    """``(record, why_not)``: ``why_not`` is ``"absent"`` for a file that is not there and ``"unreadable"`` for one that is but
+    cannot be read as a record (a damaged file, a permission, a JSON that is not an object)."""
+    target = path or _path()
     try:
-        got = json.loads((path or _path()).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return got if isinstance(got, dict) else None
+        text = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "absent"
+    except (OSError, ValueError):  # a UnicodeDecodeError is a ValueError
+        return None, "unreadable"
+    try:
+        got = json.loads(text)
+    except ValueError:
+        return None, "unreadable"
+    return (got, None) if isinstance(got, dict) else (None, "unreadable")
 
 
 def _write(state: dict[str, Any], path: Path | None = None) -> None:
@@ -692,13 +734,17 @@ def _write(state: dict[str, Any], path: Path | None = None) -> None:
 
 
 def _read_record() -> dict[str, Any] | None:
-    """The marks file, with the SAME session's pressure snapshots folded in.
+    return _read_record_why()[0]
+
+
+def _read_record_why() -> tuple[dict[str, Any] | None, str | None]:
+    """The marks file, with the SAME session's pressure snapshots folded in, and why there is none (``_read_why``).
 
     The pressure file is matched on pid and start time: one left behind by an older
     session (a failed reset) must never be read as the crashed session's."""
-    got = _read()
+    got, why = _read_why()
     if got is None:
-        return None
+        return None, why
     pressure = _read(_pressure_path())
     if (
         pressure
@@ -717,7 +763,7 @@ def _read_record() -> dict[str, Any] | None:
     ):
         got["pressure_light"] = light["snapshots"]
         got["pressure_light_taken"] = light.get("taken")
-    return got
+    return got, None
 
 
 def _readings() -> dict[str, float]:
@@ -804,16 +850,23 @@ def _guard_view() -> dict[str, Any] | None:
     }
 
 
-def _release_view() -> dict[str, Any] | None:
-    """The guard's last release-ladder record (RSS before and after, each step's measured ``freed_mb``, whether the process was
-    swapping), as the guard holds it, or ``None`` when no engage has run one. One short lock hold inside the guard, no I/O."""
+def _release_view(guard: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """The guard's last release-ladder record, rebuilt from the allow-list (``release_view.allow_listed``: numbers, step names and
+    the CLASS of an error, nothing a step's engine said), or ``None`` when no engage has run one OR the record is of an earlier
+    engagement than ``guard`` reports (the guard stamps each record with the engagement it was run for, so a snapshot of the
+    third engagement never carries the first one's ladder as its own). One short lock hold inside the guard, no I/O."""
     try:
+        from src.monitoring.release_view import allow_listed
         from src.scheduler import memguard
 
         rec = memguard.memory_guard.last_release()
+        if not isinstance(rec, dict):
+            return None
+        if guard is not None and rec.get("engagement") != guard.get("engagements"):
+            return None
+        return allow_listed(rec)
     except Exception:  # noqa: BLE001 - optional context, never a failure
         return None
-    return dict(rec) if isinstance(rec, dict) else None
 
 
 #: What ``_holders_view`` reads of the pool: ``Pool`` methods that are plain counters, no connection and no lock of the app's.
@@ -838,7 +891,8 @@ def _holders_view() -> dict[str, Any]:
     """What may be holding the memory, from PLAIN READS only: the pool's counters, whether each columnar serve holds a
     connection and since when, and the most the SQLite page caches of the pooled connections can hold. It never opens a
     connection, never takes the write gate or a serve's lock and never walks the heap, because it runs on a machine that is
-    short of memory. A figure that cannot be read is ABSENT, never 0. ``sqlite_cache_upper_bound_mb`` is the per-connection
+    short of memory. (The pool's counters take the pool queue's own lock for the instant of the read, a lock no statement holds
+    across work.) A figure that cannot be read is ABSENT, never 0. ``sqlite_cache_upper_bound_mb`` is the per-connection
     cache setting times the connections the pool holds: an UPPER BOUND, labelled so, never a reading (SQLite's and DuckDB's own
     byte counts need a connection and are not read)."""
     out: dict[str, Any] = {}
@@ -948,7 +1002,7 @@ def _pressure_snapshot(
     if guard and guard.get("engaged"):
         # The heavy snapshot's guard block also says what the release ladder returned (the light ring keeps the four fields):
         # which step gave back the memory, and what took it back, was only inferable from the readings either side.
-        release = _release_view()
+        release = _release_view(guard)
         snap["guard"] = {**guard, **({"last_release": release} if release else {})}
     for key in ("avail_mb", "total_mb", "rss_mb", "swap_used_mb"):
         if readings.get(key) is not None:
@@ -1103,10 +1157,10 @@ def capture_previous() -> dict[str, Any] | None:
 
     Call once at boot, before anything can observe. Returns the previous marks (or
     None when there are none — a first boot, or a removed file)."""
-    global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE
+    global _PREV, _PREV_LOADED, _PREV_WHY, _MARKS, _LAST_WRITE
     with _LOCK:
         if not _PREV_LOADED:
-            _PREV = _read_record()
+            _PREV, _PREV_WHY = _read_record_why()
             _PREV_LOADED = True
         _MARKS = _session_header()
         _LAST_WRITE = _NEVER
@@ -1122,9 +1176,15 @@ def capture_previous() -> dict[str, Any] | None:
 
 def previous() -> dict[str, Any] | None:
     """The previous session's marks as captured at boot, or None."""
+    return previous_why()[0]
+
+
+def previous_why() -> tuple[dict[str, Any] | None, str | None]:
+    """``(marks, why_not)``: the previous session's marks as captured at boot, and when there are none, why (``"absent"`` or
+    ``"unreadable"``)."""
     if _PREV_LOADED:
-        return _PREV
-    return _read_record()
+        return _PREV, _PREV_WHY
+    return _read_record_why()
 
 
 def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> None:
@@ -1381,9 +1441,10 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
 
 def reset_for_tests() -> None:
     """Clear the module state. Test-only; the suite shares one process."""
-    global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION
+    global _PREV, _PREV_WHY, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION
     with _LOCK:
         _PREV = None
+        _PREV_WHY = None
         _PREV_LOADED = False
         _MARKS = {}
         _LAST_WRITE = _NEVER

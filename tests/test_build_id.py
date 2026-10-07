@@ -50,3 +50,29 @@ def test_build_identity_is_cached_and_complete():
     first = build_id.build_identity()
     assert set(first) == {"commit", "source_fingerprint", "files", "bytes", "schema_head", "took_ms"}
     assert build_id.build_identity() == first
+
+
+_SHA40 = "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_git_commit_is_a_whole_object_id_or_nothing(tmp_path):
+    git = tmp_path / ".git"
+    git.mkdir()
+    (git / "HEAD").write_text(_SHA40 + "\n")
+    assert build_id.git_commit(tmp_path) == _SHA40
+    (git / "HEAD").write_text(_SHA40 * 2 + "\n")  # neither 40 nor 64: cut to nothing, never to a prefix
+    assert build_id.git_commit(tmp_path) is None
+    (git / "HEAD").write_text("a" * 64 + "\n")
+    assert build_id.git_commit(tmp_path) == "a" * 64
+    (git / "HEAD").write_text("not a commit\n")
+    assert build_id.git_commit(tmp_path) is None
+
+
+def test_git_commit_resolves_a_relative_gitdir_from_the_file_it_is_in(tmp_path):
+    real = tmp_path / "modules" / "m"
+    real.mkdir(parents=True)
+    (real / "HEAD").write_text(_SHA40 + "\n")
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / ".git").write_text("gitdir: ../modules/m\n")
+    assert build_id.git_commit(work) == _SHA40

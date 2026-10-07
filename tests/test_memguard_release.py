@@ -373,7 +373,18 @@ def test_an_engage_runs_the_release_and_keeps_the_record():
     g = MemoryGuard(trip_after=1, release_fn=lambda: (calls.append(1), {"freed_mb": 42.0})[1])
     assert g.observe(rss_mb=900.0, mem_avail_mb=10.0, mem_total_mb=1000.0) is True
     assert calls == [1], "engaging must run the ladder"
-    assert g.last_release() == {"freed_mb": 42.0}
+    assert g.last_release() == {"freed_mb": 42.0, "engagement": 1}, "stamped with the engagement it was run for"
+
+
+def test_each_engagement_stamps_its_own_release_record():
+    """MUTATION TARGET: the stamp. A snapshot of the second engagement must not carry the first one's ladder as its own."""
+    records = iter([{"freed_mb": 1.0}, {"freed_mb": 2.0}])
+    g = MemoryGuard(trip_after=1, resume_after=1, release_fn=lambda: next(records))
+    assert g.observe(rss_mb=900.0, mem_avail_mb=10.0, mem_total_mb=1000.0) is True
+    assert g.last_release() == {"freed_mb": 1.0, "engagement": 1}
+    assert g.observe(rss_mb=100.0, mem_avail_mb=900.0, mem_total_mb=1000.0) is False
+    assert g.observe(rss_mb=900.0, mem_avail_mb=10.0, mem_total_mb=1000.0) is True
+    assert g.last_release() == {"freed_mb": 2.0, "engagement": 2}
 
 
 def test_a_failing_release_never_breaks_the_pause():

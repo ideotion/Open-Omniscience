@@ -47,22 +47,33 @@ def source_fingerprint(root: Path | None = None) -> dict[str, Any]:
     return {"source_fingerprint": digest.hexdigest()[:16], "files": files, "bytes": total}
 
 
+_SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def _sha(text: str) -> str | None:
+    """``text`` when it is a whole object id (40 hex characters, or 64 in a repository that uses SHA-256), else ``None``: an id is
+    never cut, and a text that is not one is not recorded as one."""
+    text = text.strip().lower()
+    return text if _SHA.match(text) else None
+
+
 def git_commit(repo: Path | None = None) -> str | None:
     """HEAD of the checkout at ``repo`` (default: the app's parent directory), read from ``.git`` without a subprocess."""
     try:
         git = (repo or _src_root().parent) / ".git"
-        if git.is_file():  # a worktree: ``gitdir: <path>``
+        if git.is_file():  # a worktree or a submodule: ``gitdir: <path>``, relative to the directory the ``.git`` file is in
             line = git.read_text(encoding="utf-8").strip()
             if not line.startswith("gitdir:"):
                 return None
-            git = Path(line.split(":", 1)[1].strip())
+            target = Path(line.split(":", 1)[1].strip())
+            git = target if target.is_absolute() else git.parent / target
         head = (git / "HEAD").read_text(encoding="utf-8").strip()
         if not head.startswith("ref:"):
-            return head[:40] or None
+            return _sha(head)
         ref = head.split(":", 1)[1].strip()
         loose = git / ref
         if loose.is_file():
-            return loose.read_text(encoding="utf-8").strip()[:40] or None
+            return _sha(loose.read_text(encoding="utf-8"))
         common = git / "commondir"
         roots = [git] + ([git / common.read_text(encoding="utf-8").strip()] if common.is_file() else [])
         for root in roots:
@@ -70,10 +81,10 @@ def git_commit(repo: Path | None = None) -> str | None:
             if packed.is_file():
                 for row in packed.read_text(encoding="utf-8").splitlines():
                     if row.endswith(" " + ref) and not row.startswith("#"):
-                        return row.split(" ", 1)[0][:40]
+                        return _sha(row.split(" ", 1)[0])
             candidate = root / ref
             if candidate.is_file():
-                return candidate.read_text(encoding="utf-8").strip()[:40] or None
+                return _sha(candidate.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return None

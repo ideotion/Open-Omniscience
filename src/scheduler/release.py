@@ -33,6 +33,12 @@ the honest gap.
 Every step reports its own ``freed_mb``, measured before and after. ``None``
 means the RSS reading was unavailable — never 0, which would read as "this step
 freed nothing".
+
+A step that fails records the CLASS of its error and none of its words (``error``,
+``errors``): an engine's text can hold the passphrase, a path or a character of a decode
+error, and this record is copied into the session's forensics sidecars and the ledger's
+end records, which the debug bundle carries. ``src/monitoring/release_view.py`` is the
+allow-list every one of those copies goes through.
 """
 
 from __future__ import annotations
@@ -79,7 +85,7 @@ def _dispose_idle_pool() -> dict[str, Any]:
         out["ok"] = True
     except Exception as exc:  # noqa: BLE001 - a release is never worth a crash
         out["ok"] = False
-        out["error"] = f"{type(exc).__name__}: {exc}"[:200]
+        out["error"] = type(exc).__name__
     return out
 
 
@@ -101,7 +107,7 @@ def _shrink_sqlite() -> dict[str, Any]:
         out["ok"] = True
     except Exception as exc:  # noqa: BLE001
         out["ok"] = False
-        out["error"] = f"{type(exc).__name__}: {exc}"[:200]
+        out["error"] = type(exc).__name__
     return out
 
 
@@ -138,7 +144,7 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
             finally:
                 mod._LOCK.release()
         except Exception as exc:  # noqa: BLE001
-            out.setdefault("errors", {})[name] = f"{type(exc).__name__}: {exc}"[:120]
+            out.setdefault("errors", {})[name] = type(exc).__name__
     out["ok"] = "errors" not in out
     return out
 
@@ -176,7 +182,7 @@ def _collect_garbage(swapping: bool | None) -> dict[str, Any]:
         out["ok"] = True
     except Exception as exc:  # noqa: BLE001
         out["ok"] = False
-        out["error"] = f"{type(exc).__name__}: {exc}"[:200]
+        out["error"] = type(exc).__name__
     return out
 
 
@@ -190,7 +196,7 @@ def _malloc_trim() -> dict[str, Any]:
         out["ok"] = True
     except Exception as exc:  # noqa: BLE001 - not glibc
         out["ok"] = False
-        out["error"] = f"{type(exc).__name__}: {exc}"[:120]
+        out["error"] = type(exc).__name__
     return out
 
 
@@ -219,7 +225,7 @@ def release_residents() -> dict[str, Any]:
         try:
             rec = fn()
         except Exception as exc:  # noqa: BLE001 - one step must not stop the ladder
-            rec = {"step": "unknown", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            rec = {"step": "unknown", "ok": False, "error": type(exc).__name__}
         rec["freed_mb"] = _freed(before, _rss_mb())
         steps.append(rec)
 
