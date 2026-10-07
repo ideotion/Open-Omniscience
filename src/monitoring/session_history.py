@@ -634,10 +634,10 @@ def _boot_env_take() -> dict[str, Any]:
     NAMES of the variables still there (never a value) and the CLASS of any failure of the take. A take that failed leaves the value
     in the environment every child inherits, and a record that said nothing would read as a take that worked. The take runs at the
     first import of ``src.database.connect``: where that has not happened yet the names are still there for the first import to
-    take, so the record says the store is not imported and names none (a name reported then would read as a failed take)."""
+    take, so the record says the store is not imported and gives both lists as null (a name reported then would read as a failed take, and an empty list as a take that worked). The lifespan imports the store before the boot record, so this is the answer only of a caller that is not the server."""
     try:
         if "src.database.connect" not in sys.modules:
-            return {"store_imported": False, "still_in_environment": [], "take_failed": []}
+            return {"store_imported": False, "still_in_environment": None, "take_failed": None}
         from src.monitoring import secret_scrub
 
         failed = secret_scrub.take_failed()

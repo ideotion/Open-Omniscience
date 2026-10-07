@@ -221,23 +221,28 @@ def test_before_the_store_is_imported_no_name_is_reported_as_a_failed_take(monke
 
     monkeypatch.delitem(sys.modules, "src.database.connect", raising=False)
     monkeypatch.setenv("OO_DB_PASSPHRASE", PASS)
-    assert session_history._boot_env_take() == {"store_imported": False, "still_in_environment": [], "take_failed": []}
+    assert session_history._boot_env_take() == {"store_imported": False, "still_in_environment": None, "take_failed": None}
 
 
 def test_the_ledger_boot_record_carries_env_take_and_so_does_boots_json(tmp_path, monkeypatch):
     """MUTATION TARGET: ``"env_take"`` in ``record_boot`` and in ``boots._BOOT_FIELDS`` (either can go with every other test green, and a
     failed take then reads as a clean one in the bundle)."""
-    from src.monitoring import boots, session_history
+    from src.monitoring import boots, session_history, session_hwm
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OO_SESSION_LIVENESS", "0")
     session_history._reset_for_tests()
-    rec = session_history.record_boot(None)
-    assert set(rec["env_take"]) >= {"still_in_environment", "take_failed"}
-    on_disk = [r for r in session_history.read_records() if r["kind"] == "boot"][-1]
-    assert on_disk["env_take"] == rec["env_take"]
-    member = boots.diagnostics_member()
-    assert member["boots"][-1]["env_take"] == rec["env_take"]
-    session_history._reset_for_tests()
+    session_hwm.reset_for_tests()
+    try:
+        rec = session_history.record_boot(None)
+        assert set(rec["env_take"]) >= {"still_in_environment", "take_failed"}
+        on_disk = [r for r in session_history.read_records() if r["kind"] == "boot"][-1]
+        assert on_disk["env_take"] == rec["env_take"]
+        member = boots.diagnostics_member()
+        assert member["boots"][-1]["env_take"] == rec["env_take"]
+    finally:
+        session_history._reset_for_tests()
+        session_hwm.reset_for_tests()
 
 
 _FAILED_TAKE_CHILD = """
@@ -285,3 +290,36 @@ def test_the_forkserver_check_has_a_control_of_its_own(tmp_path):
     assert control.returncode == 0 and control.stdout.strip() == "forkserver-holds-it", control.stderr[-1500:]
     real = _run(_FORKSERVER_ONLY.format(prelude="", passphrase=PASS), tmp_path)
     assert real.returncode == 0 and real.stdout.strip() == "forkserver-clean", real.stderr[-1500:]
+
+
+_LIFESPAN_CHILD = """
+import asyncio, sys
+from src.monitoring import secret_scrub as S
+def refuse(*a, **k):
+    raise PermissionError('text that must never be recorded')
+S.take_from_environment = refuse
+assert 'src.database.connect' not in sys.modules
+from src.api import main
+assert 'src.database.connect' in sys.modules, 'the take did not run before the lifespan'
+async def go():
+    async with main.lifespan(main.app):
+        from src.monitoring import session_history
+        boot = [r for r in session_history.read_records() if r['kind'] == 'boot'][-1]
+        got = boot['env_take']
+        assert got == {{'store_imported': True, 'still_in_environment': ['OO_DB_PASSPHRASE', 'OO_KEY_PASSPHRASE'], 'take_failed': ['PermissionError']}}, got
+        assert 'must never be recorded' not in repr(boot) and {passphrase!r} not in repr(boot)
+asyncio.run(go())
+print('ok')
+"""
+
+
+def test_the_take_comes_before_the_boot_record_on_a_server_started_by_uvicorn(tmp_path):
+    """A server not started by ``_serve`` (``python -m uvicorn src.api.main:app``, or ``serve`` with OO_AUTOSEED=0) writes its boot
+    record from the lifespan: the take has run by then, a take that failed is read back from the ledger by its class, and the engine's
+    text is not in the record. MUTATION TARGET: the import of ``connect`` in ``lifespan`` and the one at the top of ``src.api.main``'s
+    chain (either, with the other gone, still passes: the test fails only when neither is left)."""
+    proc = _run(
+        _LIFESPAN_CHILD.format(passphrase=PASS), tmp_path,
+        OO_DB_PLAINTEXT="1", OO_NO_SCHEDULER="1", OO_AUTOSEED="0", OO_SESSION_LIVENESS="0",
+    )
+    assert proc.returncode == 0 and proc.stdout.strip().endswith("ok"), (proc.stdout + proc.stderr)[-1500:]

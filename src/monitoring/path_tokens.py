@@ -14,8 +14,8 @@ the app's directory, the data directory and EVERY home directory the process can
 ``HOME`` says is still the one that is replaced, and a user name with a space in it is inside the root and not a stopping place.
 THEN the shapes any user's profile takes (``C:\Users\<name with spaces>``, ``/home/<name>``, ``/var/home/<name>`` (Fedora's atomic desktops), ``/Users/<name>``, a profile directory on a UNC share,
 ``~name``) and UNC paths (``\\?\UNC\...`` too), and then every other absolute path. A known root ends only where a name cannot go on
-(a space ends a POSIX one; a Windows one ends at a separator or a quote, because a Windows name holds spaces and dots). The three roots are read when it is called, so a changed ``HOME`` or data
-directory is followed. Never raises. WHAT IT DOES NOT DO: a path written relative, or a user name written with no path around it; a directory-only
+(a space ends a POSIX one; a Windows one ends at a separator or at a quote no word character follows, because a Windows name holds spaces and dots). The three roots are read when it is called, so a changed ``HOME`` or data
+directory is followed. Never raises. WHAT IT DOES NOT DO: a ``repr`` that escapes an apostrophe (``\'``, when the text also holds a double quote) still ends a name at the backslash; a path written relative, or a user name written with no path around it; a directory-only
 path under a root the process does not know, that is no profile shape, keeps its last segment, and a UNC directory with a space in its
 name is partly kept (the generic rule stops at the space).
 """
@@ -28,7 +28,7 @@ import re
 import sys
 from pathlib import Path
 
-_SEG = r"[^\s\\/:'\"<>|*?]+"
+_SEG = r"(?:[^\s\\/:'\"<>|*?]|'(?=\w))+"
 _SEP = r"[\\/]+"
 #: A run of backslashes opening a UNC path: bounded, because an unbounded run restarts the match at every backslash of a long run
 #: and costs the square of its length (8,000 took 1.8 s, 20,000 took 13 s); ``repr`` and JSON write at most four, a doubled doubling.
@@ -39,7 +39,7 @@ _NAME_WIN = r"(?:[^\\/\r\n:'\"<>|*?]|'(?=\w))+"
 _NAME_POSIX = r"(?:[^\s\\/:'\"<>|*?]|'(?=\w))+"
 #: An absolute path of at least two segments: POSIX, a Windows drive, or UNC (``\\server\share\...``, in either slash and
 #: with the backslashes doubled as ``repr`` and JSON write them).
-_ABS = re.compile(rf"(?<![\w.<>~$…])(?:[A-Za-z]:{_SEP}|{_UNC_LEAD}(?:[?.]\\+)?|/)(?:{_SEG}{_SEP})*{_SEG}")
+_ABS = re.compile(rf"(?<![\w.<>~$…])(?:[A-Za-z]:{_SEP}|{_UNC_LEAD}(?:[?.]\\+(?:[A-Za-z]:{_SEP})?)?|/)(?:{_SEG}{_SEP})*{_SEG}")
 #: ``<tok>`` and what follows it.
 _TOKENISED = re.compile(rf"<(app|data|home)>((?:{_SEP}{_SEG})*)")
 #: A user's profile directory, whoever's, with the name taken up to the next separator (a Windows name may hold spaces).
@@ -103,8 +103,10 @@ def _root_pattern(root: str) -> re.Pattern[str]:
     # separator, a quote or the end for a Windows one, whose profile names hold spaces and dots (``Al Ice``, ``Al.DOMAIN``): a
     # longer name is another user's, and ``_PROFILE_WIN`` takes it whole.
     end = r"(?!'\w)" + (r"(?![^\s\\/:'\"<>|*?])" if not windows else r"(?![^\\/:'\"<>|*?])")
-    # a root starts at the first separator of a run, never inside one: from every separator of a long run the match would restart
-    return re.compile(rf"(?<![\w.<>~$…\\/]){lead}{body}{end}", re.IGNORECASE if windows else 0)
+    # a root with a separator lead starts at the first separator of a run, never inside one: from every separator of a long run the
+    # match would restart; a drive-letter root has no lead and may follow an extended prefix (``\\?\D:\...``)
+    behind = r"(?<![\w.<>~$…\\/])" if lead else r"(?<![\w.<>~$…])"
+    return re.compile(rf"{behind}{lead}{body}{end}", re.IGNORECASE if windows else 0)
 
 
 def _collapse(match: re.Match[str]) -> str:

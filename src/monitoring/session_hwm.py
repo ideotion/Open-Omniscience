@@ -1390,7 +1390,7 @@ def _fit_newest(items: list[Any], budget: int) -> tuple[list[Any], int]:
 def _previous_for_member() -> tuple[dict[str, Any], str | None]:
     """The previous session's marks as the member may copy them: only when they carry the ledger's id for that session (the way the end
     record and ``forensics._previous_peaks`` decide), and with every release-ladder record rebuilt from the allow-list. ``({}, why)`` where
-    they are not that session's: ``no identity`` or ``another session``. Never raises."""
+    they are not that session's or cannot be read: ``no identity``, ``another session``, ``scrub failed (Class)`` (the allow-list could not be applied) or ``unreadable (Class)``. Never raises."""
     try:
         from src.monitoring.release_view import scrub_marks
         from src.monitoring.session_history import previous_session_id

@@ -171,7 +171,7 @@ def test_a_long_run_of_backslashes_is_read_in_linear_time(run):
     assert path_tokens._UNC_LEAD == r"\\{2,8}"
     for pattern in (path_tokens._ABS, path_tokens._PROFILE_UNC):
         assert r"\\{2,}" not in pattern.pattern, "an unbounded run of backslashes"
-    for root in ("/home/al", "C:\\Users\\Al", "\\\\server\\share"):
+    for root in ("/home/al", "\\\\server\\share"):  # the roots with a separator lead; a drive root has none
         assert path_tokens._root_pattern(root).pattern.startswith("(?<![\\w.<>~$…\\\\/])"), "a root starts at the first separator of a run"
     for text in ("\\" * run + "x", "/" * run + "x"):
         got = tokenise_paths(text)
@@ -181,3 +181,33 @@ def test_a_long_run_of_backslashes_is_read_in_linear_time(run):
 def test_a_non_profile_extended_unc_path_keeps_only_its_file_name():
     """Pins the extended-prefix branch of the generic rule (no profile directory in it)."""
     assert tokenise_paths(r"open \\?\UNC\fileserver\share\data\file.txt now") == "open …/file.txt now"
+
+
+def test_a_drive_root_after_an_extended_prefix_is_still_found(known_home):
+    """MUTATION TARGET: the lookbehind of a root with no separator lead (``_root_pattern``): refusing a backslash before a drive-letter
+    root loses ``\\\\?\\D:\\Profiles\\alice`` and leaves the whole path."""
+    known_home(r"D:\Profiles\alice")
+    out = tokenise_paths(r"open \\?\D:\Profiles\alice\proj\x.py")
+    assert "alice" not in out and out.endswith("<home>/…/x.py"), out
+    assert "alice" not in tokenise_paths(r"open \\?\d:\profiles\ALICE\proj\x.py")
+
+
+def test_an_extended_prefix_with_a_drive_and_no_known_root_leaves_the_file_name_only():
+    out = tokenise_paths(r"open \\?\D:\Work\data\x.py")
+    assert out == r"open …/x.py" or out.endswith("…/x.py"), out
+    assert "Work" not in out
+
+
+def test_the_generic_rule_keeps_an_apostrophe_inside_a_name():
+    out = tokenise_paths("/mnt/data/O'Brien/docs/x.py")
+    assert "Brien" not in out and out.endswith("x.py"), out
+    # a quote that ends a path is still an end
+    assert tokenise_paths("cwd='/mnt/data/work/x.py'").endswith("x.py'")
+
+
+def test_only_roots_with_a_separator_lead_refuse_a_separator_before_them():
+    from src.monitoring.path_tokens import _root_pattern
+
+    assert _root_pattern("/srv/app").search("x //srv/app/y").start() == 2  # the first separator of the run, never the second
+    assert _root_pattern("D:/Profiles/alice").search(r"\\?\D:\Profiles\alice\x") is not None
+    assert _root_pattern("D:/Profiles/alice").search(r"xD:\Profiles\alice\x") is None  # a word character still refuses
