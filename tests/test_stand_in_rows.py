@@ -644,10 +644,11 @@ def fake_llm():
         ("GET", "/api/ai/articles/{}/keywords", None),
         ("GET", "/api/article-dates/article/{}", None),
         ("POST", "/api/article-dates/article/{}", None),
+        ("GET", "/api/insights/subjectivity?article_id={}", None),
     ],
-    ids=["summarize", "translate", "analyses", "ai-keywords", "date-tags", "extract-dates"],
+    ids=["summarize", "translate", "analyses", "ai-keywords", "date-tags", "extract-dates", "subjectivity"],
 )
-def test_an_article_by_id_route_of_the_ai_layer_or_the_date_tags_answers_the_stand_in_as_not_found(client, fake_llm, method, path, body):
+def test_an_article_by_id_route_answers_the_stand_in_as_not_found(client, fake_llm, method, path, body):
     _give_articles_what_a_stand_in_could_carry(_api_session(client))
     lost = client.request(method, path.format(STAND_IN_ARTICLE), json=body)
     assert lost.status_code == 404, (lost.status_code, lost.text)
@@ -657,28 +658,54 @@ def test_an_article_by_id_route_of_the_ai_layer_or_the_date_tags_answers_the_sta
     assert real.status_code == 200, (real.status_code, real.text)
 
 
-def test_an_article_the_app_judged_not_an_article_is_still_reached_by_its_id_in_those_routes(client, fake_llm):
-    """Only the stand-in is refused: an article that was quarantined for what it is (a link list) is a real row, and an explicit id reaches it
-    (the reader and the explicit id sets of the signed outputs do the same), so a gate that read ``quarantined`` instead of the stand-in's own
-    reason would turn it into a not-found."""
+def _make_article_2_a_link_list(session) -> None:
+    """Article 2 is quarantined for what it is (a link list), with the text and kept children a stand-in could carry: a real row that is not a
+    stand-in, so a gate that read ``quarantined`` instead of the stand-in's own reason would turn it into a not-found."""
     from src.database.models import Article
 
-    session = _api_session(client)
     _give_articles_what_a_stand_in_could_carry(session, ids=(1, 2))
     row = session.get(Article, 2)
     row.quarantined, row.quarantine_reason = True, "link list"
     session.commit()
+
+
+def test_an_article_the_app_judged_not_an_article_is_still_reached_by_its_id_in_every_gate_that_leaves_the_stand_in_out(client, db, fake_llm, monkeypatch):
+    """Only the stand-in is refused: an article that was quarantined for what it is (a link list) is a real row, and an explicit id reaches it
+    (the reader and the explicit id sets of the signed outputs do the same). Every gate of the by-id routes and the id sets is asked here, so
+    none of them can read ``quarantined`` instead of the stand-in's own reason and still pass."""
+    import json
+
+    from src.api.ai import _resolve_work
+
+    session = _api_session(client)
+    _make_article_2_a_link_list(session)
+    _make_article_2_a_link_list(db)
     for method, path, body in [
         ("POST", "/api/llm/articles/{}/summarize", {"model": "m"}),
+        ("POST", "/api/llm/articles/{}/translate", {"model": "m", "target_language": "French"}),
         ("GET", "/api/llm/articles/{}/analyses", None),
         ("GET", "/api/ai/articles/{}/keywords", None),
         ("GET", "/api/article-dates/article/{}", None),
         ("POST", "/api/article-dates/article/{}", None),
+        ("GET", "/api/insights/subjectivity?article_id={}", None),
     ]:
         reached = client.request(method, path.format(2), json=body)
         assert reached.status_code == 200, (method, path, reached.status_code, reached.text)
     synth = client.post("/api/llm/synthesize", json={"article_ids": [2]})
     assert synth.status_code == 200 and [m["id"] for m in synth.json()["members"]] == [2], synth.text
+    monkeypatch.setattr("src.database.session.SessionLocal", lambda: _api_session(client))  # the bulk run writes through its own session
+    run = client.post("/api/llm/bulk", json={"op": "summarize", "model": "m", "article_ids": [2], "skip_existing": False})
+    assert run.status_code == 200, run.text
+    items = [json.loads(line) for line in run.text.splitlines() if line.strip()]
+    assert [i["article_id"] for i in items if i.get("event") == "item"] == [2], items
+    work = _resolve_work(db, article_ids=[2], query=None, source=None, language=None, start_date=None, end_date=None, cap=None)
+    assert [w.article_id for w in work] == [2], work
+    # the date lists and the id set of the corpus analyses reach it too
+    assert [a["article_id"] for a in client.get("/api/article-dates/by-date", params={"date": "2026-03-05"}).json()["articles"]] == [1, 2]
+    facets = client.get("/api/insights/corpus-source-language-facets", params={"article_ids": "2"}).json()
+    assert facets["corpus_n"] == 1 and facets["corpus_total"] == 1, facets
+    link = client.get("/api/links/articles-by-link", params={"url": "https://l.example/2"}).json()
+    assert [a["id"] for a in link["articles"]] == [2], link
 
 
 def test_the_kept_children_of_the_stand_in_are_not_listed_by_the_routes_that_read_them_by_the_stand_ins_id(client, fake_llm):
@@ -722,6 +749,240 @@ def test_an_explicit_id_set_handed_to_the_synthesis_the_bulk_run_and_the_keyword
     assert refused.value.status_code == 404
 
 
+@pytest.fixture()
+def similarity_client(client, monkeypatch):
+    """The article-similarity router, mounted in an app of its own on the same store: the main app mounts it only with the ``[analysis]`` extra,
+    and the analyzer needs scikit-learn, so the comparison itself is stood in for (the gate under test is the route's own, not the analyzer's)."""
+    from fastapi import FastAPI
+
+    from src.api import keyword_analysis
+    from src.api.main import app as main_app
+    from src.api.ratelimit import limiter
+    from src.database.session import get_db
+
+    monkeypatch.setattr(keyword_analysis.article_intelligence_analyzer, "calculate_similarity", lambda a, b, method="cosine": 0.5)
+    mini = FastAPI()
+    mini.state.limiter = limiter
+    mini.include_router(keyword_analysis.router)
+    mini.dependency_overrides[get_db] = main_app.dependency_overrides[get_db]
+    with TestClient(mini) as c:
+        yield c
+
+
+def test_the_article_similarity_route_answers_the_stand_in_as_not_found_in_either_position(client, similarity_client):
+    from src.database.models import Article
+
+    session = _api_session(client)
+    _give_articles_what_a_stand_in_could_carry(session, ids=(1, 2, STAND_IN_ARTICLE))
+    url = "/api/analysis/articles/similarity"
+    for first, second in ((STAND_IN_ARTICLE, 1), (1, STAND_IN_ARTICLE), (STAND_IN_ARTICLE, STAND_IN_ARTICLE)):
+        lost = similarity_client.post(url, params={"article_id1": first, "article_id2": second})
+        assert lost.status_code == 404, (first, second, lost.status_code, lost.text)
+    real = similarity_client.post(url, params={"article_id1": 1, "article_id2": 2})  # the positive control: two real articles are compared
+    assert real.status_code == 200 and "similarity" in real.json(), real.text
+    row = session.get(Article, 2)  # an article quarantined for what it is (a link list) is a real row, and is compared in either position
+    row.quarantined, row.quarantine_reason = True, "link list"
+    session.commit()
+    for first, second in ((2, 1), (1, 2)):
+        kept = similarity_client.post(url, params={"article_id1": first, "article_id2": second})
+        assert kept.status_code == 200, (first, second, kept.status_code, kept.text)
+
+
+def _keep_the_keyword_mentions_of(session, article_ids) -> None:
+    """One keyword that each of ``article_ids`` mentions (the rows a lost article's mentions leave in the table, whose parent is the stand-in)."""
+    from src.database.models import Keyword, KeywordMention
+
+    kw = Keyword(term="sharedterm", normalized_term="sharedterm", language="en")
+    session.add(kw)
+    session.flush()
+    for aid in article_ids:
+        session.add(KeywordMention(keyword_id=kw.id, article_id=aid, count=1))
+    session.commit()
+
+
+def test_the_readers_related_list_and_near_copies_never_offer_the_stand_in_whose_keyword_mentions_were_kept(client):
+    from src.database.models import Article
+
+    session = _api_session(client)
+    _give_articles_what_a_stand_in_could_carry(session, ids=(1, 2, STAND_IN_ARTICLE))
+    session.get(Article, STAND_IN_ARTICLE).content = session.get(Article, 1).content  # a text that is a copy of article 1's, so the copy check would group it
+    session.commit()
+    _keep_the_keyword_mentions_of(session, (1, 2, STAND_IN_ARTICLE))
+    page = client.get("/api/articles/1/view")
+    assert page.status_code == 200
+    stand_in_link = f"/api/articles/{STAND_IN_ARTICLE}/view"
+    related = page.text.split("Related in your corpus", 1)[1]
+    assert "/api/articles/2/view" in related.split("</section>", 1)[0], "the positive control: a real article that shares the keyword is related"
+    assert stand_in_link not in page.text, "the stand-in is offered as a related article or as a copy"
+    assert 'class="dup-badge"' in page.text and "/api/articles/2/view" in page.text.split('class="dup-badge"', 1)[1], "the positive control: the real copy is named"
+
+
+def test_the_date_lists_and_the_agendas_deduced_events_never_hold_the_stand_in_whose_date_tag_was_kept(client, db):
+    """The date tag a stand-in kept is in the table (nothing is deleted); the lists that join it to its article would show the stand-in as an
+    article that mentions the date, count it in the agenda's articles and sources, and put its number in the set the agenda opens."""
+    from datetime import date
+
+    from src.database.models import Article
+    from src.timemap import datestore
+
+    _give_articles_what_a_stand_in_could_carry(_api_session(client), ids=(1, 2, STAND_IN_ARTICLE))
+    listed = client.get("/api/article-dates/by-date", params={"date": "2026-03-05"}).json()
+    assert [a["article_id"] for a in listed["articles"]] == [1, 2] and listed["count"] == 2, listed  # the real articles; not 1500
+    assert STAND_IN_MARKER not in str(listed)
+
+    _give_articles_what_a_stand_in_could_carry(db, ids=(1, 2, STAND_IN_ARTICLE))
+    today = date(2026, 3, 1)
+    real_sources = {db.get(Article, i).source_id for i in (1, 2)}
+    assert len(real_sources) == 2  # two articles of two sources: the stand-in's source would make it three
+    pair = datestore.upcoming_deduced(db, today=today, min_articles=2)["events"]
+    assert [(e["date"], e["n_articles"], e["n_sources"], sorted(e["article_ids"])) for e in pair] == [("2026-03-05", 2, 2, [1, 2])], pair  # the positive control
+    # a date only the real article 1 and the stand-in mention: the stand-in cannot make it a pair
+    db.query(datestore.ArticleMentionedDate).filter(datestore.ArticleMentionedDate.article_id == 2).delete()
+    db.commit()
+    assert datestore.upcoming_deduced(db, today=today, min_articles=2)["events"] == []
+    alone = datestore.upcoming_deduced(db, today=today, min_articles=1)["events"]
+    assert alone == [{"date": "2026-03-05", "n_articles": 1, "n_sources": 1, "article_ids": [1]}], alone
+
+
+def test_an_explicit_id_set_of_the_corpus_analyses_never_holds_the_stand_in_nor_its_lost_source(client):
+    """``_resolve_corpus`` feeds the corpus-* analyses, the link graph and the source coverage: the stand-in is dropped from a set it is named
+    in (before the cap and the total), so the "(lost sources N)" row never shows in the coverage of the sources of the set."""
+    named = f"1,{STAND_IN_ARTICLE},2"
+    facets = client.get("/api/insights/corpus-source-language-facets", params={"article_ids": named}).json()
+    assert facets["corpus_n"] == 2 and facets["corpus_total"] == 2, facets
+    assert [f["domain"] for f in facets["sources"]] == ["s0.example.org", "s1.example.org"], facets  # the two real articles' sources, no "(lost sources 13)"
+    only = client.get("/api/insights/corpus-source-language-facets", params={"article_ids": str(STAND_IN_ARTICLE)}).json()
+    assert only["corpus_n"] == 0 and only["corpus_total"] == 0 and only["sources"] == [], only
+    twin = client.get("/api/insights/corpus-source-language-facets", params={"article_ids": "1,2"}).json()  # the positive control
+    assert twin["corpus_n"] == 2 and twin["corpus_total"] == 2 and twin["sources"] == facets["sources"], twin
+    coverage = client.get("/api/insights/corpus-sources", params={"article_ids": named}).json()
+    assert coverage["count"] == 2 and sorted(c["domain"] for c in coverage["sources"]) == ["s0.example.org", "s1.example.org"], coverage
+    links = client.get("/api/links/corpus", params={"article_ids": named}).json()
+    assert links["n_articles"] == 2 and links["total_matched"] == 2, links
+
+
+def test_the_ids_a_list_names_are_asked_in_chunks_and_only_the_stand_ins_come_back(db):
+    ids = list(range(1, 1501)) + list(range(2000, 4000))  # 3,500 ids: the stand-in sits in the second chunk, so a first-chunk-only read misses it
+    assert stand_in.stand_in_article_ids(db, ids) == {STAND_IN_ARTICLE}
+    assert stand_in.stand_in_article_ids(db, []) == set() and stand_in.stand_in_article_ids(db, [1, 2, 3]) == set()
+    assert stand_in.stand_in_article_ids(db, (str(STAND_IN_ARTICLE),)) == {STAND_IN_ARTICLE}
+
+
+def test_the_python_reading_of_the_stand_in_source_mark_agrees_with_the_sql_condition_on_every_source(db):
+    from src.database.models import Source
+
+    by_sql = {s.id for s in db.query(Source).filter(~stand_in.not_a_stand_in_source())}
+    by_row = {s.id for s in db.query(Source).all() if stand_in.is_a_stand_in_source(s)}
+    assert by_sql == by_row == {13}
+
+
+def test_the_articles_that_cite_a_link_never_list_the_stand_in_whose_links_were_kept(client):
+    """``article_links`` rows are kept for a lost article, so the lookup by link found the stand-in and listed it as an article that cites it,
+    counted it, and named its source."""
+    lost = client.get("/api/links/articles-by-link", params={"url": f"https://l.example/{STAND_IN_ARTICLE}"})
+    assert lost.status_code == 200 and lost.json()["count"] == 0 and lost.json()["articles"] == [], lost.text
+    real = client.get("/api/links/articles-by-link", params={"url": "https://l.example/1"}).json()  # the positive control
+    assert real["count"] == 1 and [a["id"] for a in real["articles"]] == [1], real
+    by_domain = client.get("/api/links/articles-by-link", params={"domain": "l.example", "limit": 3}).json()
+    assert by_domain["count"] == 1499 and STAND_IN_ARTICLE not in [a["id"] for a in by_domain["articles"]], by_domain["count"]
+
+
+def test_a_newsletter_is_never_filed_under_the_stand_in_a_kept_mapping_points_at(db, monkeypatch):
+    """The import files a newsletter under the source its publisher resolves to. A resolution that names the stand-in (the id a kept mapping
+    carries) would hide the newsletter from every reader that leaves the stand-in out, so it stays in the bucket as a refused attach."""
+    from src.database.models import Article
+    from src.ingest import newsletter_source as ns
+    from src.ingest.email import ingest_emails
+
+    def _eml(subject: str, mid: str) -> bytes:
+        return (
+            "From: Publisher <news@fresh.example>\n"
+            f"Subject: {subject}\nMessage-ID: <{mid}>\nDate: Mon, 05 Jan 2026 18:00:00 +0000\n"
+            "Content-Type: text/plain; charset=utf-8\n\n"
+            f"A newsletter body about {subject} with enough ordinary sentences in it that the importer treats it as real prose rather than an empty shell.\n"
+        ).encode()
+
+    def _points_at(source_id: int):
+        return lambda session, from_addr, list_id=None, *, list_id_parsed=None: ns.Resolution(
+            "attach-exact", "fresh.example", "etld1", "a kept mapping", source_id=source_id, source_name="n", source_domain="d"
+        )
+
+    bucket = db.get(__import__("src.database.models", fromlist=["Source"]).Source, 1)
+    monkeypatch.setattr(ns, "resolve_newsletter_publisher", _points_at(13))
+    tally = ingest_emails(db, bucket, [_eml("Lost target", "l1@x")])
+    assert tally["stored"] == 1 and tally["attach_refused"] == 1 and tally["attached_existing"] == 0, tally
+    stored = db.query(Article).filter(Article.title == "Lost target").one()
+    assert stored.source_id == 1 and stored.newsletter_attached_via is None, (stored.source_id, stored.newsletter_attached_via)
+    assert db.query(Article).filter(Article.source_id == 13).count() == 1  # only the stand-in article itself is under the stand-in source
+    monkeypatch.setattr(ns, "resolve_newsletter_publisher", _points_at(2))  # the positive control: a real target is used
+    tally = ingest_emails(db, bucket, [_eml("Real target", "r1@x")])
+    assert tally["attached_existing"] == 1 and tally["attach_refused"] == 0, tally
+    placed = db.query(Article).filter(Article.title == "Real target").one()
+    assert placed.source_id == 2 and placed.newsletter_attached_via == "attach-exact:etld1", (placed.source_id, placed.newsletter_attached_via)
+
+
+def test_the_qualification_integrity_report_and_repair_never_judge_or_rewrite_the_stand_in(db):
+    """A judging attempt kept for the stand-in disagrees with its status, as one kept for a real source can: the repair would write the
+    stand-in's status, and the report would name it as an inversion. Both read one candidate join, so both leave it out."""
+    from datetime import datetime
+
+    from src.catalog.qualification_integrity import (
+        qualification_integrity_report,
+        repair_inversions,
+    )
+    from src.database.models import Source, SourceQualificationAttempt
+
+    when = datetime(2026, 10, 7, 12, 0, 0)
+    for sid in (1, 13):
+        db.add(SourceQualificationAttempt(source_id=sid, attempted_at=when, verdict="qualified", criteria_version="v"))
+    db.commit()
+    report = qualification_integrity_report(db)
+    assert report["inversions_total"] == 1 and [d["domain"] for d in report["demoted"]] == ["s0.example.org"], report["demoted"]  # the real source only
+    planned = repair_inversions(db, dry_run=True)
+    assert planned["reconciled_total"] == 1 and [r["domain"] for r in planned["restored_to_qualified"]] == ["s0.example.org"], planned
+    applied = repair_inversions(db, dry_run=False)
+    assert applied["reconciled_total"] == 1, applied
+    db.expire_all()
+    lost = db.query(Source).filter(Source.id == 13).one()
+    assert lost.status == "unqualified" and lost.qualified_at is None, (lost.status, lost.qualified_at)
+    assert db.query(Source).filter(Source.id == 1).one().status == "qualified"  # the positive control: the same repair restored the real source
+
+
+def test_the_archive_backfill_queue_skips_the_stand_in_whether_it_is_queued_or_already_active(db, tmp_path):
+    from src.ingest import clear_kill_switch
+    from src.ingest.archive_backfill import advance_backfill, enqueue_source, load_state
+
+    seen: list[str] = []
+
+    def discover(fetcher, source, *, full_history):
+        seen.append(source.domain)
+        return ["https://x.example/a"]
+
+    def ingest(session, source, url, *, fetcher):
+        seen.append(f"ingest {source.domain}")
+        raise AssertionError("a stand-in was fetched for")
+
+    clear_kill_switch()
+    try:
+        queued = tmp_path / "queued.json"
+        enqueue_source(13, state_path=queued)
+        out = advance_backfill(db, fetcher=object(), per_pass=5, state_path=queued, ingest_fn=ingest, discover_fn=discover)
+        assert out["skipped"] == "source no longer exists" and out["source_id"] == 13, out
+        assert load_state(queued)["queue"] == [] and seen == []  # nothing was enumerated for it
+        active = tmp_path / "active.json"
+        active.write_text('{"active": {"source_id": 13, "urls": ["https://x.example/a"], "cursor": 0, "full_history": false, "tally": {}}}')
+        out = advance_backfill(db, fetcher=object(), per_pass=5, state_path=active, ingest_fn=ingest, discover_fn=discover)
+        assert out["skipped"] == "source no longer exists" and out["done"] is True and seen == [], (out, seen)
+        assert load_state(active)["active"] is None
+        # the positive control: a real source in the same queue is enumerated
+        real = tmp_path / "real.json"
+        enqueue_source(1, state_path=real)
+        out = advance_backfill(db, fetcher=object(), per_pass=5, state_path=real, ingest_fn=ingest, discover_fn=discover)
+        assert out["enumerated"] is True and seen == ["s0.example.org"], (out, seen)
+    finally:
+        clear_kill_switch()
+
+
 def test_the_source_routes_the_id_route_used_to_shadow_answer_over_http_and_leave_the_stand_in_out(client):
     """``/api/sources/export``, ``/stats`` and ``/search`` answered 422 to every call (``/api/sources/{source_id}`` was declared above them
     and matched their last segment as an id), so their gates could only be tested below the route; they are reached now."""
@@ -745,7 +1006,27 @@ def test_the_source_routes_the_id_route_used_to_shadow_answer_over_http_and_leav
     real = client.get("/api/sources/search", params={"query": "realtag"})  # the positive control: the same search finds a real source
     assert real.status_code == 200 and [r["id"] for r in real.json()["results"]] == [1], real.text
     assert client.get("/api/sources/1").status_code == 200  # the id route still answers for an id
-    assert [client.request(m, "/api/sources/abc").status_code for m in ("GET", "PUT", "DELETE")] == [404, 404, 404]  # a segment that is no id is no route, for every method
+    assert [client.request(m, "/api/sources/abc").status_code for m in ("GET", "PUT", "DELETE")] == [404, 404, 404]  # a segment that is no id and no literal is no route, for every method
+    assert [client.request(m, "/api/sources/export").status_code for m in ("PUT", "DELETE")] == [405, 405]  # a literal name answers 405 to a method the literal does not declare
+
+
+def test_the_source_search_counts_every_match_and_bounds_its_page(client):
+    from src.database.models import Source
+
+    session = _api_session(client)
+    for sid in (1, 2, 3, 4, 5):
+        session.get(Source, sid).tags = "paged"
+    session.commit()
+    page = client.get("/api/sources/search", params={"query": "paged", "limit": 2, "offset": 1})
+    body = page.json()
+    assert page.status_code == 200 and body["count"] == 2 and body["total"] == 5, body  # five matched; the page carries two
+    assert len({r["id"] for r in body["results"]} & {1, 2, 3, 4, 5}) == 2
+    last = client.get("/api/sources/search", params={"query": "paged", "limit": 2, "offset": 4}).json()
+    assert last["count"] == 1 and last["total"] == 5, last
+    past = client.get("/api/sources/search", params={"query": "paged", "limit": 2, "offset": 9}).json()
+    assert past["count"] == 0 and past["total"] == 5, past  # a page past the end still says how many matched
+    for params in ({"limit": 0}, {"limit": 501}, {"offset": -1}):
+        assert client.get("/api/sources/search", params={"query": "paged", **params}).status_code == 422, params
 
 
 def test_no_literal_route_of_the_source_router_is_shadowed_by_another_route_declared_above_it():

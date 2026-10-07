@@ -2252,7 +2252,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     from sqlalchemy import func
 
     from src.database.models import ArticleLink
-    from src.database.stand_in import not_a_stand_in_article
+    from src.database.stand_in import not_a_stand_in_article, stand_in_article_ids
     from src.utils.security import safe_href
 
     # A repair's stand-in article is a place-holder for a lost row, not an article that was stored: not found, as any unknown id is.
@@ -2707,6 +2707,11 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 .all()
             )
             if ranked:
+                # The keyword mentions kept for a lost article stay in the table, so the stand-in (the place-holder a salvage copy writes at
+                # its id) would be offered as an article that shares keywords with this one: it is no article, and a link to it is not found.
+                _lost = stand_in_article_ids(db, [rid for rid, _shared in ranked])
+                ranked = [row for row in ranked if row[0] not in _lost]
+            if ranked:
                 _rel_titles = {
                     rid: rtitle
                     for rid, rtitle in db.query(Article.id, Article.title).filter(
@@ -2786,6 +2791,9 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             if _mk
             else []
         )
+        if _cand:
+            _lost = stand_in_article_ids(db, _cand)  # the same kept mentions, the same place-holder: never one of the "copies"
+            _cand = [rid for rid in _cand if rid not in _lost]
         if _cand:
             docs = {str(a.id): ((a.title or "") + "\n" + (a.get_content() or ""))}
             titles: dict[str, str] = {}

@@ -65,6 +65,7 @@ from src.catalog.qualification import (
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
 )
+from src.database.stand_in import not_a_stand_in_source
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -329,7 +330,7 @@ def qualification_integrity_report(
             A,
             (A.source_id == Source.id) & (A.attempted_at == newest_at.c.last_at),
         )
-        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict)
+        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict, not_a_stand_in_source())
         .distinct()
         .all()
     )
@@ -570,7 +571,7 @@ def repair_inversions(
             A,
             (A.source_id == Source.id) & (A.attempted_at == newest_at.c.last_at),
         )
-        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict)
+        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict, not_a_stand_in_source())
         .distinct()
         .all()
     )

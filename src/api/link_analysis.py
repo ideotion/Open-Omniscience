@@ -29,6 +29,7 @@ from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
 from src.database.session import get_db
+from src.database.stand_in import stand_in_article_ids
 
 router = APIRouter(prefix="/api/links", tags=["links"])
 
@@ -289,6 +290,11 @@ def articles_by_link(
                 }
             )
 
+        # The links a salvage copy kept for a lost article stay in the table, so the stand-in (the place-holder it writes at that id) would be
+        # listed as an article that cites the link: it is no article, and the count and the list both leave it out.
+        lost = stand_in_article_ids(db, ids)
+        if lost:
+            ids = [i for i in ids if i not in lost]
         total = len(ids)
         articles = []
         if ids:

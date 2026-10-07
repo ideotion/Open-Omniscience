@@ -34,6 +34,7 @@ from sqlalchemy import Table, or_
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
+from src.database.stand_in import is_a_stand_in_source
 from src.ingest.newsletter_source import parse_list_id
 from src.database.write import is_locked_error, run_write_with_retry
 from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
@@ -688,7 +689,9 @@ def ingest_emails(
         if d.source_id == source.id:
             return source, d.via
         got = session.get(Source, d.source_id)
-        if got is None:
+        if got is None or is_a_stand_in_source(got):
+            # A stand-in (the place-holder a salvage copy writes at a lost id) is no publisher: a newsletter filed under it would be hidden
+            # from every reader that leaves the stand-in out, so it stays in the bucket as a refused attach, a gap and never a guess.
             return source, None
         return got, d.via
 

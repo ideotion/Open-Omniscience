@@ -33,6 +33,7 @@ from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_article, stand_in_article_ids
 from src.jobs.background import BackgroundJob, register_job
 from src.utils.cache import SimpleCache
 
@@ -448,6 +449,11 @@ def _resolve_corpus(
                 if v not in seen:
                     seen.add(v)
                     ids.append(v)
+        # A stand-in (the place-holder a salvage copy writes at a lost id) is no article of the set it was named in: dropped before the cap and the
+        # total, so every corpus-* analysis, the link graph and the source coverage leave it (and its "(lost sources N)" source) out.
+        lost = stand_in_article_ids(db, ids)
+        if lost:
+            ids = [v for v in ids if v not in lost]
         return ids[:cap], len(ids)
     from src.api.main import _query_articles, _query_expander
 
@@ -2333,11 +2339,12 @@ def insights_subjectivity(
     (rule-based, never AI, never asserted) surface. Returns the descriptive components +
     spans for a highlight, or an honest gap when the article's language has no lexicon.
     Labelled with its provenance class so it is never blended with the source-asserted or
-    AI-derived layers. Counts only, no score. 404 if the article is absent."""
+    AI-derived layers. Counts only, no score. 404 if the article is absent (a stand-in, the
+    place-holder a salvage copy writes at a lost id, is absent)."""
     from src.analytics.subjectivity import subjectivity
     from src.database.models import Article
 
-    art = db.get(Article, article_id)
+    art = db.query(Article).filter(Article.id == article_id, not_a_stand_in_article()).first()
     if art is None:
         raise HTTPException(status_code=404, detail="article not found")
     result = subjectivity(art.get_content() or "", art.language)

@@ -42,6 +42,12 @@ def not_a_stand_in_source() -> Any:
     return ~Source.domain.startswith(SOURCE_DOMAIN_PREFIX, autoescape=True)
 
 
+def is_a_stand_in_source(source: Any) -> bool:
+    """Whether a LOADED ``Source`` row is a stand-in, for the code that holds the row already and must not run a query per row (the newsletter
+    import places thousands of messages). It is :func:`not_a_stand_in_source` read in Python, and a test pins that the two agree on every row."""
+    return str(getattr(source, "domain", None) or "").startswith(SOURCE_DOMAIN_PREFIX)
+
+
 def not_a_stand_in_article() -> Any:
     """The SQL condition that leaves stand-in articles out, for the readers that INCLUDE quarantined articles (``Article`` rows). NULL-safe: an
     article that was never judged has no reason at all."""
@@ -52,8 +58,27 @@ def not_a_stand_in_article() -> Any:
 
 def is_a_stand_in_article(session: Any, article_id: int) -> bool:
     """Whether ``article_id`` is a stand-in article: for a route that is asked about an article by its id and never loads the row itself, and
-    so must refuse the stand-in's id as it refuses an id that names nothing. It is the complement of :func:`not_a_stand_in_article`, so the
-    two cannot disagree."""
+    so cannot filter the row it loads (the date tags and the AI keywords of an article). It is the complement of :func:`not_a_stand_in_article`,
+    so the two cannot disagree. It says nothing of an id that names no article at all: such a route answers an absent id as it always did (an
+    empty list), and only the stand-in's id is refused."""
     from src.database.models import Article
 
     return session.query(Article.id).filter(Article.id == article_id, ~not_a_stand_in_article()).first() is not None
+
+
+#: How many ids one ``IN (...)`` list holds (the same bound the corpus resolver clamps to), so a long list never hits SQLite's variable limit.
+_IN_CHUNK = 900
+
+
+def stand_in_article_ids(session: Any, article_ids: Any) -> set[int]:
+    """The ids among ``article_ids`` that name a stand-in article, for a reader that is handed a list of article numbers (a query or body
+    field) and loads no article from it itself. The complement of :func:`not_a_stand_in_article`, asked in chunks."""
+    from src.database.models import Article
+
+    ids = [int(i) for i in article_ids]
+    found: set[int] = set()
+    for start in range(0, len(ids), _IN_CHUNK):
+        chunk = ids[start : start + _IN_CHUNK]
+        rows = session.query(Article.id).filter(Article.id.in_(chunk), ~not_a_stand_in_article()).all()
+        found.update(int(r[0]) for r in rows)
+    return found

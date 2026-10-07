@@ -844,7 +844,8 @@ def source_facets(
 # ``{source_id:int}``, not ``{source_id}``, on all three routes of the bare id path (get, put, delete): a bare parameter matches ANY one
 # segment, so the literal paths declared further down (``/export``, ``/stats``, ``/search``) were shadowed by it for as long as it was declared
 # above them, and answered 422 to every call. A path converter that only matches digits cannot shadow a literal, whatever the declaration
-# order, and a segment that is no id is a missing route for every method (a bare PUT or DELETE left beside a typed GET answers it 405).
+# order, and a segment that is no id is never taken for one: on a name that is no route at all it answers 404 for every method, and on the
+# literal names (``/export``, ``/stats``, ``/search``) a method the literal does not declare answers 405, as any route does for a method it lacks.
 @router.get("/{source_id:int}", response_model=dict)
 @limiter.limit("100/hour")
 def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
@@ -1833,15 +1834,21 @@ def get_source_statistics(request: Request, db: Session = Depends(get_db)):
 @router.get("/search", response_model=dict)
 @limiter.limit("50/hour")
 def search_sources(
-    request: Request, query: str, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)
+    request: Request,
+    query: str,
+    limit: int = Query(20, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
 ):
     """
     Search for sources by name, domain, or tags.
 
     Parameters:
     - query: Search query (matches against name, domain, and tags)
-    - limit: Maximum number of results
-    - offset: Offset for pagination
+    - limit: Maximum number of results (1 to 500)
+    - offset: Offset for pagination (0 or more)
+
+    ``total`` is every source the query matched; ``count`` is how many of them this page carries.
     """
     logger.info(f"Search sources: query={query}")
 
@@ -1852,17 +1859,17 @@ def search_sources(
         # Get all sources and filter in memory (for simplicity)
         all_sources = manager.get_all_sources()
 
-        results = []
+        matches = []
         for source in all_sources:
             if (
                 query_lower in source.name.lower()
                 or query_lower in source.domain.lower()
                 or (source.tags and query_lower in source.tags.lower())
             ):
-                results.append(source)
+                matches.append(source)
 
-        # Apply pagination
-        results = results[offset : offset + limit]
+        # Apply pagination; the total is what matched, never the page's own length
+        results = matches[offset : offset + limit]
 
         formatted_results = [
             {
@@ -1881,7 +1888,7 @@ def search_sources(
             "query": query,
             "results": formatted_results,
             "count": len(formatted_results),
-            "total": len(results),
+            "total": len(matches),
         }
 
 
