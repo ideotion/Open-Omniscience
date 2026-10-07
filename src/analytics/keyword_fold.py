@@ -222,11 +222,15 @@ def fold_page(
     langs: ArticleLanguageMap,
     page: int = _PAGE,
     copied_pairs: set[tuple[int, int]] | None = None,
+    hidden: frozenset[int] | None = None,
 ) -> PageResult:
     """Fold ONE page of ``src``'s mentions (those with ``article_id > after_article_id``).
 
     The read and the writes share one transaction under the single-writer gate: the rows
     decided on are the rows written, whatever else is running. Committed before return.
+
+    ``hidden`` is the keyword ids of the shipped stoplist (read once per job by the caller; read
+    here when a caller does not pass it).
     """
     from src.analytics.extract import ExtractedTerm
     from src.analytics.store import _get_or_create_keyword, _prefetch_keywords, top_keyword_of
@@ -301,7 +305,19 @@ def fold_page(
             ).filter(KeywordMention.article_id.in_(chunk)):
                 c = contrib[int(aid)]
                 c[int(kid)] = c.get(int(kid), 0) + int(cnt or 0)
-        before = {a: top_keyword_of(contrib[a]) for a in aids}
+        # The stored top is made WITHOUT the shipped stoplist's words (R111 step T3,
+        # src.analytics.stoplist_recompute): the fold recomputes it the same way, or a page of
+        # moved mentions would write a hidden word back into the columns the pass cleaned.
+        if hidden is None:
+            from src.analytics.stoplist_recompute import hidden_keyword_ids
+
+            hidden = frozenset(hidden_keyword_ids(session))
+        hid = hidden
+
+        def _top(c: dict[int, int]) -> tuple[int | None, int | None, int | None]:
+            return top_keyword_of({k: v for k, v in c.items() if k not in hid})
+
+        before = {a: _top(contrib[a]) for a in aids}
 
         plain: dict[int, list[int]] = {}
         folds: list[dict[str, Any]] = []
@@ -349,7 +365,7 @@ def fold_page(
             kw.mention_count = max(0, (kw.mention_count or 0) + d_men[kw.id])
             kw.article_count = max(0, (kw.article_count or 0) + d_art[kw.id])
         for aid in aids:
-            after = top_keyword_of(contrib[aid])
+            after = _top(contrib[aid])
             if after != before[aid]:
                 session.query(Article).filter(Article.id == aid).update(
                     {
@@ -700,9 +716,11 @@ class KeywordFoldJobManager:
     def _fold_phase(self, session: Session) -> bool:
         """Returns True when the fold is complete, False when stopped."""
         from src.analytics.article_lang_map import ArticleLanguageMap
+        from src.analytics.stoplist_recompute import hidden_keyword_ids
 
         rules = FoldRules.build(session)
         langs = ArticleLanguageMap(session)
+        hidden = frozenset(hidden_keyword_ids(session))  # once per job: the list moves with an update
         session.commit()
         copied: set[tuple[int, int]] = set()
         self._pending = None
@@ -732,7 +750,7 @@ class KeywordFoldJobManager:
                     continue
                 r = fold_page(
                     session, src, after_article_id=self._in_aid, langs=langs,
-                    page=self._page, copied_pairs=copied,
+                    page=self._page, copied_pairs=copied, hidden=hidden,
                 )
                 with self._lock:
                     self._add("mentions_moved", r.moved)

@@ -204,6 +204,34 @@ def _marker_wants_refresh(payload: dict) -> bool:
     return last is None or _monotonic() - last >= _MARKER_RETRY_S
 
 
+def _stoplist_fingerprint() -> str | None:
+    """The shipped stoplist's fingerprint, or None when it cannot be read (never raises)."""
+    try:
+        from src.analytics.stoplist_recompute import current_fingerprint
+
+        return current_fingerprint()
+    except Exception:  # noqa: BLE001 - an unreadable list must not make the feed stale
+        return None
+
+
+def _stoplist_wants_refresh(payload: dict) -> bool:
+    """True when the cards were made under another shipped stoplist and a refresh is allowed now.
+
+    A word an update hides stays in the titles of cached cards until they are recomputed
+    (R111 step T3). The same background refresh the other stale causes use does it, under the
+    marker repair's own throttle, so a refresh that keeps ending early (``kept_reason``) is
+    retried every ``_MARKER_RETRY_S``, never on every Home poll. A cache written before this
+    field existed has none and is refreshed once."""
+    current = _stoplist_fingerprint()
+    if current is None or payload.get("stoplist") == current:
+        return False
+    if not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
+        return False
+    with _refresh_lock:
+        last = _marker_retry["at"]
+    return last is None or _monotonic() - last >= _MARKER_RETRY_S
+
+
 def _dismissed_path():
     from src.paths import data_dir
 
@@ -411,6 +439,9 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         # the corpus was tiny would otherwise show an empty Home forever despite a
         # large corpus; P0-3, field test 2026-06-22).
         "article_count": _article_count(session),
+        # The shipped stoplist these cards were made under (R111 step T3): a different one
+        # makes the cache stale, because a newly hidden word would otherwise stay in a title.
+        "stoplist": _stoplist_fingerprint(),
         "cards": _sorted(cards),
     }
     if stats.get("truncated"):
@@ -532,6 +563,7 @@ def get_briefing(
         cached.get("version") != CACHE_VERSION  # a servable prior shape: recompute once
         or _is_cache_stale(session, cached, current=_count_once())
         or _marker_wants_refresh(cached)
+        or _stoplist_wants_refresh(cached)
     )
     need_recompute = force or cached is None or stale
     if need_recompute and background:
@@ -540,7 +572,7 @@ def get_briefing(
         payload = cached
     elif need_recompute:
         if stale:
-            _LOG.info("briefing cache is stale (corpus grew, an older cache shape, or a stop marker to repair); recomputing")
+            _LOG.info("briefing cache is stale (corpus grew, an older cache shape, a stop marker to repair, or a new stoplist); recomputing")
         payload = refresh_briefing(session)
     else:
         payload = cached

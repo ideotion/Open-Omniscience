@@ -3670,6 +3670,24 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         (batch_id,),
     )
     ids = [int(r[0]) for r in _q(con, "SELECT old FROM temp.carry_ids ORDER BY old")]
+    if ids:
+        # R111 step T3 (src/analytics/stoplist_recompute.py): a carried article's top keyword was
+        # computed from the incoming mention rows with NO stoplist filter, so it can hold a word this
+        # corpus hides. Forget the finished stoplist run: the next maintenance window then walks every
+        # hidden word, once, and takes each one out of the tops. The working copy
+        # becomes the live corpus at the swap, so this is atomic with the tops it answers for. (The
+        # carry plan's own filter would be the fuller fix; it is recorded in OPEN_QUEUE.md.)
+        from src.analytics.stoplist_recompute import CURSOR_KEY, DONE_KEY
+
+        # Both keys: a cursor left in the working copy would resume a pass in flight past the carried
+        # articles. (No `suppress(sqlite3.OperationalError)`: sqlcipher3 raises its own class, so it
+        # would suppress nothing there and everything on a plaintext file, a full disk included.)
+        # `main.` is explicit: an unqualified name falls through to an ATTACHED schema, so a working
+        # copy without the table would otherwise delete from the INCOMING backup's own table.
+        if _local_has_table(con, "derived_meta"):
+            con.execute(
+                "DELETE FROM main.derived_meta WHERE key IN (?, ?)", (DONE_KEY, CURSOR_KEY)
+            )
     # The ORM's own storage form for a DateTime column -- naive UTC, space-separated,
     # microseconds -- so a carried row's timestamp is indistinguishable in shape from one
     # index_article wrote. (The first draft used isoformat(), whose "+00:00" suffix put a

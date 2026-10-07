@@ -145,6 +145,40 @@ def test_an_unfinished_prune_runs_back_to_back_without_the_interval_throttle(sch
     assert sched._last_maint  # the throttle stamp belongs to the FULL window only
 
 
+def test_an_unfinished_stoplist_recompute_runs_back_to_back_like_the_prune(sched, monkeypatch):
+    """R111 step T3: a recompute that stopped early on its list is continued while the machine is free."""
+    _record_runs(monkeypatch)
+    state = {"left": 3, "passes": 0}
+    monkeypatch.setattr(om, "prune_incomplete", lambda: False)
+    monkeypatch.setattr(om, "recompute_incomplete", lambda: state["left"] > 0)
+    monkeypatch.setattr(om, "_cleanup_stamp", lambda: state["passes"])
+
+    def fake(*, should_stop=None):
+        state["passes"] += 1
+        state["left"] -= 1
+        return {"stoplist_recompute": {"complete": state["left"] <= 0}}
+
+    monkeypatch.setattr("src.scheduler.maintenance.run_cleanup_continuation", fake)
+    monkeypatch.setattr(om, "_MIN_REST_S", 0.0)
+    assert om.tick(sched) == "ran"
+    assert state["passes"] == 3
+
+
+def test_a_recompute_that_records_nothing_is_not_looped_on(sched, monkeypatch):
+    _record_runs(monkeypatch)
+    monkeypatch.setattr(om, "prune_incomplete", lambda: False)
+    monkeypatch.setattr(om, "recompute_incomplete", lambda: True)
+    monkeypatch.setattr(om, "_cleanup_stamp", lambda: "same")
+    calls = {"n": 0}
+    monkeypatch.setattr(
+        "src.scheduler.maintenance.run_cleanup_continuation",
+        lambda *, should_stop=None: calls.__setitem__("n", calls["n"] + 1) or {},
+    )
+    monkeypatch.setattr(om, "_MIN_REST_S", 0.0)
+    assert om._continue_prune(sched, lambda: False) == 1
+    assert calls["n"] == 1
+
+
 def test_the_continuation_stops_at_the_first_yield_reason(sched, monkeypatch):
     _record_runs(monkeypatch)
     state = _fake_continuation(monkeypatch, sched, incomplete_for=50)
@@ -174,7 +208,7 @@ def test_the_rest_between_passes_is_sized_from_the_pass_itself(sched, monkeypatc
     assert waits == [pytest.approx(10.0), 1.0]  # 25 % of 40 s; floored at the minimum
 
 
-def test_the_continuation_helper_runs_only_the_cleanup(monkeypatch):
+def test_the_continuation_helper_runs_only_the_cleanup_and_the_stoplist_recompute(monkeypatch):
     from src.scheduler import maintenance
 
     calls: list[str] = []
@@ -182,9 +216,16 @@ def test_the_continuation_helper_runs_only_the_cleanup(monkeypatch):
         "src.analytics.store.maybe_cleanup_keywords",
         lambda session: calls.append("cleanup") or {"skipped": "fresh"},
     )
+    monkeypatch.setattr(
+        "src.analytics.stoplist_recompute.maybe_recompute_top_keywords",
+        lambda **_kw: calls.append("recompute") or {"skipped": "current"},
+    )
     monkeypatch.setattr("src.database.session.session_scope", _null_scope)
-    assert maintenance.run_cleanup_continuation() == {"cleanup": {"skipped": "fresh"}}
-    assert calls == ["cleanup"]
+    assert maintenance.run_cleanup_continuation() == {
+        "cleanup": {"skipped": "fresh"},
+        "stoplist_recompute": {"skipped": "current"},
+    }
+    assert calls == ["cleanup", "recompute"]
     assert maintenance.run_cleanup_continuation(should_stop=lambda: True) == {"skipped": "stopping"}
 
 
