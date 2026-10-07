@@ -104,7 +104,7 @@ def test_a_stand_in_article_is_quarantined_and_a_stand_in_source_is_not_enabled_
         src = con.execute("SELECT enabled, name, domain, status FROM sources WHERE id = 13").fetchone()
         assert src[0] == 0 and src[1] == LOST_SOURCES_DOMAIN and src[2] == LOST_SOURCES_DOMAIN and src[2].startswith(stand_in.SOURCE_DOMAIN_PREFIX), src
         # the note the report carries says what holds (the OPEN_QUEUE entry says the same)
-        for claim in ("quarantined", "stand-in for a lost row", "source lists", "never collected or qualified", "deleted", "signed evidence bundle", "AI routes", "date tags", "finds it by its number", "still include it"):
+        for claim in ("quarantined", "stand-in for a lost row", "source lists", "never collected or qualified", "deleted", "signed evidence bundle", "AI routes", "date tags", "finds it by its number", "deleted with a database tool", "still include it"):
             assert claim in salvage.STAND_IN_NOTE, f"the report's note does not say {claim!r}"
         # the real rows carry none of these marks
         assert con.execute("SELECT count(*) FROM articles WHERE quarantine_reason = ?", (stand_in.ARTICLE_REASON,)).fetchone()[0] == 1
@@ -281,6 +281,7 @@ def test_the_source_manager_leaves_the_stand_in_out_of_every_reader_the_counts_a
     with SourceManager(session=db) as m:
         assert len(m.get_all_sources()) == 12 and all(s.domain != LOST_SOURCES_DOMAIN for s in m.get_all_sources())
         assert [s.id for s in m.get_sources_by_tags(["realtag"])] == [1]  # the positive control: the same call finds a real source
+        assert [s.id for s in m.get_sources_by_tags(["realtag"], match_all=True)] == [1]  # the positive control of the match-all branch
         assert m.get_sources_by_tags(["losttag"]) == [] and m.get_sources_by_tags(["losttag"], match_all=True) == []
         assert [s.id for s in m.get_sources_by_group(gid)] == [1] and [s.id for s in m.get_sources_by_group_name("g1")] == [1]
         assert [s.id for s in m.get_sources_by_country("FR")] == [1] and m.get_sources_by_country("zz") == []
@@ -309,6 +310,199 @@ def test_a_source_is_not_found_by_the_id_of_the_stand_in_in_any_of_its_routes(cl
         assert lost.status_code == 404, (suffix, lost.status_code, lost.text)
         real = client.get(f"/api/sources/1{suffix}")  # the positive control: the same route answers for a real source
         assert real.status_code == 200, (suffix, real.status_code, real.text)
+
+
+def _give_real_articles_to_the_stand_in_source(session, ids=(2, 3, 4)) -> int:
+    """Real articles kept for the lost source (the stand-in owns them, so deleting it would cascade to them). Returns how many articles the
+    stand-in source owns now: the stand-in article beside the ones given."""
+    from src.database.models import Article
+
+    session.query(Article).filter(Article.id.in_(ids)).update({"source_id": 13}, synchronize_session=False)
+    session.commit()
+    return _owned_by_the_stand_in_source(session)
+
+
+def _owned_by_the_stand_in_source(session) -> int:
+    from src.database.models import Article
+
+    session.expire_all()
+    return session.query(Article).filter(Article.source_id == 13).count()
+
+
+def test_a_source_is_not_updated_or_deleted_by_the_id_of_the_stand_in_and_the_articles_kept_for_it_stay(client):
+    """PUT and DELETE start from ``get_source_by_id``, as the readers do. A delete of the stand-in would cascade to the real articles kept for
+    the lost source (``articles.source_id`` is ``ON DELETE CASCADE``), which is the damage a place-holder must never do."""
+    from src.database.models import Source
+
+    session = _api_session(client)
+    owned = _give_real_articles_to_the_stand_in_source(session)
+    assert owned == 4  # the stand-in article and the three real ones
+    stand_in_row = session.query(Source).filter(Source.id == 13).one()
+    before = (stand_in_row.name, stand_in_row.domain, stand_in_row.enabled, stand_in_row.priority)
+    put = client.put("/api/sources/13", json={"name": "renamed", "enabled": True, "priority": 3})
+    assert put.status_code == 404, put.text
+    gone = client.delete("/api/sources/13")
+    assert gone.status_code == 404, gone.text
+    session.expire_all()
+    row = session.query(Source).filter(Source.id == 13).one()
+    assert (row.name, row.domain, row.enabled, row.priority) == before, "a write reached the stand-in"
+    assert _owned_by_the_stand_in_source(session) == owned, "articles kept for the lost source were deleted with it"
+    # the twin: the same two routes answer for a real source
+    real = client.put("/api/sources/1", json={"priority": 3})
+    assert real.status_code == 200, real.text
+    session.expire_all()
+    assert session.query(Source).filter(Source.id == 1).one().priority == 3
+    session.add(Source(name="twin", domain="twin.example.org"))
+    session.commit()
+    twin = session.query(Source).filter(Source.domain == "twin.example.org").one().id
+    assert client.delete(f"/api/sources/{twin}").status_code == 200
+    session.expire_all()
+    assert session.query(Source).filter(Source.id == twin).count() == 0
+
+
+def test_a_source_gets_no_metadata_and_is_put_in_no_group_by_the_id_of_the_stand_in(client):
+    from sqlalchemy import select
+
+    from src.database.models import SourceGroup, SourceMetadata, source_group_association
+
+    session = _api_session(client)
+    gid = _give_the_stand_in_what_its_kept_children_leave_behind(session)
+    other = SourceGroup(name="g2")
+    session.add(other)
+    session.commit()
+    gid2 = int(other.id)
+
+    def groups_of(source_id):
+        session.expire_all()
+        return sorted(session.execute(select(source_group_association.c.group_id).where(source_group_association.c.source_id == source_id)).scalars())
+
+    def metadata_of(source_id):
+        session.expire_all()
+        row = session.query(SourceMetadata).filter(SourceMetadata.source_id == source_id).first()
+        return None if row is None else row.language
+
+    assert groups_of(13) == [gid] and metadata_of(13) == "xx"  # what the stand-in keeps
+    assert client.post("/api/sources/13/metadata", json={"language": "fr"}).status_code == 404
+    assert client.put("/api/sources/13/metadata", json={"language": "fr"}).status_code == 404
+    assert client.delete("/api/sources/13/metadata").status_code == 404
+    assert metadata_of(13) == "xx", "a metadata write reached the stand-in"
+    assert client.post("/api/sources/13/groups", json=[gid2]).status_code == 404
+    assert client.request("DELETE", "/api/sources/13/groups", json=[gid]).status_code == 404
+    assert groups_of(13) == [gid], "a group change reached the stand-in"
+    # the twins: the same routes answer for a real source
+    assert client.put("/api/sources/1/metadata", json={"language": "de"}).status_code == 200 and metadata_of(1) == "de"
+    assert client.post("/api/sources/2/metadata", json={"language": "en"}).status_code == 200 and metadata_of(2) == "en"
+    assert client.post("/api/sources/1/groups", json=[gid2]).json() == {"message": "Added source 1 to 1 groups"}
+    assert groups_of(1) == [gid, gid2]
+    assert client.request("DELETE", "/api/sources/1/groups", json=[gid2]).json() == {"message": "Removed source 1 from 1 groups"}
+    assert groups_of(1) == [gid]
+    assert client.delete("/api/sources/1/metadata").status_code == 200 and metadata_of(1) is None
+
+
+def test_the_manager_puts_the_stand_in_in_no_group_and_takes_it_out_of_none(db):
+    """The routes check the source before they call the manager; the manager refuses it on its own as well (a caller that is not the route)."""
+    from sqlalchemy import select
+
+    from src.database.models import SourceGroup, source_group_association
+    from src.database.source_manager import SourceManager
+
+    gid = _give_the_stand_in_what_its_kept_children_leave_behind(db)
+    other = SourceGroup(name="g2")
+    db.add(other)
+    db.commit()
+    gid2 = int(other.id)
+
+    def groups_of(source_id):
+        db.expire_all()
+        return sorted(db.execute(select(source_group_association.c.group_id).where(source_group_association.c.source_id == source_id)).scalars())
+
+    with SourceManager(session=db) as m:
+        assert m.add_source_to_groups(13, [gid2]) == 0 and m.remove_source_from_groups(13, [gid]) == 0
+        assert m.get_source_groups(13) == []  # the groups the stand-in was kept in are not listed for it
+        assert groups_of(13) == [gid], "a group change reached the stand-in"
+        assert m.add_source_to_groups(1, [gid2]) == 1  # the twins: the same calls act on a real source
+        assert sorted(g.id for g in m.get_source_groups(1)) == [gid, gid2]
+        assert m.remove_source_from_groups(1, [gid2]) == 1
+
+
+def test_no_ingest_route_takes_the_stand_in_source_for_a_source(client):
+    from src.api.ingestion import get_fetcher
+    from src.api.main import app
+
+    class _MustNotFetch:
+        def __getattr__(self, name):
+            raise AssertionError(f"the fetcher was used ({name}) for a source that is not one")
+
+    app.dependency_overrides[get_fetcher] = lambda: _MustNotFetch()
+    mailbox = {"host": "imap.invalid", "user": "u", "password": "x"}
+    assert client.post("/api/sources/13/ingest").status_code == 404
+    assert client.post("/api/ingest", json={"source_id": 13, "url": "https://e.org/x"}).status_code == 404
+    assert client.post("/api/sources/13/ingest-email", json=mailbox).status_code == 404
+    batch = client.post("/api/sources/ingest-batch", json={"source_ids": [13, 1]}).json()
+    assert [(r["source_id"], r["status"]) for r in batch["results"]] == [(13, "not_found"), (1, "no_feed")], batch
+    # the twin: the lookup finds a real source, which has no feed to read (so the route answers before any fetch)
+    real = client.post("/api/sources/1/ingest")
+    assert real.status_code == 400 and "no rss_url" in real.text, real.text
+
+
+def test_the_id_list_writers_never_write_to_the_stand_in_and_do_not_count_it(db):
+    from src.database.models import Source
+    from src.database.source_manager import SourceManager
+
+    ids = [1, 13]
+    with SourceManager(session=db) as m:
+        assert m.enable_sources(ids) == 1 and m.disable_sources(ids) == 1 and m.enable_sources(ids) == 1  # the real source only
+        assert m.set_source_priority(ids, 3) == 1 and m.set_source_rate_limit(ids, 7000) == 1
+        assert m.add_tags_to_sources(ids, ["newtag"]) == 1 and m.remove_tags_from_sources(ids, ["newtag"]) == 1
+        assert m.add_tags_to_sources(ids, ["newtag"]) == 1
+    db.expire_all()
+    lost = db.query(Source).filter(Source.id == 13).one()
+    assert lost.enabled in (0, False) and lost.priority != 3 and lost.rate_limit_ms != 7000 and not lost.tags, (lost.enabled, lost.priority, lost.rate_limit_ms, lost.tags)
+    real = db.query(Source).filter(Source.id == 1).one()  # the positive control: the same calls changed the real source
+    assert real.enabled and real.priority == 3 and real.rate_limit_ms == 7000 and real.tags == "newtag", (real.enabled, real.priority, real.rate_limit_ms, real.tags)
+
+
+def test_the_batch_routes_say_they_changed_the_real_source_only(client):
+    from src.database.models import Source
+
+    session = _api_session(client)
+    assert client.post("/api/sources/batch/enable", json=[1, 13]).json() == {"message": "Enabled 1 sources"}
+    assert client.post("/api/sources/batch/disable", json=[1, 13]).json() == {"message": "Disabled 1 sources"}
+    assert client.post("/api/sources/batch/priority", params={"priority": 3}, json=[1, 13]).json() == {"message": "Set priority 3 for 1 sources"}
+    added = client.post("/api/sources/batch/tags/add", json={"source_ids": [1, 13], "tags": ["t"]})
+    assert added.json() == {"message": "Added tags ['t'] to 1 sources"}, added.text
+    removed = client.post("/api/sources/batch/tags/remove", json={"source_ids": [1, 13], "tags": ["t"]})
+    assert removed.json() == {"message": "Removed tags ['t'] from 1 sources"}, removed.text
+    session.expire_all()
+    assert session.query(Source).filter(Source.id == 13).one().enabled in (0, False)
+
+
+def test_an_admission_kept_for_the_stand_in_cannot_be_undone_and_is_listed_as_gone(db):
+    """The undo writes ``enabled`` back to the value the event replaced: for a stand-in whose kept event says True, that would turn it ON for
+    collection. The stand-in is given the state that makes the undo otherwise allowed (qualified, enabled), so only the gate refuses it."""
+    from datetime import datetime
+
+    from src.catalog.qualification import AdmissionUndoRefused, admission_audit, undo_admission
+    from src.database.models import Source, SourceAdmissionEvent
+
+    now = datetime(2026, 10, 7, 12, 0, 0)
+    for sid in (1, 13):
+        row = db.query(Source).filter(Source.id == sid).one()
+        row.status, row.enabled = "qualified", True
+        db.add(SourceAdmissionEvent(source_id=sid, occurred_at=now, verdict="qualified", criteria_version="v", prior_enabled=False, prior_status="unqualified"))
+    db.commit()
+    events = {e["source_id"]: e for e in admission_audit(db)["events"]}
+    assert events[13]["reversible"] is False and events[13]["blocked_by"] == "source-no-longer-exists" and events[13]["name"] == "", events[13]
+    assert events[1]["reversible"] is True and events[1]["blocked_by"] is None, events[1]  # the positive control: a real source's admission is reversible
+    stand_in_event = db.query(SourceAdmissionEvent).filter(SourceAdmissionEvent.source_id == 13).one()
+    with pytest.raises(AdmissionUndoRefused, match="no longer exists"):
+        undo_admission(db, int(stand_in_event.id), now=now)
+    db.expire_all()
+    assert db.query(Source).filter(Source.id == 13).one().enabled is True and stand_in_event.undone_at is None  # nothing was written
+    real_event = db.query(SourceAdmissionEvent).filter(SourceAdmissionEvent.source_id == 1).one()
+    undo_admission(db, int(real_event.id), now=now)
+    db.expire_all()
+    assert db.query(Source).filter(Source.id == 1).one().enabled is False  # the same call undid the real one
 
 
 def test_the_groups_count_and_list_real_sources_only(client):
@@ -570,6 +764,35 @@ def test_no_literal_route_of_the_source_router_is_shadowed_by_another_route_decl
     assert len(literal) > 20, "the router lost its literal routes"
     shadowed = [(m, r.path, getattr(first(r.path, m), "path", None)) for r in literal for m in sorted(r.methods or ()) if m != "HEAD" and first(r.path, m) is not r]
     assert shadowed == [], shadowed
+
+
+def test_the_claim_trail_bundle_never_carries_a_stand_in_article_it_is_handed(db, tmp_path, monkeypatch):
+    """The claims trail-bundle is built from explicit article ids. The workspace the route builds comes from the search, which leaves
+    quarantined articles out, so a stand-in reaches the bundle only by an id it is handed; the by-id load leaves it out of the article
+    files, the README's count and the privacy member, and its text out of the signed ZIP."""
+    import copy
+    import io
+    import zipfile
+
+    from src.analytics import claim_bundle as cb
+    from src.analytics import claim_workspace as cw
+    from src.custody.signing import HybridSigner
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    _give_articles_what_a_stand_in_could_carry(db)
+    ws = cw.build_workspace(db, "ministry realword")
+    assert [a["id"] for a in ws["related"]["articles"]] == [1], ws["related"]["articles"]  # the search itself leaves the stand-in out
+    handed = copy.deepcopy(ws)
+    handed["related"]["articles"].append({"id": STAND_IN_ARTICLE})
+    signer = HybridSigner(tmp_path / "k" / "ed.pem", tmp_path / "k" / "ml.key", use_pqc=False)
+    data, report = cb.build_trail_bundle(db, handed, signer=signer)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = zf.namelist()
+        text = "".join(zf.read(n).decode("utf-8", "replace") for n in names)
+    assert "articles/1.json" in names and "realword" in text  # the positive control: a real article is carried
+    assert f"articles/{STAND_IN_ARTICLE}.json" not in names, names
+    assert STAND_IN_MARKER not in text, "the stand-in's text is in the signed ZIP"
 
 
 def test_the_omnibar_finds_no_stand_in_source_by_its_name(client):

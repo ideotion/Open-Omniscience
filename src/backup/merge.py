@@ -126,18 +126,26 @@ _CKPT_NO_ANSWER = "no-answer"  # nothing answered (the checkpoint failed, or the
 
 
 def _swap_refusal(why: str) -> str:
-    """The restore's refusal when the log could not be folded into the file, in the words that are TRUE for the reason."""
+    """The restore's refusal when the log could not be folded into the file, in the words that are TRUE for the reason. «May still hold»,
+    where nothing answered: all that was seen is a log file that is not empty, and that is not the same as saves that are missing from the
+    file."""
     nothing_written = "nothing was written to your corpus. "
     if why == _CKPT_SWITCHED_OFF:
         return (
-            "the write-ahead log of your corpus still holds saves that are not in the file, and moving them in before the switch "
+            "the write-ahead log of your corpus may still hold saves that are not in the file, and the step that moves them in "
             "is turned off on this computer (the OO_WAL_CHECKPOINT=0 setting) — " + nothing_written +
-            "Turn it back on (remove that setting) and import again."
+            "Remove that setting, restart the app and import again."
         )
     if why == _CKPT_NO_ANSWER:
         return (
-            "the write-ahead log of your corpus still holds saves that are not in the file, and the step that moves them in "
+            "the write-ahead log of your corpus may still hold saves that are not in the file, and the step that moves them in "
             "did not answer (the log says why) — " + nothing_written + "Import again."
+        )
+    if why == _CKPT_TIMED_OUT:
+        return (
+            f"the step that moves the write-ahead log of your corpus into the file did not finish within {_SWAP_CHECKPOINT_S:.0f}s, so "
+            "the log may still hold saves that are not in the file — " + nothing_written +
+            "Import again; if it is slow every time, let any running job finish first."
         )
     return (
         "your corpus is still being written to or read, so its write-ahead log "

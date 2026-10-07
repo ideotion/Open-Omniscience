@@ -1359,6 +1359,8 @@ def add_source_to_groups(
     logger.info(f"Add source to groups: source {source_id} to groups {group_ids}")
 
     with SourceManager(session=db) as manager:
+        if manager.get_source_by_id(source_id) is None:  # a repair's stand-in source is none
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
         count = manager.add_source_to_groups(source_id, group_ids)
         return {"message": f"Added source {source_id} to {count} groups"}
 
@@ -1374,6 +1376,8 @@ def remove_source_from_groups(
     logger.info(f"Remove source from groups: source {source_id} from groups {group_ids}")
 
     with SourceManager(session=db) as manager:
+        if manager.get_source_by_id(source_id) is None:  # a repair's stand-in source is none
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
         count = manager.remove_source_from_groups(source_id, group_ids)
         return {"message": f"Removed source {source_id} from {count} groups"}
 
@@ -1492,6 +1496,8 @@ def create_metadata(
 
     with SourceManager(session=db) as manager:
         metadata = manager.create_metadata(source_id, **metadata_data)
+        if metadata is None:
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
         return {"source_id": metadata.source_id, "message": "Metadata created successfully"}
 
 

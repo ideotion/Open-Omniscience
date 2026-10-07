@@ -1206,7 +1206,7 @@ def admission_audit(
     if rows:
         for src_row in (
             session.query(Source)
-            .filter(Source.id.in_([r.source_id for r in rows]))
+            .filter(Source.id.in_([r.source_id for r in rows]), not_a_stand_in_source())  # as undo_admission: a stand-in is "gone"
             .all()
         ):
             srcs[int(src_row.id)] = src_row
@@ -1422,7 +1422,9 @@ def undo_admission(session: Session, event_id: int, *, now: datetime) -> dict:
     ev = session.get(SourceAdmissionEvent, int(event_id))
     if ev is None:
         raise AdmissionUndoRefused("no such admission event")
-    source = session.get(Source, int(ev.source_id))
+    # a repair's stand-in source is not a source: an admission kept for a lost one is refused as «the source no longer exists», and the
+    # undo never writes its `enabled` (which a prior value of True would turn on)
+    source = session.query(Source).filter(Source.id == int(ev.source_id), not_a_stand_in_source()).first()
     refusal = admission_undo_refusal(session, ev, source)
     if refusal is not None:
         raise AdmissionUndoRefused(UNDO_REFUSAL_MESSAGES[refusal])

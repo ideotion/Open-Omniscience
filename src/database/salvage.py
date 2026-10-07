@@ -109,7 +109,7 @@ STAND_IN_NOTE = (
     "evidence bundle, and not in the advanced search that includes quarantined articles; a stand-in source is not enabled and is not in the source lists, the groups, the qualification passes "
     "or the exports, and no source route finds it by its number, so it is never collected or qualified. The rows that were kept for a lost "
     "parent stay in the library, are counted in this report, and show the lost parent's name. A stand-in is a row like any other: if it is "
-    "deleted, its number may be handed out again. The plain counts of the articles and sources tables (the totals in the summaries, the "
+    "deleted with a database tool, its number may be handed out again. The plain counts of the articles and sources tables (the totals in the summaries, the "
     "disabled-source count, the snapshots) still include it, and so does a raw export of either table."
 )
 

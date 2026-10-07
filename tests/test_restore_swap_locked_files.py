@@ -281,9 +281,9 @@ def _non_empty_live_log(monkeypatch, tmp_path):
     ("record", "env", "reason", "says", "never_says"),
     [
         # the checkpoint is switched off: nothing ran, and the refusal does not claim a writer or a reader is active
-        (None, "0", "switched-off", ("OO_WAL_CHECKPOINT=0", "Turn it back on"), ("being written to or read", "completely within")),
+        (None, "0", "switched-off", ("may still hold", "is turned off on this computer (the OO_WAL_CHECKPOINT=0 setting)", "Remove that setting, restart the app and import again"), ("being written to or read", "completely within", "still holds", "Turn it back on")),
         # it was on and gave no answer (it failed, or the database is not SQLite)
-        (None, "1", "no-answer", ("did not answer", "Import again"), ("being written to or read", "OO_WAL_CHECKPOINT")),
+        (None, "1", "no-answer", ("may still hold", "did not answer", "Import again"), ("being written to or read", "OO_WAL_CHECKPOINT", "still holds")),
         # it answered that frames are still only in the log, or that it could not take the gate: a reader or a writer is active
         ({"busy": 1, "log_frames": 10, "checkpointed_frames": 4}, "1", "blocked", ("being written to or read", "completely within", "Let the running job finish"), ("OO_WAL_CHECKPOINT",)),
         ({"skipped": "gate busy"}, "1", "blocked", ("being written to or read",), ("OO_WAL_CHECKPOINT",)),
@@ -319,7 +319,11 @@ def test_a_checkpoint_that_does_not_finish_in_time_is_a_timed_out_refusal_and_a_
         assert _checkpoint_before_swap(0.3, why=why) is False
     finally:
         release.set()
-    assert why == ["timed-out"] and "being written to or read" in _swap_refusal(why[0])
+    assert why == ["timed-out"]
+    slow = _swap_refusal(why[0])
+    # the checkpoint was slow: nobody is said to be writing or reading, and the log is not said to hold saves
+    assert "did not finish within" in slow and "may still hold" in slow and "nothing was written to your corpus" in slow, slow
+    assert not any(phrase in slow for phrase in ("being written to or read", "completely within", "still holds", "OO_WAL_CHECKPOINT")), slow
     monkeypatch.setattr(hygiene, "checkpoint_wal", lambda force=False: {"busy": 0, "log_frames": 0, "checkpointed_frames": 0})
     why = []
     assert _checkpoint_before_swap(2.0, why=why) is True and why == []
