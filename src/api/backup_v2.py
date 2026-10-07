@@ -37,7 +37,7 @@ from pydantic import BaseModel
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, check_memory_before_staging, run_restore
 from src.jobs.background import BackgroundJob, Framed, register_job
-from src.monitoring.secret_scrub import exception_text, log_failure, scrub_and_reraise, scrubbed
+from src.monitoring.secret_scrub import exception_text, log_failure, scrub_and_reraise
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -50,9 +50,9 @@ def _restore_error(action: str, exc: Exception, *secrets: str | None) -> HTTPExc
 
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
     from src.backup import runlog
-    from src.backup.merge import classify_restore_error
+    from src.backup.merge import restore_failure_text
 
-    return HTTPException(status_code=500, detail=scrubbed(classify_restore_error(action, exc), *secrets)[: runlog.FAILURE_MSG_KEEP])
+    return HTTPException(status_code=500, detail=restore_failure_text(action, exc, *secrets)[: runlog.FAILURE_MSG_KEEP])
 
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])

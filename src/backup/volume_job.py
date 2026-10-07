@@ -27,7 +27,7 @@ from src.backup.newsletter_export import NewsletterFilterRefused
 
 # The passphrase never reaches a status, a log record or the run journal through a caught exception: every
 # handler below writes its text through these (stdlib only, so this cannot cycle either).
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, traceback_text
+from src.monitoring.secret_scrub import exception_text, log_failure, traceback_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -988,7 +988,7 @@ class VolumeBackupManager:
         except Exception as exc:  # noqa: BLE001
             # The passphrases are in scope (the corpus's too): every text below is scrubbed where it is made.
             log_failure(_LOG, "volume restore failed", exc, passphrase, corpus_passphrase)
-            from src.backup.merge import MergeError, classify_restore_error
+            from src.backup.merge import restore_failure_text
 
             # A MergeError is an intentional, well-formed refusal (the live DB stays
             # untouched) -- its own message is already the honest detail. Anything
@@ -997,11 +997,7 @@ class VolumeBackupManager:
             # (P0-2, _restore_error) -- this job used to store the bare str(exc)
             # instead, so a data-merge conflict read as an unqualified, unhelpful
             # "UNIQUE constraint failed:" in the UI (field bug 2026-07-15).
-            detail = scrubbed(
-                str(exc) if isinstance(exc, MergeError) else classify_restore_error("restore", exc),
-                passphrase,
-                corpus_passphrase,
-            )
+            detail = restore_failure_text("restore", exc, passphrase, corpus_passphrase)
             # The traceback, bounded and scrubbed. `cls` + `msg` alone lose the
             # single most useful artefact a failed run leaves behind. The detail the job serves is cut AFTER its scrub.
             detail = detail[: runlog.FAILURE_MSG_KEEP]

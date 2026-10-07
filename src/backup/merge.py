@@ -53,6 +53,7 @@ from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
 from src.monitoring.engine_text import engine_text
+from src.monitoring.secret_scrub import exception_text, scrubbed, unicode_note
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -408,7 +409,13 @@ def classify_restore_error(action: str, exc: Exception) -> str:
       * a constraint/integrity clash = a MERGE data conflict (a duplicate row), not a
         version problem;
       * a missing table/column = an actual schema/version gap (keep that wording);
-      * anything else = an honest, non-speculative "could not <action>"."""
+      * anything else = an honest, non-speculative "could not <action>".
+
+    A ``UnicodeError`` anywhere in the failure's chain names a character and its offset, which is a piece of a key that no
+    scrub knows, so such a failure is recorded by its class and a fixed note and never by its words."""
+    note = unicode_note(exc)
+    if note is not None:
+        return f"could not {action} this backup: {note}"
     msg = str(exc)
     low = msg.lower()
     # A real version/schema gap: a staged migration failed, or the corpus uses a
@@ -444,6 +451,15 @@ def classify_restore_error(action: str, exc: Exception) -> str:
     if is_version:
         return f"could not {action} this backup (it may be from an incompatible version): {msg}"
     return f"could not {action} this backup: {msg}"
+
+
+def restore_failure_text(action: str, failure: Exception, *secrets: str | None) -> str:
+    """The sentence a restore that failed is answered with (the legacy route's 500 and the volume job's status): a refusal
+    keeps its own message, anything else is classified (:func:`classify_restore_error`), and every secret handed in and every
+    passphrase the process holds is taken out of the result. The ONE call both writers use, so neither makes the text by hand."""
+    if isinstance(failure, MergeError):
+        return exception_text(failure, *secrets, typed=False)
+    return scrubbed(classify_restore_error(action, failure), *secrets)
 
 
 @dataclass

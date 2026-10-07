@@ -647,6 +647,7 @@ _SCRUBBING_CALLS_OVER_SECRETS = {
     "scrubbed_value": (0, 1),  # a structure with each secret taken out of every string in it
     "traceback_text": (0, 1),  # the traceback of the exception, scrubbed
     "log_failure": (2, 3),  # logs the whole chain, with each secret out of it (the logger, then the words)
+    "restore_failure_text": (1, 2),  # merge: the sentence a failed restore is answered with (the action, then the exception)
     "_restore_error": (1, 2),  # backup_v2: the 500 the legacy restore answers with, its detail scrubbed (the action, then the exception)
 }
 
