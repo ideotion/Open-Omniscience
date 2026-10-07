@@ -284,6 +284,7 @@ def checkpoint_wal(
         bytes_before = wal.stat().st_size if wal and wal.exists() else 0
         busy_ms = _ckpt_busy_timeout_ms() if busy_timeout_ms is None else busy_timeout_ms
 
+        from src.database.damage import guard_raw_driver
         from src.database.writer import write_lock
 
         t0 = time.monotonic()
@@ -291,7 +292,10 @@ def checkpoint_wal(
         try:
             cur = raw.cursor()
             try:
-                with write_lock(timeout=gate_timeout or None):
+                # The checkpoint runs on the driver's own cursor, which the engine's damage observer never
+                # sees: the guard discards a poisoned connection before it goes back to the pool and names
+                # the file for a damaged log or page.
+                with write_lock(timeout=gate_timeout or None), guard_raw_driver(raw, engine=engine):
                     # PRAGMAs are not DML, so pysqlite opens no implicit
                     # transaction here — the checkpoint runs outside any BEGIN.
                     cur.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
