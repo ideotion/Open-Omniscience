@@ -3369,6 +3369,15 @@ def _serve() -> None:
     except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
         logger.debug("could not engage the core-dump guard", exc_info=True)
 
+    # The boot reading of the -wal, before ``init_db()`` below (and the seeding) open the store: that connection makes a new -wal or
+    # deletes the leftover one, so the lifespan's own reading would describe this process and not the previous end.
+    try:
+        from src.monitoring.forensics import take_boot_wal_reading
+
+        take_boot_wal_reading()
+    except Exception:  # noqa: BLE001 - the lifespan takes it instead
+        logger.debug("could not take the boot -wal reading", exc_info=True)
+
     import uvicorn
 
     # Arm the native crash trace next (2026-09-26): a SIGSEGV/SIGABRT anywhere from

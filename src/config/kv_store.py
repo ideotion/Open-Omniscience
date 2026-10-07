@@ -73,11 +73,14 @@ def _db_path() -> str | None:
     return str(data_dir() / "open_omniscience.db")
 
 
-def _open(path: str):
-    """Open the live DB through the ONE connect() factory (handles SQLCipher)."""
+def _open(path: str, *, read_only: bool = False):
+    """Open the live DB through the ONE connect() factory (handles SQLCipher). ``read_only`` opens an existing file ``mode=ro``: the
+    connection that closes last on a file checkpoints a leftover ``-wal`` into it and deletes it, and a settings read is made before
+    the boot reading of that ``-wal`` can be taken whenever something reads a setting early; a read-only open also never creates a
+    file (a missing one raises, and :func:`kv_get_json` reads that as no value)."""
     from src.database.connect import connect
 
-    conn = connect(path, check_same_thread=False, timeout=30)
+    conn = connect(path, check_same_thread=False, timeout=30, read_only=read_only)
     # A short busy-timeout so a transient checkpoint waits rather than erroring;
     # the write gate already prevents a *contended* writer, this is belt-and-braces.
     try:
@@ -116,7 +119,7 @@ def kv_get_json(key: str) -> dict | None:
             return _loads(raw)
     raw = None
     try:
-        conn = _open(path)
+        conn = _open(path, read_only=True)
         try:
             row = conn.execute(
                 f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param

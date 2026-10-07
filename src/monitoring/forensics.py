@@ -239,6 +239,9 @@ _PREV_AT_BOOT: dict[str, Any] | None = None
 _PREV_LOADED = False
 # This boot's -wal reading, taken before any connection can exist (S0.1).
 _WAL_AT_BOOT: dict[str, Any] | None = None
+# A reading taken by ``take_boot_wal_reading`` before the lifespan runs, for the start (``serve``) that opens the store itself
+# before the lifespan can: ``record_session_start`` uses it instead of probing again.
+_EARLY_WAL: dict[str, Any] | None = None
 # When THIS process stamped itself running, and the monotonic reading beside it.
 #
 # Deliberately in-process rather than read back from session_state.json: that file is
@@ -267,6 +270,18 @@ def _write_state(state: dict[str, Any]) -> None:
         _LOG.warning("could not persist session_state.json", exc_info=True)
 
 
+def take_boot_wal_reading() -> None:
+    """Take this boot's -wal reading NOW, for ``record_session_start`` to use. ``serve`` opens the store (``init_db``, the seeding)
+    before the server's lifespan runs, and that connection makes a new -wal or deletes the leftover one, so a reading taken in the
+    lifespan describes this process; call this first thing in ``serve``, before anything that can open the store. A server started
+    by ``python -m uvicorn`` opens nothing before its lifespan and needs no call. Never raises."""
+    global _EARLY_WAL
+    try:
+        _EARLY_WAL = wal_state_before_open()
+    except Exception:  # noqa: BLE001 - a reading that cannot be taken is taken again in the lifespan
+        _EARLY_WAL = None
+
+
 def record_session_start() -> dict[str, Any] | None:
     """Stamp this session 'running'; returns the PREVIOUS session's state (the
     forensic input). Call once at process start; best-effort.
@@ -279,11 +294,12 @@ def record_session_start() -> dict[str, Any] | None:
     caller has to remember, and it also survives the case a reorder inside
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
-    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT
+    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL
     global _SESSION_STARTED_AT, _SESSION_STARTED_MONO
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
-    boot_reading = wal_state_before_open()
+    boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
+    _EARLY_WAL = None
     _WAL_AT_BOOT = boot_reading
     prev = _read_state()
     if not _PREV_LOADED:

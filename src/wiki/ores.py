@@ -119,13 +119,15 @@ class OresClient:
 
     @property
     def session(self):
-        """The HTTP session, built on first use: ``guarded_session`` reads the settings store, and a client built when this module is
-        imported would open the store before the app's lifespan can read the boot evidence (the ``-wal``) and take the passphrase."""
-        if self._session is None:
-            from src.safety.fetcher import guarded_session
+        """The HTTP session: the one injected, or the shared guarded session for this client's owner, asked for on every request so a
+        switch of the transport in Settings reaches it without a restart (``following_session``). Never built at import:
+        ``guarded_session`` reads the settings store, and an open there would delete the leftover ``-wal`` the boot record is about
+        to read."""
+        if self._session is not None:
+            return self._session
+        from src.safety.fetcher import following_session
 
-            self._session = guarded_session(user_agent=self._user_agent)
-        return self._session
+        return following_session("ores", self._user_agent)
 
     @session.setter
     def session(self, value) -> None:

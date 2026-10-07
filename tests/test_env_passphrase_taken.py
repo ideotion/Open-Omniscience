@@ -325,26 +325,46 @@ def test_the_take_comes_before_the_boot_record_on_a_server_started_by_uvicorn(tm
 
 
 _IMPORT_OPENS_NOTHING = """
-import os, sys, subprocess
+import hashlib, os, sys, subprocess
 db = os.path.join(os.environ['OO_DATA_DIR'], 'open_omniscience.db')
 os.makedirs(os.environ['OO_DATA_DIR'], exist_ok=True)
-subprocess.run([sys.executable, '-c',
-    "import sqlite3,os,sys\\nc=sqlite3.connect(sys.argv[1])\\nc.execute('PRAGMA journal_mode=WAL')\\nc.execute('CREATE TABLE t(x)')\\n"
-    "c.executemany('INSERT INTO t VALUES(?)',[(i,) for i in range(4000)])\\nc.commit()\\nos._exit(0)\\n", db], check=True)
-before = os.path.getsize(db + '-wal')
-assert before > 0
+no_store = os.environ.get('OO_TEST_NO_STORE') == '1'
+if not no_store:
+    subprocess.run([sys.executable, '-c',
+        "import sqlite3,os,sys\\nc=sqlite3.connect(sys.argv[1])\\nc.execute('PRAGMA journal_mode=WAL')\\nc.execute('CREATE TABLE t(x)')\\n"
+        "c.executemany('INSERT INTO t VALUES(?)',[(i,) for i in range(4000)])\\nc.commit()\\nos._exit(0)\\n", db], check=True)
+    digest = hashlib.sha256(open(db + '-wal', 'rb').read()).hexdigest()
+starts = []
+def refuse(name):
+    def fn(*a, **k):
+        starts.append(name)
+        raise RuntimeError('a process start at import: ' + name)
+    return fn
+subprocess.Popen = refuse('subprocess.Popen')
+for attr in ('fork', 'posix_spawn', 'execve'):
+    setattr(os, attr, refuse('os.' + attr))
 from src.api import main
+assert not starts, starts
 assert 'src.database.connect' not in sys.modules, 'importing the app opened the store'
-assert os.path.exists(db + '-wal') and os.path.getsize(db + '-wal') == before, 'the leftover -wal was touched'
+if no_store:
+    assert os.listdir(os.environ['OO_DATA_DIR']) == [], os.listdir(os.environ['OO_DATA_DIR'])
+else:
+    assert os.path.exists(db + '-wal') and hashlib.sha256(open(db + '-wal', 'rb').read()).hexdigest() == digest, 'the leftover -wal was touched'
 print('ok')
 """
 
 
-@pytest.mark.parametrize("env", [{}, {"OO_DB_PLAINTEXT": "1"}], ids=["passphrase-set", "plaintext"])
-def test_importing_the_app_opens_no_store_and_leaves_the_boot_wal_alone(tmp_path, env):
-    """The boot reading of the ``-wal`` (S0.1) is taken in the lifespan "before any connection can exist", and closing the last
-    connection deletes a leftover one: importing ``src.api.main`` used to build two wiki clients whose guarded session read the settings
-    store (``kv_store._open`` -> ``connect``), for a plaintext store and for an encrypted one with the passphrase in the environment.
-    MUTATION TARGET: the lazy ``session`` of ``WikiClient`` and ``OresClient`` (either, built at import, fails this)."""
+@pytest.mark.parametrize(
+    "env", [{}, {"OO_DB_PLAINTEXT": "1"}, {"OO_TEST_NO_STORE": "1"}],
+    ids=["passphrase-set", "plaintext", "key-set-and-no-store-file"],
+)
+def test_importing_the_app_opens_no_store_starts_no_process_and_leaves_the_boot_wal_alone(tmp_path, env):
+    """The boot reading of the ``-wal`` (S0.1) is taken before any connection can exist, and closing the last connection deletes a
+    leftover one: importing ``src.api.main`` used to build two wiki clients whose guarded session read the settings store
+    (``kv_store._open`` -> ``connect``). The leftover is compared by its bytes (a checkpoint plus one write leaves the same size);
+    with a key set and no store file nothing may appear (a read-write open with a key creates an encrypted store); and no process
+    is started at import (``Popen``, ``fork``, ``posix_spawn`` and ``execve`` are made to fail: the one process start reachable at
+    import is ``data_volume``'s ``execve``, which runs this program again and is not a child).
+    MUTATION TARGET: the lazy ``session`` of the two wiki clients (either, built at import, fails this)."""
     proc = _run(_IMPORT_OPENS_NOTHING, tmp_path, **env)
     assert proc.returncode == 0 and proc.stdout.strip().endswith("ok"), (proc.stdout + proc.stderr)[-1500:]

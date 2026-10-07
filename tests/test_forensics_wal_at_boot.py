@@ -356,3 +356,60 @@ def test_render_text_prints_the_boot_wal_and_the_previous_peaks(dd, monkeypatch)
     assert "minimum available memory: 88.0 MB" in txt
     assert "peak swap used: not measured" in txt  # omitted, stated, never 0
     assert "pass tail: hygiene:checkpoint" in txt
+
+
+_DEFAULT_START = """
+import asyncio, json, uvicorn
+from src.api import main
+from src.monitoring import forensics
+
+def fake_run(app, **kw):
+    async def go():
+        async with main.lifespan(app):
+            print("WAL " + json.dumps(forensics.wal_at_boot()))
+    asyncio.run(go())
+
+uvicorn.run = fake_run
+main._serve()
+"""
+
+
+def _default_start(data_dir) -> dict:
+    """Run ``main._serve()`` as ``open-omniscience`` does (``init_db()`` and the seeding before the server), with the server replaced by
+    the lifespan alone, and return the boot -wal reading the lifespan recorded."""
+    import pathlib
+
+    env = {
+        "PYTHONPATH": str(pathlib.Path(__file__).resolve().parents[1]), "PATH": "/usr/bin:/bin", "HOME": str(data_dir),
+        "OO_DATA_DIR": str(data_dir), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1", "OO_SESSION_LIVENESS": "0",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    proc = subprocess.run([sys.executable, "-c", _DEFAULT_START], cwd=pathlib.Path(__file__).resolve().parents[1], env=env,
+                          capture_output=True, text=True, timeout=180)
+    line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("WAL ")), None)
+    assert line, (proc.stdout + proc.stderr)[-1500:]
+    return json.loads(line[4:])
+
+
+def test_a_default_start_reads_the_previous_ends_wal_and_not_its_own(dd):
+    """MUTATION TARGET: ``take_boot_wal_reading()`` in ``_serve`` (before ``init_db()``), or the use of its reading in
+    ``record_session_start``. The default start opens the store before the lifespan, so a reading taken in the lifespan described this
+    process (``present``, sized by ``init_db``'s own writes) after a crash and after a clean end alike."""
+    db = dd / "open_omniscience.db"
+    size = _leave_a_wal(db)
+    got = _default_start(dd)
+    assert got["state"] == "present" and got["bytes"] == size, got
+
+
+def test_a_default_start_after_a_clean_end_reads_absent(dd):
+    import sqlite3
+
+    db = dd / "open_omniscience.db"
+    c = sqlite3.connect(str(db))
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("CREATE TABLE t(x)")
+    c.execute("INSERT INTO t VALUES(1)")
+    c.commit()
+    c.close()  # a clean close checkpoints and removes the -wal
+    assert not (dd / "open_omniscience.db-wal").exists()
+    assert _default_start(dd)["state"] == "absent"

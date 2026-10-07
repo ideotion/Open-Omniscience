@@ -281,10 +281,36 @@ def test_the_three_api_fetchers_carry_protected_mode_set_after_import(settings_e
     assert following_fetcher("hazards").proxy == SINGLE
 
 
+def test_the_wikipedia_and_ores_clients_follow_a_switch_to_protected_mode_and_back(settings_env):
+    """MUTATION TARGET: ``WikiClient.session`` / ``OresClient.session`` asking ``following_session`` on every request (a client that
+    kept the session it built keeps the transport it was built with until a restart)."""
+    from src.safety.settings import save_settings
+    from src.wiki.client import WikiClient
+    from src.wiki.ores import OresClient
+
+    for client in (WikiClient(), OresClient()):
+        before = client.session
+        assert before.transport_proxy is None and client.session is before, "kept while the transport is unchanged"
+        save_settings({"fetch_mode": "protected", "http_proxy": SINGLE})
+        during = client.session
+        assert during is not before and during.transport_proxy and during.transport_proxy.startswith("socks5h://127.0.0.1:9150")
+        save_settings({"fetch_mode": "transparent"})
+        after = client.session
+        assert after is not during and after.transport_proxy is None
+
+
+def test_an_injected_session_is_kept_by_both_clients():
+    from src.wiki.client import WikiClient
+    from src.wiki.ores import OresClient
+
+    sentinel = requests.Session()
+    assert WikiClient(session=sentinel).session is sentinel and OresClient(session=sentinel).session is sentinel
+
+
 def _import_time_calls(path: Path) -> list[int]:
     """Lines where ``path`` calls a fetcher factory outside any function body: at module
     level or directly in a class body, i.e. at import time."""
-    factories = {"make_fetcher", "guarded_session", "following_fetcher", "EthicalFetcher"}
+    factories = {"make_fetcher", "guarded_session", "following_fetcher", "following_session", "EthicalFetcher"}
     tree = ast.parse(path.read_text(encoding="utf-8"))
     hits: list[int] = []
 

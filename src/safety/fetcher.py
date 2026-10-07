@@ -373,7 +373,7 @@ def _fetcher_for(s: SafetySettings, **overrides) -> EthicalFetcher:
 # A long-lived fetcher that follows the transport setting
 # --------------------------------------------------------------------------- #
 _FOLLOWING_LOCK = threading.Lock()
-_FOLLOWING: dict[str, tuple[tuple[Any, ...], EthicalFetcher]] = {}
+_FOLLOWING: dict[str, tuple[tuple[Any, ...], Any]] = {}
 
 
 def _transport_key(s: SafetySettings) -> tuple[Any, ...]:
@@ -406,4 +406,22 @@ def following_fetcher(owner: str) -> EthicalFetcher:
         if held is None or held[0] != key:
             held = (key, _fetcher_for(s))
             _FOLLOWING[owner] = held
+        return held[1]
+
+
+def following_session(owner: str, user_agent: str) -> GuardedSession:
+    """The long-lived guarded session of one API client, rebuilt whenever the transport changes (``following_fetcher``'s twin for the
+    clients that talk to a service's API and follow its own etiquette instead of ``robots.txt``: the MediaWiki and ORES clients).
+
+    ``guarded_session`` decides the transport once, when it is built, so a client that keeps its session keeps the transport it was
+    built with: a switch to protected mode in Settings would reach it only after a restart. Build it on first use (never at import:
+    it reads the settings store) and ask here for it on every request."""
+    s = load_settings()
+    key = (*_transport_key(s), user_agent)
+    name = f"session/{owner}"
+    with _FOLLOWING_LOCK:
+        held = _FOLLOWING.get(name)
+        if held is None or held[0] != key:
+            held = (key, guarded_session(user_agent=user_agent))
+            _FOLLOWING[name] = held
         return held[1]
