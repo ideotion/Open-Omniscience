@@ -841,7 +841,11 @@ def source_facets(
     }
 
 
-@router.get("/{source_id}", response_model=dict)
+# ``{source_id:int}``, not ``{source_id}``, on all three routes of the bare id path (get, put, delete): a bare parameter matches ANY one
+# segment, so the literal paths declared further down (``/export``, ``/stats``, ``/search``) were shadowed by it for as long as it was declared
+# above them, and answered 422 to every call. A path converter that only matches digits cannot shadow a literal, whatever the declaration
+# order, and a segment that is no id is a missing route for every method (a bare PUT or DELETE left beside a typed GET answers it 405).
+@router.get("/{source_id:int}", response_model=dict)
 @limiter.limit("100/hour")
 def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
@@ -999,7 +1003,7 @@ _SOURCE_UPDATE_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
 }
 
 
-@router.put("/{source_id}", response_model=dict)
+@router.put("/{source_id:int}", response_model=dict)
 @limiter.limit("50/hour")
 def update_source(
     request: Request, source_id: int, source_data: dict, db: Session = Depends(get_db)
@@ -1045,7 +1049,7 @@ def update_source(
         }
 
 
-@router.delete("/{source_id}", response_model=dict)
+@router.delete("/{source_id:int}", response_model=dict)
 @limiter.limit("20/hour")
 def delete_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """

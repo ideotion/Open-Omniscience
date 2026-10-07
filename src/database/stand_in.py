@@ -48,3 +48,12 @@ def not_a_stand_in_article() -> Any:
     from src.database.models import Article
 
     return Article.quarantine_reason.is_distinct_from(ARTICLE_REASON)
+
+
+def is_a_stand_in_article(session: Any, article_id: int) -> bool:
+    """Whether ``article_id`` is a stand-in article: for a route that is asked about an article by its id and never loads the row itself, and
+    so must refuse the stand-in's id as it refuses an id that names nothing. It is the complement of :func:`not_a_stand_in_article`, so the
+    two cannot disagree."""
+    from src.database.models import Article
+
+    return session.query(Article.id).filter(Article.id == article_id, ~not_a_stand_in_article()).first() is not None

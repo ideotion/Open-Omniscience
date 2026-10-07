@@ -104,7 +104,7 @@ def test_a_stand_in_article_is_quarantined_and_a_stand_in_source_is_not_enabled_
         src = con.execute("SELECT enabled, name, domain, status FROM sources WHERE id = 13").fetchone()
         assert src[0] == 0 and src[1] == LOST_SOURCES_DOMAIN and src[2] == LOST_SOURCES_DOMAIN and src[2].startswith(stand_in.SOURCE_DOMAIN_PREFIX), src
         # the note the report carries says what holds (the OPEN_QUEUE entry says the same)
-        for claim in ("quarantined", "stand-in for a lost row", "source lists", "never collected or qualified", "deleted", "signed evidence bundle", "finds it by its number", "still include it"):
+        for claim in ("quarantined", "stand-in for a lost row", "source lists", "never collected or qualified", "deleted", "signed evidence bundle", "AI routes", "date tags", "finds it by its number", "still include it"):
             assert claim in salvage.STAND_IN_NOTE, f"the report's note does not say {claim!r}"
         # the real rows carry none of these marks
         assert con.execute("SELECT count(*) FROM articles WHERE quarantine_reason = ?", (stand_in.ARTICLE_REASON,)).fetchone()[0] == 1
@@ -387,6 +387,189 @@ def test_each_selection_of_a_signed_output_asks_the_search_for_articles_that_are
 def test_the_reader_answers_the_stand_in_article_as_not_found(client):
     assert client.get(f"/api/articles/{STAND_IN_ARTICLE}/view").status_code == 404
     assert client.get("/api/articles/1/view").status_code == 200  # the positive control: the reader answers for a real article
+
+
+STAND_IN_MARKER = "zzzqq"  # a word only the stand-in's text carries, so a prompt that holds it was built from the stand-in
+
+
+class _FakeLlm:
+    """Stands in for the local model: offline, and it keeps every prompt it was handed so a test can say what the model never saw."""
+
+    base_url = "http://127.0.0.1:11434"
+
+    def __init__(self):
+        self.prompts: list[str] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate(self, prompt, *, model="m", system=None, options=None, keep_alive=None):
+        from src.llm.ollama import GenerationResult
+
+        self.prompts.append(prompt)
+        return GenerationResult(model=model, text="FAKE")
+
+
+def _give_articles_what_a_stand_in_could_carry(session, ids=(1, STAND_IN_ARTICLE)) -> None:
+    """Text, a title and the kept children of an article (a summary, an AI keyword, a date tag) on each of ``ids``: the stand-in a salvage
+    copy writes has none of them today (its text is NULL, so an AI call would refuse it for having no text, whatever the gate does), and the
+    gate is for the day a copy or an edit gives it some. Article 1 is the positive control: the same routes answer for it."""
+    from datetime import UTC, date, datetime
+
+    from src.database.models import AiKeyword, Article, ArticleAnalysis, ArticleMentionedDate
+
+    for aid in ids:
+        art = session.get(Article, aid)
+        marker = STAND_IN_MARKER if aid == STAND_IN_ARTICLE else "realword"
+        art.content, art.title, art.language = f"On 5 March 2026 the ministry said {marker} was kept.", "A title", "en"
+        session.add(ArticleAnalysis(article_id=aid, kind="summary", result="r", model="m", prompt_version="v", created_at=datetime.now(UTC)))
+        session.add(AiKeyword(article_id=aid, term="kept term", kind="keyword", model="m"))
+        session.add(ArticleMentionedDate(article_id=aid, mentioned_on=date(2026, 3, 5), precision="day", snippet="5 March 2026", confidence=0.9))
+    session.commit()
+
+
+@pytest.fixture()
+def fake_llm():
+    from src.api.llm import get_llm_client, get_llm_client_with_name
+    from src.api.main import app
+
+    fake = _FakeLlm()
+    app.dependency_overrides[get_llm_client] = lambda: fake
+    app.dependency_overrides[get_llm_client_with_name] = lambda: ("ollama", fake)
+    yield fake
+    app.dependency_overrides.pop(get_llm_client, None)
+    app.dependency_overrides.pop(get_llm_client_with_name, None)
+
+
+@pytest.mark.parametrize(
+    "method, path, body",
+    [
+        ("POST", "/api/llm/articles/{}/summarize", {"model": "m"}),
+        ("POST", "/api/llm/articles/{}/translate", {"model": "m", "target_language": "French"}),
+        ("GET", "/api/llm/articles/{}/analyses", None),
+        ("GET", "/api/ai/articles/{}/keywords", None),
+        ("GET", "/api/article-dates/article/{}", None),
+        ("POST", "/api/article-dates/article/{}", None),
+    ],
+    ids=["summarize", "translate", "analyses", "ai-keywords", "date-tags", "extract-dates"],
+)
+def test_an_article_by_id_route_of_the_ai_layer_or_the_date_tags_answers_the_stand_in_as_not_found(client, fake_llm, method, path, body):
+    _give_articles_what_a_stand_in_could_carry(_api_session(client))
+    lost = client.request(method, path.format(STAND_IN_ARTICLE), json=body)
+    assert lost.status_code == 404, (lost.status_code, lost.text)
+    assert STAND_IN_MARKER not in lost.text
+    assert all(STAND_IN_MARKER not in p for p in fake_llm.prompts), "the model was handed the stand-in's text"
+    real = client.request(method, path.format(1), json=body)  # the positive control: the same route answers for a real article
+    assert real.status_code == 200, (real.status_code, real.text)
+
+
+def test_an_article_the_app_judged_not_an_article_is_still_reached_by_its_id_in_those_routes(client, fake_llm):
+    """Only the stand-in is refused: an article that was quarantined for what it is (a link list) is a real row, and an explicit id reaches it
+    (the reader and the explicit id sets of the signed outputs do the same), so a gate that read ``quarantined`` instead of the stand-in's own
+    reason would turn it into a not-found."""
+    from src.database.models import Article
+
+    session = _api_session(client)
+    _give_articles_what_a_stand_in_could_carry(session, ids=(1, 2))
+    row = session.get(Article, 2)
+    row.quarantined, row.quarantine_reason = True, "link list"
+    session.commit()
+    for method, path, body in [
+        ("POST", "/api/llm/articles/{}/summarize", {"model": "m"}),
+        ("GET", "/api/llm/articles/{}/analyses", None),
+        ("GET", "/api/ai/articles/{}/keywords", None),
+        ("GET", "/api/article-dates/article/{}", None),
+        ("POST", "/api/article-dates/article/{}", None),
+    ]:
+        reached = client.request(method, path.format(2), json=body)
+        assert reached.status_code == 200, (method, path, reached.status_code, reached.text)
+    synth = client.post("/api/llm/synthesize", json={"article_ids": [2]})
+    assert synth.status_code == 200 and [m["id"] for m in synth.json()["members"]] == [2], synth.text
+
+
+def test_the_kept_children_of_the_stand_in_are_not_listed_by_the_routes_that_read_them_by_the_stand_ins_id(client, fake_llm):
+    """The summary, the AI keyword and the date tag the stand-in kept are in the tables (nothing is deleted), and the routes that list them
+    by the article's id answer a real article's and no stand-in's."""
+    _give_articles_what_a_stand_in_could_carry(_api_session(client))
+    assert client.get("/api/llm/articles/1/analyses").json()["count"] == 1
+    assert [k["term"] for k in client.get("/api/ai/articles/1/keywords").json()["keywords"]] == ["kept term"]
+    assert [t["date"] for t in client.get("/api/article-dates/article/1").json()["tags"]] == ["2026-03-05"]
+    for path in ("/api/llm/articles/{}/analyses", "/api/ai/articles/{}/keywords", "/api/article-dates/article/{}"):
+        lost = client.get(path.format(STAND_IN_ARTICLE))
+        assert lost.status_code == 404 and "kept term" not in lost.text and "2026-03-05" not in lost.text, (path, lost.text)
+
+
+def test_an_explicit_id_set_handed_to_the_synthesis_the_bulk_run_and_the_keyword_extraction_never_reaches_the_stand_in(client, db, fake_llm, monkeypatch):
+    import json
+
+    from fastapi import HTTPException
+
+    from src.api.ai import _resolve_work
+
+    _give_articles_what_a_stand_in_could_carry(_api_session(client))
+    both = client.post("/api/llm/synthesize", json={"article_ids": [STAND_IN_ARTICLE, 1]})
+    assert both.status_code == 200, both.text
+    assert [m["id"] for m in both.json()["members"]] == [1], both.json()["members"]  # the stand-in is no member of the synthesis
+    only = client.post("/api/llm/synthesize", json={"article_ids": [STAND_IN_ARTICLE]})
+    assert only.status_code == 404, only.text
+    monkeypatch.setattr("src.database.session.SessionLocal", lambda: _api_session(client))  # the bulk run writes through its own session
+    run = client.post("/api/llm/bulk", json={"op": "summarize", "model": "m", "article_ids": [STAND_IN_ARTICLE, 1], "skip_existing": False})
+    assert run.status_code == 200, run.text
+    items = [json.loads(line) for line in run.text.splitlines() if line.strip()]
+    assert [i["article_id"] for i in items if i.get("event") == "item"] == [1], items
+    assert fake_llm.prompts and all(STAND_IN_MARKER not in p for p in fake_llm.prompts), "the model was handed the stand-in's text"
+    assert any("realword" in p for p in fake_llm.prompts)  # the positive control: the real article's text did reach the model
+    # the keyword extraction's own selection (a database session on a copy of the store: the same rows)
+    _give_articles_what_a_stand_in_could_carry(db)
+    work = _resolve_work(db, article_ids=[STAND_IN_ARTICLE, 1], query=None, source=None, language=None, start_date=None, end_date=None, cap=None)
+    assert [w.article_id for w in work] == [1], work
+    with pytest.raises(HTTPException) as refused:
+        _resolve_work(db, article_ids=[STAND_IN_ARTICLE], query=None, source=None, language=None, start_date=None, end_date=None, cap=None)
+    assert refused.value.status_code == 404
+
+
+def test_the_source_routes_the_id_route_used_to_shadow_answer_over_http_and_leave_the_stand_in_out(client):
+    """``/api/sources/export``, ``/stats`` and ``/search`` answered 422 to every call (``/api/sources/{source_id}`` was declared above them
+    and matched their last segment as an id), so their gates could only be tested below the route; they are reached now."""
+    gid = _give_the_stand_in_what_its_kept_children_leave_behind(_api_session(client))
+    exported = client.get("/api/sources/export")
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["count"] == 12 and "(lost" not in exported.text and "s0.example.org" in exported.text
+    by_group = client.get("/api/sources/export", params={"group_id": gid})
+    assert by_group.status_code == 200 and [s["domain"] for s in by_group.json()["sources"]] == ["s0.example.org"], by_group.text
+    stats = client.get("/api/sources/stats")
+    assert stats.status_code == 200, stats.text
+    body = stats.json()
+    assert body["sources"]["total"] == 12 and body["sources"]["disabled"] == 0 and body["sources"]["enabled"] == 12, body
+    assert "losttag" not in body["sources"]["tag_counts"] and body["sources"]["tag_counts"] == {"realtag": 1}, body
+    assert body["metadata"] == {"with_metadata": 1, "with_country": 1, "with_language": 1}, body
+    found = client.get("/api/sources/search", params={"query": "lost"})
+    assert found.status_code == 200 and found.json()["results"] == [] and found.json()["count"] == 0, found.text
+    assert found.json()["total"] == 0
+    tagged = client.get("/api/sources/search", params={"query": "losttag"})
+    assert tagged.status_code == 200 and tagged.json()["count"] == 0, tagged.text
+    real = client.get("/api/sources/search", params={"query": "realtag"})  # the positive control: the same search finds a real source
+    assert real.status_code == 200 and [r["id"] for r in real.json()["results"]] == [1], real.text
+    assert client.get("/api/sources/1").status_code == 200  # the id route still answers for an id
+    assert [client.request(m, "/api/sources/abc").status_code for m in ("GET", "PUT", "DELETE")] == [404, 404, 404]  # a segment that is no id is no route, for every method
+
+
+def test_no_literal_route_of_the_source_router_is_shadowed_by_another_route_declared_above_it():
+    """The cause of the three routes above, as a rule for the whole router: for every route with a literal path, the first route (in
+    declaration order) that matches that path for that method is the route itself. Anchored to the router's own routes, never the app's
+    shared ones."""
+    from starlette.routing import Match
+
+    from src.api.source_management import router
+
+    def first(path, method):
+        scope = {"type": "http", "path": path, "method": method, "root_path": ""}
+        return next((r for r in router.routes if r.matches(scope)[0] == Match.FULL), None)
+
+    literal = [r for r in router.routes if "{" not in r.path]
+    assert len(literal) > 20, "the router lost its literal routes"
+    shadowed = [(m, r.path, getattr(first(r.path, m), "path", None)) for r in literal for m in sorted(r.methods or ()) if m != "HEAD" and first(r.path, m) is not r]
+    assert shadowed == [], shadowed
 
 
 def test_the_omnibar_finds_no_stand_in_source_by_its_name(client):

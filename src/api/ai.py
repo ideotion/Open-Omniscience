@@ -32,6 +32,7 @@ from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.api.llm import active_model, get_llm_client
 from src.database.models import AiCustomPrompt, Article
 from src.database.session import get_db
+from src.database.stand_in import is_a_stand_in_article, not_a_stand_in_article
 from src.llm.ollama import OllamaClient
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -74,7 +75,7 @@ def _resolve_work(
                 ids.append(v)
         if cap is not None:
             ids = ids[:cap]
-        by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).all()}
+        by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).filter(not_a_stand_in_article()).all()}
         articles = [by_id[i] for i in ids if i in by_id]
     elif any([query, source, language, start_date, end_date]):
         from src.api.main import _query_articles
@@ -191,7 +192,12 @@ def article_ai_keywords(
 
     Returns an empty list when an article has no AI keywords yet — the ``ai_keyword``
     table always exists in the main DB, and a read never writes anything (evidence is
-    RESOLVED here rather than persisted, precisely so that stays true)."""
+    RESOLVED here rather than persisted, precisely so that stays true).
+
+    A stand-in article (the place-holder a salvage copy writes at a lost id) is not found, as it is by the reader: the keywords kept for it
+    belong to a row that is no longer there."""
+    if is_a_stand_in_article(db, article_id):
+        raise HTTPException(status_code=404, detail=f"Article {article_id} not found.")
     rows = ai_store.keywords_for_article(
         db, article_id, kind=kind, confirmed_only=confirmed_only
     )
