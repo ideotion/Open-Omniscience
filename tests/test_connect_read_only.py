@@ -167,3 +167,43 @@ def test_on_a_file_that_had_no_log_no_byte_of_the_file_changes(tmp_path):
     assert hashlib.sha256(db.read_bytes()).hexdigest() == main_before
     wal = Path(str(db) + "-wal")
     assert (not wal.exists()) or wal.stat().st_size == 0
+
+
+# --------------------------------------------------------------------------- #
+# The URI of a Windows data directory (core fold 11)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("path", "uri"),
+    [
+        (r"C:\Users\al ice\data\o.db", "file:///C:/Users/al%20ice/data/o.db?mode=ro"),
+        (r"\\nas\share\dir x\o.db", "file:////nas/share/dir%20x/o.db?mode=ro"),
+        (r"\\?\D:\data\o.db", "file:///D:/data/o.db?mode=ro"),
+        (r"\\?\UNC\nas\share\o.db", "file:////nas/share/o.db?mode=ro"),
+        (r"\\?\unc\nas\share\o.db", "file:////nas/share/o.db?mode=ro"),
+    ],
+)
+def test_a_windows_data_directory_is_a_uri_sqlite_accepts(path, uri):
+    """MUTATION TARGET: the empty authority for a UNC path. ``as_uri`` writes ``file://nas/share/...`` and SQLite refuses a URI
+    authority, so every read-only open on a share failed, every time."""
+    from pathlib import PureWindowsPath
+
+    from src.database.connect import _read_only_uri
+
+    assert _read_only_uri(PureWindowsPath(path)) == uri
+
+
+def test_the_empty_authority_form_is_what_sqlite_reads_as_a_double_slash_path(tmp_path):
+    """The form built for a UNC path (``file:////server/share/x``) opens the file at ``//server/share/x``: shown on a POSIX path, where
+    ``//tmp/...`` is ``/tmp/...``, since there is no share to open here."""
+    import sqlite3
+
+    db = tmp_path / "o.db"
+    c = sqlite3.connect(db)
+    c.execute("CREATE TABLE t(x)")
+    c.commit()
+    c.close()
+    uri = "file:////" + str(db).lstrip("/") + "?mode=ro"  # empty authority, path //tmp/...
+    assert uri.startswith("file:////")
+    ro = sqlite3.connect(uri, uri=True)
+    assert ro.execute("SELECT count(*) FROM sqlite_master").fetchone() == (1,)
+    ro.close()

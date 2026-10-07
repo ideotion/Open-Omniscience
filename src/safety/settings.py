@@ -127,10 +127,40 @@ def _clean_proxy_list(raw) -> list[str]:
     return [p.strip() for p in raw if isinstance(p, str) and p.strip()]
 
 
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored blob that cannot be read raises ``SafetySettingsError``
+    (the class only, never the engine's text) instead of reading as the defaults, because writing the defaults back over a saved
+    protected mode and proxy list is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise SafetySettingsError(
+            f"the stored safety settings could not be read ({type(exc).__name__}); nothing was changed"
+        ) from None
+    if raw is not None:
+        return raw
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("safety_settings migration into app_state deferred", exc_info=True)
+    return raw
+
+
 def load_settings() -> SafetySettings:
     """Load safety settings; env vars override the persisted value (for headless use)."""
+    return _settings_from(_read_raw())
+
+
+def _settings_from(raw: dict | None) -> SafetySettings:
+    """The settings a stored blob (or none) and the environment make."""
     s = SafetySettings()
-    raw = _read_raw()
     if raw is not None:
         mode = raw.get("fetch_mode", s.fetch_mode)
         if mode in VALID_MODES:
@@ -160,7 +190,7 @@ def save_settings(updates: dict) -> SafetySettings:
     """Apply a partial update and persist atomically. Validates before writing."""
     from src.safety.fetcher import validate_socks_pool
 
-    current = load_settings()
+    current = _settings_from(_read_raw_strict())
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
         if mode not in VALID_MODES:

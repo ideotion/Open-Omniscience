@@ -38,7 +38,7 @@ import shutil
 import sqlite3
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 _LOG = logging.getLogger("database.connect")
 
@@ -247,10 +247,29 @@ def _apply_key(conn, key: str) -> None:
         cur.close()
 
 
+def _read_only_uri(p: PurePath) -> str:
+    """The ``mode=ro`` URI of an ABSOLUTE path, in any of the forms a Windows data directory takes. ``as_uri`` writes a UNC path with
+    the server as the URI's authority (``file://nas/share/x``), and SQLite refuses a URI authority other than ``localhost``: it wants
+    the empty authority and the path ``//nas/share/x`` (``file:////nas/share/x``). The extended prefixes (``\\\\?\\D:\\x``,
+    ``\\\\?\\UNC\\nas\\share\\x``) are written without the prefix first, which ``as_uri`` turns into a nonsense authority."""
+    if isinstance(p, PureWindowsPath):
+        text = str(p)
+        if text.upper().startswith("\\\\?\\UNC\\"):
+            text = "\\\\" + text[8:]
+        elif text.startswith(("\\\\?\\", "\\\\.\\")):
+            text = text[4:]
+        uri = PureWindowsPath(text).as_uri()
+        if not uri.startswith("file:///"):
+            uri = "file:////" + uri[len("file://"):]
+    else:
+        uri = p.as_uri()
+    return uri + "?mode=ro"
+
+
 def _read_only_target(p: Path) -> str:
     """The URI of ``p`` opened ``mode=ro`` (``uri=True`` goes with it). The path is made absolute and
-    percent-encoded by ``Path.as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax."""
-    return p.resolve().as_uri() + "?mode=ro"
+    percent-encoded by ``as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax."""
+    return _read_only_uri(p.resolve())
 
 
 def _try_open_encrypted(

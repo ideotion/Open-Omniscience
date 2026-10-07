@@ -370,11 +370,14 @@ def fake_run(app, **kw):
     asyncio.run(go())
 
 uvicorn.run = fake_run
-main._serve()
+if {serve}:
+    main._serve()
+else:
+    fake_run(main.app)  # the lifespan alone: what ``python -m uvicorn src.api.main:app`` and OO_AUTOSEED=0 run before the server
 """
 
 
-def _default_start(data_dir) -> dict:
+def _default_start(data_dir, *, serve: bool = True) -> dict:
     """Run ``main._serve()`` as ``open-omniscience`` does (``init_db()`` and the seeding before the server), with the server replaced by
     the lifespan alone, and return the boot -wal reading the lifespan recorded."""
     import pathlib
@@ -384,7 +387,7 @@ def _default_start(data_dir) -> dict:
         "OO_DATA_DIR": str(data_dir), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1", "OO_SESSION_LIVENESS": "0",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
-    proc = subprocess.run([sys.executable, "-c", _DEFAULT_START], cwd=pathlib.Path(__file__).resolve().parents[1], env=env,
+    proc = subprocess.run([sys.executable, "-c", _DEFAULT_START.replace("{serve}", str(serve))], cwd=pathlib.Path(__file__).resolve().parents[1], env=env,
                           capture_output=True, text=True, timeout=180)
     line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("WAL ")), None)
     assert line, (proc.stdout + proc.stderr)[-1500:]
@@ -413,3 +416,12 @@ def test_a_default_start_after_a_clean_end_reads_absent(dd):
     c.close()  # a clean close checkpoints and removes the -wal
     assert not (dd / "open_omniscience.db-wal").exists()
     assert _default_start(dd)["state"] == "absent"
+
+
+def test_a_lifespan_only_start_reads_the_previous_ends_wal_too(dd):
+    """The start of ``python -m uvicorn`` and of ``serve`` with OO_AUTOSEED=0: nothing opens the store before the lifespan, now that
+    importing the app opens nothing (it read ``absent`` whatever was left)."""
+    db = dd / "open_omniscience.db"
+    size = _leave_a_wal(db)
+    got = _default_start(dd, serve=False)
+    assert got["state"] == "present" and got["bytes"] == size, got

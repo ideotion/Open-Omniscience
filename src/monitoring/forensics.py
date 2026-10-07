@@ -278,8 +278,9 @@ def take_boot_wal_reading() -> None:
     global _EARLY_WAL
     try:
         _EARLY_WAL = wal_state_before_open()
-    except Exception:  # noqa: BLE001 - a reading that cannot be taken is taken again in the lifespan
+    except Exception as exc:  # noqa: BLE001 - a reading that cannot be taken is taken again in the lifespan
         _EARLY_WAL = None
+        _LOG.warning("the early boot -wal reading could not be taken (%s); the lifespan takes it", type(exc).__name__)
 
 
 def record_session_start() -> dict[str, Any] | None:

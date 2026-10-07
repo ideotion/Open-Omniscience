@@ -341,8 +341,12 @@ def refuse(name):
         raise RuntimeError('a process start at import: ' + name)
     return fn
 subprocess.Popen = refuse('subprocess.Popen')
-for attr in ('fork', 'posix_spawn', 'execve'):
-    setattr(os, attr, refuse('os.' + attr))
+for attr in ('fork', 'posix_spawn', 'posix_spawnp', 'execve', 'execv', 'execvp', 'execvpe', 'execl', 'execle', 'execlp', 'execlpe',
+             'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'system', 'popen'):
+    if hasattr(os, attr):
+        setattr(os, attr, refuse('os.' + attr))
+import _posixsubprocess
+_posixsubprocess.fork_exec = refuse('_posixsubprocess.fork_exec')
 from src.api import main
 assert not starts, starts
 assert 'src.database.connect' not in sys.modules, 'importing the app opened the store'
@@ -363,8 +367,11 @@ def test_importing_the_app_opens_no_store_starts_no_process_and_leaves_the_boot_
     leftover one: importing ``src.api.main`` used to build two wiki clients whose guarded session read the settings store
     (``kv_store._open`` -> ``connect``). The leftover is compared by its bytes (a checkpoint plus one write leaves the same size);
     with a key set and no store file nothing may appear (a read-write open with a key creates an encrypted store); and no process
-    is started at import (``Popen``, ``fork``, ``posix_spawn`` and ``execve`` are made to fail: the one process start reachable at
-    import is ``data_volume``'s ``execve``, which runs this program again and is not a child).
+    is started at import (``Popen``, ``fork_exec``, ``fork``, ``posix_spawn*``, ``exec*``, ``spawn*``, ``system`` and ``popen`` are
+    made to fail: the one process start reachable at import is ``data_volume``'s ``execve``, which runs this program again and is not
+    a child). THE THREE ASSERTIONS GUARD DIFFERENT THINGS: the settings read now opens the store read-only, so it is the
+    ``sys.modules`` assertion that catches an eager client (a read-only open of the store would leave the bytes and the directory
+    as they were), and the digest and the directory listing guard any other open of the store.
     MUTATION TARGET: the lazy ``session`` of the two wiki clients (either, built at import, fails this)."""
     proc = _run(_IMPORT_OPENS_NOTHING, tmp_path, **env)
     assert proc.returncode == 0 and proc.stdout.strip().endswith("ok"), (proc.stdout + proc.stderr)[-1500:]

@@ -294,10 +294,22 @@ def guarded_session(
     (``src.ingest.egress_window``). Omitted -- the default, and every existing
     caller -- the session refuses under the kill switch exactly as before.
     """
+    return _session_for(load_settings(), user_agent=user_agent, isolation_token=isolation_token, egress_purpose=egress_purpose)
+
+
+def _session_for(
+    settings: SafetySettings,
+    *,
+    user_agent: str = DEFAULT_USER_AGENT,
+    isolation_token: str | None = None,
+    egress_purpose: str | None = None,
+) -> GuardedSession:
+    """``guarded_session`` built from the settings ``settings`` and no other read: a caller that keys a cache on a snapshot builds the
+    session from that same snapshot, or a setting that flips between two reads caches a session of one transport under the key of
+    the other."""
     s = GuardedSession()
     s.egress_purpose = egress_purpose
     s.headers["User-Agent"] = user_agent
-    settings = load_settings()
     if not settings.is_protected:
         return s
     proxy, pool, refusal = _protected_transport(settings)
@@ -422,6 +434,6 @@ def following_session(owner: str, user_agent: str) -> GuardedSession:
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(name)
         if held is None or held[0] != key:
-            held = (key, guarded_session(user_agent=user_agent))
+            held = (key, _session_for(s, user_agent=user_agent))
             _FOLLOWING[name] = held
         return held[1]

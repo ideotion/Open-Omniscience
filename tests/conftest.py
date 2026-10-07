@@ -271,6 +271,18 @@ def _damage_registry_not_leaked():
 
 
 @pytest.fixture(autouse=True)
+def _early_boot_wal_reading_not_leaked():
+    """``main._serve()`` takes the boot -wal reading before the store is opened (``forensics.take_boot_wal_reading``) and the next
+    ``record_session_start()`` consumes it: a test that runs ``_serve`` in-process with the server stubbed leaves it behind, and the next
+    test that records a boot would use a reading taken for another data directory."""
+    from src.monitoring import forensics
+
+    forensics._EARLY_WAL = None
+    yield
+    forensics._EARLY_WAL = None
+
+
+@pytest.fixture(autouse=True)
 def _pending_resume_not_leaked():
     """SCHED-1's resume watcher is a process-global daemon: any test whose resume
     runs out of retries hands off to one, and it polls every RESUME_POLL_S for the

@@ -103,6 +103,19 @@ def _ensure_table(conn) -> None:
     )
 
 
+def _read_value(path: str, key: str, *, read_only: bool) -> str | None:
+    """The raw value stored under ``key`` (``None`` when the row is absent), through one connection opened and closed here."""
+    conn = _open(path, read_only=read_only)
+    try:
+        row = conn.execute(
+            f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+            (key,),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
 def kv_get_json(key: str) -> dict | None:
     """Return the JSON object stored under ``key`` (parsed), or ``None`` if absent.
 
@@ -117,17 +130,16 @@ def kv_get_json(key: str) -> dict | None:
         if ck in _cache:
             raw = _cache[ck]
             return _loads(raw)
-    raw = None
     try:
-        conn = _open(path, read_only=True)
         try:
-            row = conn.execute(
-                f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
-                (key,),
-            ).fetchone()
-            raw = row[0] if row else None
-        finally:
-            conn.close()
+            raw = _read_value(path, key, read_only=True)
+        except Exception as ro_exc:  # noqa: BLE001 - classified below
+            if isinstance(ro_exc, FileNotFoundError) or "no such table" in str(ro_exc).lower():
+                raise
+            # A read-only open fails where a read-write one succeeds (a hot rollback journal to recover, a directory its process
+            # cannot write the ``-shm`` into): never let that read as the defaults, which mean protected mode off.
+            _LOG.debug("kv_get_json(%r): read-only open failed; retrying read-write", key, exc_info=True)
+            raw = _read_value(path, key, read_only=False)
     except Exception:  # noqa: BLE001 - a missing table / locked DB is a normal "no value"
         _LOG.debug("kv_get_json(%r) unavailable; caller falls back", key, exc_info=True)
         return None
