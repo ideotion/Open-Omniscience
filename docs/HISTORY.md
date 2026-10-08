@@ -3,18 +3,18 @@
 A consolidated archive of point-in-time records: audits, the security proof trail, quality check-ups, the salvage map, and the early phase/optimization reports. Kept for provenance; the current state lives in the other docs.
 
 ## Contents
-- [Audit report — Open Omniscience](#audit-report-open-omniscience)
-- [Audit log — Open Omniscience](#audit-log-open-omniscience)
-- [Security audit log — Open Omniscience](#security-audit-log-open-omniscience)
-- [Full Re-Audit — 2026-06 (fresh-eyes review of merged 0.04)](#full-re-audit-2026-06-fresh-eyes-review-of-merged-004)
-- [Quality Check-up — post-merge (v0.4)](#quality-check-up-post-merge-v04)
-- [Salvage Map — what's real, what's broken, what's fabricated](#salvage-map-whats-real-whats-broken-whats-fabricated)
+- [Audit report — Open Omniscience](#audit-report--open-omniscience)
+- [Audit log — Open Omniscience](#audit-log--open-omniscience)
+- [Security audit log — Open Omniscience](#security-audit-log--open-omniscience)
+- [Full Re-Audit — 2026-06 (fresh-eyes review of merged 0.04)](#full-re-audit--2026-06-fresh-eyes-review-of-merged-004)
+- [Quality Check-up — post-merge (v0.4)](#quality-check-up--post-merge-v04)
+- [Salvage Map — what's real, what's broken, what's fabricated](#salvage-map--whats-real-whats-broken-whats-fabricated)
 - [Phase 3: Line-by-Line Code Analysis Report](#phase-3-line-by-line-code-analysis-report)
-- [Phase 4: Static & Dynamic Analysis Report](#phase-4-static-dynamic-analysis-report)
-- [Phase 1: Recursive Codebase Mapping - 0.02_Qubes Branch](#phase-1-recursive-codebase-mapping-002qubes-branch)
-- [Phase 2: Dependency & Link Verification - 0.02_Qubes Branch](#phase-2-dependency-link-verification-002qubes-branch)
-- [Open Omniscience - Complete Optimization Summary](#open-omniscience-complete-optimization-summary)
-- [Open Omniscience - Medium Priority Optimization Summary (P2 Tasks)](#open-omniscience-medium-priority-optimization-summary-p2-tasks)
+- [Phase 4: Static & Dynamic Analysis Report](#phase-4-static--dynamic-analysis-report)
+- [Phase 1: Recursive Codebase Mapping - 0.02_Qubes Branch](#phase-1-recursive-codebase-mapping--002_qubes-branch)
+- [Phase 2: Dependency & Link Verification - 0.02_Qubes Branch](#phase-2-dependency--link-verification--002_qubes-branch)
+- [Open Omniscience - Complete Optimization Summary](#open-omniscience--complete-optimization-summary)
+- [Open Omniscience - Medium Priority Optimization Summary (P2 Tasks)](#open-omniscience--medium-priority-optimization-summary-p2-tasks)
 
 
 ---

@@ -41,24 +41,24 @@ maintainer ruling · 🛠 operational (maintainer runs it — networked machine 
 
 ---
 
-## 0. Where we are — the 0.2 "data safety at scale" cycle
+## 0. Where we are — the 0.5 “investigator’s desk” cycle
 
-A live 4–5-day run grew the corpus to **~100–130 GB** (the target is designed toward **5 TB**).
-That exposed the theme of the whole cycle: **the app works, but does not yet scale — and the
-scaling failures now cause crashes and data loss, not just slowness.** So 0.2's north star is
-*"the version that survives a 100 GB field run."*
+The `0.4` cycle closed with **`v0.4.0`, living sources** (tagged `v0.4.0`, 2026-09-28):
+versioned sources — Wikipedia, law, maps — became first-class Articles, collection lanes
+replaced the single scheduler mode, the import and export were rebuilt for a large
+multilingual corpus, and keyword search now works across languages. The **`0.5` cycle is
+open** — its board is [`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md); the
+scale work below (§1–§5) remains the standing backlog.
 
 - `pyproject` version is **`0.4.0`** (tagged `v0.4.0`, 2026-09-28); the default branch is **`main`** (permanent since
   2026-07-15 — branch name and version are independent).
-- The **`v0.2.0` tag is DONE** — the maintainer ran the in-app P0 validation job on the
-  live corpus and tagged (2026-07 — see `docs/CHANGES.md` 0.2.0). The P0 scale set (§2)
-  is thereby live-validated; the 0.3 cycle (measured & verified) is open.
-- **Definition of "snappy" (the acceptance bar for 0.2):** every interactive endpoint p95
+- The **`v0.4.0` tag is DONE** (2026-09-28 — see `docs/CHANGES.md` 0.4.0 and the gate
+  [`docs/product/RELEASE_0.4_GATE.md`](product/RELEASE_0.4_GATE.md)). The `v0.3.0` tag
+  (measured & verified, 2026-08-23) closed before it; the operator runs still open at the
+  `v0.4.0` tag are listed at the end of the 0.4.0 changelog section.
+- **Definition of "snappy" (the standing acceptance bar, set in the 0.2 cycle):** every interactive endpoint p95
   **< ~500 ms** at 100 GB · **unlock < 2 s** · no UI action blocks > 1 s without becoming a
   visible job · background work never freezes the UI.
-- **Just merged (the parallel A+B wave):** the Session B chain **#620–#627** + Session A's
-  **#628** (integrity heavy-read guards) + **#629** (B10 i18n keying of the new strings) are
-  all on `0.2`. The ⏳-marked items below reference those PRs and are now shipped.
 
 ---
 
@@ -451,9 +451,12 @@ Surface: Settings → Advanced → *Bulletin* (folded, last).
   is a 🛠 networked build: capture a real response first, then write the parser against it. ⬜ / 🛠
 - **Space-time scenario cards** — disputed-chronology, story-propagation, supply-chain-ripple ✅ SHIPPED (2026-07-03, `tests/test_scenario_cards.py`); remaining: silent-disasters + law-takes-effect (codeable → S6.9 stretch) · news-desert atlas + election-window desk (external baselines/roster — 🛠 operator-gated). 🚧
 
-### Versioned sources as first-class Articles — Wikipedia + laws (maintainer-directed 2026-07-10, future version)
-The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) →
-"Versioned sources as first-class Articles"; **gated on the P0 scale set — do not start before it lands**):
+### Versioned sources as first-class Articles — Wikipedia + laws (maintainer-directed 2026-07-10 — SHIPPED in `0.4.0`)
+**This shipped in `0.4.0`** — the substrate, the Wikipedia and law lanes, and the Living
+sources tab (see `CHANGES.md` 0.4.0); the notes below are the original 2026-07-10 design
+plan, kept for the record. The headline revamp (full design in the since-retired
+`FUTURE_DEVELOPMENTS.md` → "Versioned sources as first-class Articles"; **gated on the P0
+scale set — do not start before it lands**):
 - **All Wikipedia articles of all UI-language editions auto-ingested as first-class `Article`s** — full
   pipeline (keyword engine + date extraction + When×Where×Who + sentiment), metadata linking to the
   original source, exactly like any scraped article. Bulk mechanism = **dump-as-baseline + `recentchanges`-delta**
