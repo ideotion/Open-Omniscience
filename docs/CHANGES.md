@@ -1,8 +1,8 @@
 # Changelog
 
-> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, the `0.1` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), the `0.2` cycle produced **`0.3.0`, measured & verified** (tagged `v0.3.0`), and the `0.3` cycle produced **`0.4.0`, living sources** (tagged `v0.4.0`; see the README's version note).
+> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, and since then each `0.N` cycle has closed with **`v0.N.0`** — the `0.2` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), the `0.3` cycle produced **`0.3.0`, measured & verified** (tagged `v0.3.0`), and the `0.4` cycle produced **`0.4.0`, living sources** (tagged `v0.4.0`; see the README’s version note and CONTRIBUTING’s cycle↔version table).
 
-## 0.4.0 — living sources (the `0.3` cycle, version set 2026-09-28)
+## 0.4.0 — living sources (the `0.4` cycle, version set 2026-09-28)
 
 The `0.4` cycle is about **sources that change over time**. A news article is fetched once; a
 Wikipedia page, a law or a map is revised, and what matters is the revision. `0.4` gave those
@@ -179,7 +179,7 @@ own click-through, the real restores, the removable-drive export, the keyword an
 the encrypted-install upgrade, the law vetting board, the source shortlist run and the session
 allowlist) are listed in the gate with what each must show.
 
-## 0.3.0 — measured & verified (the `0.2` cycle, version set 2026-07-18)
+## 0.3.0 — measured & verified (the `0.3` cycle, version set 2026-07-18)
 
 The `0.3` cycle is about **turning instruments on real data and believing the answer**.
 Where `0.2` made a large corpus survivable, `0.3` ran the app against one — ~1M articles,
@@ -605,7 +605,7 @@ publisher's terms — the export list states that the text is there and delibera
   for) awaits a prose measurement nobody has taken, and is deliberately not proposed without
   one.
 
-## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
+## 0.2.0 — data safety at scale (the `0.2` cycle, version set 2026-07-10)
 
 The `0.2` cycle re-engineers the app to survive **large corpora** — a live multi-day run
 reached ~100–130 GB. Shipped so far: a streaming, bounded-RAM, resumable, verifiable

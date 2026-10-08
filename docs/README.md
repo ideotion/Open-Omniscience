@@ -15,8 +15,10 @@ one that matches what you need.
 
 ## Use it
 - **[QUICKSTART.md](QUICKSTART.md)** — install (Qubes + local dev) and the end-to-end loop.
-  A machine-drafted French mirror lives at
-  [`i18n/fr/QUICKSTART.md`](i18n/fr/QUICKSTART.md) (honest-banner convention;
+  A French mirror lives at
+  [`i18n/fr/QUICKSTART.md`](i18n/fr/QUICKSTART.md) (hand-reviewed seed of the
+  `v0.0.7` text, dated 2026-06-10 — older than the English file; the English version is
+  authoritative; improve it by pull request;
   [`i18n/`](i18n/) is where future translated docs land).
 - **[OFFLINE_INSTALL.md](OFFLINE_INSTALL.md)** — installing on an **air-gapped** machine:
   build a dependency bundle on a connected computer, carry both across, double-click.
@@ -45,11 +47,14 @@ one that matches what you need.
 - **[product/SCALE_ROADMAP.md](product/SCALE_ROADMAP.md)** — the deep scale/stability roadmap
   (the 0.2 cycle's P0/P1 acceptance detail).
 - **[product/RELEASE_0.3_GATE.md](product/RELEASE_0.3_GATE.md)** — the board that closed
-  the `0.3` cycle (on the `v0.3.0` pre-release, `RC01` = a, 2026-09-27): eight rows, per-row status against
-  named artifacts, and an amendment log. **[product/RELEASE_0.4_GATE.md](product/RELEASE_0.4_GATE.md)** is the
-  current cycle's board, which `0.3` moved four required rows onto by ruling (rows 4 and 7b, the ~1M
+  the `0.3` cycle (closed 2026-09-27, `RC01` = a, on the `v0.3.0` pre-release of 2026-08-23): eight rows, per-row status against
+  named artifacts, and an amendment log. **[product/RELEASE_0.4_GATE.md](product/RELEASE_0.4_GATE.md)** — the
+  board that closed the `0.4` cycle with the `v0.4.0` tag (2026-09-28; its open rows stay open
+  there), which `0.3` moved four required rows onto by ruling (rows 4 and 7b, the ~1M
   diagnostics bar, and row 5 as row W) —
   its carried rows are ruled, its proposed rows are marked as proposals.
+  **[product/RELEASE_0.5_GATE.md](product/RELEASE_0.5_GATE.md)** is the **current cycle's
+  board** (OPEN, written 2026-09-15 ahead of the `0.4` tag).
   **[product/RELEASE_0.2_GATE.md](product/RELEASE_0.2_GATE.md)** is the equivalent record for
   the tagged `v0.2.0`, reconstructed after the fact and marked as such.
 - **[ledger/shipped.csv](ledger/shipped.csv)** + **[ledger/SHIPPED_LOG.md](ledger/SHIPPED_LOG.md)**

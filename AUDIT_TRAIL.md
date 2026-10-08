@@ -5,6 +5,47 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-09-24 · Field diagnostics — first batch: six machines (analysis + plan)
+
+- **Base commit:** `main` at `c8445c62` (PR #1170); written from the six all-diagnostics
+  bundles, three release-run reports and three forensics notes the maintainer uploaded
+  (raw bundles not committed — they carry local paths; every figure is quoted with its
+  member). **Status: analysis; the fixes it plans went into the two PRs opened with it.**
+- **Headline findings and disposition:** the analysis follows `docs/audit/15`'s provenance
+  tags ([MEASURED] / [CODE-READ] / [ARITHMETIC] / [HYPOTHESIS]) — nothing quotes a
+  speed-up that was not measured.
+- **Full log:** [`docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md`](docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md)
+  (+ the tables extract
+  [`16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24_TABLES.md`](docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24_TABLES.md)).
+
+## 2026-09-21 · Field-instance slowness at 1.3 M articles — analysis of the 2026-09-11 bundle and forensics
+
+- **Base commit:** `main` at `68b295b` (2026-09-21). **Status: ANALYSIS ONLY — nothing
+  in it was built at the time of writing.**
+- **Headline findings:** maintainer report that fresh VMs on the latest repo were
+  "very slow" and that indexing an imported 1.3 M-article database "would take months
+  or years"; the analysis measures the bundle and forensics, verifies code reads against
+  the tree, and marks every causal claim a [HYPOTHESIS] with the experiment that would
+  settle it.
+- **Full log:** [`docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md`](docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md).
+
+## 2026-09-16 · Click-throughs — encrypted walk (Q1149 = a), import lifecycle (state D), Equal Earth maps (Q1128 = a)
+
+- **Encrypted click-through (`13_ENCRYPTED_CLICKTHROUGH`):** the first UI walk recorded
+  against a genuinely **encrypted** corpus (every earlier walk seeded with
+  `OO_DB_PLAINTEXT=1`); the encrypted variant is now a named per-release ritual in
+  `CLAUDE.md` and a bar on `RELEASE_0.4_GATE.md` row V.
+- **Import-lifecycle click-through (`14_IMPORT_LIFECYCLE`):** state D only, a plaintext
+  Chromium walk of a **real import** (a 24-article, 1.6 MB volume backup restored through
+  the actual dialog on a fresh instance).
+- **Maps click-through (`14_MAPS_EQUAL_EARTH`):** 36 observations — 5 surfaces + the
+  worldview toggle × 2 widths × 3 locales (en/fr/ar), per `RELEASE_0.4_GATE.md` row R;
+  records the false positive the run started as.
+- **Full logs:** [`docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md`](docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md) ·
+  [`docs/audit/14_IMPORT_LIFECYCLE_CLICKTHROUGH_2026-09-16.md`](docs/audit/14_IMPORT_LIFECYCLE_CLICKTHROUGH_2026-09-16.md) ·
+  [`docs/audit/14_MAPS_EQUAL_EARTH_CLICKTHROUGH_2026-09-16.md`](docs/audit/14_MAPS_EQUAL_EARTH_CLICKTHROUGH_2026-09-16.md)
+  (note: the two `14_` files are distinct audits of the same date, not a numbering error).
+
 ## 2026-09-08 · Transversal audit — edition 10 (full re-derivation, not a delta)
 
 - **Base commit:** `main` tip at session start (`faff1fc4bc08b028a54ed76fc1b20c35a53d1f91`); commissioned

@@ -192,6 +192,15 @@ So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When 
 cycle shorthand like `0.05` in the docs, read it as `0.0.5`. PRs land on `main`, the current
 cycle branch — not on any of the retired numbered branch names above.
 
+**Since the first alpha (`0.1.0`), the mapping is `0.N` cycle ⇒ `v0.N.0`** — the `0.2`
+cycle closed with `v0.2.0`, the `0.3` cycle with `v0.3.0`, the `0.4` cycle with `v0.4.0`
+(the one exception is the consolidated `0.09` cycle, which produced `0.1.0`). A cycle is
+named for the release that closes it — the release-gate files say so in their own words
+(`RELEASE_0.4_GATE.md` is "the checkable inventory for closing the `0.4` cycle") — and a
+version number may be *set* mid-cycle before the tag (e.g. `0.4.0` was set 2026-09-28,
+for the tag to move onto), which is why a changelog heading's date and its tag date can
+differ.
+
 ### Why this matters (the values link)
 
 This project exists to help people see information honestly. A tool that over-states its

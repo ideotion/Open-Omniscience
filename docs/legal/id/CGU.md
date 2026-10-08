@@ -88,7 +88,7 @@ apa pun**, sejalan dengan **bagian 15 dan 16 GPL v3** (penafian jaminan dan pemb
 tanggung jawab).
 
 4.2. **Tahap pengembangan.** Perangkat Lunak ini **muda dan eksperimental**: nomor versinya
-sendiri (`0.0.x`, pra-alfa) secara sengaja menandakan **kematangan yang terbatas**, dan
+sendiri (`0.x`, alfa) secara sengaja menandakan **kematangan yang terbatas**, dan
 dokumentasinya menunjukkan bahwa beberapa fitur belum lengkap atau dalam pembangunan.
 Penerbit tidak menjamin **kesesuaian untuk tujuan tertentu, keakuratan hasil, ketersediaan,
 maupun ketiadaan kesalahan atau gangguan**.
