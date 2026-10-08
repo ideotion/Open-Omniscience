@@ -86,7 +86,7 @@ with **sections 15 and 16 of the GPL v3** (disclaimer of warranty and limitation
 liability).
 
 4.2. **Stage of development.** The Software is **young and experimental**: its own
-version number (`0.0.x`, pre-alpha) deliberately signals **limited maturity**, and
+version number (`0.x`, alpha) deliberately signals **limited maturity**, and
 its documentation indicates that some features are incomplete or under construction.
 The Publisher does not warrant **fitness for a particular purpose, the accuracy of
 results, availability, or the absence of errors or interruptions**.

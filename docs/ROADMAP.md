@@ -454,8 +454,8 @@ Surface: Settings → Advanced → *Bulletin* (folded, last).
 ### Versioned sources as first-class Articles — Wikipedia + laws (maintainer-directed 2026-07-10 — SHIPPED in `0.4.0`)
 **This shipped in `0.4.0`** — the substrate, the Wikipedia and law lanes, and the Living
 sources tab (see `CHANGES.md` 0.4.0); the notes below are the original 2026-07-10 design
-plan, kept for the record. The headline revamp (full design in the since-retired
-`FUTURE_DEVELOPMENTS.md` → "Versioned sources as first-class Articles"; **gated on the P0
+plan, kept for the record. The headline revamp (full design in
+[`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) → "Versioned sources as first-class Articles"; **gated on the P0
 scale set — do not start before it lands**):
 - **All Wikipedia articles of all UI-language editions auto-ingested as first-class `Article`s** — full
   pipeline (keyword engine + date extraction + When×Where×Who + sentiment), metadata linking to the

@@ -94,7 +94,7 @@ jeglicher Art**, im Einklang mit den **Abschnitten 15 und 16 der GPL v3** (Aussc
 Gewährleistung und Haftungsbeschränkung).
 
 4.2. **Entwicklungsstand.** Die Software ist **jung und experimentell**: Ihre eigene
-Versionsnummer (`0.0.x`, Pre-Alpha) signalisiert bewusst eine **begrenzte Reife**, und
+Versionsnummer (`0.x`, Alpha) signalisiert bewusst eine **begrenzte Reife**, und
 ihre Dokumentation weist darauf hin, dass einige Funktionen unvollständig oder im Aufbau
 sind. Der Herausgeber gewährleistet weder die **Eignung für einen bestimmten Zweck, noch
 die Richtigkeit der Ergebnisse, noch die Verfügbarkeit, noch die Fehler- oder
