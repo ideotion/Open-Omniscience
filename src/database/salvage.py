@@ -218,7 +218,7 @@ class _Table:
         self.without_rowid = False
         self.columns: list[str] = []
         self.alias: str | None = None  # the INTEGER PRIMARY KEY column that IS the row id
-        self.rid: str | None = None  # the name the row id is selected by
+        self.rid: str | None = None  # the SQL spelling of the row id: rowid, _rowid_ or oid, or the INTEGER PRIMARY KEY column's name already quoted by _ident
         self.indexes: list[tuple[str, str]] = []  # (name, sql) of the indexes created from the schema
 
 
@@ -404,7 +404,7 @@ class Salvage:
         pks = [r for r in info if r[5] > 0]
         if len(pks) == 1 and str(pks[0][2]).upper() == "INTEGER":
             t.alias = pks[0][1]
-            t.rid = t.alias
+            t.rid = _ident(t.alias)  # a name from the file's schema goes into SQL quoted, like every other (a space or a reserved word in it must not break or steer the copy)
             return
         taken = {c.lower() for c in t.columns}
         t.rid = next((n for n in ("rowid", "_rowid_", "oid") if n not in taken), None)
@@ -521,14 +521,14 @@ class Salvage:
         hi: int | None
         note = None
         try:
-            lo = self.src.con.execute(f"SELECT min({t.rid}) FROM {q}").fetchone()[0]
+            lo = self.src.con.execute(f"SELECT min({t.rid}) FROM {q}").fetchone()[0]  # nosec B608 - t.rid is rowid, _rowid_, oid or the primary-key column's name quoted by _ident (set in _describe); the source is open mode=ro, query_only; values are bound, and q is _ident(t.name)
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
                 raise self._classify(f"table {t.name}", exc) from None
             self.src.reopen()
             lo, note = 1, "its first row id could not be read; ids from 1 were looked for"
         try:
-            hi = self.src.con.execute(f"SELECT max({t.rid}) FROM {q}").fetchone()[0]
+            hi = self.src.con.execute(f"SELECT max({t.rid}) FROM {q}").fetchone()[0]  # nosec B608 - t.rid is rowid, _rowid_, oid or the primary-key column's name quoted by _ident (set in _describe); the source is open mode=ro, query_only; values are bound, and q is _ident(t.name)
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
                 raise self._classify(f"table {t.name}", exc) from None
@@ -552,13 +552,13 @@ class Salvage:
         if t.alias is None:
             names.insert(0, t.rid or "rowid")  # the row id is not a column here: named bare, as SQLite spells it
         marks = ", ".join("?" for _ in names)
-        return f"INSERT INTO {_ident(t.name)}({', '.join(names)}) VALUES ({marks})"
+        return f"INSERT INTO {_ident(t.name)}({', '.join(names)}) VALUES ({marks})"  # nosec B608 - names are _ident-quoted columns, or the bare row-id spelling rowid/_rowid_/oid; marks are ? placeholders
 
     def _stream(self, t: _Table, pos: int, entry: dict[str, Any], index: int, total: int) -> tuple[int | None, bool]:
         """Copy the rows at or above ``pos``, in id order, one cursor step at a time. Returns ``(the last id copied,
         whether the read failed on an unreadable page)``; any other failure raises."""
         select, key_at = self._select_list(t)
-        sql = f"SELECT {select} FROM {_ident(t.name)} WHERE {t.rid} >= ? ORDER BY {t.rid}"
+        sql = f"SELECT {select} FROM {_ident(t.name)} WHERE {t.rid} >= ? ORDER BY {t.rid}"  # nosec B608 - t.rid is rowid, _rowid_, oid or the primary-key column's name quoted by _ident (set in _describe); the source is open mode=ro, query_only; values are bound; the select list is _ident-quoted columns
         insert = self._insert_sql(t)
         buf: list[tuple] = []
         size = 0
@@ -602,7 +602,7 @@ class Salvage:
     def _probe(self, t: _Table, x: int) -> tuple[bool, int | None]:
         """``(readable, the first id at or above x or None)``: whether the page ``x`` belongs to can be read."""
         self._check_stop()
-        sql = f"SELECT {t.rid} FROM {_ident(t.name)} WHERE {t.rid} >= ? ORDER BY {t.rid} LIMIT 1"
+        sql = f"SELECT {t.rid} FROM {_ident(t.name)} WHERE {t.rid} >= ? ORDER BY {t.rid} LIMIT 1"  # nosec B608 - t.rid is rowid, _rowid_, oid or the primary-key column's name quoted by _ident (set in _describe); the source is open mode=ro, query_only; values are bound; the select list is _ident-quoted columns
         try:
             row = self.src.con.execute(sql, (x,)).fetchone()
         except Exception as exc:  # noqa: BLE001
@@ -615,7 +615,7 @@ class Salvage:
     def _copy_one(self, t: _Table, rid: int, entry: dict[str, Any], index: int, total: int) -> bool:
         """Copy the one row ``rid`` by a point read. ``False`` when its own pages do not read."""
         select, _key_at = self._select_list(t)
-        sql = f"SELECT {select} FROM {_ident(t.name)} WHERE {t.rid} = ?"
+        sql = f"SELECT {select} FROM {_ident(t.name)} WHERE {t.rid} = ?"  # nosec B608 - t.rid is rowid, _rowid_, oid or the primary-key column's name quoted by _ident (set in _describe); the source is open mode=ro, query_only; values are bound; the select list is _ident-quoted columns
         try:
             row = self.src.con.execute(sql, (rid,)).fetchone()
         except Exception as exc:  # noqa: BLE001
@@ -697,11 +697,11 @@ class Salvage:
     def _copy_scan(self, t: _Table, entry: dict[str, Any], index: int, total: int) -> None:
         """A table with no id to probe: copied in its own order up to the first unreadable page."""
         cols = ", ".join(_ident(c) for c in t.columns)
-        insert = f"INSERT INTO {_ident(t.name)}({cols}) VALUES ({', '.join('?' for _ in t.columns)})"
+        insert = f"INSERT INTO {_ident(t.name)}({cols}) VALUES ({', '.join('?' for _ in t.columns)})"  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
         buf: list[tuple] = []
         size = 0
         try:
-            cur = self.src.con.execute(f"SELECT {cols} FROM {_ident(t.name)}")
+            cur = self.src.con.execute(f"SELECT {cols} FROM {_ident(t.name)}")  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
             for row in cur:
                 buf.append(row)
                 size += _row_bytes(row)
@@ -845,7 +845,7 @@ class Salvage:
                 continue
             try:
                 cur = self.dst.execute(
-                    f"UPDATE {_ident(child)} SET {_ident(str(key[3]))} = NULL WHERE {_ident(str(key[3]))} IS NOT NULL AND "
+                    f"UPDATE {_ident(child)} SET {_ident(str(key[3]))} = NULL WHERE {_ident(str(key[3]))} IS NOT NULL AND "  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
                     f"{_ident(str(key[3]))} NOT IN (SELECT {_ident(str(target_column))} FROM {_ident(parent)})"
                 )
             except Exception as exc:  # noqa: BLE001
@@ -869,9 +869,9 @@ class Salvage:
             if alias is None or key is None or key[4] not in (None, alias):
                 continue  # a key over several columns, or over a column that is not the parent's row id: kept and counted only
             try:
-                top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(parent)}").fetchone()[0] or 0
+                top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(parent)}").fetchone()[0] or 0  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
                 high = self.dst.execute(
-                    f"SELECT max({_ident(str(key[3]))}) FROM {_ident(child)} WHERE {_ident(str(key[3]))} > ?", (int(top),)
+                    f"SELECT max({_ident(str(key[3]))}) FROM {_ident(child)} WHERE {_ident(str(key[3]))} > ?", (int(top),)  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
                 ).fetchone()[0]
             except Exception as exc:  # noqa: BLE001
                 self._raise_for_target("the highest id the orphans refer to", exc)
@@ -894,7 +894,7 @@ class Salvage:
         stand-in that is NOT a place a lost row held. ``None`` when the table's highest id cannot be read as a number."""
         alias = self._row_id_alias[table]
         try:
-            top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(table)}").fetchone()[0] or 0
+            top = self.dst.execute(f"SELECT max({_ident(alias)}) FROM {_ident(table)}").fetchone()[0] or 0  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
             seq = 0
             if table in self._autoincrement:
                 row = self.dst.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (table,)).fetchone()
@@ -969,7 +969,7 @@ class Salvage:
                 values.append(value)
         try:
             self.dst.execute(
-                f"INSERT INTO {_ident(table)} ({', '.join(_ident(c) for c in columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                f"INSERT INTO {_ident(table)} ({', '.join(_ident(c) for c in columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
                 tuple(values),
             )
         except Exception as exc:  # noqa: BLE001
@@ -986,7 +986,7 @@ class Salvage:
         stand-in nobody needs is a row that does not exist in the user's data."""
         for table, row_id in reversed(self._made[mark:]):
             try:
-                self.dst.execute(f"DELETE FROM {_ident(table)} WHERE {_ident(self._row_id_alias[table])} = ?", (row_id,))
+                self.dst.execute(f"DELETE FROM {_ident(table)} WHERE {_ident(self._row_id_alias[table])} = ?", (row_id,))  # nosec B608 - every name is quoted by _ident (names come from the schema being copied) and every value is a bound ?
             except Exception as exc:  # noqa: BLE001
                 self._raise_for_target("a stand-in row that was not needed", exc)
         del self._made[mark:]

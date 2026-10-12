@@ -311,6 +311,39 @@ def test_row_ids_survive_with_gaps_with_and_without_an_integer_primary_key(tmp_p
         b.close()
 
 
+def test_a_row_id_column_whose_name_needs_quoting_is_copied_like_any_other(tmp_path):
+    """The row-id column's name comes from the file's own schema and is put into the statements that read it: a space, a quote
+    character or a reserved word in it must not break (or steer) the copy, so it is quoted like every other name."""
+    src = tmp_path / "src.db"
+    _one_store(
+        src,
+        [
+            'CREATE TABLE t_space ("order id" INTEGER PRIMARY KEY, v TEXT)',
+            'CREATE TABLE t_quote ("a""b" INTEGER PRIMARY KEY, v TEXT)',
+            'CREATE TABLE t_word ("select" INTEGER PRIMARY KEY, v TEXT)',
+        ],
+        {},
+        page=1024,
+    )
+    con = sqlite3.connect(src)
+    for table, column in (("t_space", "order id"), ("t_quote", 'a"b'), ("t_word", "select")):
+        quoted = '"' + column.replace('"', '""') + '"'
+        con.executemany(f'INSERT INTO {table} ({quoted}, v) VALUES (?, ?)', [(i * 3, f"{table}{i}") for i in range(1, 300)])
+    con.commit()
+    con.close()
+    report, out = _salvage(src, tmp_path)
+    a, b = sqlite3.connect(src), sqlite3.connect(out)
+    try:
+        for table in ("t_space", "t_quote", "t_word"):
+            assert a.execute(f"SELECT rowid, v FROM {table} ORDER BY rowid").fetchall() == b.execute(
+                f"SELECT rowid, v FROM {table} ORDER BY rowid"
+            ).fetchall(), table
+            assert _entry(report, table)["kept"] == 299, table
+    finally:
+        a.close()
+        b.close()
+
+
 def test_an_autoincrement_counter_never_goes_back_below_a_lost_id(tmp_path):
     src = tmp_path / "src.db"
     _one_store(
