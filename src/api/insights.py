@@ -3248,11 +3248,19 @@ def _supergroup_totals(
     covered by two members of the same group must count once, never per-member)
     without any further query — the id-per-key resolution now tracks EVERY member
     key a term maps to (a set, not the prior scalar last-write-wins), which is
-    exactly what makes the overlap detectable at all."""
+    exactly what makes the overlap detectable at all.
+
+    A keyword the stoplist hides is NOT counted (R111 step T2), the same rule
+    ``supergroup_stats.resolve_member_keyword_ids`` applies, so this panel and the Observatory,
+    the rising test and the drill-through agree on which keywords are hidden (they are two functions; a test
+    resolves one group through both). Only the LIST hides (stopwords +
+    the user's exclusions), not the too-short rule: a member is a deliberate pick (`ai`)."""
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
+    from src.analytics.filters import hidden_set
     from src.database.models import Keyword
 
+    hidden = hidden_set()
     term_to_key: dict[str, set[str]] = {}
     canon_to_key: dict[str, set[str]] = {}
     keys: list[str] = []
@@ -3316,6 +3324,8 @@ def _supergroup_totals(
             .all()
         )
     for kid, norm, m, a in rows:
+        if norm in hidden:
+            continue
         mention_by_id[int(kid)] = int(m or 0)
         keys_for_norm = term_to_key.get(norm) or canon_to_key.get(canonical_key(norm)) or set()
         for key in keys_for_norm:

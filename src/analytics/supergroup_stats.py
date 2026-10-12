@@ -59,10 +59,23 @@ def resolve_member_keyword_ids(
     one: it cannot, and the reason is narrower and more specific than the docstring
     admitted (see ``GET /api/insights/supergroup-articles``, which exists because
     the Observatory's drill-through was resolving membership the other way).
+
+    **A HIDDEN KEYWORD IS NOT A MEMBER'S KEYWORD (R111 step T2).** A keyword the stoplist
+    hides (a shipped stopword or one of the user's exclusions) resolves to NO id
+    here, so a group's totals, its rising test, its Observatory sky and its drill-through all
+    leave it out together. 13 terms of the shipped rings were on the shipped list when this
+    was written (`news`, `work`, `are` ...): left in, a group's share would have been driven
+    by a word the rest of the app hides. The member keeps its other terms; one with no visible
+    keyword resolves to an empty set, the same answer as a term the corpus never saw. The
+    too-short / numeric rule is NOT applied: a member is a deliberate pick (`ai` is a family
+    people add), and a length rule would empty their group without a word.
     """
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
+    from src.analytics.filters import hidden_set
     from src.database.models import Keyword
+
+    hidden = hidden_set()
 
     term_to_keys: dict[str, set[str]] = {}
     canon_to_keys: dict[str, set[str]] = {}
@@ -83,6 +96,8 @@ def resolve_member_keyword_ids(
                 .filter(Keyword.normalized_term.in_(chunk))
                 .all()
             ):
+                if norm in hidden:
+                    continue
                 for key in term_to_keys.get(norm, ()):
                     out[key].add(int(kid))
     if canon_to_keys:
@@ -93,6 +108,8 @@ def resolve_member_keyword_ids(
         from src.database.query import keyset_scan
 
         for kid, norm in keyset_scan(db.query(Keyword.id, Keyword.normalized_term), Keyword.id):
+            if norm in hidden:
+                continue
             keys = canon_to_keys.get(canonical_key(norm))
             if keys:
                 for key in keys:
