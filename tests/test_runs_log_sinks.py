@@ -13,7 +13,7 @@ handler of another failure are the ones that matter, because the other failure i
     ``except BaseException`` in the worker);
   * ``exit_evidence.note_fatal_exception`` runs inside the handler of the exception that ends the server;
   * ``exit_evidence.arm_crash_trace`` writes its reason, and logs it, on a failure at boot;
-  * ``bundle._all_diagnostics_worker``'s two journal-write warnings and ``_bundle_exclusive_window``'s failed claim, which run in a
+  * ``bundle._write_all_diagnostics_zip``'s two journal-write warnings and ``_bundle_exclusive_window``'s failed claim, which run in a
     build that may itself be inside the handler of another failure (a handler's exception chains the one it ran in as its context).
 
 Each is run here with the passphrase and a key statement in the failure it runs inside, and every record any handler formats is
@@ -429,6 +429,24 @@ def test_a_previous_file_that_cannot_be_read_logs_the_failure_scrubbed_with_no_t
     _no_passphrase_in(_everything_a_handler_would_write(caplog))
 
 
+@pytest.mark.parametrize(("level", "formatted"), [(logging.INFO, 0), (logging.DEBUG, 1)])
+def test_a_failing_tick_formats_and_scrubs_its_failure_only_when_debug_is_on(_data, _vitals, monkeypatch, caplog, level, formatted):
+    """``log_failure`` formats the traceback and runs every held shape over it before the logger asks its level; the recorder asks
+    first, so a tick that fails on every pass costs nothing at INFO."""
+    v = _vitals
+    v.start()
+    calls: list[str] = []
+    monkeypatch.setattr(v, "log_failure", lambda log, what, exc, *a, **k: calls.append(what))
+
+    def broken():
+        raise _the_failing_engine()
+
+    monkeypatch.setattr(v, "_fast_readings", broken)
+    caplog.set_level(level, logger="src.monitoring.vitals_history")
+    v.tick(now=1_699_999_200.0)
+    assert len(calls) == formatted, calls
+
+
 @pytest.mark.parametrize(
     ("exc", "expected"),
     [
@@ -463,11 +481,15 @@ _WITNESS_MODULES = (
 )
 #: Calls a module of the list above may hand a caught exception to besides the common ones, each with what it writes: the vitals
 #: recorder's ``_reason`` is the exception's class and the operating system's own reason, never its message ("Never its message,
-#: which can name a path or carry text a user typed"), and ``_note_error`` writes only that.
-_EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error"}}
-#: Files too large and too old to hold to the second rule (every handler's exception through a scrubbing call): the bundle writer
-#: has hundreds of handlers that write ``_all_diag_err_str`` or a fixed text. They are held to the first rule only: no log call asks
-#: for a traceback (``exc_info``, ``.exception()``, the ``traceback`` module, a ``**`` mapping into a log call).
+#: which can name a path or carry text a user typed"), ``_note_error`` writes only that, and ``_debug_failure`` is ``log_failure`` behind a
+#: check that DEBUG is on (tested below).
+_EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"}}
+#: Files too old to hold to the second rule (every handler's exception through a scrubbing call): the bundle writer has 53 handlers,
+#: 23 of them binding a name, and writes through its own scrub (``_all_diag_err_str`` / ``_err_str``, which the guard does not know)
+#: or a fixed text; with those two names allowed the full guard still reports 12 lines on main (three ``HTTPException(detail=str(exc))``
+#: answers of the volumes route to the local page, from splitting a finished zip on disk with no engine in the path, and re-raises).
+#: The full reading of it is the next PR's. They are held to the first rule only: no log call asks for a traceback (``exc_info``,
+#: ``.exception()``, the ``traceback`` module, a ``**`` mapping into a log call, a log method kept in a name or reached by ``getattr``).
 _NO_TRACEBACK_MODULES = ("src/api/diagnostics/bundle.py",)
 _LOG_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "exception", "log", "fatal"}
 _TRACEBACK_CALLS = {
@@ -479,9 +501,6 @@ _TRACEBACK_CALLS = {
     "format_exception_only",
     "exc_info",
 }
-#: The names a module writes its log through: a method of one of them that is not called on the spot (``emit = _LOG.debug``) is a log
-#: call the keyword scan below could no longer see the arguments of.
-_LOG_NAMES = {"_LOG", "LOG", "_log", "log", "logger", "_logger", "logging"}
 #: The calls a handler's bound exception may be handed to: each writes it through the one scrub, or asks for its class.
 #: ``forensics._why`` is ``tidy_error`` with the report's own cut.
 _SCRUBBING_CALLS = {"tidy_error", "exc_line", "exception_text", "traceback_text", "log_failure", "type", "isinstance", "_why"}
@@ -534,20 +553,18 @@ def _leaks(source: str, *, handlers: bool = True, also_scrubbing: frozenset[str]
             isinstance(node, ast.Call)
             and _call_name(node) == "getattr"
             and len(node.args) >= 2
-            and isinstance(node.args[1], ast.Constant)
-            and node.args[1].value in _LOG_METHODS | _TRACEBACK_CALLS
+            and not (isinstance(node.args[1], ast.Constant) and node.args[1].value not in _LOG_METHODS | _TRACEBACK_CALLS)
         ):
-            out.append(f"{node.lineno}: getattr reaches {node.args[1].value!r}, a way round the scan of the log calls")
+            out.append(f"{node.lineno}: getattr reaches {ast.unparse(node.args[1])}, a way round the scan of the log calls")
         if isinstance(node, ast.Attribute) and node.attr == "exc_info":
             out.append(f"{node.lineno}: sys.exc_info() reads the exception being handled")
         if (
             isinstance(node, ast.Attribute)
+            and isinstance(node.ctx, ast.Load)
             and node.attr in _LOG_METHODS
-            and isinstance(node.value, ast.Name)
-            and node.value.id in _LOG_NAMES
             and not (isinstance(parent.get(node), ast.Call) and parent[node].func is node)
         ):
-            out.append(f"{node.lineno}: {node.value.id}.{node.attr} is kept as a name, a log call the scan cannot read")
+            out.append(f"{node.lineno}: {ast.unparse(node)} is kept as a name, a log call the scan cannot read")
         if isinstance(node, ast.Import) and any(a.name.split(".")[0] == "traceback" for a in node.names):
             out.append(f"{node.lineno}: the traceback module is imported")
         if isinstance(node, ast.ImportFrom) and (
@@ -602,6 +619,13 @@ _FLAGGED = {
     "import traceback": "import traceback\n",
     "import traceback as tb": "import traceback as tb\n",
     "from traceback import format_tb": "from traceback import format_tb\n",
+    "_LOG.info with a ** mapping": "def f(k):\n    _LOG.info('x', **k)\n",
+    "_LOG.warning with a ** mapping": "def f(k):\n    _LOG.warning('x', **k)\n",
+    "_LOG.warn with a ** mapping": "def f(k):\n    _LOG.warn('x', **k)\n",
+    "_LOG.error with a ** mapping": "def f(k):\n    _LOG.error('x', **k)\n",
+    "_LOG.critical with a ** mapping": "def f(k):\n    _LOG.critical('x', **k)\n",
+    "_LOG.fatal with a ** mapping": "def f(k):\n    _LOG.fatal('x', **k)\n",
+    "_LOG.log with a ** mapping": "def f(k):\n    _LOG.log(10, 'x', **k)\n",
     "_LOG.warn with exc_info": "def f():\n    _LOG.warn('x', exc_info=True)\n",
     "_LOG.critical with exc_info": "def f():\n    _LOG.critical('x', exc_info=True)\n",
     "_LOG.fatal with exc_info": "def f():\n    _LOG.fatal('x', exc_info=True)\n",
@@ -610,6 +634,18 @@ _FLAGGED = {
     "a log method reached through getattr": "def f(k):\n    getattr(_LOG, 'debug')(**k)\n",
     "a log method reached through getattr, no **": "def f():\n    getattr(_LOG, 'exception')('x')\n",
     "a log method kept in a name": "def f(k):\n    emit = _LOG.debug\n    emit('x', **k)\n",
+    "a log method of a logger from getattr, kept in a name": (
+        "def f(k):\n    fn = logging.getLogger('a').debug\n    fn('x', **k)\n"
+    ),
+    "a log method of an attribute, kept in a name": "def f(self, k):\n    emit = self._log.debug\n    emit('x', **k)\n",
+    "a log method looked up with a name that is not a constant": "def f(name, k):\n    fn = getattr(_LOG, name)\n    fn('x', **k)\n",
+    "a log method looked up by a constant name": "def f(k):\n    fn = getattr(_LOG, 'warning')\n    fn('x', **k)\n",
+    "the exception method kept in a name": "def f():\n    fn = _LOG.exception\n    fn('x')\n",
+    "a traceback function reached through getattr": "def f(e):\n    return getattr(traceback, 'format_exc')()\n",
+    "sys.exc_info kept in a name": "def f():\n    g = sys.exc_info\n    return g()\n",
+    "the members of a group, stringified whole": (
+        "def f():\n    try:\n        go()\n    except BaseExceptionGroup as exc:\n        return str(exc.exceptions)\n"
+    ),
     "a log method kept in a name, then asked for the traceback": "def f():\n    emit = _LOG.debug\n    emit('x', exc_info=True)\n",
     "exc_info() called, its import out of sight": "def f():\n    return exc_info()\n",
     "a ** into a call that is not a name": "def f(k):\n    pick()(**k)\n",

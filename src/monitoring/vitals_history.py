@@ -460,7 +460,7 @@ def _slow_readings(now: float) -> dict[str, float]:
             if size is not None:
                 out[key] = size
     except Exception as err:  # noqa: BLE001 - the data folder is not there (DataVolumeMissing): no drive readings
-        log_failure(_LOG, "vitals history: the data folder could not be read", err, level=logging.DEBUG)
+        _debug_failure("vitals history: the data folder could not be read", err)
     _SLOW = out
     return out
 
@@ -734,7 +734,7 @@ def tick(now: float | None = None, mono: float | None = None) -> None:
             flush()
     except Exception as exc:  # noqa: BLE001 - a recorder never raises into its caller
         _note_error("tick", exc)
-        log_failure(_LOG, "vitals history tick failed", exc, level=logging.DEBUG)
+        _debug_failure("vitals history tick failed", exc)
 
 
 def _thread_cpu() -> float | None:
@@ -756,6 +756,15 @@ def _reason(exc: BaseException) -> str:
     if isinstance(exc, OSError) and exc.strerror:
         reason += f": {exc.strerror}"
     return reason[:120]
+
+
+def _debug_failure(what: str, exc: BaseException) -> None:
+    """Log a failure of the recorder's own work at DEBUG, through the one scrub (``log_failure``: the traceback is never
+    written raw, because the recorder may be running inside another failure's handler), and only when DEBUG is on: the scrub formats
+    the traceback and runs every held shape over it before a logger asks its level, and a tick that fails on every pass should not
+    pay that at a level nobody reads (the line it replaces did nothing at INFO)."""
+    if _LOG.isEnabledFor(logging.DEBUG):
+        log_failure(_LOG, what, exc, level=logging.DEBUG)
 
 
 def _note_error(what: str, exc: BaseException) -> None:
@@ -875,7 +884,7 @@ def flush() -> None:
         _note_cost("flush", started_wall, started_cpu)
         _COST["flush_bytes_last"] = float(target.stat().st_size)
     except Exception as err:  # noqa: BLE001
-        log_failure(_LOG, "vitals history flush failed", err, level=logging.DEBUG)
+        _debug_failure("vitals history flush failed", err)
 
 
 def _load() -> dict[str, Any] | None:
@@ -1014,7 +1023,7 @@ def start(now: float | None = None) -> None:
                 _PREVIOUS = carried
                 _LAST_FLUSH_AT = prev.get("saved_at")
         except Exception as err:  # noqa: BLE001 - a damaged file starts a fresh history
-            log_failure(_LOG, "vitals history: could not read the previous file", err, level=logging.DEBUG)
+            _debug_failure("vitals history: could not read the previous file", err)
             _FINE, _COARSE, _LOGS, _SESSIONS, _PREVIOUS, _CLOCK_STEPS = [], [], [], [], [], []
             _FINE_ACC = _COARSE_ACC = None
             _FINE_T = _COARSE_T = _HOUR_LOGS_T = 0
