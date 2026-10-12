@@ -197,7 +197,17 @@ def test_a_ring_whose_every_member_is_hidden_reads_as_empty_not_as_unmeasured(s)
     assert resolve_group_keyword_ids(s, "news-media") == set()
     split = ring_country_split(s, ring_id="news-media")
     assert split["found"] is True and split["countries"] == [] and split["n_keywords"] == 0
-    assert ring_country_article_ids(s, ring_id="news-media", country="FR")["article_ids"] == []
+    drill = ring_country_article_ids(s, ring_id="news-media", country="FR")
+    assert drill["article_ids"] == []
+    for caveat in (split["caveat"], drill["caveat"]):
+        assert "hidden by the stoplist" in caveat and "No indexed keywords" not in caveat, caveat
+
+
+def test_a_ring_the_corpus_never_indexed_still_says_so(s):
+    from src.analytics.queries import ring_country_split
+
+    split = ring_country_split(s, ring_id="news-media")
+    assert split["countries"] == [] and "No indexed keywords in this ring yet" in split["caveat"]
 
 
 def test_a_user_exclusion_hides_a_ring_member_in_every_ring_reader(s, monkeypatch):

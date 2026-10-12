@@ -103,6 +103,30 @@ def resolve_group_keyword_ids(db, ring_id: str) -> set[int]:
     return ids
 
 
+def hidden_group_keyword_count(db, ring_id: str) -> int:
+    """How many of a ring's keywords in this corpus the stoplist hides (what :func:`resolve_group_keyword_ids`
+    leaves out). A reader whose ring resolved to nothing asks this to tell "the corpus never indexed these
+    words" from "it has them and they are hidden": the two read differently to a person."""
+    from src.analytics import equivalence
+    from src.analytics.filters import hidden_set
+    from src.database.models import Keyword
+
+    ring = equivalence.ring_meta(ring_id)
+    if ring is None:
+        return 0
+    hidden = hidden_set() & {term for _lang, term in ring.members}
+    if not hidden:
+        return 0
+    n = 0
+    for chunk in _chunks(sorted(hidden)):
+        for lang, norm in db.query(Keyword.language, Keyword.normalized_term).filter(
+            Keyword.normalized_term.in_(chunk)
+        ):
+            if equivalence.ring_of(lang, norm) == ring_id:
+                n += 1
+    return n
+
+
 def group_stats(
     db,
     ring_id: str,

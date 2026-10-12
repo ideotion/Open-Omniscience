@@ -1572,6 +1572,20 @@ def article_graph(
     return graph
 
 
+def _empty_ring_caveat(session, ring_id: str, noun: str) -> str:
+    """Why a ring resolved to no keyword: the corpus has not indexed its words yet, or it has them and the stoplist
+    (or the user's exclusions) hides every one. The second must not read as the first (R111 step T2)."""
+    from src.analytics.group_stats import hidden_group_keyword_count
+
+    n = hidden_group_keyword_count(session, ring_id)
+    if n:
+        return (
+            f"Every keyword of this {noun} in your corpus ({n}) is hidden by the stoplist or your own exclusions, "
+            "so there is nothing to count."
+        )
+    return f"No indexed keywords in this {noun} yet for your corpus."
+
+
 def ring_country_split(session, *, ring_id: str, days: int | None = None, limit: int = 40) -> dict:
     """Split a cross-language equivalence RING's coverage by the SOURCE country.
 
@@ -1620,7 +1634,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         return {"ring_id": ring_id, "found": True, "countries": [], "n_keywords": 0,
                 "languages": languages, "n_countries": 0, "countries_listed": 0,
                 "truncated": False,
-                "caveat": "No indexed keywords in this ring yet for your corpus."}
+                "caveat": _empty_ring_caveat(session, ring_id, "ring")}
     q = (
         session.query(
             Source.country,
@@ -1728,7 +1742,7 @@ def ring_country_article_ids(
         return {
             "ring_id": ring_id, "found": True, "country": country,
             "article_ids": [], "returned_count": 0, "bounded": False,
-            "caveat": "No indexed keywords in this group yet for your corpus.",
+            "caveat": _empty_ring_caveat(session, ring_id, "group"),
         }
 
     # .distinct() the QUERY method (SELECT DISTINCT), never a bare func.distinct()
