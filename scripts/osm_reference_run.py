@@ -82,12 +82,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.extract is None or not args.country:
         ap.error("--extract and --country are required")
 
+    from src.monitoring.secret_scrub import exception_text
     from src.osm.ingest import country_codes
 
     try:
         country_codes(args.country)
     except ValueError as exc:
-        print(f"refused: {R.scrub(str(exc))}")
+        print(f"refused: {R.scrub(exception_text(exc, typed=False))}")
         return 2
     prior = None
     if args.prior_report is not None:
@@ -124,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
             report_path=None if args.plan else target,
         )
     except (OSError, ValueError) as exc:
-        print(f"refused: {R.scrub(str(exc))}")  # paths reduced to file names: the terminal is pasted into tickets
+        print(f"refused: {R.scrub(exception_text(exc, typed=False))}")  # paths reduced to file names: the terminal is pasted into tickets
         return 2
 
     if args.plan:

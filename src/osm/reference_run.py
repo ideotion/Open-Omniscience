@@ -72,7 +72,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import scrub_text
+from src.monitoring.secret_scrub import exception_text, scrubbed
 
 SCHEMA_VERSION = 1
 MARKER = ".oo-osm-reference-run"
@@ -196,8 +196,13 @@ _FILE_URL = re.compile(r"(?P<scheme>\b[A-Za-z][\w+.-]*:)/{3,}(?P<path>[^\s'\"`:;
 
 
 def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = None,
-          roots: tuple[tuple[str, str], ...] = ()) -> str:
+          roots: tuple[tuple[str, str], ...] = (), secret: bool = True) -> str:
     """``text`` without any of ``secrets_`` and with every absolute path reduced to its file name.
+
+    The secrets go through the shared :func:`src.monitoring.secret_scrub.scrubbed`, which also takes out every passphrase
+    this process holds (the operator's own session or ``OO_DB_PASSPHRASE``, whether or not it was handed in) and withholds a
+    text that holds a secret too short to take out. ``secret=False`` is the PATHS-ONLY pass (a field name the code defines,
+    which a passphrase that equalled it would rename, and the finished report, whose verdict words the exit code reads).
 
     The run's own directory, and every known root in ``roots`` (``(path, label)`` pairs: the
     repository, the home directory, the input and output folders), are replaced LITERALLY first, so a
@@ -207,10 +212,7 @@ def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = N
     pastes or attaches, so a traceback's home directory and the repository's location have no
     business in it.
     """
-    out = text
-    for s in secrets_:
-        if s:
-            out = scrub_text(out, s)  # the shared helper: split/join, and a marker that cannot rebuild the secret
+    out = scrubbed(text, *secrets_) if secret else text
     if run_dir:
         out = out.replace(str(run_dir), "<run>")
     for path, label in roots:
@@ -226,15 +228,6 @@ def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = N
 
 #: How much of a failing child's stderr the report keeps: the last 12 lines (a traceback's tail, where the
 #: cause is) and 600 characters of stdout. They bound the REPORT's size and what an operator pastes.
-def _exc_text(exc: BaseException) -> str:
-    """``Type: message`` for a report -- except for a UnicodeError, whose message NAMES the character it could not encode
-    and its offset (a passphrase letter, when the passphrase file holds one this locale cannot carry): the exact-match
-    scrub cannot recognise a letter plus an offset, so such an error is recorded by its class alone."""
-    if isinstance(exc, UnicodeError):
-        return f"{type(exc).__name__} (its message is not recorded: it would name a character of the text being encoded)"
-    return f"{type(exc).__name__}: {exc}"
-
-
 def _tail(path: Path, lines: int = 12, *, secrets_: tuple[str, ...], run_dir: Path,
           roots: tuple[tuple[str, str], ...] = ()) -> str:
     try:
@@ -584,7 +577,7 @@ def run_phase(
                                     start_new_session=True, preexec_fn=_pdeathsig_preexec())  # noqa: PLW1509
         except (OSError, subprocess.SubprocessError, UnicodeError) as exc:  # UnicodeError: an env value the locale cannot encode
             res.status, res.reason = "failed", scrub(
-                f"the phase could not be started ({_exc_text(exc)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
+                f"the phase could not be started ({exception_text(exc, *secrets_)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
             res.wall_seconds = round(time.monotonic() - t0, 3)
             res.disk_free_after_bytes = probe.free_disk(run_dir)
             return res
@@ -739,17 +732,18 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
         return False
 
 
-def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: tuple[tuple[str, str], ...] = ()):
+def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: tuple[tuple[str, str], ...] = (),
+               secret: bool = True):
     """``scrub`` applied to every string VALUE of a JSON-shaped value; KEYS lose their paths but are never touched
     by the secret (a field name is code's, and a passphrase that equalled one would rename it: the rule in
-    docs/ledger/LESSONS.md, "leave the fields a program reads alone")."""
+    docs/ledger/LESSONS.md, "leave the fields a program reads alone"). ``secret=False``: paths only."""
     if isinstance(obj, str):
-        return scrub(obj, secrets_=secrets_, run_dir=run_dir, roots=roots)
+        return scrub(obj, secrets_=secrets_, run_dir=run_dir, roots=roots, secret=secret)
     if isinstance(obj, list):
-        return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for v in obj]
+        return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots, secret=secret) for v in obj]
     if isinstance(obj, dict):
-        return {(scrub(k, run_dir=run_dir, roots=roots) if isinstance(k, str) else k):
-                _scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for k, v in obj.items()}
+        return {(scrub(k, run_dir=run_dir, roots=roots, secret=False) if isinstance(k, str) else k):
+                _scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots, secret=secret) for k, v in obj.items()}
     return obj
 
 
@@ -966,7 +960,7 @@ def _run(
         report["finished_at"] = now().isoformat()
         # Paths only: every engine text was scrubbed of the passphrase where it was made (above), and a pass of the
         # secret over the finished record could rewrite a verdict word the exit code reads (a passphrase "failed").
-        final = _scrub_obj(report, secrets_=(), run_dir=run_dir, roots=roots)
+        final = _scrub_obj(report, secrets_=(), run_dir=run_dir, roots=roots, secret=False)
         if report_path is not None:
             try:
                 write_report(final, report_path)
@@ -1064,7 +1058,7 @@ def _run(
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
     except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
-        note = scrub(f"the runner itself failed: {_exc_text(exc)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
+        note = scrub(f"the runner itself failed: {exception_text(exc, passphrase)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
         if report["status"] == "ok":
             report["status"], report["reason"] = "failed", note
         else:  # what happened first (a signal, a guard's stop) stays the status; this is added to it

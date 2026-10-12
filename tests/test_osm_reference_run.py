@@ -1172,6 +1172,70 @@ def test_a_key_letter_the_locale_cannot_encode_is_never_named_in_the_report(tmp_
     assert key_text not in text
 
 
+def test_the_operators_own_passphrase_is_taken_out_of_a_childs_words_though_it_was_never_handed_in(tmp_path, monkeypatch):
+    # The shared scrub takes out every passphrase this process HOLDS (here the environment's), beside the throwaway store's.
+    # MUTATION TARGET: `scrub` back to scrubbing only the secrets it is given.
+    held = "operators-own-store-passphrase-7731"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+    code = f"import sys\nprint('{held} on stdout')\nsys.stderr.write('Traceback: {held} on stderr\\n')\nsys.exit(1)"
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    assert report["status"] == "failed"
+    assert held not in json.dumps(report) and held not in json.dumps(report, ensure_ascii=False)
+    assert "on stderr" in json.dumps(report), "the engine's other words stay"
+
+
+def test_a_runner_failure_and_a_phase_that_cannot_start_are_written_through_the_shared_scrub(tmp_path, monkeypatch):
+    # The two handlers that write a caught exception: `exception_text` takes out the throwaway key AND the held ones.
+    # MUTATION TARGET: either handler back to a hand-made `f"{type(exc).__name__}: {exc}"`.
+    key_text = "a-key-the-operator-made-9921"
+    held = "the-sessions-own-passphrase-4410"
+    key = tmp_path / "k"
+    key.write_text(key_text, "utf-8")
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _boom(*a, **kw):
+        raise RuntimeError(f"engine said {key_text} and {held}")
+
+    monkeypatch.setattr(R, "run_phase", _boom)
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "failed" and "RuntimeError" in report["reason"]
+    assert key_text not in json.dumps(report) and held not in json.dumps(report)
+    monkeypatch.undo()
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _no_exec(*a, **kw):
+        raise OSError(f"cannot execute with {key_text} and {held}")
+
+    monkeypatch.setattr(R.subprocess, "Popen", _no_exec)
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "failed" and "could not be started" in report["reason"] and "OSError" in report["reason"]
+    assert key_text not in json.dumps(report) and held not in json.dumps(report)
+
+
+def test_the_commands_refusal_line_takes_out_a_held_passphrase(tmp_path, monkeypatch):
+    held = "held-by-the-process-for-the-refusal-5502"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _refuse(**kw):
+        raise ValueError(f"the workdir {held} cannot be used")
+
+    monkeypatch.setattr(R, "run", _refuse)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 2 and held not in out and "refused:" in out
+    monkeypatch.setattr(R, "run", lambda **kw: (_ for _ in ()).throw(UnicodeEncodeError("ascii", "pässword", 1, 2, "x")))
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 2 and "UnicodeEncodeError" in out and "ä" not in out and "ordinal" not in out and "position" not in out
+
+
+def test_a_passphrase_that_is_a_verdict_word_leaves_the_finished_report_alone(tmp_path):
+    # The finished pass is paths only: a key `ok` (the word of a good verdict) must not rewrite a status the exit code reads.
+    key = tmp_path / "ok.key"
+    key.write_text("ok", "utf-8")
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "ok" and report["phases"][0]["status"] == "ok"
+    assert report["store"]["deleted"] is True
+
+
 def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):
     report = {"status": "interrupted", "reason": "x", "phases": [], "store": {"deleted": True}}
     monkeypatch.setattr(R, "run", lambda **kw: (report, None))

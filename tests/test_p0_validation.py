@@ -979,6 +979,10 @@ _GUARDED_MODULES = {
     "api/diagnostics/p0": ({"p0_validation_start"}, 1, True, {}),
     "api/diagnostics/release_run": ({"release_run_start", "release_run_resume"}, 2, True, {}),
     "api/ingestion": ({"ingest_email_endpoint", "_mailbox_pull_worker"}, 2, True, {}),
+    # The OSM reference run: its runner holds the passphrase of the throwaway store it makes (or the operator's key file's) and
+    # writes the engine's words into a report an operator pastes. Its other texts (a phase's start failure, the children's
+    # stderr and JSON) go through `scrub`, which calls `scrubbed`; tests/test_osm_reference_run.py pins each by behaviour.
+    "osm/reference_run": ({"_run"}, 1, False, {}),
 }
 
 
@@ -1048,10 +1052,6 @@ _NOT_GUARDED = {
     "llm/vllm_lifecycle.py": (
         "Not a passphrase: `needle` there is the search term failure_excerpt looks for in a server's log; nothing it "
         "handles is a secret."
-    ),
-    "osm/reference_run.py": (
-        "Its own scrub, scrub(text, secrets_=...), applied where each text is made and pinned by "
-        "tests/test_osm_reference_run.py; its handlers are not written through secret_scrub's helpers."
     ),
     "safety/crypto.py": (
         "decrypt_bytes and decrypt_stream re-raise their own literal messages from an InvalidTag or a struct.error, whose "
