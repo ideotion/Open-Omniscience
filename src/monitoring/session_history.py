@@ -94,6 +94,25 @@ SUSPEND_MIN_GAP_S = 120.0
 CLOCK_STEP_MIN_S = 120.0
 #: Compaction ceiling: the ledger keeps the newest lines when it grows past this.
 MAX_LINES = 4000
+#: What an end line may carry of the dead session's own memory record (marks, what the memory was
+#: made of, the pressure snapshots), in bytes of compact JSON. 4 KB keeps the whole-ledger read at
+#: every boot cheap: ``read_records`` parses the file whole and ``MAX_LINES`` bounds its LINES, not
+#: its bytes, so a crash loop of ends must not be able to turn the ledger into a crash dump (the
+#: instance that prompted this had 9 unclean ends in 5 hours).
+END_PEAKS_MAX_BYTES = 4096
+#: A pressure snapshot keeps its busiest threads and each thread's innermost frames. 8 threads and
+#: 4 frames are what fits in ``END_PEAKS_MAX_BYTES`` beside the marks: measured on the 2026-09-30
+#: bundle, one snapshot at 8 x 4 is about 1.6 KB and that bundle's three snapshots come to 4.2 KB, so
+#: they are CEILINGS -- ``_end_peaks`` takes one notch off at a time (frames, then threads) until the
+#: line fits, and names what it took.
+END_PEAKS_THREADS = 8
+END_PEAKS_FRAMES = 4
+#: The marks themselves are never dropped for size: they are the answer ("how big, how short of
+#: memory, when"), everything else is context for it.
+_END_MARK_KEYS = (
+    "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at",
+    "swap_used_max_mb", "swap_used_max_at", "phase",
+)
 #: What this build's records carry, written on every boot record, so a reader can tell
 #: "this session never started collection" (the feature is present and no event was
 #: recorded) from "this build did not record collection" (the feature is absent).
@@ -169,6 +188,16 @@ def ledger_path() -> Path:
 
 def liveness_path() -> Path:
     return data_dir() / LIVENESS_FILE
+
+
+def _code_markers() -> dict[str, Any] | None:
+    """Which build this session runs (finding E): see ``build_marker``. Never raises."""
+    try:
+        from src.monitoring.build_marker import process_markers
+
+        return process_markers()
+    except Exception:  # noqa: BLE001 - a build marker is a nicety on a boot record
+        return None
 
 
 def _app_version() -> str | None:
@@ -300,6 +329,114 @@ def _hwm_last_seen(prev_state: dict[str, Any]) -> dict[str, Any] | None:
     return got
 
 
+def _json_bytes(obj: Any) -> int:
+    return len(json.dumps(obj, separators=(",", ":"), default=str).encode("utf-8"))
+
+
+def _pressure_for_end(snaps: list[Any], threads: int, frames: int) -> list[dict[str, Any]]:
+    """The pressure snapshots cut down to what an end line keeps: when, why, the memory readings,
+    and (only while ``threads`` > 0) the busiest threads with their innermost ``frames`` frames.
+    The sampler's own thread is left out: it is the instrument, not a suspect."""
+    out: list[dict[str, Any]] = []
+    for snap in snaps:
+        if not isinstance(snap, dict):
+            continue
+        kept = {k: snap[k] for k in ("at", "why", "avail_mb", "rss_mb", "swap_used_mb") if k in snap}
+        if threads > 0 and isinstance(snap.get("threads"), list):
+            rows = []
+            for t in snap["threads"]:
+                if not isinstance(t, dict) or t.get("sampler"):
+                    continue
+                row: dict[str, Any] = {"name": t.get("name")}
+                if t.get("cpu_s") is not None:
+                    row["cpu_s"] = t["cpu_s"]
+                if t.get("waiting"):
+                    row["waiting"] = True
+                stack = t.get("stack")
+                if frames > 0 and isinstance(stack, list):
+                    row["stack"] = [str(x)[:120] for x in stack[:frames]]
+                rows.append(row)
+                if len(rows) >= threads:
+                    break
+            kept["threads"] = rows
+        out.append(kept)
+    return out
+
+
+def _end_peaks(hwm: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What an end line carries of the dead session's own memory record, within
+    ``END_PEAKS_MAX_BYTES``.
+
+    The marks AND when each was set come first and are never dropped: the chronology shows them
+    beside the session's other dated events, and a minimum with no time cannot be placed among
+    them. Over the cap, detail goes in a fixed order, each step only when the line is still too
+    big, and ``truncated`` names every step taken (a reader must be able to tell "no snapshots"
+    from "snapshots cut for size"): the frames of each thread, then the threads, then all but
+    the NEWEST snapshot (the one nearest the death), then ``heap_at_peak``, then ``at_peak``."""
+    if not isinstance(hwm, dict) or not hwm:
+        return None
+    peaks: dict[str, Any] = {k: hwm[k] for k in _END_MARK_KEYS if k in hwm}
+    if isinstance(hwm.get("at_peak"), dict) and hwm["at_peak"]:
+        peaks["at_peak"] = hwm["at_peak"]
+    # ``heap_at_peak`` is the newest peak that read glibc's heap: the same reading as ``at_peak``
+    # whenever the last peak could read it, and then it is not repeated.
+    if isinstance(hwm.get("heap_at_peak"), dict) and hwm["heap_at_peak"] and hwm.get("heap_at_peak") != hwm.get("at_peak"):
+        peaks["heap_at_peak"] = hwm["heap_at_peak"]
+    raw_pressure = hwm.get("pressure")
+    snaps: list[Any] = raw_pressure if isinstance(raw_pressure, list) else []
+    if hwm.get("pressure_taken") is not None:
+        peaks["pressure_taken"] = hwm["pressure_taken"]
+    if not peaks and not snaps:
+        return None
+    threads, frames = END_PEAKS_THREADS, END_PEAKS_FRAMES
+    truncated: list[str] = []
+
+    def build() -> dict[str, Any]:
+        out = dict(peaks)
+        if snaps:
+            out["pressure"] = _pressure_for_end(snaps, threads, frames)
+        if truncated:
+            out["truncated"] = list(truncated)
+        return out
+
+    out = build()
+    # One notch at a time, so a line only a little over loses a little: the innermost frame is the
+    # one that names what a thread was doing, the thread list is the next to thin.
+    steps: list[tuple[str, int]] = [
+        *[("frames", n) for n in range(END_PEAKS_FRAMES - 1, 0, -1)],
+        *[("threads", n) for n in (6, 4, 2, 0)],
+    ]
+    for what, value in steps:
+        if _json_bytes(out) <= END_PEAKS_MAX_BYTES:
+            break
+        if what == "frames":
+            frames = value
+        else:
+            threads = value
+        if what not in truncated:
+            truncated.append(what)
+        out = build()
+    if _json_bytes(out) > END_PEAKS_MAX_BYTES and len(snaps) > 1:
+        snaps = snaps[-1:]
+        truncated.append("snapshots")
+        out = build()
+    for key in ("heap_at_peak", "at_peak"):
+        if _json_bytes(out) <= END_PEAKS_MAX_BYTES:
+            break
+        if key in peaks:
+            del peaks[key]
+            truncated.append(key)
+            out = build()
+    if _json_bytes(out) > END_PEAKS_MAX_BYTES and snaps:
+        snaps = []
+        truncated.append("snapshots")
+        out = build()
+    out.pop("truncated", None)
+    if truncated:
+        out["truncated"] = list(dict.fromkeys(truncated))
+    return out or None
+
+
 def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None:
     """RR-11: the ledger holds no boot yet, so the session just before it -- the one
     forensics' sentinel describes -- would be invisible to the chronology. Write it from
@@ -338,21 +475,35 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
     else:
         end.update({"at": None, "clean": False if state and state != "clean" else None,
                     "basis": "the sentinel names no end time and nothing else dated it, so the end has no time"})
-    if hwm:
-        # The marks AND when each was set: the chronology shows these beside the session's other dated
-        # events, and a minimum with no time cannot be placed among them.
-        peaks = {
-            k: hwm[k]
-            for k in (
-                "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at",
-                "swap_used_max_mb", "swap_used_max_at", "phase",
-            )
-            if k in hwm
-        }
-        if peaks:
-            end["previous_peaks"] = peaks
+    try:
+        peaks = _end_peaks(hwm)
+    except Exception:  # noqa: BLE001 - the ledger never breaks a boot; the end is written without the marks
+        peaks = None
+    if peaks:
+        end["previous_peaks"] = peaks
     _append(end)
     return end
+
+
+def _same_process(boot: dict[str, Any], state: dict[str, Any]) -> bool:
+    """Whether the ledger's last boot record and the forensics sentinel describe ONE process. A pid is
+    not an identity (the machine reuses them, and an app started the same way at every login gets much
+    the same one), so the pid must agree AND the machine boot where both name one AND the moment the
+    process began where both carry one -- the three tests ``earlier_unclean_ends`` makes to tell the
+    previous session from an older one. A sidecar of another process must never hand its marks to this
+    session's end line."""
+    if state.get("pid") is None or boot.get("pid") != state.get("pid"):
+        return False
+    try:
+        from src.monitoring.exit_evidence import _SAME_START_S, _same_boot, _when
+
+        boot_id = state.get("boot_id")
+        if not _same_boot(boot.get("machine_boot_id"), boot_id if isinstance(boot_id, str) else None):
+            return False
+        began, started = _when(boot.get("at")), _when(state.get("started_at"))
+        return began is None or started is None or abs(began - started) <= _SAME_START_S
+    except Exception:  # noqa: BLE001 - a doubt about identity is "not the same": no marks are handed over
+        return False
 
 
 def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -387,6 +538,19 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen
+        # The dead session's own marks, on its end line (finding E, 2026-10-01): only the pre-ledger
+        # seed ever wrote them, so a crash loop erased the peaks, the pressure snapshots and the
+        # stacks of every crash but the latest -- the sidecar holds ONE session and is reset at each
+        # boot. Written only when the sidecar and the ledger name the same process (pid, machine boot and
+        # start, ``_same_process``): a boot the ledger missed would otherwise hand one session's marks to
+        # another's end.
+        if isinstance(prev_state, dict) and _same_process(last_boot, prev_state):
+            try:
+                peaks = _end_peaks(_hwm_last_seen(prev_state))
+            except Exception:  # noqa: BLE001 - the ledger never breaks a boot; the end is written without them
+                peaks = None
+            if peaks:
+                rec["previous_peaks"] = peaks
     _append(rec)
     return rec
 
@@ -486,6 +650,7 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "memory_budget": _boot_memory_budget(),
         "allocator": _boot_allocator(),
         "rollup_serve_mode": _boot_rollup_mode(),
+        "code": _code_markers(),
     }
     _append(rec)
     compact_if_needed()

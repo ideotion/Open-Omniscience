@@ -89,6 +89,23 @@ def _state_path() -> Path:
     return data_dir() / "session_state.json"
 
 
+# The reason a degraded part of the report gives: a type and one sentence. What it protects: the report is
+# read at a glance and an engine's text can be a page long.
+_REASON_CHARS = 200
+
+
+def _why(exc: BaseException) -> str:
+    """``Type: message`` for a part of the report that could not be built, with the passphrase, a key
+    literal and the person's folders taken out of the whole text before it is cut (the one scrub the
+    diagnostics runs use). A scrub that itself fails names the type only."""
+    try:
+        from src.monitoring.diagnostics_runs import tidy_error
+
+        return tidy_error(exc, _REASON_CHARS)  # an exception is written by ``exc_line``, which never raises
+    except Exception:  # noqa: BLE001 - a reason is never the thing that fails the report
+        return type(exc).__name__
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -675,6 +692,16 @@ def previous_session_report() -> dict[str, Any]:
     # The host's own account. It is the ONLY source that separates an OOM kill from a
     # host reset from a signal from a native fault — the app's records cannot.
     out["kernel_evidence"] = kernel_evidence()
+    # The EARLIER unclean ends and what the crash trace holds for each (finding D, 2026-10-01): the
+    # entry below reads the previous session's pid only, so on a crash loop every earlier stack
+    # stayed on the machine and in no bundle. Reported for EVERY verdict: an earlier crash followed
+    # by a clean session still happened.
+    try:
+        from src.monitoring.exit_evidence import earlier_unclean_ends
+
+        out["earlier_unclean_ends"] = earlier_unclean_ends(prev)
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        out["earlier_unclean_ends"] = {"available": False, "reason": _why(exc)}
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
@@ -853,9 +880,9 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
         from src.monitoring.exit_evidence import launcher_exit, previous_trace
 
         out["launcher"] = launcher_exit(pid, boot)
-        out["crash_trace"] = previous_trace(pid, boot)
+        out["crash_trace"] = previous_trace(pid, boot, prev.get("started_at"))
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
-        out["unavailable"] = f"{type(exc).__name__}: {exc}"[:200]
+        out["unavailable"] = _why(exc)
     if _JOURNAL_EXIT_EVIDENCE is not None:
         out.update(_JOURNAL_EXIT_EVIDENCE)
     else:
@@ -1452,6 +1479,33 @@ def _render_exit_evidence(ev: Any) -> list[str]:
     return out
 
 
+def _render_earlier_ends(ev: Any) -> list[str]:
+    """The earlier unclean ends and their traces, in words (finding D). Each session says what
+    it ended by and either shows the head of its trace or why there is none."""
+    if not isinstance(ev, dict):
+        return []
+    if ev.get("available") is False:
+        return [f"- earlier unclean ends: unavailable ({ev.get('reason', 'no reason recorded')})"]
+    out = [
+        f"- earlier unclean ends in the session ledger: {ev.get('unclean_ends_in_ledger', 0)} "
+        f"(newest {ev.get('shown', 0)} listed"
+        + (f", {ev['older_not_shown']} older not listed" if ev.get("older_not_shown") else "") + ")"
+    ]
+    for row in ev.get("sessions") or []:
+        sig = row.get("signal") or (
+            f"exit status {row['status']}" if row.get("status") is not None else "no signal recorded"
+        )
+        out.append(f"  - pid {row.get('pid')}, started {row.get('started_at')}, ended {row.get('ended_at')}: {sig}")
+        trace = row.get("trace")
+        if isinstance(trace, dict):
+            out.append(f"    trace: {trace.get('summary')} ({trace.get('lines_total')} lines)")
+            for ln in (trace.get("lines") or [])[1:9]:
+                out.append(f"    | {ln}")
+        elif row.get("why_no_trace"):
+            out.append(f"    no trace: {row['why_no_trace']}")
+    return out
+
+
 def render_text(d: dict[str, Any] | None = None) -> str:
     """A plain-text rendering of the session forensics, built to be READABLE WHEN
     PASTED INTO A CHAT — the channel this file exists for. Mirrors
@@ -1505,6 +1559,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         for ln in (kern.get("lines") or [])[:6]:
             lines.append(f"  - kernel: {ln}")
     lines += _render_exit_evidence(prev.get("exit_evidence"))
+    lines += _render_earlier_ends(prev.get("earlier_unclean_ends"))
     peaks = prev.get("previous_session_peaks") or {}
     if peaks:
         lines.append("- that session's own peaks:")

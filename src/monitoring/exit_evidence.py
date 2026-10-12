@@ -37,7 +37,6 @@ import logging
 import os
 import re
 import shutil
-import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
@@ -70,6 +69,39 @@ _TRACE_HEADER_RE = re.compile(
 # still run to a few thousand lines; the head names the fatal error and the crashing
 # thread first.
 _TRACE_REPORT_LINES = 120
+# A trace line is cut at this many characters. faulthandler writes one line per frame (about 100
+# characters), so the cut only ever touches an exception's message, which can be a page of text;
+# without it a report of ten earlier ends could run to several hundred KB. The summary is one of these
+# lines, so it is held to the same.
+_TRACE_LINE_CHARS = 200
+# A trace line is ALSO cut at this many bytes of UTF-8 (the cut line, with its ellipsis, in ASCII): the
+# member is written as UTF-8 (``ensure_ascii=False``), so the characters alone would let a line of Chinese
+# or of astral characters take three or four times the room the slot is sized for (measured: 233 KB for
+# accented text, 346 KB for CJK, 458 KB for astral characters at 120,000 characters). A trace line is ASCII
+# but for an exception's message, so this costs a real report nothing.
+_TRACE_LINE_BYTES = _TRACE_LINE_CHARS - 1 + len("\u2026".encode("utf-8"))
+# How much of an exception that ended the server is written to the crash trace log, from its END:
+# the end of a traceback is the exception itself, the part a reader needs; 8,000 characters keeps the log's
+# growth per crash small against ``_TRACE_MAX_BYTES``.
+_FATAL_TEXT_CHARS = 8000
+# The reason ``arm_crash_trace`` gives when it could not arm: a type and one sentence.
+_ARM_REASON_CHARS = 200
+# The block of one thread in a faulthandler dump, and the file named in one frame of it.
+_THREAD_HEAD = re.compile(r"^(?:Current thread|Thread) 0x")
+_FILE_IN_FRAME = re.compile(r'(File ")([^"]+)(")')
+# How far BEFORE a session's boot record (or sentinel) its trace header may lie: the trace is armed
+# first thing in ``_serve``, the boot record is written once the data is unlocked and the database
+# prepared, and a first start with migrations is slow. Half an hour protects only against taking
+# the header of some OTHER session that had the same pid, which matters where the machine's boot
+# id is unknown (every platform without ``/proc/sys/kernel/random/boot_id``); a header further back
+# than this is another session's.
+_HEADER_LEAD_S = 1800.0
+# How far AFTER it a header may lie: the header, the sentinel and the boot record are stamped by
+# three clock reads at one-second resolution, so a header can read a second later than the record.
+_HEADER_LAG_S = 5.0
+# The sentinel and the boot record of one session are written one call apart: their times differ by
+# a second at most. Beyond this a boot record with the previous session's pid is another session.
+_SAME_START_S = 5.0
 
 # The journal identifiers of the user-space killers and of the core-dump handler.
 _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
@@ -367,7 +399,9 @@ def arm_crash_trace() -> dict[str, Any]:
         return {"armed": True, "path": str(path)}
     except Exception as exc:  # noqa: BLE001 - a crash recorder never blocks a boot
         _LOG.debug("could not arm the crash trace", exc_info=True)
-        return {"armed": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        from src.monitoring.diagnostics_runs import exc_line, tidy_error
+
+        return {"armed": False, "reason": tidy_error(exc_line(exc), _ARM_REASON_CHARS)}
 
 
 def note_fatal_exception(exc: BaseException) -> None:
@@ -377,55 +411,378 @@ def note_fatal_exception(exc: BaseException) -> None:
     faulthandler never sees it, and its traceback otherwise goes only to the launcher
     window. Best-effort and bounded."""
     try:
-        text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-8000:]
+        # The traceback is written by ``secret_scrub.traceback_text``: the passphrases the process holds taken
+        # out of the WHOLE text (the cause chain included), the class and the frames and none of the words
+        # when a ``UnicodeError`` is reachable (its message names a character and its offset). Then a key
+        # literal and the person's folders are taken out, and only then is the text cut: an exception that ends
+        # the server can carry the engine's statement in its message, and this file is read into the
+        # diagnostics zip. Withheld, not kept, when it cannot be checked. The same function the trace read uses.
+        from src.monitoring.diagnostics_runs import WITHHELD, scrubbed_text
+        from src.monitoring.secret_scrub import traceback_text
+
+        clean = scrubbed_text(traceback_text(exc))
+        text = clean[-_FATAL_TEXT_CHARS:] if clean is not None else f"{type(exc).__name__}: {WITHHELD}"
         with open(crash_trace_path(), "a", encoding="utf-8") as fh:
             fh.write(f"Uncaught exception ended the server at {_now()}:\n{text}\n")
     except Exception:  # noqa: BLE001 - never mask the exception being reported
         _LOG.debug("could not record the fatal exception", exc_info=True)
 
 
-def previous_trace(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
-    """What the crash trace holds for the session with ``pid`` (in machine boot
-    ``boot_id``, when known), or None when it holds nothing: that session did not die of
-    a native fault or a Python exception (or predates the trace), which is itself worth
-    knowing beside a SIGKILL."""
+def _when(text: Any) -> float | None:
+    """An ISO time of the ledger, the sentinel or a trace header as epoch seconds; None when ``text``
+    is not one (the callers then fall back to matching by pid and boot alone)."""
+    if not isinstance(text, str):
+        return None
+    try:
+        when = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (when if when.tzinfo else when.replace(tzinfo=UTC)).timestamp()
+
+
+def _trace_in(
+    lines: list[str], pid: int, boot_id: str | None, started_at: str | None = None
+) -> tuple[bool, list[str]]:
+    """(header found, the body under the NEWEST matching header) for one read of the trace log.
+
+    A header matches by its pid, and by its machine boot where both are known. When ``started_at``
+    (the moment the session's own record says it began) is given, the header must also have been
+    written within ``_HEADER_LEAD_S`` before it and ``_HEADER_LAG_S`` after: a pid is reused (an app
+    started the same way at every login gets much the same one), and where the boot is unknown the
+    pid alone would give one session the trace of another. The body is trimmed of blank lines at both
+    ends and is empty when the header has nothing under it."""
+    anchor = _when(started_at)
+    start = None
+    for i, line in enumerate(lines):
+        m = _TRACE_HEADER_RE.match(line.strip())
+        if not (m and int(m.group(1)) == pid and _same_boot(m.group(2), boot_id)):
+            continue
+        written = _when(m.group(3))
+        if anchor is not None and written is not None and not (
+            anchor - _HEADER_LEAD_S <= written <= anchor + _HEADER_LAG_S
+        ):
+            continue
+        start = i
+    if start is None:
+        return False, []
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if _TRACE_HEADER_RE.match(line.strip()):
+            break
+        body.append(line)
+    while body and not body[-1].strip():
+        body.pop()
+    while body and not body[0].strip():
+        body.pop(0)
+    return True, body
+
+
+def _crashing_thread_first(body: list[str]) -> list[str]:
+    """``body`` with the block of the thread that was running when the signal came moved ahead of the
+    other threads' blocks. faulthandler writes it LAST, labelled "Current thread", so a cut at the first
+    lines of a many-thread dump would keep the idle threads and drop the one that crashed."""
+    heads = [i for i, line in enumerate(body) if _THREAD_HEAD.match(line)]
+    current = next((i for i in heads if body[i].startswith("Current thread")), None)
+    if current is None or current == heads[0]:
+        return body
+    end = next((i for i in heads if i > current), len(body))
+    return body[: heads[0]] + body[current:end] + body[heads[0] : current] + body[end:]
+
+
+def _trace_line(line: str) -> str:
+    """One line of a trace as the report carries it: the file a frame names shortened the way the
+    stack sampler shortens it (``src/...``, ``pkg/...``, a bare name), the data and home folders of an
+    exception's message replaced, and the line cut (at ``_TRACE_LINE_CHARS`` characters and at
+    ``_TRACE_LINE_BYTES`` bytes). The person's folder is a name; it has no business in a report that is
+    sent to someone else. The scrub has already run, on the whole text: the home folder is ``<home>`` by
+    now, which ``_short_path`` knows, beside the real checkout."""
+    from src.monitoring.diagnostics_runs import tokenise_paths
+    from src.monitoring.session_hwm import _short_path
+
+    line = _FILE_IN_FRAME.sub(lambda m: m.group(1) + _short_path(m.group(2)) + m.group(3), line)
+    line = tokenise_paths(line)
+    if len(line) > _TRACE_LINE_CHARS:
+        line = line[: _TRACE_LINE_CHARS - 1] + "\u2026"
+    if len(line.encode("utf-8")) > _TRACE_LINE_BYTES:
+        line = line.encode("utf-8")[: _TRACE_LINE_BYTES - 3].decode("utf-8", "ignore") + "\u2026"
+    return line
+
+
+def _read_log(path: Path) -> tuple[list[str], bool]:
+    """The trace log as it was WRITTEN: its bytes decoded as UTF-8 and split on LF alone, and whether they
+    decoded. ``read_text().splitlines()`` rewrote what the scrub has to see: it splits on CR, VT, FF, FS,
+    GS, RS, NEL and the two Unicode separators too, so a passphrase holding one of them came out as two
+    lines that no form matches. A trailing CR is left on the line (a log a Windows build wrote has CR LF
+    ends); it is taken off after the scrub. A log that is not valid UTF-8 is read with the bad bytes
+    replaced, only to find its headers, and says it did not decode: every report made from it is withheld.
+    Raises ``OSError`` when the file cannot be read."""
+    raw = path.read_bytes()
+    try:
+        return raw.decode("utf-8").split("\n"), True
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", errors="replace").split("\n"), False
+
+
+_NOT_UTF8 = "<text withheld, the trace log is not valid UTF-8 and could not be checked for the passphrase>"
+
+
+def _withheld(body: list[str], source: Path, why: str | None = None) -> dict[str, Any]:
+    from src.monitoring.diagnostics_runs import WITHHELD
+
+    return {
+        "summary": why or WITHHELD, "lines": [], "lines_total": len(body), "source": Path(source).name,
+        "withheld": True,
+    }
+
+
+def _without_torn_starts(body: list[str]) -> list[str] | None:
+    """``body`` with the front of each "Uncaught exception ended the server" block made safe: an older
+    writer cut that block's text from the front BEFORE it took the passphrase out, so the block can begin
+    with what is left of a passphrase the cut fell inside. ``None`` when that could not be established."""
+    from src.monitoring.diagnostics_runs import without_a_torn_start
+
+    starts = [i for i, ln in enumerate(body) if ln.startswith("Uncaught exception")]
+    if not starts:
+        return body
+    out = body[: starts[0] + 1]
+    for n, i in enumerate(starts):
+        end = starts[n + 1] if n + 1 < len(starts) else len(body)
+        block = without_a_torn_start("\n".join(body[i + 1 : end]))
+        if block is None:
+            return None
+        out += block.split("\n") if block else []
+        if n + 1 < len(starts):
+            out.append(body[end])
+    return out
+
+
+def _trace_report(
+    body: list[str], source: Path, max_lines: int, *, decodable: bool = True
+) -> dict[str, Any]:
+    """A trace as the report carries it. The WHOLE body is taken through the one scrub before anything
+    is chosen or cut (the head search, the thread order, the line limits and the per-line cut): an older
+    log, written before ``note_fatal_exception`` scrubbed, can hold an exception's text with the engine's
+    statement in it, and a cut that fell inside a passphrase would keep the part it left. The body is the
+    log's lines exactly as written (``_read_log``), and the scrub also reads them in the form a Windows
+    text-mode writer left a passphrase that holds an LF in. A body that cannot be made free of the
+    passphrase, or that did not decode, is withheld whole."""
+    from src.monitoring.diagnostics_runs import scrubbed_text
+
+    if not decodable:
+        return _withheld(body, source, _NOT_UTF8)
+    safe = _without_torn_starts(body)
+    clean = scrubbed_text("\n".join(safe), file_text=True) if safe is not None else None
+    if clean is None:
+        return _withheld(body, source)
+    body = [ln.rstrip("\r") for ln in clean.split("\n")]
+    ordered = _crashing_thread_first(body)
+    head = next(
+        (ln.strip() for ln in body if ln.startswith(("Fatal Python error", "Uncaught exception"))),
+        body[0].strip(),
+    )
+    return {
+        "summary": _trace_line(head),
+        "lines": [_trace_line(ln) for ln in ordered[:max_lines]],
+        "lines_total": len(body),
+        "source": Path(source).name,
+    }
+
+
+def previous_trace(
+    pid: int | None, boot_id: str | None = None, started_at: str | None = None
+) -> dict[str, Any] | None:
+    """What the crash trace holds for the session with ``pid`` (in machine boot ``boot_id`` and begun
+    at ``started_at``, when known), or None when it holds nothing: that session did not die of a native
+    fault or a Python exception (or predates the trace), which is itself worth knowing beside a SIGKILL."""
     if not isinstance(pid, int):
         return None
     path = crash_trace_path()
     for candidate in (path, path.with_name(CRASH_TRACE + ".1")):
         try:
-            lines = candidate.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines, decoded = _read_log(candidate)
         except OSError:
             continue
-        start = None
-        for i, line in enumerate(lines):
-            m = _TRACE_HEADER_RE.match(line.strip())
-            if m and int(m.group(1)) == pid and _same_boot(m.group(2), boot_id):
-                start = i
-        if start is None:
+        found, body = _trace_in(lines, pid, boot_id, started_at)
+        if not found:
             continue
-        body: list[str] = []
-        for line in lines[start + 1 :]:
-            if _TRACE_HEADER_RE.match(line.strip()):
-                break
-            body.append(line)
-        while body and not body[-1].strip():
-            body.pop()
-        while body and not body[0].strip():
-            body.pop(0)
-        if not body:
-            return None
-        head = next(
-            (ln.strip() for ln in body if ln.startswith(("Fatal Python error", "Uncaught exception"))),
-            body[0].strip(),
-        )
-        return {
-            "summary": head[:300],
-            "lines": body[:_TRACE_REPORT_LINES],
-            "lines_total": len(body),
-            "source": str(candidate),
-        }
+        return _trace_report(body, candidate, _TRACE_REPORT_LINES, decodable=decoded) if body else None
     return None
+
+
+# --------------------------------------------------------------------------- #
+#  3b. The traces of the EARLIER unclean ends (finding D, 2026-10-01)
+# --------------------------------------------------------------------------- #
+
+#: How many earlier unclean ends the report carries, newest first. 10 ends of 60 lines of at most
+#: ``_TRACE_LINE_BYTES`` bytes of UTF-8 is 10 x 60 x 202 = 121,200 bytes, about 125 KB of JSON worst case in
+#: any script (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that): the
+#: member's slot in the redesign's slot table (R119) is sized from that worst case. Where a part ends is the
+#: volume writer's business. A machine that crashed 9 times in 5 hours is the case that prompted it, and an
+#: older end is still in the ledger and the chronology.
+EARLIER_ENDS_LIMIT = 10
+#: Lines of trace kept per earlier end. 60 is the fatal-error header and the crashing thread's stack,
+#: which faulthandler writes first; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (120).
+EARLIER_TRACE_LINES = 60
+#: Signals a process can leave a faulthandler trace for. SIGKILL is not among them: nothing runs after it.
+_NATIVE_FAULT_SIGNALS = ("SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE")
+
+
+def _why_no_trace(exit_seen: dict[str, Any] | None, header_found: bool) -> str:
+    """The cause of an absent trace, by what the session ended by -- an absence is a finding too,
+    and "none" read the same for a SIGKILL (expected) and a SIGABRT (a gap). ``exit_seen`` is the
+    launcher's record of the end, or None when it holds none."""
+    signal_name = (exit_seen or {}).get("signal")
+    signal_name = signal_name if isinstance(signal_name, str) and signal_name else None
+    held = (
+        "the trace log holds this session's header with nothing under it"
+        if header_found
+        else "the trace log holds nothing for its pid and boot"
+    )
+    if signal_name == "SIGKILL":
+        return "a SIGKILL leaves no trace: nothing can write one from inside the process"
+    if signal_name in _NATIVE_FAULT_SIGNALS:
+        if header_found:
+            return (
+                f"ended by {signal_name} and the trace log holds this session's header with nothing "
+                "under it: the process died before faulthandler wrote a stack"
+            )
+        return (
+            f"ended by {signal_name}, which leaves a trace, and the trace log holds no header for this "
+            "pid and boot: it was rotated away (one older generation is kept), the run predates the "
+            "trace, or OO_CRASH_TRACE=0 was set"
+        )
+    if signal_name:
+        return f"ended by {signal_name}, which is not a fault signal: no trace is expected"
+    if exit_seen:
+        status = exit_seen.get("status")
+        return (
+            f"the launcher saw it exit with status {status}; a trace is left only when an uncaught "
+            f"exception ended the server, and {held}"
+        )
+    return f"the launcher recorded no exit for this session, and {held}"
+
+
+def earlier_unclean_ends(
+    prev: dict[str, Any] | None = None,
+    *,
+    limit: int = EARLIER_ENDS_LIMIT,
+    max_lines: int = EARLIER_TRACE_LINES,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """The session ledger's unclean ends before the previous session, newest first, each with
+    what the trace log holds for its process.
+
+    The bundle used to read the trace of the PREVIOUS session's pid only, so on a crash loop
+    every earlier crash's stack stayed on the machine (two SIGABRTs of one instance, on disk and
+    in no bundle). ``prev`` is the sentinel the previous session left, so that session -- which
+    has its own, fuller entry -- is not listed twice."""
+    if records is None:
+        try:
+            from src.monitoring.session_history import read_records
+
+            records = read_records()
+        except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+            return {"available": False, "reason": f"the session ledger could not be read ({type(exc).__name__})"}
+    boots: dict[str, dict[str, Any]] = {
+        str(r.get("session_id")): r for r in records if r.get("kind") == "boot" and r.get("session_id")
+    }
+    prev_pid = (prev or {}).get("pid") if isinstance(prev, dict) else None
+    prev_boot = (prev or {}).get("boot_id") if isinstance(prev, dict) else None
+    prev_started = _when((prev or {}).get("started_at")) if isinstance(prev, dict) else None
+    ends: list[dict[str, Any]] = []
+    for r in records:
+        if r.get("kind") != "end" or r.get("clean") is not False:
+            continue
+        b = boots.get(str(r.get("session_id")))
+        if b is not None and isinstance(prev_pid, int) and b.get("pid") == prev_pid and _same_boot(
+            b.get("machine_boot_id"), prev_boot if isinstance(prev_boot, str) else None
+        ):
+            # The previous session has its own, fuller entry. A pid is not an identity (the machine
+            # reuses them, and where the boot is unknown nothing else tells two sessions apart), so
+            # the moment it began is compared too, whenever both records carry one.
+            began = _when(b.get("at"))
+            if prev_started is None or began is None or abs(began - prev_started) <= _SAME_START_S:
+                continue
+        ends.append(r)
+    ends.reverse()  # newest first
+    log = crash_trace_path()
+    rotated = log.with_name(CRASH_TRACE + ".1")
+
+    def _size(p: Path) -> int | None:
+        try:
+            return p.stat().st_size
+        except OSError:
+            return None
+
+    out: dict[str, Any] = {
+        "method": (
+            "The session ledger's unclean ends before the previous session, newest first, each looked "
+            f"up in the crash trace log by the pid and machine boot its boot record carries (the first "
+            f"{max_lines} lines of its trace). A session with no trace says why, by what it ended by; "
+            "a SIGKILL cannot leave one. The log keeps one rotated generation, so an old end may have "
+            "lost its trace to rotation."
+        ),
+        "limit": limit,
+        "lines_per_trace": max_lines,
+        "unclean_ends_in_ledger": len(ends),
+        "shown": 0,
+        "older_not_shown": 0,
+        "trace_log": {"bytes": _size(log), "rotated_bytes": _size(rotated)},
+        "sessions": [],
+    }
+    reads: dict[Path, tuple[list[str], bool] | None] = {}
+
+    def _lines(p: Path) -> tuple[list[str], bool] | None:
+        if p not in reads:
+            try:
+                reads[p] = _read_log(p)
+            except OSError:
+                reads[p] = None
+        return reads[p]
+
+    for end in ends[:limit]:
+        sid = str(end.get("session_id"))
+        b = boots.get(sid)
+        pid = (b or {}).get("pid")
+        boot = (b or {}).get("machine_boot_id")
+        row: dict[str, Any] = {
+            "session_id": sid, "pid": pid, "started_at": (b or {}).get("at"), "ended_at": end.get("at"),
+        }
+        exit_seen = end.get("exit") if isinstance(end.get("exit"), dict) else None
+        if exit_seen is None and isinstance(pid, int):
+            try:
+                exit_seen = launcher_exit(pid, boot if isinstance(boot, str) else None)
+            except Exception:  # noqa: BLE001
+                exit_seen = None
+        signal_name = (exit_seen or {}).get("signal")
+        row["signal"] = signal_name
+        if exit_seen and not signal_name:
+            # An exit by status (an error exit) has no signal to show: say what the launcher saw.
+            row["status"], row["kind"] = exit_seen.get("status"), exit_seen.get("kind")
+        if not isinstance(pid, int):
+            row["trace"] = None
+            row["why_no_trace"] = "the ledger no longer holds this session's boot record, so its pid is unknown"
+            out["sessions"].append(row)
+            continue
+        found_any = False
+        trace = None
+        for cand in (log, rotated):
+            read = _lines(cand)
+            if read is None:
+                continue
+            found, body = _trace_in(read[0], pid, boot if isinstance(boot, str) else None, (b or {}).get("at"))
+            if found:
+                found_any = True
+                if body:
+                    trace = _trace_report(body, cand, max_lines, decodable=read[1])
+                break
+        row["trace"] = trace
+        if trace is None:
+            row["why_no_trace"] = _why_no_trace(exit_seen, found_any)
+        out["sessions"].append(row)
+    out["shown"] = len(out["sessions"])
+    out["older_not_shown"] = max(0, len(ends) - out["shown"])
+    return out
 
 
 # --------------------------------------------------------------------------- #

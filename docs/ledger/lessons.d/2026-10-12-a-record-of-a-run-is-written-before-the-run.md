@@ -1,0 +1,49 @@
+## 2026-10-12 — A RECORD OF A RUN IS WRITTEN BEFORE THE RUN, NEVER INVENTS AN END, AND CLAIMS ONLY WHAT THE SERVER CAN SEE; A FAILURE'S TEXT IS MADE SAFE ONCE, WHOLE AND CUT LAST; A SHARED SESSION OUTLIVES THE CONNECTION A DAMAGED PAGE KILLED (export thread, diagnostics, 2026-10-06 to 2026-10-12)
+
+The all-diagnostics build left nothing that any later bundle carried when it failed, was killed or was never saved, so the operator pressed the button again without anyone knowing why
+(`diagnostics_runs.py`, R119; the independent read of it found one block and eight should-fix, each reproduced against a real server and each now pinned). (1) **The begin line is fsynced before the
+build does anything**, because a kill takes whatever is in a buffer; the end line is written for an exception AND for a `BaseException` (the worker re-raises both, and the record is never why a run
+fails). (2) **A begin with no end is "no-end", never "done" and never "failed", and "this process" is told by a random token and an in-memory set, never by a pid or a process start time**: psutil derives
+the start time from the boot time plus the WALL CLOCK, so a clock step made a running build read as gone (reproduced), and a pid is reused. A failed end write must still leave the set (a full drive
+must not keep the newest begin reading "running" for the rest of the process's life). Two builds of one archive name in one second are two runs: the record id is random. (3) **What a transfer record can
+claim is what the server saw**: uvicorn's `send` returns silently after a disconnect, so "the last body message was handed over" is true of a download the page abandoned and of a 100-byte Range request
+(reproduced for both); watch `http.disconnect` beside the response and record complete, range, abandoned, error, head or refused; anyio 4 wraps what the body raised in an exception group, so unwrap it or
+the server sees another exception; a server that answers by path ends with `http.response.pathsend`, not a body message. (4) **Every site that serves the zip goes through ONE helper, and the source-level
+guard looks for the media type, not for a class name** (a bare-`FileResponse(` grep could not see a zip answered as `Response(content=...)`), with the unrecorded sites listed by name in the test and in
+the member's own text. (5) **A file with a ceiling is held at the APPEND, with room reserved for the line about to be written** (trimming only at a begin let a retry loop grow it; trimming to the ceiling
+and then appending passed it), a last line a kill tore is ended before the next goes after it (or the two read as one and the new record is lost), a line that parses but is not ours (an id that is a list)
+must not turn the recorder off, and a rewrite syncs the temporary file and then the folder.
+
+(6) **Failure text is made safe by ONE whole-text function, handed the text UNCUT, and cut LAST.** The shape of the passphrase net is `secret_scrub.scrubbed` / `exception_text` (the release
+candidate's, #1336: every shape of every held passphrase in one read, a text it cannot prove clean withheld); `diagnostics_runs.scrubbed_text` composes it with what a record also needs, in this order: the
+passphrases from the WHOLE text, a key statement's literal in whatever quoting (`_KEY_LITERALS`), whitespace collapsed, the person's folders as `<data>` and `<home>`, an INDEPENDENT recheck for both
+(`secret_scrub.held_shapes`, not the scrub that just ran, because a replacement can rebuild what an earlier step took out: a held passphrase that is `<data>` is rebuilt by naming the folder), and only then
+the cut. The first design scrubbed where the text was made and cut to 300 there, and the record scrubbed what was left: a literal that opens before the cut and closes after it is no statement any pattern
+recognises, so `'k3y-zzzz` went into the record whole (reproduced). A caller that cuts first has already lost; a scrub that cannot be shown to have worked withholds the text rather than keeping it; and every other
+reason a report gives (`forensics`, `arm_crash_trace`) goes through the same function. An exception is written by `exception_text`, so a `UnicodeError` reachable in its chain is the class and fixed words (its
+message names a character and an offset, a piece of a key no scrub of the text can know), and a `__str__` that raises is the class and «its text is withheld», not a string that says nothing.
+(7) **A crash trace is read for the thread that crashed**: faulthandler writes "Current thread" LAST, so a cut to the first lines keeps the idle threads and drops it (measured on 3.13); a header is matched
+by pid AND by when it was written against the boot record's time (a pid alone gives one session another's stack where the machine's boot is unknown), the previous session is told from an older one of its pid by
+its start, an exit by STATUS is not "no exit recorded", and the report carries file names, never the person's folders, and no unbounded line.
+(8) **A log is read AS IT WAS WRITTEN before it is read as text, and an older one as hostile to the secret** (the coordinator's second block on that PR, each case reproduced): `read_text().splitlines()` splits on
+CR, VT, FF, FS, GS, RS, NEL and U+2028/2029 as well as LF, so a passphrase holding any of them came out as two lines that no form of it matches; the log is split on LF alone and decoded as strict UTF-8 (a log that
+does not decode is withheld whole, since a passphrase written in another encoding cannot be seen). A log a Windows build wrote has every LF as CR LF, the passphrase's own included (and CR CR LF for a CR LF in it),
+so the scrub also runs on the text with CR LF read as LF and the result is checked in both spellings. The whole trace body is scrubbed BEFORE the head is chosen and the lines are limited, and each line is cut at
+200 characters AND 202 bytes of UTF-8 (the member is written with `ensure_ascii=False`: the same ten earlier ends measured 233 KB in accented text, 346 KB in CJK and 458 KB in astral characters at 200 characters).
+An older writer cut the exception's text from the FRONT before it scrubbed, so a block can BEGIN with the tail of a passphrase that no scrub of the whole passphrase sees: the longest tail of any shape the block
+begins with (`secret_scrub.held_shapes`, whatever the secret's length), and the torn line it ends in, are removed unless the block starts with "Traceback (most recent call last):". **A test of a scrub that must
+be cut-proof has to put the secret ACROSS the cut**: three tests of that PR started the passphrase or the key literal at or after the 295th character and passed the mutant that cuts first, which is the one thing
+they were written to catch; they now start it 20 to 30 characters before. The `ATTACH ... KEY` pattern is its own pass, after the others: in one alternation its span carried the literal of an `ENCRYPTION_KEY`
+statement through unredacted.
+(9) **A marker unreadable on ONE of two boots is unknown, not unchanged**: `[]` for it put a crash after an unreadable boot under "nothing moved", the mirror of the "updated" error; and a dead session's peaks go on its
+end only when pid, machine boot AND start agree (a pid is reused). (10) **A member that grows with a ledger needs its own bound, stated against the part it ships in**: the chronology of a full ledger (4,000 lines)
+measured 4.27 MB of JSON on a synthetic ledger, about 0.9 MB of it the peaks of unclean ends at 1.3 KB each (an end may carry 4 KB), so the member thins the stacks of all but the newest ten ends, then drops the oldest
+sessions by ONE time cut for sessions, events and gaps, and what it measures is what it writes (the cut note is inside the measure: the first version came out 72 bytes over its own bound).
+
+(11) **A SHARED SESSION OUTLIVES THE CONNECTION A DAMAGED PAGE KILLED** (after #1333 made the observer invalidate that one connection). The debug bundle runs ten database sections one after the other on ONE shared snapshot
+session. A section that reads a damaged page raises (or catches its own error and goes on), the observer invalidates the connection, and the session keeps a transaction on a connection that is gone: EVERY later
+statement of that session raises `PendingRollbackError` until it is rolled back, so one bad page turned the healthy tables' sections into the same error and the bundle said nothing where the operator needs it to
+look. `bundle._roll_back_a_failed_read` rolls the session back before each DB section (every DB read of the bundle goes through the one wrapper, so one place is enough). **Detect it with the public `Connection.invalidated` of `session.connection()`, not with
+`Session.is_active`, which stays True** (verified on SQLAlchemy 2.1.1), and **roll back ONLY then**: a rollback ends the read transaction and the next statement opens a snapshot of a LATER moment, so a section that
+failed for another reason (a Python error, a statement deadline) must leave the snapshot every later section reads. The test pairs a real SQLCipher store with an overwritten page (the canary is that the session IS
+dead until rolled back) with the endpoint, where a section that invalidates the connection and raises and one that invalidates it and returns both leave the later sections answered.
