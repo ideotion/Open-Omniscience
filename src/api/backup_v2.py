@@ -1364,6 +1364,17 @@ def reindex_backlog_resume_status() -> dict:
     top -- and 102 ms is far too much for a one-second poll, which is why the client
     paces THIS read at 5 s inside its single chain while the queue status keeps the
     1 s cadence. The figure moves on the scale of minutes, so nothing is lost.
+
+    THE STAND-IN QUESTION (E3, 2026-10-12). The owed count leaves out the stand-ins a salvage copy wrote
+    (they are never re-indexed), which ``_BACKLOG_LOST_SQL`` asks from the stand-in side: the hash index
+    names them (a covering range, no article row) and each is looked up in ``merged_rows``, so its cost
+    follows the number of stand-ins, not the number of pending articles. Measured the same way as above
+    (the same fixture, one session, the median of five; this machine's figures are not the ones above,
+    only comparable with each other), at 1,000,000 pending articles: **220 ms with no stand-in question,
+    215 ms with the statement as it is (none or 1,000 stand-ins) and 333 ms with 100,000 stand-ins**; the
+    first version of the question, ``m.row_id IN (the hash range)`` tested for every pending row, cost 333
+    ms with no stand-in at all and 665 ms with 1,000, which is why it was replaced. At 100,000 pending: 21
+    ms, 21 ms and 33 ms (10,000 stand-ins) against 32 and 53. The two statements return the same counts.
     """
     from src.backup.merge import reindex_backlog
 

@@ -99,3 +99,11 @@ def stand_in_article_ids(session: Any) -> set[int]:
     """Every stand-in article's id, in ONE index-only read (:func:`_stand_in_article_id_select`) whose cost does not depend on the set a caller
     holds: the caller subtracts them from its own ids in Python. Asking per id costs a row page each (the reason sits after the article text)."""
     return {int(r[0]) for r in session.execute(_stand_in_article_id_select())}
+
+
+def stand_in_article_count(session: Any) -> int:
+    """How many stand-in articles there are, in ONE index-only count over the same hash range as :func:`stand_in_article_ids`, for a caller that needs
+    the number and not the ids (it holds nothing, whatever the size of the set)."""
+    from sqlalchemy import func, select
+
+    return int(session.execute(select(func.count()).select_from(_stand_in_article_id_select().subquery())).scalar() or 0)

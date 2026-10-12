@@ -1013,11 +1013,16 @@ def _distinct_articles(session, ids) -> int:
     Over more than one chunk the distinct set is assembled in Python rather than summed,
     because summing per-chunk distinct counts would count such an article twice — the
     error the number exists to avoid.
+
+    The mentions kept for a lost article (a stand-in row of a salvage copy, E3) are left
+    out in BOTH branches: this is the centre ``concept_arms`` prints beside arms that
+    already leave them out, and the ``articles`` ``trend`` prints, so one payload counts one
+    population.
     """
     if len(ids) <= _IN_CHUNK:
         return int(
             session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
-            .filter(KeywordMentionRead.keyword_id.in_(ids))
+            .filter(KeywordMentionRead.keyword_id.in_(ids), not_a_stand_in_article_id(KeywordMentionRead.article_id))
             .scalar()
             or 0
         )
@@ -1026,7 +1031,7 @@ def _distinct_articles(session, ids) -> int:
         chunk = ids[i : i + _IN_CHUNK]
         for (aid,) in (
             session.query(KeywordMentionRead.article_id)
-            .filter(KeywordMentionRead.keyword_id.in_(chunk))
+            .filter(KeywordMentionRead.keyword_id.in_(chunk), not_a_stand_in_article_id(KeywordMentionRead.article_id))
             .distinct()
             .all()
         ):
@@ -1096,12 +1101,7 @@ def trend(
     for d, c in rows:
         buckets[_bucket_key(d, bucket)] = buckets.get(_bucket_key(d, bucket), 0) + int(c or 0)
     points = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
-    articles = (
-        session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
-        .filter(KeywordMentionRead.keyword_id == kw.id)
-        .scalar()
-        or 0
-    )
+    articles = _distinct_articles(session, [kw.id])
     return {
         "term": term,
         "bucket": bucket,
@@ -3043,11 +3043,14 @@ def associations(
                 # The article set is the population the PMI is computed over, and the one the
                 # min_cooccur floor and n_a are read from (the corpus total above and in the
                 # layered graph leave a stand-in out the same way): a mention kept for a lost
-                # article is none of them. What this does NOT reach is n_b (below, the maintained
-                # ``article_count`` counter or one grouped count): a co-keyword mentioned at a
-                # stand-in is counted once more there, which moves a pair's PMI by at most
-                # log2((n_b + 1) / n_b) per such mention and never changes a floor, so it is
-                # left as documented rather than paid for with a join.
+                # article is none of them. What this does NOT reach is n_b (below): it has to stay
+                # equal to the maintained ``Keyword.article_count`` counter, which the corpus-wide
+                # branch reads with no query and which counts a mention kept for a lost article,
+                # and gating the windowed branch's grouped count alone would put the two branches
+                # of this function on different bases. A co-keyword mentioned at k lost articles is
+                # therefore counted k times more than its real articles: the pair's PMI reads lower
+                # by log2((n_b + k) / n_b), n_b being the count over real articles (always
+                # downward), and no floor reads n_b (its callers only display it).
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
             ),
             start,

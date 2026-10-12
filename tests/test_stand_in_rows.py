@@ -894,12 +894,14 @@ def test_the_hash_range_finds_the_stand_in_a_salvage_copy_wrote_and_no_real_quar
     from src.database.models import Article
 
     assert stand_in.stand_in_article_ids(db) == {STAND_IN_ARTICLE}
+    assert stand_in.stand_in_article_count(db) == 1  # the number, from the same range, without the set
     real = db.get(Article, 3)
     real.quarantined, real.quarantine_reason = True, "judged not an article"
     db.commit()
     assert stand_in.stand_in_article_ids(db) == {STAND_IN_ARTICLE}, "a real quarantined article is found as a stand-in"
     by_reason = {int(i) for (i,) in db.query(Article.id).filter(~stand_in.not_a_stand_in_article())}
     assert by_reason == stand_in.stand_in_article_ids(db) == {STAND_IN_ARTICLE}
+    assert stand_in.stand_in_article_count(db) == 1
     assert db.get(Article, STAND_IN_ARTICLE).hash == stand_in.lost_text("articles", STAND_IN_ARTICLE)
 
 
@@ -946,6 +948,7 @@ def test_both_forms_of_the_helper_seek_the_hash_index_and_read_no_article_row(db
 
     plans = {
         "the enumerator": _plan(db, stand_in._stand_in_article_id_select()),
+        "the count": _plan(db, select(func.count()).select_from(stand_in._stand_in_article_id_select().subquery())),
         "the child condition": _plan(db, select(func.count()).select_from(ArticleLink).where(stand_in.not_a_stand_in_article_id(ArticleLink.article_id))),
     }
     for form, plan in plans.items():
@@ -2124,6 +2127,21 @@ def test_a_restore_batch_holding_the_stand_in_ends_reindexed_whether_it_is_the_h
     assert db.query(KeywordMention).filter_by(article_id=STAND_IN_ARTICLE).count() == 1  # what the copy kept for the lost article stays
 
 
+def test_a_stamped_stand_in_is_certified_and_is_not_subtracted_a_second_time_as_lost(restore_seams):
+    """``lost`` is the stand-ins a batch lists that are NOT certified: one that already holds a stamp of the engine is counted by ``certified``,
+    and subtracting it again would make the batch owe less than it does."""
+    from src.backup.merge import _backlog_engine, pending_reindex_batches, reindex_backlog
+    from src.database.models import ArticleIndexStamp
+
+    db = restore_seams
+    _merged_batch(db, [1, 2, STAND_IN_ARTICLE])
+    assert [(b["articles"], b["certified"]) for b in pending_reindex_batches()] == [(2, 0)]  # the stand-in owes nothing (lost)
+    db.add(ArticleIndexStamp(article_id=STAND_IN_ARTICLE, engine=_backlog_engine(), inputs="{}"))
+    db.commit()
+    assert [(b["articles"], b["certified"]) for b in pending_reindex_batches()] == [(2, 1)]  # certified now, and not lost a second time
+    assert reindex_backlog()["articles_pending"] == 2
+
+
 def test_a_restore_batch_of_nothing_but_the_stand_in_is_stamped_done_and_owes_nothing(restore_seams):
     from src.backup.merge import pending_reindex_batches, reindex_backlog, reindex_imported_articles
 
@@ -2145,9 +2163,61 @@ def test_an_imported_article_deleted_before_its_batch_drained_does_not_hold_the_
     batch = _merged_batch(db, [1, 2, 1501])
     db.query(Article).filter(Article.id == 2).delete(synchronize_session=False)
     db.commit()
-    out = reindex_imported_articles(batch, workers=0)
+    progress: list[tuple[int, int]] = []
+    out = reindex_imported_articles(batch, workers=0, progress_cb=lambda d, t: progress.append((d, t)))
     assert out["reindexed"] == 2 and out["failed"] == 0, out
     assert _batch_status(db, batch) == "reindexed" and pending_reindex_batches() == []
+    assert progress[-1] == (3, 3), progress  # the pass never counts the id that named no article, but the batch is done: its bar ends full
+
+
+def test_the_watermark_after_an_absent_id_lags_the_last_finished_article_and_never_runs_ahead_of_it(restore_seams, monkeypatch):
+    """``done`` counts the articles finalised, so after an id that names no article it is one short of the list position: the saved watermark names
+    an EARLIER id than the last finished (safe: the resume redoes the articles between, and the re-index is idempotent). Counting the absent id
+    early would put it AHEAD of an unfinished article, and a crash would resume past it for good: so a crash on the article after the first one
+    is resumed and that article is indexed."""
+    import src.backup.merge as merge_mod
+    from src.analytics import store
+    from src.backup.merge import peek_reindex_cursor, reindex_imported_articles
+    from src.database.models import Article, KeywordMention
+
+    class _Crash(BaseException):  # a kill: nothing in the pass catches it
+        pass
+
+    db = restore_seams
+    _real_articles_above_the_stand_in(db, [1501, 1502, 1503])
+    batch = _merged_batch(db, [1501, 1502, 1503])
+    db.query(Article).filter(Article.id == 1503).delete(synchronize_session=False)  # the absent id is the LAST of the list
+    db.commit()
+    real_index_article = store.index_article
+
+    def crash_on_1502(session, article, *a, **kw):
+        if article.id == 1502:
+            raise _Crash
+        return real_index_article(session, article, *a, **kw)
+
+    monkeypatch.setattr(store, "index_article", crash_on_1502)
+    with pytest.raises(_Crash):
+        reindex_imported_articles(batch, workers=0, commit_batch=1)
+    db.rollback()
+    assert (peek_reindex_cursor() or {}).get("last_id") == 1501, peek_reindex_cursor()  # not 1502, which was never finished
+    assert db.query(KeywordMention).filter_by(article_id=1502).count() == 0
+    assert _batch_status(db, batch) == "merged"
+    monkeypatch.setattr(store, "index_article", real_index_article)
+    out = reindex_imported_articles(batch, workers=0, commit_batch=1)  # the resume
+    assert out["reindexed"] == 1, out  # 1501 is stamped by the first run, 1503 names no article
+    assert db.query(KeywordMention).filter_by(article_id=1502).count() > 0
+    assert _batch_status(db, batch) == "reindexed"
+
+    # and the watermark that follows an absent id names the absent id itself, an earlier id than the last article finished (1507)
+    _real_articles_above_the_stand_in(db, [1505, 1506, 1507])
+    second = _merged_batch(db, [1505, 1506, 1507])
+    db.query(Article).filter(Article.id == 1506).delete(synchronize_session=False)
+    db.commit()
+    saved: list[int] = []
+    real_save = merge_mod._save_reindex_cursor
+    monkeypatch.setattr(merge_mod, "_save_reindex_cursor", lambda bid, *, last_id, **kw: (saved.append(last_id), real_save(bid, last_id=last_id, **kw))[1])
+    reindex_imported_articles(second, workers=0, commit_batch=1)
+    assert saved == [1505, 1506], saved
 
 
 def test_a_restore_batch_that_was_stopped_early_stays_merged_even_when_it_holds_a_stand_in(restore_seams):
@@ -2239,13 +2309,34 @@ def test_a_concept_arm_counts_the_real_articles_of_its_language_and_the_stand_in
     ck = q.ConceptKeywords(concept=concept, keywords=[ids["armterm"]], primary=ids["armterm"], by_language={"en": [ids["armterm"].id]}, missing=[])
 
     def arm():
-        (only,) = q.concept_arms(db, ck, min_cooccur=2)["arms"]
-        return only["articles"], [(a["term"], a["articles"]) for a in only["associations"]]
+        out = q.concept_arms(db, ck, min_cooccur=2)
+        (only,) = out["arms"]
+        # the arm, its associations, and the CENTRE printed beside the arms: one payload, one population
+        return only["articles"], [(a["term"], a["articles"]) for a in only["associations"]], out["center"]["articles"]
 
-    assert arm() == (1, []), arm()
+    assert arm() == (1, [], 1), arm()
     _mentions(db, "armterm", [2])
     _mentions(db, "armco", [2])  # the positive control: a second real article is an article of the arm and makes the co-occurrence two
-    assert arm() == (2, [("armco", 2)]), arm()
+    assert arm() == (2, [("armco", 2)], 2), arm()
+
+
+def test_the_distinct_articles_of_a_concept_leave_the_stand_in_out_in_both_branches_and_the_trend_prints_the_same_number(db, monkeypatch):
+    """``_distinct_articles`` is the centre of ``concept_arms`` and the ``articles`` of ``trend`` (ring and single keyword): one helper, two
+    branches (one query, or chunks assembled in Python), and a stand-in counted by either made the same payload count two populations."""
+    from src.analytics import queries as q
+    from src.database.models import Keyword
+
+    _mentions(db, "ctrterm", [1, STAND_IN_ARTICLE])
+    _mentions(db, "ctrtwo", [1, STAND_IN_ARTICLE])
+    ids = [k.id for k in db.query(Keyword).filter(Keyword.normalized_term.in_(["ctrterm", "ctrtwo"])).order_by(Keyword.id)]
+    assert q._distinct_articles(db, ids) == 1  # the one query
+    with monkeypatch.context() as chunked:  # (not monkeypatch.undo(): it would also undo the patches of the fixtures)
+        chunked.setattr(q, "_IN_CHUNK", 1)  # the chunks assembled in Python: one keyword per chunk
+        assert q._distinct_articles(db, ids) == 1
+        assert q.trend(db, "ctrterm")["articles"] == 1  # the single keyword's own count, through the same helper
+        _mentions(db, "ctrtwo", [2])  # the positive control: a real article of the second form is one more, once, in each branch
+        assert q._distinct_articles(db, ids) == 2
+    assert q._distinct_articles(db, ids) == 2
 
 
 def test_a_keywords_days_and_the_days_of_all_keywords_are_counted_of_real_articles_only(db):

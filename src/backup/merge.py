@@ -6468,13 +6468,10 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: stamped by the engine a re-index would run -- carried at import, or re-indexed by an
 #: earlier run that was interrupted before it could stamp the batch complete. Those owe
 #: nothing, so the backlog is ``n - certified``. The join is on two narrow tables
-#: (merged_rows, article_index_stamps) and never touches an article row.
+#: (merged_rows, article_index_stamps) and never touches an article row (the stand-in question below reads the
+#: article hash index only: a covering range, no row page).
 _BACKLOG_SQL = (
-    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified,"
-    # A stand-in (the place-holder a salvage copy writes at a lost id, carried by a backup of that copy) is never re-indexed, so it never owes
-    # one: ``lost`` counts the unstamped ones and the owed count leaves them out. It reads the hash index only (stand_in.py), never an article row.
-    " COALESCE(SUM(st.article_id IS NULL AND m.row_id IN"
-    "   (SELECT id FROM articles WHERE hash >= '" + ARTICLE_HASH_PREFIX + "' AND hash < '" + ARTICLE_HASH_END + "')), 0) AS lost"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
+    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified"
     " FROM merge_batches b"
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
@@ -6484,6 +6481,19 @@ _BACKLOG_SQL = (
     " GROUP BY b.id, b.imported_at"
     " HAVING COUNT(m.row_id) > 0"
     " ORDER BY b.id"
+)
+
+#: ``lost``: of a batch's articles that are not certified, how many are stand-ins (the place-holder a salvage copy writes at a lost id, which a
+#: backup of that copy carries). A stand-in is never re-indexed, so it never owes one, and the owed count leaves it out. Asked from the STAND-IN
+#: side: the hash index names them (stand_in.py: a covering range, no article row), and each is looked up in ``merged_rows`` by
+#: (table_name, row_id), so the cost follows the number of stand-ins and not the number of pending articles. (Asked from the pending side, as
+#: ``m.row_id IN (<the range>)`` tested for every pending row, it cost 1.5 to 2.3 times the whole read at a million pending articles.)
+_BACKLOG_LOST_SQL = (
+    "SELECT m.batch_id, COUNT(*) FROM articles a"
+    " JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
+    " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine = :engine"
+    " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND st.article_id IS NULL"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
+    " GROUP BY m.batch_id"
 )
 
 
@@ -6501,6 +6511,20 @@ def _backlog_engine() -> str:
         return "<unknown>"
 
 
+def _backlog_rows(session) -> list[tuple]:
+    """The backlog read for :func:`pending_reindex_batches` and :func:`reindex_backlog`: one row per pending batch,
+    ``(id, imported_at, articles, certified, lost)`` -- the two statements above, so the two callers cannot drift apart. ``lost`` is the
+    stand-ins the batch lists that are not certified (:data:`_BACKLOG_LOST_SQL`); the owed count is ``articles - certified - lost``."""
+    from sqlalchemy import text
+
+    engine_id = _backlog_engine()
+    rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": engine_id}).fetchall()
+    if not rows:
+        return []
+    lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id})}
+    return [(*r, lost.get(int(r[0]), 0)) for r in rows]
+
+
 def pending_reindex_batches() -> list[dict]:
     """Imports whose articles are merged but not confirmed re-indexed.
 
@@ -6514,15 +6538,11 @@ def pending_reindex_batches() -> list[dict]:
     tell the two apart with. That is the project's own degrade-sentinel lesson, and the
     wrapper below is the fix.)
     """
-    from sqlalchemy import text
-
     from src.database.session import session_scope
 
     try:
         with session_scope() as session:
-            rows = session.execute(
-                text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
-            ).fetchall()
+            rows = _backlog_rows(session)
         return [
             {"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2]) - int(r[3]) - int(r[4]),
              "certified": int(r[3])}
@@ -6547,15 +6567,11 @@ def reindex_backlog() -> dict:
     ``available: false`` means the backlog could not be read (a locked or missing store),
     NOT that it is empty -- reporting the two the same way would be the exact
     fabricated-reassurance this guard exists to prevent."""
-    from sqlalchemy import text
-
     from src.database.session import session_scope
 
     try:
         with session_scope() as session:
-            rows = session.execute(
-                text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
-            ).fetchall()
+            rows = _backlog_rows(session)
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
         # because the root error handler writes the traceback, which ends with the engine's own words
@@ -6704,8 +6720,15 @@ def reindex_imported_articles(
 
         def _tracked(done: int, _total: int) -> None:
             # Persist the watermark as the re-index advances, so a crash resumes here
-            # rather than redoing the batch. `done` counts FINALISED articles in list
-            # order, so ids[done-1] is the last one that completed.
+            # rather than redoing the batch. `done` counts the articles FINALISED (reindexed
+            # or failed), in list order, so ids[done-1] is the last one that completed --
+            # EXACTLY when every id of the list names an article. An id that names none (an
+            # imported article deleted since: ``merged_rows`` has no cascade) is not counted
+            # by the pass until the batch has ended, so after one `done` lags the list and
+            # ids[done-1] is an EARLIER id than the last that completed. That is the safe
+            # direction: a resume redoes the articles between (the re-index is idempotent)
+            # and can never skip one, which counting the absent id here, before the articles
+            # that precede it in the list are done, would (a crash would resume past them).
             if 0 < done <= total:
                 _save_reindex_cursor(
                     batch_id, last_id=ids[done - 1], done=already + done, total=len(all_ids)
@@ -6734,8 +6757,16 @@ def reindex_imported_articles(
         # whole point of not merging the derived rows in the first place.
         # An id that named no article when its window was loaded (an imported article deleted before its batch drained: ``merged_rows`` has no
         # cascade) is finished too: there is nothing to index, and counting it out is what lets such a batch ever be stamped done.
-        if int(result.get("reindexed", 0)) + int(result.get("failed", 0)) + int(stats.get("absent", 0)) >= total:
+        finalised = int(result.get("reindexed", 0)) + int(result.get("failed", 0))
+        if finalised + int(stats.get("absent", 0)) >= total:
             mark_reindex_complete(batch_id)
+            if finalised < total and progress_cb is not None:
+                # The pass never counts an id that named no article, so its last report ended short of the batch: say that the batch is done, so
+                # the bar a caller draws from it ends full. (Report-only, like the pass's own: it must never undo a stamp.)
+                try:
+                    progress_cb(len(all_ids), len(all_ids))
+                except Exception:  # noqa: BLE001
+                    _LOG.debug("could not report the finished batch's progress", exc_info=True)
         if already:
             result["resumed_already_done"] = already
         if certified:

@@ -63,9 +63,9 @@ def _default_extractor():
 def _articles_to_reindex(session, article_model) -> int:
     """The articles a pass can finish: every article but the stand-ins (the place-holders a salvage copy writes at a lost id), which the pass
     skips. A total that counted them would leave the progress one short of it for every stand-in, so it never reached 100 %."""
-    from src.database.stand_in import stand_in_article_ids
+    from src.database.stand_in import stand_in_article_count
 
-    return max(0, int(session.query(article_model.id).count()) - len(stand_in_article_ids(session)))
+    return max(0, int(session.query(article_model.id).count()) - stand_in_article_count(session))
 
 
 class ReindexJobManager:
