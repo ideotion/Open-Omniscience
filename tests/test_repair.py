@@ -1195,7 +1195,7 @@ def test_a_failed_repair_and_a_failed_step_after_the_switch_record_the_type_of_t
 ):
     """The passphrase rule: the copy and the steps after the switch run on keyed connections, so what a driver says (and the error
     it was raised from, which a traceback prints) can carry a ``PRAGMA key`` statement; a record's traceback rides the diagnostics
-    bundle. The repair's own record carries the driver's first line scrubbed; the log carries only the type."""
+    bundle. The repair's own record carries the driver's class and a fixed label, never a word of its text (class-only, scrubbed or not); the log carries only the type."""
     import sqlite3
 
     from src.database import connect, session
@@ -1225,6 +1225,8 @@ def test_a_failed_repair_and_a_failed_step_after_the_switch_record_the_type_of_t
         assert "database repair failed (RuntimeError)" in caplog.text, caplog.text
         rec = reg.repairs()[-1]
         assert secret not in json.dumps(rec, default=str), "the repair's own record is scrubbed too"
+        assert "PRAGMA" not in json.dumps(rec, default=str) and "failed" not in str(rec.get("failure")), "no word of the driver's text is recorded"
+        assert rec.get("failure") == "OperationalError", rec  # the driver's class (the error behind the wrapper), nothing else
 
         caplog.clear()
         monkeypatch.setattr(session, "session_scope", driver_error)

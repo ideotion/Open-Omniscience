@@ -299,6 +299,24 @@ def test_what_the_guard_keeps_of_a_full_drive_never_carries_the_statement_or_its
     assert g3.note_error(OSError(errno.ENOSPC, "No space left on device"), "export") is True
     assert "No space left on device" in g3.state()["last_disk_full"]["detail"]
 
+    # ... but the FILE it failed on is not part of the cause: an OSError's text names it (a home folder with a person's name in it), and
+    # the detail is served into the page's poll and the bundle. Directly, wrapped in another exception, and as the cause of one.
+    named = "/home/Person Name/data/store.db"
+    wrapper = RuntimeError("could not write " + named)
+    wrapper.__cause__ = OSError(errno.ENOSPC, "No space left on device", named)
+    for what, exc in {
+        "direct": OSError(errno.ENOSPC, "No space left on device", named),
+        "as a cause": wrapper,
+        "a wrapper that quotes the path and no OSError": RuntimeError("write failed: " + named + ": No space left on device"),
+    }.items():
+        g5 = _guard()
+        assert g5.note_error(exc, "export") is True, what
+        d5 = g5.state()["last_disk_full"]["detail"]
+        assert "Person Name" not in d5 and "store.db" not in d5, (what, d5)
+    g6 = _guard()
+    g6.note_error(OSError(errno.ENOSPC, "No space left on device", named), "export")
+    assert g6.state()["last_disk_full"]["detail"] == "export: OSError: No space left on device"
+
     # the engine's own error hook keeps the same detail, from the driver's exception
     g4 = _guard()
     monkey_guard = storage_guard.storage_guard

@@ -56,14 +56,13 @@ its indexes created BEFORE its rows, so the pages are built as the rows arrive a
 at the price of a slower copy. A memory figure that cannot be read is not a reason to take the slow road.
 
 THE PASSPHRASE. Nothing here writes a value, a path or an engine message into a record: the report holds table
-names, counts and id ranges, and the one place an engine's text could enter it (a failure's reason) goes through
-``secret_scrub.scrub_text``, the same helper every other record uses.
+names, counts and id ranges, and a failure's reason is the driver's CLASS and a fixed label (:func:`damage.failure_text`), never
+a part of the driver's own text.
 """
 
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import re
 import threading
@@ -141,7 +140,7 @@ class SalvageStopped(Exception):  # noqa: N818 - a signal, not an error
 
 class SalvageFailed(RuntimeError):
     """A failure that is not an unreadable page: nothing may be concluded from it, so the copy ends and no file is
-    swapped in. ``where`` names the step (a table, an index, the search index); ``reason`` is scrubbed text."""
+    swapped in. ``where`` names the step (a table, an index, the search index); ``reason`` is a class and a fixed label, never a driver's text."""
 
     def __init__(self, where: str, reason: str) -> None:
         super().__init__(f"{where}: {reason}")
@@ -151,35 +150,6 @@ class SalvageFailed(RuntimeError):
 
 def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
-
-
-def _scrub(text: str) -> str:
-    """``text`` with the passphrase the process holds taken out of it in every form this code could write it: as typed, SQL-quoted
-    (a quote doubled), as ``repr`` and as JSON writes it, the longest form first. The one place an engine's text enters a record
-    of this module. A scrub that cannot run withholds the text: it never lets the raw text through."""
-    try:
-        from src.database.connect import get_passphrase
-        from src.monitoring.secret_scrub import scrub_text
-
-        needle = get_passphrase()
-        if not needle:
-            return text
-        forms = {needle, needle.replace("'", "''"), repr(needle)[1:-1], json.dumps(needle)[1:-1], json.dumps(needle, ensure_ascii=False)[1:-1]}
-        for form in sorted((f for f in forms if f), key=len, reverse=True):
-            text = scrub_text(text, form)
-        return text
-    except Exception:  # noqa: BLE001 - a scrub that cannot run must not put the raw text in a record
-        return "(text withheld: the passphrase scrub could not run)"
-
-
-def _failure_text(exc: BaseException) -> str:
-    """The reason for a failure, from the DRIVER's exception when there is one (its first line), scrubbed. Never the
-    wrapper's text, which can carry a statement and its values. The WHOLE text is scrubbed before the first line is taken: a passphrase
-    with a line break that the driver echoes would otherwise be cut in two first, and neither half matches the needle (the coordinator's
-    check of E3, item 4)."""
-    driver = damage.driver_error(exc) or exc
-    first = (_scrub(str(driver)).splitlines() or [""])[0].strip() or type(driver).__name__
-    return f"{type(driver).__name__}: {first}"[:240]
 
 
 def _row_bytes(row: tuple) -> int:
@@ -305,7 +275,7 @@ class Salvage:
         return damage.corruption_of(exc) is not None
 
     def _classify(self, where: str, exc: BaseException) -> SalvageFailed:
-        return SalvageFailed(where, _failure_text(exc))
+        return SalvageFailed(where, damage.failure_text(exc))
 
     # -- run -------------------------------------------------------------------------------------
     def run(self) -> dict[str, Any]:
@@ -350,7 +320,7 @@ class Salvage:
                 raise SalvageRefused(
                     "schema-unreadable", "the list of tables in the damaged file cannot be read, so nothing can be copied"
                 ) from exc
-            raise SalvageRefused("cannot-open", f"the damaged file could not be opened for reading ({_failure_text(exc)})") from exc
+            raise SalvageRefused("cannot-open", f"the damaged file could not be opened for reading ({damage.failure_text(exc)})") from exc
         self.encrypted = bool(conn_mod.is_encrypted_file(self.source))
 
     def _read_schema(self) -> tuple[list[_Table], list[tuple[str, str, str, str]]]:
@@ -761,7 +731,7 @@ class Salvage:
                 self.dst.execute(sql)
             except Exception as exc:  # noqa: BLE001
                 self._check_stop()
-                raise SalvageFailed(f"index {name}", _failure_text(exc)) from exc
+                raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from exc
         t.indexes = []  # created: the later pass skips them
 
     def _create_rest(self, tables: list[_Table], others: list[tuple[str, str, str, str]]) -> None:
@@ -776,7 +746,7 @@ class Salvage:
                     self.dst.execute(sql)
                 except Exception as exc:  # noqa: BLE001
                     self._check_stop()
-                    raise SalvageFailed(f"index {name}", _failure_text(exc)) from exc
+                    raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from exc
                 done += 1
         self.report["indexes_seconds"] = round(time.monotonic() - t0, 1)
         for kind, name, _tbl, sql in others:
@@ -833,8 +803,8 @@ class Salvage:
                 cur = self.dst.execute("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?", (floor, name))
                 if cur.rowcount == 0 and self.dst.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (name,)).fetchone():
                     self.dst.execute("INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)", (name, floor))
-            except Exception:  # noqa: BLE001 - a table that has no counter has nothing to restore
-                _LOG.debug("salvage: could not restore a counter", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a table that has no counter has nothing to restore
+                _LOG.debug("salvage: could not restore a counter (%s)", type(exc).__name__)
 
     def _orphan_groups(self) -> dict[tuple[str, str, int], int]:
         """The rows whose parent is not there, counted per ``(child table, parent table, foreign key number)``."""

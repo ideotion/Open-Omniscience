@@ -140,6 +140,36 @@ def test_degrades_honestly_when_dbstat_is_not_compiled_in(db, monkeypatch):
     assert out["method"] and out["caveat"]
 
 
+def _engine_failure(line: str) -> Exception:
+    """A driver error carrying the engine's own line, wrapped as SQLAlchemy wraps it (its text adds the statement)."""
+    from sqlalchemy.exc import DatabaseError
+
+    inner = sqlite3.OperationalError(line)
+    inner.sqlite_errorcode = 11  # type: ignore[attr-defined]
+    inner.sqlite_errorname = "SQLITE_CORRUPT"  # type: ignore[attr-defined]
+    return DatabaseError("SELECT name FROM sqlite_master -- MARKER-STATEMENT", (), inner)
+
+
+@pytest.mark.parametrize("fails_on", ["FROM sqlite_master", "dbstat"])
+def test_a_failed_read_reports_the_class_and_a_fixed_label_never_the_engines_line(db, monkeypatch, fails_on):
+    """The block rides the diagnostics bundle, and a damaged schema is worded with the name of an object and a fragment of its
+    definition (engine text into a record is class-only)."""
+    from src.database import damage
+
+    real_rows = storage_mod._rows
+
+    def fake_rows(session, sql):
+        if fails_on in sql:
+            raise _engine_failure('malformed database schema (ix_secret_name) - near "MARKER-FRAGMENT": syntax error')
+        return real_rows(session, sql)
+
+    monkeypatch.setattr(storage_mod, "_rows", fake_rows)
+    out = storage_composition(db)
+    assert out["available"] is False
+    assert out["reason"].endswith("OperationalError: " + damage.CORRUPT_SCHEMA), out["reason"]
+    assert "MARKER" not in repr(out) and "ix_secret_name" not in repr(out)
+
+
 def test_degrades_honestly_on_a_deadline_abort(db, monkeypatch):
     from contextlib import contextmanager
 

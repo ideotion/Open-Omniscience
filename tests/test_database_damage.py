@@ -16,6 +16,7 @@ answered: a test that raised a hand-built exception would pass for the wrong rea
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import random
@@ -628,6 +629,9 @@ _DRIVER_TEXTS = [
     pytest.param(f'malformed database schema (ix_{SECRET}) - near "{SECRET}": syntax error', None, damage.CORRUPT_SCHEMA, id="schema-no-code"),
     pytest.param(f"database corruption at line 99 of [{SECRET}]", 11, damage.CORRUPT_OTHER, id="other-class-by-code"),
     pytest.param(f"database disk image is malformed\n{SECRET} second line", 11, damage.CORRUPT_IMAGE, id="image-second-line"),
+    # the text-only fallback (a driver without ``sqlite_errorcode``) for the image class: the label, never the line
+    pytest.param(f"database disk image is malformed {SECRET}", None, damage.CORRUPT_IMAGE, id="image-no-code-with-text"),
+    pytest.param(f"database disk image is malformed\n{SECRET} second line", None, damage.CORRUPT_IMAGE, id="image-no-code-second-line"),
 ]
 
 
@@ -803,9 +807,62 @@ def test_the_bundle_member_is_the_record_cut_oldest_first_and_names_the_cut(regi
     assert damage.diagnostics_member(0)["method"], "a nonsense budget is raised to the smallest, never an error"
 
 
-def test_the_bundle_member_never_raises(registry, monkeypatch):
-    monkeypatch.setattr(registry, "state", lambda **kw: (_ for _ in ()).throw(RuntimeError("boom\nsecond")))
-    assert damage.diagnostics_member(50_000) == {"error": "RuntimeError: boom"}
+def test_the_bundle_member_never_raises_and_says_the_class_of_a_failure_never_its_words(registry, monkeypatch):
+    """The member rides the bundle, so a failure of its own is the exception's class (and an OSError's errno name): never ``str(exc)``,
+    cut or not, which can be an engine's words or a path."""
+    marker = "MARKER-in-the-exception-text-9"
+    monkeypatch.setattr(registry, "state", lambda **kw: (_ for _ in ()).throw(RuntimeError(f"boom {marker}\nsecond")))
+    assert damage.diagnostics_member(50_000) == {"error": "RuntimeError"}
+    monkeypatch.setattr(registry, "state", lambda **kw: (_ for _ in ()).throw(OSError(errno.EIO, f"disk {marker}", f"/home/{marker}/x")))
+    out = damage.diagnostics_member(50_000)
+    assert out == {"error": "OSError EIO"} and marker not in json.dumps(out)
+
+
+def test_failure_label_is_the_class_and_for_an_os_error_the_errno_name_and_never_a_word_of_the_message():
+    marker = "MARKER-31"
+    assert damage.failure_label(OSError(errno.ENOSPC, f"no space {marker}", f"/p/{marker}")) == "OSError ENOSPC"
+    assert damage.failure_label(FileNotFoundError(errno.ENOENT, f"missing {marker}", f"/p/{marker}")) == "FileNotFoundError ENOENT"
+    assert damage.failure_label(OSError(f"no errno {marker}")) == "OSError"
+    assert damage.failure_label(RuntimeError(marker)) == "RuntimeError"
+    assert damage.failure_label(PermissionError(99999, marker)) == "PermissionError"  # an errno with no name in the table: the class alone
+
+
+def test_a_record_that_cannot_be_written_says_the_class_and_the_errno_name_never_the_message_or_the_path(tmp_path, caplog):
+    """``write_error`` rides the bundle (``state``), and an ``OSError``'s message names the path it failed on."""
+    import logging
+
+    marker = "MARKER-path-and-message-31"
+    reg = DamageRegistry(path_fn=lambda: tmp_path / marker / "rec.json")  # a folder that is not there: the write fails with ENOENT and its message names the path
+    with caplog.at_level(logging.DEBUG):
+        assert _note(reg)
+        reg._flush_latest()
+    st = reg.state(detail=True)
+    assert st["write_error"] == "FileNotFoundError ENOENT", st["write_error"]
+    assert marker not in json.dumps(st, default=str)
+
+    # the same for a failure of the thread that writes the record (any exception, not only an OSError)
+    def disk_full():
+        raise OSError(errno.ENOSPC, f"no space {marker}", f"/home/{marker}/rec.json.tmp")
+
+    reg._single_flight(("test-record",), disk_full)
+    assert reg.state()["write_error"] == "OSError ENOSPC"
+    reg._single_flight(("test-record-2",), lambda: (_ for _ in ()).throw(RuntimeError(f"an engine said {marker}")))
+    assert reg.state()["write_error"] == "RuntimeError"
+    assert marker not in caplog.text and marker not in json.dumps(reg.state(detail=True), default=str)
+    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error and the path"
+
+
+def test_no_logging_call_of_the_damage_chain_asks_for_a_traceback():
+    """An ``exc_info`` log is a sink: its record rides the diagnostics bundle (``data/app_errors.jsonl``) and a traceback prints the exception and
+    the error it was raised from, which for a database error ends in the engine's own words. These modules run on keyed connections, so they log
+    the class of a failure (``type(exc).__name__``) and nothing else."""
+    import re
+
+    for name in ("damage", "repair", "verify", "salvage", "article_indexes"):
+        text = (ROOT / "src" / "database" / f"{name}.py").read_text(encoding="utf-8")
+        code = "\n".join(line.split("  #")[0] for line in text.splitlines() if not line.lstrip().startswith("#"))
+        found = re.findall(r"exc_info\s*=\s*(?!False|None)\w+|\.exception\(", code)
+        assert not found, f"src/database/{name}.py asks for a traceback in a log: {found}"
 
 
 # --------------------------------------------------------------------------- #
@@ -1760,8 +1817,9 @@ def test_a_failure_inside_the_record_thread_is_said_not_only_debug_logged(tmp_pa
         assert _note(reg)
         _settle(reg)
     assert reg.latched(FILE_CORPUS), "the latch does not depend on the record"
-    assert reg.state()["write_error"] == "RuntimeError: boom"
+    assert reg.state()["write_error"] == "RuntimeError", "the class; the exception's words are not kept (they can carry a path)"
     assert any(r.levelno == logging.WARNING and "could not be written" in r.getMessage() for r in caplog.records)
+    assert "boom" not in caplog.text and "boom" not in repr(reg.state())
 
 
 def test_starting_collection_releases_only_the_files_it_paused(registry):

@@ -358,8 +358,8 @@ def _write_marker(attempts: int, **facts: Any) -> bool:
         tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
         os.replace(tmp, path)
         return True
-    except OSError:
-        _LOG.warning("article-list index build: the attempt could not be recorded", exc_info=True)
+    except OSError as exc:
+        _LOG.warning("article-list index build: the attempt could not be recorded (%s)", type(exc).__name__)
         return False
 
 
@@ -396,8 +396,8 @@ def stop() -> None:
                 _marker_path().unlink()
         else:
             _write_marker(left, gave_back=True)
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        _LOG.debug("article-list index build: could not give an attempt back", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        _LOG.debug("article-list index build: could not give an attempt back (%s)", type(exc).__name__)
 
 
 # --- the build ---------------------------------------------------------------------------------

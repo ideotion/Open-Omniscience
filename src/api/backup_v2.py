@@ -1385,9 +1385,11 @@ def reindex_backlog_resume_status() -> dict:
         after ANALYZE, 1,000 stand-ins:           236-246 / 481-528 / 223-250 / 222-247
         after ANALYZE, 100,000 stand-ins:         221 / 616 / 342 / 344
 
-    (The 100,000 case was measured in a file that had been analysed once and had its statistics rows deleted,
-    where SQLite chose the same order either way; the first version of the question is the one that was
-    replaced.) At 100,000 pending articles (one run), same columns: never analysed, no stand-in: 24 / 33 / 52 /
+    (The two never-analysed rows are the first case of a run, the only one on a freshly built file. The
+    probe's later no-statistics cases reused the file and deleted the statistics rows on a connection that had
+    already loaded them, so they ran with the previous case's statistics and the unforced statement was fast
+    there (212 to 342 ms); a connection opened after the rows were deleted chooses the slow order again, so
+    only the forced order is safe. The first version of the question is the one that was replaced.) At 100,000 pending articles (one run), same columns: never analysed, no stand-in: 24 / 33 / 52 /
     23; after ANALYZE, no stand-in: 22 / 32 / 23 / 24; after ANALYZE, 10,000 stand-ins: 22 / 52 / 32 / 32. The
     statements return the same counts: the probe compared them row for row before the first version was
     dropped.

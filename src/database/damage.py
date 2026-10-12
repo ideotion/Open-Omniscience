@@ -79,6 +79,7 @@ reading of tables is ``database/verify.py``'s, on its own connections.
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import logging
 import os
@@ -223,6 +224,17 @@ def _corrupt_label(low_first_line: str) -> str:
     return CORRUPT_OTHER
 
 
+def failure_label(exc: BaseException) -> str:
+    """What a record keeps of a failure that is NOT a driver's ``SQLITE_CORRUPT``: the exception's class and, for an ``OSError``, the NAME of
+    its errno (``OSError ENOSPC``). Never the message and never the path: an ``OSError`` carries the file it failed on (a home folder with a
+    person's name in it), and any other exception can carry an engine's own words, a statement or a bound value. What this protects: the
+    record rides the diagnostics bundle, and engine text into a record is class-only."""
+    name = type(exc).__name__
+    code = exc.errno if isinstance(exc, OSError) else None
+    named = errno.errorcode.get(code) if isinstance(code, int) else None
+    return f"{name} {named}" if named else name
+
+
 def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
     """What the driver said, when it said ``SQLITE_CORRUPT`` (primary code 11, any extended code); else
     ``None``. ``{"code", "name", "message", "driver_class"}``. The message is a FIXED LABEL
@@ -263,6 +275,28 @@ def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
     if low.startswith(CORRUPT_IMAGE) or low.startswith(CORRUPT_SCHEMA):
         return {"code": None, "name": None, "message": _corrupt_label(low), "driver_class": type(driver).__name__}
     return None
+
+
+# SQLite's own constants ("SQLITE_IOERR_READ"): a name from a fixed set, never a message. Anything that does not look like one is dropped, so
+# a driver that put text in the attribute adds none.
+_SQLITE_NAME = re.compile(r"^SQLITE_[A-Z0-9_]{1,40}$")
+
+
+def failure_text(exc: BaseException) -> str:
+    """The reason for a failure, as a record keeps it: the DRIVER's class (never the wrapper's) and, when the driver gave one, a FIXED
+    label: the label of the damage class for ``SQLITE_CORRUPT`` (:func:`corruption_of`), else SQLite's own constant name for the
+    error (``SQLITE_IOERR_READ``, a vocabulary of the library and not text of any statement). NEVER a part of the driver's message, scrubbed or
+    not: it can carry a schema name, a statement or a bound value, the copy runs on keyed connections, and this line is written to records
+    that ride the diagnostics bundle (the repair record, the full-text probe of the integrity report; engine text into a record is
+    class-only). The classification reads the raw error; nothing of its text goes further."""
+    driver = driver_error(exc) or exc
+    found = corruption_of(exc)
+    if found is not None:
+        return f"{type(driver).__name__}: {found['message']}"
+    name = getattr(driver, "sqlite_errorname", None)
+    if isinstance(name, str) and _SQLITE_NAME.match(name):
+        return f"{type(driver).__name__}: {name}"
+    return failure_label(driver)
 
 
 def is_corruption(exc: BaseException | None) -> bool:
@@ -569,8 +603,7 @@ class DamageRegistry:
                 self._flushed_seq = doc.get("write_seq", 0)
                 landed = True
             except OSError as exc:
-                first = (str(exc).splitlines() or [""])[0][:120]
-                error = f"{type(exc).__name__}: {first}"
+                error = failure_label(exc)  # the class and the errno name: a drive's message names the path, and the record rides the bundle
                 with contextlib.suppress(OSError):
                     tmp.unlink()
         with self._lock:
@@ -591,8 +624,8 @@ class DamageRegistry:
                     doc = self._doc_locked()
                 if self._flush(doc, durable=True):
                     return True
-        except Exception:  # noqa: BLE001 - a record that cannot be written is said by the caller
-            _LOG.debug("database damage: the record could not be made durable", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a record that cannot be written is said by the caller
+            _LOG.debug("database damage: the record could not be made durable (%s)", type(exc).__name__)
         return False
 
     # -- noticing ----------------------------------------------------------------------------------
@@ -688,8 +721,8 @@ class DamageRegistry:
                 ),
             )
             return True
-        except Exception:  # noqa: BLE001 - never raises
-            _LOG.debug("database damage: could not record an incident", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never raises
+            _LOG.debug("database damage: could not record an incident (%s)", type(exc).__name__)
             return False
 
     def _apply_incident(
@@ -758,10 +791,9 @@ class DamageRegistry:
             try:
                 fn()
             except Exception as exc:  # noqa: BLE001
-                _LOG.warning("database damage: the record could not be written", exc_info=True)
+                _LOG.warning("database damage: the record could not be written (%s)", failure_label(exc))
                 with self._lock:
-                    first = (str(exc).splitlines() or [""])[0][:120]
-                    self._write_error = f"{type(exc).__name__}: {first}"
+                    self._write_error = failure_label(exc)
             with self._lock:
                 extra = self._pending.pop(key, 0)
                 if extra and rerun:
@@ -904,8 +936,8 @@ class DamageRegistry:
                     ", ".join(released),
                     reason,
                 )
-        except Exception:  # noqa: BLE001
-            _LOG.debug("database damage: retry failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("database damage: retry failed (%s)", type(exc).__name__)
         return released
 
     def _start_recheck(self, recheck: dict[str, list[str]], reason: str, claims: dict[str, int]) -> list[str]:
@@ -916,8 +948,8 @@ class DamageRegistry:
             from src.database import verify
 
             outcome = verify.recheck(recheck, reason=reason, claims=claims)
-        except Exception:  # noqa: BLE001 - a latch that cannot be re-read stays
-            _LOG.warning("database damage: could not start the re-read of the reported tables", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a latch that cannot be re-read stays
+            _LOG.warning("database damage: could not start the re-read of the reported tables (%s)", type(exc).__name__)
             outcome = {}
         released: list[str] = []
         with self._lock:
@@ -1042,8 +1074,8 @@ class DamageRegistry:
                     file_key,
                 )
             return released
-        except Exception:  # noqa: BLE001 - a re-read's bookkeeping must never raise; the latch stays
-            _LOG.debug("database damage: could not store a re-read's result", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a re-read's bookkeeping must never raise; the latch stays
+            _LOG.debug("database damage: could not store a re-read's result (%s)", type(exc).__name__)
             return False
 
     # -- the per-table check (database/verify.py) --------------------------------------------------
@@ -1166,8 +1198,8 @@ class DamageRegistry:
                 superseded = self._supersede_incidents_locked(file_key)  # they were about a file that no longer is
             if gone is not None or superseded:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
-        except Exception:  # noqa: BLE001
-            _LOG.debug("database damage: could not forget a check's record", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("database damage: could not forget a check's record (%s)", type(exc).__name__)
 
     def verification_file_stopped(self, file_key: str) -> None:
         """The check of ``file_key`` was interrupted by a stop (the app is shutting down). The entry stays ``running`` so
@@ -1180,8 +1212,8 @@ class DamageRegistry:
                     return
                 entry["attempts"] = max(0, int(entry.get("attempts") or 1) - 1)
             self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
-        except Exception:  # noqa: BLE001
-            _LOG.debug("database damage: could not give an attempt back", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("database damage: could not give an attempt back (%s)", type(exc).__name__)
 
     def verification_file_skipped(
         self, file_key: str, *, path: Path | None, attempts: int, reason: str, earlier_damaged: list[str] | None = None
@@ -1227,8 +1259,8 @@ class DamageRegistry:
                 file_key, [], path=path, at=at, carried=list(tables),
                 stopped_after=int(attempts) if attempts >= MAX_VERIFY_ATTEMPTS else None,
             )
-        except Exception:  # noqa: BLE001 - a check's bookkeeping must never take the boot down
-            _LOG.debug("database damage: could not hold a file on an earlier finding", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a check's bookkeeping must never take the boot down
+            _LOG.debug("database damage: could not hold a file on an earlier finding (%s)", type(exc).__name__)
 
     def verification_file_done(self, file_key: str, result: dict[str, Any], *, path: Path | None = None) -> None:
         """Store the finished check of ``file_key`` and, when a table was read as damaged, latch the file the same
@@ -1261,8 +1293,8 @@ class DamageRegistry:
                 self._note_verified_damage(file_key, damaged, path=path, at=at, carried=carry)
             else:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
-        except Exception:  # noqa: BLE001 - a check's bookkeeping must never take the boot down
-            _LOG.debug("database damage: could not store a check's result", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a check's bookkeeping must never take the boot down
+            _LOG.debug("database damage: could not store a check's result (%s)", type(exc).__name__)
 
     @staticmethod
     def _carry_after(earlier: set[str], tables: list[dict[str, Any]], *, listed: bool, damaged: set[str]) -> list[str]:
@@ -1387,8 +1419,8 @@ class DamageRegistry:
                 else:
                     self._repairs.append({"id": rec_id, "process": self._process, **fields})
             self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
-        except Exception:  # noqa: BLE001 - a record that cannot be kept must never stop a repair
-            _LOG.debug("database damage: could not record a repair attempt", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a record that cannot be kept must never stop a repair
+            _LOG.debug("database damage: could not record a repair attempt (%s)", type(exc).__name__)
 
     def repairs(self) -> list[dict[str, Any]]:
         """The attempts, oldest first (copies)."""
@@ -1418,8 +1450,8 @@ class DamageRegistry:
             if changed:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
             return changed
-        except Exception:  # noqa: BLE001 - bookkeeping must never stop a start
-            _LOG.debug("database damage: could not settle an interrupted repair", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping must never stop a start
+            _LOG.debug("database damage: could not settle an interrupted repair (%s)", type(exc).__name__)
             return 0
 
     def latch_is_set(self, file_key: str) -> bool:
@@ -1807,8 +1839,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             out["verification_tables_dropped_to_fit"] = True
         return out
     except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
-        first = (str(exc).splitlines() or [""])[0][:160]
-        return {"error": f"{type(exc).__name__}: {first}"}
+        return {"error": failure_label(exc)}  # the class only: the member rides the bundle, and what an exception says can be an engine's words
 
 
 #: The plain sentences. Frames the page translates (each is also a locale key, x12). The damage sentences say

@@ -818,8 +818,8 @@ def owe_at_locked_boot() -> None:
         plan = plan_boot()
         if plan is not None:
             _owe(plan)
-    except Exception:  # noqa: BLE001 - a bookkeeping failure must never take the lock screen down
-        _LOG.warning("database check: could not record the check as owed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bookkeeping failure must never take the lock screen down
+        _LOG.warning("database check: could not record the check as owed (%s)", type(exc).__name__)
 
 
 def arm_at_boot() -> bool:
@@ -873,8 +873,8 @@ def arm_at_boot() -> bool:
             ", ".join(k for k, _p, _a in plan["files"]),
         )
         return True
-    except Exception:  # noqa: BLE001 - never hold collection for a check that cannot be planned
-        _LOG.warning("database check: could not plan the start-up check", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never hold collection for a check that cannot be planned
+        _LOG.warning("database check: could not plan the start-up check (%s)", type(exc).__name__)
         return False
 
 
@@ -1125,10 +1125,10 @@ def recheck(files: dict[str, list[str]], *, reason: str, claims: dict[str, int] 
             path = _path_of(key)
             try:
                 readable = switch_on() and path is not None and path.is_file() and path.stat().st_size > 0
-            except OSError:
+            except OSError as exc:
                 # Could not tell whether there is a file to read: that is UNCHECKED, never "nothing to read" (which
                 # releases the latch). The latch stays and the next start of collection asks again.
-                _LOG.warning("database check: could not examine the %s file for the re-read", key, exc_info=True)
+                _LOG.warning("database check: could not examine the %s file for the re-read (%s)", key, type(exc).__name__)
                 out[key] = "kept"
                 continue
             if not readable or path is None:
@@ -1143,14 +1143,14 @@ def recheck(files: dict[str, list[str]], *, reason: str, claims: dict[str, int] 
         t = threading.Thread(target=_recheck_main, args=(plan, reason, claims or {}), name="oo-database-recheck", daemon=True)
         try:
             t.start()
-        except Exception:  # noqa: BLE001 - no thread, no read: the latch stays
-            _LOG.warning("database check: could not start the re-read of the reported tables", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - no thread, no read: the latch stays
+            _LOG.warning("database check: could not start the re-read of the reported tables (%s)", type(exc).__name__)
             out.update({key: "kept" for key, _p, _n in plan})
             return out
         out.update({key: "started" for key, _p, _n in plan})
         return out
-    except Exception:  # noqa: BLE001
-        _LOG.warning("database check: could not plan the re-read of the reported tables", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("database check: could not plan the re-read of the reported tables (%s)", type(exc).__name__)
         return {key: out.get(key, "kept") for key in files}
 
 

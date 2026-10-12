@@ -492,6 +492,18 @@ def is_io_error(exc: BaseException | None) -> bool:
     return False
 
 
+def _os_error_behind(exc: BaseException | None) -> OSError | None:
+    """The first ``OSError`` with an errno in ``exc``'s chain (``.orig``, ``__cause__``, ``__context__``), or ``None``."""
+    seen: set[int] = set()
+    cur = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, OSError) and isinstance(cur.errno, int) and cur.errno > 0:
+            return cur
+        cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
+    return None
+
+
 def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -> str:
     """What the guard keeps of an error: the DRIVER's exception class and FIRST line of its message
     (``OperationalError: disk I/O error``), never SQLAlchemy's wrapper text, which carries the SQL and
@@ -505,6 +517,13 @@ def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -
     if orig is not None:
         shown, text = orig, str(orig)
     elif quote_head:
+        os_error = _os_error_behind(exc)
+        if os_error is not None:
+            # An ``OSError``'s text names the file it failed on (a home folder with a person's name in it) and this detail is served into the
+            # status payload and the bundle: the class and the errno's standard phrase ("No space left on device"), never the path.
+            return f"{type(os_error).__name__}: {os.strerror(int(os_error.errno or 0))}"
+        if type(exc).__name__ != "PendingRollbackError":
+            return type(exc).__name__  # any other exception's words are its author's, and can hold a path or a value
         # the Session's rollback error opens with a paragraph of advice and then quotes the original
         shown, text = exc, _text_head(exc).rpartition("Original exception was: ")[2]
     else:

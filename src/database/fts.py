@@ -1114,12 +1114,15 @@ def fts_status(session: Session) -> dict:
       * ``rows``         — the indexed-row count, or ``None`` when the count timed out /
         errored (``count_status`` says which) — NEVER conflated with absence.
       * ``count_status`` — ok | timed_out | error | skipped.
-      * ``error``        — the probe error message when unhealthy / the count failed.
+      * ``error``        — what failed when unhealthy / the count failed: the DRIVER's class and a fixed label
+        (:func:`src.database.damage.failure_text`), never the engine's own message (the integrity report that
+        carries this rides the diagnostics bundle).
 
     Callers should run this OUTSIDE any enclosing ``statement_deadline`` block: it manages its
     own bounded deadlines, and nesting the progress-handler-based deadline would clobber the
     outer one on exit.
     """
+    from src.database.damage import failure_text
     from src.database.maintenance import StatementTimeout, statement_deadline
 
     bind = session.get_bind()
@@ -1143,7 +1146,7 @@ def fts_status(session: Session) -> dict:
         out["present"] = row is not None
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never crashes
         out["present"] = None
-        out["error"] = str(exc)[:200]
+        out["error"] = failure_text(exc)
         return out
     if not out["present"]:
         return out  # genuinely absent -> init_db()/ensure_fts() recreates it (a re-index heals)
@@ -1160,7 +1163,7 @@ def fts_status(session: Session) -> dict:
         return out
     except Exception as exc:  # noqa: BLE001 - a corruption error is the actionable signal
         out["healthy"] = False
-        out["error"] = str(exc)[:200]
+        out["error"] = failure_text(exc)
         out["count_status"] = "error"
         return out  # damaged -> don't attempt the heavier COUNT; re-index heals
 
@@ -1174,7 +1177,7 @@ def fts_status(session: Session) -> dict:
         out["count_status"] = "timed_out"
     except Exception as exc:  # noqa: BLE001 - count failure is disclosed, presence stands
         out["count_status"] = "error"
-        out["error"] = str(exc)[:200]
+        out["error"] = failure_text(exc)
     return out
 
 

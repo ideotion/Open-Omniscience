@@ -1008,19 +1008,45 @@ def test_an_undamaged_encrypted_file_is_copied_row_for_row(tmp_path, enc_pristin
     assert salvage.check_copy(out)[0]
 
 
-def test_a_passphrase_with_a_line_break_that_the_driver_echoes_is_scrubbed_before_the_text_is_cut():
-    """The coordinator's check of E3, item 4: the first line was taken and THEN scrubbed, so a passphrase with a line break that the driver
-    echoed was cut in two first and the first half stayed in the repair record."""
-    from src.database import connect
+def test_a_failure_is_recorded_as_the_drivers_class_and_a_fixed_label_never_a_word_of_its_text():
+    """Engine text into a record is class-only (the coordinator's ruling, which replaces the scrubbed first line the check of E3 asked for at item 4):
+    the driver's error is read to classify it, and the record carries its class and a fixed label. A passphrase with a line break, a schema name,
+    a statement and a bound value that the driver echoes are in none of it, scrubbed or not."""
+    import sqlite3
+
+    from src.database import connect, damage
 
     previous = connect.get_passphrase()
     connect.set_passphrase("first-half-of-the-key\nsecond-half-of-the-key")
     try:
-        text = salvage._failure_text(RuntimeError("could not open with the key first-half-of-the-key\nsecond-half-of-the-key, sorry"))
+        def failing(message: str, code: int | None = None, name: str | None = None):
+            exc = sqlite3.OperationalError(message)
+            if code is not None:
+                exc.sqlite_errorcode = code
+                exc.sqlite_errorname = name
+            return exc
+
+        marker = "MARKER-bound-value-77"
+        wrapped = RuntimeError(f"[SQL: INSERT INTO t VALUES ('{marker}')]")
+        wrapped.__cause__ = failing(f"could not open with the key first-half-of-the-key\nsecond-half-of-the-key, sorry {marker}", 14, "SQLITE_CANTOPEN")
+        cases = {
+            "an error with SQLite's own name": (wrapped, "OperationalError: SQLITE_CANTOPEN"),
+            "the generic error": (failing(f"near \"{marker}\": syntax error", 1, "SQLITE_ERROR"), "OperationalError: SQLITE_ERROR"),
+            "a driver without a name": (failing(f"disk is {marker}"), "OperationalError"),
+            "a damaged page": (failing(f"database disk image is malformed {marker}", 11, "SQLITE_CORRUPT"), "OperationalError: " + damage.CORRUPT_IMAGE),
+            "a damaged schema": (failing(f"malformed database schema (ix_{marker}) - near x", 11, "SQLITE_CORRUPT"), "OperationalError: " + damage.CORRUPT_SCHEMA),
+            "not a driver's at all": (RuntimeError(f"could not open with the key first-half-of-the-key\nsecond-half-of-the-key, sorry {marker}"), "RuntimeError"),
+            "an OSError": (OSError(28, f"no space {marker}", f"/home/{marker}/x"), "OSError ENOSPC"),
+            # text where SQLite's constant name belongs (or a name longer than any) is not a name
+            "text in the name": (failing(f"disk is {marker}", 1, f"SQLITE_ERROR {marker}"), "OperationalError"),
+            "a name too long": (failing("x", 1, "SQLITE_" + "X" * 60), "OperationalError"),
+        }
+        for what, (exc, expected) in cases.items():
+            text = damage.failure_text(exc)
+            assert text == expected, (what, text)
+            assert marker not in text and "first-half-of-the-key" not in text and "second-half-of-the-key" not in text, (what, text)
     finally:
         connect.set_passphrase(previous)
-    assert "first-half-of-the-key" not in text and "second-half-of-the-key" not in text, text
-    assert text.startswith("RuntimeError: ") and "could not open with the key" in text
 
 
 def test_a_wrong_key_refuses_to_open_and_writes_nothing(tmp_path, enc_pristine):

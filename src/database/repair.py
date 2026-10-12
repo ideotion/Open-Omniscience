@@ -56,8 +56,8 @@ library is latched damaged again. NOR A FILE THE DRIVE COULD NOT READ: SQLite 3.
 the damaged file raw once (:func:`_disk_unread_pages`); a page the drive could not give, here or in the start-up check's own page
 pass, means the file is kept for ever (no date is recorded) and the notice says to check the drive.
 
-PASSPHRASE. The record holds counts, table names, id ranges and reason CODES; an engine's text enters it only through
-``secret_scrub`` and only in the report's ``failure`` line.
+PASSPHRASE. The record holds counts, table names, id ranges and reason CODES; an engine's text never enters it: the report's
+``failure`` line is the driver's class and a fixed label (``damage.failure_text``), and a failure that is not a driver's is its class.
 """
 
 from __future__ import annotations
@@ -189,8 +189,8 @@ def stop() -> None:
                 _marker_path().unlink()
         else:
             _write_marker(left, gave_back=True)
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        _LOG.debug("database repair: could not give back an attempt", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        _LOG.debug("database repair: could not give back an attempt (%s)", type(exc).__name__)
 
 
 def _reset_for_tests() -> None:
@@ -240,8 +240,8 @@ def _write_marker(attempts: int, **facts: Any) -> bool:
         tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
         os.replace(tmp, path)
         return True
-    except OSError:
-        _LOG.warning("database repair: the attempt could not be recorded", exc_info=True)
+    except OSError as exc:
+        _LOG.warning("database repair: the attempt could not be recorded (%s)", type(exc).__name__)
         return False
 
 
@@ -740,8 +740,8 @@ def run_now_and_wait() -> str:
     outcome = _repair_once()
     try:
         sweep_kept_copies()
-    except Exception:  # noqa: BLE001 - a removal that went wrong must never be the boot's failure
-        _LOG.warning("database repair: the sweep of kept copies failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a removal that went wrong must never be the boot's failure
+        _LOG.warning("database repair: the sweep of kept copies failed (%s)", type(exc).__name__)
     return outcome
 
 
@@ -824,7 +824,10 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         _LOG.warning("database repair: not done (%s): %s", refusal.code, refusal.detail)
         raise Declined(refusal.code, refusal.detail) from refusal
     except Exception as exc:
-        report.update(outcome="failed", reason="copy-failed", failure=salvage._failure_text(exc))
+        # A salvage failure already says where and why in words of ours (a table or index name, and the class and fixed label of the driver's
+        # error, ``damage.failure_text``); any other exception is its class, and for a driver's error its fixed label.
+        failure = f"{exc.where}: {exc.reason}" if isinstance(exc, salvage.SalvageFailed) else damage.failure_text(exc)
+        report.update(outcome="failed", reason="copy-failed", failure=failure)
         # The TYPE only, never the text or a traceback: the copy runs on keyed connections, so what a driver says (and the error it
         # was raised from, which a traceback prints too) can carry a statement that holds the passphrase. The record above carries
         # the driver's first line, scrubbed; this log carries neither.
@@ -1443,8 +1446,8 @@ def sweep_kept_copies(*, now: datetime | None = None) -> list[dict[str, Any]]:
             else:
                 result.update(_remove_kept_copy(rec, when))
             out.append(result)
-    except Exception:  # noqa: BLE001
-        _LOG.warning("database repair: the sweep of kept copies stopped", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("database repair: the sweep of kept copies stopped (%s)", type(exc).__name__)
     return out
 
 
@@ -1505,8 +1508,8 @@ def _remove_kept_copy(rec: dict[str, Any], when: datetime) -> dict[str, Any]:
             wal_left = True
     try:
         os.unlink(path)
-    except OSError:
-        _LOG.warning("database repair: the kept copy %s could not be removed; it is tried again at the next start", name, exc_info=True)
+    except OSError as exc:
+        _LOG.warning("database repair: the kept copy %s could not be removed; it is tried again at the next start (%s)", name, type(exc).__name__)
         return {"outcome": "failed", "reason": "unlink"}
     if wal_out:
         with contextlib.suppress(OSError):

@@ -6529,7 +6529,9 @@ def _backlog_rows(session) -> list[tuple]:
         return []
     lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id})}
     # The two statements share no snapshot, so ``lost`` is held to what the first one says the batch can owe (``articles - certified``): a race
-    # between them can make a batch owe less than it does for one poll, never a negative number.
+    # between them can make a batch owe less than it does for one poll, never a negative number. The one race found is a stamp deleted between
+    # the reads (a stand-in is never stamped and a merged batch gets no new rows): the first statement counted that article as certified, the
+    # second counts it as unstamped, and the raw figure would take it off the owed count twice.
     return [(*r, min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3])))) for r in rows]
 
 

@@ -395,8 +395,9 @@ def write_gate_report() -> dict:
       shape the field's three-hour WAL growth had; the top row is the candidate.
 
     * ``invalidations`` -- the last connections the POOL invalidated (a failed rollback
-      on return, a disconnect), each with who held it, which route and the DRIVER's own
-      message (never the statement or its parameters), and the total since start: the
+      on return, a disconnect), each with who held it, which route, the exception's class
+      and the driver's code NAME (``SQLITE_IOERR_READ``, ``ENOSPC``; never its message, the
+      statement or its parameters), and the total since start: the
       open question behind a pool that loses connections under disk trouble.
 
     An empty ``pool`` list means nothing is checked out RIGHT NOW -- a returned
