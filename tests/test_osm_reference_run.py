@@ -1351,9 +1351,11 @@ def test_the_third_signal_removes_the_raw_logs_before_the_runner_goes(tmp_path):
     assert not logs.exists()
 
 
-def test_a_third_signal_arms_the_default_action_before_the_log_removal_can_block(tmp_path):
+@pytest.mark.parametrize("sig,expected", [(signal.SIGINT, -signal.SIGINT), (signal.SIGQUIT, 128 + signal.SIGTERM)])
+def test_a_third_signal_arms_the_way_out_before_the_log_removal_can_block(tmp_path, sig, expected):
     # A full or hung disk is exactly when the way out is needed: the removal may block, and the NEXT signal must still end
-    # the process. MUTATION TARGET: the removal moved back before the default action is armed.
+    # the process (SIGQUIT by exit status 143, never by its core-dumping default).
+    # MUTATION TARGET: the removal moved back before the default action / the SIGQUIT handler is armed.
     code = (
         "import signal, sys, time\nfrom pathlib import Path\nfrom src.osm import reference_run as R\n"
         "def _stuck(run_dir):\n    print('blocked', flush=True)\n    time.sleep(120)\n"
@@ -1369,8 +1371,9 @@ def test_a_third_signal_arms_the_default_action_before_the_log_removal_can_block
     try:
         assert proc.stdout.readline().strip() == "blocked"
         time.sleep(0.5)  # past the debounce: a separate event
-        proc.send_signal(signal.SIGINT)
-        assert proc.wait(timeout=20) == -signal.SIGINT
+        proc.send_signal(sig)
+        # 20 s: the stub sleeps 120 s, so a process still alive at 20 s can only be blocked; the slack covers a loaded runner.
+        assert proc.wait(timeout=20) == expected
     finally:
         if proc.poll() is None:
             proc.kill()

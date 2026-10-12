@@ -715,6 +715,12 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
                         with contextlib.suppress(ValueError, OSError):
                             signal.signal(sig, signal.SIG_DFL)
                 signal.signal(final, signal.SIG_DFL)
+                quit_sig = getattr(signal, "SIGQUIT", None)
+                if quit_sig is not None:
+                    # SIGQUIT's default dumps a core holding the passphrase, so it cannot be handed back: it ends the
+                    # process here, as a SIGTERM would, when a blocked removal is interrupted by it.
+                    with contextlib.suppress(ValueError, OSError):
+                        signal.signal(quit_sig, lambda _signum, _frame: os._exit(128 + int(signal.SIGTERM)))
                 if _INT.run_dir is not None:  # the raw logs hold the children's words unscrubbed: no report is coming to say so
                     with contextlib.suppress(Exception):
                         _remove_logs(_INT.run_dir)
