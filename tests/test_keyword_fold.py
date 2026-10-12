@@ -397,6 +397,40 @@ def test_what_the_fold_never_touches(tmp_path, monkeypatch):
     assert tally.get("mentions_moved", 0) == 0 and tally.get("mentions_merged", 0) == 0
 
 
+def test_the_fold_writes_the_top_without_the_shipped_stoplist_words(tmp_path, monkeypatch):
+    """The stored top is made without the stoplist's words (R111 step T3): a page of moved mentions
+    recomputes it the same way, so a hidden word is never written back into the top columns."""
+    from src.analytics.extract import global_stopwords
+
+    assert "the" in global_stopwords()
+    eng, s = _mini(tmp_path)
+    a = _art(s, "a", "en")
+    b = _art(s, "b", "en")
+    hid = _kw(s, "the")
+    studies = _kw(s, "studies")
+    study = _kw(s, "study")
+    # `a`: the hidden word leads, the folded word is visible: the top moves from studies to study
+    _mention(s, hid, a, count=5)
+    _mention(s, studies, a, count=3)
+    _mention(s, study, a, count=2)
+    # `b`: the hidden word leads and `studies` folds into `study`: the visible top keeps its count
+    # but moves to the target keyword, so its columns are rewritten to (study, 1, 1), never to `the`
+    _mention(s, hid, b, count=4)
+    _mention(s, studies, b, count=1)
+    s.execute(text("UPDATE articles SET top_keyword_id=:k, top_keyword_count=1, top_keyword_tied_n=1 "
+                   "WHERE id=:a"), {"k": studies.id, "a": b.id})
+    s.execute(text("UPDATE articles SET top_keyword_id=:k, top_keyword_count=3, top_keyword_tied_n=1 "
+                   "WHERE id=:a"), {"k": studies.id, "a": a.id})
+    s.commit()
+
+    _run_fold(tmp_path, eng, monkeypatch)
+    s.expire_all()
+    tops = {h: (k, c, n) for h, k, c, n in s.execute(text(
+        "SELECT hash, top_keyword_id, top_keyword_count, top_keyword_tied_n FROM articles"))}
+    assert tops["a"] == (study.id, 5, 1), "the hidden word must not return to the top"
+    assert tops["b"] == (study.id, 1, 1)
+
+
 def test_user_tags_follow_the_fold_and_baseline_tags_do_not(tmp_path, monkeypatch):
     eng, s = _mini(tmp_path)
     a = _art(s, "a", "en")

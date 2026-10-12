@@ -100,6 +100,7 @@ def test_get_briefing_counts_the_corpus_at_most_once(session, monkeypatch):
     monkeypatch.setattr(service, "_read_cache", lambda: {
         "version": service.CACHE_VERSION,  # a current cache: an older shape recomputes
         "generated_at": "2026-09-11T00:00:00Z", "cards": [], "article_count": 0,
+        "stoplist": service._stoplist_fingerprint(),  # made under the current list: not stale for it
     })
     monkeypatch.setattr(service, "_refresh_status", lambda: {})
 

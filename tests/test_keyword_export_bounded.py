@@ -21,9 +21,11 @@ What is pinned here, and why each line is not a restatement of the implementatio
 * what the export holds does not grow with the window (tracemalloc, not a guess);
 * the constants that turn memory into a row budget are checked against a measurement.
 
-The end-to-end contract (byte-identical json, digest and shards against the implementation this
-replaces) was checked by ``differential_keyword_export.py`` (shared under
-``keyword-export/``) on random databases; it is not repeated here because it needs the old code.
+The end-to-end contract (byte-identical json and shards, and a digest identical apart from the six
+keys it gained, against the implementation this replaces) was checked by
+``differential_keyword_export_normalised.py`` (shared under ``keyword-export/``, a copy of
+``differential_keyword_export.py`` that sets those six keys aside) on random databases; it is not
+repeated here because it needs the old code.
 """
 
 from __future__ import annotations
@@ -882,6 +884,19 @@ def test_scratch_names_cannot_collide_even_in_the_same_millisecond(tmp_path, mon
     kle.unlink_quietly(b)
 
 
+def test_closing_a_ranker_drops_the_rows_its_heaps_hold(tmp_path):
+    """The heap form keeps a copy of every row of the window until it is read out. The grouping
+    that follows is the peak of the digest, so the copy must be gone by then: the export closes the
+    ranker before it, and a closed ranker holds nothing and gives nothing back."""
+    r = kls.Ranker(0, 10**9, heap_rows=10**9, spill_dir=tmp_path, disk_check=None)
+    for kid in range(1, 40):
+        r.add("en", kid, kid, 1, None, None, "en")
+    assert len(list(r.rows("en"))) == 39 and not r.spilled
+    r.close()
+    assert list(r.rows("en")) == []
+    assert r.taken("en") == 39  # what was seen stays known: pages and totals are read after it
+
+
 def test_memory_plan_sizes_from_what_is_available_and_never_guesses_when_unread():
     floor = kls.memory_plan(None)
     assert floor["heap_rows"] == kls.MIN_HEAP_ROWS and floor["batch"] == 800
@@ -915,19 +930,28 @@ def test_row_budget_constant_matches_the_measured_row_size():
     assert abs(per_row - kls.ROW_BYTES) / kls.ROW_BYTES < 0.25, per_row
 
 
-def test_family_row_budget_constant_matches_the_measured_size():
-    """FAMILY_ROW_BYTES turns a share of available memory into how many keywords the families
-    may be grouped over. Measured here on a mixed basis (a third multi-token phrases); the
-    budget must cover the peak while grouping and must not be absurdly far above it."""
+def _grouping_peak_per_keyword(shape: str) -> float:
+    """tracemalloc's peak above the entries, per keyword, while ``build_families`` runs over 20,000
+    keywords of one shape, plus the 500 bytes the entries' own ``fam`` items hold (they are built
+    before tracing starts)."""
     from src.analytics.families import build_families
 
     rnd = random.Random(3)
-    vocab = [f"w{i}" for i in range(5000)]
+    if shape == "short":
+        vocab = [f"w{i}" for i in range(5000)]
+        phrase_share, phrase_lengths = 0.33, [2, 3]
+    else:  # Cyrillic words of four to eleven letters, three in five of the terms two to four tokens
+        letters = "абвгдежзиклмнопрстуфхцчшщыэюя"
+        vocab = ["".join(rnd.choice(letters) for _ in range(rnd.randint(4, 11))) for _ in range(20_000)]
+        phrase_share, phrase_lengths = 0.6, [2, 3, 4]
+
+    def sizes() -> int:
+        return rnd.choice(phrase_lengths) if rnd.random() < phrase_share else 1
+
     n = 20_000
     fam = []
     for i in range(n):
-        toks = [rnd.choice(vocab) for _ in range(rnd.choice([2, 3]) if rnd.random() < 0.33 else 1)]
-        norm = " ".join(toks)
+        norm = " ".join(rnd.choice(vocab) for _ in range(sizes()))
         fam.append((
             kls.order_key(i, i % 500, True),
             {"term": norm.title(), "normalized": norm, "kind": rnd.choice(["person", "org", "term"]),
@@ -936,17 +960,45 @@ def test_family_row_budget_constant_matches_the_measured_size():
     gc.collect()
     tracemalloc.start()
     try:
-        base = tracemalloc.get_traced_memory()[0] - 0
+        base = tracemalloc.get_traced_memory()[0]
         families = build_families([it for _k, it in fam], {})
         peak_extra = tracemalloc.get_traced_memory()[1] - base
         del families
     finally:
         tracemalloc.stop()
-    per_entry = peak_extra / n
-    # (what `fam` itself holds is ~0.5 KB per entry and is measured before tracing starts; the
-    # constant covers both, so compare it with grouping's own peak plus that)
-    assert per_entry + 500 <= kls.FAMILY_ROW_BYTES * 1.25, per_entry
-    assert per_entry + 500 >= kls.FAMILY_ROW_BYTES * 0.4, per_entry
+    return peak_extra / n + 500
+
+
+@pytest.mark.parametrize("shape", ["short", "cyrillic-phrases"])
+def test_family_row_budget_constant_covers_the_grouping_on_both_term_shapes(shape):
+    """FAMILY_ROW_BYTES turns a share of available memory into how many keywords the families may
+    be grouped over. tracemalloc misses the allocator's overhead, so what it reads is a LOWER bound
+    on the resident cost: the constant must sit at or above it for the short single-script terms
+    AND for phrase-heavy non-Latin ones (the shape that costs most per keyword), and not absurdly
+    far above the worst."""
+    per_keyword = _grouping_peak_per_keyword(shape)
+    assert per_keyword <= kls.FAMILY_ROW_BYTES, per_keyword
+    if shape != "short":
+        assert per_keyword >= kls.FAMILY_ROW_BYTES * 0.6, per_keyword
+
+
+#: The grouping's PEAK RESIDENT rise per keyword, measured out of process on 2026-10-06 over terms
+#: shaped like the field's: Cyrillic words of four to eleven letters, three in five of the terms two
+#: to four tokens. 2,069 / 2,134 / 2,228 bytes at 200,000 / 100,000 / 50,000 keywords (the small
+#: size carries the most of the process's own fixed growth, so it is the worst); Latin phrases of the
+#: same shape read 2,027 and single-token terms 1,483. The worst is the figure the constant must
+#: cover, and moving the constant means measuring again on purpose.
+_MEASURED_FAMILY_PEAK_BYTES = 2_228
+
+
+def test_family_row_constant_is_the_measured_worst_shape_plus_its_margin():
+    """Two-sided, and by value, as the entry constant is. The margin sits HERE because this is the
+    constant that scales with the length of a term; a constant of 2,000 (the value before this was
+    measured on phrase-heavy non-Latin terms) passed the tracemalloc test and priced the component
+    the digest gate now leans on 10 per cent short of its worst measured shape."""
+    assert kls.FAMILY_ROW_BYTES == 2_500
+    assert kls.FAMILY_ROW_BYTES >= _MEASURED_FAMILY_PEAK_BYTES * 1.10
+    assert kls.FAMILY_ROW_BYTES <= _MEASURED_FAMILY_PEAK_BYTES * 1.15
 
 
 def _digest_peak(tmp_path, monkeypatch, *, keywords: int, seed: int) -> tuple[int, int]:
@@ -1003,21 +1055,27 @@ def test_export_entry_constant_matches_the_measured_size(digest_peaks):
     constant must cover the peak per exported entry, and must not sit so far above it that the
     gate refuses machines that could run the export. This is the LOWER bound: tracemalloc misses the
     allocator's overhead, so the window is wide on purpose; the resident size at 100k-410k entries,
-    measured out of process, is what pins the value (the test below)."""
+    measured out of process, is what pins the value (the test below).
+
+    At these sizes the grouping holds the whole window (its budget is 50,000 keywords at least), so
+    the slope is the entry's own cost PLUS the grouping's: the two constants together."""
     (small_peak, small_n), (big_peak, big_n) = digest_peaks
     assert small_n > 8_000 and big_n > small_n * 1.5
     slope = (big_peak - small_peak) / (big_n - small_n)
-    assert slope <= kls.EXPORT_ENTRY_BYTES, slope
-    assert slope >= kls.EXPORT_ENTRY_BYTES * 0.5, slope
+    covered = kls.EXPORT_ENTRY_BYTES + kls.FAMILY_ROW_BYTES
+    assert slope <= covered, slope
+    assert slope >= covered * 0.5, slope
 
 
 # The RESIDENT-size measurements the two constants rest on (peak RSS of the digest in its own
-# process, synthetic databases of 82 languages x 5,000 exported keywords, 2026-09-30: +277 / +528
-# / +1,015 MiB at 100,000 / 205,000 / 410,000 entries). The fit is the slope and the intercept
-# below. tracemalloc cannot see the allocator's overhead, the SQLite page cache or the
-# interpreter, so it can only ever be a LOWER bound on these; the constants are pinned against the
-# measurement itself, and moving one means measuring again, not editing a number.
-_MEASURED_RSS_SLOPE_BYTES = 2_505
+# process, synthetic databases of 21, 41 and 82 languages x 5,000 exported keywords, 2026-10-06,
+# with the grouping held at 50,000 keywords: +145.7 / +192.0 / +272.8 MiB at 105,000 / 205,000 /
+# 410,000 entries, a slope of 413-485 bytes per entry; the intercept, 38.8 MiB, is the earlier fit
+# on the code before the digest read its keywords in batches and is still the larger figure).
+# tracemalloc cannot see the allocator's overhead, the SQLite page cache or the interpreter, so it
+# can only ever be a LOWER bound on these; the constants are pinned against the measurement itself,
+# and moving one means measuring again, not editing a number.
+_MEASURED_RSS_SLOPE_BYTES = 485
 _MEASURED_RSS_INTERCEPT_BYTES = int(38.8 * 2**20)
 
 
@@ -1025,7 +1083,7 @@ def test_export_entry_constant_is_the_measured_resident_slope_plus_its_margin():
     """Two-sided, and by value. It must cover the slope that was measured (or the gate admits a
     machine the export then kills), and it may not drift far above it (or the gate refuses machines
     that could run the export). The margin is the ten per cent the constant's comment states."""
-    assert kls.EXPORT_ENTRY_BYTES == 2750
+    assert kls.EXPORT_ENTRY_BYTES == 500
     assert kls.EXPORT_ENTRY_BYTES >= _MEASURED_RSS_SLOPE_BYTES
     assert kls.EXPORT_ENTRY_BYTES <= _MEASURED_RSS_SLOPE_BYTES * 1.15
 
@@ -1718,7 +1776,7 @@ def test_what_the_zip_holds_does_not_grow_with_the_window(tmp_path_factory, monk
     root = tmp_path_factory.mktemp("kw-flat")
     monkeypatch.setenv("OO_DATA_DIR", str(root))
     # The families are grouped over what fits a memory budget (production: a tenth of the
-    # memory available at the start, ~2 KB per keyword); both windows below are LARGER than
+    # memory available at the start, 2.5 KB per keyword: FAMILY_ROW_BYTES); both windows below are LARGER than
     # the budget used here, so what is held has reached its bound.
     monkeypatch.setattr(
         kls, "memory_plan", lambda _a: {"heap_rows": 500, "batch": 800, "family_rows": 900}
@@ -1785,3 +1843,394 @@ def test_the_scratch_archive_is_deleted_once_it_has_been_sent(dbs, data_dir):
 
     asyncio.run(_send())
     assert not path.exists() and _leftovers(data_dir) == []
+
+
+# --------------------------------------------------------------------------- the digest's memory
+
+
+def _digest_doc(db, **kw) -> dict:
+    doc = json.loads(_drain_body(_call(db, fmt="json", digest=True, per_lang=5000, max_mb=None, **kw)))
+    doc.pop("generated_at", None)
+    return doc
+
+
+def _with_plan(monkeypatch, **override):
+    """The route's memory plan with some of its numbers set, as a machine of that size would."""
+    from src.api.diagnostics import keywords as route
+
+    real = route.memory_plan
+    monkeypatch.setattr(route, "memory_plan", lambda available: {**real(available), **override})
+
+
+def test_the_digest_reads_metadata_one_batch_at_a_time_and_says_the_same_whatever_the_batch(
+    dbs, data_dir, monkeypatch
+):
+    """The digest used to fetch every survivor's metadata and signature before it built an entry,
+    so its resident size grew with the window by the metadata of every keyword (1,057 MiB at 82
+    languages x 5,000). It now asks for a batch, builds that batch's entries, feeds the digests and
+    lets the metadata go. The document is the same whatever the batch is."""
+    from src.api.diagnostics import keywords as route
+
+    # The budget the digest reports is a tenth of the memory available when it starts: hold the
+    # reading still, or two runs differ by what the machine did between them.
+    monkeypatch.setattr(route, "available_bytes_now", lambda: 8 * 2**30)
+    db = _session(dbs[1])
+    whole = _digest_doc(db)
+    survivors = whole["data"]["corpus"]["keywords_exported"]
+    assert survivors > 300, survivors  # several batches of 100, or the test says nothing
+
+    asked: list[int] = []
+    real = route.fetch_meta
+    monkeypatch.setattr(route, "fetch_meta", lambda d, ids: (asked.append(len(ids)), real(d, ids))[1])
+    _with_plan(monkeypatch, batch=100)
+    small_batches = _digest_doc(db)
+
+    assert max(asked) <= 100 and len(asked) >= survivors // 100, (max(asked), len(asked))
+    assert small_batches == whole
+    db.close()
+
+
+def test_the_digests_sample_is_the_highest_mentions_with_ties_in_window_order(dbs, data_dir):
+    """The 100 keywords the digest prints are chosen while the window is read in batches, by a
+    bounded heap. A stable sort of the whole window, highest first, is what it replaced, and the
+    window has heavy ties on mentions, so the tie order is what could differ."""
+    db = _session(dbs[1])
+    full = json.loads(_drain_body(_call(db, fmt="json", digest=False, per_lang=5000, max_mb=None)))
+    dig = _digest_doc(db)
+    window = full["data"]["keywords"]
+    assert len(window) > 300 and len({k["mentions"] for k in window[:100]}) < 100  # ties inside the top
+    expected = sorted(window, key=lambda k: k["mentions"], reverse=True)[:100]
+    assert dig["data"]["keywords"] == expected
+    assert dig["data"]["keywords_digest"]["total"] == len(window)
+    db.close()
+
+
+def test_a_machine_that_cannot_group_the_window_groups_a_prefix_and_says_so(dbs, data_dir, monkeypatch):
+    """The families' grouping is the digest's largest working set (2.5 KB per keyword it
+    groups: FAMILY_ROW_BYTES), so it is sized from the memory available when the export starts, as the archive's is.
+    Everything else the digest says covers the whole window either way, and the provenance names
+    what the grouping was given."""
+    db = _session(dbs[1])
+    whole = _digest_doc(db)["data"]
+    prov = whole["families_provenance"]
+    assert prov["basis_is_whole_window"] is True and prov["basis_per_language"] is None
+    assert prov["basis_keywords"] == whole["corpus"]["keywords_exported"]
+    assert "first " not in prov["note"]  # the note is the one it has always been
+
+    _with_plan(monkeypatch, family_rows=60)
+    cut = _digest_doc(db)["data"]
+    cprov = cut["families_provenance"]
+    assert cprov["basis_is_whole_window"] is False
+    assert 1 <= cprov["basis_per_language"] < max(whole["corpus"]["exported_per_language"].values())
+    assert 0 < cprov["basis_keywords"] <= 60 and cprov["basis_budget_keywords"] == 60
+    assert f"first {cprov['basis_per_language']} keywords of each language" in cprov["note"]
+    assert cut["families_summary"]["total_families"] < whole["families_summary"]["total_families"]
+    # what the grouping was NOT given is still read in full
+    for key in ("corpus", "keywords", "keywords_digest", "stopword_candidates", "ring_candidates",
+                "per_source_concentration"):
+        assert cut[key] == whole[key], key
+    db.close()
+
+@pytest.fixture(scope="module")
+def hidden_db(tmp_path_factory):
+    """The first fixture corpus plus, in four of its languages, three keywords the digest hides (a
+    stop-word, a number, a short word) mentioned in that language's articles only and often enough
+    to outrank everything else there: they sit at the front of that language's window, so a basis
+    cut that counted positions wrongly, or that fed hidden keywords to the grouping, would show."""
+    root = tmp_path_factory.mktemp("kw-hidden")
+    path = root / "hidden.db"
+    _build(path, 1, articles=150, keywords=900)
+    con = sqlite3.connect(path)
+    kid = con.execute("SELECT MAX(id) FROM keywords").fetchone()[0]
+    mentions = []
+    for lang in ("en", "fr", "de", "zh"):
+        in_lang = [r[0] for r in con.execute("SELECT id FROM articles WHERE language=?", (lang,))]
+        assert len(in_lang) > 10, lang
+        for term in ("the", "2026", "of"):
+            kid += 1
+            con.execute(
+                "INSERT INTO keywords(id,term,normalized_term,language,is_entity) VALUES (?,?,?,?,0)",
+                (kid, term, term, lang),
+            )
+            mentions += [(kid, aid, 3, "2026-05-01", 1) for aid in in_lang]
+    con.executemany(
+        "INSERT INTO keyword_mentions(keyword_id,article_id,count,observed_on,source_id)"
+        " VALUES (?,?,?,?,?)",
+        mentions,
+    )
+    con.commit()
+    con.close()
+    return path
+
+
+def _window_of(db) -> list[dict]:
+    """The keywords the window holds, in the order the export writes them (each language's own order)."""
+    full = json.loads(_drain_body(_call(db, fmt="json", digest=False, per_lang=5000, max_mb=None)))
+    return full["data"]["keywords"]
+
+
+def _window_language(entry: dict) -> str:
+    """The language whose window an entry sits in: the DOMINANT language of the articles that
+    mention it (ties: the code ascending), and its stored language only when nothing mentions it
+    ("?" when that is empty too), as the scan decides it."""
+    sig = entry["language_signature"]
+    if sig:
+        return min(sig, key=lambda lg: (-sig[lg], lg))
+    return entry["language"] or "?"
+
+
+def test_a_cut_hands_the_grouping_each_languages_own_first_keywords_hidden_ones_counted_in_place(
+    hidden_db, data_dir, monkeypatch
+):
+    """WHICH keywords the grouping is given when the machine cannot hold the window. The prefix is
+    each language's own (never a global mentions-ranked cut, the shape that anglicised the export);
+    a keyword the digest hides takes its place in the prefix and is counted there, and is never fed
+    to the grouping; and the note states the budget it was cut to."""
+    from src.api.diagnostics import keywords as route
+
+    db = _session(hidden_db)
+    window = _window_of(db)
+    assert sum(k["hidden"] for k in window) >= 12 and len({_window_language(k) for k in window}) >= 5
+
+    seen: dict[str, list] = {}
+    real = route.build_families
+    monkeypatch.setattr(route, "build_families", lambda items, ov: (seen.update(items=list(items)), real(items, ov))[1])
+    _with_plan(monkeypatch, family_rows=200)
+    cut = _digest_doc(db)["data"]
+    prov = cut["families_provenance"]
+    c = prov["basis_per_language"]
+    assert c is not None and 3 < c < 150, c
+
+    position: dict = {}
+    taken, expected = 0, []
+    for k in window:
+        lg = _window_language(k)
+        i = position[lg] = position.get(lg, -1) + 1
+        if i < c:
+            taken += 1  # a hidden keyword counts in the position and in the basis
+            if not k["hidden"]:
+                expected.append({f: k[f] for f in ("term", "normalized", "kind", "mentions", "articles")})
+    assert seen["items"] == expected
+    assert not any(it["normalized"] in ("the", "2026", "of") for it in seen["items"])
+    assert prov["basis_keywords"] == taken > len(expected)
+    assert prov["basis_budget_keywords"] == 200 and taken <= 200
+    assert f"({taken} keywords in all, the largest set that fits the 200-keyword budget)" in prov["note"]
+    # the next prefix up would not have fit: the cut is the LARGEST that does
+    sizes = Counter(_window_language(k) for k in window)
+    assert sum(min(c + 1, n) for n in sizes.values()) > 200
+    db.close()
+
+
+def test_when_the_families_cover_a_prefix_no_text_says_they_cover_the_window(hidden_db, data_dir, monkeypatch):
+    """A claim written for one regime must be conditional on the regime that decides it. With the
+    whole window grouped, the notes say every family is counted and nothing dropped; with a prefix
+    they must say what the summary covers, in the provenance AND in the summary itself (a reader
+    of that block alone must not need the provenance to know)."""
+    db = _session(hidden_db)
+    whole = _digest_doc(db)["data"]
+    assert "Every family is still counted in families_summary" in whole["families_provenance"]["selection_bias"]
+    assert "Nothing is DROPPED" in whole["families_provenance"]["note"]
+    assert whole["families_summary"]["basis_is_whole_window"] is True
+    assert whole["families_summary"]["basis_per_language"] is None
+    assert whole["families_summary"]["method"].startswith("Computed over ALL families before")
+    assert whole["families_summary"]["total_families"] == whole["families_provenance"]["total"]
+
+    _with_plan(monkeypatch, family_rows=200)
+    cut = _digest_doc(db)["data"]
+    prov, summ = cut["families_provenance"], cut["families_summary"]
+    c = prov["basis_per_language"]
+    first = f"first {c} keywords of each language's window"
+    assert first in prov["selection_bias"] and first in summ["method"]
+    for text in (prov["selection_bias"], prov["note"], summ["method"]):
+        assert "Every family is still counted" not in text and "Nothing is DROPPED" not in text, text
+        assert not text.startswith("Computed over ALL families before"), text
+    assert "in no family" in prov["selection_bias"] and "in no family" in summ["method"]
+    assert "among the families the grouping was given" in summ["conflated"]["method"]
+    assert summ["basis_is_whole_window"] is False and summ["basis_per_language"] == c
+    assert summ["total_families"] == prov["total"] < whole["families_summary"]["total_families"]
+    # the budget the note states is the one in force, as a number a reader can check
+    assert f"{prov['basis_budget_keywords']}-keyword budget" in prov["note"]
+    assert "or 50000 keywords when that is more" in prov["note"]
+    db.close()
+
+
+def test_the_whole_window_families_and_summary_are_what_the_entries_give(hidden_db, data_dir, monkeypatch):
+    """The digest's families, with the whole window grouped, are ``build_families`` over exactly
+    the non-hidden entries of the window, and its summary is the summary over those families, with
+    the two flags the summary now carries: a reference built here from the plain JSON export, not
+    the digest compared with itself under another batch size."""
+    from src.analytics.families import build_families
+    from src.api.diagnostics.keywords import _families_summary, _keyword_zip_families_cap
+
+    db = _session(hidden_db)
+    window = _window_of(db)
+    items = [{f: k[f] for f in ("term", "normalized", "kind", "mentions", "articles")}
+             for k in window if not k["hidden"]]
+    fams = build_families(items, {})
+    cap = _keyword_zip_families_cap()
+    assert len(fams) > 300 and (not cap or len(fams) <= cap)  # none is cut from the printed list
+    dig = _digest_doc(db)["data"]
+    assert dig["families"] == [f.to_dict() for f in fams]
+    flags = {k: dig["families_summary"].pop(k) for k in ("basis_is_whole_window", "basis_per_language")}
+    assert flags == {"basis_is_whole_window": True, "basis_per_language": None}
+    assert dig["families_summary"] == json.loads(json.dumps(_families_summary(f.to_dict() for f in fams)))
+    db.close()
+
+
+class _InstanceCounts:
+    """A session that answers the estimate's three counting statements with a chosen instance's
+    numbers: bundle 091717's (1.83 M articles, 14.65 M keywords, 82 languages) cannot be built in
+    a test, and the arithmetic over its counts is what the gate decides from."""
+
+    def __init__(self, *, articles=1_830_000, max_kid=14_650_000, languages=81):
+        self._answers = {  # most specific first: the language count also reads FROM articles
+            "DISTINCT language": languages,
+            "FROM keywords": max_kid,
+            "FROM articles": (articles, 1, articles),
+        }
+
+    def execute(self, stmt):
+        sql = str(stmt)
+        for needle, value in self._answers.items():
+            if needle in sql:
+                return types.SimpleNamespace(one=lambda v=value: v, scalar=lambda v=value: v)
+        raise AssertionError(sql)
+
+
+def test_the_digests_need_follows_the_memory_it_may_group_over_and_stops_there():
+    mib = 2**20
+    need = {
+        free: kls.estimate_export_need(_InstanceCounts(), per_language=5000, available_bytes=free * mib)
+        for free in (425, 1_500, 4_000, 15_000, 64_000)
+    }
+    # 82 languages x 5,000 = 410,000 entries, grouped over a tenth of what is free at 2.5 KB each
+    assert need[1_500]["exportable_keywords"] == 410_000
+    assert need[1_500]["grouped_keywords"] == int(1_500 * mib * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES)
+    # the floor: a machine with almost nothing free still groups what the default window needs
+    assert need[425]["grouped_keywords"] == kls.MIN_FAMILY_ROWS
+    # ...which is where a tenth of what is free stops being the larger figure (1.25 GB at 2.5 KB)
+    assert 1_170 * mib * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES < kls.MIN_FAMILY_ROWS
+    assert 1_500 * mib * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES > kls.MIN_FAMILY_ROWS
+    # it grows with the machine's free memory until the window is grouped whole, then stops
+    values = [need[f]["need_mb"] for f in sorted(need)]
+    assert values == sorted(values)
+    assert values[0] < values[1] < values[2] < values[3]  # strictly, while the grouping grows
+    # ...and each extra grouped keyword is priced at the family row's bytes, no more and no less
+    grown = need[4_000]["grouped_keywords"] - need[1_500]["grouped_keywords"]
+    assert need[4_000]["need_mb"] - need[1_500]["need_mb"] == pytest.approx(
+        grown * kls.FAMILY_ROW_BYTES / mib, rel=1e-6
+    )
+    assert need[15_000]["grouped_keywords"] == need[64_000]["grouped_keywords"] == 410_000
+    assert need[15_000]["need_mb"] == need[64_000]["need_mb"]
+    # an unmeasured machine gets the floor, as the route's own plan does
+    assert (
+        kls.estimate_export_need(_InstanceCounts(), per_language=5000, available_bytes=None)[
+            "grouped_keywords"
+        ]
+        == kls.MIN_FAMILY_ROWS
+    )
+
+
+@pytest.mark.parametrize(
+    "free_mib, total_mib, runs",
+    [
+        (1_170, 5_921, True),   # OOS-12 on 2026-10-05: 1,170 free of 5,921; the gate said 1,062 + 256 > 1,170
+        (1_075, 4_033, True),   # hP on 2026-10-06
+        (2_280, 6_773, True),   # bundle 091717's lower reading (6,773 MiB of RAM in all)
+        (425, 5_921, False),    # OOS-11: the machine really had nothing left
+    ],
+)
+def test_the_gate_admits_the_machines_that_can_run_the_digest_and_declines_the_ones_that_cannot(
+    monkeypatch, free_mib, total_mib, runs
+):
+    """Three machines whose 2026-10-05/06 bundles say 'declined-ram' (two of the four that did: OOS-12
+    and hP; OOS-10's reading is not in the repository) with bundle 091717's own reading, and the
+    one where the decline was right (OOS-11). The numbers are theirs; the instance's counts are
+    091717's, the largest seen."""
+    import src.database.maintenance as mt
+    from src.api.diagnostics import bundle
+
+    monkeypatch.setattr(mt, "_available_mb", lambda: float(free_mib))
+    monkeypatch.setattr(mt, "_read_memory_floor_mb", lambda: 256.0)
+    reading: dict = {}
+    why = bundle.ram_declined_reason(
+        "keyword-log-digest.json", total_mb=float(total_mib), db=_InstanceCounts(),
+        available_mb=float(free_mib), reading=reading,
+    )
+    assert (why is None) is runs, (why, reading)
+    assert reading["need_basis"] == "estimated"
+    assert reading["need_counts"]["grouped_keywords"] == int(
+        max(kls.MIN_FAMILY_ROWS, free_mib * 2**20 * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES)
+    )
+
+
+def test_the_gate_prices_the_need_and_decides_on_one_reading_of_the_memory_available(monkeypatch):
+    """The need depends on the memory available (the grouping is sized from it), and the decision
+    compares the need with the memory available: two reads of a quantity that moves can price one
+    figure and judge another. The gate reads once and hands the reading to the estimator, whether
+    it read it itself (a slow count between two reads once gave two answers through the
+    quarter-second cache) or was given one."""
+    import src.database.maintenance as mt
+    from src.api.diagnostics import bundle
+
+    readings = iter([3_000.0, 400.0, 400.0, 400.0])
+    calls: list[float] = []
+    monkeypatch.setattr(mt, "_available_mb", lambda: (calls.append(1.0), next(readings))[1])
+    monkeypatch.setattr(mt, "_read_memory_floor_mb", lambda: 256.0)
+    reading: dict = {}
+    why = bundle.ram_declined_reason(
+        "keyword-log-digest.json", total_mb=16_000.0, db=_InstanceCounts(), reading=reading
+    )
+    assert len(calls) == 1, calls
+    assert why is None and reading["available_mb"] == 3_000.0
+    assert reading["need_counts"]["grouped_keywords"] == int(3_000 * 2**20 * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES)
+
+    # a caller's own reading is the one both halves use, and the machine is not asked at all
+    monkeypatch.setattr(mt, "_available_mb", lambda: pytest.fail("the gate read the machine again"))
+    reading = {}
+    bundle.ram_declined_reason(
+        "keyword-log-digest.json", total_mb=16_000.0, db=_InstanceCounts(), available_mb=1_500.0,
+        reading=reading,
+    )
+    assert reading["available_mb"] == 1_500.0
+    assert reading["need_counts"]["grouped_keywords"] == int(1_500 * 2**20 * kls.FAMILY_SHARE / kls.FAMILY_ROW_BYTES)
+
+
+def test_the_summary_over_light_facts_says_what_the_summary_over_whole_families_says():
+    """``_family_facts`` replaced ``Family.to_dict`` as the summary's input, so that a summary over
+    400,000 families holds seven fields each and not every variant of every family. The summary
+    must not notice: the same numbers, over families in no particular order (the quantiles read a
+    sorted list, and a summary that forgot to sort would report the order it was handed)."""
+    from src.analytics.families import Family
+    from src.api.diagnostics.keywords import _families_summary, _family_facts
+
+    def fam(name, mentions, variants, *, conflated=(), manual=False):
+        return Family(
+            canonical=name.title(), normalized=name, kind="concept", mentions=mentions,
+            articles=3, manual=manual, conflated_by=list(conflated),
+            members=[{"term": f"{name}{i}", "normalized": f"{name}{i}", "mentions": 1} for i in range(variants)],
+        )
+
+    families = [
+        fam("delta", 40, 5), fam("alpha", 7, 1, conflated=["lemma"]), fam("echo", 90, 3, manual=True),
+        fam("bravo", 12, 2), fam("golf", 3, 7, conflated=["lemma"]), fam("charlie", 55, 1), fam("foxtrot", 21, 4),
+    ]
+    light = _families_summary(_family_facts(f) for f in families)
+    whole = _families_summary(f.to_dict() for f in families)
+    assert light == whole
+    # the figures themselves, so that two summaries wrong in the same way do not agree
+    assert light["total_families"] == 7
+    assert light["manual_overrides"] == 1
+    assert (light["variants"]["min"], light["variants"]["median"], light["variants"]["max"]) == (1, 3, 7)
+    assert light["variants"]["sum"] == 23
+    assert light["single_member_families"] == 2
+    assert (light["mentions"]["min"], light["mentions"]["median"], light["mentions"]["max"]) == (3, 21, 90)
+    # a conflated family keeps its variant count and its provenance, rarest first
+    assert [(c["normalized"], c["mentions"], c["variants"], c["conflated_by"]) for c in light["conflated"]["families"]] == [
+        ("golf", 3, 7, ["lemma"]),
+        ("alpha", 7, 1, ["lemma"]),
+    ]
+    assert _family_facts(families[1]) == {
+        "term": "Alpha", "normalized": "alpha", "kind": "concept", "mentions": 7,
+        "variants": 1, "manual": False, "conflated_by": ["lemma"],
+    }

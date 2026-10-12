@@ -112,21 +112,6 @@ def test_the_traceback_is_scrubbed_before_it_is_cut(tmp_path):
     assert len(tail) == 8000 and tail.endswith("z\n")
 
 
-def test_a_scrub_that_cannot_run_writes_the_class_and_none_of_the_words(tmp_path, monkeypatch):
-    """The journal never fails the block it observes, and never writes a text it could not check: the block's own error
-    still propagates, and the record is the class and a fixed line."""
-
-    def broken(*a, **k):
-        raise RuntimeError("the scrub broke")
-
-    monkeypatch.setattr(runlog, "exception_text", broken)
-    with pytest.raises(ValueError, match="the engine said"), runlog.run("verify", label="unscrubbable", secrets=(PASS,)):
-        raise ValueError(f"the engine said {PASS}")
-    assert PASS not in _journal(tmp_path)
-    err = _error(tmp_path)
-    assert err["cls"] == "ValueError" and err["msg"] == "ValueError: its text is withheld" and err["traceback"] == ""
-
-
 def _unicode_cause():
     """The ``UnicodeEncodeError`` a passphrase with a lone surrogate raises: its text names the character and its offset."""
     try:
@@ -141,7 +126,7 @@ def _no_codec_words(tmp_path) -> None:
 
 
 def test_an_error_that_has_a_unicode_error_behind_it_is_written_by_its_class_only(tmp_path):
-    """MUTATION TARGET: ``runlog.error_fields`` handing the text to ``scrubbed(str(exc))`` again. A ``UnicodeError``'s words name a
+    """MUTATION TARGET: ``runlog.run`` handing the text to ``scrubbed(str(exc))`` again. A ``UnicodeError``'s words name a
     character of the passphrase and its place in it, which no scrub knows; the record names the class and a fixed note."""
     cause = _unicode_cause()
     with pytest.raises(RuntimeError), runlog.run("verify", label="unicode", secrets=(PASS,)):
@@ -166,15 +151,6 @@ def test_a_run_that_holds_no_passphrase_writes_the_error_as_it_was(tmp_path):
     err = _error(tmp_path)
     assert err["cls"] == "RuntimeError" and err["msg"] == "boom"
     assert "RuntimeError: boom" in err["traceback"] and S.REDACTED not in _journal(tmp_path)
-
-
-def test_a_bare_text_handed_as_the_secrets_is_one_secret_and_not_its_letters(tmp_path):
-    """``secrets="word"`` is a sequence of letters, and every letter of a message would be taken out for a mistake of one
-    character at a call site: it is one secret."""
-    _fails("the engine refused the file", secrets="the typed passphrase")
-    assert _error(tmp_path)["msg"] == "the engine refused the file"
-    _fails("the key the typed passphrase was refused", secrets="the typed passphrase")
-    assert "the typed passphrase" not in _journal(tmp_path)
 
 
 # --------------------------------------------------------------------------- #

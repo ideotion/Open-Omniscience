@@ -360,6 +360,61 @@ def test_a_missing_table_counts_as_nothing_but_any_other_failure_refuses(tmp_pat
         merge_mod._incoming_group_rows(_open_plain(), viewed)
 
 
+def test_a_detach_that_fails_masks_neither_the_counts_nor_the_refusal(tmp_path) -> None:
+    """The DETACH guard is a ``suppress``: a DETACH that raises after a good attach must change
+    nothing -- the counts still come back when the COUNT worked, and when the COUNT failed the
+    refusal names the COUNT's exception class, not the DETACH's."""
+    import sqlite3
+
+    staged = tmp_path / "d" / "staged.db"
+    _staged_with_keywords(staged, 2)
+
+    def conn_failing(*, count: bool, detach: bool):  # noqa: ANN202
+        class Boom(sqlite3.Connection):
+            def execute(self, sql, *a, **kw):  # noqa: ANN001, ANN002, ANN003, ANN202
+                if detach and sql.startswith("DETACH"):
+                    raise sqlite3.ProgrammingError("detach refused")
+                if count and "COUNT(*)" in sql:
+                    raise sqlite3.DatabaseError("count refused")
+                return super().execute(sql, *a, **kw)
+
+        con = sqlite3.connect(":memory:", factory=Boom)
+        con.isolation_level = None
+        return con
+
+    got = merge_mod._incoming_group_rows(conn_failing(count=False, detach=True), staged)
+    assert got["keywords"] == 2, "a failing DETACH must not turn good counts into a refusal"
+    with pytest.raises(MergeError, match=r"\(DatabaseError\)") as err:
+        merge_mod._incoming_group_rows(conn_failing(count=True, detach=True), staged)
+    assert "ProgrammingError" not in str(err.value), "the refusal names the COUNT's class"
+
+
+def test_merge_corpus_refuses_an_absent_staged_file_before_it_writes(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    before = encrypted_working_copy.read_bytes()
+    opened: list = []
+    real_connect = connect_mod.connect
+
+    def recording(*a, **kw):  # noqa: ANN002, ANN003, ANN202
+        con = real_connect(*a, **kw)
+        opened.append(con)
+        return con
+
+    monkeypatch.setattr(connect_mod, "connect", recording)
+    absent = tmp_path / "absent.db"
+    with pytest.raises(MergeError, match="Could not read the incoming file's row counts") as err:
+        merge_corpus(absent, encrypted_working_copy, _META)
+    assert "FileNotFoundError" in str(err.value)
+    assert "Nothing was written to your corpus." in str(err.value)
+    assert not absent.exists(), "the refusal must not create the file it could not read"
+    assert encrypted_working_copy.read_bytes() == before, "a refused merge changed nothing"
+    assert opened, "the merge opened no connection"
+    for con in opened:
+        with pytest.raises(Exception):  # noqa: B017 - any driver's "closed" error
+            con.execute("SELECT 1")
+
+
 def test_a_count_that_fails_leaves_nothing_behind_and_quotes_nothing(tmp_path) -> None:
     """The passphrase rule, pinned: engine text can quote a path and, on a damaged encrypted page,
     more than that, so the refusal must carry only the exception class -- not in its message, its
@@ -446,6 +501,103 @@ def test_an_encrypted_merge_on_a_short_machine_is_refused_before_it_writes(
     for con in opened:
         with pytest.raises(Exception):  # noqa: B017 - any driver's "closed" error
             con.execute("SELECT 1")
+
+
+# --------------------------------------------------------------------------- #
+#  the same refusal, asked before anything is staged
+# --------------------------------------------------------------------------- #
+def _live_is(monkeypatch, path) -> None:
+    import src.backup.sqlite_backup as sqlite_backup
+
+    monkeypatch.setattr(sqlite_backup, "live_db_path", lambda: path)
+
+
+def _short_machine(monkeypatch, mb: float = 10.0) -> None:
+    import src.database.maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_available_mb_now", lambda: mb)
+
+
+def test_the_pre_staging_check_refuses_an_encrypted_corpus_on_a_short_machine(
+    encrypted_working_copy, monkeypatch
+) -> None:
+    _live_is(monkeypatch, encrypted_working_copy)
+    _short_machine(monkeypatch)
+    with pytest.raises(MergeError, match="Not enough free memory to merge into an encrypted corpus"):
+        merge_mod.check_memory_before_staging()
+    _short_machine(monkeypatch, 1_000_000.0)
+    merge_mod.check_memory_before_staging()  # enough memory: no refusal
+
+
+def test_the_pre_staging_check_never_refuses_a_plain_missing_or_unreadable_corpus(
+    tmp_path, monkeypatch
+) -> None:
+    import src.backup.sqlite_backup as sqlite_backup
+
+    _short_machine(monkeypatch)
+    plain = tmp_path / "plain.db"
+    _plain_corpus(plain, articles=1)
+    _live_is(monkeypatch, plain)
+    merge_mod.check_memory_before_staging()  # a plain store is never gated
+    _live_is(monkeypatch, tmp_path / "missing.db")
+    merge_mod.check_memory_before_staging()  # no file, no verdict
+
+    def unreadable():  # noqa: ANN202
+        raise RuntimeError("no live database here")
+
+    monkeypatch.setattr(sqlite_backup, "live_db_path", unreadable)
+    merge_mod.check_memory_before_staging()  # unknown is not a shortage
+
+
+def test_the_legacy_restore_refuses_before_it_reads_or_stages_a_byte(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    from fastapi import HTTPException
+
+    import src.api.backup_v2 as backup_v2
+
+    _live_is(monkeypatch, encrypted_working_copy)
+    _short_machine(monkeypatch)
+
+    def staged_something(*a, **kw):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("a byte was staged before the memory check")
+
+    monkeypatch.setattr(backup_v2, "_stage_upload", staged_something)
+    archive = tmp_path / "x.oobak"
+    archive.write_bytes(b"not read")
+    with pytest.raises(HTTPException) as err:
+        backup_v2.restore_legacy_path(str(archive), None)
+    assert err.value.status_code == 400
+    assert "Not enough free memory to merge into an encrypted corpus" in err.value.detail
+
+
+def test_the_volume_restore_refuses_before_it_reassembles_or_pauses_anything(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    import time
+
+    import src.backup.artifact as artifact_mod
+    import src.scheduler.runner as sched_mod
+    from src.backup.volume_job import VolumeBackupManager
+
+    _live_is(monkeypatch, encrypted_working_copy)
+    _short_machine(monkeypatch)
+
+    def touched(*a, **kw):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("work started before the memory check")
+
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", touched)
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", touched)
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    t0 = time.time()
+    while mgr.status()["running"] and time.time() - t0 < 10:
+        time.sleep(0.01)
+    status = mgr.status()
+    assert status["state"] == "error"
+    assert "Not enough free memory to merge into an encrypted corpus" in status["error"]
 
 
 def test_a_plain_merge_runs_whatever_memory_is_reported(tmp_path, monkeypatch) -> None:

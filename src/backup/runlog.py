@@ -103,13 +103,11 @@ import os
 import threading
 import time
 from collections import deque
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-from src.monitoring.secret_scrub import exception_text, traceback_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -836,6 +834,14 @@ def end(outcome: str, **fields: Any) -> dict | None:
         return None
 
 
+#: What a run's failure record keeps. 2000 characters of the message: the longest message this code
+#: raises on purpose (a merge refusal with its numbers) is under 600, so this holds one in full and
+#: still bounds an engine message that quotes a statement. 8000 characters of the traceback: its LAST
+#: frames, which are the ones that say where it failed. Both cuts are made AFTER the scrub.
+FAILURE_MSG_KEEP = 2000
+FAILURE_TRACEBACK_KEEP = 8000
+
+
 def milestone(ev: str, *, durable: bool = True, **fields: Any) -> None:
     """Record a milestone on the ambient run. A no-op when there is none."""
     rl = _CURRENT
@@ -862,28 +868,14 @@ def statement(label: str | None) -> None:
         rl.statement(label)
 
 
-def error_fields(exc: BaseException, secrets: Sequence[str | None] = ()) -> dict[str, Any]:
-    """What the ``error`` milestone of a run that raised records of ``exc``: its class, the first 2,000 characters of its
-    message and the last 8,000 of its traceback. The journal is a file the debug bundle carries, and an engine's error can
-    quote the statement that held a key, so the text is scrubbed of every passphrase the process holds
-    (``secret_scrub.held_passphrases``) and of every one the caller names (``run(secrets=...)``) BEFORE it is cut: a text cut
-    first can split a passphrase and keep half of it. When the scrub cannot run, the class is written and none of the
-    exception's words. ``milestone("error", **error_fields(exc))`` is how a worker that catches its own exception writes it."""
-    cls = type(exc).__name__
-    named = (secrets,) if isinstance(secrets, str) else tuple(secrets)
-    try:
-        return {
-            "cls": cls,
-            "msg": exception_text(exc, *named, typed=False, limit=2000, withheld=f"{cls}: its text is withheld"),
-            "traceback": traceback_text(exc, *named)[-8000:],
-        }
-    except Exception:  # noqa: BLE001 - ``str(exc)`` itself raised: the class says what failed
-        return {"cls": cls, "msg": f"{cls}: its text is withheld", "traceback": ""}
-
-
 @contextmanager
 def run(
-    kind: str, *, label: str = "", dest: str | None = None, secrets: Sequence[str | None] = (), **header: Any
+    kind: str,
+    *,
+    label: str = "",
+    dest: str | None = None,
+    secrets: tuple[str | None, ...] = (),
+    **header: Any,
 ) -> Iterator[Any]:
     """Open a run for the duration of a block, closing it however the block ends.
 
@@ -897,16 +889,24 @@ def run(
     :func:`end` itself; the exits here are no-ops once a run has been closed, so
     an explicit outcome always wins over the generic one.
 
-    ``secrets`` are the passphrases the CALLER holds that the process does not (a backup's, typed into a request): the
-    journal writes the error that ended the block, and takes them out of it together with the ones the process holds
-    (:func:`error_fields`). A caller that holds one hands every one it holds
-    (``tests/test_p0_validation.py`` reads the call).
+    ``secrets`` are passphrases the block holds besides the process's own; they are taken out of a
+    failure's text before it is journalled, and are never written to the header.
     """
     rl = begin(kind, label=label, dest=dest, **header)
     try:
         yield rl
     except BaseException as exc:
-        milestone("error", **error_fields(exc, secrets))
+        from src.monitoring.secret_scrub import exception_text, traceback_text
+
+        # Written through the one scrub (``secret_scrub``): the secrets the block holds and the process's own are taken out
+        # BEFORE the cut, a ``UnicodeError`` anywhere in the chain is recorded by class only, and a text that cannot be
+        # checked is withheld.
+        milestone(
+            "error",
+            cls=type(exc).__name__,
+            msg=exception_text(exc, *secrets, typed=False, limit=FAILURE_MSG_KEEP),
+            traceback=traceback_text(exc, *secrets)[-FAILURE_TRACEBACK_KEEP:],
+        )
         end("error", cls=type(exc).__name__)
         raise
     else:

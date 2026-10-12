@@ -221,10 +221,15 @@ def test_every_reader_gives_the_answer_it_gave_when_it_read_everything(db, monke
         return wanted
 
     monkeypatch.setattr(concentration, "_flood_pairs_to_test", spy)
+    started_on = date.today()
     shipped = _answers(db)
     db.rollback()
     _unfiltered(monkeypatch)
     everything = _answers(db)
+    if date.today() != started_on:
+        # The readers call ``date.today()`` themselves: two reads that straddle midnight see windows a day
+        # apart (``series_window`` start and end differ), so their answers cannot be compared.
+        pytest.skip("the two reads straddled midnight")
     assert shipped == everything
     sizes = _sizes(shipped)
     # A comparison of two empty answers proves nothing: each reader must have found
