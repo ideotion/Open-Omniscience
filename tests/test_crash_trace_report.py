@@ -367,6 +367,79 @@ def test_a_unicode_error_that_ends_the_server_is_written_as_fixed_words(dd):
     assert "xe9" not in written and "position" not in written, "a character and its offset are a piece of a key"
 
 
+def _written_then_read(dd, exc: BaseException) -> dict:
+    """The report ``previous_trace`` makes from a log THIS code wrote: a session's header, then ``note_fatal_exception``'s block."""
+    _log(dd, "\n" + _header(900, "2026-09-30T01:00:00+00:00") + "\n")
+    ee.note_fatal_exception(exc)
+    report = ee.previous_trace(900, None, "2026-09-30T01:00:00Z")
+    assert report is not None and not report.get("withheld"), report
+    return report
+
+
+def test_the_report_of_a_unicode_error_that_ended_the_server_keeps_the_line_that_says_what_happened(dd, monkeypatch):
+    """The block ``note_fatal_exception`` writes for a ``UnicodeError`` begins with its class and fixed words, not with
+    "Traceback (most recent call last):": a reader that took it for a torn start dropped that line, the one thing the block says,
+    even with no passphrase held (the fail-safe is for an OLDER writer's log)."""
+    from src.monitoring.secret_scrub import UNICODE_WITHHELD
+
+    monkeypatch.setattr("src.database.connect._passphrase", None)
+    try:
+        raise UnicodeEncodeError("ascii", "caf\u00e9", 3, 4, "ordinal not in range(128)")
+    except UnicodeError as exc:
+        report = _written_then_read(dd, exc)
+    text = "\n".join(report["lines"])
+    assert f"UnicodeEncodeError: {UNICODE_WITHHELD}"[:150] in text, text
+    assert "test_the_report_of_a_unicode_error" in text, "the frames follow the note"
+    assert "xe9" not in text and "position" not in text
+
+
+def test_the_report_of_a_text_withheld_for_the_passphrase_keeps_its_one_line(dd, monkeypatch):
+    from src.monitoring import secret_scrub
+    from src.monitoring.diagnostics_runs import WITHHELD
+
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "pa55-phrase")
+    monkeypatch.setattr(secret_scrub, "_redacted", lambda text, forms: text)  # the scrub removes nothing: the writer withholds
+    try:
+        raise RuntimeError("context pa55-phrase")
+    except RuntimeError as exc:
+        ee.note_fatal_exception(exc)
+        written = (dd / "diagnostics" / "crash_trace.log").read_text(encoding="utf-8")
+    assert f"RuntimeError: {WITHHELD}" in written
+    _log(dd, "\n" + _header(900, "2026-09-30T01:00:00+00:00") + "\n" + written)
+    report = ee.previous_trace(900, None, "2026-09-30T01:00:00Z")
+    assert report is not None and not report.get("withheld")
+    assert any(line.startswith("RuntimeError: <text withheld") for line in report["lines"]), report["lines"]
+    assert "pa55-phrase" not in json.dumps(report)
+
+
+def test_only_the_fixed_first_lines_the_writer_makes_count_as_whole_not_any_line_that_looks_like_one(dd, monkeypatch):
+    from src.database import connect
+    from src.monitoring import diagnostics_runs as dr
+    from src.monitoring import secret_scrub
+    from src.monitoring.secret_scrub import UNICODE_WITHHELD
+
+    monkeypatch.setattr(connect, "_passphrase", SECRET)
+    body = "  File \"a.py\", line 1, in f\n"
+    # kept as they are: the traceback's own first line and the three fixed lines (with CR LF ends too)
+    for first in (
+        "Traceback (most recent call last):",
+        f"UnicodeDecodeError: {UNICODE_WITHHELD}",
+        f"RuntimeError: {dr.WITHHELD}",
+        "RuntimeError: its text is withheld",
+        f"KeyError: {dr.WITHHELD}\r",
+    ):
+        assert dr.without_a_torn_start(first + "\n" + body) == first + "\n" + body, first
+    assert secret_scrub._class_only(RuntimeError()).endswith(dr._CLASS_ONLY_WORDS), "the words the scrub writes are the ones kept"
+    # dropped, as a torn first line: a name with words after the fixed ones, words that are not the fixed ones, and a half line
+    for first in (
+        "RuntimeError: its text is withheld by someone",
+        "RuntimeError: something else",
+        "odd words: " + dr.WITHHELD,
+        "tail of a line cut in the middle",
+    ):
+        assert dr.without_a_torn_start(first + "\n" + body) == body, first
+
+
 def test_the_previous_sessions_report_names_its_trace_by_its_start(dd):
     """The report on the previous session passes the sentinel's start to the trace lookup: two sessions
     of one pid must not both read the newest header's stack."""

@@ -790,7 +790,7 @@ def ram_declined_reason(
                 need = float(got)
             estimated = True
         except Exception as exc:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
-            estimate_error = f"{type(exc).__name__}: {_all_diag_err_str(exc)[:160]}"
+            estimate_error = _all_diag_err_str(exc, typed=True)[:160]
             # The scrubbed text, not the traceback: an engine's words can carry the statement it
             # failed on, and the log's tail rides the same zip.
             _LOG.debug("need estimate for %s failed; using the measured constant (%s)", name, estimate_error)
@@ -1476,7 +1476,7 @@ def _run_nondb_member_bounded(fn, budget_s: float):
 _ERR_STR_CHARS = 300
 
 
-def _all_diag_err_str(exc: BaseException) -> str:
+def _all_diag_err_str(exc: BaseException, *, typed: bool = False) -> str:
     """Render a member's exception for the envelope/error-file -- even a broken ``__str__``
     must still yield a marker (S8 lesson: a failed member must never be silently lost).
 
@@ -1485,8 +1485,10 @@ def _all_diag_err_str(exc: BaseException) -> str:
     afterwards (a cut that fell inside the passphrase would leave the part it kept, which a scrub of the cut
     text cannot see); an exception with a ``UnicodeError`` anywhere in its chain is the class and fixed words
     (its message names a character and its offset); a text that cannot be checked, or whose ``__str__`` raises,
-    is the class and none of its words. The callers name the class themselves (``typed=False``)."""
-    return _exception_text(exc, typed=False, limit=_ERR_STR_CHARS)
+    is the class and none of its words. A caller that does not name the class itself passes ``typed=True`` (``Name: text``): a
+    ``UnicodeError``'s fixed words and a ``__str__`` that raises already carry their class in either form, so prefixing the
+    class again in the caller would write it twice."""
+    return _exception_text(exc, typed=typed, limit=_ERR_STR_CHARS)
 
 
 # RATCHET (2026-07-17) + RUNTIME COVERAGE (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the
@@ -1714,7 +1716,7 @@ def _chronology_member() -> dict:
         # The member is held to its own bound (the route, ``/chronology``, returns the whole ledger).
         return bounded_for_member(chronology(anchor="run"))
     except Exception as exc:  # noqa: BLE001 - a member that fails says so, never blanks
-        return {"available": False, "error": f"{type(exc).__name__}: {_all_diag_err_str(exc)}"[:_ERR_STR_CHARS]}
+        return {"available": False, "error": _all_diag_err_str(exc, typed=True)}
 
 
 def _release_run_last() -> dict:
@@ -2407,7 +2409,7 @@ def _write_all_diagnostics_zip(
         try:
             previous_text, previous_block = _fold_previous_run_journals(previous_runs)
         except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
-            fold_error = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            fold_error = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
             # The scrubbed text, not the traceback: the log's tail rides the same zip, and an
             # engine's words can carry the statement it failed on.
             _LOG.warning("could not fold the previous runs' journals (%s)", fold_error)
@@ -2610,7 +2612,7 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
         try:
             st = path.stat()
         except OSError as exc:
-            why = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            why = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
             not_carried.append({"journal": name, "reason": f"could not stat it: {why}"})
             continue
         if len(carried) >= _PREVIOUS_JOURNAL_MAX_RUNS:
@@ -2631,7 +2633,7 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
                     entry["truncated"] = True
                 raw = fp.read(_PREVIOUS_JOURNAL_MAX_BYTES)
         except OSError as exc:
-            entry["read_error"] = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            entry["read_error"] = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
             carried.append(entry)
             continue
         if entry["truncated"]:
@@ -2807,7 +2809,7 @@ def _all_diagnostics_build(ctx, profile: str, fname: str) -> dict:
     try:
         previous_runs = _read_previous_run_journals(out_dir, journal_path)
     except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
-        read_error = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+        read_error = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
         # The scrubbed text, not the traceback (see the fold below).
         _LOG.warning("could not read the previous runs' journals (%s)", read_error)
         previous_runs = {"carried": [], "not_carried": [], "error": read_error}

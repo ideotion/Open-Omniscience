@@ -398,10 +398,11 @@ def arm_crash_trace() -> dict[str, Any]:
         _TRACE_HANDLE = fh
         return {"armed": True, "path": str(path)}
     except Exception as exc:  # noqa: BLE001 - a crash recorder never blocks a boot
-        _LOG.debug("could not arm the crash trace", exc_info=True)
-        from src.monitoring.diagnostics_runs import exc_line, tidy_error
+        from src.monitoring.diagnostics_runs import tidy_error
 
-        return {"armed": False, "reason": tidy_error(exc_line(exc), _ARM_REASON_CHARS)}
+        reason = tidy_error(exc, _ARM_REASON_CHARS)
+        _LOG.debug("could not arm the crash trace: %s", reason)
+        return {"armed": False, "reason": reason}
 
 
 def note_fatal_exception(exc: BaseException) -> None:
@@ -424,8 +425,12 @@ def note_fatal_exception(exc: BaseException) -> None:
         text = clean[-_FATAL_TEXT_CHARS:] if clean is not None else f"{type(exc).__name__}: {WITHHELD}"
         with open(crash_trace_path(), "a", encoding="utf-8") as fh:
             fh.write(f"Uncaught exception ended the server at {_now()}:\n{text}\n")
-    except Exception:  # noqa: BLE001 - never mask the exception being reported
-        _LOG.debug("could not record the fatal exception", exc_info=True)
+    except Exception as err:  # noqa: BLE001 - never mask the exception being reported
+        # The reason, not the traceback: this runs inside the handler of the fatal exception, so a logged traceback would
+        # print the fatal exception's message through ``__context__``, unscrubbed, next to a body that scrubs the same text.
+        from src.monitoring.diagnostics_runs import tidy_error
+
+        _LOG.debug("could not record the fatal exception: %s", tidy_error(err))
 
 
 def _when(text: Any) -> float | None:

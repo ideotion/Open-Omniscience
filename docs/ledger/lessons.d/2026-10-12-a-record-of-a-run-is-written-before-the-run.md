@@ -16,8 +16,9 @@ must not turn the recorder off, and a rewrite syncs the temporary file and then 
 
 (6) **Failure text is made safe by ONE whole-text function, handed the text UNCUT, and cut LAST.** The shape of the passphrase net is `secret_scrub.scrubbed` / `exception_text` (the release
 candidate's, #1336: every shape of every held passphrase in one read, a text it cannot prove clean withheld); `diagnostics_runs.scrubbed_text` composes it with what a record also needs, in this order: the
-passphrases from the WHOLE text, a key statement's literal in whatever quoting (`_KEY_LITERALS`), whitespace collapsed, the person's folders as `<data>` and `<home>`, an INDEPENDENT recheck for both
-(`secret_scrub.held_shapes`, not the scrub that just ran, because a replacement can rebuild what an earlier step took out: a held passphrase that is `<data>` is rebuilt by naming the folder), and only then
+passphrases from the WHOLE text, a key statement's literal in whatever quoting (`_KEY_LITERALS`), whitespace collapsed, the person's folders as `<data>` and `<home>`, a RECHECK for both
+(`secret_scrub.held_shapes`, read again and matched by code of its own, because a replacement can rebuild what an earlier step took out: a held passphrase that is `<data>` is rebuilt by naming the folder; it
+shares the shape list (`_shapes`) and `held_passphrases` with the scrub, so it catches a regression in the matching or the cache, never a shape both leave out), and only then
 the cut. The first design scrubbed where the text was made and cut to 300 there, and the record scrubbed what was left: a literal that opens before the cut and closes after it is no statement any pattern
 recognises, so `'k3y-zzzz` went into the record whole (reproduced). A caller that cuts first has already lost; a scrub that cannot be shown to have worked withholds the text rather than keeping it; and every other
 reason a report gives (`forensics`, `arm_crash_trace`) goes through the same function. An exception is written by `exception_text`, so a `UnicodeError` reachable in its chain is the class and fixed words (its
@@ -31,7 +32,8 @@ does not decode is withheld whole, since a passphrase written in another encodin
 so the scrub also runs on the text with CR LF read as LF and the result is checked in both spellings. The whole trace body is scrubbed BEFORE the head is chosen and the lines are limited, and each line is cut at
 200 characters AND 202 bytes of UTF-8 (the member is written with `ensure_ascii=False`: the same ten earlier ends measured 233 KB in accented text, 346 KB in CJK and 458 KB in astral characters at 200 characters).
 An older writer cut the exception's text from the FRONT before it scrubbed, so a block can BEGIN with the tail of a passphrase that no scrub of the whole passphrase sees: the longest tail of any shape the block
-begins with (`secret_scrub.held_shapes`, whatever the secret's length), and the torn line it ends in, are removed unless the block starts with "Traceback (most recent call last):". **A test of a scrub that must
+begins with (`secret_scrub.held_shapes`, whatever the secret's length), and the torn line it ends in, are removed unless the block starts with a first line this code writes whole: "Traceback (most recent call last):", or the
+class and the fixed words `note_fatal_exception` writes in place of a traceback (a `UnicodeError`'s note, a text withheld, a scrub that could not run), which is the one line that says what happened. **A test of a scrub that must
 be cut-proof has to put the secret ACROSS the cut**: three tests of that PR started the passphrase or the key literal at or after the 295th character and passed the mutant that cuts first, which is the one thing
 they were written to catch; they now start it 20 to 30 characters before. The `ATTACH ... KEY` pattern is its own pass, after the others: in one alternation its span carried the literal of an `ENCRYPTION_KEY`
 statement through unredacted.
@@ -47,3 +49,9 @@ look. `bundle._roll_back_a_failed_read` rolls the session back before each DB se
 `Session.is_active`, which stays True** (verified on SQLAlchemy 2.1.1), and **roll back ONLY then**: a rollback ends the read transaction and the next statement opens a snapshot of a LATER moment, so a section that
 failed for another reason (a Python error, a statement deadline) must leave the snapshot every later section reads. The test pairs a real SQLCipher store with an overwritten page (the canary is that the session IS
 dead until rolled back) with the endpoint, where a section that invalidates the connection and raises and one that invalidates it and returns both leave the later sections answered.
+
+(12) **A LOG CALL IN A HANDLER IS A SINK, AND THE HANDLER OF ANOTHER FAILURE IS WHERE ITS WORDS ARE.** `_LOG.debug(..., exc_info=True)` prints the exception, its cause and its context ("During handling of the above exception..."), and a recorder that
+fails while it records a failure (a full drive under `end_run`, a refused write under `note_fatal_exception`) has that failure as its `__context__`: the engine's statement, or a key, printed unscrubbed to every handler of the root logger and to the error
+journal the bundle carries, beside a body that scrubbed the same text with care. Log the reason through the one scrub (`tidy_error`, a one-liner) or `secret_scrub.log_failure`, never the traceback; the modules of the crash witnesses are read whole by
+`tests/test_runs_log_sinks.py` (no `exc_info`, no `.exception()`, no caught exception used outside a scrubbing call), with the cases it must flag written out so that a guard that stops reading anything fails. And **a function that hands every shape of the
+passphrase to a caller (`held_shapes`) is held to a test that no module keeps the result**, because the module that did would be a second cache `forget_held` does not empty.

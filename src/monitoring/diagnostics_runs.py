@@ -70,7 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import UNICODE_WITHHELD, exception_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -231,7 +231,11 @@ def _taken_out(text: str) -> str | None:
 def _clean(out: str) -> bool:
     """Whether ``out`` holds no shape of a held passphrase and no key statement's literal. The shapes are read here again
     (``secret_scrub.held_shapes``) and not through the scrub that just ran, so a scrub that missed one is caught by a
-    check that does not share its code."""
+    check that does not share its matching or its cache. WHAT THIS DOES NOT CATCH: it reads the same list of shapes
+    (``secret_scrub._shapes``) and the same held passphrases (``held_passphrases``) as the scrub, so a shape the list
+    leaves out, or a passphrase ``held_passphrases`` does not return (``OO_KEY_PASSPHRASE`` forgotten), is missed by both
+    together. It catches a regression in ``_redact``/``_redacted``/``_clean``/``_forms_now`` or in the ``_HELD_FORMS`` cache
+    (a stale entry after the passphrase changed), and a replacement that rebuilds what an earlier step took out."""
     from src.monitoring.secret_scrub import held_shapes
 
     forms = held_shapes()
@@ -303,8 +307,8 @@ def without_a_torn_start(text: str) -> str | None:
     scrub of the whole passphrase can see it: the longest tail of any form that the text begins with is
     taken off (in the text as it is, or with CR LF read as LF, which is how a text-mode writer on Windows
     wrote a passphrase that holds an LF), and so is the line it ends in, which is the torn one. A text
-    that starts with a whole first line ("Traceback (most recent call last):", which no tail of a form
-    begins) is kept as it is."""
+    that starts with a whole first line (the traceback's own, or one of the fixed lines ``note_fatal_exception``
+    writes in place of a traceback: ``_is_a_written_first_line``) is kept as it is."""
     try:
         forms = held_forms()
     except Exception:  # noqa: BLE001 - failing CLOSED
@@ -318,7 +322,7 @@ def without_a_torn_start(text: str) -> str | None:
         text = plain
     cut = longest_tail(text)
     rest = text[cut:]
-    if not cut and rest.startswith(_WHOLE_FIRST_LINE):
+    if not cut and _is_a_written_first_line(rest):
         return rest
     _torn, newline, whole_lines = rest.partition("\n")
     return whole_lines if newline else ""
@@ -327,6 +331,22 @@ def without_a_torn_start(text: str) -> str | None:
 #: The first line of a Python traceback. A text that begins with it was not cut from the front inside a
 #: line: a tail of the passphrase cannot be followed by this text without a cut at the line's start.
 _WHOLE_FIRST_LINE = "Traceback (most recent call last):"
+#: The words ``note_fatal_exception`` writes after a class name in place of a traceback's first line: a ``UnicodeError`` in
+#: the chain (``secret_scrub.UNICODE_WITHHELD``, followed by the frames), a text that could not be made free of the
+#: passphrase (``WITHHELD``, the whole block) and a scrub that could not run (``secret_scrub._class_only``'s words). They
+#: are fixed, so a block that begins with one of them was written whole by this code and cut from nothing: the report
+#: keeps the line that says what happened, which is the one thing a reader of the crash needs. What they are not: a
+#: passphrase's tail (a class name, a colon and these words are not a piece of any shape, and ``cut`` is zero above).
+_CLASS_ONLY_WORDS = "its text is withheld"
+_WRITTEN_FIRST_LINE = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*: (?:" + "|".join(re.escape(w) for w in (UNICODE_WITHHELD, WITHHELD, _CLASS_ONLY_WORDS)) + r")\Z"
+)
+
+
+def _is_a_written_first_line(text: str) -> bool:
+    """Whether ``text`` begins with a first line this code writes whole: a traceback's, or one of the fixed lines above."""
+    first = text.partition("\n")[0].rstrip("\r")
+    return first.startswith(_WHOLE_FIRST_LINE) or _WRITTEN_FIRST_LINE.match(first) is not None
 
 
 def exc_line(exc: BaseException) -> str:
@@ -487,8 +507,11 @@ def _append(rec: dict[str, Any], *, trim_runs: int | None = None) -> bool:
                 with contextlib.suppress(OSError):
                     os.fsync(fp.fileno())
         return True
-    except Exception:  # noqa: BLE001 - a record about the diagnostics never fails them
-        _LOG.debug("diagnostics runs: could not write the record", exc_info=True)
+    except Exception as err:  # noqa: BLE001 - a record about the diagnostics never fails them
+        # The reason, not the traceback: this runs inside the handler of the build's own failure (``end_run`` is called
+        # from it), so a logged traceback would print that failure's message through ``__context__``, unscrubbed, to
+        # every handler. ``tidy_error`` is the one scrub of what this module keeps, and it cannot raise.
+        _LOG.debug("diagnostics runs: could not write the record: %s", tidy_error(err))
         return False
 
 

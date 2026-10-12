@@ -74,6 +74,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -107,6 +108,14 @@ END_PEAKS_MAX_BYTES = 4096
 #: line fits, and names what it took.
 END_PEAKS_THREADS = 8
 END_PEAKS_FRAMES = 4
+#: A frame of a snapshot's stack as an end line keeps it (``file:line function``, which its first 120 characters name).
+#: What it protects: the line's ``END_PEAKS_MAX_BYTES`` (4 frames x 8 threads x 3 snapshots of unbounded text would not fit);
+#: it shortens what is printed of one frame, never how many frames the snapshot had.
+_END_FRAME_CHARS = 120
+#: The thread counts ``_end_peaks`` thins an over-long line to, after the frames are down to one, a notch at a time (from
+#: ``END_PEAKS_THREADS`` = 8). What they protect: the line stays under ``END_PEAKS_MAX_BYTES`` while it loses as few threads as
+#: it must; each notch taken is named in ``truncated``, so a thinned list is never read as the session's whole.
+_END_THREAD_NOTCHES = (6, 4, 2, 0)
 #: The marks themselves are never dropped for size: they are the answer ("how big, how short of
 #: memory, when"), everything else is context for it.
 _END_MARK_KEYS = (
@@ -223,8 +232,8 @@ def _append(rec: dict[str, Any]) -> None:
             p.parent.mkdir(parents=True, exist_ok=True)
             with open(p, "a", encoding="utf-8", newline="\n") as fh:
                 fh.write(json.dumps(rec, separators=(",", ":"), default=str) + "\n")
-    except OSError:
-        _LOG.debug("session ledger: could not append", exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, "session ledger: could not append", exc, level=logging.DEBUG)
 
 
 def read_records() -> list[dict[str, Any]]:
@@ -295,8 +304,8 @@ def _write_liveness(now_wall: float, now_mono: float, now_bt: float | None = Non
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(rec), encoding="utf-8")
         os.replace(tmp, p)
-    except OSError:
-        _LOG.debug("session ledger: could not write liveness", exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, "session ledger: could not write liveness", exc, level=logging.DEBUG)
 
 
 def read_liveness() -> dict[str, Any] | None:
@@ -354,7 +363,7 @@ def _pressure_for_end(snaps: list[Any], threads: int, frames: int) -> list[dict[
                     row["waiting"] = True
                 stack = t.get("stack")
                 if frames > 0 and isinstance(stack, list):
-                    row["stack"] = [str(x)[:120] for x in stack[:frames]]
+                    row["stack"] = [str(x)[:_END_FRAME_CHARS] for x in stack[:frames]]
                 rows.append(row)
                 if len(rows) >= threads:
                     break
@@ -404,7 +413,7 @@ def _end_peaks(hwm: dict[str, Any] | None) -> dict[str, Any] | None:
     # one that names what a thread was doing, the thread list is the next to thin.
     steps: list[tuple[str, int]] = [
         *[("frames", n) for n in range(END_PEAKS_FRAMES - 1, 0, -1)],
-        *[("threads", n) for n in (6, 4, 2, 0)],
+        *[("threads", n) for n in _END_THREAD_NOTCHES],
     ]
     for what, value in steps:
         if _json_bytes(out) <= END_PEAKS_MAX_BYTES:
@@ -829,21 +838,21 @@ def _loop() -> None:
             next_tick = time.monotonic() + TICK_S
             try:
                 tick_once()
-            except Exception:  # noqa: BLE001 - the tick must never kill its thread
-                _LOG.debug("session ledger: tick failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - the tick must never kill its thread
+                log_failure(_LOG, "session ledger: tick failed", exc, level=logging.DEBUG)
         try:
             from src.monitoring.session_hwm import observe
 
             observe(may_snapshot_threads=True)
-        except Exception:  # noqa: BLE001 - best-effort and throttled on its own
-            _LOG.debug("session ledger: memory observe failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - best-effort and throttled on its own
+            log_failure(_LOG, "session ledger: memory observe failed", exc, level=logging.DEBUG)
         try:
             # The vitals history rides this same tick (R119): no thread of its own.
             from src.monitoring.vitals_history import tick
 
             tick()
-        except Exception:  # noqa: BLE001 - best-effort; the history never raises into the tick
-            _LOG.debug("session ledger: vitals tick failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - best-effort; the history never raises into the tick
+            log_failure(_LOG, "session ledger: vitals tick failed", exc, level=logging.DEBUG)
 
 
 def start_liveness() -> bool:
@@ -858,8 +867,8 @@ def start_liveness() -> bool:
             from src.monitoring.vitals_history import start as _vitals_start
 
             _vitals_start()
-        except Exception:  # noqa: BLE001 - the history is optional context, never a boot failure
-            _LOG.debug("session ledger: vitals history did not start", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the history is optional context, never a boot failure
+            log_failure(_LOG, "session ledger: vitals history did not start", exc, level=logging.DEBUG)
         _THREAD = threading.Thread(target=_loop, name="oo-session-liveness", daemon=True)
         _THREAD.start()
         return True
@@ -876,8 +885,8 @@ def stop_liveness() -> None:
         from src.monitoring.vitals_history import flush as _vitals_flush
 
         _vitals_flush()  # a clean end writes the history it holds (a kill loses at most five minutes)
-    except Exception:  # noqa: BLE001
-        _LOG.debug("session ledger: vitals flush failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "session ledger: vitals flush failed", exc, level=logging.DEBUG)
 
 
 def _reset_for_tests() -> None:

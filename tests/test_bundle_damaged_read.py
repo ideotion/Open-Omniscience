@@ -92,6 +92,9 @@ def test_a_session_with_no_transaction_and_a_missing_session_are_left_alone(tmp_
     try:
         assert db.in_transaction() is False
         assert _roll_back_a_failed_read(db) is False
+        # asking the session about its connection would BEGIN a transaction (``session.connection()`` autobegins): a helper
+        # that did not check ``in_transaction()`` first would return False all the same, so the test reads the state it leaves
+        assert db.in_transaction() is False, "the helper opened a transaction on a session that had none"
         assert _roll_back_a_failed_read(None) is False
     finally:
         db.close()

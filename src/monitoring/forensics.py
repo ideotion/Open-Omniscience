@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -92,6 +93,12 @@ def _state_path() -> Path:
 # The reason a degraded part of the report gives: a type and one sentence. What it protects: the report is
 # read at a glance and an engine's text can be a page long.
 _REASON_CHARS = 200
+# The lines of an earlier unclean end's trace the plain-text report prints under its summary line (the first line of the
+# trace IS the summary, so it is skipped). What it protects: the text is pasted into a chat, with up to ten earlier ends
+# (``exit_evidence.EARLIER_ENDS_LIMIT``) in it; the 8 lines are the fatal-error header's neighbours and the crashing thread's
+# innermost frames, which faulthandler writes first. It shortens what is printed: the summary line names ``lines_total``,
+# and the structured report in the zip carries every line it kept.
+_EARLIER_TRACE_LINES_PRINTED = 8
 
 
 def _why(exc: BaseException) -> str:
@@ -280,8 +287,8 @@ def _write_state(state: dict[str, Any]) -> None:
         tmp = _state_path().with_suffix(".json.tmp")
         tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
         os.replace(tmp, _state_path())
-    except OSError:
-        _LOG.warning("could not persist session_state.json", exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, "could not persist session_state.json", exc, level=logging.WARNING)
 
 
 def record_session_start() -> dict[str, Any] | None:
@@ -335,8 +342,8 @@ def record_session_start() -> dict[str, Any] | None:
             state["boot_id"] = boot_id
         if cgroup:
             state["cgroup"] = cgroup
-    except Exception:  # noqa: BLE001 - a missing handle never breaks a boot
-        _LOG.debug("session sentinel: boot id / cgroup unavailable", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a missing handle never breaks a boot
+        log_failure(_LOG, "session sentinel: boot id / cgroup unavailable", exc, level=logging.DEBUG)
     _write_state(state)
     # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
     # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
@@ -346,8 +353,8 @@ def record_session_start() -> dict[str, Any] | None:
         from src.monitoring.session_history import record_boot
 
         record_boot(prev)
-    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
-        _LOG.debug("session ledger: boot record failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        log_failure(_LOG, "session ledger: boot record failed", exc, level=logging.DEBUG)
     return prev
 
 
@@ -437,8 +444,8 @@ def record_clean_shutdown() -> None:
         from src.monitoring.session_history import record_end
 
         record_end(clean=True, reason=state.get("shutdown_reason") or _STOP_SIGNAL)
-    except Exception:  # noqa: BLE001 - never in the way of a shutdown
-        _LOG.debug("session ledger: end record failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never in the way of a shutdown
+        log_failure(_LOG, "session ledger: end record failed", exc, level=logging.DEBUG)
 
 
 def _last_collect_perf_sample() -> dict[str, Any] | None:
@@ -523,8 +530,8 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
         from src.monitoring.unlock_marker import note_unlock_done
 
         note_unlock_done()
-    except Exception:  # noqa: BLE001 - a stamp must never break the unlock it describes
-        _LOG.debug("could not stamp the unlock", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a stamp must never break the unlock it describes
+        log_failure(_LOG, "could not stamp the unlock", exc, level=logging.DEBUG)
     state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
     state["last_unlock"] = {**record, "at": _now()}
     recovery = _recovery_from_record(record)
@@ -1499,7 +1506,7 @@ def _render_earlier_ends(ev: Any) -> list[str]:
         trace = row.get("trace")
         if isinstance(trace, dict):
             out.append(f"    trace: {trace.get('summary')} ({trace.get('lines_total')} lines)")
-            for ln in (trace.get("lines") or [])[1:9]:
+            for ln in (trace.get("lines") or [])[1 : 1 + _EARLIER_TRACE_LINES_PRINTED]:
                 out.append(f"    | {ln}")
         elif row.get("why_no_trace"):
             out.append(f"    no trace: {row['why_no_trace']}")
@@ -1725,8 +1732,8 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         from src.monitoring import expedition
 
         lines.append(expedition.render_text())
-    except Exception:  # noqa: BLE001 - the forensics file must survive a broken sidecar
-        _LOG.debug("session forensics: expedition log unavailable", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the forensics file must survive a broken sidecar
+        log_failure(_LOG, "session forensics: expedition log unavailable", exc, level=logging.DEBUG)
         lines.append("The expedition log could not be read for this report.")
 
     return "\n".join(lines)

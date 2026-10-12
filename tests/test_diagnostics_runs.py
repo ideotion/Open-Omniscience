@@ -250,8 +250,9 @@ def test_a_text_is_withheld_when_what_the_process_holds_cannot_be_read(_data, mo
         r.held_forms()
 
 
-def test_a_text_the_independent_recheck_cannot_read_the_shapes_for_is_withheld_though_the_scrub_ran(_data, monkeypatch):
-    """The recheck reads the shapes ITSELF (``held_shapes``), so that it does not share the scrub's code; when it cannot read them
+def test_a_text_the_recheck_cannot_read_the_shapes_for_is_withheld_though_the_scrub_ran(_data, monkeypatch):
+    """The recheck reads the shapes ITSELF (``held_shapes``), so that it shares neither the scrub's matching nor its cache (it does
+    share the list of shapes and the held passphrases, so it cannot catch a shape both leave out); when it cannot read them
     (a change of the session's passphrase between the two reads, or a read that failed the second time) the text is not kept
     on the strength of the first read alone."""
     from src.monitoring import secret_scrub

@@ -156,6 +156,32 @@ def test_the_class_is_named_by_the_caller_and_the_cut_is_the_documented_one(monk
     assert len(_bundle._all_diag_err_str(RuntimeError("z" * 1000))) == _bundle._ERR_STR_CHARS == 300
 
 
+def test_a_caller_that_does_not_name_the_class_gets_it_once_even_for_a_unicode_error(monkeypatch):
+    """``typed=True`` is ``Type: text``; a ``UnicodeError`` and a ``__str__`` that raises already carry their class in the text
+    they are written as, so a caller that wrote ``f"{type(exc).__name__}: {text}"`` named the class twice
+    ("UnicodeEncodeError: UnicodeEncodeError: ...")."""
+    monkeypatch.setattr(_connect, "_passphrase", SECRET)
+    bad = UnicodeEncodeError("ascii", "caf\u00e9", 3, 4, "ordinal not in range(128)")
+    assert _bundle._all_diag_err_str(bad, typed=True) == f"UnicodeEncodeError: {_scrub.UNICODE_WITHHELD}"
+    assert _bundle._all_diag_err_str(RuntimeError("no such table: foo"), typed=True) == "RuntimeError: no such table: foo"
+
+    class Unrenderable(Exception):
+        def __str__(self):
+            raise ValueError("no")
+
+    assert _bundle._all_diag_err_str(Unrenderable(), typed=True) == "Unrenderable: its text is withheld"
+
+
+def test_no_place_in_the_bundle_names_the_class_in_front_of_a_text_that_names_it():
+    """Every caller that wants the class asks for it (``typed=True``); the f-string that put it in front of the untyped text is
+    how the class came to be written twice for a ``UnicodeError``."""
+    from pathlib import Path
+
+    source = Path(_bundle.__file__).read_text(encoding="utf-8")
+    assert "{type(exc).__name__}: {_all_diag_err_str(" not in source
+    assert source.count("_all_diag_err_str(exc, typed=True)") >= 6, "the six sites that name the class ask for it"
+
+
 # --------------------------------------------------------------------------- #
 #  The forms (the coordinator's check: the raw string alone is not enough)
 # --------------------------------------------------------------------------- #
