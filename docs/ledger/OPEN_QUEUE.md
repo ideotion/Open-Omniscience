@@ -16459,3 +16459,14 @@ UPDATEs, so a carried top never holds a hidden word; it is new logic in a module
 **T2 still open:** bulletin coverage, stories and articles (through the export thread, the sole pusher of the bulletin code), `supergroup_rising`/`supergroup_stats`, `source_topics`, the AI keywords. **Left on
 purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage
 worklist may deliberately include stoplisted words).
+
+**T2 REST BUILT (2026-10-12; the paragraph above is the state before it).** The readers listed there as open now follow the shipped list: `supergroup_stats.resolve_member_keyword_ids` (so the
+Observatory, the rising test, the stats and the drill-through) and `api.insights._supergroup_totals` (the Groups panel) resolve a hidden keyword to no id; `source_topics.derive_source_topics` leaves a hidden
+tagged keyword out IN SQL (the `COUNT(DISTINCT article)` must not be corrected afterwards); the bulletin's coverage columns, story keyword sets and per-article keywords drop a hidden word BEFORE
+the cut (the coverage fetch widens until it holds enough visible rows), travelling as a patch through the export thread. **The "curated-group totals" omission above is REVERSED, on measured
+evidence:** 13 terms of the shipped rings are already on the shipped list (`news` in news-media, `work` in occupation, `reporting` in journalism, `making` in creation, `advertisement` in advertising, `are`
+in meditation, `all` and `tout` in universe, `d` in unmanned-aerial-vehicle, `se` in operating-system, `tempo` in weather, `по` in software, `कर` in tax), so it was not a "later" case. **Only the LIST
+hides in the group and topic readers, not a listing's too-short / numeric rule:** a group member and a topic tag are deliberate picks (`ai` is both) and a length rule would silently empty the group (the
+bulletin, a listing, uses the full predicate). **The AI keywords are LEFT ON PURPOSE:** they are typed LLM outputs the user can confirm or reject one by one, so a stoplist word there is a proposal the user
+answers, not a count that misleads. Still left: the omnibar and "did you mean", the operator-only readers. Enforced by `tests/test_t2_groups_and_topics_hide_stoplisted.py` and
+`tests/test_bulletin_hides_stoplisted.py`.
