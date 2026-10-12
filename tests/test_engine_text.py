@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import threading
 from contextlib import contextmanager
 from datetime import datetime
@@ -10,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from src.monitoring import engine_text as et
 from src.monitoring.engine_text import engine_text
 
 SECRET = "correct horse battery staple 7"
@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
     monkeypatch.setenv("OO_DB_PASSPHRASE", SECRET)
-    monkeypatch.setattr("src.database.connect.get_passphrase", lambda: None)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    monkeypatch.setattr("src.database.connect._passphrase", None)
 
 
 def test_the_passphrase_is_taken_out_of_the_whole_text_before_the_cut():
@@ -34,8 +35,14 @@ def test_the_passphrase_is_taken_out_of_the_whole_text_before_the_cut():
 
 def test_the_connected_passphrase_is_scrubbed_too(monkeypatch):
     monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
-    monkeypatch.setattr("src.database.connect.get_passphrase", lambda: SECRET)
+    monkeypatch.setattr("src.database.connect._passphrase", SECRET)
     assert SECRET not in engine_text(RuntimeError(f"boom {SECRET} boom"))
+
+
+def test_the_key_passphrase_is_scrubbed_too(monkeypatch):
+    """The one that wraps the signing keys is a passphrase the process holds like the others."""
+    monkeypatch.setenv("OO_KEY_PASSPHRASE", "signing key pass 99")
+    assert "signing key pass 99" not in engine_text(RuntimeError("near 'signing key pass 99'"))
 
 
 def test_an_empty_passphrase_in_the_environment_changes_nothing(monkeypatch):
@@ -44,13 +51,79 @@ def test_an_empty_passphrase_in_the_environment_changes_nothing(monkeypatch):
 
 
 def test_a_text_that_cannot_be_checked_is_withheld_not_kept(monkeypatch):
-    def broken():
-        raise RuntimeError("no passphrase reader")
-
-    monkeypatch.setattr("src.database.connect.get_passphrase", broken)
-    assert et._without_the_passphrase("anything") is None
+    monkeypatch.setattr("src.monitoring.secret_scrub.held_passphrases", lambda: None)
     out = engine_text(ValueError(f"has {SECRET} in it"))
     assert SECRET not in out and "ValueError" in out and "withheld" in out
+
+
+def test_a_scrub_that_cannot_be_loaded_withholds_the_text(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def _no_scrub(name, *a, **k):
+        if name == "src.monitoring.secret_scrub":
+            raise ImportError("gone")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", _no_scrub)
+    out = engine_text(ValueError(f"has {SECRET} in it"))
+    assert SECRET not in out and "ValueError" in out and "withheld" in out
+
+
+def test_a_passphrase_under_the_floor_withholds_the_text_it_is_in(monkeypatch):
+    """One to three characters cannot be taken out of a text without taking the text out."""
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "ab")
+    out = engine_text(RuntimeError("has ab in it"))
+    assert "withheld" in out and "RuntimeError" in out
+
+
+def test_a_unicode_error_is_the_class_and_none_of_its_words():
+    out = engine_text(UnicodeDecodeError("utf-8", b"\xff", 0, 1, f"bad {SECRET}"))
+    assert SECRET not in out and "withheld" in out
+
+
+# ---- every shape the passphrase takes x every form an engine writes it in -----------------
+
+#: independent writers (not the scrub's own carrier list): each turns a secret into the text an engine, a
+#: driver or a framework would put it in.
+_SECRETS = (
+    SECRET,
+    "it's a \"quoted\" back\\slash pass",
+    "pässwörd ünïcode 123",
+    "o'brien''s pass ok",
+)
+_FORMS = {
+    "plain": lambda s: RuntimeError(f"near {s} here"),
+    "sql-quoted": lambda s: RuntimeError(f"[SQL: PRAGMA key = '{s.replace(chr(39), chr(39) * 2)}']"),
+    "parameters": lambda s: RuntimeError(f"[parameters: ({s!r},)]"),
+    "two-arguments": lambda s: RuntimeError("could not open", s),
+    "repr-of-the-exception": lambda s: RuntimeError(repr(RuntimeError(s))),
+    "json-body": lambda s: RuntimeError(json.dumps({"detail": s})),
+    "json-body-ascii": lambda s: RuntimeError(json.dumps({"detail": s}, ensure_ascii=False)),
+    "bytes-repr": lambda s: RuntimeError(repr(s.encode("utf-8"))),
+    "sql-in-json-in-repr": lambda s: RuntimeError(
+        repr(json.dumps({"detail": f"PRAGMA key = '{s.replace(chr(39), chr(39) * 2)}'"}))
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(_FORMS))
+@pytest.mark.parametrize("secret", _SECRETS, ids=["plain", "quotes", "unicode", "sql-quote"])
+def test_no_shape_in_no_form_survives_engine_text(monkeypatch, secret, form):
+    monkeypatch.setenv("OO_DB_PASSPHRASE", secret)
+    exc = _FORMS[form](secret)
+    whole = str(exc)
+    assert secret in whole or form != "plain", "the fixture must carry the secret in this form"
+    for limit in (None, 40, 200):
+        out = engine_text(exc, limit)
+        assert secret not in out
+        assert secret[:12] not in out, f"{form}: a prefix of the passphrase survived (limit {limit})"
+    # a cut INSIDE the secret, wherever the form put it
+    spot = whole.find(secret[:6])
+    if spot >= 0:
+        out = engine_text(exc, spot + 6)
+        assert secret[:6] not in out, f"{form}: a cut made inside the passphrase kept its start"
 
 
 def test_an_unrenderable_exception_still_gives_a_marker():
@@ -146,7 +219,35 @@ def test_the_backlog_reads_keep_the_secret_out_of_their_reason_and_their_log(mon
     monkeypatch.setattr("src.analytics.engine_identity.baseline_engine_id", _identity_fails)
     assert merge._backlog_engine() == "<unknown>"
     assert "could not read the re-index backlog" in caplog.text
+    assert "could not compute the engine identity for the backlog" in caplog.text
+    assert "RuntimeError" in caplog.text, "a line names the class beside the words (an empty message logs blank)"
     _no_secret_anywhere(caplog, out)
+
+
+def test_a_backlog_failure_with_an_empty_message_still_names_its_class(monkeypatch, caplog):
+    import logging
+
+    from src.backup import merge
+
+    caplog.set_level(logging.DEBUG)
+
+    class _Boom:
+        def __enter__(self):
+            raise KeyError()
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("src.database.session.session_scope", lambda *a, **k: _Boom())
+    out = merge.reindex_backlog()
+    assert out["available"] is False and out["reason"] == ""
+    assert merge.pending_reindex_batches() == []
+    assert caplog.text.count("KeyError") >= 2, "both reads name the class, whatever the message holds"
+    monkeypatch.setattr(
+        "src.analytics.engine_identity.baseline_engine_id", lambda: (_ for _ in ()).throw(KeyError())
+    )
+    assert merge._backlog_engine() == "<unknown>"
+    assert caplog.text.count("KeyError") >= 3
 
 
 def test_the_cleanup_skip_records_and_their_log_lines_keep_the_secret_out(monkeypatch, tmp_path, caplog):
@@ -167,6 +268,12 @@ def test_the_cleanup_skip_records_and_their_log_lines_keep_the_secret_out(monkey
     tally = store.maybe_cleanup_keywords(session)
     for key in ("prune", "language", "entity_status"):
         assert tally[key]["skipped"].startswith("RuntimeError: failed")
+    for line in (
+        "automatic orphan-keyword prune failed",
+        "automatic keyword-language reconcile failed",
+        "automatic keyword-entity-status reconcile failed",
+    ):
+        assert line in caplog.text, f"the handler's own log line is gone: {line}"
     # the resumed-prune arm: a fresh marker whose prune sweep was not complete
     stamp = datetime.now().isoformat(timespec="seconds")
     (tmp_path / "keyword_cleanup.json").write_text(
@@ -175,6 +282,7 @@ def test_the_cleanup_skip_records_and_their_log_lines_keep_the_secret_out(monkey
     )
     resumed = store.maybe_cleanup_keywords(session)
     assert resumed.get("resumed_prune") is True and "RuntimeError: failed" in resumed["prune"]["skipped"]
+    assert "automatic orphan-keyword prune resume failed" in caplog.text
     marker = (tmp_path / "keyword_cleanup.json").read_text(encoding="utf-8")
     assert SECRET not in marker
     _no_secret_anywhere(caplog, tally, resumed)
@@ -193,6 +301,7 @@ def test_the_unreadable_arm_of_the_write_cost_member_keeps_the_secret_out(monkey
     monkeypatch.setattr(kwc, "_sample_rows", _boom)
     out = kwc.keyword_write_cost(_empty_session())
     assert out["available"] is False and "disk image is malformed" in out["reason"]
+    assert "keyword write cost unavailable" in caplog.text
     _no_secret_anywhere(caplog, out)
 
 
@@ -249,21 +358,42 @@ def _scope_nodes(tree: ast.AST, functions):
             yield n
 
 
+def _uses_outside(rel: str, name: str, nodes, parent, *, helpers: bool) -> list[str]:
+    """Every load of ``name`` in ``nodes`` that is not engine_text's first argument, inside type() or
+    isinstance(), or (where ``helpers``) handed to an allowed helper."""
+    out: list[str] = []
+    allowed = {"type", "isinstance"} | (_ALLOWED_HELPERS if helpers else set())
+    for stmt in nodes:
+        for use in ast.walk(stmt):
+            if not (isinstance(use, ast.Name) and use.id == name and isinstance(use.ctx, ast.Load)):
+                continue
+            call = parent.get(use)
+            ok = isinstance(call, ast.Call) and (
+                (_is_call_to(call, {"engine_text"}) and call.args and call.args[0] is use)
+                or _is_call_to(call, allowed)
+            )
+            if not ok:
+                out.append(f"{rel}:{use.lineno} uses {name!r} outside engine_text()")
+    return out
+
+
+def _helper_problems(rel: str, tree: ast.AST, parent) -> list[str]:
+    """A helper the handlers may hand their exception to is trusted only as far as its own body: its first
+    parameter is used as engine_text's first argument or inside type()/isinstance(), and nothing else."""
+    out: list[str] = []
+    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in _ALLOWED_HELPERS):
+        first = fn.args.args[0].arg
+        out += _uses_outside(rel, first, fn.body, parent, helpers=False)
+    return out
+
+
 def _problems(rel: str, tree: ast.AST, scope: ast.AST, parent) -> list[str]:
     out: list[str] = []
     for h in (n for n in ast.walk(scope) if isinstance(n, ast.ExceptHandler) and n.name):
-        for stmt in h.body:
-            for use in ast.walk(stmt):
-                if not (isinstance(use, ast.Name) and use.id == h.name and isinstance(use.ctx, ast.Load)):
-                    continue
-                call = parent.get(use)
-                ok = isinstance(call, ast.Call) and (
-                    (_is_call_to(call, {"engine_text"}) and call.args and call.args[0] is use)
-                    or _is_call_to(call, {"type", "isinstance"} | _ALLOWED_HELPERS)
-                )
-                if not ok:
-                    out.append(f"{rel}:{use.lineno} uses {h.name!r} outside engine_text()")
+        out += _uses_outside(rel, h.name, h.body, parent, helpers=True)
     for node in ast.walk(scope):
+        if isinstance(node, ast.Name) and node.id in _TRACEBACK_NAMES:
+            out.append(f"{rel}:{node.lineno} reaches the traceback through the bare name {node.id}")
         if (
             isinstance(node, ast.keyword)
             and node.arg == "exc_info"
@@ -299,15 +429,31 @@ def test_a_handler_never_uses_its_exception_except_through_engine_text(rel, func
     for scope in _scope_nodes(tree, functions):
         problems += _problems(rel, tree, scope, parent)
         calls += sum(1 for n in ast.walk(scope) if _is_call_to(n, {"engine_text"}))
+    problems += _helper_problems(rel, tree, parent)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom) and n.module in {"traceback", "sys", "logging"}:
+            problems += [
+                f"{rel}:{n.lineno} imports {a.name} from {n.module} (a traceback reader under another name)"
+                for a in n.names
+                if a.name in _TRACEBACK_NAMES
+            ]
     assert not problems, "\n".join(problems)
     assert calls >= floor, f"{rel}: {calls} engine_text() calls, expected at least {floor}"
 
-    imports = [
+    bindings = [
         n for n in ast.walk(tree)
+        if isinstance(n, (ast.Import, ast.ImportFrom))
+        and any((a.asname or a.name.split(".")[-1]) == "engine_text" for a in n.names)
+    ]
+    canonical = [
+        n for n in bindings
         if isinstance(n, ast.ImportFrom) and n.module == "src.monitoring.engine_text"
         and [a.name for a in n.names] == ["engine_text"] and n.names[0].asname is None
     ]
-    assert imports, f"{rel} must bind engine_text with `from src.monitoring.engine_text import engine_text`"
+    assert len(bindings) == 1 and len(canonical) == 1, (
+        f"{rel} must bind engine_text exactly once, with `from src.monitoring.engine_text import engine_text`; "
+        f"found {[(b.lineno, ast.dump(b)[:60]) for b in bindings]}"
+    )
     rebound = []
     for n in ast.walk(tree):
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name in {"engine_text", "type", "isinstance"}:
@@ -317,3 +463,45 @@ def test_a_handler_never_uses_its_exception_except_through_engine_text(rel, func
         if isinstance(n, ast.alias) and n.asname in {"engine_text", "type", "isinstance"}:
             rebound.append(f"import as {n.asname}")
     assert not rebound, f"{rel} rebinds a name the ban relies on: {rebound}"
+
+
+# ---- the scan itself: each way round it is refused (a guard that cannot fail guards nothing) ----
+
+
+def _scan(source: str) -> list[str]:
+    tree = ast.parse(source)
+    parent = _parents(tree)
+    problems = _problems("x.py", tree, tree, parent) + _helper_problems("x.py", tree, parent)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom) and n.module in {"traceback", "sys", "logging"}:
+            problems += [f"import {a.name}" for a in n.names if a.name in _TRACEBACK_NAMES]
+    return problems
+
+
+_HEAD = "from src.monitoring.engine_text import engine_text\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    pass\nexcept Exception as exc:\n    log(str(exc))\n",
+        "try:\n    pass\nexcept Exception as exc:\n    format_exc()\n",
+        "from traceback import format_exc as fe\n",
+        "from sys import exc_info\n",
+        "from logging import exception\n",
+        "def _skip_error(exc):\n    return {'skipped': str(exc)}\n",
+        "def _cut_reason(exc):\n    return repr(exc)\n",
+        "try:\n    pass\nexcept Exception as exc:\n    log(exc_info=True)\n",
+    ],
+)
+def test_the_scan_refuses_each_bypass(body):
+    assert _scan(_HEAD + body), f"the scan let this through:\n{body}"
+
+
+def test_the_scan_accepts_the_shapes_the_files_use():
+    ok = (
+        _HEAD
+        + "def _skip_error(exc):\n    return {'s': f'{type(exc).__name__}: {engine_text(exc)}'}\n"
+        + "try:\n    pass\nexcept Exception as exc:\n    log(engine_text(exc), type(exc).__name__)\n"
+    )
+    assert _scan(ok) == []

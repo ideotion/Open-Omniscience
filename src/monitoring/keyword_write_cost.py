@@ -365,7 +365,7 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
         # judged against: a cut-short sample never takes it down with it.
         cut = _cut_reason(exc)
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
-        _LOG.debug("keyword write cost unavailable: %s", engine_text(exc))
+        _LOG.debug("keyword write cost unavailable: %s: %s", type(exc).__name__, engine_text(exc))
         out["available"] = False
         out["reason"] = f"unreadable: {engine_text(exc, 200)}"
         return out
