@@ -16,7 +16,8 @@ WHAT IT DOES.
   wrong passphrase produces under SQLCipher, measured on the real driver (``tests/test_database_damage.py``).
 * **Names.** One incident record per distinct (file, scope, statement shape) per process, in
   ``data/database-damage.json`` (atomic, the newest 20 kept, survives restarts): when, which FILE, the
-  driver's code and first line, the statement's SHAPE with every value stripped, the thread and the route,
+  driver's code and a FIXED LABEL for what it said (never the driver's own text: see :func:`corruption_of`) with the
+  driver's class, the statement's SHAPE with every value stripped, the thread and the route,
   how the previous session ended, and the sizes of the file, its log and the drive. A repeat of a known
   incident is counted, not re-recorded. NO value from any row, no passphrase and no URL reaches the record.
 * **Contains, per file.** The latch names the file: the CORPUS latch stops collection's writes to the
@@ -154,9 +155,17 @@ VERDICT_OK = "ok"
 VERDICT_DAMAGED = "damaged"
 VERDICT_UNCHECKED = "unchecked"
 
-#: How much of the driver's first line and of a statement's shape a record keeps.
-_MESSAGE_KEEP = 160
+#: How much of a statement's shape a record keeps.
 _SHAPE_KEEP = 240
+
+#: The words a record keeps of what the driver said when it said ``SQLITE_CORRUPT``: one of these three FIXED labels, chosen
+#: by the CLASS of the driver's first line and never a part of it. What this protects: SQLite words some corruption errors with
+#: the name of the schema object or a fragment of its definition ("malformed database schema (name) - ...") and a driver's text
+#: is the one thing in the record that no code of ours wrote; the record rides the diagnostics bundle, so engine text into a
+#: record is class-only. The first label is the text SQLite gives for a damaged page; the second is the head of its schema one.
+CORRUPT_IMAGE = "database disk image is malformed"
+CORRUPT_SCHEMA = "malformed database schema"
+CORRUPT_OTHER = "the driver reported SQLITE_CORRUPT"
 
 _DBAPI_MODULES = ("sqlite3", "sqlcipher3")
 
@@ -205,9 +214,22 @@ def driver_error(exc: BaseException | None) -> BaseException | None:
     return None
 
 
+def _corrupt_label(low_first_line: str) -> str:
+    """The fixed label for the class of a driver's (lower-cased) first line: the only thing of the line that is recorded."""
+    if low_first_line.startswith(CORRUPT_IMAGE):
+        return CORRUPT_IMAGE
+    if low_first_line.startswith(CORRUPT_SCHEMA):
+        return CORRUPT_SCHEMA
+    return CORRUPT_OTHER
+
+
 def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
     """What the driver said, when it said ``SQLITE_CORRUPT`` (primary code 11, any extended code); else
-    ``None``. ``{"code", "name", "message"}``, the message being the driver's own FIRST line.
+    ``None``. ``{"code", "name", "message", "driver_class"}``. The message is a FIXED LABEL
+    (:data:`CORRUPT_IMAGE`, :data:`CORRUPT_SCHEMA` or :data:`CORRUPT_OTHER`) and never the driver's text: the
+    classification reads the driver's own first line, and nothing of that line goes further, so the record
+    (and the verdict's reason, which is the same label) carries the class of the line and the class of the
+    exception (``driver_class``, its type name) and no schema name, no fragment of a definition and no value.
 
     A driver that carries ``sqlite_errorcode`` (CPython's ``sqlite3`` from 3.11, and ``sqlcipher3``, both
     measured) is matched on the code alone: ``SQLITE_NOTADB`` (26) is not corruption whatever its text
@@ -235,10 +257,11 @@ def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
         return {
             "code": code,
             "name": name if isinstance(name, str) else "SQLITE_CORRUPT",
-            "message": first[:_MESSAGE_KEEP],
+            "message": _corrupt_label(low),
+            "driver_class": type(driver).__name__,
         }
-    if low.startswith("database disk image is malformed") or low.startswith("malformed database schema"):
-        return {"code": None, "name": None, "message": first[:_MESSAGE_KEEP]}
+    if low.startswith(CORRUPT_IMAGE) or low.startswith(CORRUPT_SCHEMA):
+        return {"code": None, "name": None, "message": _corrupt_label(low), "driver_class": type(driver).__name__}
     return None
 
 
@@ -791,6 +814,7 @@ class DamageRegistry:
             "code": found["code"],
             "code_name": found["name"],
             "message": found["message"],
+            "driver_class": found.get("driver_class"),
             "statement_shape": shape,
             "thread": thread_name,
             "endpoint": endpoint,

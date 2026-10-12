@@ -2932,7 +2932,7 @@ def test_a_listing_that_reads_as_damage_twice_is_the_schema_damaged_and_confirme
 def test_a_listing_that_reads_as_damage_once_and_lists_the_second_time_is_the_list_with_the_first_read_kept(healthy):
     out = verify.inspect_confirmed(healthy, opener=_opens(_corrupt("malformed database schema (x)"), healthy))
     assert "error" not in out and set(out["names"]) == {"articles", "notes"}
-    assert out["second_read"] == verify.SECOND_READ_CLEAN and out["first_read"] == ["malformed database schema (x)"]
+    assert out["second_read"] == verify.SECOND_READ_CLEAN and out["first_read"] == ["malformed database schema"]  # the label of the class, not the schema object the driver named
 
 
 def test_a_listing_whose_second_read_could_not_be_made_is_unchecked_with_the_first_read_and_why(healthy):

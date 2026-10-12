@@ -2142,6 +2142,71 @@ def test_a_stamped_stand_in_is_certified_and_is_not_subtracted_a_second_time_as_
     assert reindex_backlog()["articles_pending"] == 2
 
 
+def test_a_lost_count_that_a_race_inflated_never_makes_a_batch_owe_a_negative_number(restore_seams, monkeypatch):
+    """The backlog read is two statements with no shared snapshot, so ``lost`` is held to what the first one says the batch can owe
+    (``articles - certified``): the owed count of both callers is never below zero, with or without a certified article in the batch."""
+    import src.backup.merge as merge_mod
+    from src.backup.merge import _backlog_engine
+    from src.database.models import ArticleIndexStamp
+
+    db = restore_seams
+    plain = _merged_batch(db, [1, 2])
+    stamped = _merged_batch(db, [3, 4])
+    db.add(ArticleIndexStamp(article_id=3, engine=_backlog_engine(), inputs="{}"))  # one of the second batch's two is certified: it can owe 1
+    db.commit()
+    monkeypatch.setattr(merge_mod, "_BACKLOG_LOST_SQL", "SELECT id, 99 FROM merge_batches WHERE :engine IS NOT NULL")  # 99 lost of 2
+    assert [(b["batch_id"], b["articles"]) for b in merge_mod.pending_reindex_batches()] == [(plain, 0), (stamped, 0)]
+    assert merge_mod.reindex_backlog()["articles_pending"] == 0
+    assert [r[4] for r in merge_mod._backlog_rows(db)] == [2, 1], "lost is capped at what the batch can still owe, not at zero"
+
+
+def _backlog_plan_fixture(tmp_path, analysed: bool):
+    """A fresh PLAINTEXT file with the four tables the backlog read touches: 3 pending batches of 200 articles (20 of them stand-ins) and five
+    times as many other merged rows beside them. ``analysed=False`` is the state of a salvage copy or a merged file before the next boot's optimize."""
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    from src.database import models as m
+
+    path = tmp_path / ("analysed.db" if analysed else "fresh.db")
+    eng = create_engine(f"sqlite:///{path}")
+    m.Base.metadata.create_all(eng, tables=[m.MergeBatch.__table__, m.MergedRow.__table__, m.ArticleIndexStamp.__table__, m.Article.__table__])
+    eng.dispose()
+    con = sqlite3.connect(path)
+    con.executemany("INSERT INTO merge_batches (id, artifact_kind, origin_fingerprint, status, imported_at) VALUES (?, 'oo-backup-2', 'x', 'merged', '2026-10-12')", [(i,) for i in (1, 2, 3)])
+    con.executemany(
+        "INSERT INTO articles (id, url, canonical_url, source_id, content, hash) VALUES (?, ?, ?, 1, '', ?)",
+        ((i, f"u{i}", f"c{i}", (f"{stand_in.ARTICLE_HASH_PREFIX}{i})" if i % 30 == 0 else f"h{i:08d}")) for i in range(1, 601)),
+    )
+    con.executemany("INSERT INTO merged_rows (batch_id, table_name, row_id) VALUES (?, 'articles', ?)", ((1 + (i // 200), i + 1) for i in range(600)))
+    con.executemany("INSERT INTO merged_rows (batch_id, table_name, row_id) VALUES (?, 'sources', ?)", ((1 + (i % 3), i + 1) for i in range(3000)))
+    con.commit()
+    if analysed:
+        con.execute("ANALYZE")
+        con.commit()
+    return con
+
+
+@pytest.mark.parametrize("analysed", [False, True])
+def test_the_stand_in_question_of_the_backlog_read_starts_from_the_hash_range_whether_or_not_the_store_has_statistics(tmp_path, analysed):
+    """Asked from the stand-ins, the cost follows their number only if ``articles`` is the OUTER table: the hash range first, then ``merged_rows`` by
+    ``(table_name, row_id)``. SQLite picks that order unforced after ANALYZE and the other one before it (every pending row fetched, with its
+    article row, to test a hash), and a salvage copy is a fresh file: so the order is forced and the plan is asserted on both."""
+    from src.backup.merge import _BACKLOG_LOST_SQL
+
+    con = _backlog_plan_fixture(tmp_path, analysed)
+    assert bool(con.execute("SELECT count(*) FROM sqlite_master WHERE name = 'sqlite_stat1'").fetchone()[0]) is analysed
+    plan = [str(r[-1]) for r in con.execute("EXPLAIN QUERY PLAN " + _BACKLOG_LOST_SQL.replace(":engine", "'e0'"))]
+    assert plan[0].startswith("SEARCH a USING COVERING INDEX idx_article_hash"), plan  # the outer loop is the hash range, no article row read
+    assert any(line.startswith("SEARCH m USING INDEX ix_merged_rows_lookup") for line in plan), plan
+    assert not any(line.startswith(("SCAN", "SEARCH a USING INTEGER PRIMARY KEY")) for line in plan), plan  # no scan, no article row fetched by id
+    # and it answers: 20 stand-ins (ids 30, 60, ... 600), 6 or 7 to a batch
+    lost = {int(b): int(n) for b, n in con.execute(_BACKLOG_LOST_SQL, {"engine": "e0"})}
+    assert lost == {1: 6, 2: 7, 3: 7}, lost
+    con.close()
+
+
 def test_a_restore_batch_of_nothing_but_the_stand_in_is_stamped_done_and_owes_nothing(restore_seams):
     from src.backup.merge import pending_reindex_batches, reindex_backlog, reindex_imported_articles
 
@@ -2168,6 +2233,36 @@ def test_an_imported_article_deleted_before_its_batch_drained_does_not_hold_the_
     assert out["reindexed"] == 2 and out["failed"] == 0, out
     assert _batch_status(db, batch) == "reindexed" and pending_reindex_batches() == []
     assert progress[-1] == (3, 3), progress  # the pass never counts the id that named no article, but the batch is done: its bar ends full
+
+
+def test_a_progress_callback_that_raises_on_the_final_report_leaves_the_batch_stamped_and_logs_the_class_only(restore_seams, caplog):
+    """The final report is the caller's job-state writer, so what it raises is not ours: the stamp stands (the report is report-only), and the
+    log carries the class of the error and no traceback (an ``exc_info`` log is a sink: the traceback ends in the engine's own words)."""
+    import logging
+
+    from src.backup.merge import pending_reindex_batches, reindex_imported_articles
+    from src.database.models import Article
+
+    db = restore_seams
+    _real_articles_above_the_stand_in(db, [1501])
+    batch = _merged_batch(db, [1, 2, 1501])
+    db.query(Article).filter(Article.id == 2).delete(synchronize_session=False)
+    db.commit()
+    marker = "S3CR3T-IN-THE-CALLBACKS-ERROR"
+    calls: list[tuple[int, int]] = []
+
+    def callback(done, total):
+        calls.append((done, total))
+        if done == total:
+            raise RuntimeError(marker)
+
+    with caplog.at_level(logging.DEBUG):
+        out = reindex_imported_articles(batch, workers=0, progress_cb=callback)
+    assert out["reindexed"] == 2 and calls[-1] == (3, 3), calls
+    assert _batch_status(db, batch) == "reindexed" and pending_reindex_batches() == []
+    mine = [r for r in caplog.records if "finished batch's progress" in r.getMessage()]
+    assert len(mine) == 1 and "RuntimeError" in mine[0].getMessage(), [r.getMessage() for r in caplog.records]
+    assert mine[0].exc_info is None and marker not in caplog.text and "Traceback" not in caplog.text
 
 
 def test_the_watermark_after_an_absent_id_lags_the_last_finished_article_and_never_runs_ahead_of_it(restore_seams, monkeypatch):

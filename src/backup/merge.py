@@ -6488,9 +6488,15 @@ _BACKLOG_SQL = (
 #: side: the hash index names them (stand_in.py: a covering range, no article row), and each is looked up in ``merged_rows`` by
 #: (table_name, row_id), so the cost follows the number of stand-ins and not the number of pending articles. (Asked from the pending side, as
 #: ``m.row_id IN (<the range>)`` tested for every pending row, it cost 1.5 to 2.3 times the whole read at a million pending articles.)
+#:
+#: ``CROSS JOIN`` is the ORDER, not a product: SQLite never reorders a table across it, so ``articles`` is the outer loop whatever the planner
+#: knows. With statistics (``ANALYZE``) it chooses that order unforced; WITHOUT them (a salvage copy is a fresh file, and ``optimize_at_boot``
+#: only seeds them at the next boot; a merged file keeps the live file's old ones) it chose ``merged_rows`` first and fetched an article row
+#: for every pending row to test its hash: about 270 ms more than the read without the question at a million pending articles (481 and 507 ms
+#: against 216 and 214), and on a real store each of those fetches reads the article's page. ``tests/test_stand_in_rows.py`` asserts the plan with and without statistics.
 _BACKLOG_LOST_SQL = (
     "SELECT m.batch_id, COUNT(*) FROM articles a"
-    " JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
+    " CROSS JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
     " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine = :engine"
     " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND st.article_id IS NULL"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
     " GROUP BY m.batch_id"
@@ -6522,7 +6528,9 @@ def _backlog_rows(session) -> list[tuple]:
     if not rows:
         return []
     lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id})}
-    return [(*r, lost.get(int(r[0]), 0)) for r in rows]
+    # The two statements share no snapshot, so ``lost`` is held to what the first one says the batch can owe (``articles - certified``): a race
+    # between them can make a batch owe less than it does for one poll, never a negative number.
+    return [(*r, min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3])))) for r in rows]
 
 
 def pending_reindex_batches() -> list[dict]:
@@ -6765,8 +6773,10 @@ def reindex_imported_articles(
                 # the bar a caller draws from it ends full. (Report-only, like the pass's own: it must never undo a stamp.)
                 try:
                     progress_cb(len(all_ids), len(all_ids))
-                except Exception:  # noqa: BLE001
-                    _LOG.debug("could not report the finished batch's progress", exc_info=True)
+                except Exception as exc:  # noqa: BLE001
+                    # The TYPE only, no exc_info: the callback is the caller's job-state writer, so what it raises is not ours, and a traceback
+                    # (and the error it was raised from) ends in the engine's own words.
+                    _LOG.debug("could not report the finished batch's progress (%s)", type(exc).__name__)
         if already:
             result["resumed_already_done"] = already
         if certified:

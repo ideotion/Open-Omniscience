@@ -285,6 +285,9 @@ def test_a_schema_row_that_names_nothing_real_is_damage_on_the_real_driver(tmp_p
         with pytest.raises(Exception), eng.connect() as conn:  # noqa: B017 - the engine's own error type
             conn.execute(text("SELECT count(*) FROM sqlite_master")).fetchall()
         assert registry.latched(FILE_CORPUS)
+        raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")  # the registry fixture's file
+        assert json.loads(raw)["incidents"][0]["message"] == damage.CORRUPT_SCHEMA
+        assert words not in raw and "ix_t" not in raw, "the driver's schema text reached the record"
     finally:
         eng.dispose()
 
@@ -614,6 +617,47 @@ def test_the_incident_record_keeps_no_value_and_no_passphrase(registry, tmp_path
     raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")
     assert SECRET not in raw and "hunter2" not in raw and "31337" not in raw
     assert "INSERT INTO articles" in raw
+
+
+# The driver's own text, in the shapes SQLite gives it, each carrying a marker that must never reach a record: a schema object's
+# name and the fragment of its definition after it, a page number, a source line. The label is chosen by the CLASS of the first line.
+_DRIVER_TEXTS = [
+    pytest.param("database disk image is malformed", 11, damage.CORRUPT_IMAGE, id="image"),
+    pytest.param(f"database disk image is malformed {SECRET}", 267, damage.CORRUPT_IMAGE, id="image-extended-code-with-text"),
+    pytest.param(f'malformed database schema (ix_{SECRET}) - near "{SECRET}": syntax error', 11, damage.CORRUPT_SCHEMA, id="schema"),
+    pytest.param(f'malformed database schema (ix_{SECRET}) - near "{SECRET}": syntax error', None, damage.CORRUPT_SCHEMA, id="schema-no-code"),
+    pytest.param(f"database corruption at line 99 of [{SECRET}]", 11, damage.CORRUPT_OTHER, id="other-class-by-code"),
+    pytest.param(f"database disk image is malformed\n{SECRET} second line", 11, damage.CORRUPT_IMAGE, id="image-second-line"),
+]
+
+
+@pytest.mark.parametrize(("text_", "code", "label"), _DRIVER_TEXTS)
+def test_what_the_driver_said_is_classified_on_its_text_and_recorded_as_a_fixed_label(text_, code, label):
+    """Engine text into a record is class-only: the line is READ to tell the class, and the record carries the fixed label of that
+    class and the exception's class, never the line (a schema name, a fragment of a definition, a page, a source line)."""
+    found = corruption_of(_fake_driver_error(text_, code=code))
+    assert found is not None
+    assert found["message"] == label
+    assert found["driver_class"] == "DatabaseError"
+    assert SECRET not in repr(found) and "ix_" not in repr(found) and "line 99" not in repr(found)
+    assert label in (damage.CORRUPT_IMAGE, damage.CORRUPT_SCHEMA, damage.CORRUPT_OTHER)
+
+
+@pytest.mark.parametrize(("text_", "code", "label"), _DRIVER_TEXTS)
+def test_no_driver_text_reaches_the_incident_record_or_the_verdicts_reason(registry, tmp_path, text_, code, label):
+    from src.database import verify
+
+    exc = _fake_driver_error(text_, code=code)
+    ctx = type("Ctx", (), {})()
+    ctx.original_exception = exc
+    ctx.statement = "SELECT 1"
+    registry.on_engine_error(ctx, FILE_CORPUS)
+    raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")
+    inc = json.loads(raw)["incidents"][0]
+    assert inc["message"] == label and inc["driver_class"] == "DatabaseError"
+    assert SECRET not in raw and "ix_" not in raw and "line 99" not in raw and "second line" not in raw
+    verdict, reason = verify.classify_error(exc)
+    assert verdict == verify.VERDICT_DAMAGED and reason == label
 
 
 # --------------------------------------------------------------------------- #
