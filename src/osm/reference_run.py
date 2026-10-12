@@ -705,11 +705,19 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
                 if pg is not None:
                     with contextlib.suppress(OSError):
                         os.killpg(pg, signal.SIGKILL)
+                final = signal.SIGTERM if signum == getattr(signal, "SIGQUIT", None) else signum
+                # The default action is armed FIRST, for every signal that does not dump a core: the log removal below
+                # touches the disk, a disk that is full or hung is exactly the state this way out is for, and the next
+                # signal must end the process even while that call is blocked.
+                for name in ("SIGHUP", "SIGTERM", "SIGINT"):
+                    sig = getattr(signal, name, None)
+                    if sig is not None:
+                        with contextlib.suppress(ValueError, OSError):
+                            signal.signal(sig, signal.SIG_DFL)
+                signal.signal(final, signal.SIG_DFL)
                 if _INT.run_dir is not None:  # the raw logs hold the children's words unscrubbed: no report is coming to say so
                     with contextlib.suppress(Exception):
                         _remove_logs(_INT.run_dir)
-                final = signal.SIGTERM if signum == getattr(signal, "SIGQUIT", None) else signum
-                signal.signal(final, signal.SIG_DFL)
                 os.kill(os.getpid(), final)
                 os._exit(128 + int(final))  # only reached where the signal was not delivered (a runner that is PID 1)
             if pg is not None:

@@ -11,8 +11,10 @@ import contextlib
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -737,11 +739,15 @@ def test_a_member_that_survives_the_sweep_keeps_the_store_and_the_report_says_so
     monkeypatch.setattr(R, "_wait_group_gone", lambda pgid, timeout_s: False)
     called = []
     monkeypatch.setattr(R, "_delete_store", lambda *a, **k: called.append(1) or {"deleted": True})
-    report, kept = _run(tmp_path, phases_override=_scripted("print(1)"))
+    # MUTATION TARGET: drop the `_remove_logs` call from the `survived` branch.
+    code = "import sys\nsys.stderr.write('raw-log-words-4471\\n')\nprint(1)"
+    report, kept = _run(tmp_path, phases_override=_scripted(code))
     assert not called, "the store was deleted under a member that was still alive"
     assert report["status"] == "failed" and report["phases"][0]["group_survived"] is True
     assert report["store"]["kept"] is True and "still alive" in report["store"]["note"]
     assert kept is not None and kept.is_dir()
+    assert report["store"]["logs_removed"] is True and not (kept / "logs").exists()
+    assert all(b"raw-log-words-4471" not in f.read_bytes() for f in kept.rglob("*") if f.is_file())
     monkeypatch.undo()
     assert R.cleanup(kept)["deleted"] is True
 
@@ -1291,9 +1297,10 @@ def test_the_commands_country_refusal_line_writes_a_unicode_error_by_class_alone
         assert leaked not in out, leaked
 
 
-def test_the_command_writes_any_failure_of_the_run_as_a_refusal_line_not_a_traceback(tmp_path, monkeypatch):
-    # `_run` records every Exception; the command's own handler must be as wide (a RuntimeError, a KeyError...).
-    # MUTATION TARGET: the handler back to `except (OSError, ValueError)`.
+def test_the_command_writes_a_crash_as_a_typed_failure_not_a_refusal_and_not_a_traceback(tmp_path, monkeypatch):
+    # `_run` records every Exception; the command's own handler must be as wide (a RuntimeError, a KeyError...), but a
+    # crash is not an operator's refusal: it is typed and exits 1. MUTATION TARGET: the handler back to
+    # `except (OSError, ValueError)` (a traceback), or the wide branch printing "refused:" and exiting 2.
     held = "held-by-the-process-for-a-runtime-error-3307"
     monkeypatch.setenv("OO_DB_PASSPHRASE", held)
 
@@ -1302,7 +1309,7 @@ def test_the_command_writes_any_failure_of_the_run_as_a_refusal_line_not_a_trace
 
     monkeypatch.setattr(R, "run", _boom)
     rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
-    assert rc == 2 and out.startswith("refused: engine said") and held not in out
+    assert rc == 1 and out.startswith("failed: RuntimeError") and held not in out
 
 
 def test_the_raw_logs_go_when_the_deletion_stops_short_and_a_failing_removal_never_costs_the_report(tmp_path, monkeypatch):
@@ -1342,6 +1349,32 @@ def test_the_third_signal_removes_the_raw_logs_before_the_runner_goes(tmp_path):
     done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
     assert done.returncode == -15 and "survived" not in done.stdout
     assert not logs.exists()
+
+
+def test_a_third_signal_arms_the_default_action_before_the_log_removal_can_block(tmp_path):
+    # A full or hung disk is exactly when the way out is needed: the removal may block, and the NEXT signal must still end
+    # the process. MUTATION TARGET: the removal moved back before the default action is armed.
+    code = (
+        "import signal, sys, time\nfrom pathlib import Path\nfrom src.osm import reference_run as R\n"
+        "def _stuck(run_dir):\n    print('blocked', flush=True)\n    time.sleep(120)\n"
+        "R._remove_logs = _stuck\n"
+        "with R._terminating_signals():\n"
+        "    h = signal.getsignal(signal.SIGTERM)\n"
+        f"    R._INT.run_dir = Path({str(tmp_path)!r})\n"
+        "    R._INT.count = 2\n"
+        "    h(signal.SIGTERM, None)\n"
+        "print('survived the third')\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", code], cwd=str(ROOT), stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.stdout.readline().strip() == "blocked"
+        time.sleep(0.5)  # past the debounce: a separate event
+        proc.send_signal(signal.SIGINT)
+        assert proc.wait(timeout=20) == -signal.SIGINT
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 
 def test_a_secret_under_the_floor_withholds_the_whole_text_it_is_found_in(tmp_path):
