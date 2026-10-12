@@ -42,7 +42,8 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   ``--passphrase-file`` (a file they made, holding any passphrase), so that a separate gazetteer build
   can open the kept store with the same file; the runner only reads it. The runner refuses a workdir
   inside the repository, where the store and its logs would sit in the working tree. The children's RAW logs
-  (``logs/``) are deleted from a store that is kept (the report carries their scrubbed tails).
+  (``logs/``) are deleted from any store the run leaves (kept, survived by a group, half-deleted, or abandoned by a third
+  signal); the report carries their scrubbed tails.
 * **THE REPORT** carries no secret and no path outside this run's own data directory: inputs by
   file name, children's error text scrubbed of the passphrase and of every absolute path.
 
@@ -416,6 +417,8 @@ class _Interrupts:
     sent: bool = False
     #: When the last signal that COUNTED arrived: signals within ``SIGNAL_DEBOUNCE_S`` of it are one event.
     last: float | None = None
+    #: The run directory while a run is live: the third signal removes the children's raw logs from it before the runner leaves.
+    run_dir: Path | None = None
 
 
 _INT = _Interrupts()
@@ -682,6 +685,7 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
     def __enter__(self):
         self._prev: dict = {}
         _INT.signal, _INT.count, _INT.pgid, _INT.sent, _INT.last = None, 0, None, False, None
+        _INT.run_dir = None
         if threading.current_thread() is not threading.main_thread():
             return self
 
@@ -701,6 +705,9 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
                 if pg is not None:
                     with contextlib.suppress(OSError):
                         os.killpg(pg, signal.SIGKILL)
+                if _INT.run_dir is not None:  # the raw logs hold the children's words unscrubbed: no report is coming to say so
+                    with contextlib.suppress(Exception):
+                        _remove_logs(_INT.run_dir)
                 final = signal.SIGTERM if signum == getattr(signal, "SIGQUIT", None) else signum
                 signal.signal(final, signal.SIG_DFL)
                 os.kill(os.getpid(), final)
@@ -727,6 +734,7 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
         return self
 
     def __exit__(self, *exc):
+        _INT.run_dir = None
         for sig, prev in self._prev.items():
             with contextlib.suppress(ValueError, OSError):  # pragma: no cover
                 signal.signal(sig, prev)
@@ -759,20 +767,24 @@ def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: t
 
 
 def _remove_logs(run_dir: Path) -> dict:
-    """Delete the children's RAW logs (``logs/<phase>.out`` and ``.err``) from a store that is being KEPT: they are the
-    engine's output as it wrote it, paths and anything it echoed, and a kept store is left on a disk for days. The report
-    carries the scrubbed tails, which is the record. A file that cannot be removed is named in the report."""
+    """Delete the children's RAW logs (``logs/<phase>.out`` and ``.err``) from a store that is NOT being deleted (kept, or left
+    by a deletion that stopped short): they are the engine's output as it wrote it, paths and anything it echoed, and such
+    a store is left on a disk for days. The report carries the scrubbed tails, which is the record. A file that cannot be
+    removed is named in the report; this never raises (an OSError here must not cost the report)."""
     left = 0
-    log_dir = run_dir / "logs"
-    for f in sorted(log_dir.glob("*")) if log_dir.is_dir() else []:
-        try:
-            f.unlink()
-        except OSError:
-            left += 1
-    with contextlib.suppress(OSError):
-        log_dir.rmdir()
+    try:
+        log_dir = run_dir / "logs"
+        for f in sorted(log_dir.glob("*")) if log_dir.is_dir() else []:
+            try:
+                f.unlink()
+            except OSError:
+                left += 1
+        with contextlib.suppress(OSError):
+            log_dir.rmdir()
+    except OSError:
+        left += 1
     return {"logs_removed": left == 0,
-            "logs_note": ("the children's raw logs were removed from the kept store; the report carries their scrubbed tails"
+            "logs_note": ("the children's raw logs were removed from the store; the report carries their scrubbed tails"
                           if left == 0 else
                           f"{left} of the children's raw log files could not be removed and stay beside the store, "
                           "unscrubbed; --cleanup deletes them")}
@@ -1029,6 +1041,7 @@ def _run(
     tmp_dir = run_dir / "tmp"
     try:
         run_dir.mkdir(mode=0o700)
+        _INT.run_dir = run_dir
     except OSError as exc:  # an unwritable workdir is a named refusal with a report, not a traceback
         report["status"] = "refused"
         report["reason"] = f"the throwaway store cannot be made in the work directory ({type(exc).__name__})"
@@ -1118,6 +1131,8 @@ def _run(
             gone = _delete_store(run_dir, probe)
             report["store"] = {"kept": not gone.get("deleted"), **gone}
             kept_dir = None if gone.get("deleted") else run_dir
+            if not gone.get("deleted"):  # a deletion that stopped short leaves what it left: the raw logs go regardless
+                report["store"].update(_remove_logs(run_dir))
     if _INT.signal is not None and report["status"] != "interrupted":
         # What the run did stays its status (a finished run is ok, a guard's stop is refused-mid-run); the signal
         # that reached the runner is recorded beside it, never lost.

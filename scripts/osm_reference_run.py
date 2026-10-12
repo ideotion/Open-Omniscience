@@ -28,7 +28,7 @@ name); the passphrase exists only in the children's environment. Exit: 0 done, 1
 2 refused (preflight, mid-run guard, or a phase's own refusal),
 3 interrupted (SIGHUP, SIGTERM or Ctrl-C: the child was stopped, the store deleted, the report written).
 A third signal (each more than a quarter of a second after the last) kills the child's group and the runner at once: no
-report, the store kept (the 'store:' line named it at the start; ``--cleanup`` removes it); the shell shows 128 plus the signal.
+report, the store kept without the children's raw logs (the 'store:' line named it at the start; ``--cleanup`` removes it); the shell shows 128 plus the signal.
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             on_start=lambda d: print(f"store: {d} (if this run is killed, delete it with --cleanup)", flush=True),
             report_path=None if args.plan else target,
         )
-    except (OSError, ValueError) as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure of the run is a refusal line, never a default traceback of the chain
         print(f"refused: {R.scrub(exception_text(exc, typed=False))}")  # paths reduced to file names: the terminal is pasted into tickets
         return 2
 

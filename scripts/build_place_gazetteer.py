@@ -50,7 +50,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "configs" / "places_gazetteer.yml"
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--country", action="append", required=True, help="ISO 3166-1 alpha-2 or alpha-3; repeatable")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -190,6 +190,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    # The WHOLE of the command is under one handler (the passphrase file is read into the environment first, so the
+    # shared scrub takes it out): a default traceback would print an exception as it made its message.
+    try:
+        return _main(argv)
+    except Exception as exc:  # noqa: BLE001 - the operator reads the reason
+        from src.monitoring.secret_scrub import exception_text
+
+        print(f"failed: {exception_text(exc)}")
+        return 1
 
 
 if __name__ == "__main__":

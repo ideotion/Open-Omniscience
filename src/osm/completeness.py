@@ -44,6 +44,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.osm.tags import column_name
 
 _LOG = logging.getLogger("osm.completeness")
@@ -147,8 +148,8 @@ def tag_completeness(alpha3: str) -> dict:
     try:
         out["admin1"] = admin1_state(alpha3)
     except Exception as exc:  # noqa: BLE001 - said on the page, never a silent "no regions"
-        _LOG.warning("osm: could not read the admin-1 split for %s", alpha3, exc_info=True)
-        out["admin1"] = {"status": "unreadable", "error": f"{type(exc).__name__}: {exc}"}
+        log_failure(_LOG, f"osm: could not read the admin-1 split for {alpha3}", exc, level=logging.WARNING)
+        out["admin1"] = {"status": "unreadable", "error": exception_text(exc)}
     return out
 
 
@@ -266,7 +267,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
     except Exception as exc:
         with store.lane_session("osm") as s:
             row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one()
-            row.status, row.error = "failed", f"{type(exc).__name__}: {exc}"
+            row.status, row.error = "failed", exception_text(exc)
             row.finished_at = datetime.now(UTC)
         raise
     return admin1_state(alpha3, path=path)
@@ -291,8 +292,8 @@ def start_count(alpha3: str, *, path: Path | None = None) -> dict:
     def run() -> None:
         try:
             count_admin1(alpha3, path=path)
-        except Exception:  # noqa: BLE001 - recorded on the row as "failed"; logged here
-            _LOG.warning("osm: the admin-1 count for %s failed", alpha3, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - recorded on the row as "failed"; logged here
+            log_failure(_LOG, f"osm: the admin-1 count for {alpha3} failed", exc, level=logging.WARNING)
         finally:
             with _RUN_LOCK:
                 _RUNNING.discard(alpha3)

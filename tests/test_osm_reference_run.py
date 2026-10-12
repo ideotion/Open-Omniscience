@@ -888,7 +888,6 @@ def test_two_keys_of_a_childs_json_that_scrub_to_the_same_text_stay_apart(tmp_pa
     assert "***redacted***#2" in app, "the second key is kept apart, not dropped"
 
 
-
 def test_a_passphrase_file_that_is_not_utf8_is_refused_without_naming_a_byte(tmp_path):
     key = tmp_path / "bad.key"
     key.write_bytes(b"pass\xff\xfeword-0123456789")
@@ -1275,6 +1274,74 @@ def test_the_commands_country_refusal_line_takes_out_a_held_passphrase(tmp_path,
     rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", held)
     assert rc == 2 and out.startswith("refused:") and "not an ISO 3166-1" in out
     assert held not in out and held.upper() not in out
+
+
+def test_the_commands_country_refusal_line_writes_a_unicode_error_by_class_alone(tmp_path, monkeypatch):
+    # The engine text of a UnicodeError names a letter and an offset that no exact-match scrub takes out: only
+    # `exception_text` writes it by class. MUTATION TARGET: the line back to `R.scrub(str(exc))`.
+    import src.osm.ingest as ingest
+
+    def _bad(_code):
+        raise UnicodeEncodeError("ascii", "pässword", 1, 2, "ordinal not in range")
+
+    monkeypatch.setattr(ingest, "country_codes", _bad)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ")
+    assert rc == 2 and "UnicodeEncodeError" in out
+    for leaked in ("ä", "position", "ordinal", "pässword"):
+        assert leaked not in out, leaked
+
+
+def test_the_command_writes_any_failure_of_the_run_as_a_refusal_line_not_a_traceback(tmp_path, monkeypatch):
+    # `_run` records every Exception; the command's own handler must be as wide (a RuntimeError, a KeyError...).
+    # MUTATION TARGET: the handler back to `except (OSError, ValueError)`.
+    held = "held-by-the-process-for-a-runtime-error-3307"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _boom(**kw):
+        raise RuntimeError(f"engine said {held}")
+
+    monkeypatch.setattr(R, "run", _boom)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 2 and out.startswith("refused: engine said") and held not in out
+
+
+def test_the_raw_logs_go_when_the_deletion_stops_short_and_a_failing_removal_never_costs_the_report(tmp_path, monkeypatch):
+    # MUTATION TARGET: the `_remove_logs` call after a deletion that did not complete (the store is left, logs and all).
+    secret = "short-deletion-log-secret-2208"
+    code = f"import sys\nsys.stderr.write('{secret}\\n')\nprint('x')"
+    monkeypatch.setattr(R, "_delete_store", lambda run_dir, probe: {"deleted": False, "error": "the deletion stopped: OSError"})
+    report, kept = _run(tmp_path, phases_override=_scripted(code))
+    try:
+        assert report["store"]["deleted"] is False and report["store"]["logs_removed"] is True
+        assert not (kept / "logs").exists()
+    finally:
+        monkeypatch.undo()
+        R.cleanup(kept)
+    # A listing that fails is a recorded "not removed", never an exception out of the finally.
+    (tmp_path / "logs").mkdir()
+    monkeypatch.setattr(Path, "glob", lambda self, pat: (_ for _ in ()).throw(OSError("listing failed")))
+    out = R._remove_logs(tmp_path)
+    assert out["logs_removed"] is False and "could not be removed" in out["logs_note"]
+
+
+def test_the_third_signal_removes_the_raw_logs_before_the_runner_goes(tmp_path):
+    # No report is coming after a third signal, so the unscrubbed logs must not wait for one.
+    # MUTATION TARGET: drop the `_remove_logs(_INT.run_dir)` in the handler's third-signal branch.
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "ingest.err").write_text("the passphrase-bearing words\n", "utf-8")
+    code = (
+        "import signal, sys\nfrom pathlib import Path\nfrom src.osm import reference_run as R\n"
+        "with R._terminating_signals():\n"
+        "    h = signal.getsignal(signal.SIGTERM)\n"
+        f"    R._INT.run_dir = Path({str(tmp_path)!r})\n"
+        "    R._INT.count = 2\n"
+        "    h(signal.SIGTERM, None)\n"
+        "print('survived the third')\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+    assert done.returncode == -15 and "survived" not in done.stdout
+    assert not logs.exists()
 
 
 def test_a_secret_under_the_floor_withholds_the_whole_text_it_is_found_in(tmp_path):
