@@ -389,6 +389,31 @@ def _read_raw() -> dict | None:
     return raw
 
 
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises SchedulerSettingsError (the class only)
+    instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise SchedulerSettingsError(
+            f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
+        ) from None
+    if raw is not None:
+        return raw
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("scheduler_settings migration into app_state deferred", exc_info=True)
+    return raw
+
+
 def _coerce_bool(value, fallback: bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -697,10 +722,10 @@ def retired_settings_disclosures() -> list[str]:
     ]
 
 
-def load_settings() -> SchedulerSettings:
+def load_settings(*, strict: bool = False) -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
     d = SchedulerSettings()
-    raw = _read_raw()
+    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
         return d
     _disclose_retired(raw)
@@ -838,7 +863,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
             raise SchedulerSettingsError(
                 f"{key} has been retired and can no longer be set. {_RETIRED_KEYS[key]}"
             )
-    current = load_settings()
+    current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
 
     # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a
     # caller still sending it would otherwise get a 200 that changed nothing.

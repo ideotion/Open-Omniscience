@@ -138,9 +138,9 @@ def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
     try:
         return read_artifact(data, passphrase=passphrase)
     except EncryptionError as exc:
-        raise HTTPException(status_code=400, detail=f"decryption failed: {exception_text(exc, passphrase, typed=False)}") from exc
+        raise HTTPException(status_code=400, detail=f"decryption failed: {exception_text(exc, passphrase, typed=False)}") from None
     except ArtifactError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from None
 
 
 def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: bool) -> None:
@@ -217,11 +217,11 @@ def restore_legacy_path(
         try:
             check_memory_before_staging()
         except MergeError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from None
         try:
             data = p.read_bytes()
         except OSError as exc:
-            raise HTTPException(status_code=400, detail=f"could not read {p}: {exception_text(exc, passphrase, typed=False)}") from exc
+            raise HTTPException(status_code=400, detail=f"could not read {p}: {exception_text(exc, passphrase, typed=False)}") from None
         staged = _stage_upload(data, passphrase or None)
         _apply_restore_selection(staged, include_newsletters=include_newsletters)
         from src.backup import runlog
@@ -258,7 +258,7 @@ def restore_legacy_path(
                 return report
         except (MergeError, RestoreRefused) as exc:
             # See restore_commit above: a refusal keeps its own message.
-            raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from None
         except HTTPException:
             raise
         except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
@@ -266,7 +266,7 @@ def restore_legacy_path(
             # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is built from
             # the scrubbed text, and the recorders that keep a response text scrub it again where they make the record.
             log_failure(_LOG, "legacy restore failed", exc, passphrase)
-            raise _restore_error("restore", exc, passphrase) from exc
+            raise _restore_error("restore", exc, passphrase) from None
         finally:
             cleanup_staging(staged)
 
@@ -585,9 +585,9 @@ def volume_backup_start(body: VolumeBackupBody) -> dict:
                 verify_after_write=body.verify_after_write,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from exc
+            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from None
 
 
 @router.post("/v2/volumes/restore")
@@ -608,11 +608,11 @@ def volume_backup_restore(body: VolumeRestoreBody) -> dict:
         except ValueError as exc:
             raise HTTPException(
                 status_code=400, detail=exception_text(exc, body.passphrase, body.corpus_passphrase, typed=False)
-            ) from exc
+            ) from None
         except RuntimeError as exc:
             raise HTTPException(
                 status_code=409, detail=exception_text(exc, body.passphrase, body.corpus_passphrase, typed=False)
-            ) from exc
+            ) from None
 
 
 @router.post("/v2/volumes/verify")
@@ -628,9 +628,9 @@ def volume_backup_verify(body: VolumeVerifyBody) -> dict:
         try:
             return get_volume_manager().start_verify(body.src, body.passphrase or None)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from exc
+            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from None
 
 
 @router.post("/v2/volumes/cancel")
@@ -849,9 +849,9 @@ def import_queue_start(body: ImportQueueBody) -> dict:
                 [i.model_dump() for i in body.items], passphrase=body.passphrase
             )
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from exc
+            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from None
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
 
 
 @router.get("/import-queue/status")

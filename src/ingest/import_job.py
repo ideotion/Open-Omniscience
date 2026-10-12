@@ -30,7 +30,7 @@ from pathlib import Path
 
 from src.database.corpus_lease import corpus_lease
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
-from src.monitoring.secret_scrub import exception_text, traceback_text
+from src.monitoring.secret_scrub import exception_text, log_failure, traceback_text
 
 _LOG = logging.getLogger("ingest.import_job")
 
@@ -354,8 +354,8 @@ class NewsletterImportManager:
                                 quarantine_summary = default_quarantine_candidates_batch(
                                     session, article_ids=new_ids, write=True
                                 )
-                        except Exception:  # noqa: BLE001 - never abort a good import
-                            _LOG.warning("quarantine scan after the import failed", exc_info=True)
+                        except Exception as exc:  # noqa: BLE001 - never abort a good import
+                            log_failure(_LOG, "quarantine scan after the import failed", exc, level=logging.WARNING)
 
                     # S3.5 (field-feedback A1): persist a standalone, downloadable
                     # JSON+Markdown report for this run -- the newsletter path had NONE
@@ -374,8 +374,8 @@ class NewsletterImportManager:
                         if quarantine_summary is not None:
                             report["quarantine_summary"] = quarantine_summary
                         persist_import_report("newsletter", report)
-                    except Exception:  # noqa: BLE001 - never abort a good import
-                        _LOG.warning("persisting the newsletter import report failed", exc_info=True)
+                    except Exception as exc:  # noqa: BLE001 - never abort a good import
+                        log_failure(_LOG, "persisting the newsletter import report failed", exc, level=logging.WARNING)
                 with self._lock:
                     if self._stop.is_set():
                         self._state = "cancelled" if self._cancelled else "paused"

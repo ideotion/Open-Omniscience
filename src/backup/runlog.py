@@ -109,6 +109,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text, log_failure, traceback_text
+
 _LOG = logging.getLogger(__name__)
 
 _DIR_NAME = "run_logs"
@@ -385,11 +387,12 @@ class RunLog:
             self._m_fp = open(self.milestone_path, "a", encoding="utf-8")  # noqa: SIM115
             self._b_fp = open(self.beat_path, "a", encoding="utf-8")  # noqa: SIM115
         except Exception as exc:  # noqa: BLE001 - never block the run on its own journal
-            self._disable("milestones", exc)
-            self._disable("beats", exc)
+            self._disable("milestones", exception_text(exc))
+            self._disable("beats", exception_text(exc))
 
-    def _disable(self, stream: str, exc: BaseException) -> None:
-        reason = f"{stream}: {type(exc).__name__}: {exc}"
+    def _disable(self, stream: str, said: str) -> None:
+        """``said`` is the failure's words written through the one scrub (``exception_text``) by the handler that caught it."""
+        reason = f"{stream}: {said}"
         if stream == "milestones":
             self._m_off = True
             fp, self._m_fp = self._m_fp, None
@@ -480,7 +483,7 @@ class RunLog:
                     with suppress(OSError):
                         os.fsync(fp.fileno())
             except Exception as exc:  # noqa: BLE001
-                self._disable("beats" if beat else "milestones", exc)
+                self._disable("beats" if beat else "milestones", exception_text(exc))
 
     # -- milestones -------------------------------------------------------- #
     def milestone(self, ev: str, *, durable: bool = True, **fields: Any) -> None:
@@ -669,8 +672,8 @@ class RunLog:
         while not self._stop.wait(_BEAT_INTERVAL_S):
             try:
                 rec = self._beat(prev)
-            except Exception:  # noqa: BLE001 - a sampler must never die on one bad beat
-                _LOG.debug("run journal beat failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a sampler must never die on one bad beat
+                log_failure(_LOG, "run journal beat failed", exc, level=logging.DEBUG)
                 continue
             prev = rec
             self._write(
@@ -697,8 +700,8 @@ class RunLog:
                     "\n".join(lines[-_BEAT_CAP_LINES:]) + "\n", encoding="utf-8"
                 )
                 self._b_fp = open(self.beat_path, "a", encoding="utf-8")  # noqa: SIM115
-            except Exception:  # noqa: BLE001 - an untrimmed ring is fine; a broken run is not
-                _LOG.debug("run journal beat trim failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - an untrimmed ring is fine; a broken run is not
+                log_failure(_LOG, "run journal beat trim failed", exc, level=logging.DEBUG)
 
     # -- lifecycle --------------------------------------------------------- #
     def _start(self, header: dict) -> None:
@@ -811,8 +814,8 @@ def begin(kind: str, *, label: str = "", dest: str | None = None, **header: Any)
         rl._start({"run_id": rl.run_id, "kind": kind, "label": label, "dest": dest,
                    "pid": os.getpid(), "hardware": hw, **header})
         return rl
-    except Exception:  # noqa: BLE001
-        _LOG.warning("run journal could not start; continuing unjournalled", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "run journal could not start; continuing unjournalled", exc, level=logging.WARNING)
         with _CURRENT_LOCK:
             _CURRENT = None
         return None
@@ -829,8 +832,8 @@ def end(outcome: str, **fields: Any) -> dict | None:
     try:
         rl.end(outcome, **fields)
         return rl.summary()
-    except Exception:  # noqa: BLE001 - closing the journal must never fail the run
-        _LOG.warning("run journal could not be closed cleanly", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - closing the journal must never fail the run
+        log_failure(_LOG, "run journal could not be closed cleanly", exc, level=logging.WARNING)
         return None
 
 
@@ -896,8 +899,6 @@ def run(
     try:
         yield rl
     except BaseException as exc:
-        from src.monitoring.secret_scrub import exception_text, traceback_text
-
         # Written through the one scrub (``secret_scrub``): the secrets the block holds and the process's own are taken out
         # BEFORE the cut, a ``UnicodeError`` anywhere in the chain is recorded by class only, and a text that cannot be
         # checked is withheld.
@@ -1359,8 +1360,8 @@ def promote_incomplete_runs(*, max_runs: int = 50) -> list[dict]:
                 fh.flush()
                 with suppress(OSError):
                     os.fsync(fh.fileno())
-        except OSError:
-            _LOG.debug("could not mark %s as incomplete", run_id, exc_info=True)
+        except OSError as exc:
+            log_failure(_LOG, f"could not mark {run_id} as incomplete", exc, level=logging.DEBUG)
             continue
         _LOG.warning(
             "run %s has no run_end -- it was killed or its journal was muted "

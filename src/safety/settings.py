@@ -67,6 +67,12 @@ class SafetySettings:
     def is_protected(self) -> bool:
         return self.fetch_mode == "protected"
 
+    #: True on the settings :func:`load_settings` makes when the stored choice could not be READ (locked, keyed to another
+    #: passphrase, damaged). Not a field, so it is in no saved or served dict. Such settings are protected with no proxy, which
+    #: no fetcher or session turns into a direct connection (``TransportUnavailable`` / a transport refusal): offline, as the app
+    #: starts (R117), until the store reads again.
+    read_failed = False
+
 
 # The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
 _KV_KEY = "settings.safety"
@@ -102,9 +108,9 @@ def _read_raw() -> dict | None:
     to (and one-time migrating) the legacy ``safety_settings.json`` file."""
     if not _use_kv():
         return _read_json_file()
-    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.config.kv_store import kv_get_json_checked, kv_set_json
 
-    raw = kv_get_json(_KV_KEY)
+    raw = kv_get_json_checked(_KV_KEY)  # raises KvReadError on a failed read: that is not "no settings"
     if raw is not None:
         return raw
     raw = _read_json_file()
@@ -154,8 +160,23 @@ def _read_raw_strict() -> dict | None:
 
 
 def load_settings() -> SafetySettings:
-    """Load safety settings; env vars override the persisted value (for headless use)."""
-    return _settings_from(_read_raw())
+    """Load safety settings; env vars override the persisted value (for headless use).
+
+    A stored choice that cannot be READ never reads as the defaults (which are the direct connection): the settings come back
+    protected with no proxy and ``read_failed`` set, which every transport builder refuses. Absent is still the defaults."""
+    from src.config.kv_store import KvReadError
+
+    try:
+        raw = _read_raw()
+    except KvReadError:
+        s = _settings_from(None)
+        if os.getenv("OO_FETCH_MODE") not in VALID_MODES:
+            s.fetch_mode = "protected"
+            s.http_proxy = ""
+            s.http_proxies = []
+        s.read_failed = True
+        return s
+    return _settings_from(raw)
 
 
 def _settings_from(raw: dict | None) -> SafetySettings:

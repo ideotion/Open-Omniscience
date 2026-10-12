@@ -390,7 +390,7 @@ _FOLLOWING: dict[str, tuple[tuple[Any, ...], Any]] = {}
 
 def _transport_key(s: SafetySettings) -> tuple[Any, ...]:
     """Everything ``_fetcher_for`` reads from the settings, and nothing else."""
-    return (bool(s.is_protected), s.http_proxy, tuple(getattr(s, "http_proxies", None) or ()))
+    return (bool(s.is_protected), s.http_proxy, tuple(getattr(s, "http_proxies", None) or ()), bool(getattr(s, "read_failed", False)))
 
 
 def following_fetcher(owner: str) -> EthicalFetcher:
@@ -415,6 +415,8 @@ def following_fetcher(owner: str) -> EthicalFetcher:
     key = _transport_key(s)
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(owner)
+        if getattr(s, "read_failed", False) and held is not None:
+            return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
         if held is None or held[0] != key:
             held = (key, _fetcher_for(s))
             _FOLLOWING[owner] = held
@@ -433,6 +435,8 @@ def following_session(owner: str, user_agent: str) -> GuardedSession:
     name = f"session/{owner}"
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(name)
+        if getattr(s, "read_failed", False) and held is not None:
+            return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
         if held is None or held[0] != key:
             held = (key, _session_for(s, user_agent=user_agent))
             _FOLLOWING[name] = held

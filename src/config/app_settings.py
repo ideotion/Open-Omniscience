@@ -270,6 +270,32 @@ def _read_raw() -> dict | None:
     return raw
 
 
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises AppSettingsError (the class only)
+    instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise AppSettingsError(
+            f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
+        ) from None
+    if raw is not None:
+        return raw
+    # No DB row yet: migrate the legacy JSON file if present (best-effort, one-time).
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)  # adopt into the durable store
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("app_settings migration into app_state deferred", exc_info=True)
+    return raw
+
+
 def _write_raw(payload: dict) -> None:
     if not _use_kv():
         path = _settings_path()
@@ -282,9 +308,9 @@ def _write_raw(payload: dict) -> None:
     kv_set_json(_KV_KEY, payload)  # transactional, encrypted, backed up (D1)
 
 
-def load_settings() -> AppSettings:
+def load_settings(*, strict: bool = False) -> AppSettings:
     """Load preferences, falling back to defaults on a missing/corrupt store."""
-    raw = _read_raw()
+    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
         return AppSettings()
 
@@ -423,7 +449,7 @@ def load_settings() -> AppSettings:
 
 def save_settings(updates: dict) -> AppSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
-    current = load_settings()
+    current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
 
     if "theme" in updates and updates["theme"] is not None:
         theme = str(updates["theme"])

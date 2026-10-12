@@ -108,6 +108,31 @@ def _read_raw() -> dict | None:
     return raw
 
 
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises CustodySettingsError (the class only)
+    instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise CustodySettingsError(
+            f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
+        ) from None
+    if raw is not None:
+        return raw
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("custody_settings migration into app_state deferred", exc_info=True)
+    return raw
+
+
 def _write_raw(payload: dict) -> None:
     if not _use_kv():
         path = _settings_path()
@@ -138,14 +163,14 @@ def _legacy_auto_log_default() -> bool:
         return True  # matches the on-by-default dataclass default (Item-N ruling)
 
 
-def load_settings() -> CustodySettings:
+def load_settings(*, strict: bool = False) -> CustodySettings:
     """Load custody preferences, falling back to honest defaults.
 
     A missing file yields defaults (with ``auto_log_on_ingest`` seeded from the
     legacy config flag). A corrupt file is logged and treated as defaults rather
     than crashing the API.
     """
-    raw = _read_raw()
+    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
         return CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
 
@@ -186,7 +211,7 @@ def save_settings(updates: dict) -> CustodySettings:
     saving while it stays "local", never needs it. ``ots_consent`` itself is never
     persisted -- it is a one-shot instruction to this call, not a preference.
     """
-    current = load_settings()
+    current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
 
     if "anchoring_mode" in updates and updates["anchoring_mode"] is not None:
         mode = str(updates["anchoring_mode"])

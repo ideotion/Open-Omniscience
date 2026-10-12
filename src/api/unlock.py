@@ -248,7 +248,7 @@ def encrypt_db(body: EncryptBody) -> dict:
         try:
             reports = encrypt_all(body.passphrase)
         except EncryptToolError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)
         dispose_engine()  # next connection opens through the keyed factory
     _LOG.info("store encrypted in place")
@@ -701,7 +701,7 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
             detail=exception_text(
                 exc, passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
             ),
-        ) from exc
+        ) from None
     conn.close()
 
 
@@ -737,7 +737,7 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
                 detail=exception_text(
                     exc, body.passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
                 ),
-            ) from exc
+            ) from None
         finally:
             _end_recovery_notice(_recovery_token)
         _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)

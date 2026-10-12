@@ -345,8 +345,12 @@ for attr in ('fork', 'posix_spawn', 'posix_spawnp', 'execve', 'execv', 'execvp',
              'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'system', 'popen'):
     if hasattr(os, attr):
         setattr(os, attr, refuse('os.' + attr))
-import _posixsubprocess
-_posixsubprocess.fork_exec = refuse('_posixsubprocess.fork_exec')
+try:
+    import _posixsubprocess  # POSIX only: Windows starts a process another way, and the Popen stub above covers it
+except ImportError:
+    _posixsubprocess = None
+if _posixsubprocess is not None:
+    _posixsubprocess.fork_exec = refuse('_posixsubprocess.fork_exec')
 from src.api import main
 assert not starts, starts
 assert 'src.database.connect' not in sys.modules, 'importing the app opened the store'

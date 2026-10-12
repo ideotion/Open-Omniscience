@@ -126,7 +126,7 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
             # BackupError includes the encrypted-store refusal (an encrypted corpus
             # must use the streaming encrypted backup, not this decrypt-to-plaintext
             # path) — surface it as a clean 400, never an ungraceful 500.
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
     return StreamingResponse(
         io.BytesIO(blob),
         media_type="application/octet-stream",
