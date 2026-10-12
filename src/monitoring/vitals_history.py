@@ -62,6 +62,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -458,8 +459,8 @@ def _slow_readings(now: float) -> dict[str, float]:
             size = _stat_mb(base / name)
             if size is not None:
                 out[key] = size
-    except Exception:  # noqa: BLE001 - the data folder is not there (DataVolumeMissing): no drive readings
-        _LOG.debug("vitals history: the data folder could not be read", exc_info=True)
+    except Exception as err:  # noqa: BLE001 - the data folder is not there (DataVolumeMissing): no drive readings
+        log_failure(_LOG, "vitals history: the data folder could not be read", err, level=logging.DEBUG)
     _SLOW = out
     return out
 
@@ -733,7 +734,7 @@ def tick(now: float | None = None, mono: float | None = None) -> None:
             flush()
     except Exception as exc:  # noqa: BLE001 - a recorder never raises into its caller
         _note_error("tick", exc)
-        _LOG.debug("vitals history tick failed", exc_info=True)
+        log_failure(_LOG, "vitals history tick failed", exc, level=logging.DEBUG)
 
 
 def _thread_cpu() -> float | None:
@@ -873,8 +874,8 @@ def flush() -> None:
             _LAST_FLUSH_AT = doc["saved_at"]
         _note_cost("flush", started_wall, started_cpu)
         _COST["flush_bytes_last"] = float(target.stat().st_size)
-    except Exception:  # noqa: BLE001
-        _LOG.debug("vitals history flush failed", exc_info=True)
+    except Exception as err:  # noqa: BLE001
+        log_failure(_LOG, "vitals history flush failed", err, level=logging.DEBUG)
 
 
 def _load() -> dict[str, Any] | None:
@@ -1012,8 +1013,8 @@ def start(now: float | None = None) -> None:
                     del carried[short[0] if short else 0]
                 _PREVIOUS = carried
                 _LAST_FLUSH_AT = prev.get("saved_at")
-        except Exception:  # noqa: BLE001 - a damaged file starts a fresh history
-            _LOG.debug("vitals history: could not read the previous file", exc_info=True)
+        except Exception as err:  # noqa: BLE001 - a damaged file starts a fresh history
+            log_failure(_LOG, "vitals history: could not read the previous file", err, level=logging.DEBUG)
             _FINE, _COARSE, _LOGS, _SESSIONS, _PREVIOUS, _CLOCK_STEPS = [], [], [], [], [], []
             _FINE_ACC = _COARSE_ACC = None
             _FINE_T = _COARSE_T = _HOUR_LOGS_T = 0

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -37,6 +38,7 @@ from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring import diagnostics_runs as _diag_runs
 from src.monitoring.secret_scrub import exception_text as _exception_text
+from src.monitoring.secret_scrub import log_failure
 from src.utils.export_envelope import app_version, envelope
 
 from ._base import _LOG, _MAX_KEYWORDS_PER_LANG, api_dir, package_source, router
@@ -2212,13 +2214,15 @@ def _write_all_diagnostics_zip(
                     journal_fp.flush()
                     with contextlib.suppress(OSError):
                         os.fsync(journal_fp.fileno())
-                except OSError:
+                except OSError as journal_err:
                     # The journal is a diagnostic aid, not the bundle itself -- a write
                     # failure (e.g. ENOSPC on the sidecar's disk) must degrade the run to
-                    # unjournaled rather than abort a hard-won hour-long bundle.
-                    _LOG.warning(
-                        "all-diagnostics journal write failed; disabling journal for the "
-                        "rest of this run", exc_info=True
+                    # unjournaled rather than abort a hard-won hour-long bundle. Logged through
+                    # the one scrub: this handler may run inside another failure's, which a
+                    # logged traceback would print through its context.
+                    log_failure(
+                        _LOG, "all-diagnostics journal write failed; disabling journal for the rest of this run",
+                        journal_err, level=logging.WARNING,
                     )
                     with contextlib.suppress(OSError):
                         journal_fp.close()
@@ -2391,10 +2395,10 @@ def _write_all_diagnostics_zip(
                     journal_fp.flush()
                     with contextlib.suppress(OSError):
                         os.fsync(journal_fp.fileno())
-                except OSError:
-                    _LOG.warning(
-                        "all-diagnostics journal write failed; disabling journal for the "
-                        "rest of this run", exc_info=True
+                except OSError as journal_err:
+                    log_failure(
+                        _LOG, "all-diagnostics journal write failed; disabling journal for the rest of this run",
+                        journal_err, level=logging.WARNING,
                     )
                     with contextlib.suppress(OSError):
                         journal_fp.close()
@@ -2526,8 +2530,8 @@ def _bundle_exclusive_window():
         stack = contextlib.ExitStack()
         try:
             was_paused = stack.enter_context(exclusive_window())
-        except Exception:  # noqa: BLE001 - the bundle is the evidence channel; never lose it
-            _LOG.warning("all-diagnostics could not claim the machine", exc_info=True)
+        except Exception as err:  # noqa: BLE001 - the bundle is the evidence channel; never lose it
+            log_failure(_LOG, "all-diagnostics could not claim the machine", err, level=logging.WARNING)
             claim: dict[str, Any] = {"held": False, "reason": "could not claim the machine"}
         else:
             claim = {"held": True, "paused_collection": bool(was_paused), "nested": nested}

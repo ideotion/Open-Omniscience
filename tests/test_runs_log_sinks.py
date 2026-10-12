@@ -12,7 +12,9 @@ handler of another failure are the ones that matter, because the other failure i
   * ``diagnostics_runs._append`` runs inside the handler of the build's own failure (``end_run`` is called from
     ``except BaseException`` in the worker);
   * ``exit_evidence.note_fatal_exception`` runs inside the handler of the exception that ends the server;
-  * ``exit_evidence.arm_crash_trace`` writes its reason, and logs it, on a failure at boot.
+  * ``exit_evidence.arm_crash_trace`` writes its reason, and logs it, on a failure at boot;
+  * ``bundle._all_diagnostics_worker``'s two journal-write warnings and ``_bundle_exclusive_window``'s failed claim, which run in a
+    build that may itself be inside the handler of another failure (a handler's exception chains the one it ran in as its context).
 
 Each is run here with the passphrase and a key statement in the failure it runs inside, and every record any handler formats is
 searched. A source-level guard then holds the whole set of modules of the crash witnesses to the same rule, with the cases it must
@@ -136,6 +138,75 @@ def test_a_crash_trace_that_cannot_be_armed_logs_and_returns_the_one_scrubbed_re
     _none_of_it(_everything_a_handler_would_write(caplog))
 
 
+def test_a_failed_claim_of_the_machine_logs_the_scrubbed_failure_and_no_raw_traceback(_data, monkeypatch, caplog):
+    import src.api.diagnostics as d
+    import src.scheduler.runner as R
+
+    _held(monkeypatch)
+
+    def wedged(*args, **kwargs):
+        raise RuntimeError(f"the scheduler is wedged on {SECRET} [SQL: {STATEMENT}]")
+
+    monkeypatch.setattr(R, "exclusive_window", wedged)
+    caplog.set_level(logging.DEBUG)
+    try:
+        try:
+            raise OSError(f"the build was already failing on {SECRET}")
+        except OSError:
+            with d._bundle_exclusive_window() as claim:
+                assert claim == {"held": False, "reason": "could not claim the machine"}
+    finally:
+        caplog.set_level(logging.WARNING)
+    mine = [rec for rec in caplog.records if "could not claim the machine" in rec.getMessage()]
+    assert len(mine) == 1 and mine[0].exc_info is None, [rec.getMessage() for rec in caplog.records]
+    assert "RuntimeError" in mine[0].getMessage(), "the failure is named"
+    for leaked in (SECRET, "correct horse", "battery"):
+        assert leaked not in _everything_a_handler_would_write(caplog), leaked
+
+
+@pytest.mark.parametrize("event", ["begin", "end"])
+def test_a_journal_that_cannot_be_written_logs_the_failure_without_a_traceback_and_the_run_goes_on(
+    _data, monkeypatch, caplog, tmp_path, event
+):
+    """The journal is a diagnostic aid: ENOSPC on its disk degrades the run to unjournaled. The warning is written through
+    ``log_failure`` (no ``exc_info``), at both places that write a journal line, because the handler may run inside the handler
+    of another failure. (The write is made to fail by the line that makes the text: a drive that refuses writes, such as
+    /dev/full, is read back whole by the fold at the end of the run and is no fixture for it.)"""
+    import io
+    import json
+    import types
+    import zipfile
+
+    import src.api.diagnostics as d
+    from src.api.diagnostics import bundle as bundle_module
+
+    _held(monkeypatch)
+    real_json = bundle_module.json
+
+    def dumps(obj, *args, **kwargs):
+        if isinstance(obj, dict) and obj.get("event") == event:
+            raise OSError(28, f"No space left on device ({SECRET})")
+        return real_json.dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(bundle_module, "json", types.SimpleNamespace(**{**vars(json), "dumps": dumps}))
+    caplog.set_level(logging.DEBUG)
+    members = [("a.json", lambda: {"x": 1}), ("b.json", lambda: {"y": 2})]
+    buf = io.BytesIO()
+    try:
+        with zipfile.ZipFile(buf, "w") as z:
+            d._write_all_diagnostics_zip(members, z, journal_path=tmp_path / "run.journal.jsonl")
+        names = zipfile.ZipFile(io.BytesIO(buf.getvalue())).namelist()
+    finally:
+        caplog.set_level(logging.WARNING)
+    assert "a.json" in names and "b.json" in names, "the bundle is still written"
+    mine = [rec for rec in caplog.records if "journal write failed" in rec.getMessage()]
+    assert len(mine) == 1, [rec.getMessage() for rec in caplog.records]
+    assert mine[0].exc_info is None and mine[0].exc_text is None
+    assert "OSError" in mine[0].getMessage()
+    for leaked in (SECRET, "correct horse", "battery"):
+        assert leaked not in _everything_a_handler_would_write(caplog), leaked
+
+
 # --------------------------------------------------------------------------- #
 #  the member's own "could not be read"
 # --------------------------------------------------------------------------- #
@@ -248,6 +319,135 @@ def test_the_holder_scan_sees_a_module_that_caches_the_shapes(_data, monkeypatch
 
 
 # --------------------------------------------------------------------------- #
+#  the vitals recorder: four debug lines that ran with exc_info, and the reason it keeps
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def _vitals(monkeypatch):
+    from src.monitoring import vitals_history as v
+
+    v.reset_for_tests()
+    monkeypatch.setattr(v, "_fast_readings", lambda: {})
+    monkeypatch.setattr(v, "_slow_readings", lambda _now: {})
+    monkeypatch.setattr(v, "_busiest", lambda _avail: ([], None))
+    yield v
+    v.reset_for_tests()
+
+
+def _the_failing_engine():
+    return RuntimeError(f"the engine said {SECRET} and its statement")
+
+
+def _no_passphrase_in(text: str) -> None:
+    """``log_failure`` takes out the passphrase the process holds (a key statement is the runs scrub's business, not its)."""
+    for leaked in (SECRET, "correct horse", "battery"):
+        assert leaked not in text, leaked
+
+
+def _inside_another_failure(call) -> None:
+    """The recorder's lines run on the liveness thread, where an unrelated handler may be on the stack: its exception is the
+    ``__context__`` of whatever the recorder meets."""
+    try:
+        raise _the_failing_engine()
+    except RuntimeError:
+        call()
+
+
+def _only_the_vitals_records(caplog) -> list[logging.LogRecord]:
+    return [rec for rec in caplog.records if rec.name == "src.monitoring.vitals_history"]
+
+
+def test_a_tick_that_fails_logs_the_failure_scrubbed_with_no_traceback_on_the_record(_data, _vitals, monkeypatch, caplog):
+    v = _vitals
+    _held(monkeypatch)
+    v.start()
+
+    def broken():
+        raise _the_failing_engine()
+
+    monkeypatch.setattr(v, "_fast_readings", broken)
+    caplog.set_level(logging.DEBUG)
+    _inside_another_failure(lambda: v.tick(now=1_699_999_200.0))
+    mine = [rec for rec in _only_the_vitals_records(caplog) if "tick failed" in rec.getMessage()]
+    assert len(mine) == 1, [rec.getMessage() for rec in caplog.records]
+    assert mine[0].exc_info is None and mine[0].exc_text is None
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+    assert v.diagnostics_member()["errors"]["last_tick_error"]["error"] == "RuntimeError", "the member keeps the class and no words"
+
+
+def test_a_flush_that_fails_logs_the_failure_scrubbed_with_no_traceback_on_the_record(_data, _vitals, monkeypatch, caplog):
+    v = _vitals
+    _held(monkeypatch)
+    v.start()
+
+    def broken():
+        raise _the_failing_engine()
+
+    monkeypatch.setattr(v, "_state_doc", broken)
+    caplog.set_level(logging.DEBUG)
+    _inside_another_failure(v.flush)
+    mine = [rec for rec in _only_the_vitals_records(caplog) if "flush failed" in rec.getMessage()]
+    assert len(mine) == 1, [rec.getMessage() for rec in caplog.records]
+    assert mine[0].exc_info is None and mine[0].exc_text is None
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+
+
+def test_a_data_folder_that_cannot_be_read_logs_the_failure_scrubbed_with_no_traceback_on_the_record(_data, monkeypatch, caplog):
+    from src.monitoring import vitals_history as v
+
+    v.reset_for_tests()
+    _held(monkeypatch)
+
+    def gone():
+        raise _the_failing_engine()
+
+    monkeypatch.setattr(v, "data_dir", gone)
+    monkeypatch.setattr(v, "_count_readings", lambda: {})
+    caplog.set_level(logging.DEBUG)
+    try:
+        _inside_another_failure(lambda: v._slow_readings(10_000_000.0))
+    finally:
+        v.reset_for_tests()
+    mine = [rec for rec in _only_the_vitals_records(caplog) if "data folder could not be read" in rec.getMessage()]
+    assert len(mine) == 1, [rec.getMessage() for rec in caplog.records]
+    assert mine[0].exc_info is None and mine[0].exc_text is None
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+
+
+def test_a_previous_file_that_cannot_be_read_logs_the_failure_scrubbed_with_no_traceback_on_the_record(_data, _vitals, monkeypatch, caplog):
+    v = _vitals
+    _held(monkeypatch)
+
+    def broken():
+        raise _the_failing_engine()
+
+    monkeypatch.setattr(v, "_load", broken)
+    caplog.set_level(logging.DEBUG)
+    _inside_another_failure(v.start)
+    mine = [rec for rec in _only_the_vitals_records(caplog) if "could not read the previous file" in rec.getMessage()]
+    assert len(mine) == 1, [rec.getMessage() for rec in caplog.records]
+    assert mine[0].exc_info is None and mine[0].exc_text is None
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (OSError(28, "No space left on device", f"/home/someone/{SECRET}/vitals.json"), "OSError: No space left on device"),
+        (OSError(f"no errno, only {SECRET}"), "OSError"),
+        (_the_failing_engine(), "RuntimeError"),
+        (UnicodeDecodeError("utf-8", b"\xff", 0, 1, f"bad byte near {SECRET}"), "UnicodeDecodeError"),
+    ],
+)
+def test_the_reason_the_vitals_recorder_keeps_is_the_class_and_the_systems_own_reason_and_never_the_message(exc, expected):
+    """``_reason`` is one of the two calls the guard above lets a vitals handler hand its exception to, so it is pinned here."""
+    from src.monitoring import vitals_history as v
+
+    got = v._reason(exc)
+    assert got == expected
+    _none_of_it(got)
+
+
+# --------------------------------------------------------------------------- #
 #  the modules of the crash witnesses log no traceback and print no exception raw
 # --------------------------------------------------------------------------- #
 #: The modules this PR creates or rewrites for the crash witnesses and the runs, each read whole.
@@ -259,15 +459,32 @@ _WITNESS_MODULES = (
     "src/monitoring/build_marker.py",
     "src/monitoring/chronology.py",
     "src/api/diagnostics/runs.py",
+    "src/monitoring/vitals_history.py",
 )
+#: Calls a module of the list above may hand a caught exception to besides the common ones, each with what it writes: the vitals
+#: recorder's ``_reason`` is the exception's class and the operating system's own reason, never its message ("Never its message,
+#: which can name a path or carry text a user typed"), and ``_note_error`` writes only that.
+_EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error"}}
+#: Files too large and too old to hold to the second rule (every handler's exception through a scrubbing call): the bundle writer
+#: has hundreds of handlers that write ``_all_diag_err_str`` or a fixed text. They are held to the first rule only: no log call asks
+#: for a traceback (``exc_info``, ``.exception()``, the ``traceback`` module, a ``**`` mapping into a log call).
+_NO_TRACEBACK_MODULES = ("src/api/diagnostics/bundle.py",)
 _LOG_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "exception", "log", "fatal"}
-_TRACEBACK_CALLS = {"exception", "format_exc", "print_exc", "format_exception", "print_exception", "format_exception_only"}
+_TRACEBACK_CALLS = {
+    "exception",
+    "format_exc",
+    "print_exc",
+    "format_exception",
+    "print_exception",
+    "format_exception_only",
+    "exc_info",
+}
+#: The names a module writes its log through: a method of one of them that is not called on the spot (``emit = _LOG.debug``) is a log
+#: call the keyword scan below could no longer see the arguments of.
+_LOG_NAMES = {"_LOG", "LOG", "_log", "log", "logger", "_logger", "logging"}
 #: The calls a handler's bound exception may be handed to: each writes it through the one scrub, or asks for its class.
 #: ``forensics._why`` is ``tidy_error`` with the report's own cut.
 _SCRUBBING_CALLS = {"tidy_error", "exc_line", "exception_text", "traceback_text", "log_failure", "type", "isinstance", "_why"}
-#: Attributes of a caught exception that are not its text: its class, and the members of an exception group (which the
-#: handler raises again, as they are, for the server to see).
-_NOT_TEXT_ATTRIBUTES = {"__class__", "exceptions"}
 
 
 def _call_name(call: ast.Call) -> str | None:
@@ -278,10 +495,27 @@ def _call_name(call: ast.Call) -> str | None:
     return None
 
 
-def _leaks(source: str) -> list[str]:
+def _is_not_the_text_of_the_failure(use: ast.Name, parent: dict[ast.AST, ast.AST]) -> bool:
+    """``exc.__class__`` (its class), ``len(exc.exceptions)`` (a count) and ``raise exc.exceptions[0]`` (the member, raised again as
+    it is for the server to see). ``[str(x) for x in exc.exceptions]`` and ``str(exc.exceptions[0])`` are its text, and are not."""
+    attr = parent.get(use)
+    if not isinstance(attr, ast.Attribute):
+        return False
+    if attr.attr == "__class__":
+        return True
+    if attr.attr != "exceptions":
+        return False
+    up = parent.get(attr)
+    if isinstance(up, ast.Call) and _call_name(up) == "len" and attr in up.args:
+        return True
+    return isinstance(up, ast.Subscript) and up.value is attr and isinstance(parent.get(up), ast.Raise)
+
+
+def _leaks(source: str, *, handlers: bool = True, also_scrubbing: frozenset[str] | set[str] = frozenset()) -> list[str]:
     """The ways a module of the witnesses could print a failure raw: a log call asked for the traceback (``exc_info`` that is not
-    the constant False/None, ``.exception()``, the ``traceback`` module, a ``**`` mapping a log call could carry ``exc_info`` in), and
-    a handler's bound exception used anywhere but as an argument of a scrubbing call or of ``type()``/``isinstance()``."""
+    the constant False/None, ``.exception()``, the ``traceback`` module however it is imported, ``exc_info()`` however it is
+    imported, a ``**`` mapping a log call could carry ``exc_info`` in, a log method reached through ``getattr`` or kept in a name),
+    and a handler's bound exception used anywhere but as an argument of a scrubbing call or of ``type()``/``isinstance()``."""
     tree = ast.parse(source)
     parent = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
     out: list[str] = []
@@ -294,19 +528,41 @@ def _leaks(source: str) -> list[str]:
             out.append(f"{node.value.lineno}: a log call asked for the traceback (exc_info)")
         if isinstance(node, ast.Call) and _call_name(node) in _TRACEBACK_CALLS:
             out.append(f"{node.lineno}: {_call_name(node)}() writes the traceback")
-        if isinstance(node, ast.Call) and _call_name(node) in _LOG_METHODS and any(k.arg is None for k in node.keywords):
+        if isinstance(node, ast.Call) and any(k.arg is None for k in node.keywords) and _call_name(node) in _LOG_METHODS | {None}:
             out.append(f"{node.lineno}: a ** mapping handed to a log call can carry exc_info")
-        if isinstance(node, ast.Attribute) and node.attr in {"exc_info"}:
+        if (
+            isinstance(node, ast.Call)
+            and _call_name(node) == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in _LOG_METHODS | _TRACEBACK_CALLS
+        ):
+            out.append(f"{node.lineno}: getattr reaches {node.args[1].value!r}, a way round the scan of the log calls")
+        if isinstance(node, ast.Attribute) and node.attr == "exc_info":
             out.append(f"{node.lineno}: sys.exc_info() reads the exception being handled")
-        if isinstance(node, ast.ExceptHandler) and node.name:
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in _LOG_METHODS
+            and isinstance(node.value, ast.Name)
+            and node.value.id in _LOG_NAMES
+            and not (isinstance(parent.get(node), ast.Call) and parent[node].func is node)
+        ):
+            out.append(f"{node.lineno}: {node.value.id}.{node.attr} is kept as a name, a log call the scan cannot read")
+        if isinstance(node, ast.Import) and any(a.name.split(".")[0] == "traceback" for a in node.names):
+            out.append(f"{node.lineno}: the traceback module is imported")
+        if isinstance(node, ast.ImportFrom) and (
+            (node.module or "").split(".")[0] == "traceback" or any(a.name in _TRACEBACK_CALLS for a in node.names)
+        ):
+            out.append(f"{node.lineno}: a traceback function is imported by name")
+        if handlers and isinstance(node, ast.ExceptHandler) and node.name:
             for stmt in node.body:
                 for use in ast.walk(stmt):
                     if not (isinstance(use, ast.Name) and use.id == node.name and isinstance(use.ctx, ast.Load)):
                         continue
                     call = parent.get(use)
-                    if isinstance(call, ast.Call) and _call_name(call) in _SCRUBBING_CALLS and use in call.args:
+                    if isinstance(call, ast.Call) and _call_name(call) in _SCRUBBING_CALLS | also_scrubbing and use in call.args:
                         continue
-                    if isinstance(call, ast.Attribute) and call.attr in _NOT_TEXT_ATTRIBUTES:
+                    if _is_not_the_text_of_the_failure(use, parent):
                         continue
                     out.append(f"{use.lineno}: the caught exception {node.name!r} is used outside a scrubbing call")
     return out
@@ -315,7 +571,20 @@ def _leaks(source: str) -> list[str]:
 @pytest.mark.parametrize("rel", _WITNESS_MODULES)
 def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught_exception_raw(rel):
     source = (ROOT / rel).read_text(encoding="utf-8")
-    assert _leaks(source) == [], f"{rel}: {_leaks(source)}"
+    extra = _EXTRA_SCRUBBING_CALLS.get(rel, set())
+    assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
+
+
+@pytest.mark.parametrize("rel", _NO_TRACEBACK_MODULES)
+def test_the_bundle_writer_logs_no_traceback(rel):
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    assert _leaks(source, handlers=False) == [], f"{rel}: {_leaks(source, handlers=False)}"
+
+
+def test_the_traceback_only_reading_ignores_how_a_handler_uses_its_exception():
+    body = "def f():\n    try:\n        go()\n    except OSError as exc:\n        return str(exc)\n"
+    assert _leaks(body) and _leaks(body, handlers=False) == []
+    assert _leaks("def f():\n    _LOG.debug('x', exc_info=True)\n", handlers=False), "a traceback is flagged in either reading"
 
 
 _FLAGGED = {
@@ -324,6 +593,35 @@ _FLAGGED = {
     ".exception()": "def f():\n    try:\n        go()\n    except OSError:\n        _LOG.exception('x')\n",
     "traceback.format_exc": "def f():\n    return traceback.format_exc()\n",
     "sys.exc_info()": "def f():\n    return sys.exc_info()\n",
+    "exc_info() imported by name": "from sys import exc_info\n\n\ndef f():\n    return exc_info()\n",
+    "exc_info imported by name, never called": "from sys import exc_info as where\n",
+    "traceback.print_exc": "def f():\n    traceback.print_exc()\n",
+    "traceback.format_exception": "def f(e):\n    return traceback.format_exception(e)\n",
+    "traceback.print_exception": "def f(e):\n    traceback.print_exception(e)\n",
+    "traceback.format_exception_only": "def f(e):\n    return traceback.format_exception_only(e)\n",
+    "import traceback": "import traceback\n",
+    "import traceback as tb": "import traceback as tb\n",
+    "from traceback import format_tb": "from traceback import format_tb\n",
+    "_LOG.warn with exc_info": "def f():\n    _LOG.warn('x', exc_info=True)\n",
+    "_LOG.critical with exc_info": "def f():\n    _LOG.critical('x', exc_info=True)\n",
+    "_LOG.fatal with exc_info": "def f():\n    _LOG.fatal('x', exc_info=True)\n",
+    "_LOG.error with exc_info": "def f():\n    _LOG.error('x', exc_info=True)\n",
+    "_LOG.log with exc_info": "def f():\n    _LOG.log(10, 'x', exc_info=True)\n",
+    "a log method reached through getattr": "def f(k):\n    getattr(_LOG, 'debug')(**k)\n",
+    "a log method reached through getattr, no **": "def f():\n    getattr(_LOG, 'exception')('x')\n",
+    "a log method kept in a name": "def f(k):\n    emit = _LOG.debug\n    emit('x', **k)\n",
+    "a log method kept in a name, then asked for the traceback": "def f():\n    emit = _LOG.debug\n    emit('x', exc_info=True)\n",
+    "exc_info() called, its import out of sight": "def f():\n    return exc_info()\n",
+    "a ** into a call that is not a name": "def f(k):\n    pick()(**k)\n",
+    "the members of a group, as text": (
+        "def f():\n    try:\n        go()\n    except BaseExceptionGroup as exc:\n        return [str(x) for x in exc.exceptions]\n"
+    ),
+    "a member of a group, as text": (
+        "def f():\n    try:\n        go()\n    except BaseExceptionGroup as exc:\n        return str(exc.exceptions[0])\n"
+    ),
+    "the members of a group, handed on": (
+        "def f():\n    try:\n        go()\n    except BaseExceptionGroup as exc:\n        return exc.exceptions\n"
+    ),
     "a ** mapping": "def f(k):\n    _LOG.debug('x', **k)\n",
     "str(exc)": "def f():\n    try:\n        go()\n    except OSError as exc:\n        return str(exc)\n",
     "an f-string of exc": "def f():\n    try:\n        go()\n    except OSError as exc:\n        return f'bad {exc}'\n",
@@ -338,6 +636,16 @@ _ALLOWED = {
     "exc_info=None": "def f():\n    _LOG.debug('x', exc_info=None)\n",
     "tidy_error(exc)": "def f():\n    try:\n        go()\n    except OSError as exc:\n        return tidy_error(exc, 200)\n",
     "log_failure(log, what, exc)": "def f():\n    try:\n        go()\n    except OSError as exc:\n        log_failure(_LOG, 'x', exc)\n",
+    "a log method called on the spot": "def f():\n    _LOG.debug('x')\n    _LOG.warning('y %s', 1)\n",
+    "a count of the members of a group": (
+        "def f():\n    try:\n        go()\n    except BaseExceptionGroup as exc:\n        return len(exc.exceptions)\n"
+    ),
+    "a single member of a group, raised again as it is": (
+        "def f():\n    try:\n        go()\n    except BaseExceptionGroup as exc:\n"
+        "        if len(exc.exceptions) == 1:\n            raise exc.exceptions[0] from None\n        raise\n"
+    ),
+    "getattr for something that is not a log method": "def f(e):\n    return getattr(e, 'errno', None)\n",
+    "a module that imports from secret_scrub": "from src.monitoring.secret_scrub import traceback_text\n",
     "exc.__class__.__name__": "def f():\n    try:\n        go()\n    except OSError as exc:\n        return exc.__class__.__name__\n",
     "type(exc).__name__": "def f():\n    try:\n        go()\n    except OSError as exc:\n        return type(exc).__name__\n",
     "a handler that binds nothing": "def f():\n    try:\n        go()\n    except OSError:\n        _LOG.debug('x')\n",
