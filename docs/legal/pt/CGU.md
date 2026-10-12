@@ -87,7 +87,7 @@ tipo**, em consonância com as **secções 15 e 16 da GPL v3** (exclusão de gar
 limitação de responsabilidade).
 
 4.2. **Estado de desenvolvimento.** O Software é **jovem e experimental**: o seu próprio
-número de versão (`0.0.x`, pré-alfa) assinala deliberadamente uma **maturidade limitada**,
+número de versão (`0.x`, alfa) assinala deliberadamente uma **maturidade limitada**,
 e a sua documentação indica que algumas funcionalidades estão incompletas ou em
 construção. O Editor não garante nem a **adequação a um uso específico, nem a exatidão dos
 resultados, nem a disponibilidade, nem a ausência de erros ou interrupções**.

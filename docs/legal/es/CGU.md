@@ -91,7 +91,7 @@ en consonancia con las **secciones 15 y 16 de la GPL v3** (exención de garantí
 limitación de responsabilidad).
 
 4.2. **Estado de desarrollo.** El Software es **joven y experimental**: su propio número
-de versión (`0.0.x`, pre-alfa) señala deliberadamente una **madurez limitada**, y su
+de versión (`0.x`, alfa) señala deliberadamente una **madurez limitada**, y su
 documentación indica que algunas funcionalidades están incompletas o en construcción.
 El Editor no garantiza ni la **adecuación a un uso concreto, ni la exactitud de los
 resultados, ni la disponibilidad, ni la ausencia de errores o interrupciones**.

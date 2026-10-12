@@ -79,11 +79,30 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
 
     SQL keys off ``keyword_mentions.source_id`` (denormalised) and joins only the
     small ``keyword_tags`` (axis="topic"); no keyword_mentions->articles join.
+
+    **A keyword the stoplist hides is not evidence of a topic (R111 step T2).** The tagged
+    keywords are few (a controlled axis), so the hidden ones are resolved FIRST, from the
+    tag table and the small ``keywords`` columns, and left out of the aggregation in SQL:
+    summing per-keyword counts afterwards would count an article twice wherever it carries two
+    keywords of one topic, and that is the one thing this query's ``COUNT(DISTINCT article)``
+    exists to prevent. Only the LIST hides here (shipped stopwords + the user's exclusions), not
+    the too-short / numeric rule: a topic tag is a deliberate, curated label on a keyword
+    (``ai`` is one), and a length rule would silently erase its evidence.
     """
     from sqlalchemy import func, select
 
+    from src.analytics.filters import hidden_set
     from src.database.derived_views import KeywordMentionRead
-    from src.database.models import KeywordTag, Source
+    from src.database.models import Keyword, KeywordTag, Source
+
+    hidden = hidden_set()
+    tagged = session.execute(
+        select(KeywordTag.keyword_id, Keyword.normalized_term)
+        .join(Keyword, Keyword.id == KeywordTag.keyword_id)
+        .where(KeywordTag.axis == "topic")
+        .distinct()
+    ).all()
+    hidden_ids = sorted({int(kid) for kid, norm in tagged if norm in hidden})
 
     stmt = (
         select(
@@ -96,6 +115,12 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
         .where(KeywordTag.axis == "topic")
         .group_by(Source.domain, KeywordTag.tag)
     )
+    if hidden_ids:
+        # ONE NOT IN. WHAT BOUNDS IT: the topic axis is curated (the baseline files carry about a hundred
+        # entries across seven languages, each tagging a few keywords), so the hidden ones are a handful,
+        # and SQLite 3.32+ and SQLCipher 4 bind 32766 variables per statement. Chunking would not bound it:
+        # ANDed chunks are still one statement.
+        stmt = stmt.where(KeywordTag.keyword_id.notin_(hidden_ids))
     rows = session.execute(stmt).all()  # Row objects unpack as (domain, tag, count)
     return aggregate_source_topics(rows, min_articles=min_articles, top_n=top_n)
 
