@@ -497,8 +497,9 @@ def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verify_verdict_and_
 def test_the_passphrase_is_out_of_the_reason_when_joining_two_lines_would_rebuild_it(tmp_path, monkeypatch):
     """The reason joins the engine's lines with ``"; "``: a passphrase that holds ``"; "`` and whose halves end
     one line and start the next is in neither line and in the joined text (the coordinator's check of #1318,
-    N5). The lines stay as the engine made them, and the lead stays the check's own words. MUTATION TARGET: the
-    scrub of the joined tail."""
+    N5). The lead stays the check's own words; the measurement is the clean joined text alone, because the lines as the engine
+    made them would leave each half in its list (the coordinator's check of fold 3, F4). MUTATION TARGET: the scrub of the joined
+    tail, and the replacement of the list by the clean text when the join changes."""
     import src.backup.stream_backup as stream_backup
 
     _live_corpus(tmp_path, monkeypatch)
@@ -510,7 +511,8 @@ def test_the_passphrase_is_out_of_the_reason_when_joining_two_lines_would_rebuil
     )
     verify = out["report"]["checks"]["p0_1_verify"]
     assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
-    assert verify["measurements"]["problems"] == lines
+    assert verify["measurements"]["problems"] == ["volume 2 failed its checksum, ***redacted*** was not read"]
+    assert "left half" not in json.dumps(out) and "right half" not in json.dumps(out)
     assert secret not in json.dumps(out)
     assert secret not in Path(out["path"]).read_text(encoding="utf-8"), "the file the debug bundle carries"
 
@@ -538,137 +540,560 @@ def test_a_passphrase_that_is_also_a_verdict_word_leaves_the_verdicts_and_the_su
 _TRACEBACK_NAMES = frozenset(
     {"format_exc", "print_exc", "format_exception", "print_exception", "format_exception_only", "exc_info"}
 )
+#: The methods of a logger, for a call that is handed its keyword arguments as a ``**`` mapping the walk cannot read.
+_LOGGER_METHODS = frozenset({"debug", "info", "warning", "warn", "error", "exception", "critical", "fatal", "log"})
 
 
-def _writes_a_traceback(call: ast.Call) -> bool:
-    """Whether ``call`` writes the exception being handled: ``.exception(...)`` (a logger's, or
-    ``sys.exception()``), a call into the ``traceback`` module or a name imported from it, ``sys.exc_info()``,
-    or any call given an ``exc_info`` that is not the constant ``False`` or ``None``."""
+def _bound_as(tree: ast.AST, module: str) -> frozenset[str]:
+    """The names ``module`` goes by in the source: itself, and what ``import module as other`` binds."""
+    names = {module}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names |= {a.asname for a in node.names if a.name == module and a.asname}
+    return frozenset(names)
+
+
+def _traceback_function_names(tree: ast.AST) -> frozenset[str]:
+    """The names the ``traceback`` module's functions go by: their own, and what ``from traceback import format_exc as fe``
+    binds."""
+    names = set(_TRACEBACK_NAMES)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "traceback":
+            names |= {a.asname for a in node.names if a.asname}
+    return frozenset(names)
+
+
+def _splat_may_carry_exc_info(value: ast.expr, call: ast.Call) -> bool:
+    """Whether the ``**`` mapping of a call may hand it an ``exc_info``: a dict written out that names one (or splats another),
+    or any mapping the walk cannot read given to a call of a logger's method."""
+    if isinstance(value, ast.Dict):
+        return any(
+            key is None or (isinstance(key, ast.Constant) and key.value == "exc_info") for key in value.keys
+        )
+    return isinstance(call.func, ast.Attribute) and call.func.attr in _LOGGER_METHODS
+
+
+def _writes_a_traceback(
+    call: ast.Call,
+    traceback_modules: frozenset[str] = frozenset({"traceback"}),
+    traceback_functions: frozenset[str] = _TRACEBACK_NAMES,
+    sys_modules: frozenset[str] = frozenset({"sys"}),
+) -> bool:
+    """Whether ``call`` writes the exception being handled: ``.exception(...)`` (a logger's, or ``sys.exception()``), a call
+    into the ``traceback`` module under any name it is imported as or a name imported from it (``from traceback import
+    format_exc as fe``), ``sys.exc_info()``, any call given an ``exc_info`` that is not the constant ``False`` or ``None``, and a
+    call given a ``**`` mapping that may carry one (:func:`_splat_may_carry_exc_info`)."""
     func = call.func
     if isinstance(func, ast.Attribute):
-        if func.attr == "exception" or (isinstance(func.value, ast.Name) and func.value.id == "traceback"):
+        if func.attr == "exception" or (isinstance(func.value, ast.Name) and func.value.id in traceback_modules):
             return True
-        if func.attr == "exc_info" and isinstance(func.value, ast.Name) and func.value.id == "sys":
+        if func.attr == "exc_info" and isinstance(func.value, ast.Name) and func.value.id in sys_modules:
             return True
-    elif isinstance(func, ast.Name) and func.id in _TRACEBACK_NAMES:
+    elif isinstance(func, ast.Name) and func.id in traceback_functions:
         return True
     return any(
-        kw.arg == "exc_info" and not (isinstance(kw.value, ast.Constant) and kw.value.value in (False, None))
+        (kw.arg == "exc_info" and not (isinstance(kw.value, ast.Constant) and kw.value.value in (False, None)))
+        or (kw.arg is None and _splat_may_carry_exc_info(kw.value, call))
         for kw in call.keywords
     )
 
 
-#: The names the secret goes by where the release run holds it: the parameter or local a helper is given it as
-#: (``passphrase``; ``secret`` and ``needle`` in ``release_run.py``'s helpers) and, as an attribute, the one the run's
-#: parameters carry (``run.params.passphrase``).
-_SECRET_NAMES = frozenset({"passphrase", "secret", "needle"})
+#: The names the secret goes by where the release run, the volume job and the import queue hold it, each with WHICH secret
+#: it is: the parameter or local a helper is given it as (``passphrase``; ``secret`` and ``needle`` in
+#: ``release_run.py``'s helpers, the same passphrase under another name; ``corpus_passphrase``, the restore job's second
+#: one; ``password``, the mailbox password a request types, which no net holds either). A function that holds two secrets has to
+#: name both in a call that scrubs for it ...
+_SECRET_NAMES = {
+    "passphrase": "passphrase",
+    "secret": "passphrase",
+    "needle": "passphrase",
+    "corpus_passphrase": "corpus_passphrase",
+    "password": "password",
+}
+
+#: ... and, as an attribute (or ``getattr(obj, "passphrase")``), the one the run's parameters carry
+#: (``run.params.passphrase``, a request body's ``body.passphrase``), the one the import queue keeps for the length of a
+#: run (``self._passphrase``), the restore's second one (``body.corpus_passphrase``, ``self._corpus_passphrase``) and a
+#: mailbox's password (``req.password``). An
+#: attribute is a secret by NAME here and a VALUE by the object it is read off: ``self._passphrase`` and ``body.passphrase`` are
+#: two secrets, and a function that reads both holds two, each of which a scrubbing call has to name.
+_SECRET_ATTRIBUTES = {
+    "passphrase": "passphrase",
+    "_passphrase": "passphrase",
+    "corpus_passphrase": "corpus_passphrase",
+    "_corpus_passphrase": "corpus_passphrase",
+    "password": "password",
+}
 
 #: The calls that write a caught exception as a text with the secret taken out of it: name -> (the index of the
 #: argument that carries what is written, the index of the secret). A handler may use the exception only inside the
-#: first, and only when the second IS the secret.
+#: first, and only when the second IS the secret AND the function holds no other: a text scrubbed of one of two secrets
+#: still carries the other, which is what :data:`_SCRUBBING_CALLS_OVER_SECRETS` is for.
+#: The per-needle helpers of ``secret_scrub`` (``scrub_text``, ``scrub_value``, ``scrub_file``) are NOT here and credit nothing: they
+#: know one needle the caller made itself and nothing the process holds, and a secret under the floor they leave in the text, so
+#: a handler that writes a caught exception through one writes the passphrase the process holds as it is.
 _SCRUBBING_CALLS = {
-    "_exception_text": (0, 1),  # p0_validation: "Name: message", scrubbed, from the exception itself
+    "_exception_text": (0, 1),  # p0_validation: "Name: message" through ``scrubbed``, from the exception itself
     "_error_text": (0, 1),  # release_run_fresh_restore: the same, for the restore child
-    "_scrub_value": (0, 1),  # release_run: ``secret_scrub.scrub_value`` over a text built from the exception
-    "scrub_value": (0, 1),
-    "_log_phase_failure": (1, 3),  # release_run: logs the whole chain, with the secret out of it
 }
 
+#: The same for the helpers of ``secret_scrub`` that take ANY NUMBER of secrets (the volume job's restore holds two,
+#: the artifact's passphrase and the corpus's): name -> (the index of the argument that carries what is written, the
+#: index of the first secret). Such a call routes only when EVERY argument from that index on is a secret AND together
+#: they name every secret the function holds, because a text scrubbed of one of two still carries the other.
+_SCRUBBING_CALLS_OVER_SECRETS = {
+    "scrubbed": (0, 1),  # a text with each secret taken out
+    "exception_text": (0, 1),  # the exception's own text, each secret taken out and THEN cut (the helper the three modules use)
+    "scrubbed_value": (0, 1),  # a structure with each secret taken out of every string in it
+    "traceback_text": (0, 1),  # the traceback of the exception, scrubbed
+    "log_failure": (2, 3),  # logs the whole chain, with each secret out of it (the logger, then the words)
+    "restore_failure_text": (1, 2),  # merge: the sentence a failed restore is answered with (the action, then the exception)
+    "_restore_error": (1, 2),  # backup_v2: the 500 the legacy restore answers with, its detail scrubbed (the action, then the exception)
+}
+
+#: What a handler of a module that answers requests (the route layer) may hand the exception to without a scrub: the
+#: response the caller gets. A response is the caller's own text; the recorders that keep one scrub it where they make
+#: their record (the import queue, which this guard also reads) and ``note_http_error`` records the status alone (a
+#: test pins that). A log record is not a response.
+_RESPONSE_BUILDERS = frozenset({"HTTPException", "_restore_error"})
+
 #: What a caught exception may be asked for without writing its message: a phase error's two fields that are data
-#: (its status and what the phase measured before it failed), and, in the walk, its class (``type(exc)``).
+#: (its status and what the phase measured before it failed) -- and only the exception the run's own phases raise,
+#: ``_PhaseError``, because on any other exception ``status`` and ``partial`` are the engine's -- and, in the walk, its
+#: class (``type(exc)``).
 _PLAIN_FIELDS = frozenset({"status", "partial"})
+
+#: The exception classes whose handler may read the one field that holds the code's OWN fixed sentence (never an engine's words),
+#: because the page matches that sentence whole and a scrub would redact it: class name -> field. Read as the phase-error fields are:
+#: the handler catches the class by that name alone.
+_FIXED_TEXT_FIELDS = {"NewsletterFilterRefused": "served_text"}
+
+
+#: Helpers a handler may hand the exception to because they read its CLASS and answer a question about it, never its words:
+#: name -> the module under ``src/`` that defines it. A test below reads each one's body, so a helper that starts to read the
+#: message (``"timed out" in str(exc)``) stops being one.
+_CLASSIFIERS = {"_is_pool_timeout": "monitoring/release_run"}
+
+
+def _is_a_phase_error_handler(handler: ast.ExceptHandler) -> bool:
+    """Whether ``handler`` catches ``_PhaseError`` by that name alone."""
+    return isinstance(handler.type, ast.Name) and handler.type.id == "_PhaseError"
+
+
+def _secret_attribute(node: ast.AST) -> tuple[str, str] | None:
+    """``(which secret, the expression)`` for an attribute of :data:`_SECRET_ATTRIBUTES` (``body.passphrase``) or a
+    ``getattr(obj, "passphrase"[, default])`` of one (the same secret, read a way the attribute walk does not see), else
+    ``None``."""
+    if isinstance(node, ast.Attribute) and node.attr in _SECRET_ATTRIBUTES:
+        return _SECRET_ATTRIBUTES[node.attr], ast.unparse(node)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value in _SECRET_ATTRIBUTES
+    ):
+        return _SECRET_ATTRIBUTES[node.args[1].value], f"{ast.unparse(node.args[0])}.{node.args[1].value}"
+    return None
 
 
 def _is_the_secret(node: ast.AST) -> bool:
-    """Whether ``node`` IS the secret as the run holds it: a name it goes by or an attribute called ``passphrase``
-    (``run.params.passphrase``) -- not a constant (``""`` scrubs nothing), not a call, not any other name."""
-    return (isinstance(node, ast.Name) and node.id in _SECRET_NAMES) or (
-        isinstance(node, ast.Attribute) and node.attr == "passphrase"
+    """Whether ``node`` IS the secret as the run holds it: a name it goes by, an attribute it is kept in
+    (``run.params.passphrase``, ``self._passphrase``) or a ``getattr`` of one -- not a constant (``""`` scrubs nothing), not
+    any other call, not any other name."""
+    return (isinstance(node, ast.Name) and node.id in _SECRET_NAMES) or _secret_attribute(node) is not None
+
+
+class _Held:
+    """The secrets ONE function holds, each by which secret it is: a parameter (any kind) or a name it reads that is one of
+    :data:`_SECRET_NAMES`, or an attribute (or ``getattr``) of :data:`_SECRET_ATTRIBUTES`. The attribute is how
+    ``release_run.py``, the route layer and the import queue hold it (``run.params.passphrase``, ``body.corpus_passphrase``,
+    ``self._passphrase``), which no parameter list shows.
+
+    The same passphrase under another name is ONE secret (``secret = run.params.passphrase``). Two attributes of one kind
+    read off DIFFERENT objects are TWO (``self._passphrase`` and ``body.passphrase``, both ``passphrase`` in the table): a
+    function that reads both holds two values, and a scrubbing call that names one has left the other in the text."""
+
+    def __init__(self, fn: ast.AST) -> None:
+        names: set[str] = set()
+        attributes: dict[str, set[str]] = {}
+        for n in ast.walk(fn):
+            if isinstance(n, ast.arg) and n.arg in _SECRET_NAMES:
+                names.add(_SECRET_NAMES[n.arg])
+            elif isinstance(n, ast.Name) and n.id in _SECRET_NAMES:
+                names.add(_SECRET_NAMES[n.id])
+            else:
+                found = _secret_attribute(n)
+                if found:
+                    attributes.setdefault(found[0], set()).add(found[1])
+        self._split = {kind for kind, expressions in attributes.items() if len(expressions) > 1}
+        self.keys = names | {
+            key for kind, expressions in attributes.items() for key in (expressions if kind in self._split else {kind})
+        }
+
+    def key_of(self, node: ast.AST) -> str:
+        """Which secret ``node`` is, for a node :func:`_is_the_secret` accepted."""
+        if isinstance(node, ast.Name):
+            return _SECRET_NAMES[node.id]
+        kind, expression = _secret_attribute(node)  # type: ignore[misc]
+        return expression if kind in self._split else kind
+
+    def covered_by(self, args: list[ast.expr]) -> bool:
+        """Whether ``args`` (the secret arguments of a call of :data:`_SCRUBBING_CALLS_OVER_SECRETS`) are all secrets and,
+        between them, name every secret the function holds."""
+        named = {self.key_of(a) for a in args if _is_the_secret(a)}
+        # A function that holds no secret is covered by a call that names none (the process's own are taken out of every
+        # text); one that holds a secret is covered only by a call that names every one it holds.
+        return (bool(args) or not self.keys) and all(_is_the_secret(a) for a in args) and self.keys <= named
+
+
+def _covered_by_a_scrubbing_block(fn: ast.AST, held: _Held) -> set[int]:
+    """The ids of every node inside a ``with scrub_and_reraise(log, what, *secrets)`` of the function whose secrets name every
+    secret it holds: whatever is raised inside such a block leaves it as a ``RuntimeError`` with the secrets out of its text,
+    ``from None``, unless it is the framework's own answer (the block's contract: ``src/monitoring/secret_scrub.py``)."""
+    covered: set[int] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                call = item.context_expr
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Name)
+                    and call.func.id == "scrub_and_reraise"
+                    and len(call.args) > 2
+                    and held.covered_by(call.args[2:])
+                ):
+                    for stmt in node.body:
+                        covered |= {id(n) for n in ast.walk(stmt)}
+    return covered
+
+
+def _is_a_builder_call(node: ast.AST) -> bool:
+    """Whether ``node`` is a call of one of :data:`_RESPONSE_BUILDERS`."""
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _RESPONSE_BUILDERS
+
+
+def _cuts_the_exception(carrying: ast.AST, name: str | None) -> bool:
+    """Whether the argument a scrubbing call carries cuts the caught exception's text with a slice INSIDE the call
+    (``scrubbed(f"{exc}"[:300])``): the cut comes before the scrub, and a secret that starts before it and ends after it leaves
+    its first half in the text, which no later scrub can match. The cut belongs after the call (``scrubbed(...)[:300]``) or in
+    ``exception_text(..., limit=)``, which does it in that order."""
+    return bool(name) and any(
+        isinstance(n, ast.Subscript)
+        and isinstance(n.slice, ast.Slice)
+        and any(isinstance(m, ast.Name) and m.id == name for m in ast.walk(n.value))
+        for n in ast.walk(carrying)
     )
 
 
-def _holds_the_secret(fn: ast.AST) -> bool:
-    """Whether the function takes a parameter (any kind), reads a name or reads an attribute that is the secret.
-    The attribute is how ``release_run.py`` holds it (``run.params.passphrase``), which no parameter list shows."""
-    return any(
-        (isinstance(n, ast.arg) and n.arg in _SECRET_NAMES)
-        or (isinstance(n, ast.Name) and n.id in _SECRET_NAMES)
-        or (isinstance(n, ast.Attribute) and n.attr == "passphrase")
-        for n in ast.walk(fn)
-    )
-
-
-def _caught_exception_leaks(source: str) -> tuple[list[str], list[str], int]:
+def _caught_exception_leaks(
+    source: str, *, responses: bool = False, every: bool = False
+) -> tuple[list[str], list[str], int]:
     """Read ``source`` the way the guard below does: ``(holders, offenders, routed)`` -- the functions that hold the
-    secret (:func:`_holds_the_secret`; ``async`` or not), the places inside their ``except`` handlers where the caught
-    exception reaches a text some way other than a call of :data:`_SCRUBBING_CALLS` that is given the secret, and how
-    many such calls the handlers make (a walk that routes nothing has found nothing to guard).
+    secret (:class:`_Held`; ``async`` or not), the places inside their ``except`` handlers where the caught
+    exception reaches a text some way other than a call of :data:`_SCRUBBING_CALLS` that is given the secret (or of
+    :data:`_SCRUBBING_CALLS_OVER_SECRETS` that is given every secret the function holds), and how many such calls the
+    handlers make (a walk that routes nothing has found nothing to guard).
 
     A way is: the handler's own name used anywhere but inside the carrying argument of such a call (an f-string,
     ``str()``, ``.args``, a copy under another name, a call that is handed it, that call's other arguments,
-    ``raise ... from exc``, which carries it on as the cause), except its class (``type(exc)``) and a phase error's
-    ``status`` and ``partial``; such a call given no second argument, an empty one or one that is not the secret
-    routes nothing, so the exception inside it is a way too; and, in a handler WITH OR WITHOUT a name, a call that
-    writes the traceback (:func:`_writes_a_traceback`). It follows no call: a helper the handler calls that reads the
-    exception itself is not seen."""
+    ``raise ... from exc``, which carries it on as the cause), except its class (``type(exc)``) and the ``status`` and
+    ``partial`` of a ``_PhaseError``; such a call given no second argument, an empty one or one that is not the secret
+    routes nothing, so the exception inside it is a way too; a call that writes the traceback (:func:`_writes_a_traceback`:
+    ``exc_info=``, ``**{"exc_info": True}``, ``.exception()``, the ``traceback`` module under any name, ``sys.exc_info()``), in a
+    handler WITH OR WITHOUT a name; and a NEW exception raised in a handler with no ``from`` clause, which carries the caught
+    one as its context for the traceback a consumer prints (``from None`` drops it), except in the response builders of the
+    route layer and inside a ``with scrub_and_reraise`` that names every secret (:func:`_covered_by_a_scrubbing_block`). It
+    follows no call: a helper the handler calls that reads the exception itself is not seen. A slice of the exception's text INSIDE
+    the carrying argument of such a call (``scrubbed(str(exc)[:300], key)``) is a way too (:func:`_cuts_the_exception`: the cut
+    comes before the scrub, and a secret that straddles it leaves its first half); the cut belongs after the call or in
+    ``exception_text(..., limit=)``. A handler at module level is read like a function and listed as ``<module>``. With ``responses`` (the route
+    layer) the exception may also be the cause of what a call of :data:`_RESPONSE_BUILDERS` is raised as: the caller's own
+    response, whose TEXT is still the writer's to scrub (``detail=scrubbed(str(exc), body.passphrase)``: a typed key is held by no
+    net until it is accepted, and the browser can send what a response said back to the error journal through
+    ``note_frontend_error``, which knows only what the process holds; ``note_http_error`` records the status alone).
+
+    With ``every`` a function that holds NO secret is read too (:data:`_EVERY_HANDLER`): the release run's own handlers write
+    what they catch into a report, a state file and a log, and a function that holds nothing today is the one that holds the
+    passphrase after the next edit (the run's ``_probes`` and ``_collect`` handlers were read as holding none, and wrote the
+    text by hand). Its handlers may use the exception only inside a scrubbing call that names no secret."""
     tree = ast.parse(source)
+    traceback_modules = _bound_as(tree, "traceback")
+    traceback_functions = _traceback_function_names(tree)
+    sys_modules = _bound_as(tree, "sys")
     holders: list[str] = []
     offenders: dict[int, str] = {}
     routed: set[int] = set()
-    for fn in ast.walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or not _holds_the_secret(fn):
+    in_a_function = {
+        id(h)
+        for f in ast.walk(tree)
+        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+        for h in ast.walk(f)
+        if isinstance(h, ast.ExceptHandler)
+    }
+    # A handler at module level (an import guard, a bootstrap) is a scope of its own: it holds what it names and is read like a function.
+    scopes = [
+        (n.name if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<module>", n)
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        or (isinstance(n, ast.ExceptHandler) and id(n) not in in_a_function)
+    ]
+    for fname, fn in scopes:
+        held = _Held(fn)
+        if held.keys:
+            holders.append(fname)
+        elif not every:
             continue
-        holders.append(fn.name)
+        covered = _covered_by_a_scrubbing_block(fn, held)
         for handler in (n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)):
             allowed: set[int] = set()
             for node in ast.walk(handler):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     spec = _SCRUBBING_CALLS.get(node.func.id)
-                    if spec and len(node.args) > max(spec) and _is_the_secret(node.args[spec[1]]):
+                    many = _SCRUBBING_CALLS_OVER_SECRETS.get(node.func.id)
+                    if (
+                        spec
+                        and len(node.args) > max(spec)
+                        and _is_the_secret(node.args[spec[1]])
+                        and held.keys == {held.key_of(node.args[spec[1]])}
+                    ):
                         routed.add(id(node))
-                        allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
-                    elif node.func.id == "type" and len(node.args) == 1:
+                        if not _cuts_the_exception(node.args[spec[0]], handler.name):
+                            allowed |= {id(n) for n in ast.walk(node.args[spec[0]])}
+                    elif many and len(node.args) >= many[1] and held.covered_by(node.args[many[1] :]):
+                        routed.add(id(node))
+                        if not _cuts_the_exception(node.args[many[0]], handler.name):
+                            allowed |= {id(n) for n in ast.walk(node.args[many[0]])}
+                    elif (node.func.id == "type" or node.func.id in _CLASSIFIERS) and len(node.args) == 1:
                         allowed.add(id(node.args[0]))
-                elif isinstance(node, ast.Attribute) and node.attr in _PLAIN_FIELDS:
+                elif isinstance(node, ast.Attribute) and (
+                    (node.attr in _PLAIN_FIELDS and _is_a_phase_error_handler(handler))
+                    or (isinstance(handler.type, ast.Name) and _FIXED_TEXT_FIELDS.get(handler.type.id) == node.attr)
+                ):
                     allowed.add(id(node.value))
+                elif (
+                    responses
+                    and isinstance(node, ast.Raise)
+                    and node.cause is not None
+                    and _is_a_builder_call(node.exc)
+                ):
+                    allowed |= {id(n) for n in ast.walk(node.cause)}
             for node in ast.walk(handler):
                 named = handler.name and isinstance(node, ast.Name) and node.id == handler.name
-                if (named and id(node) not in allowed) or (isinstance(node, ast.Call) and _writes_a_traceback(node)):
-                    offenders.setdefault(id(node), f"{fn.name}, line {node.lineno}")
+                if (named and id(node) not in allowed) or (
+                    isinstance(node, ast.Call)
+                    and _writes_a_traceback(node, traceback_modules, traceback_functions, sys_modules)
+                ):
+                    offenders.setdefault(id(node), f"{fname}, line {node.lineno}")
+                elif (
+                    isinstance(node, ast.Raise)
+                    and isinstance(node.exc, ast.Call)
+                    and node.cause is None
+                    and id(node) not in covered
+                    and not (responses and _is_a_builder_call(node.exc))
+                ):
+                    offenders.setdefault(id(node), f"{fname}, line {node.lineno} (raised with no `from`)")
     return holders, sorted(offenders.values()), len(routed)
 
 
-#: The modules that hold the passphrase, with what the walk must find in each so that a rename or a restructure
-#: cannot leave it looking at nothing: the functions it must read as holding the secret, and the fewest calls of a
-#: scrubbing helper its handlers make today.
+def _catches_only_responses(handler: ast.ExceptHandler) -> bool:
+    """Whether ``handler`` catches nothing but the framework's own answers (``except HTTPException``), which it may raise again
+    as they are: an answer is the code's own text, scrubbed by whoever wrote it."""
+    types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return bool(types) and all(isinstance(t, ast.Name) and t.id in _RESPONSE_BUILDERS for t in types)
+
+
+def _reraising_functions(source: str, *, responses: bool = False) -> dict[str, list[int]]:
+    """The functions that hold a secret and, in an ``except`` handler, raise what they caught again AS IT IS (a bare ``raise``),
+    outside a ``with scrub_and_reraise`` that names every secret they hold (:func:`_covered_by_a_scrubbing_block`): the exception
+    leaves them as it made its message, to whichever handler catches it next, which has to scrub it. Each is listed in
+    :data:`_GUARDED_MODULES` with the reason its catcher does. With ``responses`` a handler of the framework's own answers
+    (``except HTTPException: raise``) is not one."""
+    tree = ast.parse(source)
+    found: dict[str, list[int]] = {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        held = _Held(fn)
+        if not held.keys:
+            continue
+        covered = _covered_by_a_scrubbing_block(fn, held)
+        for handler in (n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)):
+            if responses and _catches_only_responses(handler):
+                continue
+            for node in ast.walk(handler):
+                if isinstance(node, ast.Raise) and node.exc is None and id(node) not in covered:
+                    found.setdefault(fn.name, []).append(node.lineno)
+    return found
+
+
+#: The modules that hold the passphrase, each by where it lives under ``src/``, with: what the walk must find in it so that a
+#: rename or a restructure cannot leave it looking at nothing (the functions it must read as holding the secret, and the fewest
+#: calls of a scrubbing helper its handlers make today); whether it answers requests (``responses``: the exception may be the
+#: cause of a response, :data:`_RESPONSE_BUILDERS`, whose TEXT is still scrubbed by its writer); and the functions that raise
+#: again what they caught as it is (a bare ``raise`` outside a ``with scrub_and_reraise``), each with why whoever catches it next
+#: scrubs it. The last is held to zero slack both ways below, so a function that starts to re-raise has to say why that is safe.
 _GUARDED_MODULES = {
-    "p0_validation": ({"_check_backup", "_check_restore"}, 4),
-    "release_run": ({"_run_phase", "_fresh_install_restore"}, 4),
-    "release_run_fresh_restore": ({"main"}, 1),
+    "monitoring/p0_validation": ({"_check_backup", "_check_restore"}, 7, False, {}),
+    "monitoring/release_run": (
+        {"_run_phase", "_fresh_install_restore", "_row5_quarantine"},
+        24,
+        False,
+        {
+            "_fresh_install_restore": (
+                "its `except BaseException` removes the empty directory a failed spawn leaves and raises the spawn's own error "
+                "again, before any child has been handed the passphrase; its caller, _run_phase, is read by this guard and "
+                "writes what it catches through exception_text and log_failure"
+            ),
+            "_row5_quarantine": (
+                "its `except (_PhaseError, RuntimeError)` passes on, as they are, the phase error it built from the scrubbed text "
+                "(exception_text with the run's passphrase, raised from None) and the RuntimeError its callees raise; its caller, "
+                "_run_phase, is read by this guard and writes what it catches through exception_text and log_failure"
+            ),
+        },
+    ),
+    "monitoring/release_run_fresh_restore": ({"main"}, 1, False, {}),
+    "backup/volume_job": ({"start_backup", "_run_backup", "_run_restore", "_run_verify"}, 17, False, {}),
+    "backup/stream_backup": (
+        {"verify_stream_backup"},
+        1,
+        False,
+        {
+            "read_stream_backup": (
+                "its `except Exception` removes the staging directory a failed restore leaves and raises the failure again as it "
+                "was; its callers are the volume job's restore and restore_legacy_path (through read_artifact), both read by "
+                "this guard, and each writes or converts what it catches with the secrets out of it"
+            )
+        },
+    ),
+    "backup/import_queue": ({"start", "_drive", "_run_corpus", "_run_legacy"}, 4, False, {}),
+    "api/backup_v2": (
+        {"_stage_upload", "restore_legacy_path", "volume_backup_start", "import_queue_start"},
+        14,
+        True,
+        {},
+    ),
+    "api/unlock": ({"unlock", "_unlock_locked", "create_db", "encrypt_db"}, 3, True, {}),
+    "api/safety": ({"encrypted_backup"}, 1, True, {}),
+    "api/diagnostics/p0": ({"p0_validation_start"}, 1, True, {}),
+    "api/diagnostics/release_run": ({"release_run_start", "release_run_resume"}, 2, True, {}),
+    "api/ingestion": ({"ingest_email_endpoint", "_mailbox_pull_worker"}, 2, True, {}),
 }
+
+
+#: The guarded modules whose every function is read, not only the ones that hold a secret: the release run, the P0 check and
+#: the restore child write what they catch into the run's report, its state file and its log, and the helper they write it through
+#: (``secret_scrub.exception_text``) takes the process's own passphrases out of any text. A handler here that makes the text by
+#: hand is a leak in waiting, whether or not its function holds the passphrase today.
+_EVERY_HANDLER = frozenset({"monitoring/p0_validation", "monitoring/release_run", "monitoring/release_run_fresh_restore"})
 
 
 @pytest.mark.parametrize("module", sorted(_GUARDED_MODULES))
 def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way_but_through_a_scrub(module):
     """The sites there are today are pinned by behaviour tests; the next ``except ... as exc`` that puts ``{exc}``
     into a report is how the next leak is made, and no test of the existing ones would see it. Every handler inside
-    a function that holds the passphrase (takes it, reads it into a local, or reads it off the run's parameters) may
-    use the caught exception only inside a call that scrubs it with the secret (``_exception_text``, the child's
-    ``_error_text``, ``scrub_value``, ``_log_phase_failure``), or ask for its class or a phase error's ``status`` and
-    ``partial``, and may ask for no traceback (``exc_info=``, ``.exception()``, the ``traceback`` module,
-    ``sys.exc_info()``), because the text such a call writes carries the message too. It reads the syntax of
-    ``p0_validation.py``, ``release_run.py`` and ``release_run_fresh_restore.py`` and follows no call; what stays
-    outside it is listed in ``LESSONS.md`` (the entry about a net going where the text is made) and the cases below
-    pin what it sees. (``_check_unlock`` and ``_check_collector`` hold no secret, so they are not held to this.)"""
-    must_hold, least_routed = _GUARDED_MODULES[module]
-    path = Path(p0.__file__).with_name(f"{module}.py")
-    holders, offenders, routed = _caught_exception_leaks(path.read_text(encoding="utf-8"))
+    a function that holds the passphrase (takes it, reads it into a local, or reads it off the run's parameters or
+    the queue's ``self``) may use the caught exception only inside a call that scrubs it with the secret
+    (``_exception_text`` and the child's ``_error_text``, each of which takes ONE secret and so counts only in a function that
+    holds that one, and writes it through ``scrubbed``; ``secret_scrub``'s ``scrubbed``, ``scrubbed_value``,
+    ``traceback_text`` and ``log_failure``, which must be given EVERY secret the function holds, a restore's two, and
+    which secret a name or an attribute is, is read from :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`), or ask
+    for its class or a ``_PhaseError``'s ``status`` and ``partial``, and may ask for no
+    traceback (``exc_info=``, ``**{"exc_info": True}``, ``.exception()``, the ``traceback`` module under any name,
+    ``sys.exc_info()``), because the text such a call writes carries the message too. A NEW exception raised in a handler
+    carries the caught one as its context, which a traceback prints: it is raised ``from None``, or inside a ``with
+    scrub_and_reraise`` that names every secret. In the route layer (``responses``) the exception may be the CAUSE of the
+    response the caller gets (``raise HTTPException(...) from exc``), and the response's TEXT is still the writer's to
+    scrub: a typed key is held by no net until it is accepted, and the browser can send what a response said back to the error
+    journal through ``note_frontend_error``, which knows only the passphrases the process holds, so a ``detail=str(exc)`` can
+    carry a typed key into the bundle (``note_http_error`` records the status alone). And a function that raises what it caught AGAIN as it is (a bare
+    ``raise``) outside such a block is listed with why whoever catches it next scrubs it. It reads the syntax of the modules in
+    ``_GUARDED_MODULES`` and follows no call; what stays outside it is listed in ``LESSONS.md`` (the entry about a net going
+    where the text is made) and in ``OPEN_QUEUE.md``, and the cases below pin what it sees.
+    (``_check_unlock`` and ``_check_collector`` hold no secret; in the three modules of :data:`_EVERY_HANDLER` they are held to the
+    same call with none named, and elsewhere a function that holds no secret is not read.)"""
+    must_hold, least_routed, responses, reraises = _GUARDED_MODULES[module]
+    path = Path(p0.__file__).parents[1] / f"{module}.py"
+    source = path.read_text(encoding="utf-8")
+    holders, offenders, routed = _caught_exception_leaks(source, responses=responses, every=module in _EVERY_HANDLER)
     assert must_hold <= set(holders), f"{module}: the walk found {holders}; a rename must not leave it looking at nothing"
     assert routed >= least_routed, (
         f"{module}: the walk saw {routed} calls of a scrubbing helper in the handlers and the module makes "
         f"{least_routed}: a restructure must not leave it looking at nothing"
     )
     assert not offenders, f"{module}: a caught exception reaches a text without going through a scrub: {offenders}"
+    reraising = _reraising_functions(source, responses=responses)
+    assert set(reraising) == set(reraises), (
+        f"{module}: raise what they catch again as it is, outside a `with scrub_and_reraise`, and are not listed: "
+        f"{sorted(set(reraising) - set(reraises))}; listed but no longer re-raising (take them out): "
+        f"{sorted(set(reraises) - set(reraising))}"
+    )
+    assert all(len(reason) > 80 for reason in reraises.values()), "a reason, not a placeholder"
+
+
+#: The modules under ``src/`` whose functions hold the passphrase and write what they catch in a way
+#: :func:`_caught_exception_leaks` flags (read with ``responses``, so a response does not count), that are NOT in
+#: :data:`_GUARDED_MODULES`, each with why it stays outside. It is the list of what the walk does not cover, held to zero
+#: slack both ways below: a module that starts to hold the passphrase and write what it catches has to be guarded or named
+#: here with its reason, and an entry whose sites were fixed or went has to come out, so the list cannot go stale or grow
+#: unseen. The walk reads the names in :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`: a module that calls the
+#: passphrase something else is not seen.
+_NOT_GUARDED = {
+    "analytics/columnar.py": (
+        "NOT BUILT. Three log records written with exc_info inside functions that take the passphrase (connect, "
+        "encryption_gate, refresh_persisted_read_model): an engine error can quote the statement that carried the key. "
+        "They sit with the columnar store's key handling, which the key-derivation change in docs/ledger/OPEN_QUEUE.md reads."
+    ),
+    "llm/vllm_lifecycle.py": (
+        "Not a passphrase: `needle` there is the search term failure_excerpt looks for in a server's log; nothing it "
+        "handles is a secret."
+    ),
+    "osm/reference_run.py": (
+        "Its own scrub, scrub(text, secrets_=...), applied where each text is made and pinned by "
+        "tests/test_osm_reference_run.py; its handlers are not written through secret_scrub's helpers."
+    ),
+    "safety/crypto.py": (
+        "decrypt_bytes and decrypt_stream re-raise their own literal messages from an InvalidTag or a struct.error, whose "
+        "texts hold no passphrase."
+    ),
+    "testing/scale_bench.py": (
+        "The developer benchmark: it runs on a synthetic corpus with a throwaway passphrase of its own and is never part of "
+        "a shipped run."
+    ),
+}
+
+
+def _modules_that_hold_the_passphrase_and_write_what_they_catch() -> set[str]:
+    """Every module under ``src/`` where the walk finds a handler in a function that holds the secret that either writes
+    the exception some way it flags or already writes it through a scrub (a response does not count)."""
+    src = Path(p0.__file__).parents[1]
+    found: set[str] = set()
+    for path in sorted(src.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if not any(word in text for word in ("passphrase", "secret", "needle", "password")):
+            continue
+        try:
+            _, offenders, routed = _caught_exception_leaks(text, responses=True)
+        except SyntaxError:
+            continue
+        if offenders or routed:
+            found.add(path.relative_to(src).as_posix())
+    return found
+
+
+def test_every_module_that_holds_the_passphrase_and_writes_what_it_catches_is_guarded_or_listed_with_its_reason():
+    """The guard above reads a table of modules, and a deleted row or a new module is something no test of the rows can see.
+    This reads ``src/`` for the modules the walk would flag and holds the table and the list of what stays outside to it, both
+    ways. MUTATION TARGET: a row of ``_GUARDED_MODULES`` dropped, or a module added to ``src/`` that holds the passphrase and
+    writes ``{exc}``."""
+    guarded = {f"{module}.py" for module in _GUARDED_MODULES}
+    found = _modules_that_hold_the_passphrase_and_write_what_they_catch() - guarded
+    assert found == set(_NOT_GUARDED), (
+        f"hold the passphrase and write what they catch, neither guarded nor listed: {sorted(found - set(_NOT_GUARDED))}; "
+        f"listed but no longer flagged (take them out): {sorted(set(_NOT_GUARDED) - found)}"
+    )
+    assert all(len(reason) > 60 for reason in _NOT_GUARDED.values()), "a reason, not a placeholder"
 
 
 def _guarded(clause: str, body: str, head: str = "def check(ctx, passphrase):") -> str:
@@ -680,6 +1105,18 @@ def _guarded(clause: str, body: str, head: str = "def check(ctx, passphrase):") 
 _NAMED = "except Exception as exc:"
 _UNNAMED = "except Exception:"
 _AS_ERR = "except Exception as err:"
+_PHASE = "except _PhaseError as exc:"
+_TWO_SECRETS = "def check(ctx, passphrase, corpus_passphrase):"
+#: A function that reads both of the restore's secrets off the request's body, as the route does.
+_TWO_ATTRIBUTES = "def check(body):\n    keys = (body.passphrase, body.corpus_passphrase)"
+#: A function that keeps the secret on ``self``, as the import queue does, with ``body`` in the handler.
+_ON_SELF = "def check(self):\n    key = self._passphrase\n    try:\n        go()\n    except Exception as exc:\n        {}\n"
+#: A function that reads the secret off ``self`` AND off the request's body: two values under ONE entry of the table, which a
+#: scrub that names one leaves the other in the text of.
+_TWO_OBJECTS = (
+    "def check(self, body):\n    keys = (self._passphrase, body.passphrase)\n    try:\n        go()\n"
+    "    except Exception as exc:\n        {}\n"
+)
 
 #: Each way a caught exception can reach a text, as the function the guard must flag.
 _WAYS_THAT_LEAK = {
@@ -706,20 +1143,55 @@ _WAYS_THAT_LEAK = {
     # --- the name, the position and the secret are each a way of their own
     "a handler named something other than exc": _guarded(_AS_ERR, "e = str(err)"),
     "the exception as the helper's second argument": _guarded(_NAMED, "err = _exception_text(passphrase, exc)"),
+    "a cut of the exception's text inside the helper's carrying argument": _guarded(
+        _NAMED, "err = _exception_text(RuntimeError(str(exc)[:300]), passphrase)"
+    ),
     "the helper given no secret": _guarded(_NAMED, "err = _exception_text(exc)"),
     "the helper given an empty secret": _guarded(_NAMED, "err = _exception_text(exc, '')"),
     "the helper given a name that is not the secret": _guarded(_NAMED, "err = _exception_text(exc, other)"),
     "the secret in another position than the one the helper reads it at": _guarded(
         _NAMED, "err = _exception_text(exc, other, passphrase)"
     ),
-    "a scrub given a name that is not the secret": _guarded(_NAMED, "err = _scrub_value(str(exc), other)"),
-    "a scrub given another field of the run": _guarded(_NAMED, "err = _scrub_value(str(exc), run.params.dest_dir)"),
-    "the exception again beside a scrub": _guarded(_NAMED, "err = _scrub_value(str(exc), passphrase) + str(exc)"),
+    "the exception handed to a scrub that is given a name that is not the secret": _guarded(
+        _NAMED, "err = scrubbed(str(exc), other)"
+    ),
+    # --- the per-needle helpers know one needle and nothing the process holds: they credit nothing, however they are called
+    "scrub_text, given the passphrase": _guarded(_NAMED, "err = scrub_text(str(exc), passphrase)"),
+    "scrub_value, given the passphrase": _guarded(_NAMED, "err = scrub_value(str(exc), passphrase)"),
+    "release_run's alias of scrub_value, given the passphrase": _guarded(_NAMED, "err = _scrub_value(str(exc), passphrase)"),
+    "the old logging helper of the release run": _guarded(_NAMED, "_log_phase_failure(name, exc, why, passphrase)"),
+    "scrub_text given a name that is not the secret": _guarded(_NAMED, "err = scrub_text(str(exc), other)"),
+    # --- a helper that takes ONE secret, in a function that holds two: the other one is in the text
+    "the one-secret helper, the one secret of two": _guarded(_NAMED, "err = _exception_text(exc, passphrase)", head=_TWO_SECRETS),
+    "the one-secret helper, the other secret of two": _guarded(
+        _NAMED, "err = _exception_text(exc, corpus_passphrase)", head=_TWO_SECRETS
+    ),
+    "the one-secret helper, one of two secrets read off the body": _guarded(
+        _NAMED, "err = _exception_text(exc, body.passphrase)", head=_TWO_ATTRIBUTES
+    ),
+    # --- the mailbox password is a secret like the others
+    "a mailbox password read off the request": (
+        "def check(req):\n    key = req.password\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = str(exc)\n"
+    ),
+    "a parameter named password": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, password):"),
+    "a text scrubbed of a passphrase in a function that holds a password too": _guarded(
+        _NAMED, "err = scrubbed(str(exc), passphrase)", head="def check(ctx, passphrase, password):"
+    ),
+    "the helper given one of two secrets": _guarded(
+        _NAMED, "err = _exception_text(exc, passphrase)", head=_TWO_SECRETS
+    ),
+    "a scrub given another field of the run": _guarded(_NAMED, "err = scrubbed(str(exc), run.params.dest_dir)"),
+    "the exception again beside a scrub": _guarded(_NAMED, "err = scrubbed(str(exc), passphrase) + str(exc)"),
     "the message after the class name": _guarded(_NAMED, "err = f'{type(exc).__name__}: {exc}'"),
     "the logging helper, the exception in another place": _guarded(
-        _NAMED, "_log_phase_failure(name, other, exc, passphrase)"
+        _NAMED, "log_failure(_LOG, 'x', other, exc, passphrase)"
     ),
     "a field of the exception that is not plain": _guarded(_NAMED, "err = exc.message"),
+    # --- a ``status`` or ``partial`` is data only on the run's own phase error
+    "a status read off an exception that is not a phase error": _guarded(_NAMED, "end(exc.status)"),
+    "a partial read off an exception that is not a phase error": _guarded(_NAMED, "end(result=exc.partial)"),
+    "a phase error caught beside another type": _guarded("except (_PhaseError, RuntimeError) as exc:", "end(exc.status)"),
     # --- a function that holds the secret by another route than a parameter named passphrase
     "a secret read off the run's parameters": (
         "def check(run):\n    key = run.params.passphrase\n    try:\n        go()\n    except Exception as exc:\n"
@@ -729,29 +1201,298 @@ _WAYS_THAT_LEAK = {
         "def check(ctx):\n    passphrase = ctx.get()\n    try:\n        go()\n    except Exception as exc:\n"
         "        err = str(exc)\n"
     ),
+    "a secret kept on self": _ON_SELF.format("err = str(exc)"),
     "a parameter named secret": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, secret):"),
     "a parameter named needle": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, needle):"),
+    "a parameter named corpus_passphrase": _guarded(_NAMED, "err = str(exc)", head="def check(ctx, corpus_passphrase):"),
+    # --- the helpers that take any number of secrets (secret_scrub): every secret the function holds must be named
+    "a text scrubbed of one of two secrets": _guarded(
+        _NAMED, "err = scrubbed(str(exc), passphrase)", head=_TWO_SECRETS
+    ),
+    "a text scrubbed of the other of two secrets": _guarded(
+        _NAMED, "err = scrubbed(str(exc), corpus_passphrase)", head=_TWO_SECRETS
+    ),
+    "a text scrubbed of one of two secrets read off the body": _guarded(
+        _NAMED, "err = scrubbed(str(exc), body.corpus_passphrase)", head=_TWO_ATTRIBUTES
+    ),
+    "a text scrubbed of a name that is not a secret beside the secret": _guarded(
+        _NAMED, "err = scrubbed(str(exc), passphrase, other)"
+    ),
+    "a text scrubbed of no secret": _guarded(_NAMED, "err = scrubbed(str(exc))"),
+    "a text scrubbed of an empty secret": _guarded(_NAMED, "err = scrubbed(str(exc), '')"),
+    "the exception in the place of the secrets": _guarded(_NAMED, "err = scrubbed(passphrase, exc)"),
+    "a starred list in the place of the secrets": _guarded(_NAMED, "err = scrubbed(str(exc), *held)"),
+    "a traceback scrubbed of one of two secrets": _guarded(
+        _NAMED, "err = traceback_text(exc, corpus_passphrase)", head=_TWO_SECRETS
+    ),
+    "the logging helper given one of two secrets": _guarded(
+        _NAMED, "log_failure(_LOG, 'x', exc, passphrase)", head=_TWO_SECRETS
+    ),
+    "the logging helper given no secret": _guarded(_NAMED, "log_failure(_LOG, 'x', exc)"),
+    "the logging helper, the exception as its message": _guarded(
+        _NAMED, "log_failure(_LOG, str(exc), other, passphrase)"
+    ),
+    "the logging helper, the exception in the place of the logger": _guarded(
+        _NAMED, "log_failure(exc, 'x', other, passphrase)"
+    ),
+    "a text scrubbed of a secret kept on self, beside the exception": _ON_SELF.format(
+        "err = scrubbed(str(exc), self._passphrase) + str(exc)"
+    ),
+    "a text scrubbed of another attribute of self": _ON_SELF.format("err = scrubbed(str(exc), self._other)"),
+    # --- a secret read with getattr is the secret: the attribute walk does not see it, so the table has to
+    "a secret read with getattr": (
+        "def check(body):\n    key = getattr(body, 'passphrase', '')\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = str(exc)\n"
+    ),
+    "a text scrubbed of a getattr of something that is not a secret": (
+        "def check(body):\n    key = body.passphrase\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = scrubbed(str(exc), getattr(body, 'other', ''))\n"
+    ),
+    # --- two values of one kind read off two objects: a scrub of one leaves the other in the text
+    "a text scrubbed of the queue's secret, the request's beside it": _TWO_OBJECTS.format(
+        "err = scrubbed(str(exc), self._passphrase)"
+    ),
+    "a text scrubbed of the request's secret, the queue's beside it": _TWO_OBJECTS.format(
+        "err = scrubbed(str(exc), body.passphrase)"
+    ),
+    # --- a NEW exception carries the caught one as its context, which a traceback prints, whatever its text was made of
+    "a new exception built from a scrubbed text, with no `from`": _guarded(
+        _NAMED, "raise RuntimeError(scrubbed(str(exc), passphrase))"
+    ),
+    "a new exception built from nothing, with no `from`": _guarded(_NAMED, "raise RuntimeError('x')"),
+    "a response raised with no `from`, outside the route layer": _guarded(
+        _NAMED, "raise HTTPException(status_code=400, detail='no')"
+    ),
+    # --- the traceback written some way the walk has to read through
+    "a splat that names an exc_info": _guarded(_UNNAMED, "_LOG.warning('x', **{'exc_info': True})"),
+    "a splat of a mapping the walk cannot read, given to a logger": _guarded(_UNNAMED, "_LOG.warning('x', **kw)"),
+    "a splat of a mapping that splats another": _guarded(_UNNAMED, "_LOG.warning('x', **{**kw})"),
+    "the traceback module imported as another name": "import traceback as tb\n" + _guarded(_UNNAMED, "err = tb.format_exc()"),
+    "a traceback function imported as another name": "from traceback import format_exc as fe\n"
+    + _guarded(_UNNAMED, "err = fe()"),
+    "sys imported as another name": "import sys as system\n" + _guarded(_UNNAMED, "err = system.exc_info()"),
 }
 
 #: What the guard must leave alone, as the function it is asked about and the calls it must count as routed.
 _WAYS_THAT_ARE_FINE = {
     "the helper, given the passphrase": (_guarded(_NAMED, "err = _exception_text(exc, passphrase)"), 1),
     "the child's helper, given the passphrase": (_guarded(_NAMED, "err = _error_text(exc, passphrase)"), 1),
+    "a slice of something else inside the scrubbing call": (
+        _guarded(_NAMED, "err = scrubbed(f'{exc} {tag[:3]}', passphrase)"),
+        1,
+    ),
     "a scrub of a text built from the exception": (
-        _guarded(_NAMED, "err = _scrub_value(f'{type(exc).__name__}: {exc}', passphrase)[:400]"),
+        _guarded(_NAMED, "err = scrubbed(f'{type(exc).__name__}: {exc}', passphrase)[:400]"),
         1,
     ),
     "a scrub given the secret off the run's parameters": (
         "def check(run):\n    try:\n        go()\n    except Exception as exc:\n"
-        "        err = scrub_value(str(exc), run.params.passphrase)\n",
+        "        err = scrubbed(str(exc), run.params.passphrase)\n",
         1,
     ),
-    "the logging helper, given the secret": (_guarded(_NAMED, "_log_phase_failure(name, exc, why, passphrase)"), 1),
+    "a scrub given a mailbox password off the request": (
+        "def check(req):\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = scrubbed(str(exc), req.password)\n",
+        1,
+    ),
+    "a structure scrubbed of the passphrase": (_guarded(_NAMED, "err = scrubbed_value({'e': str(exc)}, passphrase)"), 1),
+    "the logging helper, given the secret": (_guarded(_NAMED, "log_failure(_LOG, 'x', exc, passphrase)"), 1),
     "only the exception's class": (_guarded(_NAMED, "_LOG.warning('x (%s)', type(exc).__name__)"), 0),
-    "a phase error's status and partial": (_guarded(_NAMED, "end(exc.status, result=exc.partial)"), 0),
+    "a phase error's status and partial": (_guarded(_PHASE, "end(exc.status, result=exc.partial)"), 0),
     "a log call that asks for no traceback": (_guarded(_UNNAMED, "_LOG.warning('x', exc_info=False)"), 0),
     "a log call whose exc_info is None": (_guarded(_UNNAMED, "_LOG.warning('x', exc_info=None)"), 0),
     "a handler that only returns": (_guarded(_UNNAMED, "return None"), 0),
+    "a text scrubbed of the only secret there is": (_guarded(_NAMED, "err = scrubbed(str(exc), passphrase)"), 1),
+    "a text scrubbed of both of two secrets": (
+        _guarded(_NAMED, "err = scrubbed(str(exc), passphrase, corpus_passphrase)", head=_TWO_SECRETS),
+        1,
+    ),
+    "a text scrubbed of both of two secrets, in the other order": (
+        _guarded(_NAMED, "err = scrubbed(str(exc), corpus_passphrase, passphrase)", head=_TWO_SECRETS),
+        1,
+    ),
+    "a text scrubbed of both of two secrets read off the body": (
+        _guarded(_NAMED, "err = scrubbed(str(exc), body.passphrase, body.corpus_passphrase)", head=_TWO_ATTRIBUTES),
+        1,
+    ),
+    # --- a helper that takes one secret is enough where one secret is held, whatever it goes by
+    "the one-secret helper, given the one secret a function holds under two names": (
+        _guarded(_NAMED, "err = _exception_text(exc, secret)", head="def check(ctx, passphrase, secret):"),
+        1,
+    ),
+    "the one-secret helper, given the restore's second secret where it is the only one held": (
+        _guarded(_NAMED, "err = _exception_text(exc, corpus_passphrase)", head="def check(ctx, corpus_passphrase):"),
+        1,
+    ),
+    "a text built from the exception, scrubbed whole": (
+        _guarded(
+            _NAMED,
+            "err = scrubbed(str(exc) if isinstance(exc, ValueError) else classify('r', exc), passphrase)[:2000]",
+        ),
+        1,
+    ),
+    "a traceback scrubbed of both secrets": (
+        _guarded(_NAMED, "err = traceback_text(exc, passphrase, corpus_passphrase)[-8000:]", head=_TWO_SECRETS),
+        1,
+    ),
+    "the logging helper, given both secrets and a level": (
+        _guarded(_NAMED, "log_failure(_LOG, 'x', exc, passphrase, corpus_passphrase, level=30)", head=_TWO_SECRETS),
+        1,
+    ),
+    "a text scrubbed of the secret a queue keeps on self": (_ON_SELF.format("err = scrubbed(str(exc), self._passphrase)"), 1),
+    "the logging helper, given the secret a queue keeps on self": (
+        _ON_SELF.format("log_failure(_LOG, 'x', exc, self._passphrase)"),
+        1,
+    ),
+    # --- a getattr of a name of the table is the secret it names, so it routes like the attribute does
+    "a secret read with getattr, given to a scrub": (
+        "def check(body):\n    try:\n        go()\n    except Exception as exc:\n"
+        "        err = scrubbed(str(exc), getattr(body, 'passphrase', ''))\n",
+        1,
+    ),
+    # --- two values of one kind, read off two objects, are scrubbed when a call names both
+    "a text scrubbed of the queue's secret and the request's": (
+        _TWO_OBJECTS.format("err = scrubbed(str(exc), self._passphrase, body.passphrase)"),
+        1,
+    ),
+    "a text scrubbed of the request's secret and the queue's, in the other order": (
+        _TWO_OBJECTS.format("err = scrubbed(str(exc), body.passphrase, self._passphrase)"),
+        1,
+    ),
+    # --- a new exception is fine when it leaves its context behind
+    "a new exception built from a scrubbed text, from None": (
+        _guarded(_NAMED, "raise RuntimeError(scrubbed(str(exc), passphrase)) from None"),
+        1,
+    ),
+    # --- a splat that names no exc_info writes no traceback
+    "a splat that carries no exc_info": (_guarded(_UNNAMED, "_LOG.warning('x', **{'extra': {}})"), 0),
+    "an exc_info that is the constant False": (_guarded(_UNNAMED, "_LOG.warning('x', exc_info=False)"), 0),
+}
+
+#: The route layer (``responses``): what a handler there may NOT do with its exception, and what it may.
+_ROUTE = "def route(body, passphrase):"
+#: The route layer, where the secrets are read off the request's body.
+_ROUTE_BODY = "def route(body):\n    key = body.passphrase"
+_ROUTE_TWO_SECRETS = "def route(body):\n    keys = (body.passphrase, body.corpus_passphrase)"
+_ROUTE_WAYS_THAT_LEAK = {
+    "a log call given the exception": _guarded(_NAMED, "_LOG.warning('x %s', exc)", head=_ROUTE),
+    "a log call given the exception's text": _guarded(_NAMED, "_LOG.warning('x %s', str(exc))", head=_ROUTE),
+    "a log call asked for the traceback": _guarded(_NAMED, "_LOG.exception('x')", head=_ROUTE),
+    "a log call asked for the traceback, the handler unnamed": _guarded(_UNNAMED, "_LOG.warning('x', exc_info=True)", head=_ROUTE),
+    "the exception's text kept in a local": _guarded(_NAMED, "err = str(exc)", head=_ROUTE),
+    "the exception handed to a function that is not a response": _guarded(_NAMED, "note(exc)", head=_ROUTE),
+    "a response built from the exception and a log of it beside it": (
+        f"{_ROUTE}\n    try:\n        go()\n    {_NAMED}\n        _LOG.warning('x %s', exc)\n"
+        "        raise HTTPException(status_code=400, detail='no') from exc\n"
+    ),
+    "the logging helper given no secret": _guarded(_NAMED, "log_failure(_LOG, 'x', exc)", head=_ROUTE),
+    # --- a response's TEXT is the writer's to scrub: the journal that records it knows only what the process holds
+    "a response whose detail is the exception's text": _guarded(
+        _NAMED, "raise HTTPException(status_code=409, detail=str(exc)) from exc", head=_ROUTE
+    ),
+    "a response whose detail is an f-string of the exception": _guarded(
+        _NAMED, "raise HTTPException(status_code=400, detail=f'x: {exc}') from exc", head=_ROUTE
+    ),
+    "a response whose detail is the exception, with no cause": _guarded(
+        _NAMED, "raise HTTPException(status_code=400, detail=str(exc))", head=_ROUTE
+    ),
+    "a response whose detail is scrubbed of a name that is not the secret": _guarded(
+        _NAMED, "raise HTTPException(status_code=400, detail=scrubbed(str(exc), other)) from exc", head=_ROUTE
+    ),
+    "a response whose detail is scrubbed of one of two secrets read off the body": _guarded(
+        _NAMED, "raise HTTPException(status_code=400, detail=scrubbed(str(exc), body.passphrase)) from exc", head=_ROUTE_TWO_SECRETS
+    ),
+    "the module's helper given no secret": _guarded(_NAMED, "raise _restore_error('restore', exc) from exc", head=_ROUTE),
+    "the module's helper given one of two secrets": _guarded(
+        _NAMED, "raise _restore_error('restore', exc, body.passphrase) from exc", head=_ROUTE_TWO_SECRETS
+    ),
+    "a response whose detail is built from the exception, as a keyword of the helper": _guarded(
+        _NAMED, "raise HTTPException(status_code=400, detail={'why': str(exc)}) from exc", head=_ROUTE
+    ),
+    # --- a NEW exception that is not a response carries the caught one as its context
+    "a new exception that is not a response, with no `from`": _guarded(_NAMED, "raise RuntimeError('x')", head=_ROUTE),
+    "a new exception built from a scrubbed text, with no `from None`": _guarded(
+        _NAMED, "raise RuntimeError(scrubbed(str(exc), passphrase))", head=_ROUTE
+    ),
+    "a new exception built from the exception's cause": _guarded(
+        _NAMED, "raise RuntimeError('x') from exc", head=_ROUTE
+    ),
+    "a block that names one of two secrets, a new exception raised in it": (
+        _ROUTE_TWO_SECRETS
+        + "\n    with scrub_and_reraise(_LOG, 'x', body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise RuntimeError('x')\n"
+    ),
+    "a block that names no secret, a new exception raised in it": (
+        _ROUTE_BODY
+        + "\n    with scrub_and_reraise(_LOG, 'x'):\n        try:\n            go()\n"
+        "        except Exception:\n            raise RuntimeError('x')\n"
+    ),
+    "a block of some other helper, a new exception raised in it": (
+        _ROUTE_BODY
+        + "\n    with guard(_LOG, 'x', body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise RuntimeError('x')\n"
+    ),
+    "a new exception raised beside a block, not in it": (
+        _ROUTE_BODY
+        + "\n    with scrub_and_reraise(_LOG, 'x', body.passphrase):\n        pass\n"
+        "    try:\n        go()\n    except Exception:\n        raise RuntimeError('x')\n"
+    ),
+}
+_ROUTE_WAYS_THAT_ARE_FINE = {
+    "a response built by the module's helper, given the secret": (
+        _guarded(_NAMED, "raise _restore_error('restore', exc, passphrase) from exc", head=_ROUTE),
+        1,
+    ),
+    "a response built by the module's helper, given both secrets": (
+        _guarded(
+            _NAMED,
+            "raise _restore_error('restore', exc, body.passphrase, body.corpus_passphrase) from exc",
+            head=_ROUTE_TWO_SECRETS,
+        ),
+        1,
+    ),
+    "a response whose cause alone is the exception": (
+        _guarded(_NAMED, "raise HTTPException(status_code=400, detail='no') from exc", head=_ROUTE),
+        0,
+    ),
+    "a response with no cause at all": (_guarded(_NAMED, "raise HTTPException(status_code=400, detail='no')", head=_ROUTE), 0),
+    "a response whose detail is the exception's text, scrubbed of the secret": (
+        _guarded(_NAMED, "raise HTTPException(status_code=409, detail=scrubbed(str(exc), passphrase)) from exc", head=_ROUTE),
+        1,
+    ),
+    "a response whose detail is scrubbed of the secret read off the body": (
+        _guarded(
+            _NAMED, "raise HTTPException(status_code=409, detail=scrubbed(f'x: {exc}', body.passphrase)) from exc", head=_ROUTE_BODY
+        ),
+        1,
+    ),
+    "a response whose detail is scrubbed of both secrets read off the body": (
+        _guarded(
+            _NAMED,
+            "raise HTTPException(status_code=409, detail=scrubbed(str(exc), body.passphrase, body.corpus_passphrase)) from exc",
+            head=_ROUTE_TWO_SECRETS,
+        ),
+        1,
+    ),
+    "the logging helper, given the secret": (_guarded(_NAMED, "log_failure(_LOG, 'x', exc, passphrase)", head=_ROUTE), 1),
+    "a new exception raised in a block that names the one secret": (
+        _ROUTE_BODY
+        + "\n    with scrub_and_reraise(_LOG, 'x', body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise RuntimeError('x')\n",
+        0,
+    ),
+    "a new exception raised in a block that names both secrets": (
+        _ROUTE_TWO_SECRETS
+        + "\n    with scrub_and_reraise(_LOG, 'x', body.passphrase, body.corpus_passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise RuntimeError('x')\n",
+        0,
+    ),
+    "a new exception raised in a block that names both secrets, in the other order": (
+        _ROUTE_TWO_SECRETS
+        + "\n    with scrub_and_reraise(_LOG, 'x', body.corpus_passphrase, body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise RuntimeError('x')\n",
+        0,
+    ),
 }
 
 
@@ -774,11 +1515,217 @@ def test_the_guard_on_caught_exception_texts_leaves_the_allowed_forms_alone(way)
     assert routed == expected_routed, routed
 
 
+@pytest.mark.parametrize("way", sorted(_ROUTE_WAYS_THAT_LEAK))
+def test_the_guard_on_the_route_layer_flags_each_way_a_log_or_a_local_could_carry_the_exception(way):
+    """The route layer may answer with the exception (a response is outside the rule) and may not record it: a log
+    call, a traceback, a local that could reach one. MUTATION TARGET: the response builders' table, or letting the
+    ``responses`` mode allow more than a call of a builder and the cause of what such a call is raised as."""
+    holders, offenders, _ = _caught_exception_leaks(_ROUTE_WAYS_THAT_LEAK[way], responses=True)
+    assert holders == ["route"], f"{way}: the function was not read as one that holds the passphrase"
+    assert offenders, f"{way}: the guard did not flag it"
+
+
+@pytest.mark.parametrize("way", sorted(_ROUTE_WAYS_THAT_ARE_FINE))
+def test_the_guard_on_the_route_layer_leaves_a_response_and_a_scrubbed_record_alone(way):
+    source, expected_routed = _ROUTE_WAYS_THAT_ARE_FINE[way]
+    holders, offenders, routed = _caught_exception_leaks(source, responses=True)
+    assert holders == ["route"] and offenders == [], (holders, offenders)
+    assert routed == expected_routed, routed
+
+
+def test_a_response_is_a_way_for_a_module_that_does_not_answer_requests():
+    """The relaxation is the route layer's alone, and it is the CAUSE and the raise that it allows, never the TEXT: a response
+    whose cause is the exception, and a response raised with no cause at all, are leaks in a module read without ``responses``
+    and fine in the route layer; a response whose detail is the exception's words is a leak in both, until it is scrubbed.
+    MUTATION TARGET: either branch of the walk that allows a response, made to apply to every module, or the allowance of a
+    response's cause widened to the words inside it."""
+    for body in (
+        "raise HTTPException(status_code=400, detail='no') from exc",
+        "raise HTTPException(status_code=400, detail='no')",
+        "raise _restore_error('restore', exc, passphrase) from exc",
+    ):
+        source = _guarded(_NAMED, body, head=_ROUTE)
+        assert _caught_exception_leaks(source)[1], f"{body}: a response is outside the rule only in the route layer"
+        assert not _caught_exception_leaks(source, responses=True)[1], body
+    for body in (
+        "raise HTTPException(status_code=400, detail=str(exc))",
+        "raise HTTPException(status_code=400, detail=str(exc)) from exc",
+        "raise HTTPException(status_code=400, detail=f'x: {exc}') from exc",
+    ):
+        source = _guarded(_NAMED, body, head=_ROUTE)
+        assert _caught_exception_leaks(source)[1], f"{body}: a leak outside the route layer"
+        assert _caught_exception_leaks(source, responses=True)[1], f"{body}: the words of a response are scrubbed by its writer"
+
+
+#: Each way a function that holds a secret raises what it caught AGAIN as it is: the source, the mode the walk reads it in, and
+#: the functions :func:`_reraising_functions` must name. A bare ``raise`` is the exception leaving as it made its message.
+_RERAISING = {
+    "a bare raise in a handler": (_guarded(_NAMED, "raise", head=_ROUTE), {}, ["route"]),
+    "a bare raise in a handler that names nothing": (_guarded(_UNNAMED, "raise", head=_ROUTE), {}, ["route"]),
+    "a bare raise after other work": (
+        f"{_ROUTE}\n    try:\n        go()\n    except Exception:\n        cleanup()\n        raise\n",
+        {},
+        ["route"],
+    ),
+    "a bare raise inside a block that names the one secret": (
+        "def route(body):\n    with scrub_and_reraise(_LOG, 'x', body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise\n",
+        {},
+        [],
+    ),
+    "a bare raise inside a block that names one of two secrets": (
+        "def route(body):\n    keys = (body.passphrase, body.corpus_passphrase)\n"
+        "    with scrub_and_reraise(_LOG, 'x', body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise\n",
+        {},
+        ["route"],
+    ),
+    "a bare raise inside a block that names both secrets": (
+        "def route(body):\n    keys = (body.passphrase, body.corpus_passphrase)\n"
+        "    with scrub_and_reraise(_LOG, 'x', body.passphrase, body.corpus_passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise\n",
+        {},
+        [],
+    ),
+    "a bare raise inside a block that names no secret": (
+        "def route(body):\n    key = body.passphrase\n    with scrub_and_reraise(_LOG, 'x'):\n        try:\n            go()\n"
+        "        except Exception:\n            raise\n",
+        {},
+        ["route"],
+    ),
+    "a bare raise inside a block of another helper": (
+        "def route(body):\n    key = body.passphrase\n    with guard(_LOG, 'x', body.passphrase):\n        try:\n            go()\n"
+        "        except Exception:\n            raise\n",
+        {},
+        ["route"],
+    ),
+    "a bare raise beside a block, not inside it": (
+        "def route(body):\n    key = body.passphrase\n    with scrub_and_reraise(_LOG, 'x', body.passphrase):\n        pass\n"
+        "    try:\n        go()\n    except Exception:\n        raise\n",
+        {},
+        ["route"],
+    ),
+    "the framework's own answer raised again, outside the route layer": (
+        "def route(body):\n    key = body.passphrase\n    try:\n        go()\n    except HTTPException:\n        raise\n",
+        {},
+        ["route"],
+    ),
+    "the framework's own answer raised again, in the route layer": (
+        "def route(body):\n    key = body.passphrase\n    try:\n        go()\n    except HTTPException:\n        raise\n",
+        {"responses": True},
+        [],
+    ),
+    "the framework's answer caught beside another type, in the route layer": (
+        "def route(body):\n    key = body.passphrase\n    try:\n        go()\n    except (HTTPException, ValueError):\n        raise\n",
+        {"responses": True},
+        ["route"],
+    ),
+    "a bare raise in a function that holds no secret": (
+        "def check(ctx):\n    try:\n        go()\n    except Exception:\n        raise\n",
+        {},
+        [],
+    ),
+    "a new exception is not a bare raise": (_guarded(_NAMED, "raise RuntimeError('x') from None", head=_ROUTE), {}, []),
+}
+
+
+@pytest.mark.parametrize("way", sorted(_RERAISING))
+def test_the_guard_names_a_function_that_raises_what_it_caught_again_as_it_is(way):
+    """The exception that leaves a function as it made its message goes to whichever handler catches it next, so the function is
+    LISTED with why that one scrubs it, unless the raise is inside a ``with scrub_and_reraise`` that names every secret the
+    function holds. MUTATION TARGET: the coverage of a block (its helper's name, the secrets it names against the secrets the
+    function holds, the statements it spans) and the exemption of the framework's own answer."""
+    source, mode, expected = _RERAISING[way]
+    assert sorted(_reraising_functions(source, **mode)) == expected, way
+
+
 def test_the_guard_on_caught_exception_texts_does_not_read_a_function_that_is_not_given_the_passphrase():
     """``_check_unlock`` and ``_check_collector`` put ``{exc}`` into their reports on purpose; they hold no
     secret, so a guard that read every function would reject them."""
     holders, offenders, _ = _caught_exception_leaks(_guarded(_NAMED, "err = str(exc)", head="def check(ctx):"))
     assert holders == [] and offenders == []
+
+
+@pytest.mark.parametrize("name", sorted(_CLASSIFIERS))
+def test_a_classifier_a_handler_may_hand_the_exception_to_reads_its_class_and_nothing_else(name):
+    """The guard lets a handler pass the exception to these helpers without a scrub; that holds only while the helper reads the
+    exception as ``isinstance`` does and returns a ``bool``. MUTATION TARGET: a body that reads the message."""
+    tree = ast.parse((Path(p0.__file__).parents[1] / f"{_CLASSIFIERS[name]}.py").read_text(encoding="utf-8"))
+    (fn,) = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name]
+    param = fn.args.args[0].arg
+    allowed: set[int] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "isinstance" and node.args:
+            allowed.add(id(node.args[0]))
+    reads = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == param and isinstance(n.ctx, ast.Load)]
+    assert reads and all(id(n) in allowed for n in reads), f"{name} reads more of the exception than its class"
+    assert isinstance(fn.returns, ast.Name) and fn.returns.id == "bool", f"{name} answers with something that is not a bool"
+
+
+def test_the_classifier_check_sees_a_helper_that_reads_the_message():
+    source = "def _is_pool_timeout(exc: BaseException) -> bool:\n    return 'timed out' in str(exc)\n"
+    fn = ast.parse(source).body[0]
+    allowed = {
+        id(n.args[0])
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "isinstance" and n.args
+    }
+    reads = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "exc" and isinstance(n.ctx, ast.Load)]
+    assert not all(id(n) in allowed for n in reads)
+
+
+#: What the every-handler read (:data:`_EVERY_HANDLER`) flags in a function that holds NO secret, and what it leaves alone.
+_NO_SECRET = "def check(ctx):"
+_EVERY_LEAKS = {
+    "f-string": _guarded(_NAMED, 'err = f"{type(exc).__name__}: {exc}"', head=_NO_SECRET),
+    "str": _guarded(_NAMED, "err = str(exc)[:300]", head=_NO_SECRET),
+    "exc_info": _guarded(_NAMED, 'log.warning("it failed", exc_info=True)', head=_NO_SECRET),
+    "bare logger.exception": _guarded(_UNNAMED, 'log.exception("it failed")', head=_NO_SECRET),
+    "a new exception with the caught one as its context": _guarded(_NAMED, 'raise RuntimeError("it failed")', head=_NO_SECRET),
+    "a helper that is handed it": _guarded(_NAMED, "record(exc)", head=_NO_SECRET),
+    "a scrubbing call that does not carry it": _guarded(_NAMED, 'record(exception_text(exc), exc)', head=_NO_SECRET),
+    "a cut inside the scrubbing call": _guarded(_NAMED, 'err = scrubbed(f"{type(exc).__name__}: {exc}"[:300])', head=_NO_SECRET),
+    "a handler at module level": "try:\n    go()\nexcept Exception as exc:\n    err = str(exc)\n",
+    "a cut of the exception's text inside the scrubbing call": _guarded(_NAMED, "err = scrubbed(str(exc)[:300])", head=_NO_SECRET),
+}
+_EVERY_FINE = {
+    "exception_text": (_guarded(_NAMED, "err = exception_text(exc, limit=300)", head=_NO_SECRET), 1),
+    "exception_text untyped": (_guarded(_NAMED, "err = exception_text(exc, typed=False, limit=300)", head=_NO_SECRET), 1),
+    "a scrubbed handler at module level": ("try:\n    go()\nexcept Exception as exc:\n    err = exception_text(exc, limit=300)\n", 1),
+    "a cut after the scrubbing call": (_guarded(_NAMED, "err = scrubbed(str(exc))[:300]", head=_NO_SECRET), 1),
+    "scrubbed text": (_guarded(_NAMED, 'err = scrubbed(f"{type(exc).__name__}: {exc}")', head=_NO_SECRET), 1),
+    "log_failure": (_guarded(_NAMED, 'log_failure(log, "it failed", exc)', head=_NO_SECRET), 1),
+    "the class alone": (_guarded(_NAMED, "err = type(exc).__name__", head=_NO_SECRET), 0),
+    "a classifier": (_guarded(_NAMED, "retry = _is_pool_timeout(exc)", head=_NO_SECRET), 0),
+    "a new exception from None": (_guarded(_NAMED, 'raise RuntimeError("it failed") from None', head=_NO_SECRET), 0),
+}
+
+
+@pytest.mark.parametrize("way", sorted(_EVERY_LEAKS))
+def test_the_every_handler_read_flags_a_function_that_holds_no_secret(way):
+    """MUTATION TARGET: the ``every`` switch (a no-secret function skipped again), the covering rule for a call that names no
+    secret, and the dispatch that reads a call with no secret argument."""
+    holders, offenders, _ = _caught_exception_leaks(_EVERY_LEAKS[way], every=True)
+    assert holders == [] and offenders, (way, holders, offenders)
+    assert _caught_exception_leaks(_EVERY_LEAKS[way]) == ([], [], 0), "without the switch such a function is not read"
+
+
+@pytest.mark.parametrize("way", sorted(_EVERY_FINE))
+def test_the_every_handler_read_leaves_a_scrubbed_text_alone(way):
+    source, expected_routed = _EVERY_FINE[way]
+    holders, offenders, routed = _caught_exception_leaks(source, every=True)
+    assert holders == [] and offenders == [] and routed == expected_routed, (holders, offenders, routed)
+
+
+def test_a_call_that_names_no_secret_does_not_cover_a_function_that_holds_one():
+    """The helper takes the process's own passphrases out of any text, and a typed one (a backup's, a restore's) only when it is
+    named: ``exception_text(exc)`` in a function that holds the passphrase leaves the typed key in the text."""
+    for call in ("exception_text(exc)", "exception_text(exc, limit=300)", "scrubbed(str(exc))"):
+        source = _guarded(_NAMED, f"err = {call}")
+        holders, offenders, routed = _caught_exception_leaks(source, every=True)
+        assert holders == ["check"] and offenders and routed == 0, (call, holders, offenders, routed)
+    holders, offenders, routed = _caught_exception_leaks(_guarded(_NAMED, "err = exception_text(exc, passphrase)"), every=True)
+    assert holders == ["check"] and offenders == [] and routed == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -917,3 +1864,122 @@ def test_the_unlock_bar_requires_a_COLD_boot():
     bar = p0._acceptance_bars()["p0_4_unlock"]
     assert "COLD" in bar
     assert "WAL" in bar, "the bar must name what a warm unlock fails to exercise"
+
+
+def test_the_passphrase_the_process_holds_is_out_of_the_p0_report_beside_the_typed_one(tmp_path, monkeypatch):
+    """The verify check copies the engine's failure lines and joins them, and every caught text goes through one helper: the
+    session's own passphrase (held by the process, not the one the check was handed) is out of all of them. MUTATION TARGET: the
+    per-needle ``scrub_value`` or ``scrub_text`` in place of the held-aware helpers, at the copy of the lines, at the join, in
+    ``_exception_text``."""
+    import src.backup.stream_backup as stream_backup
+    from src.monitoring import secret_scrub as ss
+
+    _live_corpus(tmp_path, monkeypatch)
+    held = "held-session-key-Wm3#"
+    secret = "p0-typed-backup-key-9d1"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+    lines = [f"member data.db failed to decrypt: could not reach {held} on the drive", f"also {secret}"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase=secret, measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    clean = ["member data.db failed to decrypt: could not reach ***redacted*** on the drive", "also ***redacted***"]
+    assert verify["measurements"]["problems"] == clean
+    assert verify["reason"] == "verification failed: " + "; ".join(clean), verify["reason"]
+    text = json.dumps(out) + Path(out["path"]).read_text(encoding="utf-8")
+    assert held not in text and secret not in text
+    assert p0._exception_text(RuntimeError(f"x {held} y {secret}"), secret) == "RuntimeError: x ***redacted*** y ***redacted***"
+
+
+def test_a_held_passphrase_split_across_two_lines_is_out_of_the_joined_reason(tmp_path, monkeypatch):
+    """The reason joins the engine's lines, so a passphrase the PROCESS holds that holds ``"; "`` can end one line and start the
+    next: the join is scrubbed of the held ones too, not only of the typed one. MUTATION TARGET: the scrub of the joined tail
+    that names the typed passphrase alone, and the replacement of the list by the clean text when the join changes."""
+    import src.backup.stream_backup as stream_backup
+    from src.monitoring import secret_scrub as ss
+
+    _live_corpus(tmp_path, monkeypatch)
+    held = "left half; right half"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+    lines = ["volume 2 failed its checksum, left half", "right half was not read"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(
+        FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="p0-typed-backup-key-9d1", measure_incremental=False
+    )
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["reason"] == "verification failed: volume 2 failed its checksum, ***redacted*** was not read", verify["reason"]
+    # The measurement is the clean joined text alone: neither half of the key stays in any item of the list.
+    assert verify["measurements"]["problems"] == ["volume 2 failed its checksum, ***redacted*** was not read"]
+    assert "left half" not in json.dumps(out) and "right half" not in json.dumps(out)
+    assert held not in json.dumps(out) and held not in Path(out["path"]).read_text(encoding="utf-8")
+
+
+def test_a_held_key_split_across_two_lines_is_found_when_the_typed_key_is_a_piece_of_it(tmp_path, monkeypatch):
+    """The typed key ``half`` is taken out of each line first, which turns ``left half`` into ``left ***`` and leaves the held
+    key ``left half; right half`` in neither the lines nor their join: the joined pass reads the RAW lines. MUTATION TARGET: the
+    join built from the lines after the line-by-line scrub (``left`` and ``right`` stayed in the list and in the reason)."""
+    import src.backup.stream_backup as stream_backup
+    from src.monitoring import secret_scrub as ss
+
+    _live_corpus(tmp_path, monkeypatch)
+    held = "left half; right half"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+    lines = ["volume 2 failed its checksum, left half", "right half was not read"]
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": lines})
+    out = p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="half", measure_incremental=False)
+    verify = out["report"]["checks"]["p0_1_verify"]
+    shown = json.dumps([verify["reason"], verify["measurements"]["problems"]])
+    assert "left" not in shown.replace("***", "") and "right" not in shown and "half" not in shown, shown
+    assert verify["measurements"]["problems"] == [verify["reason"].removeprefix("verification failed: ")], verify
+
+
+def test_the_unlock_and_collector_checks_and_the_last_report_scrub_the_exception_they_write(monkeypatch):
+    """Handlers that hold no secret wrote the exception by hand; the session's passphrase can be in an engine's words there too.
+    MUTATION TARGET: the helper at any of the three that read an engine (the unlock check, the collector check, the last report),
+    each DRIVEN here, so a handler that goes back to the f-string fails its own line."""
+    from src.monitoring import forensics
+    from src.monitoring import secret_scrub as ss
+
+    held = "held-session-key-Wm3#"
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (held,))
+
+    def boom(*_a, **_k):
+        raise RuntimeError(f"engine said {held}")
+
+    monkeypatch.setattr(forensics, "session_forensics", boom)
+    unlock = p0._check_unlock()
+    assert held not in json.dumps(unlock) and "RuntimeError: engine said ***redacted***" in json.dumps(unlock)
+
+    from src.monitoring import collect_perf
+
+    monkeypatch.setattr(collect_perf, "recent_samples", boom)
+    collector = p0._check_collector()
+    assert held not in json.dumps(collector) and "RuntimeError: engine said ***redacted***" in json.dumps(collector)
+
+    def boom_late(*_a, **_k):
+        raise RuntimeError("x" * 294 + held + " tail")  # the key starts where the cut at 300 falls inside it
+
+    monkeypatch.setattr(p0, "_report_dir", boom_late)
+    last = p0.last_p0_validation_report()
+    assert held not in json.dumps(last) and held[:6] not in last["error"], last
+    assert len(last["error"]) == 300 and last["error"].endswith("***red"), last
+
+
+def test_a_handler_at_module_level_is_listed_as_module_not_by_its_as_name():
+    """The label of a scope is the function's name, and ``<module>`` for a handler outside any function (its ``as`` name is a
+    variable, not a place). MUTATION TARGET: the label of a module-level scope."""
+    holders, offenders, _ = _caught_exception_leaks("try:\n    go()\nexcept Exception as exc:\n    err = str(exc)\n", every=True)
+    assert holders == [] and len(offenders) == 1 and offenders[0].startswith("<module>, line "), offenders
+
+
+def test_a_failed_verify_with_no_lines_says_unknown_even_when_the_key_is_a_piece_of_that_word(tmp_path, monkeypatch):
+    """No lines is the check's own word, ``unknown``, which no key is a piece of (a typed key ``nkno`` turned it into
+    ``u***redacted***wn``). MUTATION TARGET: the replacement of an empty list, the reason built from the join of nothing."""
+    import src.backup.stream_backup as stream_backup
+
+    _live_corpus(tmp_path, monkeypatch)
+    monkeypatch.setattr(stream_backup, "verify_stream_backup", lambda *a, **k: {"ok": False, "problems": []})
+    out = p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="nkno", measure_incremental=False)
+    verify = out["report"]["checks"]["p0_1_verify"]
+    assert verify["reason"] == "verification failed: unknown" and verify["measurements"]["problems"] == [], verify

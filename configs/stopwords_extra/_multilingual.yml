@@ -345,3 +345,15 @@ stopwords:
   - الجمعة
   - الخميس
   - السبت
+  # batch ko-2026-10-batch1 (log sha256 3b045774e254; verdicts sha256 beb3efd563e5): Latin-script tokens
+  # read in the Korean log; filed here because ko.yml may hold Hangul only (test_stopword_file_scripts)
+  - addclass
+  - attr
+  - cssclip
+  - dhmkkh
+  - dhmkkhh
+  - encodeuricomponent
+  - pclassname
+  - pdesc
+  - pmurl
+  - ppurl

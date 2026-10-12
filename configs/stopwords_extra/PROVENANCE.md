@@ -336,3 +336,25 @@ files; `all` and `are` are new to it, which is why
 `tests/test_analytics_extract.py` declares them in `added_since_migration`. German `bio` and
 `uno` stay shown. No corpus evidence backs these four: they are a stated preference, recorded
 as one.
+
+---
+
+## Stoplist batch 1: LaTeX macros, boilerplate, markup debris, keyboard noise (2026-10-06, R98/R111)
+
+Eighteen words, from the keyword-log triage (two blind reads of a language's high-confidence "noise" rows; every word below passed the
+verdict gate with no `unstable` or `not_repeated` flag and `scripts/stopword_batch.py` refused none of them). Evidence is the 09-30 shards
+(`log sha256` in the batch comments); counts are articles / mentions in that shard.
+
+- **English (`en.yml`), 8 words.** LaTeX macros left in article text: `mathcal` (34 / 722), `mathbf` (33 / 1,786), `mathbb` (25 / 388), `mathrm` (7 / 453).
+  Paper boilerplate: `fig` (79 / 822), `supplementary` (75 / 891), `crossref` (42 / 931). A run-on token, `likelyno7` (2 / 774).
+  NOT taken: `table` (an ordinary word, 1,139 / 3,369), `doi` and `figure` (the tool's own `also_an_entity` refusal).
+- **Korean log, 10 words, filed in `_multilingual.yml`.** Script and markup text that survives extraction on Korean pages: `addclass`, `attr`, `cssclip`,
+  `encodeuricomponent`, `pclassname`, `pdesc`, `pmurl`, `ppurl` (2 articles each, 6 to 18 mentions), and the keyboard noise `dhmkkh`, `dhmkkhh` (25 articles each).
+  They are Latin script, and `ko.yml` holds Hangul only (`tests/test_stopword_file_scripts.py`), so they go where the web-markup junk already lives.
+  `stopword_batch.py --apply` files a batch under the language it was run for and does NOT know this rule: it wrote them to `ko.yml` and the guard failed.
+  Move such a batch by hand until the tool does it (OPEN_QUEUE, 2026-10-06).
+- **Left out on purpose, per the coordinator's ruling.** The 88 `lng` words (foreign words in another language's log), and every mojibake fragment (zh 19, ja 1): the
+  cause is upstream (see the OPEN_QUEUE entry), and a stoplist word per fragment would hide the symptom one spelling at a time.
+
+A stoplist word is language-agnostic in effect (`global_stopwords()` unions every file), so each of these is hidden in every language. That is safe for the
+words above (none is a word of the app's shipped rings or a platform name; the tool checks both), and it is the reason `table` stayed out.

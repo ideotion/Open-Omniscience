@@ -218,9 +218,10 @@ def _corpus_stats(corpus_snapshot: Path) -> dict:
     """Per-table counts + the Merkle root over (id, hash) of every article --
     the artifact-level authentication hash for the article set (design §2)."""
     from src.crypto.merkle_tree import compute_merkle_root
+    from src.database.read_only_uri import open_plain_read_only
     from src.reporting.evidence import canonical_bytes
 
-    conn = sqlite3.connect(f"file:{corpus_snapshot}?mode=ro", uri=True)
+    conn = open_plain_read_only(corpus_snapshot)
     try:
         tables = [
             r[0]
@@ -335,11 +336,28 @@ def _drop_newsletter_articles(db_path: Path) -> int:
         con.close()
 
 
-def _drop_newsletter_rows(con) -> int:
+def _merge_fts_index(con) -> bool:
+    """Make the search index forget the deleted articles' text. ``article_fts`` is an external-content
+    FTS5 table: deleting an article writes a delete marker and leaves its postings and its terms in the
+    index's segments until a merge, and neither VACUUM nor ``sqlcipher_export`` removes them (measured:
+    a newsletter's unique words were still in the file after both). ``optimize`` merges every segment
+    into one, which drops them. Returns whether there was an index to merge; a failure propagates, so a
+    backup that promised to leave newsletters out does not carry their words in its search index."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'article_fts' AND type = 'table'").fetchone():
+        return False
+    con.execute("INSERT INTO article_fts(article_fts) VALUES('optimize')")
+    return True
+
+
+def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     """The connection-level core of :func:`_drop_newsletter_articles`, so the
     streaming backup can filter an ENCRYPTED disposable snapshot through a keyed
     SQLCipher connection (plaintext never staged at backup time). The caller owns
-    (and closes) the connection."""
+    (and closes) the connection.
+
+    ``vacuum=False`` leaves the file's free pages where they are: an ENCRYPTED copy is rewritten
+    into a fresh file by the caller instead (``src/backup/newsletter_export.py``), because VACUUM
+    builds its whole new copy in SQLCipher's in-memory temp store."""
     cur = con.cursor()
     marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
     src_ids = [r[0] for r in cur.execute(
@@ -375,9 +393,11 @@ def _drop_newsletter_rows(con) -> int:
         if "article_id" in cols:
             _delete_in(cur, t, "article_id", art_ids)
     _delete_in(cur, "articles", "id", art_ids)
+    _merge_fts_index(con)
     con.commit()
-    cur.execute("VACUUM")
-    con.commit()
+    if vacuum:
+        cur.execute("VACUUM")
+        con.commit()
     return len(art_ids)
 
 
