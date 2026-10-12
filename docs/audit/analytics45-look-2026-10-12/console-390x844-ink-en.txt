@@ -1,0 +1,2 @@
+# console (error + warning) and pageerror text, width 390x844, theme ink, language en
+(no console errors or warnings)
