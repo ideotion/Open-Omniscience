@@ -262,6 +262,9 @@ PHASE_DISK = "paused-low-disk"
 #: The corpus file was reported damaged (``database/damage.py``). Not a storage reading: the latch is
 #: the damage registry's, and it is released by the operator starting collection again.
 PHASE_DAMAGE = "paused-damaged"
+#: The check after an unexpected stop is reading the data files (``database/verify.py``): collection waits for
+#: it, and the pause ends by itself when it ends. Not a storage reading either: the registry's ``verifying()``.
+PHASE_VERIFY = "paused-verifying"
 
 #: The plain-words sentences, as frames the page fills with the numbers in its own
 #: language (the pattern of ``estimate_method_i18n``). Each is also a locale key, x12.
@@ -343,6 +346,12 @@ FRAME_OVERRIDE_NO_SUPERVISOR = (
 FRAME_OVERRIDE_DAMAGE = (
     "Collection cannot be forced on: the database reported damage in your library's file, and writing "
     "on only makes that worse. Starting collection again tries once more."
+)
+#: The check after an unexpected stop is still reading the data files: forcing collection on would write
+#: into files the check has not finished reading, so the click is refused with a sentence.
+FRAME_OVERRIDE_VERIFYING = (
+    "Collection cannot be forced on while the app checks your data files after an unexpected stop. The "
+    "pause ends by itself when the check ends."
 )
 
 
@@ -770,13 +779,17 @@ class StorageGuard:
 
     def kind(self) -> str | None:
         """``"disk"`` (the more severe, wins), ``"wal"``, ``"damage"`` (the corpus file was reported
-        damaged) or None."""
+        damaged), ``"verifying"`` (the check after an unexpected stop is reading the data files) or None."""
         with self._lock:
             storage = "disk" if self._disk else ("wal" if self._wal else None)
-        return storage or ("damage" if damage.registry.corpus_latched() else None)
+        return storage or _damage_kind()
 
     def admit(self) -> str | None:
-        """None = start the next unit of work; else ``"disk"``, ``"wal"`` or ``"damage"``.
+        """None = start the next unit of work; else ``"disk"``, ``"wal"``, ``"damage"`` or ``"verifying"``.
+
+        ``"verifying"`` is the check after an unexpected stop (``database/verify.py``): collection waits for it
+        and the pause ends by itself when it ends. Like ``"damage"`` it is not a storage reading, so it follows
+        neither this guard's switch nor the operator's override (its own switch is ``OO_BOOT_VERIFY``).
 
         ``"damage"`` is the CORPUS file's latch in ``database/damage.py``: the database reported it
         damaged, and writing on only makes that worse. It is not a storage reading and it follows
@@ -797,11 +810,11 @@ class StorageGuard:
             with self._lock:
                 if self._override is None:
                     storage = "disk" if self._disk else ("wal" if self._wal else None)
-        return storage or ("damage" if damage.registry.corpus_latched() else None)
+        return storage or _damage_kind()
 
     def phase(self) -> str | None:
         kind = self.kind()
-        return {"disk": PHASE_DISK, "wal": PHASE_WAL, "damage": PHASE_DAMAGE}.get(kind or "")
+        return {"disk": PHASE_DISK, "wal": PHASE_WAL, "damage": PHASE_DAMAGE, "verifying": PHASE_VERIFY}.get(kind or "")
 
     # -- the latches ---------------------------------------------------------------
     def observe(
@@ -1222,14 +1235,17 @@ class StorageGuard:
         return bool("disk" in kinds and self._disk and (free is None or reserve is None or free < reserve))
 
     def _override_refusal_locked(
-        self, free: int | None, floor: int, now_mono: float, damaged: bool = False
+        self, free: int | None, floor: int, now_mono: float, damaged: bool = False, verifying: bool = False
     ) -> dict[str, Any] | None:
         """What a click on "Resume anyway" would be answered with right now, or None when it
         would be granted: the ONE place the refusals are decided, so the button that is
         offered and the click that is answered cannot disagree. Caller holds the lock;
-        ``damaged`` is the corpus latch of ``database/damage.py``, read BEFORE the lock was taken."""
+        ``damaged`` is the corpus latch of ``database/damage.py`` and ``verifying`` its check after an
+        unexpected stop, both read BEFORE the lock was taken."""
         if damaged:
             return {"kind": "damage", "frame": FRAME_OVERRIDE_DAMAGE, "vars": {}}
+        if verifying:
+            return {"kind": "verifying", "frame": FRAME_OVERRIDE_VERIFYING, "vars": {}}
         if self._hold_until is not None and now_mono < self._hold_until:
             return {"kind": "held", "frame": FRAME_OVERRIDE_HELD, "vars": {}}
         if free is None:
@@ -1256,6 +1272,7 @@ class StorageGuard:
         wal, free = r.get("wal_bytes"), r.get("disk_free_bytes")
         now_mono = self._clock()
         damaged = damage.registry.corpus_latched()  # before the lock: the registry's lock is never nested here
+        verifying = damage.registry.verifying()
         refused: dict[str, Any] | None = None
         with self._lock:
             out["engaged"] = self._wal or self._disk
@@ -1263,7 +1280,7 @@ class StorageGuard:
                 self._override = self._withdrawn = None  # nothing left to override
                 return out
             floor = override_floor_bytes(wal if wal is not None else self._wal_seen)
-            refused = self._override_refusal_locked(free, floor, now_mono, damaged)
+            refused = self._override_refusal_locked(free, floor, now_mono, damaged, verifying)
             if refused is None:
                 self._override = {
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1578,6 +1595,7 @@ class StorageGuard:
         # registry's lock is never held while this one is awaited (nor the reverse).
         dmg = damage.registry.state(detail=detail)
         damaged = _corpus_latched_in(dmg)
+        verifying = bool(dmg.get("enabled") and dmg.get("verifying"))
         with self._lock:
             wal, disk = self._wal, self._disk
             thr = dict(self._thresholds)
@@ -1659,7 +1677,9 @@ class StorageGuard:
             reason = " ".join(_render_english(n) for n in notes) or None
             if dmg["notes"]:
                 # The damage latch has no numbers to render: its sentences are plain frames.
-                reason = " ".join([*([reason] if reason else []), *(n["frame"] for n in dmg["notes"])])
+                reason = " ".join(
+                    [*([reason] if reason else []), *(n["frame"].format(**n["vars"]) for n in dmg["notes"])]
+                )
             return {
                 "enabled": self.enabled(),
                 "engaged": wal or disk,
@@ -1670,7 +1690,7 @@ class StorageGuard:
                     else (
                         PHASE_WAL
                         if wal and not overridden
-                        else (PHASE_DAMAGE if damaged else None)
+                        else (PHASE_DAMAGE if damaged else (PHASE_VERIFY if verifying else None))
                     )
                 ),
                 # An operator's override (R112): collection runs although the latch holds. The
@@ -1681,7 +1701,7 @@ class StorageGuard:
                 # page offers the button only then, and says the refusal otherwise (a supervisor
                 # that is not running is the route's own answer and is not in this preview).
                 "override_refusal": (
-                    self._override_refusal_locked(free_now, floor_now, self._clock(), damaged)
+                    self._override_refusal_locked(free_now, floor_now, self._clock(), damaged, verifying)
                     if (wal or disk) and not overridden
                     else None
                 ),
@@ -1765,6 +1785,14 @@ class StorageGuard:
                     "the end of the pass in flight (an upper bound: it counts every writer)."
                 ),
             }
+
+
+def _damage_kind() -> str | None:
+    """The kind the DATABASE'S own state gives: ``"damage"`` (the corpus file is latched) before ``"verifying"``
+    (the check after an unexpected stop is reading the files), else None."""
+    if damage.registry.corpus_latched():
+        return "damage"
+    return "verifying" if damage.registry.verifying() else None
 
 
 def _corpus_latched_in(dmg: dict[str, Any]) -> bool:

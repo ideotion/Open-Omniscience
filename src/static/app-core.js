@@ -2045,8 +2045,14 @@
     function _damageHtml(a, t, tf) {
       const d = a && a.storage_guard && a.storage_guard.database_damage;
       if (!d || !Array.isArray(d.notes) || !d.notes.length) return "";
-      const lines = d.notes.map((n) => `<div class="vwarn">${esc(tf(n.frame, {}))}</div>`).join("");
-      return `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so releases the pause; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
+      // The check after an unexpected stop (database/verify.py) says how far it is, in a line of its own: it is
+      // not a report of damage, so the damage hover is not drawn over it.
+      const checking = d.notes.filter((n) => n.kind === "verifying")
+        .map((n) => `<div class="vnote">${esc(tf(n.frame, n.vars || {}))}</div>`).join("");
+      const damaged = d.notes.filter((n) => n.kind !== "verifying");
+      if (!damaged.length) return checking;
+      const lines = damaged.map((n) => `<div class="vwarn">${esc(tf(n.frame, n.vars || {}))}</div>`).join("");
+      return checking + `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. After an unexpected stop the app reads each table of your data files once before collection writes to them again; that check writes nothing of its own, and the pause ends by itself when it ends. The app does not repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so tries once more: a pause the start-up check set ends only when the tables it named read clean again, and any other pause ends and stops again at the first failed read if the damage is still there. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
     }
     // The storage guard's notice (2026-09-30, ranks 1/2/6): collection is PAUSED because the
     // database's write-ahead log is held open past this machine's limit, or the data drive is
@@ -2094,6 +2100,8 @@
     function _storagePausedText(phase, g) {
       // The damage pause is the database's own report, not a limit the override covers.
       if (phase === "paused-damaged") return "Paused: the database reported damage";
+      // Nor is the check after an unexpected stop: it is the app reading its own files, never a limit to override.
+      if (phase === "paused-verifying") return "Paused: checking the data files after an unexpected stop";
       if (g && g.overridden) return null;
       return { "paused-wal-pinned": "Paused: the database log has grown too large",
                "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;

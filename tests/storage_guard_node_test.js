@@ -62,6 +62,7 @@ const FRAME_UNREADABLE = frame("Free space on the data drive cannot be read, so 
 const FRAME_OVERRIDE_WAL = frame("Collection was resumed by you although the database's working file");
 const FRAME_OVERRIDE_DAMAGE = frame("Collection cannot be forced on: the database reported damage in your library's file");
 const FRAME_DAMAGE_DATA = frame("Part of your library's data file could not be read: the database reported damage.");
+const FRAME_VERIFYING = frame("The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}.");
 const OVERRIDDEN = { engaged: true, overridden: true, notes: [{ kind: "override-wal", frame: FRAME_OVERRIDE_WAL, vars: { size: 3221225472, limit: 1073741824, floor: 3221225472 } }] };
 const ok = (over) => Object.assign({ running: true, online: true, storage_guard: GUARD }, over || {});
 
@@ -180,6 +181,30 @@ for (const [ui, draw] of Object.entries(render)) {
     assert.ok(html.includes("Collection cannot be forced on"), html);
     assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), "a button beside its own refusal: " + html);
   });
+  // The check after an unexpected stop (database/verify.py): a line of its own with the numbers the server
+  // counted, never under the damage hover (it is the app reading its files, not a report of damage), and
+  // no button: forcing collection on while the files are read is refused by the server.
+  const CHECKING = { latched: [], notes: [{ kind: "verifying", file: "corpus", frame: FRAME_VERIFYING, vars: { index: 3, total: 41 } }] };
+  const withCheck = (over, extra) => ok(Object.assign({ storage_guard: { engaged: false, notes: [], database_damage: Object.assign({}, CHECKING, extra || {}) } }, over || {}));
+  check(ui + ": the check draws its progress with the server's numbers, in a note and not a warning", () => {
+    const html = draw(withCheck());
+    assert.ok(html.includes("table 3 of 41"), "the numbers did not reach the sentence: " + html);
+    assert.ok(html.includes('class="vnote"') && !html.includes('class="vwarn"'), html);
+    assert.ok(!html.includes("database disk image is malformed"), "the damage hover was drawn over a line that is not damage: " + html);
+    assert.ok(!/\{\w+\}/.test(html), "a placeholder survived: " + html);
+    assert.ok(!/data-(on-click="storageGuardResume\(\)"|tm="storage-resume")/.test(html), html);
+  });
+  check(ui + ": the check draws with the scheduler stopped and in airplane mode (it runs while the app is offline)", () => {
+    assert.ok(draw(withCheck({ running: false })).includes("table 3 of 41"));
+    assert.ok(draw(withCheck({ online: false })).includes("table 3 of 41"));
+  });
+  check(ui + ": a damaged file found while the check runs is still said, with its hover, beside the progress", () => {
+    const both = { latched: ["corpus"], notes: CHECKING.notes.concat(DAMAGE.notes) };
+    const html = draw(ok({ storage_guard: { engaged: false, notes: [], database_damage: both } }));
+    assert.ok(html.includes("table 3 of 41") && html.includes("could not be read"), html);
+    assert.ok(html.includes('class="vwarn"') && html.includes("database disk image is malformed"), html);
+    assert.ok(html.indexOf("table 3 of 41") < html.indexOf("could not be read"), "the progress line belongs above the report");
+  });
   check(ui + ": no latched file means no damage notice", () => {
     const g = { engaged: false, notes: [], database_damage: { latched: [], notes: [] } };
     assert.strictEqual(draw(ok({ storage_guard: g })), "");
@@ -271,6 +296,9 @@ for (const [ui, fn] of [["the app", pausedApp], ["/tasks", pausedTm]]) {
     assert.ok(/^Paused: the database reported damage/.test(fn("paused-damaged", OVERRIDDEN)));
     assert.ok(/^Paused: the database reported damage/.test(fn("paused-damaged", GUARD)));
     assert.ok(/^Paused: the database reported damage/.test(fn("paused-damaged", undefined)));
+    // the check after an unexpected stop is the app reading its own files: never a limit an override covers
+    assert.ok(/^Paused: checking the data files after an unexpected stop/.test(fn("paused-verifying", OVERRIDDEN)));
+    assert.ok(/^Paused: checking the data files after an unexpected stop/.test(fn("paused-verifying", GUARD)));
   });
 }
 const callSites = (src, name) => (src.match(new RegExp(name + "\\(a\\.phase[^)]*\\)", "g")) || []);

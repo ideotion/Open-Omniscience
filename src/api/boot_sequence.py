@@ -10,7 +10,10 @@ free, and thirteen minutes after boot the rollup was still building. Three whole
 side by side are three working sets in memory at once and three claims on the write gate, and
 the process was SIGKILLed with all of them running.
 
-THE ORDER, and why. (1) the cache warm-up: about a minute, and what makes Home fast; (2) the
+THE ORDER, and why. (0) the check of the data files after an unexpected stop (``database/verify.py``),
+which does nothing after a clean end: it goes FIRST because it reads each table once before anything writes
+to the files again, and the warm-up and the rollup are whole-corpus reads that would compete with it;
+(1) the cache warm-up: about a minute, and what makes Home fast; (2) the
 rollup's first build: the biggest read, which analytics need and which the warm-up's own reads
 kick off; (3) the re-index resume: it owes hours and holds the write gate, so it goes last. After
 the first run of each the order no longer applies: a rollup rebuilt later for a changed corpus, or
@@ -43,7 +46,7 @@ _LOG = logging.getLogger(__name__)
 SLOW_STEP_S = 300.0
 
 # The steps, in the order they run. A step's state: pending | running | done | failed | skipped | declined.
-STEPS = ("warm-cache", "rollup", "reindex-resume")
+STEPS = ("verify-database", "warm-cache", "rollup", "reindex-resume")
 
 _LOCK = threading.Lock()
 _STATE: dict[str, object] = {"warm": "pending", "reindex_pending": None}
@@ -86,7 +89,7 @@ def snapshot() -> dict:
             "steps": steps,
             "reindex_requested": _STATE["reindex_pending"],
             "method": (
-                "The three heavy start-up jobs run one after the other. A rollup a serve kicks after "
+                "The check of the data files after an unexpected stop (nothing after a clean end) and the three heavy start-up jobs run one after the other. A rollup a serve kicks after "
                 "the re-index has started builds beside it, and declines when memory is short. "
                 "No timeout: a step that does not end shows here as running, with its seconds; the rollup step "
                 "also shows its build's stage, rows streamed, rows/s and seconds since it last moved, and the "
@@ -102,7 +105,8 @@ def request_reindex(articles_pending: int) -> None:
 
 
 def warm_running() -> bool:
-    """True from the sequence's start until its warm-up step ends: the rollup declines meanwhile."""
+    """True from the sequence's start until its warm-up step ends (the check after an unexpected stop included):
+    the rollup declines meanwhile."""
     with _LOCK:
         return _STATE["warm"] == "running"
 
@@ -115,7 +119,7 @@ def heavy_step_verdict() -> dict | None:
     if busy:
         return {
             "reason": "boot_order",
-            "detail": "the start-up cache warm-up or rollup build is running; this build waits its turn",
+            "detail": "the start-up file check, cache warm-up or rollup build is running; this build waits its turn",
         }
     return None
 
@@ -248,6 +252,14 @@ class _Skipped(Exception):  # noqa: N818 - a signal, not an error
         self.state = state
 
 
+def _verify_database() -> None:
+    """The check after an unexpected stop, when ``verify.arm_at_boot`` armed one; otherwise nothing to do."""
+    from src.database import verify
+
+    if not verify.run_armed():
+        raise _Skipped
+
+
 def _rollup_first_build() -> None:
     from src.analytics import rollup_serve
 
@@ -279,11 +291,15 @@ def _start_reindex() -> None:
 
 
 def run(warm: Callable[[], None]) -> None:
-    """The sequence, in the calling thread: warm-up, rollup first build, re-index resume."""
+    """The sequence, in the calling thread: the check after an unexpected stop, warm-up, rollup first build,
+    re-index resume."""
     with _LOCK:
+        # "warm" covers the check too: a serve-kicked rollup declines (``warm_running``) from the sequence's
+        # start, so nothing heavy competes with the check's reads.
         _STATE["warm"] = "running"
         _SEQUENCE["started_at"] = time.time()
     try:
+        _timed("verify-database", _verify_database, holds="the cache warm-up, the rollup build and the re-index")
         _timed("warm-cache", warm, holds="the rollup build and the re-index")
     finally:
         with _LOCK:
