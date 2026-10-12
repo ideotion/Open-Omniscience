@@ -16460,13 +16460,18 @@ UPDATEs, so a carried top never holds a hidden word; it is new logic in a module
 purpose:** the omnibar and "did you mean" (a user who types a stopword may want it), curated-group totals (they matter only if a curated member is later stoplisted), the operator-only readers (the triage
 worklist may deliberately include stoplisted words).
 
-**T2 REST BUILT (2026-10-12; the paragraph above is the state before it).** The readers listed there as open now follow the shipped list: `supergroup_stats.resolve_member_keyword_ids` (so the
-Observatory, the rising test, the stats and the drill-through) and `api.insights._supergroup_totals` (the Groups panel) resolve a hidden keyword to no id; `group_stats.resolve_group_keyword_ids` (ring stats) and `queries.ring_country_split` apply the same rule, so a ring and the group that holds it count the same words; `source_topics.derive_source_topics` leaves a hidden
-tagged keyword out IN SQL, with one NOT IN (the `COUNT(DISTINCT article)` must not be corrected afterwards); the bulletin's coverage columns, story keyword sets and per-article keywords drop a hidden word BEFORE
-the cut (the coverage fetch widens until it holds enough visible rows), travelling as a patch through the export thread. **Two bulletin consequences, stated:** the bulletin is a listing, so the full predicate applies and two-letter terms (`eu`, `un`, `ai`) no longer take part in story grouping; and `articles_in_period` counts every article of the window, including one whose keywords are all hidden. **The "curated-group totals" omission above is REVERSED, on measured
-evidence:** 13 terms of the shipped rings are already on the shipped list (`news` in news-media, `work` in occupation, `reporting` in journalism, `making` in creation, `advertisement` in advertising, `are`
-in meditation, `all` and `tout` in universe, `d` in unmanned-aerial-vehicle, `se` in operating-system, `tempo` in weather, `по` in software, `कर` in tax), so it was not a "later" case. **Only the LIST
-hides in the group and topic readers, not a listing's too-short / numeric rule:** a group member and a topic tag are deliberate picks (`ai` is both) and a length rule would silently empty the group (the
-bulletin, a listing, uses the full predicate). **The AI keywords are LEFT ON PURPOSE:** they are typed LLM outputs the user can confirm or reject one by one, so a stoplist word there is a proposal the user
-answers, not a count that misleads. Still left: the omnibar and "did you mean", the operator-only readers. Enforced by `tests/test_t2_groups_and_topics_hide_stoplisted.py` and
-`tests/test_bulletin_hides_stoplisted.py`.
+**T2 REST BUILT (2026-10-12, #1341; the paragraph above is the state before it).** The group, ring and topic readers listed there as open now follow the shipped list:
+`supergroup_stats.resolve_member_keyword_ids` (so the Observatory, the rising test, the stats and the drill-through) and `api.insights._supergroup_totals` (the Groups panel) resolve a hidden keyword to no id (two
+functions that agree on the hide rule, pinned by one test; they still differ on ring-term normalisation and on first-match-wins, as before); `group_stats.resolve_group_keyword_ids` (ring stats and the
+country drill) and `queries.ring_country_split` apply the same rule, so a ring and the group that holds it count the same words; `source_topics.derive_source_topics` leaves a hidden tagged keyword out IN SQL,
+with one NOT IN (the `COUNT(DISTINCT article)` must not be corrected afterwards). **The "curated-group totals" omission above is REVERSED, on measured evidence:** 13 terms of the shipped rings are already
+on the shipped list (`news` in news-media, `work` in occupation, `reporting` in journalism, `making` in creation, `advertisement` in advertising, `are` in meditation, `all` and `tout` in universe, `d` in
+unmanned-aerial-vehicle, `se` in operating-system, `tempo` in weather, `по` in software, `कर` in tax), so it was not a "later" case. **Only the LIST hides in the group and topic readers, not a listing's
+too-short / numeric rule:** a group member and a topic tag are deliberate picks (`ai` is both) and a length rule would silently empty the group. **The AI keywords are LEFT ON PURPOSE:** they are typed
+LLM outputs the user can confirm or reject one by one, so a stoplist word there is a proposal the user answers, not a count that misleads. Still left: the omnibar and "did you mean", the operator-only
+readers. Enforced by `tests/test_t2_groups_and_topics_hide_stoplisted.py`.
+
+**T2 STILL OPEN: the bulletin trio (coverage columns, story keyword sets, article keywords).** The fix is written and tested (a patch on main 6c858f353, 574 bulletin tests pass, in
+`/mnt/project-files/keyword-session/t2-rest-2026-10-12/bulletin-t2-rest.patch`); it travels through the export thread, the sole pusher of the bulletin code, and the PR that carries it records it and
+its test (`tests/test_bulletin_hides_stoplisted.py`). Its two consequences, to be stated there: the bulletin is a listing, so the full predicate applies and two-letter terms (`eu`, `un`, `ai`) no longer
+take part in story grouping; and `articles_in_period` counts every article of the window, including one whose keywords are all hidden. This entry is cleared by that PR.

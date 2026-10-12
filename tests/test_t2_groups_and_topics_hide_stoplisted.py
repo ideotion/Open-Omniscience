@@ -16,6 +16,10 @@ article carrying two keywords of one topic), so the filter is in the query.
 
 ``mathcal`` is a batch-1 stopword (a LaTeX macro); ``press`` is an ordinary word. Only the LIST hides
 here, not the listing's too-short rule: a group member and a topic tag are deliberate picks (``ai``).
+
+THE RING-LEVEL READERS ARE PINNED TOO (``group_stats.resolve_group_keyword_ids`` for the ring stats and
+``queries.ring_country_split`` / ``ring_country_article_ids`` for the country split and its drill): one ring
+must show one set of words in all of them, and the drill must be the split's own cell.
 """
 
 from __future__ import annotations
@@ -150,17 +154,65 @@ def test_the_groups_panel_totals_agree_with_the_observatory_resolver(s):
 # ------------------------------------------------------------------ the ring-level readers (one ring)
 
 
-def test_the_ring_readers_leave_out_a_hidden_member_too(s):
-    """`/ring-stats` (group_stats) and the country split read ONE ring; they must count the words the
-    super-group holding that ring counts, or the same ring shows two totals."""
-    from src.analytics.group_stats import resolve_group_keyword_ids
-    from src.analytics.queries import ring_country_split
+def _ring_corpus(s):
+    """`news-media`: `news` (on the shipped list) on articles 0-3, `press` (not) on articles 2-3, one French source."""
+    src, arts = _articles(s, 4, domain="fr.test")
+    src.country = "FR"
+    news, press = _kw(s, "news", n_articles=4), _kw(s, VISIBLE, n_articles=2)
+    for kw, chosen in ((news, arts), (press, arts[2:])):
+        for a in chosen:
+            s.add(KeywordMention(keyword_id=kw.id, article_id=a.id, count=1,
+                                 observed_on=date.today(), source_id=src.id))
+    s.commit()
+    return news, press, arts
 
-    news, press = _kw(s, "news"), _kw(s, VISIBLE)
+
+def test_the_ring_readers_leave_out_a_hidden_member_too(s):
+    """`/ring-stats` (group_stats), the country split and its drill read ONE ring; they must count the words
+    the super-group holding that ring counts, and must agree with each other."""
+    from src.analytics.group_stats import resolve_group_keyword_ids
+    from src.analytics.queries import ring_country_article_ids, ring_country_split
+
+    news, press, arts = _ring_corpus(s)
     assert resolve_group_keyword_ids(s, "news-media") == {press.id}
     split = ring_country_split(s, ring_id="news-media")
     assert split["n_keywords"] == 1, "the hidden `news` was counted as a keyword of the ring"
+    (fr,) = split["countries"]
+    assert fr["articles"] == 2, "the two articles of `press`, not the four of `news`"
+    drill = ring_country_article_ids(s, ring_id="news-media", country="FR")
+    assert sorted(drill["article_ids"]) == sorted(a.id for a in arts[2:]), "the drill must be the split's cell"
+    assert len(drill["article_ids"]) == fr["articles"]
     assert news.id not in resolve_member_keyword_ids(s, [("news-media", "news-media")])["news-media"]
+
+
+def test_a_ring_whose_every_member_is_hidden_reads_as_empty_not_as_unmeasured(s):
+    from src.analytics.group_stats import resolve_group_keyword_ids
+    from src.analytics.queries import ring_country_article_ids, ring_country_split
+
+    news, _press, _arts = _ring_corpus(s)
+    # remove the visible member from the corpus: only the hidden `news` is left in the ring
+    s.query(KeywordMention).filter(KeywordMention.keyword_id != news.id).delete()
+    s.query(Keyword).filter(Keyword.id != news.id).delete()
+    s.commit()
+    assert resolve_group_keyword_ids(s, "news-media") == set()
+    split = ring_country_split(s, ring_id="news-media")
+    assert split["found"] is True and split["countries"] == [] and split["n_keywords"] == 0
+    assert ring_country_article_ids(s, ring_id="news-media", country="FR")["article_ids"] == []
+
+
+def test_a_user_exclusion_hides_a_ring_member_in_every_ring_reader(s, monkeypatch):
+    """The second half of the hide set: the user's own exclusions, not only the shipped list."""
+    from src.analytics.filters import KeywordFilter
+    from src.analytics.group_stats import resolve_group_keyword_ids
+    from src.analytics.queries import ring_country_split
+
+    _news, press, _arts = _ring_corpus(s)
+    assert VISIBLE not in global_stopwords()
+    monkeypatch.setattr("src.analytics.filters.load_settings", lambda: KeywordFilter(excluded=[VISIBLE]))
+    assert resolve_group_keyword_ids(s, "news-media") == set()
+    assert resolve_member_keyword_ids(s, [("news-media", "news-media")])["news-media"] == set()
+    assert ring_country_split(s, ring_id="news-media")["n_keywords"] == 0
+    assert press.id not in _supergroup_totals(s, {("news-media", "news-media")})[1]["news-media"]
 
 
 # ------------------------------------------------------------------------------- source topics

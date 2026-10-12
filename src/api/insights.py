@@ -3252,7 +3252,8 @@ def _supergroup_totals(
 
     A keyword the stoplist hides is NOT counted (R111 step T2), the same rule
     ``supergroup_stats.resolve_member_keyword_ids`` applies, so this panel and the Observatory,
-    the rising test and the drill-through stay one measure. Only the LIST hides (stopwords +
+    the rising test and the drill-through agree on which keywords are hidden (they are two functions; a test
+    resolves one group through both). Only the LIST hides (stopwords +
     the user's exclusions), not the too-short rule: a member is a deliberate pick (`ai`)."""
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
