@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     from src.entities import gazetteer_build as G
+    from src.monitoring.secret_scrub import exception_text
     from src.osm.ingest import country_codes
 
     try:
@@ -100,10 +101,10 @@ def main(argv: list[str] | None = None) -> int:
             per_country[country["alpha2"]] = pl
             read_counts[a3] = counts
     except ValueError as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {exception_text(exc, typed=False)}")
         return 2
     except G.GazetteerBuildError as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {exception_text(exc, typed=False)}")
         return 2
     except Exception as exc:  # noqa: BLE001 - the operator reads the reason; never a passphrase
         print(f"failed: could not read osm.db ({type(exc).__name__}); is the app stopped and the passphrase set?")
@@ -135,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             items, fetch = G.fetch_wikidata(qids, getter=G.guarded_getter)
         except G.GazetteerBuildError as exc:  # airplane mode, or the transport is unavailable
-            print(f"refused: {exc}")
+            print(f"refused: {exception_text(exc, typed=False)}")
             return 2
         out["fetch"] = fetch
         if fetch["stopped_by_airplane_mode"]:

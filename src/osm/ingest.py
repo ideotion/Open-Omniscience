@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import exception_text
 from src.osm import tags as T
 from src.osm.geometry import Border, BorderError, encode_coords, representative_point, stitch
 from src.osm.pbf import Node, Relation, Way
@@ -310,8 +311,10 @@ def ingest_country(
         report.status = "complete"
     except Exception as exc:
         report.status = "failed"
-        report.error = f"{type(exc).__name__}: {exc}"
-        _LOG.warning("the %s cut from %s failed: %s", alpha2, path.name, exc)
+        # Written through the shared helper: this runs in a child that holds the store's passphrase, and the parent's report
+        # carries ``report.error`` on; a UnicodeError is recorded by class alone (its message names a letter and an offset).
+        report.error = exception_text(exc)
+        _LOG.warning("the %s cut from %s failed: %s", alpha2, path.name, report.error)
         raise
     finally:
         locations.close()

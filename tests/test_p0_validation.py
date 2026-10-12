@@ -607,6 +607,9 @@ _SECRET_NAMES = {
     "passphrase": "passphrase",
     "secret": "passphrase",
     "needle": "passphrase",
+    # A TUPLE of the secrets one function holds (the OSM reference run's `secrets_`), handed on as `*secrets_`: the same
+    # secret under another name, which :func:`_is_the_secret` accepts starred.
+    "secrets_": "passphrase",
     "corpus_passphrase": "corpus_passphrase",
     "password": "password",
 }
@@ -701,7 +704,9 @@ def _secret_attribute(node: ast.AST) -> tuple[str, str] | None:
 def _is_the_secret(node: ast.AST) -> bool:
     """Whether ``node`` IS the secret as the run holds it: a name it goes by, an attribute it is kept in
     (``run.params.passphrase``, ``self._passphrase``) or a ``getattr`` of one -- not a constant (``""`` scrubs nothing), not
-    any other call, not any other name."""
+    any other call, not any other name. A secret handed on STARRED (``*secrets_``, a tuple of them) is the secret."""
+    if isinstance(node, ast.Starred):
+        return _is_the_secret(node.value)
     return (isinstance(node, ast.Name) and node.id in _SECRET_NAMES) or _secret_attribute(node) is not None
 
 
@@ -734,6 +739,8 @@ class _Held:
 
     def key_of(self, node: ast.AST) -> str:
         """Which secret ``node`` is, for a node :func:`_is_the_secret` accepted."""
+        if isinstance(node, ast.Starred):
+            return self.key_of(node.value)
         if isinstance(node, ast.Name):
             return _SECRET_NAMES[node.id]
         kind, expression = _secret_attribute(node)  # type: ignore[misc]
@@ -980,9 +987,9 @@ _GUARDED_MODULES = {
     "api/diagnostics/release_run": ({"release_run_start", "release_run_resume"}, 2, True, {}),
     "api/ingestion": ({"ingest_email_endpoint", "_mailbox_pull_worker"}, 2, True, {}),
     # The OSM reference run: its runner holds the passphrase of the throwaway store it makes (or the operator's key file's) and
-    # writes the engine's words into a report an operator pastes. Its other texts (a phase's start failure, the children's
-    # stderr and JSON) go through `scrub`, which calls `scrubbed`; tests/test_osm_reference_run.py pins each by behaviour.
-    "osm/reference_run": ({"_run"}, 1, False, {}),
+    # writes the engine's words into a report an operator pastes. `run_phase` holds the key as the tuple `secrets_` and hands
+    # it on starred; its other texts (the children's stderr and JSON) go through `scrub`, which calls `scrubbed`.
+    "osm/reference_run": ({"_run", "run_phase"}, 2, False, {}),
 }
 
 
@@ -1149,6 +1156,13 @@ _WAYS_THAT_LEAK = {
     "the helper given no secret": _guarded(_NAMED, "err = _exception_text(exc)"),
     "the helper given an empty secret": _guarded(_NAMED, "err = _exception_text(exc, '')"),
     "the helper given a name that is not the secret": _guarded(_NAMED, "err = _exception_text(exc, other)"),
+    "a tuple of secrets read as a secret, the exception written by hand": _guarded(
+        _NAMED, "err = f'{exc}'", head="def check(ctx, secrets_):"
+    ),
+    "a starred name that is not a secret handed to the scrub": _guarded(_NAMED, "err = exception_text(exc, *other)"),
+    "a starred tuple of secrets beside the exception in the wrong place": _guarded(
+        _NAMED, "err = exception_text(*secrets_, exc)", head="def check(ctx, secrets_):"
+    ),
     "the secret in another position than the one the helper reads it at": _guarded(
         _NAMED, "err = _exception_text(exc, other, passphrase)"
     ),
@@ -1276,6 +1290,10 @@ _WAYS_THAT_LEAK = {
 #: What the guard must leave alone, as the function it is asked about and the calls it must count as routed.
 _WAYS_THAT_ARE_FINE = {
     "the helper, given the passphrase": (_guarded(_NAMED, "err = _exception_text(exc, passphrase)"), 1),
+    "the shared helper, given a tuple of the secrets starred": (
+        _guarded(_NAMED, "err = exception_text(exc, *secrets_)", head="def check(ctx, secrets_):"),
+        1,
+    ),
     "the child's helper, given the passphrase": (_guarded(_NAMED, "err = _error_text(exc, passphrase)"), 1),
     "a slice of something else inside the scrubbing call": (
         _guarded(_NAMED, "err = scrubbed(f'{exc} {tag[:3]}', passphrase)"),

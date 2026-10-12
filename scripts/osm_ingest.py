@@ -36,6 +36,7 @@ def main() -> int:
     args = ap.parse_args()
 
     from src.database.connect import get_passphrase, is_encrypted_file, plaintext_mode
+    from src.monitoring.secret_scrub import exception_text
     from src.osm.ingest import ingest_country
     from src.osm.reader import GeoExtraMissing
     from src.paths import data_dir
@@ -48,10 +49,10 @@ def main() -> int:
     try:
         report = ingest_country(args.extract, args.country, reader=args.reader)
     except GeoExtraMissing as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {exception_text(exc, typed=False)}")
         return 2
     except Exception as exc:  # noqa: BLE001 - the operator reads the reason, the row records it
-        print(f"failed: {type(exc).__name__}: {exc}")
+        print(f"failed: {exception_text(exc)}")
         return 1
     out = report.to_dict()
     out["extract_bytes"] = args.extract.stat().st_size

@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from scripts import osm_reference_run as CLI
+from src.monitoring import secret_scrub as SS
 from src.osm import reference_run as R
 from tests._osm_lane_helpers import FIXTURE, HAVE_OSMIUM, ROOT
 
@@ -862,18 +863,30 @@ def test_a_passphrase_that_holds_a_newline_is_scrubbed_before_the_stderr_tail_is
         assert part not in json.dumps(report), part
 
 
-def test_a_passphrase_that_is_a_field_name_scrubs_the_engines_words_and_leaves_the_report_alone(tmp_path):
-    """The runner puts no minimum on a passphrase (the app's own rule is guidance, and this store is not the
-    install's): one that equals a key and a verdict word must not rename a field or turn a verdict into a marker."""
+def test_a_passphrase_that_is_a_field_name_scrubs_the_childs_words_and_leaves_the_runners_report_alone(tmp_path):
+    """The runner puts no minimum on a passphrase (the app's own rule is guidance, and this store is not the install's): one
+    that equals a verdict word must not turn the RUNNER's verdict into a marker. The child's JSON is the child's words, keys
+    included (a key built from an engine's text would carry it), so its key `status` is rewritten, failing closed."""
     key = tmp_path / "op.key"
     key.write_text("status", "utf-8")
-    code = "import json\nprint(json.dumps({'note': 'the passphrase is status', 'status': 'fine'}))"
+    code = "import json\nprint(json.dumps({'note': 'the passphrase is status', 'status': 'fine', 'plain': 'x'}))"
     report, _ = _run(tmp_path, phases_override=_scripted(code), passphrase_file=key)
-    assert report["status"] == "ok" and "status" in report["phases"][0]
+    assert report["status"] == "ok" and report["phases"][0]["status"] == "ok", "the runner's own fields are its own"
     app = report["phases"][0]["app_report"]
-    assert app["status"] == "fine", "the child's own value is its own"
-    assert "status" in app, "a KEY is never rewritten by the secret"
+    assert "status" not in app and "plain" in app, "the child's key that IS the secret is rewritten; the others stay"
     assert "***redacted***" in app["note"] and "is status" not in app["note"]
+    assert "***redacted***" in app and app["***redacted***"] == "fine"
+
+
+def test_two_keys_of_a_childs_json_that_scrub_to_the_same_text_stay_apart(tmp_path):
+    key = tmp_path / "k"
+    key.write_text("collision-secret-1", "utf-8")
+    code = ("import json\nprint(json.dumps({'collision-secret-1': 1, '***redacted***': 2, 'ok': 3}))")
+    report, _ = _run(tmp_path, phases_override=_scripted(code), passphrase_file=key)
+    app = report["phases"][0]["app_report"]
+    assert sorted(app.values()) == [1, 2, 3] and "collision-secret-1" not in json.dumps(app)
+    assert "***redacted***#2" in app, "the second key is kept apart, not dropped"
+
 
 
 def test_a_passphrase_file_that_is_not_utf8_is_refused_without_naming_a_byte(tmp_path):
@@ -909,14 +922,42 @@ def test_a_path_inside_a_childs_json_report_is_scrubbed(tmp_path):
     assert "/home/alice" not in text and "/srv/keyed" not in text and "osm.db" in text
 
 
-def test_the_childs_logs_are_owner_only(tmp_path):
-    code = "print('x')"
+def test_the_childs_logs_are_owner_only(tmp_path, monkeypatch):
+    # Read the modes at the moment the runner removes them: the logs are gone from a kept store afterwards.
+    seen: dict[str, int] = {}
+    real = R._remove_logs
+
+    def _look(run_dir):
+        for f in (run_dir / "logs").glob("*"):
+            seen[f.name] = f.stat().st_mode & 0o077
+        return real(run_dir)
+
+    monkeypatch.setattr(R, "_remove_logs", _look)
     pf = tmp_path / "op.key"
     pf.write_text("op-passphrase-0123456789\n", encoding="utf-8")
-    _report, kept = _run(tmp_path, phases_override=_scripted(code), keep_store=True, passphrase_file=pf)
+    _report, kept = _run(tmp_path, phases_override=_scripted("print('x')"), keep_store=True, passphrase_file=pf)
     try:
-        for f in (kept / "logs").glob("*"):
-            assert (f.stat().st_mode & 0o077) == 0, f.name
+        assert seen, "the runner made logs for the phase"
+        assert all(mode == 0 for mode in seen.values()), seen
+    finally:
+        R.cleanup(kept)
+
+
+def test_the_childs_raw_logs_do_not_stay_on_disk_in_a_kept_store(tmp_path):
+    # The raw logs hold the child's words unscrubbed; a kept store would leave them beside the operator's files.
+    # MUTATION TARGET: drop the `_remove_logs` call from the keep-store branch.
+    secret = "kept-store-log-secret-6613"
+    pf = tmp_path / "op.key"
+    pf.write_text(secret + "\n", encoding="utf-8")
+    code = f"import sys\nprint('{secret} on stdout')\nsys.stderr.write('{secret} on stderr\\n')"
+    report, kept = _run(tmp_path, phases_override=_scripted(code), keep_store=True, passphrase_file=pf)
+    try:
+        assert report["store"]["logs_removed"] is True and "logs_note" in report["store"]
+        assert not (kept / "logs").exists()
+        for f in kept.rglob("*"):
+            if f.is_file() and f.name != "op.key":
+                assert secret.encode() not in f.read_bytes(), f
+        assert secret not in json.dumps(report)
     finally:
         R.cleanup(kept)
 
@@ -1227,8 +1268,32 @@ def test_the_commands_refusal_line_takes_out_a_held_passphrase(tmp_path, monkeyp
     assert rc == 2 and "UnicodeEncodeError" in out and "ä" not in out and "ordinal" not in out and "position" not in out
 
 
-def test_a_passphrase_that_is_a_verdict_word_leaves_the_finished_report_alone(tmp_path):
+def test_the_commands_country_refusal_line_takes_out_a_held_passphrase(tmp_path, monkeypatch):
+    # `country_codes` names the value it was given; a passphrase typed as the country must not reach the terminal.
+    held = "held-and-typed-as-the-country-8841"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", held)
+    assert rc == 2 and out.startswith("refused:") and "not an ISO 3166-1" in out
+    assert held not in out and held.upper() not in out
+
+
+def test_a_secret_under_the_floor_withholds_the_whole_text_it_is_found_in(tmp_path):
+    # A two-character key cannot be taken out of free text without ruining it, so any text holding it is withheld whole.
+    # MUTATION TARGET: `scrub` back to a per-needle loop (which would leave the surrounding words).
+    key = tmp_path / "short.key"
+    key.write_text("q7", "utf-8")
+    code = "import sys\nsys.stderr.write('Traceback q7 then trailing-words\\n')\nprint('fine words')\nsys.exit(1)"
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted(code))
+    text = json.dumps(report)
+    assert report["status"] == "failed"
+    assert "trailing-words" not in text and SS.UNREADABLE_TEXT in text
+
+
+def test_a_passphrase_that_is_a_verdict_word_leaves_the_finished_report_alone(tmp_path, monkeypatch):
     # The finished pass is paths only: a key `ok` (the word of a good verdict) must not rewrite a status the exit code reads.
+    # The process HOLDS `ok` (the environment's), so a finished pass that scrubbed secrets would withhold the status.
+    # MUTATION TARGET: the finished pass back to `paths_only=False`.
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "ok")
     key = tmp_path / "ok.key"
     key.write_text("ok", "utf-8")
     report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
