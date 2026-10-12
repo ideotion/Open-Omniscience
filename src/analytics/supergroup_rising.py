@@ -72,6 +72,7 @@ def _corpus_volume(db, lo: date, hi: date) -> int:
 
 def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
     from src.database.derived_views import KeywordMentionRead
+    from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -85,6 +86,8 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
                 KeywordMentionRead.observed_on >= lo,
                 KeywordMentionRead.observed_on < hi,
                 KeywordMentionRead.source_id.isnot(None),
+                # a mention kept for a lost article is no independent outlet (its source is whatever was written beside it)
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .distinct()
         ):
@@ -94,6 +97,7 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
 
 def _article_ids_windowed(db, keyword_ids, lo: date, hi: date) -> list[int]:
     from src.database.derived_views import KeywordMentionRead
+    from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -106,6 +110,7 @@ def _article_ids_windowed(db, keyword_ids, lo: date, hi: date) -> list[int]:
                 KeywordMentionRead.keyword_id.in_(chunk),
                 KeywordMentionRead.observed_on >= lo,
                 KeywordMentionRead.observed_on < hi,
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .distinct()
         ):
@@ -196,6 +201,7 @@ def find_rising_supergroups(
     from src.analytics.managed import normalize_lang
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_article_id
 
     # Active same-language source counts over the recent window — the DF-ubiquity
     # gate's denominator, built ONCE (the find_flooded_topics pattern), not per group.
@@ -205,6 +211,7 @@ def find_rising_supergroups(
             KeywordMentionRead.observed_on >= w_start,
             KeywordMentionRead.observed_on < hi,
             KeywordMentionRead.source_id.isnot(None),
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
         )
         .group_by(KeywordMentionRead.source_id)
         .all()

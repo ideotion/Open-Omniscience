@@ -14,11 +14,15 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import DatabaseError as _SADatabaseError
 from sqlalchemy.orm import sessionmaker
 
+from src.database import damage
 from src.database.fts import ensure_fts, fts_status
 from src.database.maintenance import StatementTimeout
 from src.database.models import Article, Base, Source
@@ -92,7 +96,59 @@ def test_corrupt_index_is_present_but_unhealthy_actionable():
     assert st["present"] is True
     assert st["healthy"] is False
     assert st["count_status"] == "error"
-    assert "malformed" in (st["error"] or "")
+    assert st["error"] == "RuntimeError", "the class of the failure; the exception's own words are not kept"
+
+
+def _driver_failure(line: str, code: int, name: str) -> Exception:
+    """What the session raises for a driver error: SQLAlchemy's wrapper (its text carries the statement and
+    every bound value) around the driver's own exception, which carries the engine's line."""
+    inner = sqlite3.OperationalError(line)
+    inner.sqlite_errorcode = code  # type: ignore[attr-defined]
+    inner.sqlite_errorname = name  # type: ignore[attr-defined]
+    return _SADatabaseError("SELECT rowid FROM article_fts WHERE x = 'MARKER-BOUND-VALUE'", ("MARKER-BOUND-VALUE",), inner)
+
+
+@pytest.mark.parametrize(
+    "fails_on, line, code, name, expected, where",
+    [
+        pytest.param(
+            "rowid FROM article_fts", "malformed database schema (secret_index_name) - near \"MARKER-FRAGMENT\"",
+            11, "SQLITE_CORRUPT", "OperationalError: " + damage.CORRUPT_SCHEMA, "the health probe, a damaged schema", id="health-schema",
+        ),
+        pytest.param(
+            "rowid FROM article_fts", "database disk image is malformed MARKER-PAGE",
+            11, "SQLITE_CORRUPT", "OperationalError: " + damage.CORRUPT_IMAGE, "the health probe, a damaged page", id="health-page",
+        ),
+        pytest.param(
+            "rowid FROM article_fts", "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
+            "the health probe, an I/O error", id="health-io",
+        ),
+        pytest.param(
+            "count(*) FROM article_fts", "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
+            "the row count", id="count-io",
+        ),
+        pytest.param(
+            "sqlite_master", "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
+            "the presence read", id="presence-io",
+        ),
+    ],
+)
+def test_a_failed_probe_is_recorded_as_a_class_and_a_fixed_label_never_the_engines_words(fails_on, line, code, name, expected, where):
+    """The integrity report that carries ``error`` rides the diagnostics bundle, and a database error
+    ends in the engine's own line (the name of a schema object and a fragment of its definition) beside
+    SQLAlchemy's statement and bound values: engine text into a record is class-only."""
+    s = _corpus()
+    orig = s.execute
+
+    def fake(stmt, *a, **k):
+        if fails_on in str(stmt):
+            raise _driver_failure(line, code, name)
+        return orig(stmt, *a, **k)
+
+    s.execute = fake  # type: ignore[method-assign]
+    st = fts_status(s)
+    assert st["error"] == expected, where
+    assert "MARKER" not in repr(st) and "secret_index_name" not in repr(st) and "SELECT" not in repr(st), where
 
 
 def test_non_sqlite_backend_is_unsupported_not_absent():

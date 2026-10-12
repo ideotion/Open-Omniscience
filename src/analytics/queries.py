@@ -32,6 +32,7 @@ from src.database.models import (
     KeywordFamilyOverride,
     Source,
 )
+from src.database.stand_in import not_a_stand_in_article_id
 
 # Chunk size for id IN(...) queries -- stay under SQLite's historical ~999
 # bound-variable ceiling, the same repo-wide invariant as latest.py:_SQL_IN_CHUNK
@@ -550,7 +551,8 @@ def concept_arms(
         for i in range(0, len(kw_ids), _IN_CHUNK):
             rows = (
                 session.query(KeywordMentionRead.article_id)
-                .filter(KeywordMentionRead.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]))
+                # the mentions kept for a lost article: a stand-in is no article of this language, and one real article beside it would pass ``min_cooccur``
+                .filter(KeywordMentionRead.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]), not_a_stand_in_article_id(KeywordMentionRead.article_id))
                 .distinct()
                 .all()
             )
@@ -1011,11 +1013,16 @@ def _distinct_articles(session, ids) -> int:
     Over more than one chunk the distinct set is assembled in Python rather than summed,
     because summing per-chunk distinct counts would count such an article twice — the
     error the number exists to avoid.
+
+    The mentions kept for a lost article (a stand-in row of a salvage copy, E3) are left
+    out in BOTH branches: this is the centre ``concept_arms`` prints beside arms that
+    already leave them out, and the ``articles`` ``trend`` prints, so one payload counts one
+    population.
     """
     if len(ids) <= _IN_CHUNK:
         return int(
             session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
-            .filter(KeywordMentionRead.keyword_id.in_(ids))
+            .filter(KeywordMentionRead.keyword_id.in_(ids), not_a_stand_in_article_id(KeywordMentionRead.article_id))
             .scalar()
             or 0
         )
@@ -1024,7 +1031,7 @@ def _distinct_articles(session, ids) -> int:
         chunk = ids[i : i + _IN_CHUNK]
         for (aid,) in (
             session.query(KeywordMentionRead.article_id)
-            .filter(KeywordMentionRead.keyword_id.in_(chunk))
+            .filter(KeywordMentionRead.keyword_id.in_(chunk), not_a_stand_in_article_id(KeywordMentionRead.article_id))
             .distinct()
             .all()
         ):
@@ -1094,12 +1101,7 @@ def trend(
     for d, c in rows:
         buckets[_bucket_key(d, bucket)] = buckets.get(_bucket_key(d, bucket), 0) + int(c or 0)
     points = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
-    articles = (
-        session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
-        .filter(KeywordMentionRead.keyword_id == kw.id)
-        .scalar()
-        or 0
-    )
+    articles = _distinct_articles(session, [kw.id])
     return {
         "term": term,
         "bucket": bucket,
@@ -1209,17 +1211,21 @@ def trend_range_article_ids(
     )
 
     # Bounded quarantine removal, chunked under SQLite's variable ceiling via the
-    # module's own _IN_CHUNK rather than a second copy of the same 900.
+    # module's own _IN_CHUNK rather than a second copy of the same 900. It asks for the
+    # ids that ARE quarantined (``IS 1`` seeks the covering index whether or not the
+    # table was ever analysed) and subtracts them: ``IS NOT 1`` probes one article row
+    # per id until the first ANALYZE (12.8 MiB per 900 ids, measured). A stand-in
+    # article is quarantined, so it is subtracted here with the rest.
     openable: list[int] = []
     for i in range(0, len(ids), _IN_CHUNK):
         chunk = ids[i : i + _IN_CHUNK]
         rows = (
             session.query(Article.id)
-            .filter(Article.id.in_(chunk), Article.quarantined.isnot(True))
+            .filter(Article.id.in_(chunk), Article.quarantined.is_(True))
             .all()
         )
-        keep = {r[0] for r in rows}
-        openable.extend(aid for aid in chunk if aid in keep)
+        held = {r[0] for r in rows}
+        openable.extend(aid for aid in chunk if aid not in held)
 
     excluded = len(ids) - len(openable)
     capped = len(openable) > cap
@@ -1643,7 +1649,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         )
         .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMentionRead.keyword_id.in_(kw_ids))
+        .filter(KeywordMentionRead.keyword_id.in_(kw_ids), not_a_stand_in_article_id(KeywordMentionRead.article_id))
     )
     if days and days > 0:
         cutoff = date.today() - timedelta(days=days)
@@ -1751,7 +1757,7 @@ def ring_country_article_ids(
         session.query(KeywordMentionRead.article_id)
         .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMentionRead.keyword_id.in_(list(kw_ids)))
+        .filter(KeywordMentionRead.keyword_id.in_(list(kw_ids)), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .distinct()
     )
     q = q.filter(Source.country.is_(None)) if country is None else q.filter(Source.country == country)
@@ -3040,7 +3046,11 @@ def associations(
         if corpus_total is not None
         else (
             _window_filter(
-                session.query(func.count(func.distinct(KeywordMentionRead.article_id))), start, end
+                session.query(func.count(func.distinct(KeywordMentionRead.article_id))).filter(
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id)
+                ),
+                start,
+                end,
             ).scalar()
             or 0
         )
@@ -3049,7 +3059,19 @@ def associations(
         a
         for (a,) in _window_filter(
             session.query(KeywordMentionRead.article_id).filter(
-                KeywordMentionRead.keyword_id.in_(seed_ids)
+                KeywordMentionRead.keyword_id.in_(seed_ids),
+                # The article set is the population the PMI is computed over, and the one the
+                # min_cooccur floor and n_a are read from (the corpus total above and in the
+                # layered graph leave a stand-in out the same way): a mention kept for a lost
+                # article is none of them. What this does NOT reach is n_b (below): it has to stay
+                # equal to the maintained ``Keyword.article_count`` counter, which the corpus-wide
+                # branch reads with no query and which counts a mention kept for a lost article,
+                # and gating the windowed branch's grouped count alone would put the two branches
+                # of this function on different bases. A co-keyword mentioned at k lost articles is
+                # therefore counted k times more than its real articles: the pair's PMI reads lower
+                # by log2((n_b + k) / n_b), n_b being the count over real articles (always
+                # downward), and no floor reads n_b (its callers only display it).
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             ),
             start,
             end,
@@ -3425,7 +3447,7 @@ def context(
     rows = (
         session.query(KeywordMentionRead, Article)
         .join(Article, Article.id == KeywordMentionRead.article_id)
-        .filter(KeywordMentionRead.keyword_id.in_(_concept_seed_ids(concept, kw)))
+        .filter(KeywordMentionRead.keyword_id.in_(_concept_seed_ids(concept, kw)), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .order_by(KeywordMentionRead.observed_on.desc(), KeywordMentionRead.id.desc())
         .limit(limit)
         .all()
@@ -3776,7 +3798,7 @@ def _article_set(session, normalized_terms: list[str], *, cap: int = 4000) -> se
     rows = (
         session.query(KeywordMentionRead.article_id)
         .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
-        .filter(Keyword.normalized_term.in_(normalized_terms))
+        .filter(Keyword.normalized_term.in_(normalized_terms), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .distinct()
         .limit(cap)
         .all()
@@ -3932,7 +3954,11 @@ def layered_graph(
         # The PMI corpus denominator, computed ONCE (was recomputed inside every call).
         corpus_total = (
             _window_filter(
-                session.query(func.count(func.distinct(KeywordMentionRead.article_id))), start, end
+                session.query(func.count(func.distinct(KeywordMentionRead.article_id))).filter(
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id)
+                ),
+                start,
+                end,
             ).scalar()
             or 0
         )

@@ -48,6 +48,11 @@ How it is wired (zero call-site churn for ORM writes):
   ``do_orm_execute`` listener closes that hole: it acquires the gate for any
   ORM-issued DML write too, so both the unit of work and ORM-issued DML serialise.
 
+  A TEXTUAL write (``session.execute(text("DELETE ..."))``) is gated too (the deep read of E3, 2026-10-06): ``is_insert`` and its two
+  siblings are False for ``text()``, so ``_is_textual_write`` reads the statement's first word (a ``WITH`` that carries a write
+  counts). A write on the session's CONNECTION (``session.connection().execute``) or on an engine connection is Core and is not seen
+  by any hook; the repair does not rely on the gate for those, it compares the file's data version before it switches.
+
   THE ONE THING THESE TWO HOOKS CANNOT SEE, stated because this docstring used to
   claim they saw everything (found 2026-09-11, finding C8): the LEGACY BULK
   operations — ``bulk_update_mappings``, ``bulk_insert_mappings``,
@@ -80,6 +85,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -650,6 +656,31 @@ def _on_before_flush(session, _flush_context, _instances) -> None:
         session.info[_SESSION_FLAG] = True
 
 
+_SQL_LEADING = re.compile(r"(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)*", re.DOTALL)
+_SQL_FIRST_WORD = re.compile(r"[A-Za-z]+")
+_SQL_WRITES = frozenset({"INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER"})
+_SQL_WRITE_ANYWHERE = re.compile(r"\b(?:INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
+
+
+def _is_textual_write(statement) -> bool:  # noqa: ANN001 - any SQLAlchemy statement
+    """A ``text("...")`` statement that changes the file: its first word, after whitespace and comments, is a write (``INSERT``,
+    ``UPDATE``, ``DELETE``, ``REPLACE``, or a ``CREATE``/``DROP``/``ALTER``, which write the file too), or it is a ``WITH`` that
+    carries one. ``is_insert`` and its two siblings are False for ``text()``, so a textual write ran outside the gate (found by the
+    deep read of E3, 2026-10-06: a repair holds the gate for the whole copy and a text ``DELETE`` committed into the old file anyway).
+    A read this takes for a write (a ``WITH`` that merely names ``update`` in a string) is gated and slowed, never lost."""
+    from sqlalchemy.sql.elements import TextClause
+
+    if not isinstance(statement, TextClause):
+        return False
+    sql = str(statement.text)
+    head = _SQL_LEADING.match(sql)
+    word = _SQL_FIRST_WORD.match(sql, head.end() if head else 0)
+    first = word.group(0).upper() if word else ""
+    if first in _SQL_WRITES:
+        return True
+    return first == "WITH" and _SQL_WRITE_ANYWHERE.search(sql) is not None
+
+
 def _on_orm_execute(orm_execute_state) -> None:
     # Fires for EVERY ORM-issued statement (reads included). Take the write
     # window only for DML writes — a read must never gate (WAL lets readers pass
@@ -660,6 +691,7 @@ def _on_orm_execute(orm_execute_state) -> None:
         orm_execute_state.is_insert
         or orm_execute_state.is_update
         or orm_execute_state.is_delete
+        or _is_textual_write(orm_execute_state.statement)
     ):
         return
     session = orm_execute_state.session

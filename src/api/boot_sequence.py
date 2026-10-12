@@ -13,6 +13,10 @@ the process was SIGKILLed with all of them running.
 THE ORDER, and why. (0) the check of the data files after an unexpected stop (``database/verify.py``),
 which does nothing after a clean end: it goes FIRST because it reads each table once before anything writes
 to the files again, and the warm-up and the rollup are whole-corpus reads that would compete with it;
+(0a) the repair of a damaged library file (``database/repair.py``, E3), which does nothing unless that check
+found the corpus file damaged: it comes right after the check because it acts on the verdict the check just measured, while
+the app is still offline and nothing writes, and before everything else because the index build and the warm-up would
+read, and the rollup would aggregate, a file that is about to be replaced by a copy;
 (0b) the build of the article list's two indexes (``database/article_indexes.py``, R128), which does
 nothing once they exist: it comes second because it is a one-time statement per index that reads the whole
 articles table and holds the write lock, and the warm-up's reads would only slow it, while a re-index
@@ -50,7 +54,7 @@ _LOG = logging.getLogger(__name__)
 SLOW_STEP_S = 300.0
 
 # The steps, in the order they run. A step's state: pending | running | done | failed | skipped | declined.
-STEPS = ("verify-database", "article-indexes", "warm-cache", "rollup", "reindex-resume")
+STEPS = ("verify-database", "repair-database", "article-indexes", "warm-cache", "rollup", "reindex-resume")
 
 _LOCK = threading.Lock()
 _STATE: dict[str, object] = {"warm": "pending", "reindex_pending": None}
@@ -72,11 +76,12 @@ def snapshot() -> dict:
     """Where the boot sequence is, for the diagnostics bundle: per step its state, when it started
     (UTC) and the seconds it has run (a running step) or took (a finished one); for a pending step
     the seconds it has waited behind the earlier ones. Counts and times only, no score."""
-    from src.database import article_indexes
+    from src.database import article_indexes, repair
 
     now = time.time()
     progress = _progress_of("rollup")  # read before _LOCK: the build holds its own lock briefly, never this one
     indexes = article_indexes.snapshot()
+    repair_state = repair.snapshot()
     with _LOCK:
         began = _SEQUENCE["started_at"]
         steps = []
@@ -98,6 +103,8 @@ def snapshot() -> dict:
             # What the article-indexes step did: its outcome, the seconds each index took, the rows and
             # free space it measured, the seconds it waited for the writer gate ({} before it has run).
             "article_indexes": indexes,
+            # What the repair step did (``{}`` before it has run): its outcome, the numbers and the reason code of a refusal.
+            "repair_database": repair_state,
             "method": (
                 "The check of the data files after an unexpected stop (nothing after a clean end), the "
                 "build of the article list's two indexes (nothing once they exist) and the three heavy "
@@ -131,7 +138,7 @@ def heavy_step_verdict() -> dict | None:
     if busy:
         return {
             "reason": "boot_order",
-            "detail": "the start-up file check, the article list's index build, the cache warm-up or the rollup build is running; this build waits its turn",
+            "detail": "the start-up file check, the repair of a damaged library file, the article list's index build, the cache warm-up or the rollup build is running; this build waits its turn",
         }
     return None
 
@@ -272,6 +279,20 @@ def _verify_database() -> None:
         raise _Skipped
 
 
+def _repair_database() -> None:
+    """The repair of a corpus file this boot's check confirmed damaged (database/repair.py): a task-manager job while the
+    app is still offline, after the check and before anything else reads the file."""
+    from src.database import repair
+
+    outcome = repair.run_now_and_wait()
+    if outcome in ("declined", "stopped"):
+        raise _Skipped("declined")
+    if outcome == "failed":
+        raise RuntimeError("the repair of the damaged library file failed (see the repair_database block)")
+    if outcome != "repaired":  # skipped: nothing was damaged
+        raise _Skipped
+
+
 def _article_indexes() -> None:
     """The two article-list indexes, when the store lacks them (database/article_indexes.py): built as a
     task-manager job while the app is still offline, after the check and before the warm-up."""
@@ -325,7 +346,11 @@ def run(warm: Callable[[], None]) -> None:
         _STATE["warm"] = "running"
         _SEQUENCE["started_at"] = time.time()
     try:
-        _timed("verify-database", _verify_database, holds="the index build, the cache warm-up, the rollup build and the re-index")
+        _timed(
+            "verify-database", _verify_database,
+            holds="the repair, the index build, the cache warm-up, the rollup build and the re-index",
+        )
+        _timed("repair-database", _repair_database, holds="the index build, the cache warm-up, the rollup build and the re-index")
         _timed("article-indexes", _article_indexes, holds="the cache warm-up, the rollup build and the re-index")
         _timed("warm-cache", warm, holds="the rollup build and the re-index")
     finally:

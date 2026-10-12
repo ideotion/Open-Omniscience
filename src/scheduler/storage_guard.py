@@ -174,6 +174,7 @@ from __future__ import annotations
 import errno
 import logging
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -492,6 +493,24 @@ def is_io_error(exc: BaseException | None) -> bool:
     return False
 
 
+#: SQLite's own messages for ``SQLITE_FULL`` and ``SQLITE_IOERR`` (every extended code), lower-cased: the only driver lines this guard keeps.
+_FIXED_PHRASES = ("database or disk is full", "disk i/o error")
+#: The first line the Session's ``PendingRollbackError`` quotes of a DRIVER's original that is one of those phrases.
+_QUOTED_DRIVER_PHRASE = re.compile(r"\((?:sqlite3|sqlcipher3)\.[\w.]+\) (?:database or disk is full|disk I/O error)", re.IGNORECASE)
+
+
+def _os_error_behind(exc: BaseException | None) -> OSError | None:
+    """The first ``OSError`` with an errno in ``exc``'s chain (``.orig``, ``__cause__``, ``__context__``), or ``None``."""
+    seen: set[int] = set()
+    cur = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, OSError) and isinstance(cur.errno, int) and cur.errno > 0:
+            return cur
+        cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
+    return None
+
+
 def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -> str:
     """What the guard keeps of an error: the DRIVER's exception class and FIRST line of its message
     (``OperationalError: disk I/O error``), never SQLAlchemy's wrapper text, which carries the SQL and
@@ -503,10 +522,30 @@ def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -
         return ""
     orig = _dbapi_cause(exc)
     if orig is not None:
-        shown, text = orig, str(orig)
+        # The driver's own line only for the two codes whose message is SQLite's fixed phrase (SQLITE_FULL 13, SQLITE_IOERR 10); a driver
+        # without a code only when the line IS one of those phrases. Any other driver error found in the chain (code 1 can echo a query, and a
+        # full drive can be found through an OSError beside it) is its class and a fixed label.
+        code = getattr(orig, "sqlite_errorcode", None)
+        first_line = (str(orig).splitlines() or [""])[0]
+        if (isinstance(code, int) and (code & 0xFF) in (13, 10)) or (not isinstance(code, int) and first_line.strip().lower() in _FIXED_PHRASES):
+            shown, text = orig, str(orig)
+        else:
+            return damage.failure_text(orig)
     elif quote_head:
-        # the Session's rollback error opens with a paragraph of advice and then quotes the original
-        shown, text = exc, _text_head(exc).rpartition("Original exception was: ")[2]
+        os_error = _os_error_behind(exc)
+        if os_error is not None:
+            # An ``OSError``'s text names the file it failed on (a home folder with a person's name in it) and this detail is served into the
+            # status payload and the bundle: the class and the errno's standard phrase ("No space left on device"), never the path.
+            return f"{type(os_error).__name__}: {os.strerror(int(os_error.errno or 0))}"
+        if type(exc).__name__ != "PendingRollbackError":
+            return type(exc).__name__  # any other exception's words are its author's, and can hold a path or a value
+        # the Session's rollback error opens with a paragraph of advice and then quotes the original: kept only when the original is a
+        # DRIVER's error with SQLite's fixed phrase (``(sqlite3.OperationalError) database or disk is full``); the quoted text of any other
+        # original (an ``OSError`` raised in a flush hook names its path) is the class of the rollback error alone
+        quoted = _text_head(exc).rpartition("Original exception was: ")[2]
+        if not _QUOTED_DRIVER_PHRASE.fullmatch((quoted.splitlines() or [""])[0].strip()):
+            return type(exc).__name__
+        shown, text = exc, quoted
     else:
         return type(exc).__name__
     first = (text.splitlines() or [""])[0]

@@ -434,7 +434,10 @@ def _held_back(db: Session, Article: Any, Source: Any) -> dict:
     on a corpus that has articles reads as "your sources have not been qualified yet",
     which is actionable, instead of as "you have nothing", which is false.
     """
-    quarantined = db.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar()
+    from src.database.stand_in import not_a_stand_in_article
+
+    # a stand-in a repair wrote for a lost article is quarantined so that no reader shows it, and is not one the app judged: not counted
+    quarantined = db.query(func.count(Article.id)).filter(Article.quarantined.is_(True), not_a_stand_in_article()).scalar()
     unqualified = (
         db.query(func.count(Article.id))
         .join(Source, Article.source_id == Source.id)

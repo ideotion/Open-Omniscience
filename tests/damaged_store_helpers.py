@@ -26,9 +26,12 @@ def needs_sqlcipher() -> None:
     pytest.importorskip("sqlcipher3")
 
 
-def build_app_store(path: Path, *, articles: int = 1500, encrypted: bool = False, key: str = KEY, sources: int = 12) -> None:
+def build_app_store(
+    path: Path, *, articles: int = 1500, encrypted: bool = False, key: str = KEY, sources: int = 12, cipher_page_size: int | None = None
+) -> None:
     """A store with the app's real schema (every model table, the full-text index and its triggers) holding ``sources`` sources
-    and ``articles`` articles, in a file of its own. SQLCipher stores are created at the app's page size (16 KiB)."""
+    and ``articles`` articles, in a file of its own. SQLCipher stores are created at the app's page size (16 KiB) unless
+    ``cipher_page_size`` says another (a file made before the app moved to 16 KiB pages is 4 KiB)."""
     from sqlalchemy import create_engine, select
     from sqlalchemy.orm import sessionmaker
 
@@ -41,7 +44,11 @@ def build_app_store(path: Path, *, articles: int = 1500, encrypted: bool = False
 
     def creator():
         return connect_mod.connect(
-            str(path), check_same_thread=False, timeout=30, create_encrypted=bool(encrypted)
+            str(path),
+            check_same_thread=False,
+            timeout=30,
+            create_encrypted=bool(encrypted),
+            cipher_page_size=cipher_page_size if encrypted else None,
         )
 
     engine = create_engine("sqlite://", creator=creator, future=True)

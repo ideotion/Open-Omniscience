@@ -242,6 +242,11 @@ def _open(path: Path):
     return con
 
 
+#: The public name of the opener: the salvage copy (``database/salvage.py``) reads a damaged file through the same read-only,
+#: ``query_only`` connection the check does, so the one thing that opens a file it must not write is one piece of code.
+open_read_only = _open
+
+
 def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
@@ -708,9 +713,10 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
     """What the start-up check will do, or ``None`` when it has nothing to do.
 
     A file is checked when the previous session ended unclean (``previous_end["clean"] is False``: an UNKNOWN
-    end, ``None``, is not a reason), an earlier process left a check of that file unfinished, or an earlier
-    process's check found it DAMAGED (the latch lives in memory and the ledger reads a clean end, so without this a
-    restart would forget the finding; the file is read again at every start until it reads clean or is replaced). A file that
+    end, ``None``, is not a reason), an earlier process left a check of that file unfinished, an earlier process's check
+    found it DAMAGED, or an earlier process met a corruption error on it while it ran and no check has finished since (the
+    latch lives in memory and the ledger reads a clean end, so without this a restart would forget the finding; the file is
+    read again at every start until it reads clean or is replaced). A file that
     does not exist is not checked (and never created: ``connect`` would create it); a file that cannot even be examined
     (an I/O error from ``stat``) is UNCHECKED, not absent. A file whose check has been left unfinished
     ``MAX_VERIFY_ATTEMPTS`` starts in a row is SKIPPED, and said: the cap stops re-running the check, and a finding
@@ -763,7 +769,11 @@ def plan_boot(*, previous_end: dict[str, Any] | None = None) -> dict[str, Any] |
         # trigger names why (an "unfinished check" label for a file damaged before was untrue).
         own_owed = last is not None and bool(last.get("own")) and last.get("state") == "owed"
         unfinished = last is not None and (last.get("state") == "running" or (last.get("state") == "owed" and not own_owed))
-        if not (unclean or unfinished or own_owed or carried):
+        # Damage an EARLIER process found while it ran (a corruption error on a request, ``damage.note``) is a reason to read the
+        # file now: the latch lived in memory and an ordinary quit wrote a clean end, so without this the notice's "repaired at the
+        # next start" was never true for it.
+        incident = damage.registry.incident_after_last_check(key)
+        if not (unclean or unfinished or own_owed or carried or incident):
             continue
         # A file HELD on an earlier finding keeps the attempts its hold carries at every clean start that follows: the hold
         # writes a ``skipped`` entry that is neither unfinished nor owed, and reading it as "no attempts" would run the check
@@ -808,8 +818,8 @@ def owe_at_locked_boot() -> None:
         plan = plan_boot()
         if plan is not None:
             _owe(plan)
-    except Exception:  # noqa: BLE001 - a bookkeeping failure must never take the lock screen down
-        _LOG.warning("database check: could not record the check as owed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bookkeeping failure must never take the lock screen down
+        _LOG.warning("database check: could not record the check as owed (%s)", type(exc).__name__)
 
 
 def arm_at_boot() -> bool:
@@ -863,8 +873,8 @@ def arm_at_boot() -> bool:
             ", ".join(k for k, _p, _a in plan["files"]),
         )
         return True
-    except Exception:  # noqa: BLE001 - never hold collection for a check that cannot be planned
-        _LOG.warning("database check: could not plan the start-up check", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never hold collection for a check that cannot be planned
+        _LOG.warning("database check: could not plan the start-up check (%s)", type(exc).__name__)
         return False
 
 
@@ -1115,10 +1125,10 @@ def recheck(files: dict[str, list[str]], *, reason: str, claims: dict[str, int] 
             path = _path_of(key)
             try:
                 readable = switch_on() and path is not None and path.is_file() and path.stat().st_size > 0
-            except OSError:
+            except OSError as exc:
                 # Could not tell whether there is a file to read: that is UNCHECKED, never "nothing to read" (which
                 # releases the latch). The latch stays and the next start of collection asks again.
-                _LOG.warning("database check: could not examine the %s file for the re-read", key, exc_info=True)
+                _LOG.warning("database check: could not examine the %s file for the re-read (%s)", key, type(exc).__name__)
                 out[key] = "kept"
                 continue
             if not readable or path is None:
@@ -1133,14 +1143,14 @@ def recheck(files: dict[str, list[str]], *, reason: str, claims: dict[str, int] 
         t = threading.Thread(target=_recheck_main, args=(plan, reason, claims or {}), name="oo-database-recheck", daemon=True)
         try:
             t.start()
-        except Exception:  # noqa: BLE001 - no thread, no read: the latch stays
-            _LOG.warning("database check: could not start the re-read of the reported tables", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - no thread, no read: the latch stays
+            _LOG.warning("database check: could not start the re-read of the reported tables (%s)", type(exc).__name__)
             out.update({key: "kept" for key, _p, _n in plan})
             return out
         out.update({key: "started" for key, _p, _n in plan})
         return out
-    except Exception:  # noqa: BLE001
-        _LOG.warning("database check: could not plan the re-read of the reported tables", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("database check: could not plan the re-read of the reported tables (%s)", type(exc).__name__)
         return {key: out.get(key, "kept") for key in files}
 
 

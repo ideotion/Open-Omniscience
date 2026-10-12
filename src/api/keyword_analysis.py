@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_article
 from src.services.article_intelligence import article_intelligence_analyzer
 from src.utils.logging_config import setup_logging
 
@@ -49,8 +50,9 @@ def calculate_article_similarity(
     method: str = Query("cosine", description="Similarity method"),
     db: Session = Depends(get_db),
 ):
-    article1 = db.query(Article).filter(Article.id == article_id1).first()
-    article2 = db.query(Article).filter(Article.id == article_id2).first()
+    # A stand-in (the place-holder a salvage copy writes at a lost id) is no article: it is not found, as the reader does.
+    article1 = db.query(Article).filter(Article.id == article_id1, not_a_stand_in_article()).first()
+    article2 = db.query(Article).filter(Article.id == article_id2, not_a_stand_in_article()).first()
     if not article1 or not article2:
         raise HTTPException(status_code=404, detail="One or both articles not found")
     similarity = article_intelligence_analyzer.calculate_similarity(

@@ -40,8 +40,10 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import errno
 import logging
 import os
+import re
 import threading
 import time
 import weakref
@@ -50,6 +52,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 _LOG = logging.getLogger(__name__)
+
+# SQLite's own constants ("SQLITE_IOERR_READ"): a name from a fixed set, never a message. Anything
+# that does not look like one is dropped, so a driver that put text in the attribute adds none.
+_SQLITE_NAME = re.compile(r"SQLITE_[A-Z0-9_]{1,40}")
 
 # The route the current request is serving, set by the request middleware BEFORE it
 # calls the endpoint. Starlette runs the endpoint in a task created after the set and
@@ -134,11 +140,13 @@ _REGISTERED = False
 # labelled reads as "corpus", the app's own.
 _POOL_LABELS: dict[int, tuple[Any, str]] = {}
 # The last connections the POOL invalidated (a failed rollback on return, an explicit
-# ``invalidate()``, a disconnect): who held it, which route, and what the DBAPI said. The
-# phantom rows above were the false positive; this is the open question behind them -- what
-# invalidates a connection in production -- so the next bundle can answer it. Bounded,
-# in-memory, and carries the DBAPI exception's own message only (never a statement or a
-# bound parameter). Twenty because the question it answers is "what invalidates connections",
+# ``invalidate()``, a disconnect): who held it, which route, and WHICH exception said so (its
+# class and the driver's code, never its words). The phantom rows above were the false positive;
+# this is the open question behind them -- what invalidates a connection in production -- so the
+# next bundle can answer it. Bounded, in-memory, and carries no message at all: a database
+# error ends in the engine's own words (for a damaged file the name of a schema object and a
+# fragment of its definition), and this ring rides the diagnostics bundle (``write-gate.json``).
+# Twenty because the question it answers is "what invalidates connections",
 # which a handful of recent, named examples answers and a longer list repeats; the TOTAL keeps
 # counting past it, so an incident's size is never read off the ring's length.
 _INVALIDATIONS: deque[dict[str, Any]] = deque(maxlen=20)
@@ -220,19 +228,32 @@ def _on_detach(dbapi_connection, connection_record) -> None:
         _LIVE.pop(id(connection_record), None)
 
 
+def _failure_code(orig: BaseException | None) -> str | None:
+    """The fixed NAME that says what kind of failure ``orig`` was, or ``None``: SQLite's constant from
+    ``sqlite_errorname`` (checked against the pattern of one, so text put there is not kept) or, for an
+    ``OSError``, the name of its ``errno``. A name from a fixed set; never a message, a path or a statement.
+    Never raises (a hostile attribute reads as ``None``)."""
+    try:
+        name = getattr(orig, "sqlite_errorname", None)
+        if isinstance(name, str) and _SQLITE_NAME.fullmatch(name):
+            return name
+        code = orig.errno if isinstance(orig, OSError) else None
+        return errno.errorcode.get(code) if isinstance(code, int) else None
+    except Exception:  # noqa: BLE001 - an instrument must never break the pool
+        return None
+
+
 def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
     """Record WHAT invalidated a connection and who was holding it. Never raises."""
     global _INVALIDATED, _INVAL_LOGGED_AT, _INVAL_SUPPRESSED
     try:
         thread = threading.current_thread()
-        # Everything that runs foreign code (``str()`` of an exception) happens BEFORE the lock
-        # is taken: a ``__str__`` that raises used to lose the invalidation altogether (4 of 6
-        # hostile inputs in the coordinator's check), and one that is slow held the table.
+        # Everything that reads a foreign object happens BEFORE the lock is taken. The record
+        # used to keep ``str(orig)[:160]``: a ``__str__`` that raised lost the invalidation
+        # altogether (4 of 6 hostile inputs in the coordinator's check), and the text itself was
+        # the engine's line. It reads the class and one attribute now, and calls no ``__str__``.
         orig = getattr(exception, "orig", exception)
-        try:
-            message = str(orig)[:160] if orig is not None else None
-        except Exception:  # noqa: BLE001 - a hostile __str__ must not lose the record
-            message = "(the exception's message could not be read)"
+        code = _failure_code(orig)
         exc_name = type(orig).__name__ if orig is not None else None
         with _LOCK:
             live = _LIVE.get(id(connection_record)) or {}
@@ -246,9 +267,10 @@ def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
                 "by_thread": thread.name,
                 "held_by": held_by,
                 "exception": exc_name,
-                # The DBAPI's own message, trimmed: SQLAlchemy's wrapper carries the SQL
-                # text and its parameters, which this record never keeps.
-                "message": message,
+                # SQLite's constant ("SQLITE_IOERR_READ") or an OSError's errno name ("ENOSPC"),
+                # else None. Never the exception's message: for a damaged file that is the engine's
+                # own line, and SQLAlchemy's wrapper adds the statement and its bound values.
+                "code": code,
             }
             _INVALIDATIONS.append(rec)
             _INVALIDATED += 1
@@ -261,11 +283,11 @@ def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
                 _INVAL_SUPPRESSED += 1
         if log_it:
             _LOG.warning(
-                "pool connection invalidated: held by %s (route %s), %s: %s%s",
+                "pool connection invalidated: held by %s (route %s), %s%s%s",
                 held_by["thread"],
                 held_by["endpoint"],
                 rec["exception"],
-                rec["message"],
+                f" {rec['code']}" if rec["code"] else "",
                 f" (+{skipped} more since the last line; the last 20 and the total are in the pool-watch record)"
                 if skipped
                 else "",

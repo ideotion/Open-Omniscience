@@ -169,14 +169,20 @@ def _stop_database_check() -> None:
         from src.database import verify
 
         verify.stop()
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        logger.debug("could not stop the start-up database check", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not stop the start-up database check (%s)", type(exc).__name__)
     try:
         from src.database import article_indexes
 
         article_indexes.stop()  # a quit is not a build that brought the process down: the attempt is given back
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        logger.debug("could not give back the article-list index attempt", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not give back the article-list index attempt (%s)", type(exc).__name__)
+    try:
+        from src.database import repair
+
+        repair.stop()  # the copy in hand ends at its next batch; the attempt is given back like the index build's
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not stop the repair of the damaged library file (%s)", type(exc).__name__)
 
 
 def _ends_the_check_wait(fn):
@@ -571,8 +577,8 @@ async def lifespan(app: FastAPI):
             from src.database import verify as _verify_owed
 
             _verify_owed.owe_at_locked_boot()
-        except Exception:  # noqa: BLE001 - bookkeeping must never take the lock screen down
-            logger.debug("could not record the database check as owed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping must never take the lock screen down
+            logger.debug("could not record the database check as owed (%s)", type(exc).__name__)
     # Event-loop-block watchdog (recursive-augmentation log #2) — runs on the live loop
     # for the whole app lifetime; records loop lag (heavy sync work on the loop) with the
     # in-flight requests. Best-effort; started regardless of lock state (freezes can
@@ -1601,6 +1607,15 @@ def _query_expander(
     )
 
 
+def _quarantine_gate(include_quarantined: bool) -> list:
+    """The conditions that leave quarantined articles out of an article list, an explicit id set or an export (Q617): none of them when the
+    reader includes quarantined items, EXCEPT that a stand-in row (a place-holder a repair wrote for a lost article, never data) is left out
+    in every case, so a reader that opts in to quarantined items still never sees one."""
+    from src.database.stand_in import not_a_stand_in_article
+
+    return [not_a_stand_in_article()] if include_quarantined else [Article.quarantined.isnot(True)]
+
+
 def _query_articles(
     session,
     *,
@@ -1662,7 +1677,7 @@ def _query_articles(
     adv = adv if isinstance(adv, AdvancedSearch) else AdvancedSearch()
     filters.extend(adv.conditions(session))
     # Q617: quarantined items are EXCLUDED unless the reader includes them, advanced-only.
-    _q_gate = [] if adv.include_quarantined else [Article.quarantined.isnot(True)]
+    _q_gate = _quarantine_gate(adv.include_quarantined)
     descending = (sort_dir or "desc").lower() != "asc"
 
     # A query of field filters only (``author:smith``) has nothing to rank: it is a
@@ -1931,8 +1946,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
             a.id: a
             for a in (
                 db.query(Article)
-                .filter(Article.id.in_(id_list),
-                        *([] if adv.include_quarantined else [Article.quarantined.isnot(True)]))
+                .filter(Article.id.in_(id_list), *_quarantine_gate(adv.include_quarantined))
                 .all()
                 if id_list
                 else []
@@ -2134,8 +2148,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             a.id: a
             for a in (
                 db.query(Article)
-                .filter(Article.id.in_(id_list),
-                        *([] if adv.include_quarantined else [Article.quarantined.isnot(True)]))
+                .filter(Article.id.in_(id_list), *_quarantine_gate(adv.include_quarantined))
                 .all()
                 if id_list
                 else []
@@ -2263,9 +2276,11 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     from sqlalchemy import func
 
     from src.database.models import ArticleLink
+    from src.database.stand_in import not_a_stand_in_article, not_a_stand_in_article_id
     from src.utils.security import safe_href
 
-    a = db.query(Article).filter_by(id=article_id).first()
+    # A repair's stand-in article is a place-holder for a lost row, not an article that was stored: not found, as any unknown id is.
+    a = db.query(Article).filter_by(id=article_id).filter(not_a_stand_in_article()).first()
     if a is None:
         raise HTTPException(status_code=404, detail="Article not found.")
     content = a.get_content() if hasattr(a, "get_content") else (a.content or "")
@@ -2709,6 +2724,10 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 .filter(
                     KeywordMentionRead.keyword_id.in_(my_kw),
                     KeywordMentionRead.article_id != a.id,
+                    # The keyword mentions kept for a lost article stay in the table, so the stand-in (the place-holder a salvage copy writes at
+                    # its id) would be offered as an article that shares keywords with this one: it is no article, and a link to it is not found.
+                    # The condition sits BEFORE the limit, so the list keeps its 8 whenever the corpus has 8 real neighbours.
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id),
                 )
                 .group_by(KeywordMentionRead.article_id)
                 .order_by(func.count(KeywordMentionRead.keyword_id).desc())
@@ -2786,6 +2805,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 .filter(
                     KeywordMentionRead.keyword_id.in_(_mk),
                     KeywordMentionRead.article_id != a.id,
+                    # the same kept mentions, the same place-holder: never one of the "copies", and left out before the limit so the 12 hold
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id),
                 )
                 .group_by(KeywordMentionRead.article_id)
                 .order_by(func.count(KeywordMentionRead.keyword_id).desc())
@@ -3034,7 +3055,10 @@ def list_sources(
                 status_code=400,
                 detail="fields= was given but named nothing; omit it for the whole row",
             )
-    query = db.query(Source).order_by(Source.id.asc())
+    from src.database.stand_in import not_a_stand_in_source
+
+    # a stand-in source (a place-holder a repair wrote for a lost one) is not a source the user saved: never listed
+    query = db.query(Source).filter(not_a_stand_in_source()).order_by(Source.id.asc())
     if offset:
         query = query.offset(offset)
     if limit is not None:

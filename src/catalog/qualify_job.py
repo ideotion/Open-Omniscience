@@ -84,8 +84,11 @@ def initial_backlog_estimate(session) -> dict:
 
     from src.catalog.qualification import STATUS_UNQUALIFIED, select_due_disqualified
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
-    unqualified = int(session.query(Source).filter_by(status=STATUS_UNQUALIFIED).count())
+    unqualified = int(
+        session.query(Source).filter_by(status=STATUS_UNQUALIFIED).filter(not_a_stand_in_source()).count()
+    )
     due = len(select_due_disqualified(session, now=_dt.now(_UTC), limit=10_000))
     return {"unqualified": unqualified, "due_disqualified": due}
 

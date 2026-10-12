@@ -1364,6 +1364,35 @@ def reindex_backlog_resume_status() -> dict:
     top -- and 102 ms is far too much for a one-second poll, which is why the client
     paces THIS read at 5 s inside its single chain while the queue status keeps the
     1 s cadence. The figure moves on the scale of minutes, so nothing is lost.
+
+    THE STAND-IN QUESTION (E3, 2026-10-12). The owed count leaves out the stand-ins a salvage copy wrote
+    (they are never re-indexed), which the second statement, ``_BACKLOG_LOST_SQL``, asks from the stand-in
+    side: the hash index names them (a covering range, no article row) and each is looked up in
+    ``merged_rows``, so its cost follows the number of stand-ins, not the number of pending articles. THE
+    ORDER IS FORCED (``CROSS JOIN``): SQLite chooses it unforced only once the store has statistics, and a
+    salvage copy is a fresh file that has none until the next boot's optimize; on a store never analysed the
+    unforced statement started from ``merged_rows`` and fetched an article row for every pending row.
+    Measured the same way as above (the same fixture, the median of five; this machine's figures are not the
+    ones above, only comparable with each other; two runs, so a range where they differ, and the spread
+    from run to run on this machine is about 50 ms), at 1,000,000 pending articles, in ms. Columns: the read
+    with no stand-in question / the first version of the question, ``m.row_id IN (the hash range)`` tested
+    for every pending row / the two statements with the order left to the planner / the two statements as
+    they are:
+
+        a store never analysed, no stand-in:      216 / 322 / 481 / 217
+        a store never analysed, 1,000 stand-ins:  214 / 500 / 507 / 219
+        after ANALYZE, no stand-in:               216-237 / 359-369 / 228-231 / 218-271
+        after ANALYZE, 1,000 stand-ins:           236-246 / 481-528 / 223-250 / 222-247
+        after ANALYZE, 100,000 stand-ins:         221 / 616 / 342 / 344
+
+    (The two never-analysed rows are the first case of a run, the only one on a freshly built file. The
+    probe's later no-statistics cases reused the file and deleted the statistics rows on a connection that had
+    already loaded them, so they ran with the previous case's statistics and the unforced statement was fast
+    there (212 to 342 ms); a connection opened after the rows were deleted chooses the slow order again, so
+    only the forced order is safe. The first version of the question is the one that was replaced.) At 100,000 pending articles (one run), same columns: never analysed, no stand-in: 24 / 33 / 52 /
+    23; after ANALYZE, no stand-in: 22 / 32 / 23 / 24; after ANALYZE, 10,000 stand-ins: 22 / 52 / 32 / 32. The
+    statements return the same counts: the probe compared them row for row before the first version was
+    dropped.
     """
     from src.backup.merge import reindex_backlog
 

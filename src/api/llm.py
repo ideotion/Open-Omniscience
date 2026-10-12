@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, ArticleAnalysis
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_article
 from src.llm.backend import LlmBackend
 from src.llm.ollama import (
     CATALOG_AS_OF,
@@ -2040,7 +2041,7 @@ def summarize_article(
     client: LlmBackend = Depends(get_llm_client),
 ) -> dict:
     """Summarize a stored article with a local model and persist it with provenance."""
-    article = db.query(Article).filter_by(id=article_id).first()
+    article = db.query(Article).filter_by(id=article_id).filter(not_a_stand_in_article()).first()
     if article is None:
         raise HTTPException(status_code=404, detail=f"Article {article_id} not found.")
     if not article.content:
@@ -2106,7 +2107,7 @@ def translate_article(
     sources become part of the searchable corpus -- widening world awareness without
     any text leaving the machine.
     """
-    article = db.query(Article).filter_by(id=article_id).first()
+    article = db.query(Article).filter_by(id=article_id).filter(not_a_stand_in_article()).first()
     if article is None:
         raise HTTPException(status_code=404, detail=f"Article {article_id} not found.")
     if not article.content:
@@ -2193,7 +2194,7 @@ def list_article_analyses(
     summary or translation is NEVER keyword-indexed or fed into the analytics (the
     maintainer-agreed contract). This endpoint only reads them back.
     """
-    article = db.query(Article).filter_by(id=article_id).first()
+    article = db.query(Article).filter_by(id=article_id).filter(not_a_stand_in_article()).first()
     if article is None:
         raise HTTPException(status_code=404, detail=f"Article {article_id} not found.")
     qy = db.query(ArticleAnalysis).filter(ArticleAnalysis.article_id == article_id)
@@ -2273,7 +2274,7 @@ def synthesize_articles(
     truncated = False
     total_matched = 0
     if req.article_ids:
-        articles = db.query(Article).filter(Article.id.in_(req.article_ids)).all()
+        articles = db.query(Article).filter(Article.id.in_(req.article_ids)).filter(not_a_stand_in_article()).all()
         total_matched = len(req.article_ids)
     elif req.query:
         try:
@@ -2490,7 +2491,7 @@ def bulk_llm(
         by_id: dict[int, Article] = {}
         for _i in range(0, len(ids), _BULK_ID_CHUNK):
             chunk = ids[_i : _i + _BULK_ID_CHUNK]
-            by_id.update({a.id: a for a in db.query(Article).filter(Article.id.in_(chunk)).all()})
+            by_id.update({a.id: a for a in db.query(Article).filter(Article.id.in_(chunk)).filter(not_a_stand_in_article()).all()})
         articles = [by_id[i] for i in ids if i in by_id]
     elif any([req.query, req.source, req.language, req.start_date, req.end_date]):
         from src.api.main import _query_articles

@@ -62,13 +62,17 @@ def find_source_laundering(
     counts only; no score.
     """
     from src.database.models import Article, ArticleLink, Source
+    from src.database.stand_in import not_a_stand_in_article_id
 
+    # The links a salvage copy kept for a lost article stay in the table: a stand-in is no article, and its placeholder source is no independent
+    # outlet, so the kept links are left out of the counts AND of the member list (the condition is on the child row: no article row is read).
+    kept = not_a_stand_in_article_id(ArticleLink.article_id)
     arts = func.count(func.distinct(ArticleLink.article_id))
     srcs = func.count(func.distinct(Article.source_id))
     q = (
         session.query(ArticleLink.normalized_url, arts.label("arts"), srcs.label("srcs"))
         .join(Article, Article.id == ArticleLink.article_id)
-        .filter(ArticleLink.normalized_url.isnot(None))
+        .filter(ArticleLink.normalized_url.isnot(None), kept)
     )
     if days and days > 0:
         from datetime import UTC, datetime, timedelta
@@ -100,7 +104,7 @@ def find_source_laundering(
             session.query(Article.id, Source.name)
             .join(ArticleLink, ArticleLink.article_id == Article.id)
             .outerjoin(Source, Source.id == Article.source_id)
-            .filter(ArticleLink.normalized_url == url)
+            .filter(ArticleLink.normalized_url == url, kept)
             .all()
         )
         article_ids = sorted({m[0] for m in members})

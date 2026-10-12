@@ -2052,7 +2052,7 @@
       const damaged = d.notes.filter((n) => n.kind !== "verifying");
       if (!damaged.length) return checking;
       const lines = damaged.map((n) => `<div class="vwarn">${esc(tf(n.frame, n.vars || {}))}</div>`).join("");
-      return checking + `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. After an unexpected stop the app reads each table of your data files once before collection writes to them again; that check writes nothing of its own, and the pause ends by itself when it ends. The app does not repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so tries once more: a pause the start-up check set ends only when the tables it named read clean again, and any other pause ends and stops again at the first failed read if the damage is still there. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
+      return checking + `<div title="${esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. After an unexpected stop the app reads each table of your data files once before collection writes to them again; that check writes nothing of its own, and the pause ends by itself when it ends. The app pauses collection's writes to the file named in the sentence, so as not to make it worse. At its next start it repairs a library file the start-up check confirmed damaged: it copies every row it can still read into a new file, checks the new file and switches to it, keeps the damaged file beside it for 30 days after the new file first reads clean, and then removes that one file (and nothing else); you can remove it sooner. If the drive itself could not read a page of the damaged file, the app does not remove that file at all and says so, because a failing drive, not the file, may be why those pages could not be read. Where the sentence says how to try again, doing so tries once more: a pause the start-up check set ends only when the tables it named read clean again, and any other pause ends and stops again at the first failed read if the damage is still there. Each incident is recorded, without any article text, in the file database-damage.json in your data folder."))}">` + lines + "</div>";
     }
     // The storage guard's notice (2026-09-30, ranks 1/2/6): collection is PAUSED because the
     // database's write-ahead log is held open past this machine's limit, or the data drive is
@@ -2357,9 +2357,10 @@
       // The Wikipedia walk says WHY it waits (airplane mode, no usable proxy, the budget),
       // keyed x12 through its detail frame. It is not a download, so none of the lines
       // below apply to it.
-      // The article list's index build draws its detail the same way: the "one time only; saving waits"
-      // caveat while it runs, and the keyed reason a refusal for space carries (its error is English only).
-      if (j.kind === "wiki-walk" || j.kind === "article-indexes") {
+      // The article list's index build and the repair of a damaged library file draw their detail the same way: the
+      // "saving waits" caveat while they run, the numbers of the repair, and the keyed reason a refusal carries (the
+      // row's own error is English only).
+      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database") {
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }
