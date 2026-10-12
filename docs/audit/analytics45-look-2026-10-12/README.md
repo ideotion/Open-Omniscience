@@ -77,7 +77,7 @@ wrapper). Smallest headroom over the 15 themes and both languages, divergence / 
 **390 px +62 / +56, 360 px +32 / +26, 320 px +16 / +18**; at 768 px and above the tables fit with 263 px or
 more to spare. The cost is smaller type on a phone (11–12 px text, 9 px headings at ≤ 340 px), chosen over a clipped last column.
 **9 px is the floor and it is the app's smallest text** (the headings are uppercase labels over figures that stay 11 px): 10 px
-headings were measured at 320 px and leave +4 px in the ink theme in English (+8 / +33 in Arabic), a margin a font fallback
+headings were measured at 320 px (`ten-px-heading-probe/look-results.json`: ink, terminal and paper, served through `--serve`) and leave +4 px in the ink theme in English (+8 / +33 in Arabic), a margin a font fallback
 would spend, against +16 / +18 px at 9 px.
 `tests/test_analytics45_seed.py` pins the rules and keeps the seed's truth equal to what the readers answer.
 
