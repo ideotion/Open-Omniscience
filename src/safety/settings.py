@@ -39,6 +39,11 @@ class SafetySettingsError(ValueError):
     """Raised when a safety settings update carries an invalid value."""
 
 
+class _DamagedSettings(SafetySettingsError):
+    """The stored settings are there and cannot be parsed (as against a store that could not be opened). A save that supplies the
+    whole connection choice replaces them: choosing the connection again is the remedy, and the user's own action."""
+
+
 @dataclass
 class SafetySettings:
     fetch_mode: str = "transparent"
@@ -105,10 +110,10 @@ def _read_json_file() -> dict | None:
         raw = json.loads(path.read_text("utf-8"))
     except Exception as exc:  # noqa: BLE001 - failed closed, by class
         _LOG.warning("safety_settings.json unreadable (%s); the transport stays closed", type(exc).__name__)
-        raise KvReadError(type(exc).__name__) from None
+        raise KvReadError(type(exc).__name__, damaged=isinstance(exc, ValueError)) from None
     if not isinstance(raw, dict):
         _LOG.warning("safety_settings.json is not an object; the transport stays closed")
-        raise KvReadError("NotAnObject")
+        raise KvReadError("NotAnObject", damaged=True)
     return raw
 
 
@@ -149,9 +154,12 @@ def _read_raw_strict() -> dict | None:
     from src.config.kv_store import kv_get_json_strict, kv_set_json
 
     def refused(exc: BaseException) -> SafetySettingsError:
-        return SafetySettingsError(
+        damaged = isinstance(exc, ValueError) or bool(getattr(exc, "damaged", False))
+        err = (_DamagedSettings if damaged else SafetySettingsError)(
             f"the stored safety settings could not be read ({type(exc).__name__}); nothing was changed"
+            + (" - choose the connection again in the safety settings to replace them" if damaged else "")
         )
+        return err
 
     if not _use_kv():
         try:
@@ -187,12 +195,12 @@ def load_settings() -> SafetySettings:
     try:
         raw = _read_raw()
     except KvReadError:
+        # The environment decides when it names a mode (the headless path never reads the store for it); otherwise the choice is
+        # UNKNOWN, not absent: protected, and with nothing to route through unless the environment names a proxy.
         s = _settings_from(None)
         if os.getenv("OO_FETCH_MODE") not in VALID_MODES:
             s.fetch_mode = "protected"
-            s.http_proxy = ""
-            s.http_proxies = []
-        s.read_failed = True
+            s.read_failed = not (s.http_proxy or s.http_proxies)
         return s
     return _settings_from(raw)
 
@@ -229,7 +237,13 @@ def save_settings(updates: dict) -> SafetySettings:
     """Apply a partial update and persist atomically. Validates before writing."""
     from src.safety.fetcher import validate_socks_pool
 
-    current = _settings_from(_read_raw_strict())
+    try:
+        stored = _read_raw_strict()
+    except _DamagedSettings:
+        if updates.get("fetch_mode") is None or updates.get("http_proxy") is None:
+            raise  # a partial update would write the defaults over what the damaged value may still say
+        stored = None  # the whole choice is supplied: it replaces the damaged value
+    current = _settings_from(stored)
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
         if mode not in VALID_MODES:

@@ -118,7 +118,13 @@ def _read_value(path: str, key: str, *, read_only: bool) -> str | None:
 
 class KvReadError(Exception):
     """A stored value that EXISTS (or may) could not be read: the store is locked, keyed to another passphrase, damaged or
-    unreachable. Carries the class of the failure and none of the engine's words. Absent (no file, no table, no row) is not this."""
+    unreachable. Carries the class of the failure and none of the engine's words. Absent (no file, no table, no row) is not this.
+    ``damaged`` says the value IS there and cannot be parsed (as against a store that could not be opened): the one case a save
+    that supplies the whole choice may replace."""
+
+    def __init__(self, what: str, damaged: bool = False) -> None:
+        super().__init__(what)
+        self.damaged = damaged
 
 
 #: How long a failed read is remembered, so that a caller asking again and again (a stream's every event) does not open a
@@ -189,13 +195,15 @@ def _parsed(raw: str | None) -> dict | None:
     try:
         return _loads_strict(raw)
     except ValueError:
-        raise KvReadError("ValueError") from None
+        raise KvReadError("ValueError", damaged=True) from None
 
 
 def clear_failures() -> None:
-    """Forget the failed reads held for :data:`_FAIL_HOLD_S` (the key changed: a store that was locked may read now)."""
+    """Forget the failed reads held for :data:`_FAIL_HOLD_S` and the stores seen (the key changed, or the store was erased or
+    created: a store that was locked may read now, and one that is gone is not a vanished one)."""
     with _lock:
         _failed.clear()
+        _seen.clear()
 
 
 def kv_get_json(key: str) -> dict | None:

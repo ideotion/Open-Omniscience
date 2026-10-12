@@ -39,3 +39,6 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
         # let the lock middleware answer requests for a corpus that no longer
         # exists -- in a `finally` because a partial wipe still removed it.
         invalidate_header_cache()
+        from src.config.kv_store import kv_invalidate
+
+        kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one

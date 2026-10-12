@@ -274,18 +274,30 @@ def test_a_store_that_was_read_and_is_gone_fails_closed_and_one_never_there_is_a
     assert S.load_settings().read_failed
 
 
-def test_the_first_run_defaults_send_nothing_because_the_app_starts_offline(env):
-    """R117: a first run has no store, so the defaults (direct) apply; what keeps them from sending is the airplane switch the boot
-    engages, which the session refuses under."""
-    from src.ingest import activate_kill_switch, clear_kill_switch
+def test_the_first_run_defaults_send_nothing_because_the_app_boots_offline(env):
+    """R117: a first run has no store, so the defaults (direct) apply; what keeps them from sending is the airplane switch the BOOT
+    engages (driven through the boot path, not by engaging it here), which the session refuses under."""
+    from unittest.mock import patch
 
-    assert not S.load_settings().read_failed
-    activate_kill_switch()
+    from src import ingest as I
+
     try:
+        from src.api import main as M
+    except BaseException:  # noqa: BLE001 - the same guard as test_boot_airplane_never_revokes_online
+        pytest.skip("src.api.main is unimportable here (CI runs it)")
+    env.delenv("OO_NO_SCHEDULER", raising=False)
+    I._reset_crossed_online_for_tests()
+    I.clear_kill_switch()
+    try:
+        assert not S.load_settings().read_failed and not S.load_settings().is_protected
+        with patch("src.ingest.airplane.install_airplane_socket_guard"):
+            M._run_startup_upkeep()
+        assert I.kill_switch_active(), "the boot did not go offline"
         with pytest.raises(Exception, match=r"(?i)airplane|offline|kill|blocked"):
             guarded_session().get("https://example.org/", timeout=2)
     finally:
-        clear_kill_switch()
+        I._reset_crossed_online_for_tests()
+        I.clear_kill_switch()
 
 
 def test_the_refusal_of_an_unreadable_store_says_so_and_does_not_tell_the_user_to_set_a_proxy(env):
@@ -333,3 +345,71 @@ def test_no_settings_module_writes_a_traceback_around_the_store():
 
     for mod in (kv_store, S, a, c, sch):
         assert "exc_info" not in Path(mod.__file__).read_text(encoding="utf-8"), mod.__name__
+
+
+# --- fold 14 ------------------------------------------------------------------------------------------------------------ #
+def test_choosing_the_connection_again_replaces_a_damaged_value_and_the_next_read_is_good(env, tmp_path):
+    """The way out of a damaged value is the user's own action: a save that supplies the whole choice. MUTATION TARGET:
+    ``_DamagedSettings`` re-raised for a full save, or caught for a partial one."""
+    _store(env, "transparent")
+    _damage_the_stored_value(tmp_path, '{"fetch_mode": "prot')
+    assert S.load_settings().read_failed
+    with pytest.raises(S.SafetySettingsError) as err:
+        S.save_settings({"discovery_external_enabled": True})
+    assert "choose the connection again" in str(err.value) and "JSONDecodeError" in str(err.value)
+    with pytest.raises(S.SafetySettingsError):
+        S.save_settings({"fetch_mode": "protected"})  # half a choice
+    saved = S.save_settings({"fetch_mode": "protected", "http_proxy": SOCKS})
+    assert saved.is_protected and saved.http_proxy == SOCKS
+    kv_store.kv_invalidate()
+    again = S.load_settings()
+    assert not again.read_failed and again.http_proxy == SOCKS
+
+
+def test_a_locked_store_is_never_replaced_by_a_full_save(env):
+    """Only a value that is there and damaged is replaced; a store that could not be opened may hold a good choice."""
+    _store(env)
+
+    def boom(key):
+        raise RuntimeError("database is locked")
+
+    env.setattr(kv_store, "kv_get_json_strict", boom)
+    with pytest.raises(S.SafetySettingsError) as err:
+        S.save_settings({"fetch_mode": "transparent", "http_proxy": ""})
+    assert "choose the connection again" not in str(err.value)
+
+
+def test_a_corrupt_legacy_file_is_replaced_by_a_full_save_and_not_read_again(env, tmp_path):
+    legacy = tmp_path / "safety_settings.json"
+    legacy.write_text("{bad", encoding="utf-8")
+    assert S.load_settings().read_failed
+    S.save_settings({"fetch_mode": "transparent", "http_proxy": ""})
+    kv_store.kv_invalidate()
+    assert not S.load_settings().read_failed
+
+
+def test_the_environment_decides_before_a_failed_read_does(env):
+    _store(env, "transparent")
+    _fail_reads(env)
+    kv_store.kv_invalidate()
+    env.setenv("OO_FETCH_MODE", "protected")
+    env.setenv("OO_HTTP_PROXY", SOCKS)
+    s = S.load_settings()
+    assert not s.read_failed and s.http_proxy == SOCKS
+    assert guarded_session().transport_proxy == SOCKS
+    env.delenv("OO_FETCH_MODE")
+    kv_store.kv_invalidate()
+    s = S.load_settings()  # no mode named: protected, through the proxy the environment names
+    assert s.is_protected and s.http_proxy == SOCKS and not s.read_failed
+
+
+def test_a_store_that_is_erased_or_created_is_not_a_vanished_one(env, tmp_path):
+    from src.database import connect as connect_mod
+
+    _store(env)
+    S.load_settings()
+    (tmp_path / "open_omniscience.db").unlink()
+    connect_mod.set_passphrase(None)  # what the crypto-erase and the create-db route do
+    with kv_store._lock:
+        kv_store._cache.clear()
+    assert not S.load_settings().read_failed
