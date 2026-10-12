@@ -73,6 +73,11 @@ def seq(monkeypatch):
         raise bs._Skipped  # the check after an unexpected stop: none was armed (its own tests: test_database_verify.py)
 
     monkeypatch.setattr(bs, "_verify_database", _nothing_armed)
+
+    def _nothing_to_build():
+        raise bs._Skipped  # the article-list indexes: both exist (their own tests: test_article_indexes.py)
+
+    monkeypatch.setattr(bs, "_article_indexes", _nothing_to_build)
     import src.backup.volume_job as vj
 
     def _drain():
@@ -130,9 +135,9 @@ def test_the_flag_comes_down_even_when_the_warm_step_raises(seq):
 
 def test_a_slow_step_is_a_warning_naming_what_waited_behind_it(seq, monkeypatch, caplog):
     _log, step = seq
-    # the check step (nothing armed) reads 0.0 twice, the warm step took SLOW_STEP_S; every later reading is
-    # the same instant
-    ticks = [0.0, 0.0, 0.0, bs.SLOW_STEP_S]
+    # the check step (nothing armed) and the index step (nothing to build) read 0.0 twice each, the warm step
+    # took SLOW_STEP_S; every later reading is the same instant
+    ticks = [0.0, 0.0, 0.0, 0.0, 0.0, bs.SLOW_STEP_S]
     seq_clock = iter(ticks)
     last = [bs.SLOW_STEP_S]
 
@@ -159,9 +164,10 @@ def test_the_snapshot_says_every_steps_final_state(seq, monkeypatch):
     bs.run(step("warm"))
     rows = _by_step(bs.snapshot())
     assert {k: v["state"] for k, v in rows.items()} == {
-        "verify-database": "skipped", "warm-cache": "done", "rollup": "failed", "reindex-resume": "done",
+        "verify-database": "skipped", "article-indexes": "skipped", "warm-cache": "done", "rollup": "failed",
+        "reindex-resume": "done",
     }
-    assert bs.snapshot()["order"] == ["verify-database", "warm-cache", "rollup", "reindex-resume"]
+    assert bs.snapshot()["order"] == ["verify-database", "article-indexes", "warm-cache", "rollup", "reindex-resume"]
     assert all(v["started_at"] and v["seconds"] is not None for v in rows.values())
 
 
@@ -197,7 +203,8 @@ def test_the_snapshot_reaches_the_diagnostics_bundle_and_says_what_it_does_not_w
     from src.api.diagnostics import columnar_status
 
     block = columnar_status()["boot_sequence"]
-    assert block["order"] == ["verify-database", "warm-cache", "rollup", "reindex-resume"]
+    assert block["order"] == ["verify-database", "article-indexes", "warm-cache", "rollup", "reindex-resume"]
+    assert isinstance(block["article_indexes"], dict)
     assert "beside it" in block["method"] and "memory" in block["method"]
 
 

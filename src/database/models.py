@@ -34,7 +34,7 @@ Author: Ideotion
 """
 
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     DDL,
@@ -52,6 +52,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    collate,
     event,
 )
 
@@ -979,6 +980,22 @@ class Article(Base):
         # explicitly would duplicate that implicit key without helping the plan, at the
         # cost of a wider index entry on every keyword-indexing write.
         Index("idx_article_keyword_indexed_at", "keyword_indexed_at"),
+        # The article list's language filter (R128): language FIRST (an equality), the date SECOND
+        # (the order the list reads it in), so the filter and its sort are one index range with no
+        # sort step. idx_article_language alone found the rows and then read each whole row to get the
+        # date (1,284 ms cold on a 40,000-article, 2 GB store; 3 ms with this). Mirrored in migration
+        # c3a91f5e7b24 and in src/database/maintenance.py HOT_INDEXES, where it is DEFERRED to the
+        # start-up step that builds it with a progress line.
+        Index("idx_article_language_published", "language", "published_at"),
+        # The article list's sort by title, which orders COLLATE NOCASE (the FTS path's casefold, so
+        # "Zeta" never sorts before "apple"): only an index with the SAME collation can serve it. Declared
+        # through ``collate(title, "NOCASE")`` and NOT as ``sql_text("title COLLATE NOCASE")``: both make
+        # the same index, but with the text form the stamp alignment reports the live index as an extra
+        # one (``remove_index``, permanently), with this form it reads the same with the index present or
+        # absent (tests/test_article_indexes.py pins it). Same mirrors and the same deferral as above.
+        # ``title`` is the MappedColumn here, which the stubs type as ``Mapped[...]`` (a plain
+        # ColumnElement is what ``collate`` is typed to take; at run time it takes either).
+        Index("idx_article_title_nocase", collate(cast("Any", title), "NOCASE")),
     )
 
     @property

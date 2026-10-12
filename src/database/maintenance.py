@@ -161,7 +161,38 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_keyword_indexed_at "
         "ON articles (keyword_indexed_at)"
     ),
+    # The article list's language filter (R128, 2026-10-06). The list orders by the date, which
+    # idx_article_language (language) does not carry: the planner found the rows by language and then
+    # read one whole row per candidate to sort them (1,284 ms cold on a 40,000-article, 2 GB store).
+    # Language FIRST (the filter is an equality), the date SECOND (the order), so the walk is one
+    # index range read backwards with no sort step: 1,284 -> 3 ms cold, plan `SEARCH articles USING
+    # COVERING INDEX`. DEFERRED (see DEFERRED_INDEXES): built by the start-up step that shows in the
+    # task manager, not inside init_db. Mirrored on the model and in migration c3a91f5e7b24.
+    "idx_article_language_published": (
+        "CREATE INDEX IF NOT EXISTS idx_article_language_published "
+        "ON articles (language, published_at)"
+    ),
+    # The article list's sort by title, which orders COLLATE NOCASE (src/api/main.py:_query_articles):
+    # a plain index on title cannot serve it, the collation has to be the index's own. With it the
+    # sort is an index walk (807 -> 3 ms cold, same store) instead of reading every row's title and
+    # sorting them. DEFERRED, like the one above. NOT a drift: the model declares it through the
+    # `collate(title, "NOCASE")` and the stamp alignment reports no difference with
+    # it present or absent (tests/test_article_indexes.py pins both). Migration c3a91f5e7b24.
+    "idx_article_title_nocase": (
+        "CREATE INDEX IF NOT EXISTS idx_article_title_nocase "
+        "ON articles (title COLLATE NOCASE)"
+    ),
 }
+
+# The HOT_INDEXES entries init_db does NOT build: a CREATE INDEX over a corpus-sized table reads every
+# row once and holds the write lock while it runs, so on a big store on a slow drive it is minutes with
+# nothing on screen, inside the call that opens the database. They are built instead by the
+# ``article-indexes`` start-up step (src/database/article_indexes.py): after the check of the data
+# files, one at a time, with the free space measured first and its progress in the task manager. A
+# database that has no articles yet (a fresh one) gets them from create_all with the table.
+DEFERRED_INDEXES: frozenset[str] = frozenset(
+    {"idx_article_language_published", "idx_article_title_nocase"}
+)
 
 # --------------------------------------------------------------------------- #
 # PROPOSED, deliberately NOT wired: idx_keyword_normterm_nocase
@@ -196,6 +227,11 @@ HOT_INDEXES: dict[str, str] = {
 # -- after which it reports a permanent spurious "changed index". So shipping this
 # needs a migrations-layer decision (an `include_object` exclusion, or an equivalent),
 # which belongs to whoever owns models.py/migrations rather than to a perf pass.
+# UPDATE (R128, 2026-10-06): idx_article_title_nocase (above, in HOT_INDEXES) IS a COLLATE NOCASE
+# index and ships declared on its model as ``collate(title, "NOCASE")`` (NOT as a ``text()``: that
+# form reads as a permanent ``remove_index``); the stamp alignment reports no difference with it present
+# or absent (tests/test_article_indexes.py). That is the mirroring this note says is missing, so this
+# index may be shippable the same way -- not tried here.
 # Two honest limits on the numbers above, for whoever picks it up: WHICH full
 # traversal the planner takes before the fix varies with table statistics and with the
 # exact ORDER BY form (a bare table scan and a full index scan were both measured), so
@@ -225,8 +261,11 @@ _INDEX_REQUIRES: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
-def ensure_hot_indexes(engine: Engine) -> list[str]:
-    """Create any missing hot-path indexes (idempotent). Returns those created."""
+def ensure_hot_indexes(engine: Engine, *, include_deferred: bool = True) -> list[str]:
+    """Create any missing hot-path indexes (idempotent). Returns those created.
+
+    ``include_deferred=False`` leaves out :data:`DEFERRED_INDEXES`, the ones the start-up step builds
+    with a visible progress; ``init_db`` passes it. Every other caller keeps the whole map."""
     if engine.url.get_backend_name() != "sqlite":
         return []
     created: list[str] = []
@@ -241,6 +280,8 @@ def ensure_hot_indexes(engine: Engine) -> list[str]:
         cols_of: dict[str, set[str]] = {}
         for name, ddl in HOT_INDEXES.items():
             if name in existing:
+                continue
+            if not include_deferred and name in DEFERRED_INDEXES:
                 continue
             need = _INDEX_REQUIRES.get(name)
             if need is not None:
@@ -1969,14 +2010,29 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
                 _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
 
 
-#: SQLite's VACUUM writes a COMPLETE second copy of the database and only then
-#: swaps it in, so the peak requirement is the file plus the copy. 2.0x is the
-#: floor of that, not a safety margin on top of it.
+#: SQLite's VACUUM rebuilds the database into a second copy of its LIVE pages (the pages in use, not the free ones) and only
+#: then swaps it in: the copy is held in memory (every pooled connection of the app sets ``temp_store=MEMORY``, see
+#: :data:`VACUUM_RAM_FACTOR`) and its content is written back through the log, so the database's volume needs that much free
+#: again, on top of whatever log is already there. Measured 2026-10-06 (a 41 MB file of which 10 MB was live): the log grew by
+#: 10.3 MB, the live bytes, and the file did not grow at all. 2.0x the live bytes is therefore twice what the rewrite adds, a
+#: margin and not a floor.
 VACUUM_HEADROOM = 2.0
+
+#: What a VACUUM holds in RAM per byte of the pages it copies (the pages in use), under ``temp_store=MEMORY``. Measured
+#: 2026-10-06 on a 257 MB file: +266 MB resident (1.03x of the file, whose free pages that measurement did not separate;
+#: against +4 MB under ``FILE``); 1.25 leaves room for the page cache the rebuild fills. WHAT IT PROTECTS: a machine that
+#: has less memory than the copy needs, plus the memory guard's own floor, is not asked to
+#: build it (the kernel's out-of-memory kill would end the whole app, the failure the
+#: rollup's in-memory build brought down the 4.81 GiB machines with). It is NOT moved to a
+#: temporary file to avoid the question: at the app's 16 KiB page size a VACUUM with
+#: ``temp_store=FILE`` wrote a CORRUPT encrypted store (the deep read of the index build,
+#: reproduced through this function), so the cost of this tool is memory, and memory is
+#: what is gated.
+VACUUM_RAM_FACTOR = 1.25
 
 
 class VacuumSpaceError(RuntimeError):
-    """A VACUUM was refused because the volume it would write to is too small.
+    """A VACUUM was refused because the volume it would write to, or the memory it would hold its copy in, is too small.
 
     Carries the measurement, so the caller can tell the operator the actual
     numbers rather than "not enough space".
@@ -1987,27 +2043,88 @@ class VacuumSpaceError(RuntimeError):
         self.report = report
 
 
+def _vacuum_copy_bytes(engine: Engine) -> int | None:
+    """The bytes a VACUUM copies: the pages in use (``page_count`` minus ``freelist_count``) times the page size, read on a
+    connection, so pages that are still only in the write-ahead log count (the file's size on disk does not include them,
+    and does include the free pages a delete left). ``None`` when the connection cannot say."""
+    try:
+        with engine.connect() as conn:
+            pages = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
+            free = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
+            size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
+    except Exception as exc:  # noqa: BLE001 - an unreadable figure is reported as unread, never as a refusal
+        # The TYPE only, never the text: the engine's and the connection factory's messages can carry the passphrase, and this
+        # record is one a diagnostics bundle carries.
+        _LOG.debug("vacuum preflight: the page count could not be read (%s)", type(exc).__name__)
+        return None
+    in_use = pages - free
+    if pages <= 0 or size <= 0 or in_use <= 0:
+        # a store always holds its first page: a count that says otherwise was not read, and zero must never stand for it
+        return None
+    return in_use * size
+
+
+def _unread_notes(
+    unread: list[str], *, wal_unread: bool, whole_file: bool, log_read: bool
+) -> tuple[list[str], list[str]]:
+    """The sentences that say which figures of a preflight were not read, in the words the report's ``detail`` ends with, as
+    ``(not_checked, counted)``: the sentence naming the figures that were NOT CHECKED (the free space, the memory), kept apart so
+    that the one branch which already says so in its main sentence can drop it by what it is rather than by how it starts, and the
+    sentences about the log and the pages in use, which say what was COUNTED in place of a figure that could not be read."""
+    not_checked = ["Not checked, because it could not be read: " + " and ".join(unread) + "."] if unread else []
+    counted = []
+    if wal_unread:
+        counted.append("The size of the file's log could not be read and was counted as none.")
+    if whole_file:
+        counted.append(
+            "The pages in use could not be read, so the whole file "
+            + ("and its log were counted." if log_read else "was counted.")
+        )
+    return not_checked, counted
+
+
+def _with_notes(detail: str, notes: list[str]) -> str:
+    """``detail`` followed by ``notes`` as sentences of their own (a detail that ends in a full stop is not joined to the next
+    clause by a semicolon)."""
+    if not notes:
+        return detail
+    return detail.rstrip(".") + ". " + " ".join(notes)
+
+
 def vacuum_preflight(engine: Engine) -> dict:
     """Can this store be VACUUMed without filling the disk?
 
     DB-10 §2 carry-over. The UI already discloses an estimated DURATION and
-    confirms; nothing checked SPACE. A VACUUM needs room for a full second copy
-    of the file, and running out mid-rebuild is the worst moment to discover it.
+    confirms; nothing checked SPACE. A VACUUM rewrites the pages in use into a
+    second copy, and running out of room mid-rebuild is the worst moment to
+    discover it.
 
-    BOTH volumes are measured, because SQLite writes its rebuild to a temporary
-    file whose location it chooses (``SQLITE_TMPDIR``/``TMPDIR``/``/var/tmp``/
-    ``/tmp`` on unix) and that need not be the database's own volume. Requiring
-    the headroom on each is conservative in the only direction that is safe.
+    TWO THINGS are measured: the free space on the database's volume (the new
+    content goes through the log into the file) and the MEMORY the rebuilt copy is
+    held in (``VACUUM_RAM_FACTOR`` times the copy, plus the memory guard's floor,
+    against what is available, through the guard's own reader). THE COPY IS SIZED
+    FROM WHAT VACUUM COPIES, not from the file on disk: the pages in use (the pages
+    still only in the log count, the free pages a delete left do not), read on a
+    connection; when that cannot be read, the file plus its log is used and the report
+    says so. The log's own size is added to the disk figure; a log that exists and
+    cannot be measured is counted as none, which can under-ask, so the report says it
+    was and lists it in ``not_read``. The temporary-file volume is NOT measured: every pooled connection sets
+    ``temp_store=MEMORY``, so nothing is written there, and a refusal for a small
+    ``/tmp`` would point the operator at a volume the rebuild never touches.
 
     AN UNREADABLE FIGURE IS NOT A REFUSAL. ``shutil.disk_usage`` can raise, and
     a fabricated 0 would manufacture a refusal out of an unreadable ``statvfs``
     -- the same distinction ``vllm_lifecycle._free_disk_bytes`` already draws.
-    When the space cannot be read, ``sufficient`` is ``None`` and the caller
+    When a figure cannot be read it is NOT checked, and the detail NAMES it (an
+    unreadable memory figure lets a store of any size through, the memory guard's
+    own rule); when neither can be read, ``sufficient`` is ``None`` and the caller
     proceeds having been TOLD it was not preflighted, rather than being blocked
     by a measurement nobody took.
     """
     import shutil
-    import tempfile
+
+    # the one reader of the memory guard, shared with the index build
+    from src.database import article_indexes as _memory
 
     if engine.url.get_backend_name() != "sqlite":
         return {"checked": False, "sufficient": None,
@@ -2018,7 +2135,20 @@ def vacuum_preflight(engine: Engine) -> dict:
                 "detail": "no database file on disk to measure"}
 
     db_bytes = os.path.getsize(db_path)
-    needed = int(db_bytes * VACUUM_HEADROOM)
+    wal_bytes: int | None
+    try:
+        wal_bytes = os.path.getsize(db_path + "-wal")
+    except FileNotFoundError:
+        wal_bytes = 0  # no log file is a log of nothing: that is a reading
+    except OSError:
+        wal_bytes = None  # a log that exists and cannot be measured (permissions, a failing drive) is not a log of nothing
+    log = wal_bytes or 0
+    live_bytes = _vacuum_copy_bytes(engine)
+    copy_bytes = live_bytes if live_bytes is not None else db_bytes + log
+    copy_what = (
+        "bytes in use" if live_bytes is not None else "bytes in the file and its log" if wal_bytes is not None else "bytes in the file"
+    )
+    needed = int(copy_bytes * VACUUM_HEADROOM) + log
 
     def _free(where: str) -> int | None:
         try:
@@ -2026,46 +2156,86 @@ def vacuum_preflight(engine: Engine) -> dict:
         except OSError:
             return None
 
-    volumes = {
-        "database": (os.path.dirname(os.path.abspath(db_path)) or ".", None),
-        "temp": (tempfile.gettempdir(), None),
-    }
-    measured = {name: _free(path) for name, (path, _) in volumes.items()}
+    volumes = {"database": os.path.dirname(os.path.abspath(db_path)) or "."}
+    measured = {name: _free(path) for name, path in volumes.items()}
     readable = {k: v for k, v in measured.items() if v is not None}
+    ram_needed = int(copy_bytes * VACUUM_RAM_FACTOR)
+    floor = _memory._floor_bytes()
+    available = _memory._available_ram_bytes()
+    unread = []
+    if not readable:
+        unread.append("the free space on the database's volume")
+    if available is None:
+        unread.append("the memory available")
+    not_checked, counted = _unread_notes(
+        unread, wal_unread=wal_bytes is None, whole_file=live_bytes is None, log_read=wal_bytes is not None
+    )
+    if wal_bytes is None:
+        unread.append("the size of the file's log")
 
     report: dict = {
-        "checked": bool(readable),
+        "checked": bool(readable) or available is not None,
         "db_bytes": db_bytes,
+        "wal_bytes": wal_bytes,  # None when the log exists and its size could not be read
+        "copy_bytes": copy_bytes,
+        "copy_bytes_read": live_bytes is not None,
         "needed_bytes": needed,
         "headroom": VACUUM_HEADROOM,
         "free_bytes": {k: measured[k] for k in measured},
+        "ram_estimate_bytes": ram_needed,
+        "ram_floor_bytes": floor,
+        "ram_available_bytes": available,
+        "ram_factor": VACUUM_RAM_FACTOR,
+        "not_read": unread,
         "method": (
-            "VACUUM rebuilds the file into a full second copy before swapping it "
-            "in, so it needs about twice the current size free. Both the "
-            "database's own volume and the temporary-file volume are measured, "
-            "because SQLite may write the rebuild to either."
+            "VACUUM rewrites the pages in use into a second copy before swapping it "
+            "in. The copy is held in memory (about "
+            f"{VACUUM_RAM_FACTOR} times the pages in use, measured), so the machine must have that much "
+            "available on top of the floor the memory guard keeps free, and the "
+            f"database's own volume needs about {VACUUM_HEADROOM:g} times the pages in use free "
+            "for the new content, plus the size of the file's log. Nothing is written to the "
+            "temporary-file volume."
         ),
     }
-    if not readable:
+    if not readable and available is None:
         report["sufficient"] = None
-        report["detail"] = (
-            "free space could not be read on either volume; this VACUUM was not "
-            "preflighted"
+        # the main sentence already says that neither figure was read: the "not checked" sentence would say it twice
+        report["detail"] = _with_notes(
+            "neither the free space nor the available memory could be read; this VACUUM was not preflighted", counted
         )
         return report
 
     short = sorted(k for k, v in readable.items() if v < needed)
+    if available is not None and available < ram_needed + floor:
+        short.append("memory")
     report["sufficient"] = not short
     if short:
-        worst = min(short, key=lambda k: readable[k])
         report["short_on"] = short
-        report["detail"] = (
-            f"the {worst} volume has {readable[worst]:,} bytes free and this "
-            f"VACUUM needs about {needed:,} (twice the {db_bytes:,}-byte file). "
-            "Free space, or move the temporary directory, then retry."
+        parts = []
+        if "database" in short:
+            parts.append(
+                f"The database volume has {readable['database']:,} bytes free and this "
+                f"VACUUM needs about {needed:,} ({VACUUM_HEADROOM:g} times the {copy_bytes:,} {copy_what}, plus "
+                + (f"the {wal_bytes:,}-byte log" if wal_bytes is not None else "a log whose size could not be read")
+                + "). Free space, then retry."
+            )
+        if "memory" in short:
+            parts.append(
+                f"This computer has {available:,} bytes of memory available and the rebuilt "
+                f"copy of the {copy_bytes:,} {copy_what} is held in memory (about {ram_needed:,}) on top "
+                f"of the {floor:,} the memory guard keeps free. Close other programs and retry. "
+                "The copy is held in memory (every connection of the app keeps its temporary data there), "
+                "and a temporary file instead would corrupt an encrypted library at the app's page size (measured)."
+            )
+        report["detail"] = " ".join(parts)
+    elif unread:
+        what = " and ".join(
+            word for word, got in (("free space", bool(readable)), ("memory", available is not None)) if got
         )
+        report["detail"] = f"enough {what} for this VACUUM"
     else:
-        report["detail"] = "enough free space on every volume this VACUUM writes to"
+        report["detail"] = "enough free space and memory for this VACUUM"
+    report["detail"] = _with_notes(report["detail"], not_checked + counted)
     return report
 
 
@@ -2084,6 +2254,7 @@ def vacuum_database(engine: Engine) -> dict:
     # PREFLIGHT BEFORE THE EXCLUSIVE LOCK, so a refusal costs nobody their writer.
     preflight = vacuum_preflight(engine)
     if preflight.get("sufficient") is False:
+        _LOG.warning("compaction not run: %s", preflight.get("detail"))
         raise VacuumSpaceError(preflight)
     size_before = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else None
     t0 = time.perf_counter()
@@ -2114,9 +2285,9 @@ def vacuum_database(engine: Engine) -> dict:
         "preflight": preflight,
         "method": (
             "SQLite VACUUM (full file rebuild; frees unused pages) followed by "
-            "PRAGMA optimize. Real byte sizes from the filesystem. Free space is "
-            "checked first against twice the file size, on both the database's "
-            "volume and the temporary-file volume."
+            "PRAGMA optimize. Real byte sizes from the filesystem. Checked first: free space "
+            "on the database's volume against twice the pages in use plus the log, and the memory the "
+            "rebuilt copy is held in against what is available."
         ),
     }
 

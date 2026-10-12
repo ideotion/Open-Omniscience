@@ -1125,7 +1125,8 @@ def test_the_wiki_lane_tiers_stop_inside_a_window_when_the_check_is_armed(regist
 def test_the_check_is_the_boot_sequences_first_step():
     from src.api import boot_sequence
 
-    assert boot_sequence.STEPS[0] == "verify-database" and boot_sequence.STEPS[1] == "warm-cache"
+    assert boot_sequence.STEPS[0] == "verify-database" and boot_sequence.STEPS[2] == "warm-cache"
+    assert boot_sequence.STEPS[1] == "article-indexes", "the index build goes after the check and before the warm-up"
 
 
 def test_the_boot_step_runs_the_armed_check_and_is_skipped_when_nothing_is_armed(healthy, files, monkeypatch):
@@ -1146,6 +1147,7 @@ def test_the_boot_sequence_runs_a_real_armed_check_and_the_wait_is_over_when_it_
     assert damage.registry.verifying()
     monkeypatch.setattr(boot_sequence, "_rollup_first_build", lambda: None)
     monkeypatch.setattr(boot_sequence, "_start_reindex", lambda: None)
+    monkeypatch.setattr(boot_sequence, "_article_indexes", lambda: None)  # its own tests: test_article_indexes.py
     warmed: list[bool] = []
     try:
         boot_sequence.run(lambda: warmed.append(damage.registry.verifying()))

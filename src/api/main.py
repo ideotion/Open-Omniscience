@@ -171,6 +171,12 @@ def _stop_database_check() -> None:
         verify.stop()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.debug("could not stop the start-up database check", exc_info=True)
+    try:
+        from src.database import article_indexes
+
+        article_indexes.stop()  # a quit is not a build that brought the process down: the attempt is given back
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.debug("could not give back the article-list index attempt", exc_info=True)
 
 
 def _ends_the_check_wait(fn):

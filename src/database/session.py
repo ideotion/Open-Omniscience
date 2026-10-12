@@ -446,7 +446,10 @@ def init_db() -> None:
 
     ensure_derived_views(engine)
 
-    ensure_hot_indexes(engine)
+    # The two article-list indexes (R128) are left to the ``article-indexes`` start-up step, which shows
+    # its progress in the task manager; building them here would be a silent wait inside opening the
+    # database, on a big store minutes long (src/database/article_indexes.py).
+    ensure_hot_indexes(engine, include_deferred=False)
 
     # R23 / PR 5: finish a bulk build that a crash interrupted with its indexes dropped.
     #

@@ -2357,7 +2357,9 @@
       // The Wikipedia walk says WHY it waits (airplane mode, no usable proxy, the budget),
       // keyed x12 through its detail frame. It is not a download, so none of the lines
       // below apply to it.
-      if (j.kind === "wiki-walk") {
+      // The article list's index build draws its detail the same way: the "one time only; saving waits"
+      // caveat while it runs, and the keyed reason a refusal for space carries (its error is English only).
+      if (j.kind === "wiki-walk" || j.kind === "article-indexes") {
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }

@@ -16553,3 +16553,70 @@ take part in story grouping; and `articles_in_period` counts every article of th
   (a first failed read pauses collection) is not covered here: its follow-up is its own small PR, in the poisoned-connection entry's (d).
   FOLD 4 (the coordinator's check): the re-read files a listing two connections disagreed about as `(schema)` `unchecked`, as the start-up check and the manual call do, so a `(schema)` latch stays; the `(schema)` entry filed for a failed
   page pass carries the PAGE pass's `second_read`, and a re-read's confirmed schema damage says `agreed`.
+## 2026-10-06 — THE ARTICLE LIST'S TWO INDEXES (R128 = «34a»): WHAT IS NOT DONE, AND WHY (WAL / DISK THREAD)
+
+- **ANSWERED «34a»** (both indexes; the question was `34`, from the browse change). Built: `src/database/article_indexes.py`, the
+  `article-indexes` step of `src/api/boot_sequence.py` (after the check of the data files, before the warm-up), `maintenance.DEFERRED_INDEXES`,
+  migration `c3a91f5e7b24`, `tests/test_article_indexes.py`. What follows is what it deliberately leaves, so a later session does not take it for an oversight.
+- **THE BUILD ON A BIG STORE ON A SLOW DRIVE WAS NOT MEASURED.** The question said "a few minutes"; the measured figure is 4.0 s plus 0.1 s on a COLD 2 GB file
+  (the first read of the whole table), which scales with rows and bytes read, not with a measured wall time on a 14 GB file on a spinning disk. The step records
+  its own figure: `boot_sequence.article_indexes` in the diagnostics bundle (the seconds each index took, the rows and free space it measured, the seconds it
+  waited for the writer gate). **When the first bundle with that block arrives, put the real number where "a few minutes" was written** (the manual row for
+  `OO_ARTICLE_INDEXES`, the label's hover if one is added).
+- **`idx_article_language (language)` IS NOT DROPPED.** The new `(language, published_at)` index makes it redundant for the list, but the counts and the
+  per-language tally still use it (`tests/test_library_language_growth.py` names it), and dropping it saves ~38 bytes an article against a planner change nobody
+  measured. A drop is its own decision, after the plans of the count queries are measured with the new index present.
+- **THE FREE-SPACE FIGURE IS AN ESTIMATE, AND SAYS SO**: 400 bytes an article on the DATABASE's volume only (what it protects: a disk that fills while the
+  write-ahead log grows, which would fail every writer in the app). The temporary-file volume is NOT measured: every connection sets `temp_store=MEMORY` and the bundled
+  SQLCipher is compiled `SQLITE_TEMP_STORE=2` (LESSONS L2862), so the sorter holds every key in RAM and never writes a temporary file; measured by the deep read at
+  +73.3 MiB resident for 600,000 articles of 76 Latin characters (128 bytes an article) and +77.8 MiB for 300,000 of 76 Devanagari characters (272 bytes: about the title's UTF-8 bytes plus 50),
+  stated as `RAM_BYTES_PER_ARTICLE = 300` in the report and the manual and **GATED** (the build is declined when the machine's available memory is below the estimate plus the memory guard's floor,
+  `FRAME_NO_MEMORY`, keyed x12; the first version of this entry said NOT GATED, and the deep reads moved it). A Latin corpus is over-asked about two and a third times, on purpose: a refusal costs a slow article list, an
+  out-of-memory kill ends the app at start-up. The row count is `MAX(id)`, an upper bound read without touching a row. A figure that cannot be read is NOT a refusal (the `vacuum_preflight` rule).
+  **WHAT THE GATE DOES NOT SEE:** a process limit (psutil reads the machine, not an `RLIMIT_AS` or a cgroup: under `RLIMIT_AS` = VmSize + 200 MiB the gate said sufficient and the title sort failed with `MemoryError` at every
+  start, without counting as an unfinished one), the page cache (`cache_mb`, bounded and already in the process), and `OO_MEM_GUARD=0`, which still adds the 256 MiB floor. **VACUUM'S RAM COST (GATED, THE LONGER ROUTE STILL OPEN):**
+  `maintenance.vacuum_preflight` had the same temp-volume model and the same flaw (VACUUM measured +266 MB RSS under MEMORY against +4 MB under FILE on a 257 MB file); it now measures the database's volume (twice the PAGES IN USE plus the log's size) and the MEMORY the copy is
+  held in (`VACUUM_RAM_FACTOR` = 1.25 times the pages in use plus the memory guard's floor, through the guard's own reader), refuses with 507 and the numbers BEFORE the write lock, logs the refusal, and no longer measures the temporary volume (nothing
+  is written there). THE COPY IS SIZED FROM WHAT VACUUM COPIES (`page_count` minus `freelist_count` times the page size, read on a connection, so a page still only in the log counts and a free page a delete left does not; measured: a 41 MB file with
+  10 MB in use grew the log by 10.3 MB and the file by nothing, and `page_count` on a connection includes the log's pages where the file's size on disk does not); sized from the file it under-asked by the log's lag and over-asked by the free pages. When the
+  count cannot be read the file plus its log is counted whole and the detail says so. **AN UNREADABLE MEMORY FIGURE LETS A COPY OF ANY SIZE THROUGH (the memory guard's own fail-open rule, kept):** the detail now names every figure that was not read
+  (`not_read`, and "Not checked, because it could not be read: …") instead of claiming "enough free space and memory"; a log that exists and cannot be measured is counted as none and the detail says so once, in its own sentence. NOT done: the refusal's sentence is English, as the disk one was (a keyed x12 frame is its own change); a library larger than the memory cannot be compacted at all now (the honest answer, but a dead end: the way out is the
+  longer route, `sqlcipher_export` into a keyed attached file with a matched `cipher_page_size`, which needs no temporary database; not measured). **A SECOND MEMORY VACUUM WITH NO GATE, NOT TOUCHED HERE:** the streaming backup's
+  "exclude newsletters" path (`backup/stream_backup.py::_drop_newsletters_in_file` -> `backup/artifact.py::_drop_newsletter_rows`) runs `VACUUM` through `connect()` on a copy of the whole corpus (SQLCipher's compiled default is MEMORY, so the copy is
+  held in RAM), which on a multi-GB corpus is the rollup's failure again; its other callers VACUUM a plaintext copy through the stdlib driver (a file temp store, harmless). A first attempt, a
+  connection of its own with `temp_store=FILE`, was REVERTED after the deep delta read: **at the app's 16 KiB page size a VACUUM whose temporary database spills writes a CORRUPT store under SQLCipher** (the internal `vacuum_db`
+  is keyed at the default 4,096-byte cipher page; reproduced through `maintenance.vacuum_database`, silent, and it would have latched the corpus file the app itself broke). The only knob that makes FILE safe,
+  `cipher_default_page_size`, is process-global, so it is not a local fix. The rule for it is the one ADOPTED ABOVE for `vacuum_preflight` (refuse below 1.25 times the pages in use plus the memory guard's floor, state the RAM), and it is NOT applied to this path. ANY later attempt needs a
+  test that creates the store through `connect()` (16 KiB), forces a spill (`cache_size=10` on the VACUUM connection reproduces it at 30,000 rows in under a second) and asserts `PRAGMA quick_check` is ok. Observers VACUUM would lose by
+  leaving the pool (the storage guard's `handle_error` on `SQLITE_FULL`, `pool_watch`, the slow-query log) are the other half of that decision.
+- **`backup/merge.py` SETS `temp_store=FILE` ON THE WORKING COPY OF AN ENCRYPTED STORE (PRE-EXISTING; the same measurement found it):** under FILE SQLCipher writes the temporary b-trees and sorters of the main
+  connection IN THE CLEAR (a `SELECT DISTINCT` spilled 138,330 marker hits into an 11 MB temporary file; so did an `ORDER BY`). Every `DISTINCT`, `GROUP BY`, `IN` subquery, `ORDER BY` or temporary table of that merge that is large
+  enough to spill is a plaintext copy of the user's rows in the temporary directory. NOT measured on the merge itself (this slice did not touch it); the statements need reading, and the setting probably needs to become MEMORY with
+  the memory cost stated, which is the same question as VACUUM's above.
+- **THE ATTEMPT RECORD (deliberate, `article-indexes-attempt.json` in the data folder; it had no entry):** written before the first statement, cleared when the build ends however it ends, given back by an orderly quit; two
+  unfinished starts in a row decline the third (`MAX_UNFINISHED_STARTS`, keyed `FRAME_UNFINISHED`) until the app is UPDATED (the record carries the package version) or the file is deleted. WHAT IT PROTECTS: a build that brings the
+  process down becoming a boot loop that never reaches collection. KNOWN LIMITS (deep delta read), none fixed: (a) a SIGTERM from a user-space out-of-memory killer (earlyoom) is an orderly quit and gives the attempt back, so the cap
+  never engages for exactly the memory case (a refinement: do not give back when the memory guard reads available memory at or below its floor at `stop()` time); (b) a directory squatting on the record's name makes the record
+  unwritable (the build goes ahead, says so in the report, and leaves a `.tmp` beside it); (c) a record survives for ever when the indexes arrive by another route (a restore); (d) a build that fails because the data drive vanished
+  cannot unlink and is counted at the next start; (e) a declined start between two killed ones does not reset the count ("two in a row" is "two killed builds since the last end"); (f) the version key is the package version, so a
+  developer checkout stays capped across commits until the version flips; (g) `stop()` reading `attempts` just before the build's `_disarm` unlinks the record can rewrite a record of 1 after the build has finished (harmless while the indexes
+  exist; the next start reads one unfinished start and no more); (h) there is no way to ask for the build anyway when the memory reading under-reports (macOS counts free plus inactive, so a machine with room can be refused), and `OO_MEM_GUARD=0`
+  still adds the 256 MiB floor.
+- **THE BUILD IS NOT CANCELLABLE** (a single statement is opaque, so the row offers no Cancel) and holds the write gate for each statement; the app starts
+  offline, so no collection normally waits behind it, and the gate's watchdog names a hold past its threshold. Every gated write waits, not only a new article's (settings, tags, notes,
+  a session flush), and the caveat now says so. A refusal for space is a FAILED row whose KEYED detail (`FRAME_NO_ROOM`, whole MB and the article count) both task managers draw in
+  all twelve languages (the English error string stays the API's and the log's); the label and the progress line are in all twelve too.
+- **WHAT THE DEEP READ (2026-10-06) LEFT, NOT DONE:** (N4) the count behind a language filter still reads each matching row for `quarantined`, which the index does not carry
+  (773 -> 180 ms on 200,000 articles, against 3 ms for the page query alone); a third key column would make it index-only and changes the ruled shape. (N5) A whole-table
+  `GROUP BY language` can move to the wider index (5,611 pages against 1,612, 34 -> 41 ms warm; `corpus_language_shares`' plan changed): record it BESIDE the decision about dropping
+  `idx_article_language`. (N6) With `OO_ARTICLE_INDEXES=0`, or a refusal that repeats every start, the stamp stays one step behind head and each start pays the schema compare in
+  `init_db` (0.22 to 0.33 s measured, harmless: `IF NOT EXISTS`); the manual row says it. (N9) Presence is checked by name only, so a same-named title index without NOCASE reads as
+  present and is never repaired (theoretical: it needs a hand-made index). (N12) The restore path builds both indexes through the migration inside `upgrade_database_file` with no
+  preflight and no progress line (not measured). The figure the module and the comments quote for the language filter is now 1,284 ms cold, the one the maintainer was shown; R128's
+  row carried 1,447 ms, and nothing reproduces that number. Not pinned: the downgrade of the migration (M36), `rows` as `MAX(id)` rather than `COUNT(*)` (M49, equivalent on the tests' ids).
+- **THE STAMP ALIGNMENT SAYS `schema-behind` FOR ONE START.** The language index is declared on the model and `init_db` leaves it out, so between `init_db` and the step
+  the live schema lacks a model index; the stamp is kept (harmless: the migration is `IF NOT EXISTS`) and the next start finds the schema at head. The step does NOT
+  align the stamp itself: that run drops the derived-row view while it executes, and the step runs while the app serves. (`tests/test_article_indexes.py` pins the
+  verdict in both states, and that the title index reads no drift in any state.)
+- **TO ADD ONCE THE BROWSE CHANGE (PR D) HAS LANDED**: the plan test builds the browse's ids query with the ORM, because `_query_articles`'s ids-first form is in PR D,
+  which is not in this stack; add a test that takes the plan of the real function for a language filter and both title sorts.
