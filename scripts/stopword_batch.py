@@ -700,19 +700,29 @@ def main(argv: list[str] | None = None) -> int:
             if chosen:
                 kept = [w for w in used_allow if w in chosen]
                 plans.append(prepare_append(name, chosen, args.batch_id, kept, source) + (len(chosen),))
-        # Every refusal has been raised above. The texts are written to temporary files first (an I/O
-        # error there leaves both targets as they were) and only then renamed over their targets; if a
-        # rename itself fails after the first landed, the message names the file that did.
-        temps = []
+        # Every refusal has been raised above. The texts are written to temporary files first (an I/O error
+        # there leaves both targets as they were) and only then renamed over their targets; if a rename itself
+        # fails after the first landed, the message names the file that did. A temporary file is created
+        # exclusively (``open(..., "x")`` refuses an existing path and never follows a link a stranger left
+        # at it) and is tracked as soon as it exists, so a failed write removes its own partial file and a
+        # refused path is never removed.
+        temps: list[Path] = []
         try:
             for path, after, _count in plans:
                 tmp = path.with_name(path.name + ".tmp")
-                tmp.write_text(after, "utf-8")
-                temps.append(tmp)
+                if _symlink_on_path(tmp) or tmp.exists():
+                    raise SystemExit(f"{tmp} exists or is a link; remove it and run again (nothing was changed)")
+                with open(tmp, "x", encoding="utf-8") as handle:
+                    temps.append(tmp)  # this run made it: from here a failure removes it
+                    handle.write(after)
         except OSError as exc:
             for tmp in temps:
                 tmp.unlink(missing_ok=True)
             raise SystemExit(f"could not write the batch ({exc.strerror or exc}); nothing was changed") from exc
+        except SystemExit:
+            for tmp in temps:
+                tmp.unlink(missing_ok=True)
+            raise
         landed: list[str] = []
         for (path, _after, count), tmp in zip(plans, temps, strict=True):
             try:

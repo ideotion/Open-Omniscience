@@ -550,11 +550,35 @@ _HANDLER = "try:\n    pass\nexcept Exception as exc:\n    {}\n"
         "from x import _skip_error\n",
         "async def _skip_error(exc):\n    return engine_text(exc)\n",
         "def _skip_error(exc):\n    return engine_text(exc)\ndef _skip_error(exc):\n    return str(exc)\n",
+        # every way a name is bound is read, not only def/assign/import: a class, an except-as, a match capture
+        "class engine_text:\n    pass\n",
+        "class isinstance:\n    pass\n",
+        "try:\n    pass\nexcept Exception as engine_text:\n    pass\n",
+        "try:\n    pass\nexcept Exception as type:\n    pass\n",
+        "match x:\n    case engine_text:\n        pass\n",
+        "match x:\n    case [*engine_text]:\n        pass\n",
+        "match x:\n    case {**engine_text}:\n        pass\n",
+        "import src.monitoring.engine_text as engine_text\n",
+        "for engine_text in range(3):\n    pass\n",
     ],
 )
 def test_the_scan_refuses_each_bypass(body):
     problems, _calls = _file_problems("x.py", _HEAD + body, None)
     assert problems, f"the scan let this through:\n{body}"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "x = 1\n",  # no import at all
+        "import src.monitoring.engine_text as engine_text\n",  # a binding, but not the canonical import
+        "from src.monitoring.engine_text import engine_text as et\n",  # imports it under another name
+        "from src.monitoring.engine_text import engine_text, other\n",  # not the one-name canonical form
+    ],
+)
+def test_the_scan_requires_the_canonical_import_exactly_once(source):
+    problems, _calls = _file_problems("x.py", source, None)
+    assert any("must bind engine_text exactly once" in p for p in problems), problems
 
 
 def test_the_scan_accepts_the_shapes_the_files_use():
@@ -565,3 +589,44 @@ def test_the_scan_accepts_the_shapes_the_files_use():
     )
     problems, calls = _file_problems("x.py", ok, None)
     assert problems == [] and calls == 2
+
+
+
+# ---- typed=True: the class once, in front --------------------------------------------------
+
+
+def test_typed_writes_the_class_once_in_front_of_the_words():
+    assert engine_text(RuntimeError("database is locked"), typed=True) == "RuntimeError: database is locked"
+    assert engine_text(RuntimeError(f"near {SECRET}"), typed=True) == "RuntimeError: near ***redacted***"
+
+
+def test_typed_names_the_class_once_when_the_text_is_withheld(monkeypatch):
+    monkeypatch.setattr("src.monitoring.secret_scrub.held_passphrases", lambda: None)
+    out = engine_text(ValueError("whatever"), typed=True)
+    assert out.count("ValueError") == 1 and "withheld" in out, out
+
+
+def test_typed_gives_a_unicode_error_by_class_only():
+    out = engine_text(UnicodeDecodeError("utf-8", b"\\xff", 0, 1, f"bad {SECRET}"), typed=True)
+    assert SECRET not in out and "withheld" in out
+
+
+def test_typed_is_cut_after_the_scrub():
+    exc = RuntimeError("x" * 30 + SECRET)
+    out = engine_text(exc, 45, typed=True)
+    assert len(out) <= 45 and SECRET[:6] not in out
+
+
+def test_the_fallback_when_the_scrub_cannot_be_loaded_is_cut_too(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def _no_scrub(name, *a, **k):
+        if name == "src.monitoring.secret_scrub":
+            raise ImportError("gone")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", _no_scrub)
+    out = engine_text(ValueError("x"), 20, typed=True)
+    assert len(out) == 20 and "ValueError" in out
