@@ -707,35 +707,33 @@ def main(argv: list[str] | None = None) -> int:
         # at it) and is tracked as soon as it exists, so a failed write removes its own partial file and a
         # refused path is never removed.
         temps: list[Path] = []
-        try:
-            for path, after, _count in plans:
-                tmp = path.with_name(path.name + ".tmp")
-                if _symlink_on_path(tmp) or tmp.exists():
-                    raise SystemExit(f"{tmp} exists or is a link; remove it and run again (nothing was changed)")
-                with open(tmp, "x", encoding="utf-8") as handle:
-                    temps.append(tmp)  # this run made it: from here a failure removes it
-                    handle.write(after)
-        except OSError as exc:
-            for tmp in temps:
-                tmp.unlink(missing_ok=True)
-            raise SystemExit(f"could not write the batch ({exc.strerror or exc}); nothing was changed") from exc
-        except SystemExit:
-            for tmp in temps:
-                tmp.unlink(missing_ok=True)
-            raise
         landed: list[str] = []
-        for (path, _after, count), tmp in zip(plans, temps, strict=True):
+        try:
             try:
-                tmp.replace(path)
+                for path, after, _count in plans:
+                    tmp = path.with_name(path.name + ".tmp")
+                    if _symlink_on_path(tmp) or tmp.exists():
+                        raise SystemExit(f"{tmp} exists or is a link; remove it and run again (nothing was changed)")
+                    with open(tmp, "x", encoding="utf-8") as handle:
+                        temps.append(tmp)  # this run made it: from here a failure removes it
+                        handle.write(after)
             except OSError as exc:
-                for left in temps:
-                    left.unlink(missing_ok=True)
-                raise SystemExit(
-                    f"could not replace {path.name} ({exc.strerror or exc}); already written: "
-                    f"{', '.join(landed) or 'nothing'}"
-                ) from exc
-            landed.append(path.name)
-            print(f"\nappended {count} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+                raise SystemExit(f"could not write the batch ({exc.strerror or exc}); nothing was changed") from exc
+            for (path, _after, count), tmp in zip(plans, temps, strict=True):
+                try:
+                    tmp.replace(path)
+                except OSError as exc:
+                    raise SystemExit(
+                        f"could not replace {path.name} ({exc.strerror or exc}); already written: "
+                        f"{', '.join(landed) or 'nothing'}"
+                    ) from exc
+                landed.append(path.name)
+                print(f"\nappended {count} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+        finally:
+            # Whatever ended the run (a refusal, an I/O error, Ctrl-C), no temporary file this run made is left
+            # behind to refuse the next one; a renamed one is already gone.
+            for tmp in temps:
+                tmp.unlink(missing_ok=True)
         # The loader adds a curly copy of every listed contraction, so the digest test needs both.
         declare = sorted(set(addable) | {w.replace("'", "\u2019") for w in addable if "'" in w})
         print("next: declare them in tests/test_analytics_extract.py::added_since_migration:")

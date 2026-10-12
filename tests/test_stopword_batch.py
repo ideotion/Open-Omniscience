@@ -1212,6 +1212,40 @@ def test_a_write_error_in_the_second_temporary_file_changes_nothing(tmp_path, mo
     _untouched(extra)
 
 
+def test_a_path_planted_between_the_check_and_the_open_is_not_removed_and_the_first_temporary_is(tmp_path, monkeypatch):
+    """The pre-check passes, then a stranger's file appears: ``open(..., "x")`` refuses it, and that file is
+    not one this run made, so it is left alone (tracking the path before the open would delete it)."""
+    extra = _ko_dir(tmp_path)
+    real_open = open
+    seen = []
+
+    def _open(path, mode="r", *a, **k):
+        if mode == "x":
+            seen.append(Path(path).name)
+            if len(seen) == 2:
+                real_open(path, "w", encoding="utf-8").write("a stranger's file")  # appears after the pre-check
+        return real_open(path, mode, *a, **k)
+
+    monkeypatch.setattr(sb, "open", _open, raising=False)
+    with pytest.raises(SystemExit, match="could not write the batch"):
+        _ko_apply(tmp_path, monkeypatch)
+    assert (extra / "_multilingual.yml.tmp").read_text("utf-8") == "a stranger's file"
+    assert not (extra / "ko.yml.tmp").exists(), "the temporary file this run made was left behind"
+    assert (extra / "ko.yml").read_text("utf-8") == _KO_FILE
+
+
+def test_an_interrupt_during_the_renames_leaves_no_temporary_file(tmp_path, monkeypatch):
+    extra = _ko_dir(tmp_path)
+
+    def _interrupt(self, target):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Path, "replace", _interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        _ko_apply(tmp_path, monkeypatch)
+    _untouched(extra)
+
+
 def test_a_rename_that_fails_after_the_first_landed_names_the_file_that_did(tmp_path, monkeypatch):
     extra = _ko_dir(tmp_path)
     real = Path.replace

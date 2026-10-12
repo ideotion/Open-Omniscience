@@ -574,6 +574,7 @@ def test_the_scan_refuses_each_bypass(body):
         "import src.monitoring.engine_text as engine_text\n",  # a binding, but not the canonical import
         "from src.monitoring.engine_text import engine_text as et\n",  # imports it under another name
         "from src.monitoring.engine_text import engine_text, other\n",  # not the one-name canonical form
+        "from elsewhere import engine_text\n",  # the only import is from another module
     ],
 )
 def test_the_scan_requires_the_canonical_import_exactly_once(source):
@@ -613,8 +614,10 @@ def test_typed_gives_a_unicode_error_by_class_only():
 
 def test_typed_is_cut_after_the_scrub():
     exc = RuntimeError("x" * 30 + SECRET)
-    out = engine_text(exc, 45, typed=True)
-    assert len(out) <= 45 and SECRET[:6] not in out
+    # "RuntimeError: " (14) + 30 letters = 44, so a cut at 54 lands ten characters inside the secret: cut
+    # BEFORE the scrub it would print "correct ho"; cut after, the marker's first ten characters
+    out = engine_text(exc, 54, typed=True)
+    assert out.endswith("***redacte") and "correct ho" not in out
 
 
 def test_the_fallback_when_the_scrub_cannot_be_loaded_is_cut_too(monkeypatch):
