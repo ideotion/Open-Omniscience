@@ -287,17 +287,22 @@ and a chart lands only if the operator's rows or a ruling on a view history call
 the twelve" reads the followed editions plus any other edition the walk found the item in. **Does not close the
 row:** the clause «analytics 4–5 render from real rows» still needs the operator's walk run (the page walk is off
 until switched on; the 2026-09-30 diagnostics bundles carry no walk rows). Chromium-verified (remote sandbox) in
-`en`, `ar` and at phone width, the edition drop-down opened and its option taken · awaiting human UX pass.
+`en`, `ar` and at phone width, the edition drop-down opened and its option taken · awaiting human UX pass (superseded by the 2026-10-12 walk below).
 
-**2026-10-12 — analytics 4–5, the Chromium look (R126), on fixtures.** 48 runs on an offline loopback app (`online:false`
-asserted at each context and at the end of each run): 1440×900, 768×1024 and 390×844 × the 15 theme settings in English, plus
-Arabic at the first theme, every drop-down in the Wikipedia panel picked and read back from the control (48 of 48 held), the
-table each pick must change checked, the console kept per width and theme: **1,299 checks, 0 FAIL, 0 console lines, 0 CSP
-events, 0 requests off the loopback origin** (`docs/audit/analytics45-look-2026-10-12/`). It found one real defect, fixed
-here: at 390 px both tables were 24 px and 48 px wider than their frame, so the last column (changes in the last 7 days,
-articles in 7 days) sat behind a sideways scroll inside the table while the page itself did not scroll; one 3-line CSS rule,
-measured before and after (316 px in a 316 px frame, both languages). **The UX pass for these two readers is closed by this
-walk; the clause «render from real rows» is NOT** — every row here is one `scripts/analytics45_seed.py` wrote.
+**2026-10-12 — analytics 4–5, the Chromium look (R126), on fixtures; it SUPERSEDES the «awaiting human UX pass» above.** 80 runs on
+an offline loopback app (`online:false` asserted at each context and at the end of each run): 1440×900, 768×1024, 390×844,
+360×800 and 320×568 × the 15 theme settings in English, plus Arabic at the first theme, every drop-down in the Wikipedia panel
+picked and read back (80 of 80 held; the page redraws that drop-down on every pick, so the pick is read from the new control and
+the rebuild is recorded), the table each pick must change checked, the suggestions judged by their numbers, the console kept
+per width and theme and a console line failing the run: **2,245 checks, 0 FAIL, 0 console lines, 0 CSP events, 0 requests off
+the loopback origin**; the look's judges were shown able to fail by `mutation_checks.py` (four mutations, all caught)
+(`docs/audit/analytics45-look-2026-10-12/`). It found one real defect, fixed here: at 390 px both tables were 24 px and 48 px wider
+than their frame, so the last column (changes in the last 7 days, articles in 7 days) sat behind a sideways scroll inside the
+table while the page itself did not scroll. A padding-only fix fitted 390 px but not 360 or 320 px, so the rules in `app.css` also
+step the type down (12 px and 10 px headings at ≤ 480 px, 11 px and 9 px at ≤ 340 px); smallest headroom over the 15 themes and
+both languages 62/56 px at 390, 32/26 at 360, 16/18 at 320. **The UX pass for these two readers is closed by this walk, at
+those five widths in Chromium; the clause «render from real rows» is NOT** — every row here is one `scripts/analytics45_seed.py`
+wrote.
 
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC03` ⛔ (C4 = Q1009, the storage round-2 rows
 3–6 — blob-store dedup · OOENC2 for pack AEAD · keyed-HMAC blob addressing with opaque pack names · the

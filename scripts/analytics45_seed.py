@@ -11,7 +11,7 @@ setting. Every number the look reads back is therefore a number this script wrot
 listed in ``TRUTH`` and printed as JSON so a walk can compare the page against it.
 
 Run it BEFORE booting the app against the same data directory (the single-writer gate is a
-per-process lock):
+per-process lock). It refuses a data directory that already holds anything, and a set DATABASE_URL:
 
     OO_DATA_DIR=/tmp/oo-a45/state OO_DB_PLAINTEXT=1 OO_AUTOSEED=0 OO_NO_SCHEDULER=1 \\
         python scripts/analytics45_seed.py
@@ -168,7 +168,23 @@ def main() -> int:
     return 0
 
 
+def refuse_unless_scratch(env=os.environ) -> str | None:
+    """Why this script must not run here, or None. It adds a lane, sources, articles and a setting, so it
+    writes only into a data directory that does not exist yet or is empty (never an operator's own store),
+    and not where DATABASE_URL would send the writes somewhere else (it overrides OO_DATA_DIR)."""
+    if env.get("DATABASE_URL"):
+        return "refusing: DATABASE_URL is set and overrides OO_DATA_DIR, so the writes would go to another store"
+    data_dir = env.get("OO_DATA_DIR")
+    if not data_dir:
+        return "refusing: set OO_DATA_DIR to a new, empty scratch directory (this writes a database)"
+    path = Path(data_dir)
+    if path.exists() and (not path.is_dir() or any(path.iterdir())):
+        return f"refusing: {data_dir} is not empty, so it may be a store someone uses; give it a new scratch directory"
+    return None
+
+
 if __name__ == "__main__":
-    if not os.environ.get("OO_DATA_DIR"):
-        sys.exit("refusing: set OO_DATA_DIR to a scratch directory (this writes a database)")
+    why = refuse_unless_scratch()
+    if why:
+        sys.exit(why)
     sys.exit(main())

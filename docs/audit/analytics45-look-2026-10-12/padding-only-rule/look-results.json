@@ -1,0 +1,808 @@
+{
+ "themes": [
+  "ink"
+ ],
+ "runs": [
+  {
+   "width": "390x844",
+   "theme": "ink",
+   "lang": "en",
+   "checks": [
+    {
+     "check": "the app answers online:false",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "suggestions are offered with their numbers (Q42: 9 changes, found in 2 editions; Q34: 3, 4)",
+     "status": "ok",
+     "reading": [
+      "Q42: 9 changes, found in 2 editions",
+      "Q34: 3 changes, found in 4 editions"
+     ]
+    },
+    {
+     "check": "a suggestion fills the box and reads that item",
+     "status": "ok",
+     "reading": {
+      "box": "Q42",
+      "heading": "Q42"
+     }
+    },
+    {
+     "check": "Q42 shows en and de found (named), the other followed editions named as absences",
+     "status": "ok",
+     "reading": [
+      "eng",
+      "deu"
+     ]
+    },
+    {
+     "check": "six rows",
+     "status": "ok",
+     "reading": 6
+    },
+    {
+     "check": "editions in the order followed (en de fr es ar), then the extra one found (it)",
+     "status": "ok",
+     "reading": [
+      "eng",
+      "deu",
+      "fra",
+      "spa",
+      "ara",
+      "ita"
+     ]
+    },
+    {
+     "check": "four found rows, two absences",
+     "status": "ok",
+     "reading": [
+      4
+     ]
+    },
+    {
+     "check": "sizes en 8.8 KB, de 11.7 KB, fr 300 B, it 500 B (Latin digits)",
+     "status": "ok",
+     "reading": [
+      "8.8",
+      "11.7",
+      "300",
+      "500"
+     ]
+    },
+    {
+     "check": "changes 3, 0, then unknown twice (never 0 for an edition nothing was recorded for)",
+     "status": "ok",
+     "reading": [
+      "3",
+      "0",
+      "unknown",
+      "unknown"
+     ]
+    },
+    {
+     "check": "size bars from a zero baseline over the largest (de 100%, en 75%, fr 3%, it 4%)",
+     "status": "ok",
+     "reading": [
+      "75%",
+      "100%",
+      "3%",
+      "4%"
+     ]
+    },
+    {
+     "check": "both absences carry words (the walk never ran there · finished and found none)",
+     "status": "ok",
+     "reading": [
+      "The walk has not run for this edition.",
+      "The walk finished this edition and found no page for this item."
+     ]
+    },
+    {
+     "check": "the spread names the smallest and the largest edition and no ratio",
+     "status": "ok",
+     "reading": "Smallest: fra, ⁨300 B⁩. Largest: deu, ⁨11.7 KB⁩."
+    },
+    {
+     "check": "method and caveat are visible, not behind a toggle",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "the table fits its frame: the last column (changes) is not cut off and needs no sideways scroll (headroom in px)",
+     "status": "ok",
+     "reading": {
+      "client": 316,
+      "scroll": 316,
+      "narrowest": 291,
+      "headroom": 25
+     }
+    },
+    {
+     "check": "an invalid item is refused in words and draws no table",
+     "status": "ok",
+     "reading": "That is not a Wikidata item. Write Q followed by a number, for example Q42."
+    },
+    {
+     "check": "an item no walk found draws only absences, each with its reason, and no size bar",
+     "status": "ok",
+     "reading": [
+      [
+       "eng",
+       "The walk finished this edition and found no page for this item."
+      ],
+      [
+       "deu",
+       "The walk has not finished this edition (30 of 1 000 pages), so the item may be there."
+      ]
+     ]
+    },
+    {
+     "check": "attention en: five rows, ranks 1-5, views as given",
+     "status": "ok",
+     "reading": [
+      [
+       "1",
+       "Fixture Alpha",
+       "905 113",
+       "4",
+       "6"
+      ],
+      [
+       "2",
+       "Fixture Beta",
+       "410 220",
+       "0",
+       "0"
+      ]
+     ]
+    },
+    {
+     "check": "press counts day/week 4/6, 0/0, 2/3, not counted, 1/1 (the Wikipedia-sourced article is not coverage)",
+     "status": "ok",
+     "reading": [
+      [
+       "4",
+       "6"
+      ],
+      [
+       "0",
+       "0"
+      ],
+      [
+       "2",
+       "3"
+      ],
+      [
+       "not counted",
+       "not counted"
+      ],
+      [
+       "1",
+       "1"
+      ]
+     ]
+    },
+    {
+     "check": "edition drop-down: de picked; the control on screen (a NEW one when the page redrew it: rebuilt is recorded) reads de now and 700 ms later; the table changed to 3 rows; one request",
+     "status": "ok",
+     "reading": {
+      "held": "de",
+      "rebuilt": true,
+      "requests": 1
+     }
+    },
+    {
+     "check": "edition drop-down: en picked back, read back from the control on screen, 5 rows",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "the attention table fits its frame: the last column (articles in 7 days) is not cut off (headroom in px)",
+     "status": "ok",
+     "reading": {
+      "client": 316,
+      "scroll": 316,
+      "narrowest": 315,
+      "headroom": 1
+     }
+    },
+    {
+     "check": "Refresh asks the server once and keeps the chosen edition",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "every drop-down in the panel picked and read back from the control now on screen (1 of them)",
+     "status": "ok",
+     "reading": [
+      {
+       "id": "wiki-att-edition",
+       "status": "ok",
+       "effect": "net",
+       "rebuilt": true
+      }
+     ]
+    },
+    {
+     "check": "no horizontal scroll of the page",
+     "status": "ok",
+     "reading": {
+      "page": 0,
+      "dir": "ltr"
+     }
+    },
+    {
+     "check": "every request the page made went to the loopback origin",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "no CSP violation",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "no console error, warning, page error or HTTP >= 400 (the text is kept in console-*.txt)",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "the app still answers online:false at the end",
+     "status": "ok",
+     "reading": null
+    }
+   ],
+   "selects": [
+    {
+     "where": "living > wiki",
+     "id": "wiki-att-edition",
+     "options": 2,
+     "status": "ok",
+     "picked": "de",
+     "held": true,
+     "effect": "net",
+     "idle_net": 0,
+     "idle_mut": 0,
+     "rebuilt": true
+    }
+   ],
+   "console_lines": 0
+  },
+  {
+   "width": "360x800",
+   "theme": "ink",
+   "lang": "en",
+   "checks": [
+    {
+     "check": "the app answers online:false",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "suggestions are offered with their numbers (Q42: 9 changes, found in 2 editions; Q34: 3, 4)",
+     "status": "ok",
+     "reading": [
+      "Q42: 9 changes, found in 2 editions",
+      "Q34: 3 changes, found in 4 editions"
+     ]
+    },
+    {
+     "check": "a suggestion fills the box and reads that item",
+     "status": "ok",
+     "reading": {
+      "box": "Q42",
+      "heading": "Q42"
+     }
+    },
+    {
+     "check": "Q42 shows en and de found (named), the other followed editions named as absences",
+     "status": "ok",
+     "reading": [
+      "eng",
+      "deu"
+     ]
+    },
+    {
+     "check": "six rows",
+     "status": "ok",
+     "reading": 6
+    },
+    {
+     "check": "editions in the order followed (en de fr es ar), then the extra one found (it)",
+     "status": "ok",
+     "reading": [
+      "eng",
+      "deu",
+      "fra",
+      "spa",
+      "ara",
+      "ita"
+     ]
+    },
+    {
+     "check": "four found rows, two absences",
+     "status": "ok",
+     "reading": [
+      4
+     ]
+    },
+    {
+     "check": "sizes en 8.8 KB, de 11.7 KB, fr 300 B, it 500 B (Latin digits)",
+     "status": "ok",
+     "reading": [
+      "8.8",
+      "11.7",
+      "300",
+      "500"
+     ]
+    },
+    {
+     "check": "changes 3, 0, then unknown twice (never 0 for an edition nothing was recorded for)",
+     "status": "ok",
+     "reading": [
+      "3",
+      "0",
+      "unknown",
+      "unknown"
+     ]
+    },
+    {
+     "check": "size bars from a zero baseline over the largest (de 100%, en 75%, fr 3%, it 4%)",
+     "status": "ok",
+     "reading": [
+      "75%",
+      "100%",
+      "3%",
+      "4%"
+     ]
+    },
+    {
+     "check": "both absences carry words (the walk never ran there · finished and found none)",
+     "status": "ok",
+     "reading": [
+      "The walk has not run for this edition.",
+      "The walk finished this edition and found no page for this item."
+     ]
+    },
+    {
+     "check": "the spread names the smallest and the largest edition and no ratio",
+     "status": "ok",
+     "reading": "Smallest: fra, ⁨300 B⁩. Largest: deu, ⁨11.7 KB⁩."
+    },
+    {
+     "check": "method and caveat are visible, not behind a toggle",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "the table fits its frame: the last column (changes) is not cut off and needs no sideways scroll (headroom in px)",
+     "status": "FAIL",
+     "reading": {
+      "client": 286,
+      "scroll": 290,
+      "narrowest": 291,
+      "headroom": -5
+     }
+    },
+    {
+     "check": "an invalid item is refused in words and draws no table",
+     "status": "ok",
+     "reading": "That is not a Wikidata item. Write Q followed by a number, for example Q42."
+    },
+    {
+     "check": "an item no walk found draws only absences, each with its reason, and no size bar",
+     "status": "ok",
+     "reading": [
+      [
+       "eng",
+       "The walk finished this edition and found no page for this item."
+      ],
+      [
+       "deu",
+       "The walk has not finished this edition (30 of 1 000 pages), so the item may be there."
+      ]
+     ]
+    },
+    {
+     "check": "attention en: five rows, ranks 1-5, views as given",
+     "status": "ok",
+     "reading": [
+      [
+       "1",
+       "Fixture Alpha",
+       "905 113",
+       "4",
+       "6"
+      ],
+      [
+       "2",
+       "Fixture Beta",
+       "410 220",
+       "0",
+       "0"
+      ]
+     ]
+    },
+    {
+     "check": "press counts day/week 4/6, 0/0, 2/3, not counted, 1/1 (the Wikipedia-sourced article is not coverage)",
+     "status": "ok",
+     "reading": [
+      [
+       "4",
+       "6"
+      ],
+      [
+       "0",
+       "0"
+      ],
+      [
+       "2",
+       "3"
+      ],
+      [
+       "not counted",
+       "not counted"
+      ],
+      [
+       "1",
+       "1"
+      ]
+     ]
+    },
+    {
+     "check": "edition drop-down: de picked; the control on screen (a NEW one when the page redrew it: rebuilt is recorded) reads de now and 700 ms later; the table changed to 3 rows; one request",
+     "status": "ok",
+     "reading": {
+      "held": "de",
+      "rebuilt": true,
+      "requests": 1
+     }
+    },
+    {
+     "check": "edition drop-down: en picked back, read back from the control on screen, 5 rows",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "the attention table fits its frame: the last column (articles in 7 days) is not cut off (headroom in px)",
+     "status": "FAIL",
+     "reading": {
+      "client": 286,
+      "scroll": 314,
+      "narrowest": 315,
+      "headroom": -29
+     }
+    },
+    {
+     "check": "Refresh asks the server once and keeps the chosen edition",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "every drop-down in the panel picked and read back from the control now on screen (1 of them)",
+     "status": "ok",
+     "reading": [
+      {
+       "id": "wiki-att-edition",
+       "status": "ok",
+       "effect": "net",
+       "rebuilt": true
+      }
+     ]
+    },
+    {
+     "check": "no horizontal scroll of the page",
+     "status": "ok",
+     "reading": {
+      "page": 0,
+      "dir": "ltr"
+     }
+    },
+    {
+     "check": "every request the page made went to the loopback origin",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "no CSP violation",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "no console error, warning, page error or HTTP >= 400 (the text is kept in console-*.txt)",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "the app still answers online:false at the end",
+     "status": "ok",
+     "reading": null
+    }
+   ],
+   "selects": [
+    {
+     "where": "living > wiki",
+     "id": "wiki-att-edition",
+     "options": 2,
+     "status": "ok",
+     "picked": "de",
+     "held": true,
+     "effect": "net",
+     "idle_net": 0,
+     "idle_mut": 0,
+     "rebuilt": true
+    }
+   ],
+   "console_lines": 0
+  },
+  {
+   "width": "320x568",
+   "theme": "ink",
+   "lang": "en",
+   "checks": [
+    {
+     "check": "the app answers online:false",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "suggestions are offered with their numbers (Q42: 9 changes, found in 2 editions; Q34: 3, 4)",
+     "status": "ok",
+     "reading": [
+      "Q42: 9 changes, found in 2 editions",
+      "Q34: 3 changes, found in 4 editions"
+     ]
+    },
+    {
+     "check": "a suggestion fills the box and reads that item",
+     "status": "ok",
+     "reading": {
+      "box": "Q42",
+      "heading": "Q42"
+     }
+    },
+    {
+     "check": "Q42 shows en and de found (named), the other followed editions named as absences",
+     "status": "ok",
+     "reading": [
+      "eng",
+      "deu"
+     ]
+    },
+    {
+     "check": "six rows",
+     "status": "ok",
+     "reading": 6
+    },
+    {
+     "check": "editions in the order followed (en de fr es ar), then the extra one found (it)",
+     "status": "ok",
+     "reading": [
+      "eng",
+      "deu",
+      "fra",
+      "spa",
+      "ara",
+      "ita"
+     ]
+    },
+    {
+     "check": "four found rows, two absences",
+     "status": "ok",
+     "reading": [
+      4
+     ]
+    },
+    {
+     "check": "sizes en 8.8 KB, de 11.7 KB, fr 300 B, it 500 B (Latin digits)",
+     "status": "ok",
+     "reading": [
+      "8.8",
+      "11.7",
+      "300",
+      "500"
+     ]
+    },
+    {
+     "check": "changes 3, 0, then unknown twice (never 0 for an edition nothing was recorded for)",
+     "status": "ok",
+     "reading": [
+      "3",
+      "0",
+      "unknown",
+      "unknown"
+     ]
+    },
+    {
+     "check": "size bars from a zero baseline over the largest (de 100%, en 75%, fr 3%, it 4%)",
+     "status": "ok",
+     "reading": [
+      "75%",
+      "100%",
+      "3%",
+      "4%"
+     ]
+    },
+    {
+     "check": "both absences carry words (the walk never ran there · finished and found none)",
+     "status": "ok",
+     "reading": [
+      "The walk has not run for this edition.",
+      "The walk finished this edition and found no page for this item."
+     ]
+    },
+    {
+     "check": "the spread names the smallest and the largest edition and no ratio",
+     "status": "ok",
+     "reading": "Smallest: fra, ⁨300 B⁩. Largest: deu, ⁨11.7 KB⁩."
+    },
+    {
+     "check": "method and caveat are visible, not behind a toggle",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "the table fits its frame: the last column (changes) is not cut off and needs no sideways scroll (headroom in px)",
+     "status": "FAIL",
+     "reading": {
+      "client": 246,
+      "scroll": 290,
+      "narrowest": 291,
+      "headroom": -45
+     }
+    },
+    {
+     "check": "an invalid item is refused in words and draws no table",
+     "status": "ok",
+     "reading": "That is not a Wikidata item. Write Q followed by a number, for example Q42."
+    },
+    {
+     "check": "an item no walk found draws only absences, each with its reason, and no size bar",
+     "status": "ok",
+     "reading": [
+      [
+       "eng",
+       "The walk finished this edition and found no page for this item."
+      ],
+      [
+       "deu",
+       "The walk has not finished this edition (30 of 1 000 pages), so the item may be there."
+      ]
+     ]
+    },
+    {
+     "check": "attention en: five rows, ranks 1-5, views as given",
+     "status": "ok",
+     "reading": [
+      [
+       "1",
+       "Fixture Alpha",
+       "905 113",
+       "4",
+       "6"
+      ],
+      [
+       "2",
+       "Fixture Beta",
+       "410 220",
+       "0",
+       "0"
+      ]
+     ]
+    },
+    {
+     "check": "press counts day/week 4/6, 0/0, 2/3, not counted, 1/1 (the Wikipedia-sourced article is not coverage)",
+     "status": "ok",
+     "reading": [
+      [
+       "4",
+       "6"
+      ],
+      [
+       "0",
+       "0"
+      ],
+      [
+       "2",
+       "3"
+      ],
+      [
+       "not counted",
+       "not counted"
+      ],
+      [
+       "1",
+       "1"
+      ]
+     ]
+    },
+    {
+     "check": "edition drop-down: de picked; the control on screen (a NEW one when the page redrew it: rebuilt is recorded) reads de now and 700 ms later; the table changed to 3 rows; one request",
+     "status": "ok",
+     "reading": {
+      "held": "de",
+      "rebuilt": true,
+      "requests": 1
+     }
+    },
+    {
+     "check": "edition drop-down: en picked back, read back from the control on screen, 5 rows",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "the attention table fits its frame: the last column (articles in 7 days) is not cut off (headroom in px)",
+     "status": "FAIL",
+     "reading": {
+      "client": 246,
+      "scroll": 314,
+      "narrowest": 315,
+      "headroom": -69
+     }
+    },
+    {
+     "check": "Refresh asks the server once and keeps the chosen edition",
+     "status": "ok",
+     "reading": null
+    },
+    {
+     "check": "every drop-down in the panel picked and read back from the control now on screen (1 of them)",
+     "status": "ok",
+     "reading": [
+      {
+       "id": "wiki-att-edition",
+       "status": "ok",
+       "effect": "net",
+       "rebuilt": true
+      }
+     ]
+    },
+    {
+     "check": "no horizontal scroll of the page",
+     "status": "ok",
+     "reading": {
+      "page": 0,
+      "dir": "ltr"
+     }
+    },
+    {
+     "check": "every request the page made went to the loopback origin",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "no CSP violation",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "no console error, warning, page error or HTTP >= 400 (the text is kept in console-*.txt)",
+     "status": "ok",
+     "reading": []
+    },
+    {
+     "check": "the app still answers online:false at the end",
+     "status": "ok",
+     "reading": null
+    }
+   ],
+   "selects": [
+    {
+     "where": "living > wiki",
+     "id": "wiki-att-edition",
+     "options": 2,
+     "status": "ok",
+     "picked": "de",
+     "held": true,
+     "effect": "net",
+     "idle_net": 0,
+     "idle_mut": 0,
+     "rebuilt": true
+    }
+   ],
+   "console_lines": 0
+  }
+ ]
+}
