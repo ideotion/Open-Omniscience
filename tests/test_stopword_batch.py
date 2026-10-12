@@ -1058,3 +1058,67 @@ def test_the_summary_line_for_a_one_language_file_names_no_skipped_rows(tmp_path
     out = capsys.readouterr().out
     assert "verdicts: read 1 rows for en." in out
     assert "skipped" not in out.split("verdicts:")[1].splitlines()[0]
+
+
+# ---- a word outside the script of the language's file goes to _multilingual.yml ----------------
+
+
+def _script_test_module():
+    spec = importlib.util.spec_from_file_location(
+        "stopword_file_scripts_test", ROOT / "tests" / "test_stopword_file_scripts.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_the_tools_script_map_is_the_guards_map():
+    """The tool splits by the same table the guard test enforces; two tables would drift."""
+    guard = {name.removesuffix(".yml"): scripts for name, scripts in _script_test_module()._NON_LATIN_FILES.items()}
+    assert guard == sb.FILE_SCRIPTS
+
+
+def test_the_split_sends_a_foreign_letter_to_the_multilingual_file():
+    own, foreign = sb.split_by_script("ko", ["사이트", "iPhone", "아이폰x", "2026", "g-7"])
+    assert own == ["사이트", "2026"]  # digits carry no script: they stay
+    assert foreign == ["iPhone", "아이폰x", "g-7"]
+    assert sb.split_by_script("ru", ["сайт", "site"]) == (["сайт"], ["site"])
+    # a Latin-script language splits nothing, whatever its words hold
+    assert sb.split_by_script("en", ["site", "сайт"]) == (["site", "сайт"], [])
+
+
+def test_apply_files_the_latin_words_of_a_korean_log_in_the_multilingual_file(tmp_path, monkeypatch, capsys):
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    (extra / "ko.yml").write_text("stopwords:\n  - 기사\n", "utf-8")
+    (extra / "_multilingual.yml").write_text("stopwords:\n  - abril\n", "utf-8")
+    rows = [("ko", "사이트", "N", "bp", "H", "sonnet-5.5"), ("ko", "sidebar", "N", "bp", "H", "sonnet-5.5")]
+    keywords = [_kw("사이트", "ko", 500, sources=50), _kw("sidebar", "ko", 400, sources=50)]
+    rc = _apply(tmp_path, monkeypatch, "ko", "사이트\nsidebar\n", rows, keywords, batch_id="ko-1")
+    assert rc == 0
+    ko = yaml.safe_load((extra / "ko.yml").read_text("utf-8"))["stopwords"]
+    multi = yaml.safe_load((extra / "_multilingual.yml").read_text("utf-8"))["stopwords"]
+    assert ko == ["기사", "사이트"] and multi == ["abril", "sidebar"]
+    guard = _script_test_module()
+    assert not [w for w in ko if guard._scripts(w) - {"HANGUL"}], "the file the guard checks holds its own script"
+    out = capsys.readouterr().out
+    assert "would be filed in _multilingual.yml" in out and "appended 1 words to" in out
+
+
+def test_a_refusal_in_the_second_file_leaves_the_first_unwritten(tmp_path, monkeypatch):
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    (extra / "ko.yml").write_text("stopwords:\n  - 기사\n", "utf-8")
+    (extra / "_multilingual.yml").write_text("other: 1\n", "utf-8")  # no list: the append is refused
+    rows = [("ko", "사이트", "N", "bp", "H", "sonnet-5.5"), ("ko", "sidebar", "N", "bp", "H", "sonnet-5.5")]
+    keywords = [_kw("사이트", "ko", 500, sources=50), _kw("sidebar", "ko", 400, sources=50)]
+    with pytest.raises(SystemExit):
+        _apply(tmp_path, monkeypatch, "ko", "사이트\nsidebar\n", rows, keywords, batch_id="ko-1")
+    assert (extra / "ko.yml").read_text("utf-8") == "stopwords:\n  - 기사\n", "the first file was written anyway"
+    assert (extra / "_multilingual.yml").read_text("utf-8") == "other: 1\n"
+
+
+def test_the_multilingual_file_cannot_be_named_on_the_command_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        sb.main([str(tmp_path / "none.json"), "--language", "_multilingual"])

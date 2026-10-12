@@ -16391,7 +16391,7 @@ counts and no `top_source_share`), so the feeds behind each cause are NOT named 
 
 **TOOL GAP (found by the guard, not by the tool):** `scripts/stopword_batch.py --apply` writes a batch to the file of the language it was run for, so a Latin-script word read in a log of a
 non-Latin language lands in a file the script test (`tests/test_stopword_file_scripts.py`) refuses. The batch-1 ko words were moved to `_multilingual.yml` by hand. Teach `--apply` that rule before
-any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will otherwise fail on its first non-Latin language.
+any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will otherwise fail on its first non-Latin language. **CLOSED 2026-10-12 (the stoplist thread):** `--apply` files a word whose letters are not in the script of the language's file in `_multilingual.yml` (the table in the script is pinned equal to the guard's `_NON_LATIN_FILES`; both files are prepared before either is written, so a refusal leaves both as they were; `tests/test_stopword_batch.py`). A language the script map does not know (zh, ja: the maps hold the files that exist) writes everything to its own file, so a first batch for a new non-Latin language still adds it to `_NON_LATIN_FILES`, as the tool's closing hint says.
 
 - **THE POISONED-CONNECTION FIX (PR #1333): WHAT IT DOES NOT NAME, AND THE RAW STATEMENTS IT DOES NOT GUARD (WAL / DISK THREAD, 2026-10-06).** The fix discards a pooled SQLCipher connection that
   raised code 11 or answers an empty `MemoryError`, for the engine's statements (the `handle_error` observer) and for the three raw driver statements that read pages

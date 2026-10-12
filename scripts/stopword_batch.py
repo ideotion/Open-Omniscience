@@ -69,6 +69,13 @@ loading and candidate reading (``load_log``, ``stopword_candidates``) and adds t
 does not have: checking a DECIDED word list against the evidence and the refusals above, and,
 only with ``--apply``, writing the batch into ``configs/stopwords_extra``.
 
+A WORD WHOSE LETTERS ARE NOT IN THE SCRIPT OF THE LANGUAGE'S FILE IS FILED IN ``_multilingual.yml``,
+not in the language's file (a Latin token read in a Korean log is not a Korean word; the stoplist is
+language-agnostic when it hides, so the filing changes nothing about what is hidden, only whether the
+file's name stays true). ``tests/test_stopword_file_scripts.py`` fails a non-Latin file that holds
+another script, which is why the tool does this itself: before it did, every non-Latin batch had to be
+hand-split. Both files are checked before either is written, so a refusal leaves both as they were.
+
 After ``--apply``, declare the added words in
 ``tests/test_analytics_extract.py::added_since_migration`` (the tool prints the exact lines) and
 add a section to ``configs/stopwords_extra/PROVENANCE.md``.
@@ -126,6 +133,24 @@ BATCH_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # evidence are enough to read a refusal, and the full rows are in the --json report.
 SHOWN_ROWS = 4
 HIGH = "H"
+#: The file that holds words of no one language (see its header). The only file besides a language's
+#: own that ``--apply`` writes to, and never named on the command line.
+MULTILINGUAL = "_multilingual"
+#: The script (the first word of ``unicodedata.name``) every letter of a word in these languages' files
+#: must belong to. THE SAME MAP as ``tests/test_stopword_file_scripts.py::_NON_LATIN_FILES`` (a test in
+#: ``tests/test_stopword_batch.py`` pins them equal), kept here because a script must not import a test.
+#: A language with no entry has a Latin file, which this check cannot judge and so never splits.
+FILE_SCRIPTS: dict[str, tuple[str, ...]] = {
+    "ar": ("ARABIC",),
+    "bg": ("CYRILLIC",),
+    "bn": ("BENGALI",),
+    "el": ("GREEK",),
+    "hi": ("DEVANAGARI",),
+    "ko": ("HANGUL",),
+    "mr": ("DEVANAGARI",),
+    "ru": ("CYRILLIC",),
+    "uk": ("CYRILLIC",),
+}
 
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -478,12 +503,26 @@ def check_language(lang: str) -> str:
     return lang
 
 
-def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str], source: str) -> Path:
-    """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads.
+def letter_scripts(word: str) -> set[str]:
+    """The script names of a word's letters (digits, hyphens and apostrophes carry none)."""
+    return {(unicodedata.name(ch, "") or "UNNAMED").split(" ")[0] for ch in word if ch.isalpha()}
 
-    The comment is deterministic (no date, no file name): the same decision gives the same bytes
-    on any day. ``batch_id`` carries the date, and ``source`` is hashes and model names only."""
-    check_language(lang)
+
+def split_by_script(lang: str, words: list[str]) -> tuple[list[str], list[str]]:
+    """``(own, foreign)``: the words that belong in ``<lang>.yml`` and those that go to ``_multilingual.yml``
+    because a letter of theirs is not in the script that file holds. A Latin-script language splits nothing."""
+    allowed = set(FILE_SCRIPTS.get(lang, ()))
+    if not allowed:
+        return list(words), []
+    own = [w for w in words if not (letter_scripts(w) - allowed)]
+    return own, [w for w in words if letter_scripts(w) - allowed]
+
+
+def prepare_append(lang: str, words: list[str], batch_id: str, allowed: list[str], source: str) -> tuple[Path, str]:
+    """Everything :func:`append_batch` checks, and the text it would write, without writing it: every
+    refusal is raised here, so a caller with two files can prepare both before writing either."""
+    if lang != MULTILINGUAL:
+        check_language(lang)
     if not BATCH_ID.fullmatch(batch_id):
         raise SystemExit(f"--batch-id {batch_id!r} may hold only letters, digits, . _ - (1 to 64): it "
                          "is written into a YAML comment and must not be able to open a new line")
@@ -523,6 +562,15 @@ def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str],
     if [str(x) for x in loaded] != prior + sorted(words):
         raise SystemExit(f"{path}: the list after the append is not the old list plus exactly the "
                          "decided words; nothing written")
+    return path, after
+
+
+def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str], source: str) -> Path:
+    """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads.
+
+    The comment is deterministic (no date, no file name): the same decision gives the same bytes
+    on any day. ``batch_id`` carries the date, and ``source`` is hashes and model names only."""
+    path, after = prepare_append(lang, words, batch_id, allowed, source)
     path.write_text(after, "utf-8")
     return path
 
@@ -612,6 +660,10 @@ def main(argv: list[str] | None = None) -> int:
 
     addable = [r["term"] for r in rows if not r["refused"]]
     print(f"{lang}: {len(rows)} words read, {len(addable)} addable, {len(rows) - len(addable)} refused")
+    _own, foreign = split_by_script(lang, addable)
+    if foreign:
+        print(f"  {len(foreign)} of the addable words are not in the script of {lang}.yml and would be filed in "
+              f"{MULTILINGUAL}.yml: {_more(sorted(foreign), 12)}")
     for r in rows:
         tag = "OK     " if not r["refused"] else "REFUSED"
         extra = ""
@@ -642,14 +694,21 @@ def main(argv: list[str] | None = None) -> int:
         if single:
             source += f"; single reader: {', '.join(single)}"
         existed = (EXTRA_DIR / f"{lang}.yml").exists()
-        path = append_batch(lang, addable, args.batch_id, used_allow, source)
-        print(f"\nappended {len(addable)} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+        own, foreign = split_by_script(lang, addable)
+        plans = []
+        for name, chosen in ((lang, own), (MULTILINGUAL, foreign)):
+            if chosen:
+                kept = [w for w in used_allow if w in chosen]
+                plans.append(prepare_append(name, chosen, args.batch_id, kept, source) + (len(chosen),))
+        for path, after, count in plans:  # every refusal has been raised: nothing is half-written
+            path.write_text(after, "utf-8")
+            print(f"\nappended {count} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
         # The loader adds a curly copy of every listed contraction, so the digest test needs both.
         declare = sorted(set(addable) | {w.replace("'", "\u2019") for w in addable if "'" in w})
         print("next: declare them in tests/test_analytics_extract.py::added_since_migration:")
         print("        " + ", ".join(f'"{w}"' for w in declare) + ",")
-        if not existed:
-            print(f"{path.name} is a NEW file: if its script is not Latin, also add it to "
+        if not existed and own:
+            print(f"{lang}.yml is a NEW file: if its script is not Latin, also add it to "
                   "_NON_LATIN_FILES in tests/test_stopword_file_scripts.py (that guard fails until it is).")
         print("and add a section to configs/stopwords_extra/PROVENANCE.md with the evidence above.")
     return 0
