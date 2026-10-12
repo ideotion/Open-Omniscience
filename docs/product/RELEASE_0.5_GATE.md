@@ -289,6 +289,16 @@ row:** the clause «analytics 4–5 render from real rows» still needs the oper
 until switched on; the 2026-09-30 diagnostics bundles carry no walk rows). Chromium-verified (remote sandbox) in
 `en`, `ar` and at phone width, the edition drop-down opened and its option taken · awaiting human UX pass.
 
+**2026-10-12 — analytics 4–5, the Chromium look (R126), on fixtures.** 48 runs on an offline loopback app (`online:false`
+asserted at each context and at the end of each run): 1440×900, 768×1024 and 390×844 × the 15 theme settings in English, plus
+Arabic at the first theme, every drop-down in the Wikipedia panel picked and read back from the control (48 of 48 held), the
+table each pick must change checked, the console kept per width and theme: **1,299 checks, 0 FAIL, 0 console lines, 0 CSP
+events, 0 requests off the loopback origin** (`docs/audit/analytics45-look-2026-10-12/`). It found one real defect, fixed
+here: at 390 px both tables were 24 px and 48 px wider than their frame, so the last column (changes in the last 7 days,
+articles in 7 days) sat behind a sideways scroll inside the table while the page itself did not scroll; one 3-line CSS rule,
+measured before and after (316 px in a 316 px frame, both languages). **The UX pass for these two readers is closed by this
+walk; the clause «render from real rows» is NOT** — every row here is one `scripts/analytics45_seed.py` wrote.
+
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC03` ⛔ (C4 = Q1009, the storage round-2 rows
 3–6 — blob-store dedup · OOENC2 for pack AEAD · keyed-HMAC blob addressing with opaque pack names · the
 sqlite3mc benchmark trial) came back blank on a ⛔ question, so it **stays PENDING and is never defaulted**.

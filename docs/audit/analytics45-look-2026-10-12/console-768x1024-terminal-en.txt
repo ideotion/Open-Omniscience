@@ -1,0 +1,2 @@
+# console (error + warning) and pageerror text, width 768x1024, theme terminal, language en
+(no console errors or warnings)

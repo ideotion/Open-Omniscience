@@ -1,0 +1,8 @@
+# The look's app server, read after the runs (2026-10-12)
+App booted WITHOUT OO_NO_SCHEDULER (so it starts offline) on 127.0.0.1:8014 against a state seeded by
+scripts/analytics45_seed.py; OO_DB_PLAINTEXT=1 OO_AUTOSEED=0. GET /api/system/network answered online:false
+at the start of every browser context and at the end of every run (two checks per run in look-results.json).
+server log lines              : 20,929
+lines containing "error" or "traceback" (case-insensitive) : 0
+distinct hosts in any http(s) URL in the log : 1 (127.0.0.1)
+Method: python regex over the saved log; the log itself is not committed (20k lines of request lines).
