@@ -85,25 +85,39 @@ def test_a_unicode_error_is_the_class_and_none_of_its_words():
 
 # ---- every shape the passphrase takes x every form an engine writes it in -----------------
 
-#: independent writers (not the scrub's own carrier list): each turns a secret into the text an engine, a
-#: driver or a framework would put it in.
+#: independent writers (not the scrub's own carrier list). Each form is ``(encode, build)``: ``encode`` is how the
+#: form writes the secret INSIDE the text (repr escapes a quote, JSON escapes a non-ASCII letter, SQL doubles an
+#: apostrophe ...) and ``build`` makes the exception around it. The assertions are about the ENCODED stretch,
+#: because that is what is in the text: a test that looks only for the secret as typed passes on every escaping
+#: form with no scrub at all.
 _SECRETS = (
     SECRET,
     "it's a \"quoted\" back\\slash pass",
     "pässwörd ünïcode 123",
     "o'brien''s pass ok",
 )
+
+
+def _sql(s: str) -> str:
+    return s.replace("'", "''")
+
+
 _FORMS = {
-    "plain": lambda s: RuntimeError(f"near {s} here"),
-    "sql-quoted": lambda s: RuntimeError(f"[SQL: PRAGMA key = '{s.replace(chr(39), chr(39) * 2)}']"),
-    "parameters": lambda s: RuntimeError(f"[parameters: ({s!r},)]"),
-    "two-arguments": lambda s: RuntimeError("could not open", s),
-    "repr-of-the-exception": lambda s: RuntimeError(repr(RuntimeError(s))),
-    "json-body": lambda s: RuntimeError(json.dumps({"detail": s})),
-    "json-body-ascii": lambda s: RuntimeError(json.dumps({"detail": s}, ensure_ascii=False)),
-    "bytes-repr": lambda s: RuntimeError(repr(s.encode("utf-8"))),
-    "sql-in-json-in-repr": lambda s: RuntimeError(
-        repr(json.dumps({"detail": f"PRAGMA key = '{s.replace(chr(39), chr(39) * 2)}'"}))
+    "plain": (lambda s: s, lambda s, e: RuntimeError(f"near {e} here")),
+    "sql-quoted": (_sql, lambda s, e: RuntimeError(f"[SQL: PRAGMA key = '{e}']")),
+    "parameters": (lambda s: repr(s)[1:-1], lambda s, e: RuntimeError(f"[parameters: ({s!r},)]")),
+    "two-arguments": (lambda s: repr(s)[1:-1], lambda s, e: RuntimeError("could not open", s)),
+    "repr-of-the-exception": (lambda s: repr(s)[1:-1], lambda s, e: RuntimeError(repr(RuntimeError(s)))),
+    "json-body-escaped": (lambda s: json.dumps(s)[1:-1], lambda s, e: RuntimeError(json.dumps({"detail": s}))),
+    "json-body-unicode": (
+        lambda s: json.dumps(s, ensure_ascii=False)[1:-1],
+        lambda s, e: RuntimeError(json.dumps({"detail": s}, ensure_ascii=False)),
+    ),
+    "bytes-repr": (lambda s: repr(s.encode("utf-8"))[2:-1], lambda s, e: RuntimeError(repr(s.encode("utf-8")))),
+    "sql-in-json-in-repr": (
+        # the whole string holds both kinds of quote, so repr single-quotes it and escapes each apostrophe
+        lambda s: repr(json.dumps(_sql(s))[1:-1] + "'\"")[1:-4],
+        lambda s, e: RuntimeError(repr(json.dumps({"detail": f"PRAGMA key = '{_sql(s)}'"}))),
     ),
 }
 
@@ -112,18 +126,21 @@ _FORMS = {
 @pytest.mark.parametrize("secret", _SECRETS, ids=["plain", "quotes", "unicode", "sql-quote"])
 def test_no_shape_in_no_form_survives_engine_text(monkeypatch, secret, form):
     monkeypatch.setenv("OO_DB_PASSPHRASE", secret)
-    exc = _FORMS[form](secret)
+    encode, build = _FORMS[form]
+    stretch = encode(secret)
+    exc = build(secret, stretch)
     whole = str(exc)
-    assert secret in whole or form != "plain", "the fixture must carry the secret in this form"
+    # the fixture must carry the secret the way the form writes it, or the cell proves nothing
+    assert stretch in whole, f"{form}: the form does not carry the encoded secret {stretch!r} in {whole!r}"
     for limit in (None, 40, 200):
         out = engine_text(exc, limit)
-        assert secret not in out
-        assert secret[:12] not in out, f"{form}: a prefix of the passphrase survived (limit {limit})"
-    # a cut INSIDE the secret, wherever the form put it
-    spot = whole.find(secret[:6])
-    if spot >= 0:
-        out = engine_text(exc, spot + 6)
-        assert secret[:6] not in out, f"{form}: a cut made inside the passphrase kept its start"
+        assert stretch not in out and secret not in out
+        assert stretch[:12] not in out, f"{form}: a prefix of the passphrase survived (limit {limit})"
+    # a cut made INSIDE the encoded stretch, where the form put it
+    spot = whole.index(stretch)
+    for inside in (6, min(len(stretch) - 1, 12)):
+        out = engine_text(exc, spot + inside)
+        assert stretch[: min(inside, 6)] not in out, f"{form}: a cut inside the passphrase kept its start"
 
 
 def test_an_unrenderable_exception_still_gives_a_marker():
@@ -329,9 +346,12 @@ _SCOPES = (
     ("src/analytics/reindex_job.py", None, 1),
     ("src/analytics/store.py", ("_skip_error", "maybe_cleanup_keywords"), 1),
     ("src/backup/merge.py", ("reindex_backlog", "pending_reindex_batches", "_backlog_engine"), 3),
+    ("src/analytics/stoplist_recompute.py", ("maybe_recompute_top_keywords",), 1),
 )
 _ALLOWED_HELPERS = {"_cut_reason", "_skip_error"}  # each routes its argument through engine_text
-#: An attribute with one of these names reads or prints the exception's traceback or text.
+#: Names the ban relies on: each may be bound only the one way (engine_text) or never (type, isinstance).
+_BAN_NAMES = {"engine_text", "type", "isinstance"}
+#: A name that reads or prints the exception's traceback or text, as an attribute OR bare (after an import).
 _TRACEBACK_NAMES = {
     "exception", "format_exc", "print_exc", "exc_info", "format_exception", "print_exception",
 }
@@ -358,19 +378,41 @@ def _scope_nodes(tree: ast.AST, functions):
             yield n
 
 
+def _bindings(tree: ast.AST, name: str) -> list[ast.AST]:
+    """Every way ``name`` is bound anywhere in the file: a def or class, an assignment or loop target, an import
+    (with or without ``as``), a parameter, an ``except ... as``, a ``match`` capture."""
+    out: list[ast.AST] = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name):
+            bound = n.id if isinstance(n.ctx, ast.Store) else None
+        elif isinstance(n, ast.alias):
+            bound = n.asname or n.name.split(".")[-1]
+        elif isinstance(n, ast.arg):
+            bound = n.arg
+        elif isinstance(n, ast.MatchMapping):
+            bound = n.rest
+        else:  # def, class, `except ... as`, a match capture: each names what it binds as ``.name``
+            bound = getattr(n, "name", None) if isinstance(
+                n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.ExceptHandler, ast.MatchAs, ast.MatchStar)
+            ) else None
+        if bound == name:
+            out.append(n)
+    return out
+
+
 def _uses_outside(rel: str, name: str, nodes, parent, *, helpers: bool) -> list[str]:
-    """Every load of ``name`` in ``nodes`` that is not engine_text's first argument, inside type() or
-    isinstance(), or (where ``helpers``) handed to an allowed helper."""
+    """Every load of ``name`` in ``nodes`` that is not engine_text's FIRST argument, inside type() or
+    isinstance(), or (where ``helpers``) the FIRST argument of an allowed helper."""
     out: list[str] = []
-    allowed = {"type", "isinstance"} | (_ALLOWED_HELPERS if helpers else set())
     for stmt in nodes:
         for use in ast.walk(stmt):
             if not (isinstance(use, ast.Name) and use.id == name and isinstance(use.ctx, ast.Load)):
                 continue
             call = parent.get(use)
+            first = isinstance(call, ast.Call) and bool(call.args) and call.args[0] is use
             ok = isinstance(call, ast.Call) and (
-                (_is_call_to(call, {"engine_text"}) and call.args and call.args[0] is use)
-                or _is_call_to(call, allowed)
+                (_is_call_to(call, {"engine_text"} | (_ALLOWED_HELPERS if helpers else set())) and first)
+                or _is_call_to(call, {"type", "isinstance"})
             )
             if not ok:
                 out.append(f"{rel}:{use.lineno} uses {name!r} outside engine_text()")
@@ -379,11 +421,19 @@ def _uses_outside(rel: str, name: str, nodes, parent, *, helpers: bool) -> list[
 
 def _helper_problems(rel: str, tree: ast.AST, parent) -> list[str]:
     """A helper the handlers may hand their exception to is trusted only as far as its own body: its first
-    parameter is used as engine_text's first argument or inside type()/isinstance(), and nothing else."""
+    parameter is used as engine_text's first argument or inside type()/isinstance(), and nothing else. A helper
+    is also defined exactly once, by a plain ``def``: a lambda, an import, an ``async def`` or a second
+    definition would change what the handlers' trust points at."""
     out: list[str] = []
-    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in _ALLOWED_HELPERS):
-        first = fn.args.args[0].arg
-        out += _uses_outside(rel, first, fn.body, parent, helpers=False)
+    for name in sorted(_ALLOWED_HELPERS):
+        bound = _bindings(tree, name)
+        if not bound:
+            continue
+        if len(bound) != 1 or not isinstance(bound[0], ast.FunctionDef):
+            out.append(f"{rel}: the helper {name} is bound {len(bound)} times or not by a plain def")
+            continue
+        fn = bound[0]
+        out += _uses_outside(rel, fn.args.args[0].arg, fn.body, parent, helpers=False)
     return out
 
 
@@ -414,19 +464,13 @@ def _problems(rel: str, tree: ast.AST, scope: ast.AST, parent) -> list[str]:
     return out
 
 
-@pytest.mark.parametrize("rel,functions,floor", _SCOPES, ids=[s[0] for s in _SCOPES])
-def test_a_handler_never_uses_its_exception_except_through_engine_text(rel, functions, floor):
-    """The bound name of every ``except ... as exc`` appears only as ``engine_text``'s first
-    argument, inside ``type()``/``isinstance()``, or handed by name to an allowed helper; nothing
-    reaches the traceback (``exc_info`` other than False/None, ``.exception``, ``format_exc``,
-    ``print_exc``, ``sys.exc_info()`` and the rest, as a call or not), no log call takes ``**``,
-    and no ``getattr``. The files bind ``engine_text`` only by importing it, and define nothing
-    named ``engine_text``, ``type`` or ``isinstance``. Each scope calls it at least ``floor`` times."""
-    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+def _file_problems(rel: str, source: str, functions) -> tuple[list[str], int]:
+    """Everything the guard refuses in one file, and how many engine_text() calls the scanned scopes hold."""
+    tree = ast.parse(source)
     parent = _parents(tree)
     problems: list[str] = []
     calls = 0
-    for scope in _scope_nodes(tree, functions):
+    for scope in _scope_nodes(tree, functions) if functions is not None else [tree]:
         problems += _problems(rel, tree, scope, parent)
         calls += sum(1 for n in ast.walk(scope) if _is_call_to(n, {"engine_text"}))
     problems += _helper_problems(rel, tree, parent)
@@ -437,71 +481,87 @@ def test_a_handler_never_uses_its_exception_except_through_engine_text(rel, func
                 for a in n.names
                 if a.name in _TRACEBACK_NAMES
             ]
-    assert not problems, "\n".join(problems)
-    assert calls >= floor, f"{rel}: {calls} engine_text() calls, expected at least {floor}"
-
-    bindings = [
-        n for n in ast.walk(tree)
-        if isinstance(n, (ast.Import, ast.ImportFrom))
-        and any((a.asname or a.name.split(".")[-1]) == "engine_text" for a in n.names)
-    ]
+    # engine_text is bound exactly once, by the import from its module; type and isinstance never
+    et = _bindings(tree, "engine_text")
     canonical = [
-        n for n in bindings
+        n for n in ast.walk(tree)
         if isinstance(n, ast.ImportFrom) and n.module == "src.monitoring.engine_text"
         and [a.name for a in n.names] == ["engine_text"] and n.names[0].asname is None
     ]
-    assert len(bindings) == 1 and len(canonical) == 1, (
-        f"{rel} must bind engine_text exactly once, with `from src.monitoring.engine_text import engine_text`; "
-        f"found {[(b.lineno, ast.dump(b)[:60]) for b in bindings]}"
-    )
-    rebound = []
-    for n in ast.walk(tree):
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name in {"engine_text", "type", "isinstance"}:
-            rebound.append(f"def {n.name} at {n.lineno}")
-        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store) and n.id in {"engine_text", "type", "isinstance"}:
-            rebound.append(f"assignment to {n.id} at {n.lineno}")
-        if isinstance(n, ast.alias) and n.asname in {"engine_text", "type", "isinstance"}:
-            rebound.append(f"import as {n.asname}")
-    assert not rebound, f"{rel} rebinds a name the ban relies on: {rebound}"
+    if len(et) != 1 or len(canonical) != 1:
+        problems.append(
+            f"{rel} must bind engine_text exactly once, with `from src.monitoring.engine_text import "
+            f"engine_text`; found {len(et)} binding(s) and {len(canonical)} such import(s)"
+        )
+    problems += [
+        f"{rel}:{getattr(n, 'lineno', 0)} rebinds {name!r}, a name the ban relies on"
+        for name in ("type", "isinstance")
+        for n in _bindings(tree, name)
+    ]
+    return problems, calls
+
+
+@pytest.mark.parametrize("rel,functions,floor", _SCOPES, ids=[s[0] for s in _SCOPES])
+def test_a_handler_never_uses_its_exception_except_through_engine_text(rel, functions, floor):
+    """The bound name of every ``except ... as exc`` appears only as ``engine_text``'s FIRST argument, inside
+    ``type()``/``isinstance()``, or as the first argument of an allowed helper whose own body obeys the same
+    rule; nothing reaches the traceback (``exc_info`` other than False/None, ``.exception``, ``format_exc``,
+    ``print_exc``, ``sys.exc_info()`` and the rest, as an attribute, a bare name or an import under another
+    name), no log call takes ``**``, and no ``getattr``. The file binds ``engine_text`` once, by importing it,
+    and never rebinds ``type`` or ``isinstance``. Each scope calls it at least ``floor`` times."""
+    problems, calls = _file_problems(rel, (ROOT / rel).read_text(encoding="utf-8"), functions)
+    assert not problems, "\n".join(problems)
+    assert calls >= floor, f"{rel}: {calls} engine_text() calls, expected at least {floor}"
 
 
 # ---- the scan itself: each way round it is refused (a guard that cannot fail guards nothing) ----
 
-
-def _scan(source: str) -> list[str]:
-    tree = ast.parse(source)
-    parent = _parents(tree)
-    problems = _problems("x.py", tree, tree, parent) + _helper_problems("x.py", tree, parent)
-    for n in ast.walk(tree):
-        if isinstance(n, ast.ImportFrom) and n.module in {"traceback", "sys", "logging"}:
-            problems += [f"import {a.name}" for a in n.names if a.name in _TRACEBACK_NAMES]
-    return problems
-
-
 _HEAD = "from src.monitoring.engine_text import engine_text\n"
+_HANDLER = "try:\n    pass\nexcept Exception as exc:\n    {}\n"
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        "try:\n    pass\nexcept Exception as exc:\n    log(str(exc))\n",
-        "try:\n    pass\nexcept Exception as exc:\n    format_exc()\n",
+        _HANDLER.format("log(str(exc))"),
+        _HANDLER.format("log(f'{exc}')"),
+        _HANDLER.format("log(repr(exc))"),
+        _HANDLER.format("log(key=exc)"),
+        _HANDLER.format("log(engine_text(x, exc))"),
+        _HANDLER.format("raise RuntimeError('x') from exc"),
+        _HANDLER.format("format_exc()"),
+        _HANDLER.format("log(exc_info=True)"),
+        _HANDLER.format("log.exception('x')"),
+        _HANDLER.format("log(**kw)").replace("log(", "log.warning("),
+        _HANDLER.format("getattr(log, 'warn')('x')"),
+        _HANDLER.format("_skip_error(None, exc)") + "def _skip_error(e):\n    return engine_text(e)\n",
         "from traceback import format_exc as fe\n",
         "from sys import exc_info\n",
         "from logging import exception\n",
+        "from elsewhere import engine_text\n",
+        "import engine_text\n",
+        "engine_text = lambda e: str(e)\n",
+        "def engine_text(e):\n    return str(e)\n",
+        "type = lambda x: x\n",
+        "def f(isinstance):\n    pass\n",
         "def _skip_error(exc):\n    return {'skipped': str(exc)}\n",
         "def _cut_reason(exc):\n    return repr(exc)\n",
-        "try:\n    pass\nexcept Exception as exc:\n    log(exc_info=True)\n",
+        "_cut_reason = lambda exc: repr(exc)\n",
+        "from x import _skip_error\n",
+        "async def _skip_error(exc):\n    return engine_text(exc)\n",
+        "def _skip_error(exc):\n    return engine_text(exc)\ndef _skip_error(exc):\n    return str(exc)\n",
     ],
 )
 def test_the_scan_refuses_each_bypass(body):
-    assert _scan(_HEAD + body), f"the scan let this through:\n{body}"
+    problems, _calls = _file_problems("x.py", _HEAD + body, None)
+    assert problems, f"the scan let this through:\n{body}"
 
 
 def test_the_scan_accepts_the_shapes_the_files_use():
     ok = (
         _HEAD
-        + "def _skip_error(exc):\n    return {'s': f'{type(exc).__name__}: {engine_text(exc)}'}\n"
-        + "try:\n    pass\nexcept Exception as exc:\n    log(engine_text(exc), type(exc).__name__)\n"
+        + "def _skip_error(exc):\n    return {'s': engine_text(exc, 200, typed=True), 'c': type(exc).__name__}\n"
+        + _HANDLER.format("log(engine_text(exc), type(exc).__name__, _skip_error(exc))")
     )
-    assert _scan(ok) == []
+    problems, calls = _file_problems("x.py", ok, None)
+    assert problems == [] and calls == 2

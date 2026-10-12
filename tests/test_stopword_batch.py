@@ -1120,5 +1120,5 @@ def test_a_refusal_in_the_second_file_leaves_the_first_unwritten(tmp_path, monke
 
 def test_the_multilingual_file_cannot_be_named_on_the_command_line(tmp_path, monkeypatch):
     monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match="not a language code"):
         sb.main([str(tmp_path / "none.json"), "--language", "_multilingual"])

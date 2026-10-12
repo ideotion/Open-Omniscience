@@ -14,8 +14,10 @@ statement there is built from the passphrase and the key is applied through the 
 through SQLAlchemy, so this is the net beneath that, at the place the text is made.
 
 IT IS ONE CALL TO THE SHARED SCRUB. :func:`engine_text` is
-:func:`src.monitoring.secret_scrub.exception_text` with the class left off (the sites name it
-beside the text, or in the record's own field): every passphrase this process holds (the
+:func:`src.monitoring.secret_scrub.exception_text` with the class left off by default (a record that has
+its own field for the class), or written once in front (``typed=True``: ``Name: its words``, which is
+what a log line and a skip record want; a site that wrote the class itself beside the call would print
+it twice when the text is withheld, because the withheld answer is already ``Name: its text is withheld``): every passphrase this process holds (the
 session's, ``OO_DB_PASSPHRASE``, ``OO_KEY_PASSPHRASE``) is taken out of the WHOLE text in every
 shape the code and its drivers write it in (as typed, SQL-quoted, ``repr``, JSON, the ``repr``
 of its bytes, each carried up to three times), and any cut is made AFTERWARDS (a cut that fell
@@ -24,9 +26,11 @@ fails CLOSED: a text that could not be checked, a passphrase too short to take o
 a ``UnicodeError`` (whose words name the character and its offset) is the exception's class
 and none of its words. Only :func:`engine_text` is meant to be called from outside.
 
-THE IMPORT IS INSIDE THE FUNCTION, on purpose: this module is loaded by an index pass, and the
-index engine's stamp (``src/analytics/engine_identity.py``) lists every module a pass loads. The
-scrub is needed only on a failure, so it is loaded only then and the stamp stays as it was.
+THE IMPORT IS INSIDE THE FUNCTION, on purpose: this module is loaded by an index pass, and the closure
+test of the index engine's identity (``tests/test_index_engine_stamp.py``) fails for any module a pass
+loads that is neither an engine module nor listed in ``NOT_OUTPUT_AFFECTING``
+(``src/analytics/engine_identity.py``). The scrub is needed only on a failure, so it is loaded only
+then and that registry stays as it was (the stamp itself hashes only the engine modules).
 
 WHAT IT DOES NOT COVER: a key handed to ``connect(key=...)`` in a restore or a backup, which is
 not held in this process and so is not a needle here (those routes hand it to the scrub).
@@ -35,11 +39,13 @@ not held in this process and so is not a needle here (those routes hand it to th
 from __future__ import annotations
 
 
-def engine_text(exc: BaseException, limit: int | None = None) -> str:
-    """The words of ``exc`` with every held passphrase out of the whole text, then cut to ``limit``."""
+def engine_text(exc: BaseException, limit: int | None = None, *, typed: bool = False) -> str:
+    """The words of ``exc`` (``typed``: ``Name: the words``) with every held passphrase out of the whole text,
+    then cut to ``limit``."""
     try:
         from src.monitoring.secret_scrub import exception_text
 
-        return exception_text(exc, limit=limit, typed=False)
+        return exception_text(exc, limit=limit, typed=typed)
     except Exception:  # noqa: BLE001 - the scrub could not be loaded: the class is all that is written
-        return f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
+        out = f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
+        return out if limit is None else out[:limit]

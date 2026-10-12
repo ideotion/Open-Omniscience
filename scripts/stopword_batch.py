@@ -700,8 +700,31 @@ def main(argv: list[str] | None = None) -> int:
             if chosen:
                 kept = [w for w in used_allow if w in chosen]
                 plans.append(prepare_append(name, chosen, args.batch_id, kept, source) + (len(chosen),))
-        for path, after, count in plans:  # every refusal has been raised: nothing is half-written
-            path.write_text(after, "utf-8")
+        # Every refusal has been raised above. The texts are written to temporary files first (an I/O
+        # error there leaves both targets as they were) and only then renamed over their targets; if a
+        # rename itself fails after the first landed, the message names the file that did.
+        temps = []
+        try:
+            for path, after, _count in plans:
+                tmp = path.with_name(path.name + ".tmp")
+                tmp.write_text(after, "utf-8")
+                temps.append(tmp)
+        except OSError as exc:
+            for tmp in temps:
+                tmp.unlink(missing_ok=True)
+            raise SystemExit(f"could not write the batch ({exc.strerror or exc}); nothing was changed") from exc
+        landed: list[str] = []
+        for (path, _after, count), tmp in zip(plans, temps, strict=True):
+            try:
+                tmp.replace(path)
+            except OSError as exc:
+                for left in temps:
+                    left.unlink(missing_ok=True)
+                raise SystemExit(
+                    f"could not replace {path.name} ({exc.strerror or exc}); already written: "
+                    f"{', '.join(landed) or 'nothing'}"
+                ) from exc
+            landed.append(path.name)
             print(f"\nappended {count} words to {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
         # The loader adds a curly copy of every listed contraction, so the digest test needs both.
         declare = sorted(set(addable) | {w.replace("'", "\u2019") for w in addable if "'" in w})
