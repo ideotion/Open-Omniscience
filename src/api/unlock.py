@@ -31,6 +31,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.monitoring.secret_scrub import (
+    UNREADABLE_TEXT,
+    exception_text,
+    log_failure,
+    scrub_and_reraise,
+)
+
 # Re-exported so the first-launch page and the module that creates the folder cannot
 # disagree about the subfolder's name (the maintainer named it; see data_location.py).
 from src.safety.data_location import DATA_SUBDIR
@@ -232,13 +239,16 @@ def encrypt_db(body: EncryptBody) -> dict:
         )
     if body.passphrase != body.confirm:
         raise HTTPException(status_code=400, detail="passphrases do not match")
-    dispose_engine()
-    try:
-        reports = encrypt_all(body.passphrase)
-    except EncryptToolError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    set_passphrase(body.passphrase)
-    dispose_engine()  # next connection opens through the keyed factory
+    # The key typed into this request is not held until the store is encrypted, so the nets that read what the process holds
+    # cannot know it, and an engine's error can quote the statement that carried it: what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "encrypt in place failed", body.passphrase):
+        dispose_engine()
+        try:
+            reports = encrypt_all(body.passphrase)
+        except EncryptToolError as exc:
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
+        set_passphrase(body.passphrase)
+        dispose_engine()  # next connection opens through the keyed factory
     _LOG.info("store encrypted in place")
     return {"encrypted": True, "reports": reports, "state": app_lock_state()}
 
@@ -537,7 +547,7 @@ def _begin_recovery_notice(wal_state: dict | None) -> int | None:
         return None
 
 
-def _close_after_checkpoint(conn) -> None:
+def _close_after_checkpoint(conn, passphrase: str | None = None) -> None:
     """Close the verify connection, writing the recovered log back into the database FIRST, through
     ``execute``, and NEVER waiting for a reader.
 
@@ -561,7 +571,9 @@ def _close_after_checkpoint(conn) -> None:
     writer failed with "database is locked" after its own 5 s). Waiting is never the fix here
     (``scheduler/hygiene.py`` records the same measurement: the whole hold IS the busy handler).
     A busy or failed checkpoint returns at once and falls back to what ``close()`` always did, so
-    this can only make the step answer other requests while it runs."""
+    this can only make the step answer other requests while it runs. ``passphrase`` is the key the
+    connection was opened with, which the process does not hold until the verify has accepted it: the
+    driver's words of a failure are written with it (and with what the process holds) taken out."""
     try:
         conn.execute("PRAGMA busy_timeout = 0")
         row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -574,12 +586,14 @@ def _close_after_checkpoint(conn) -> None:
         # WARNING, not DEBUG: a write-back that fails (a full drive, an I/O error) is invisible
         # otherwise -- close() then fails the same way silently, the verify reports success and
         # the notice ends -- and the next thing the person meets is init_db on the same drive.
-        # The driver's own message only (no SQL runs here, so it carries no statement).
+        # The driver's own message only (no SQL runs here, so it carries no statement), with the typed key out of
+        # it BEFORE the first line is taken and cut: a driver's error can still quote what it was handed.
+        said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")
         _LOG.warning(
             "the recovered log could not be written back into the database before the verify "
             "connection closed (%s: %s); close() will try again",
             type(exc).__name__,
-            (str(exc).splitlines() or [""])[0][:200],
+            (said.splitlines() or [""])[0][:200],
         )
     conn.close()
 
@@ -640,7 +654,13 @@ def unlock(body: PassphraseBody) -> dict:
             from src.database.connect import get_passphrase
 
             held = get_passphrase()
-            if held is not None and hmac.compare_digest(body.passphrase.encode("utf-8"), held.encode("utf-8")):
+            # The typed key is not held yet: whatever this raises is converted with the key out of it (a key with a lone
+            # surrogate cannot be encoded, and the error names the character and its offset, a form no scrub knows).
+            with scrub_and_reraise(_LOG, "unlock failed", body.passphrase):
+                is_the_held_key = held is not None and hmac.compare_digest(
+                    _passphrase_bytes(body.passphrase), held.encode("utf-8")
+                )
+            if is_the_held_key:
                 # The held key, submitted again (a stale tab, a double click that lands late): there is nothing to
                 # replace and nothing to run again (no engine disposal, no second start-up upkeep thread), so the
                 # file is only READ with it, read-only, so that the read cannot fold a leftover log into the file.
@@ -651,6 +671,17 @@ def unlock(body: PassphraseBody) -> dict:
             # Not the held key: ``_unlock_locked`` verifies it against the file too. A wrong one is refused there
             # (403), and the right one repairs an app that reads as open while it holds a wrong key.
         return _unlock_locked(body, p)
+
+
+def _passphrase_bytes(passphrase: str) -> bytes:
+    """The typed key as UTF-8, or the 400 a key that cannot be written as UTF-8 (a lone surrogate) is answered with, in fixed
+    words: the error Python raises names the character and its offset, which is a piece of the key."""
+    try:
+        return passphrase.encode("utf-8")
+    except UnicodeError:
+        raise HTTPException(
+            status_code=400, detail="the passphrase has a character that cannot be written as UTF-8"
+        ) from None
 
 
 def _file_opens_with(p: Path, passphrase: str) -> None:
@@ -669,52 +700,74 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     try:
         conn = connect(p, key=passphrase, check_same_thread=False, read_only=True)
     except WrongPassphraseError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=403,
+            detail=exception_text(
+                exc, passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
+            ),
+        ) from exc
     conn.close()
 
 
 def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
     from src.database.connect import WrongPassphraseError, connect, set_passphrase
 
-    # S0.1: read the -wal BEFORE the verify connection, because that connection
-    # checkpoints and unlinks it. This reading is about the unlock path's own timing;
-    # the load-bearing forensic reading is the one record_session_start() takes at
-    # boot, which a wrong-passphrase attempt cannot destroy.
-    try:
-        from src.monitoring.forensics import wal_state_before_open
-
-        _wal_state = wal_state_before_open()
-    except Exception:  # noqa: BLE001 - forensics never blocks an unlock
-        _wal_state = None
-    _recovery_token = _begin_recovery_notice(_wal_state)
-    _verify_t0 = time.monotonic()
-    try:
-        conn = connect(p, key=body.passphrase, check_same_thread=False)
-        _close_after_checkpoint(conn)
-    except WrongPassphraseError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    finally:
-        _end_recovery_notice(_recovery_token)
-    _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
-    set_passphrase(body.passphrase)
-    try:
-        _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
-    except Exception:
-        # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
-        # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
-        # that state without running anything, and the page waits on "opening the database" for ever. Back to
-        # locked, as ``create_db`` does, so the retry is a real one.
-        set_passphrase(None)
+    # The key typed into this request is not held until the verify below has accepted it, so no net that reads what the
+    # process holds can know it, and an engine's error can quote the statement that carried it: whatever escapes the block (a
+    # verify that fails some other way than a wrong key, a finish that fails after the key was proven right) is written with
+    # the key out of it and raised again as a ``RuntimeError`` carrying the scrubbed text.
+    with scrub_and_reraise(_LOG, "unlock failed", body.passphrase):
+        # S0.1: read the -wal BEFORE the verify connection, because that connection
+        # checkpoints and unlinks it. This reading is about the unlock path's own timing;
+        # the load-bearing forensic reading is the one record_session_start() takes at
+        # boot, which a wrong-passphrase attempt cannot destroy.
         try:
-            # the pool keeps the connections init_db opened with the key; drop them with it
-            from src.database.session import dispose_engine
+            from src.monitoring.forensics import wal_state_before_open
 
-            dispose_engine()
-        except Exception:  # noqa: BLE001 - the retry disposes the engine again before it connects
-            _LOG.debug("engine dispose after a failed unlock finish failed", exc_info=True)
-        raise
-    _LOG.info("store unlocked")
-    return {"unlocked": True, "state": app_lock_state()}
+            _wal_state = wal_state_before_open()
+        except Exception:  # noqa: BLE001 - forensics never blocks an unlock
+            _wal_state = None
+        _recovery_token = _begin_recovery_notice(_wal_state)
+        _verify_t0 = time.monotonic()
+        try:
+            conn = connect(p, key=body.passphrase, check_same_thread=False)
+            _close_after_checkpoint(conn, passphrase=body.passphrase)
+        except WrongPassphraseError as exc:
+            # A wrong key under the floor of what can be taken out of a text (src/monitoring/secret_scrub.py,
+            # MIN_SECRET_CHARS) withholds the message whole, so the withheld text is the message's fixed words, not
+            # the scrub's "text withheld" notice: a mistyped short key is the lock screen's commonest answer.
+            raise HTTPException(
+                status_code=403,
+                detail=exception_text(
+                    exc, body.passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
+                ),
+            ) from exc
+        finally:
+            _end_recovery_notice(_recovery_token)
+        _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
+        set_passphrase(body.passphrase)
+        try:
+            _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+        except Exception:
+            # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
+            # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
+            # that state without running anything, and the page waits on "opening the database" for ever. Back to
+            # locked, as ``create_db`` does, so the retry is a real one.
+            set_passphrase(None)
+            try:
+                # the pool keeps the connections init_db opened with the key; drop them with it
+                from src.database.session import dispose_engine
+
+                dispose_engine()
+            except Exception as dispose_exc:  # noqa: BLE001 - the retry disposes the engine again before it connects
+                # Written through ``log_failure`` with the passphrase out of it, as every handler that holds one is: this
+                # function holds ``body.passphrase`` and ``tests/test_p0_validation.py`` reads its handlers.
+                log_failure(
+                    _LOG, "engine dispose after a failed unlock finish failed", dispose_exc, body.passphrase, level=logging.DEBUG
+                )
+            raise
+        _LOG.info("store unlocked")
+        return {"unlocked": True, "state": app_lock_state()}
 
 
 @router.post("/create-db")
@@ -734,17 +787,19 @@ def create_db(body: CreateBody) -> dict:
         raise HTTPException(status_code=400, detail="passphrases do not match")
     if len(body.passphrase) < _MIN_PASSPHRASE:
         raise HTTPException(status_code=400, detail=f"use at least {_MIN_PASSPHRASE} characters")
-    set_passphrase(body.passphrase)
-    try:
-        _finish_unlock()
-    except Exception:
-        set_passphrase(None)  # leave the fresh state intact on any failure
-        raise
-    finally:
-        # S3.6: the store file now exists (or the attempt touched it), so the
-        # cached header is stale either way. In a `finally` on purpose -- a
-        # half-created file left by a failure must not be answered for from a
-        # cache that still says "fresh".
-        invalidate_header_cache()
+    # As in ``_unlock_locked``: the key is not held until the store is created, so what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "create failed", body.passphrase):
+        set_passphrase(body.passphrase)
+        try:
+            _finish_unlock()
+        except Exception:
+            set_passphrase(None)  # leave the fresh state intact on any failure
+            raise
+        finally:
+            # S3.6: the store file now exists (or the attempt touched it), so the
+            # cached header is stale either way. In a `finally` on purpose -- a
+            # half-created file left by a failure must not be answered for from a
+            # cache that still says "fresh".
+            invalidate_header_cache()
     _LOG.info("encrypted store created")
     return {"created": True, "state": app_lock_state()}

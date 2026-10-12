@@ -123,14 +123,22 @@ def external_freshness() -> dict:
 # All read-only, local, no score. -------------------------------------------------- #
 
 
+#: The longest a browser's words can be in a report (``message``, ``source``, ``endpoint``). WHAT IT PROTECTS: the size of a
+#: request a page can post to a loopback route. It is NOT what keeps the journal small: the browser sends its words whole and
+#: ``note_frontend_error`` takes the passphrases out of them and only then cuts (500 for the message), because a text cut
+#: BEFORE the scrub can split a passphrase and leave a half that no scrub recognises. A report over it is refused (422), never
+#: cut here.
+_FRONTEND_TEXT_MAX = 20_000
+
+
 class _FrontendError(BaseModel):
     """A browser error the UI captured (recursive-augmentation log #1). Small,
     no-PII by contract — error text + which function/endpoint only."""
 
     kind: str = Field(default="error", max_length=40)
-    message: str = Field(default="", max_length=500)
-    source: str | None = Field(default=None, max_length=300)
-    endpoint: str | None = Field(default=None, max_length=300)
+    message: str = Field(default="", max_length=_FRONTEND_TEXT_MAX)
+    source: str | None = Field(default=None, max_length=_FRONTEND_TEXT_MAX)
+    endpoint: str | None = Field(default=None, max_length=_FRONTEND_TEXT_MAX)
     lineno: int | None = None
     ui_lang: str | None = Field(default=None, max_length=16)
 

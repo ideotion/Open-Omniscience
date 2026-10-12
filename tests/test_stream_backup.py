@@ -862,3 +862,28 @@ def test_cleanup_stale_staging_covers_bak_build_and_ooparts(tmp_path, monkeypatc
     f.write_text("x", encoding="utf-8")
     os.utime(f, (old, old))
     assert artifact_mod.cleanup_stale_staging() == 3
+
+
+def test_verify_withholds_a_decrypt_failure_that_has_a_unicode_error_in_its_chain(tmp_path, monkeypatch):
+    """A decrypt that fails because the passphrase cannot be encoded raises an ``EncryptionError`` from the ``UnicodeError``, whose
+    text names a character and its offset: the problem line carries the class and a fixed note. MUTATION TARGET: the line's
+    source going through ``exception_text``."""
+    from src.safety.crypto import EncryptionError
+
+    secret = "correct horse battery staple"
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus, pw=secret)
+
+    def refuse(path, sink, passphrase):
+        try:
+            "held\udcffkey".encode()
+        except UnicodeError as inner:
+            raise EncryptionError("could not encode the passphrase") from inner
+
+    monkeypatch.setattr("src.backup.stream_backup.decrypt_stream", refuse)
+    report = verify_stream_backup(dest, passphrase=secret)
+    text = json.dumps(report["problems"])
+    assert "failed to decrypt" in text, text
+    assert "udcff" not in text and "position" not in text and "UnicodeEncodeError" in text, text

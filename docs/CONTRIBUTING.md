@@ -72,6 +72,18 @@ after it. `ledger_shipped.py fold` appends the fragments to `shipped.csv` in bin
 them; it is for the maintainer or a release, never for a feature PR. `refs` must be the real PR
 number, not `PR pending` (a test fails on it).
 
+## Lessons and shipped-log entries: one file each
+
+The same convention covers the two big archives. A lesson is ONE file,
+`docs/ledger/lessons.d/<date>-<slug>.md` (`python scripts/lessons.py --new SLUG`); a verbatim
+shipped-log entry is ONE file, `docs/ledger/shipped_log.d/<date>-<slug>.md`
+(`python scripts/ledger_fold.py new-log SLUG`). Never append to `LESSONS.md` or `SHIPPED_LOG.md`
+and never edit `_LESSONS_LINE_CEILING`: every PR doing so conflicted every other one. A fragment
+starts with `## <date> — title`, ends with a newline and is UTF-8 with LF line ends; a lesson (not a
+shipped-log entry) has no second heading and stays under 200 lines (it bounds one entry's size); `python scripts/ledger_fold.py check` (and `tests/test_ledger_fragments.py`) validates it,
+refuses `#NNNN` and `PR pending` placeholders, and `lessons.py <words>` searches the fragments too.
+`ledger_fold.py fold` merges them into the archives at a release and is never for a feature PR.
+
 ## Locale files and merge conflicts
 
 The 12 `src/static/locales/*.json` files are kept **sorted** (`_meta` first, then keys in code-point order), so two PRs that add strings insert at different places and merge cleanly. After adding strings, run `python scripts/locales_merge.py`; it sorts the files and checks them (`--check` only verifies; `tests/test_locales_merge.py` fails on unsorted or duplicated keys).

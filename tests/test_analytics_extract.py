@@ -239,6 +239,12 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         # were not in the extras union); English "bio" and "uno" went into en.yml too but
         # other files already held them.
         "all", "are",
+        # stoplist batch 1 (2026-10-06): LaTeX macros and boilerplate in en, markup debris and
+        # keyboard noise in ko; evidence in configs/stopwords_extra/PROVENANCE.md.
+        "crossref", "fig", "likelyno7", "mathbb", "mathbf", "mathcal", "mathrm",
+        "supplementary",
+        "addclass", "attr", "cssclip", "dhmkkh", "dhmkkhh", "encodeuricomponent",
+        "pclassname", "pdesc", "pmurl", "ppurl",
     })
     assert added_since_migration <= _EXTRA_STOPWORDS, (
         "a declared post-migration addition is missing from the data files"

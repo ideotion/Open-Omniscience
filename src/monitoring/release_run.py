@@ -81,14 +81,18 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import (
+    exception_text,
+    log_failure,
+    scrubbed,
+    scrubbed_value,
+)
 from src.monitoring.secret_scrub import scrub_file as _scrub_file
-from src.monitoring.secret_scrub import scrub_value as _scrub_value
 
 _LOG = logging.getLogger("monitoring.release_run")
 
@@ -259,7 +263,7 @@ def _retrying(ctx: Any, what: str, fn: Any, log: list[dict[str, Any]] | None = N
                 raise
             if log is not None:
                 log.append({"what": what, "attempt": attempt, "waited_s": delay, "at": _now_iso(),
-                            "error": f"{type(exc).__name__}: {exc}"[:200]})
+                            "error": exception_text(exc, limit=200)})
             _LOG.warning("release run: %s hit a pool timeout (attempt %d), retrying in %.0f s", what, attempt, delay)
             _sleep_stoppable(ctx, delay)
     raise AssertionError("unreachable")  # pragma: no cover - the loop returns or raises
@@ -281,8 +285,8 @@ def _write_state(state: dict[str, Any]) -> None:
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(state, indent=1, default=str), encoding="utf-8")
         os.replace(tmp, p)
-    except OSError:
-        _LOG.warning("could not persist release-run state", exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, "could not persist release-run state", exc, level=logging.WARNING)
 
 
 class _Run:
@@ -820,7 +824,7 @@ def _pause_collection() -> dict[str, Any]:
             # stop()'s join is bounded; a pass deep in a write can outlive it. Said, not hidden.
             out["scheduler_still_winding_down"] = bool(sched.is_running())
     except Exception as exc:  # noqa: BLE001
-        out["scheduler_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        out["scheduler_error"] = exception_text(exc, limit=300)
     try:
         from src.wiki.service import lane_service_status, stop_wiki_lane
 
@@ -830,7 +834,7 @@ def _pause_collection() -> dict[str, Any]:
         if out["wiki_lane_was_streaming"]:
             stop_wiki_lane(timeout=30.0)
     except Exception as exc:  # noqa: BLE001
-        out["wiki_lane_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        out["wiki_lane_error"] = exception_text(exc, limit=300)
     out["at"] = _now_iso()
     return out
 
@@ -873,7 +877,7 @@ def _resume_collection(paused: dict[str, Any] | None) -> dict[str, Any]:
                 time.sleep(_TICK_S)
             out["scheduler_restarted"] = started
         except Exception as exc:  # noqa: BLE001
-            out["scheduler_error"] = f"{type(exc).__name__}: {exc}"[:300]
+            out["scheduler_error"] = exception_text(exc, limit=300)
     if paused.get("wiki_lane_was_streaming"):
         if kill_switch_active():
             out["wiki_lane"] = "left stopped: airplane mode is on"
@@ -883,7 +887,7 @@ def _resume_collection(paused: dict[str, Any] | None) -> dict[str, Any]:
 
                 out["wiki_lane_restarted"] = bool(start_wiki_lane())
             except Exception as exc:  # noqa: BLE001
-                out["wiki_lane_error"] = f"{type(exc).__name__}: {exc}"[:300]
+                out["wiki_lane_error"] = exception_text(exc, limit=300)
     return out
 
 
@@ -1026,7 +1030,10 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
         except RuntimeError as exc:
             # A re-index already running, or a DIFFERENT one paused: the quarantine is done
             # and its tally is kept; the re-index is the operator's to resolve.
-            raise _PhaseError(f"row 5: the re-index was refused: {exc}"[:400], partial=out, status="refused") from exc
+            raise _PhaseError(
+                f"row 5: the re-index was refused: {exception_text(exc, run.params.passphrase, typed=False)}"[:400],
+                partial=out, status="refused",
+            ) from None
         rs = _wait_job(ctx, run, "reindex", rm, out)
         out["reindex_final"] = rs
         if ctx.stopping or rs.get("stalled") or rs.get("state") == "paused":
@@ -1045,7 +1052,7 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
     except (_PhaseError, RuntimeError):
         raise
     except Exception as exc:  # noqa: BLE001 - keep what row 5 measured (RR-2)
-        raise _PhaseError(f"{type(exc).__name__}: {exc}"[:400], partial=out) from exc
+        raise _PhaseError(exception_text(exc, run.params.passphrase, limit=400), partial=out) from None
     finally:
         out["collection_resumed"] = _resume_collection(out.get("collection_paused"))
 
@@ -1140,6 +1147,22 @@ def _scrub_kept_install(fresh: Path, out_json: Path, needle: str) -> dict[str, l
     return done
 
 
+#: What the report says in place of a child's stderr that is not valid UTF-8 (a code page wrote it, or a character was cut).
+STDERR_NOT_UTF8 = "(the child's stderr is withheld: it is not valid UTF-8, so no scrub can vouch for what it holds)"
+
+
+def _child_pipe_text(raw: bytes | None) -> str | None:
+    """What the child wrote to a pipe, as the UTF-8 it was told to write: ``""`` for nothing, ``None`` when the bytes are not valid
+    UTF-8 -- text no scrub can vouch for (a key's letters in a code page, a cut through a character) is withheld whole, never
+    decoded with replacement characters, which would put a form of the key into the report that no carrier writes."""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8").replace("\r\n", "\n")
+    except UnicodeDecodeError:
+        return None
+
+
 def _fresh_install_restore(
     ctx: Any, run: _Run, backup_path: Path, *, label: str
 ) -> dict[str, Any]:
@@ -1167,13 +1190,23 @@ def _fresh_install_restore(
         "OO_DB_PASSPHRASE": run.params.passphrase,
         "OO_NO_SCHEDULER": "1",
         "OO_AUTOSEED": "0",
+        # The child writes its PIPES as UTF-8 whatever the console's code page is, and the parent reads them as bytes: on Windows
+        # the child's stderr is the ANSI page with a backslash escape for a letter outside it, a form of a passphrase no carrier
+        # of the scrub writes (a key that mixes a cp1252 letter with one outside that page reached the report half raw).
+        # PYTHONUTF8 follows the PARENT's UTF-8 mode, never a fixed value: the child decodes its ENVIRONMENT the way the parent
+        # encoded it, and a parent on a POSIX locale that is not UTF-8 (or one started with ``-X utf8`` on such a locale) encodes
+        # the key in that charset, so a child in the other mode would receive a non-ASCII key changed (the unlock fails, and what
+        # the child prints of the changed key is a form the parent's scrub does not know).
+        "PYTHONUTF8": str(int(sys.flags.utf8_mode)),
+        "PYTHONIOENCODING": "utf-8",
         "OO_RELEASE_RUN_BACKUP": str(backup_path),
         "OO_RELEASE_RUN_OUT": str(out_json),
     }
     env.pop("OO_DB_PLAINTEXT", None)
     t0 = time.monotonic()
-    scrubbed: dict[str, list[str]] | None = None
+    kept_scrub: dict[str, list[str]] | None = None
     fresh.mkdir(parents=True, exist_ok=False)
+    spawn_refused: str | None = None
     try:
         proc = subprocess.Popen(  # noqa: S603 - our own interpreter, our own module, no shell
             [sys.executable, "-m", "src.monitoring.release_run_fresh_restore"],
@@ -1181,7 +1214,15 @@ def _fresh_install_restore(
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+        )
+    except UnicodeError as exc:
+        # The environment or an argument has a character this process's locale cannot hand to a child (``os.fsencode``; the key
+        # is the one that matters, but the paths go the same way): the error's own text names that character and its offset, a
+        # form of the key no scrub knows, so only the class is recorded.
+        with contextlib.suppress(OSError):
+            fresh.rmdir()
+        spawn_refused = (
+            f"{type(exc).__name__}: the passphrase or a path has a character this process's locale cannot hand to the restore child"
         )
     except BaseException:
         # No child ran, so nothing wrote into the directory just made: take it away, kept install or
@@ -1191,8 +1232,12 @@ def _fresh_install_restore(
         with contextlib.suppress(OSError):
             fresh.rmdir()
         raise
+    if spawn_refused is not None:
+        # Raised outside the handler, so that the error has no context: the scrubbing writers withhold any exception that has a
+        # ``UnicodeError`` in its chain, and would replace this reason with their fixed note.
+        raise RuntimeError(spawn_refused)
     try:
-        said: tuple[str, str] | None = None
+        said: tuple[bytes, bytes] | None = None
         while proc.poll() is None:
             if ctx.stopping:
                 proc.terminate()
@@ -1211,7 +1256,9 @@ def _fresh_install_restore(
             except subprocess.TimeoutExpired:
                 continue
             break
-        stdout, stderr = said if said is not None else proc.communicate(timeout=30)
+        raw_out, raw_err = said if said is not None else proc.communicate(timeout=30)
+        stdout = _child_pipe_text(raw_out)
+        stderr = _child_pipe_text(raw_err)
         result: dict[str, Any] = {
             "label": label,
             "backup": str(backup_path),
@@ -1219,8 +1266,13 @@ def _fresh_install_restore(
             "elapsed_s": round(time.monotonic() - t0, 1),
             "returncode": proc.returncode,
             # Scrubbed BEFORE the cut: a cut through the passphrase would leave a fragment that no
-            # later replacement could find.
-            "stderr_tail": _scrub_value(stderr or "", run.params.passphrase)[-4000:],
+            # later replacement could find. The last 4,000 characters protect the report's size (a restore's traceback can be
+            # far longer, and the whole text was read and scrubbed first).
+            "stderr_tail": (
+                STDERR_NOT_UTF8
+                if stderr is None
+                else scrubbed(stderr, run.params.passphrase)[-4000:]
+            ),
         }
         payload: dict[str, Any] | None = None
         with contextlib.suppress(OSError, ValueError):
@@ -1233,10 +1285,10 @@ def _fresh_install_restore(
             # The child has exited, so what it wrote is closed, and its result is read. A kept install
             # is looked at later, off this run: its journal and reports are plain text beside the
             # encrypted database.
-            scrubbed = _scrub_kept_install(fresh, out_json, run.params.passphrase)
-            result["kept_install_scrub"] = scrubbed
+            kept_scrub = _scrub_kept_install(fresh, out_json, run.params.passphrase)
+            result["kept_install_scrub"] = kept_scrub
         # Before anything reads, stores or logs it (the failure text below included).
-        result = _scrub_value(result, run.params.passphrase)
+        result = scrubbed_value(result, run.params.passphrase)
         if not ctx.stopping:
             # The phase is a restore only if the child restored: its own ok and its exit status
             # decide, not the parent returning. What the child measured stays in the record
@@ -1258,7 +1310,7 @@ def _fresh_install_restore(
             shutil.rmtree(fresh, ignore_errors=True)
             with contextlib.suppress(OSError):
                 out_json.unlink()
-        elif scrubbed is None:
+        elif kept_scrub is None:
             # The scrub did not run on the way through (an exception came first). The error that brought
             # us here is the one to raise, so a failure of this is logged, never raised over it.
             try:
@@ -1346,10 +1398,10 @@ def _law_live_checks() -> dict[str, Any]:
                           "bytes": len(r.raw_content or b"") if getattr(r, "raw_content", None) else len(r.content or ""),
                           "elapsed_s": round(time.monotonic() - t0, 2)})
         except FetchError as exc:
-            entry.update({"measured": False, "refusal": type(exc).__name__, "detail": str(exc)[:300],
+            entry.update({"measured": False, "refusal": type(exc).__name__, "detail": exception_text(exc, typed=False, limit=300),
                           "elapsed_s": round(time.monotonic() - t0, 2)})
         except Exception as exc:  # noqa: BLE001
-            entry.update({"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+            entry.update({"measured": False, "error": exception_text(exc, limit=300)})
         if host == "legislation.gov.uk" and entry.get("measured") and d.get("official_url"):
             # The per-document CLML the catalogue records as this host's bulk shape,
             # composed from the row's own official_url rather than typed here.
@@ -1367,9 +1419,9 @@ def _law_live_checks() -> dict[str, Any]:
                     "adapter_read_it": True,
                 }
             except FetchError as exc:
-                entry["clml"] = {"url": clml_url, "refusal": type(exc).__name__, "detail": str(exc)[:300]}
+                entry["clml"] = {"url": clml_url, "refusal": type(exc).__name__, "detail": exception_text(exc, typed=False, limit=300)}
             except Exception as exc:  # noqa: BLE001
-                entry["clml"] = {"url": clml_url, "error": f"{type(exc).__name__}: {exc}"[:300]}
+                entry["clml"] = {"url": clml_url, "error": exception_text(exc, limit=300)}
         out[host] = entry
     return out
 
@@ -1437,7 +1489,7 @@ def _weights_digest_proposal() -> dict[str, Any]:
         else:
             out["hf"].update({"measured": False, "status_code": getattr(r, "status_code", None)})
     except Exception as exc:  # noqa: BLE001
-        out["hf"].update({"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+        out["hf"].update({"measured": False, "error": exception_text(exc, limit=300)})
     try:
         from src.llm.ollama import OllamaClient
 
@@ -1449,7 +1501,7 @@ def _weights_digest_proposal() -> dict[str, Any]:
             out["ollama"].update({"measured": bool(hit.get("digest")), "digest": hit.get("digest"),
                                   "basis": "the local Ollama's /api/tags manifest digest"})
     except Exception as exc:  # noqa: BLE001
-        out["ollama"].update({"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+        out["ollama"].update({"measured": False, "error": exception_text(exc, limit=300)})
     out["how_to_pin"] = (
         "set OO_MODEL_REVISION to the 40-character sha and OO_OLLAMA_MODEL_DIGEST to the "
         "digest, or record them in src/llm/weights_pin.py's HF_REVISION_PINS / "
@@ -1484,7 +1536,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
         try:
             out[key] = _retrying(ctx, key, fn, retries)
         except Exception as exc:  # noqa: BLE001 - recorded on the block, the others go on
-            out[key] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            out[key] = {"measured": False, "error": exception_text(exc, limit=300)}
             if core:
                 failed.append(key)
 
@@ -1520,7 +1572,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
         try:
             out["ores_probe"] = _ores_probe()
         except Exception as exc:  # noqa: BLE001
-            out["ores_probe"] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            out["ores_probe"] = {"measured": False, "error": exception_text(exc, limit=300)}
     out["pool_retries"] = retries
     if failed:
         raise _PhaseError(f"{len(failed)} end-of-window reading(s) failed: {', '.join(failed)}", partial=out)
@@ -1622,7 +1674,7 @@ def _bundle(ctx: Any) -> dict[str, Any]:
         out["measured"] = True
     except Exception as exc:  # noqa: BLE001
         out["measured"] = False
-        out["read_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        out["read_error"] = exception_text(exc, limit=300)
     return out
 
 
@@ -2071,7 +2123,7 @@ def last_release_run_report() -> dict:
             report["live_run"] = live
         return report
     except Exception as exc:  # noqa: BLE001
-        out = {"schema": RELEASE_RUN_SCHEMA, "available": False, "error": str(exc)[:300]}
+        out = {"schema": RELEASE_RUN_SCHEMA, "available": False, "error": exception_text(exc, typed=False, limit=300)}
         if live:
             out["live_run"] = live
         return out
@@ -2130,20 +2182,6 @@ def request_collect_now() -> None:
     _COLLECT_NOW.set()
 
 
-def _log_phase_failure(name: str, exc: BaseException, why: str, secret: str) -> None:
-    """Log the exception being handled, with its traceback, and with the passphrase out of both. The
-    error log keeps the last 1,500 characters of a record's traceback in ``app_errors.jsonl``, which a
-    debug bundle carries, so an exception that named the passphrase would otherwise put it on disk. Where
-    the traceback does not hold it (the usual case) the record is the one it always was; where it does,
-    the record carries the scrubbed text instead, ``why`` (already scrubbed) first because the error log
-    keeps the start of a message and the exception line is at the end."""
-    text = "".join(traceback.format_exception(exc))
-    if secret and secret in text:
-        _LOG.warning("release run phase %s failed: %s\n%s", name, why[:200], _scrub_value(text, secret))
-    else:
-        _LOG.warning("release run phase %s failed", name, exc_info=True)
-
-
 def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[BaseException], ...] = ()) -> dict[str, Any]:
     """Run one phase under the closed status vocabulary. A named refusal (a bad
     precondition) is ``refused``; anything else that raises is ``error`` -- and neither
@@ -2151,7 +2189,14 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
     the operator with nothing after three days. What the exception says reaches the log,
     the state file and the report with the passphrase taken out (the module docstring's
     promise holds for every phase, not only the restore's), BEFORE the cut to 400
-    characters, so a cut through it cannot leave a fragment."""
+    characters, so a cut through it cannot leave a fragment. Every passphrase the process
+    holds is taken out with it, and a text that cannot be checked is the exception's class
+    and none of its words (``secret_scrub.exception_text``, which every handler of this module writes a caught
+    exception through, a function that holds no passphrase included: the guard reads them all). The log line is
+    written through
+    ``log_failure``, which carries the scrubbed traceback and never the exception: the error
+    log keeps the tail of a record's traceback in ``app_errors.jsonl``, which a debug bundle
+    carries."""
     run.begin(name)
     ctx.set_progress(detail=name)
     secret = run.params.passphrase
@@ -2159,14 +2204,15 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
         result = fn()
     except _PhaseError as exc:
         # RR-2: what the phase measured before it failed stays in its record.
-        why = _scrub_value(str(exc), secret)
+        why = exception_text(exc, secret, typed=False)
         _LOG.warning("release run phase %s failed part of the way: %s", name, why)
         ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", why[:400], result=exc.partial)
     except refusals as exc:
-        ph = run.end("refused", _scrub_value(f"{type(exc).__name__}: {exc}", secret)[:400])
+        why = exception_text(exc, secret)
+        ph = run.end("refused", why[:400])
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to the report
-        why = _scrub_value(f"{type(exc).__name__}: {exc}", secret)
-        _log_phase_failure(name, exc, why, secret)
+        why = exception_text(exc, secret)
+        log_failure(_LOG, f"release run phase {name} failed", exc, secret, level=logging.WARNING)
         ph = run.end("error", why[:400])
     else:
         if ctx.stopping:
@@ -2379,11 +2425,11 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
                 try:
                     out["law"] = _law_live_checks()
                 except Exception as exc:  # noqa: BLE001
-                    out["law"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+                    out["law"] = {"error": exception_text(exc, limit=300)}
                 try:
                     out["weights"] = _weights_digest_proposal()
                 except Exception as exc:  # noqa: BLE001
-                    out["weights"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+                    out["weights"] = {"error": exception_text(exc, limit=300)}
                 return out
             _run_phase(run, ctx, "online_probes", _probes)
         else:

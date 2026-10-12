@@ -459,7 +459,9 @@
     function _ooReportError(kind, message, source, endpoint, lineno) {
       try {
         if (!_ooRawFetch) return;
-        const msg = String(message == null ? "" : message).slice(0, 500);
+        // The words are sent WHOLE: the server takes the passphrases out of them and only then cuts (a text cut here can
+        // split a passphrase, and the half that is left is no shape of it the scrub recognises).
+        const msg = String(message == null ? "" : message);
         const sig = kind + "|" + msg.slice(0, 120) + "|" + (source || "");
         const now = Date.now();
         const last = _ooErrSeen.get(sig);
@@ -469,8 +471,8 @@
         let lang = null;
         try { lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || null; } catch (e) {}
         const body = {kind: String(kind).slice(0, 40), message: msg};
-        if (source) body.source = String(source).slice(0, 300);
-        if (endpoint) body.endpoint = String(endpoint).slice(0, 300);
+        if (source) body.source = String(source);
+        if (endpoint) body.endpoint = String(endpoint);
         if (lineno != null) body.lineno = lineno | 0;
         if (lang) body.ui_lang = String(lang).slice(0, 16);
         // Use the RAW fetch so the wrapper below can't recurse on this very POST.
@@ -1856,6 +1858,8 @@
       "volume backup (it first makes a temporary copy of your data)":
         "Volume backup (it first makes a temporary copy of your data)",
       "restore staging": "Unpacking the backup to restore it",
+      "newsletter filter and search-index merge (no backup was written)":
+        "Filtering the newsletters out of the backup copy (no backup was written yet)",
     };
     const _OO_SIZE_RE = "([0-9]+(?:\\.[0-9]+)?) (B|KB|MB|GB|TB)";
     const _OO_SPACE_RES = [
@@ -1866,6 +1870,11 @@
       // folder_backup.py: the large-data folder backup's own check
       [new RegExp("Not enough free space at (.+?): needs " + _OO_SIZE_RE + ", only "
         + _OO_SIZE_RE + " free\\."), "folder"],
+      // merge.py: check_memory_for_encrypted_merge (an encrypted import holds its temp
+      // structures in memory, so it is refused before any row moves on a machine without it)
+      [new RegExp("Not enough free memory to merge into an encrypted corpus: needs about "
+        + _OO_SIZE_RE + ", only " + _OO_SIZE_RE + " available\\. Close other programs and "
+        + "import again\\. Nothing was written to your corpus\\."), "memory"],
     ];
     function ooServerText(msg) {
       const s = String(msg == null ? "" : msg);
@@ -1885,10 +1894,23 @@
       if (/^(?:could not \w+ this backup: )?wrong passphrase or the file has been altered\.?$/i.test(s.trim())) {
         return t("Could not open this backup: the passphrase is wrong, or its files have been altered.");
       }
+      // newsletter_export.py: a stopped newsletter-free backup. Two fixed sentences, whole-message
+      // only, the second carrying a reason that is the server's own fixed text or an exception class.
+      if (s.trim() === "The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.") {
+        return t("The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.");
+      }
+      const _nf = /^The backup without newsletters was stopped: the clean copy of your corpus could not be made \((.+)\)\. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead\.$/.exec(s.trim());
+      if (_nf) {
+        return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
+      }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);
         if (!m) continue;
-        const out = kind === "what"
+        const out = kind === "memory"
+          ? tf("Not enough free memory to merge into an encrypted corpus: needs about {needed}, only {free} available. Close other programs and import again. Nothing was written to your corpus.", {
+              needed: size(m[1], m[2]), free: size(m[3], m[4]),
+            })
+          : kind === "what"
           ? tf("{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.", {
               what: _OO_SPACE_WHAT[m[1]] ? t(_OO_SPACE_WHAT[m[1]]) : m[1],
               needed: size(m[2], m[3]), free: size(m[4], m[5]), path: iso(m[6]),
