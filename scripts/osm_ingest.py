@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
-def main() -> int:
+def _main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--extract", required=True, type=Path, help="an .osm.pbf already on disk")
     ap.add_argument("--country", required=True, help="ISO 3166-1 alpha-2 or alpha-3")
@@ -36,6 +36,7 @@ def main() -> int:
     args = ap.parse_args()
 
     from src.database.connect import get_passphrase, is_encrypted_file, plaintext_mode
+    from src.monitoring.secret_scrub import exception_text
     from src.osm.ingest import ingest_country
     from src.osm.reader import GeoExtraMissing
     from src.paths import data_dir
@@ -48,16 +49,28 @@ def main() -> int:
     try:
         report = ingest_country(args.extract, args.country, reader=args.reader)
     except GeoExtraMissing as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {exception_text(exc, typed=False)}")
         return 2
     except Exception as exc:  # noqa: BLE001 - the operator reads the reason, the row records it
-        print(f"failed: {type(exc).__name__}: {exc}")
+        print(f"failed: {exception_text(exc)}")
         return 1
     out = report.to_dict()
     out["extract_bytes"] = args.extract.stat().st_size
     out["osm_db_bytes"] = lane_file_bytes("osm")
     print(json.dumps(out, indent=2, sort_keys=True, default=str))
     return 0
+
+
+def main() -> int:
+    # The WHOLE of the command is under one handler: the child holds the store's passphrase, and a default traceback
+    # (from the key lookup, the file stats, the lane size read) would print the exception as it made its message.
+    try:
+        return _main()
+    except Exception as exc:  # noqa: BLE001 - the operator reads the reason
+        from src.monitoring.secret_scrub import exception_text
+
+        print(f"failed: {exception_text(exc)}")
+        return 1
 
 
 if __name__ == "__main__":

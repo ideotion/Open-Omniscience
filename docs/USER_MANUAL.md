@@ -1843,6 +1843,11 @@ them and names where to move them, and nothing is moved or deleted for you.
 
 ### 5.2 Environment variables
 
+> **Honesty note:** this table lists the operator-facing essentials — it is **not** every
+> environment variable the code can read (an audit counted ~259 environment-variable
+> references in the codebase). A variable missing from this table is the manual’s
+> brevity, not a claim that the variable does not exist.
+
 | Variable | Purpose |
 |---|---|
 | `OO_DATA_DIR` | Override the data directory (see above). |

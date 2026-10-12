@@ -41,7 +41,9 @@ THE MACHINE IS NEVER PUT AT RISK, and each guard says what it protects:
   lives only in the children's environment. ``--keep-store`` needs the operator's own
   ``--passphrase-file`` (a file they made, holding any passphrase), so that a separate gazetteer build
   can open the kept store with the same file; the runner only reads it. The runner refuses a workdir
-  inside the repository, where the store and its logs would sit in the working tree.
+  inside the repository, where the store and its logs would sit in the working tree. The children's RAW logs
+  (``logs/``) are deleted from any store the run leaves (kept, survived by a group, half-deleted, or abandoned by a third
+  signal); the report carries their scrubbed tails.
 * **THE REPORT** carries no secret and no path outside this run's own data directory: inputs by
   file name, children's error text scrubbed of the passphrase and of every absolute path.
 
@@ -72,7 +74,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import scrub_text
+from src.monitoring.secret_scrub import exception_text, scrubbed
 
 SCHEMA_VERSION = 1
 MARKER = ".oo-osm-reference-run"
@@ -196,8 +198,13 @@ _FILE_URL = re.compile(r"(?P<scheme>\b[A-Za-z][\w+.-]*:)/{3,}(?P<path>[^\s'\"`:;
 
 
 def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = None,
-          roots: tuple[tuple[str, str], ...] = ()) -> str:
+          roots: tuple[tuple[str, str], ...] = (), paths_only: bool = False) -> str:
     """``text`` without any of ``secrets_`` and with every absolute path reduced to its file name.
+
+    The secrets go through the shared :func:`src.monitoring.secret_scrub.scrubbed`, which also takes out every passphrase
+    this process holds (the operator's own session or ``OO_DB_PASSPHRASE``, whether or not it was handed in) and withholds a
+    text that holds a secret too short to take out. ``paths_only=True`` is the PATHS-ONLY pass (the finished report, whose verdict words the exit code reads and
+    whose engine texts were scrubbed where they were made).
 
     The run's own directory, and every known root in ``roots`` (``(path, label)`` pairs: the
     repository, the home directory, the input and output folders), are replaced LITERALLY first, so a
@@ -207,10 +214,7 @@ def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = N
     pastes or attaches, so a traceback's home directory and the repository's location have no
     business in it.
     """
-    out = text
-    for s in secrets_:
-        if s:
-            out = scrub_text(out, s)  # the shared helper: split/join, and a marker that cannot rebuild the secret
+    out = text if paths_only else scrubbed(text, *secrets_)
     if run_dir:
         out = out.replace(str(run_dir), "<run>")
     for path, label in roots:
@@ -226,15 +230,6 @@ def scrub(text: str, *, secrets_: tuple[str, ...] = (), run_dir: Path | None = N
 
 #: How much of a failing child's stderr the report keeps: the last 12 lines (a traceback's tail, where the
 #: cause is) and 600 characters of stdout. They bound the REPORT's size and what an operator pastes.
-def _exc_text(exc: BaseException) -> str:
-    """``Type: message`` for a report -- except for a UnicodeError, whose message NAMES the character it could not encode
-    and its offset (a passphrase letter, when the passphrase file holds one this locale cannot carry): the exact-match
-    scrub cannot recognise a letter plus an offset, so such an error is recorded by its class alone."""
-    if isinstance(exc, UnicodeError):
-        return f"{type(exc).__name__} (its message is not recorded: it would name a character of the text being encoded)"
-    return f"{type(exc).__name__}: {exc}"
-
-
 def _tail(path: Path, lines: int = 12, *, secrets_: tuple[str, ...], run_dir: Path,
           roots: tuple[tuple[str, str], ...] = ()) -> str:
     try:
@@ -422,6 +417,8 @@ class _Interrupts:
     sent: bool = False
     #: When the last signal that COUNTED arrived: signals within ``SIGNAL_DEBOUNCE_S`` of it are one event.
     last: float | None = None
+    #: The run directory while a run is live: the third signal removes the children's raw logs from it before the runner leaves.
+    run_dir: Path | None = None
 
 
 _INT = _Interrupts()
@@ -584,7 +581,7 @@ def run_phase(
                                     start_new_session=True, preexec_fn=_pdeathsig_preexec())  # noqa: PLW1509
         except (OSError, subprocess.SubprocessError, UnicodeError) as exc:  # UnicodeError: an env value the locale cannot encode
             res.status, res.reason = "failed", scrub(
-                f"the phase could not be started ({_exc_text(exc)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
+                f"the phase could not be started ({exception_text(exc, *secrets_)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
             res.wall_seconds = round(time.monotonic() - t0, 3)
             res.disk_free_after_bytes = probe.free_disk(run_dir)
             return res
@@ -688,6 +685,7 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
     def __enter__(self):
         self._prev: dict = {}
         _INT.signal, _INT.count, _INT.pgid, _INT.sent, _INT.last = None, 0, None, False, None
+        _INT.run_dir = None
         if threading.current_thread() is not threading.main_thread():
             return self
 
@@ -708,7 +706,24 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
                     with contextlib.suppress(OSError):
                         os.killpg(pg, signal.SIGKILL)
                 final = signal.SIGTERM if signum == getattr(signal, "SIGQUIT", None) else signum
+                # The default action is armed FIRST, for every signal that does not dump a core: the log removal below
+                # touches the disk, a disk that is full or hung is exactly the state this way out is for, and the next
+                # signal must end the process even while that call is blocked.
+                for name in ("SIGHUP", "SIGTERM", "SIGINT"):
+                    sig = getattr(signal, name, None)
+                    if sig is not None:
+                        with contextlib.suppress(ValueError, OSError):
+                            signal.signal(sig, signal.SIG_DFL)
                 signal.signal(final, signal.SIG_DFL)
+                quit_sig = getattr(signal, "SIGQUIT", None)
+                if quit_sig is not None:
+                    # SIGQUIT's default dumps a core holding the passphrase, so it cannot be handed back: it ends the
+                    # process here, as a SIGTERM would, when a blocked removal is interrupted by it.
+                    with contextlib.suppress(ValueError, OSError):
+                        signal.signal(quit_sig, lambda _signum, _frame: os._exit(128 + int(signal.SIGTERM)))
+                if _INT.run_dir is not None:  # the raw logs hold the children's words unscrubbed: no report is coming to say so
+                    with contextlib.suppress(Exception):
+                        _remove_logs(_INT.run_dir)
                 os.kill(os.getpid(), final)
                 os._exit(128 + int(final))  # only reached where the signal was not delivered (a runner that is PID 1)
             if pg is not None:
@@ -733,24 +748,60 @@ class _terminating_signals:  # noqa: N801 - a context manager used like a functi
         return self
 
     def __exit__(self, *exc):
+        _INT.run_dir = None
         for sig, prev in self._prev.items():
             with contextlib.suppress(ValueError, OSError):  # pragma: no cover
                 signal.signal(sig, prev)
         return False
 
 
-def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: tuple[tuple[str, str], ...] = ()):
-    """``scrub`` applied to every string VALUE of a JSON-shaped value; KEYS lose their paths but are never touched
-    by the secret (a field name is code's, and a passphrase that equalled one would rename it: the rule in
-    docs/ledger/LESSONS.md, "leave the fields a program reads alone")."""
+def _scrub_obj(obj, *, secrets_: tuple[str, ...], run_dir: Path | None, roots: tuple[tuple[str, str], ...] = (),
+               paths_only: bool = False):
+    """``scrub`` applied to every string in a JSON-shaped value, KEYS included: the keys of a child's JSON are the child's
+    words, not this module's (``IngestReport.to_dict()`` defines them today, but a key built from an engine's text would carry
+    it), so a key that holds a secret is rewritten, and two keys that come to the same text are kept apart (``#2``). The runner
+    reads no key of a child's JSON that a pathological passphrase could rename but ``osm_db_bytes`` and ``extract_bytes``, which
+    then read as missing: the failing-closed side. ``paths_only=True`` (the finished report, scrubbed where each text was made)
+    reduces paths and takes out no secret."""
     if isinstance(obj, str):
-        return scrub(obj, secrets_=secrets_, run_dir=run_dir, roots=roots)
+        return scrub(obj, secrets_=secrets_, run_dir=run_dir, roots=roots, paths_only=paths_only)
     if isinstance(obj, list):
-        return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for v in obj]
+        return [_scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots, paths_only=paths_only) for v in obj]
     if isinstance(obj, dict):
-        return {(scrub(k, run_dir=run_dir, roots=roots) if isinstance(k, str) else k):
-                _scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots) for k, v in obj.items()}
+        out: dict = {}
+        for k, v in obj.items():
+            key = scrub(k, secrets_=secrets_, run_dir=run_dir, roots=roots, paths_only=paths_only) if isinstance(k, str) else k
+            n = 1
+            while key in out:
+                n += 1
+                key = f"{key}#{n}"
+            out[key] = _scrub_obj(v, secrets_=secrets_, run_dir=run_dir, roots=roots, paths_only=paths_only)
+        return out
     return obj
+
+
+def _remove_logs(run_dir: Path) -> dict:
+    """Delete the children's RAW logs (``logs/<phase>.out`` and ``.err``) from a store that is NOT being deleted (kept, or left
+    by a deletion that stopped short): they are the engine's output as it wrote it, paths and anything it echoed, and such
+    a store is left on a disk for days. The report carries the scrubbed tails, which is the record. A file that cannot be
+    removed is named in the report; this never raises (an OSError here must not cost the report)."""
+    left = 0
+    try:
+        log_dir = run_dir / "logs"
+        for f in sorted(log_dir.glob("*")) if log_dir.is_dir() else []:
+            try:
+                f.unlink()
+            except OSError:
+                left += 1
+        with contextlib.suppress(OSError):
+            log_dir.rmdir()
+    except OSError:
+        left += 1
+    return {"logs_removed": left == 0,
+            "logs_note": ("the children's raw logs were removed from the store; the report carries their scrubbed tails"
+                          if left == 0 else
+                          f"{left} of the children's raw log files could not be removed and stay beside the store, "
+                          "unscrubbed; --cleanup deletes them")}
 
 
 def _file_facts(p: Path | None) -> dict | None:
@@ -966,7 +1017,7 @@ def _run(
         report["finished_at"] = now().isoformat()
         # Paths only: every engine text was scrubbed of the passphrase where it was made (above), and a pass of the
         # secret over the finished record could rewrite a verdict word the exit code reads (a passphrase "failed").
-        final = _scrub_obj(report, secrets_=(), run_dir=run_dir, roots=roots)
+        final = _scrub_obj(report, secrets_=(), run_dir=run_dir, roots=roots, paths_only=True)
         if report_path is not None:
             try:
                 write_report(final, report_path)
@@ -1004,6 +1055,7 @@ def _run(
     tmp_dir = run_dir / "tmp"
     try:
         run_dir.mkdir(mode=0o700)
+        _INT.run_dir = run_dir
     except OSError as exc:  # an unwritable workdir is a named refusal with a report, not a traceback
         report["status"] = "refused"
         report["reason"] = f"the throwaway store cannot be made in the work directory ({type(exc).__name__})"
@@ -1064,7 +1116,7 @@ def _run(
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
     except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
-        note = scrub(f"the runner itself failed: {_exc_text(exc)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
+        note = scrub(f"the runner itself failed: {exception_text(exc, passphrase)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
         if report["status"] == "ok":
             report["status"], report["reason"] = "failed", note
         else:  # what happened first (a signal, a guard's stop) stays the status; this is added to it
@@ -1080,17 +1132,21 @@ def _run(
             report["not_measured"] += [f"phase {n}: did not run to completion (the run ended {report['status']})"
                                        for n in unfinished]
         if keep_store:
-            report["store"] = {"kept": True, "note": "left for a separate gazetteer build; delete it with --cleanup"}
+            report["store"] = {"kept": True, "note": "left for a separate gazetteer build; delete it with --cleanup",
+                               **_remove_logs(run_dir)}
             kept_dir: Path | None = run_dir
         elif survived:
             report["store"] = {"kept": True, "deleted": False,
                                "note": "a process of the child's group was still alive after SIGKILL, so the store was NOT "
-                                       "deleted; delete it with --cleanup once that process is gone"}
+                                       "deleted; delete it with --cleanup once that process is gone",
+                               **_remove_logs(run_dir)}
             kept_dir = run_dir
         else:
             gone = _delete_store(run_dir, probe)
             report["store"] = {"kept": not gone.get("deleted"), **gone}
             kept_dir = None if gone.get("deleted") else run_dir
+            if not gone.get("deleted"):  # a deletion that stopped short leaves what it left: the raw logs go regardless
+                report["store"].update(_remove_logs(run_dir))
     if _INT.signal is not None and report["status"] != "interrupted":
         # What the run did stays its status (a finished run is ok, a guard's stop is refused-mid-run); the signal
         # that reached the runner is recorded beside it, never lost.

@@ -120,7 +120,19 @@ _READ = r"""
 ([id, host, idx]) => {
   const s = id ? document.getElementById(id)
     : (document.getElementById(host) || document.createElement('i')).querySelectorAll('select')[idx];
-  return s ? {value: s.value, n: s.options.length} : null;
+  // ``same``: is it still the very element ``_MARK`` took before the pick? A panel that redraws a select
+  // on every pick hands back a NEW element whose value is the page's own echo, not the operator's pick.
+  return s ? {value: s.value, n: s.options.length, same: s === window.__sweepRef} : null;
+}
+"""
+
+# Keep the select the pick is about, so the read-back can tell a rebuilt control from the same one.
+_MARK = r"""
+([id, host, idx]) => {
+  const s = id ? document.getElementById(id)
+    : (document.getElementById(host) || document.createElement('i')).querySelectorAll('select')[idx];
+  window.__sweepRef = s || null;
+  return !!s;
 }
 """
 
@@ -174,6 +186,7 @@ def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = 
             s0 = page.evaluate(_STATE)
             page.wait_for_timeout(400)
             before = page.evaluate(_STATE)
+            page.evaluate(_MARK, path)
             sel.select_option(value=pick, timeout=3000)
             page.wait_for_timeout(400)
             after = page.evaluate(_STATE)
@@ -192,7 +205,11 @@ def sweep_selects(page, where: str, results: list, log, seen: set, scope: str = 
                       else "net" if after["net"] - before["net"] > idle["net"]
                       else "dom" if after["mut"] - before["mut"] > idle["mut"] else "none")
             status = "unread" if held is None else "REVERTED" if held is False else "ok"
-            row.update(status=status, picked=pick, held=held, effect=effect, idle_net=idle["net"], idle_mut=idle["mut"])
+            # ``rebuilt``: the control the pick was made on is gone and the value above was read from its
+            # replacement (the one a person now sees). Recorded, never hidden; a row from before this field
+            # existed has no such key.
+            row.update(status=status, picked=pick, held=held, effect=effect, idle_net=idle["net"], idle_mut=idle["mut"],
+                       rebuilt=bool(back is not None and not back.get("same")))
             if held is None:
                 row["why"] = "the select was gone or rebuilt after the pick: its value could not be read back"
             try:  # restore, so the next select starts from the state it found

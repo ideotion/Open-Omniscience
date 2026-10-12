@@ -248,7 +248,7 @@ the `[analysis]` extra (the app still boots without it, those endpoints disabled
 | `GET /api/database/backup` | Consistent SQLite snapshot download (SQLite only) |
 | `POST /api/database/v2/restore/preview`, `/v2/restore/commit`, `/api/backup/v2/*` | **Additive-only** restore via the signed `oo-backup-2` artifact: preview the merge plan, then commit. Restore **never overwrites your corpus** — it merges duplicate-lessly, keeping local values on conflict (the destructive replace path was removed on 2026-06-13) |
 | `GET/PUT /api/settings` | GUI preferences (theme, default result limit) |
-| `… /api/scheduler/...` | Background ingester: status, start, stop, run-now, config (modes: rss / crawl / markets) |
+| `… /api/scheduler/...` | Background collection: status, start, stop, run-now, config. Since the `0.4` cycle collection runs as **lanes side by side** (`rss` / `crawl` / `markets` / `wiki` / `law`), not one scheduler mode — per-lane storage under `… /api/storage/...`, and the **Living sources** tab reads `… /api/living/...` (what changed in Wikipedia, law and maps) |
 | `… /api/markets/rules`, `/rules/{id}/run`, `/overview` | Per-source price-extraction rules + a "test" run + Markets overview |
 | `GET /api/markets/feeds`, `POST /feeds/{key}/import`, `/feeds/import-url` | Official CSV price-feed catalog + import (FRED/World Bank/EIA) + custom-URL import |
 | `GET /api/catalog/export.csv`, `/template.csv`, `/columns`, `POST /api/catalog/import` | Source-list CSV export / template / columns / upsert-by-domain import |
@@ -322,21 +322,21 @@ Global South (per `ROADMAP.md`’s anti-bias goal):
 | `fr` | French | Français | LTR | **complete** (vouched) |
 | `es` | Spanish | Español | LTR | **complete** (vouched) |
 | `de` | German | Deutsch | LTR | **complete** (vouched) |
-| `zh` | Chinese (Mandarin) | 中文 | LTR | stub → community |
-| `hi` | Hindi | हिन्दी | LTR | stub → community |
-| `ar` | Arabic | العربية | **RTL** | stub → community |
-| `bn` | Bengali | বাংলা | LTR | stub → community |
-| `ru` | Russian | Русский | LTR | stub → community |
-| `pt` | Portuguese | Português | LTR | stub → community |
-| `id` | Indonesian | Bahasa Indonesia | LTR | stub → community |
-| `ja` | Japanese | 日本語 | LTR | stub → community |
+| `zh` | Chinese (Mandarin) | 中文 | LTR | complete (translated, `0.4` cycle; not yet vouched) |
+| `hi` | Hindi | हिन्दी | LTR | complete (translated, `0.4` cycle; not yet vouched) |
+| `ar` | Arabic | العربية | **RTL** | complete (translated, `0.4` cycle; not yet vouched) |
+| `bn` | Bengali | বাংলা | LTR | complete (translated, `0.4` cycle; not yet vouched) |
+| `ru` | Russian | Русский | LTR | complete (translated, `0.4` cycle; not yet vouched) |
+| `pt` | Portuguese | Português | LTR | complete (translated, `0.4` cycle; not yet vouched) |
+| `id` | Indonesian | Bahasa Indonesia | LTR | complete (translated, `0.4` cycle; not yet vouched) |
+| `ja` | Japanese | 日本語 | LTR | complete (translated, `0.4` cycle; not yet vouched) |
 
 Easy next additions for reach: **Swahili (`sw`)**, **Urdu (`ur`, RTL)**, Italian
 (`it`), Turkish (`tr`), Vietnamese (`vi`).
 
 **Honesty stance.** A *stub* makes a language **selectable now** and falls back to
-English for any untranslated string — so the dozen are "available" without pretending
-they're translated. We mark each locale `complete | draft | stub`. The maintainer
+English for any untranslated string — a partial locale never breaks the UI (this is
+the mechanism any future locale — `it`, `tr`, `vi`, … — starts from). We mark each locale `complete | draft | stub`. The maintainer
 ships only what they can vouch for; everything else is filled by **community
 contribution** (this is precisely how open-source widens access).
 
@@ -400,8 +400,14 @@ Docs are long and translation quality matters more than for short UI strings, so
 ### Status
 
 **Phase 1 (done):** the i18n engine (`i18n.js`), the locale scaffold for all 12
-languages, and complete reference translations for **en/fr/es/de**; the rest are
-selectable stubs (English fallback).
+languages, and complete reference translations for **en/fr/es/de**.
+
+**Phase 1b (done, `0.4.0`):** the remaining interface strings were keyed and
+translated into **all twelve** languages (see `CHANGES.md` 0.4.0), so every
+locale in `src/static/locales/*.json` now carries the full key set (verified:
+12 files, 6,991 keys each, none missing). Honesty is unchanged: names are
+proper nouns and are not translated, and a partial locale still falls back to
+English rather than breaking.
 
 **Phase 2 (done — pending a real browser pass):** `i18n.js` is included in
 `index.html` (and was in `desk.html` until Desk's 2026-06-10 retirement); a

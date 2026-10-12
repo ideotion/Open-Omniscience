@@ -2317,6 +2317,20 @@
 .lane-search { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
 .lane-search h3 { margin: 0 0 4px; font-size: 15px; }
 .wiki-table-wrap { max-width: 100%; overflow-x: auto; }
+/* Phone width (9 px headings at <= 340 px are the floor: 10 px leaves +4 px in the ink theme at 320 px): the two analytics tables (one item across editions, most-viewed beside the corpus) were wider than their frame at 390 px
+   (24 and 48 px) and still were at 360 and 320 px with only the padding tightened, which cut the last column (the figure the table is
+   for) off behind a sideways scroll. Measured headroom (frame minus the narrowest the table can be drawn) after this rule, the smallest
+   over 15 themes and both languages (divergence / attention): 390 px +62/+56, 360 px +32/+26, 320 px +16/+18 (docs/audit/analytics45-look-2026-10-12/). */
+@media (max-width: 480px) {
+  .wiki-table-wrap .living-table { font-size: 12px; }
+  .wiki-table-wrap .living-table th, .wiki-table-wrap .living-table td { padding-inline: 2px; }
+  .wiki-table-wrap .living-table th { font-size: 10px; }
+}
+@media (max-width: 340px) {
+  .wiki-table-wrap .living-table { font-size: 11px; }
+  .wiki-table-wrap .living-table th, .wiki-table-wrap .living-table td { padding-inline: 1px; }
+  .wiki-table-wrap .living-table th { font-size: 9px; }
+}
 .wiki-size-bar { display: block; height: 6px; margin-top: 3px; min-width: 60px; max-width: 160px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .wiki-size-bar > i { display: block; height: 100%; background: var(--accent); }
 .lane-cov { margin: 2px 0 6px; padding-inline-start: 18px; }

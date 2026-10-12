@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
-def main() -> int:
+def _main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--history", required=True, type=Path, help="the full-history .osm.pbf on disk")
     ap.add_argument("--extract", required=True, type=Path, help="the continent extract the country was cut from")
@@ -37,6 +37,7 @@ def main() -> int:
     args = ap.parse_args()
 
     from src.database.connect import get_passphrase, is_encrypted_file, plaintext_mode
+    from src.monitoring.secret_scrub import exception_text
     from src.osm.history import HistoryError, ingest_history
     from src.osm.reader import GeoExtraMissing
     from src.paths import data_dir
@@ -50,10 +51,10 @@ def main() -> int:
     try:
         report = ingest_history(args.history, args.extract, args.country, reader=args.reader)
     except (GeoExtraMissing, HistoryError) as exc:
-        print(f"refused: {exc}")
+        print(f"refused: {exception_text(exc, typed=False)}")
         return 2
     except Exception as exc:  # noqa: BLE001 - the operator reads the reason, the row records it
-        print(f"failed: {type(exc).__name__}: {exc}")
+        print(f"failed: {exception_text(exc)}")
         return 1
     out = report.to_dict()
     out["history_bytes"] = args.history.stat().st_size
@@ -61,6 +62,18 @@ def main() -> int:
     out["osm_db_bytes"] = lane_file_bytes("osm")
     print(json.dumps(out, indent=2, sort_keys=True, default=str))
     return 0
+
+
+def main() -> int:
+    # The WHOLE of the command is under one handler: the child holds the store's passphrase, and a default traceback
+    # (from the key lookup, the file stats, the lane size read) would print the exception as it made its message.
+    try:
+        return _main()
+    except Exception as exc:  # noqa: BLE001 - the operator reads the reason
+        from src.monitoring.secret_scrub import exception_text
+
+        print(f"failed: {exception_text(exc)}")
+        return 1
 
 
 if __name__ == "__main__":

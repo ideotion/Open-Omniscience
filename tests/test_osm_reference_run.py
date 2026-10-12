@@ -11,13 +11,16 @@ import contextlib
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from scripts import osm_reference_run as CLI
+from src.monitoring import secret_scrub as SS
 from src.osm import reference_run as R
 from tests._osm_lane_helpers import FIXTURE, HAVE_OSMIUM, ROOT
 
@@ -737,11 +740,15 @@ def test_a_member_that_survives_the_sweep_keeps_the_store_and_the_report_says_so
     monkeypatch.setattr(R, "_wait_group_gone", lambda pgid, timeout_s: False)
     called = []
     monkeypatch.setattr(R, "_delete_store", lambda *a, **k: called.append(1) or {"deleted": True})
-    report, kept = _run(tmp_path, phases_override=_scripted("print(1)"))
+    # MUTATION TARGET: drop the `_remove_logs` call from the `survived` branch.
+    code = "import sys\nsys.stderr.write('raw-log-words-4471\\n')\nprint(1)"
+    report, kept = _run(tmp_path, phases_override=_scripted(code))
     assert not called, "the store was deleted under a member that was still alive"
     assert report["status"] == "failed" and report["phases"][0]["group_survived"] is True
     assert report["store"]["kept"] is True and "still alive" in report["store"]["note"]
     assert kept is not None and kept.is_dir()
+    assert report["store"]["logs_removed"] is True and not (kept / "logs").exists()
+    assert all(b"raw-log-words-4471" not in f.read_bytes() for f in kept.rglob("*") if f.is_file())
     monkeypatch.undo()
     assert R.cleanup(kept)["deleted"] is True
 
@@ -863,18 +870,29 @@ def test_a_passphrase_that_holds_a_newline_is_scrubbed_before_the_stderr_tail_is
         assert part not in json.dumps(report), part
 
 
-def test_a_passphrase_that_is_a_field_name_scrubs_the_engines_words_and_leaves_the_report_alone(tmp_path):
-    """The runner puts no minimum on a passphrase (the app's own rule is guidance, and this store is not the
-    install's): one that equals a key and a verdict word must not rename a field or turn a verdict into a marker."""
+def test_a_passphrase_that_is_a_field_name_scrubs_the_childs_words_and_leaves_the_runners_report_alone(tmp_path):
+    """The runner puts no minimum on a passphrase (the app's own rule is guidance, and this store is not the install's): one
+    that equals a verdict word must not turn the RUNNER's verdict into a marker. The child's JSON is the child's words, keys
+    included (a key built from an engine's text would carry it), so its key `status` is rewritten, failing closed."""
     key = tmp_path / "op.key"
     key.write_text("status", "utf-8")
-    code = "import json\nprint(json.dumps({'note': 'the passphrase is status', 'status': 'fine'}))"
+    code = "import json\nprint(json.dumps({'note': 'the passphrase is status', 'status': 'fine', 'plain': 'x'}))"
     report, _ = _run(tmp_path, phases_override=_scripted(code), passphrase_file=key)
-    assert report["status"] == "ok" and "status" in report["phases"][0]
+    assert report["status"] == "ok" and report["phases"][0]["status"] == "ok", "the runner's own fields are its own"
     app = report["phases"][0]["app_report"]
-    assert app["status"] == "fine", "the child's own value is its own"
-    assert "status" in app, "a KEY is never rewritten by the secret"
+    assert "status" not in app and "plain" in app, "the child's key that IS the secret is rewritten; the others stay"
     assert "***redacted***" in app["note"] and "is status" not in app["note"]
+    assert "***redacted***" in app and app["***redacted***"] == "fine"
+
+
+def test_two_keys_of_a_childs_json_that_scrub_to_the_same_text_stay_apart(tmp_path):
+    key = tmp_path / "k"
+    key.write_text("collision-secret-1", "utf-8")
+    code = ("import json\nprint(json.dumps({'collision-secret-1': 1, '***redacted***': 2, 'ok': 3}))")
+    report, _ = _run(tmp_path, phases_override=_scripted(code), passphrase_file=key)
+    app = report["phases"][0]["app_report"]
+    assert sorted(app.values()) == [1, 2, 3] and "collision-secret-1" not in json.dumps(app)
+    assert "***redacted***#2" in app, "the second key is kept apart, not dropped"
 
 
 def test_a_passphrase_file_that_is_not_utf8_is_refused_without_naming_a_byte(tmp_path):
@@ -910,14 +928,42 @@ def test_a_path_inside_a_childs_json_report_is_scrubbed(tmp_path):
     assert "/home/alice" not in text and "/srv/keyed" not in text and "osm.db" in text
 
 
-def test_the_childs_logs_are_owner_only(tmp_path):
-    code = "print('x')"
+def test_the_childs_logs_are_owner_only(tmp_path, monkeypatch):
+    # Read the modes at the moment the runner removes them: the logs are gone from a kept store afterwards.
+    seen: dict[str, int] = {}
+    real = R._remove_logs
+
+    def _look(run_dir):
+        for f in (run_dir / "logs").glob("*"):
+            seen[f.name] = f.stat().st_mode & 0o077
+        return real(run_dir)
+
+    monkeypatch.setattr(R, "_remove_logs", _look)
     pf = tmp_path / "op.key"
     pf.write_text("op-passphrase-0123456789\n", encoding="utf-8")
-    _report, kept = _run(tmp_path, phases_override=_scripted(code), keep_store=True, passphrase_file=pf)
+    _report, kept = _run(tmp_path, phases_override=_scripted("print('x')"), keep_store=True, passphrase_file=pf)
     try:
-        for f in (kept / "logs").glob("*"):
-            assert (f.stat().st_mode & 0o077) == 0, f.name
+        assert seen, "the runner made logs for the phase"
+        assert all(mode == 0 for mode in seen.values()), seen
+    finally:
+        R.cleanup(kept)
+
+
+def test_the_childs_raw_logs_do_not_stay_on_disk_in_a_kept_store(tmp_path):
+    # The raw logs hold the child's words unscrubbed; a kept store would leave them beside the operator's files.
+    # MUTATION TARGET: drop the `_remove_logs` call from the keep-store branch.
+    secret = "kept-store-log-secret-6613"
+    pf = tmp_path / "op.key"
+    pf.write_text(secret + "\n", encoding="utf-8")
+    code = f"import sys\nprint('{secret} on stdout')\nsys.stderr.write('{secret} on stderr\\n')"
+    report, kept = _run(tmp_path, phases_override=_scripted(code), keep_store=True, passphrase_file=pf)
+    try:
+        assert report["store"]["logs_removed"] is True and "logs_note" in report["store"]
+        assert not (kept / "logs").exists()
+        for f in kept.rglob("*"):
+            if f.is_file() and f.name != "op.key":
+                assert secret.encode() not in f.read_bytes(), f
+        assert secret not in json.dumps(report)
     finally:
         R.cleanup(kept)
 
@@ -1171,6 +1217,199 @@ def test_a_key_letter_the_locale_cannot_encode_is_never_named_in_the_report(tmp_
     for leaked in ("é", "xe9", "u00e9", "position", "ordinal", "range(128)", str(key_text.index("é"))):
         assert leaked not in report["reason"], leaked
     assert key_text not in text
+
+
+def test_the_operators_own_passphrase_is_taken_out_of_a_childs_words_though_it_was_never_handed_in(tmp_path, monkeypatch):
+    # The shared scrub takes out every passphrase this process HOLDS (here the environment's), beside the throwaway store's.
+    # MUTATION TARGET: `scrub` back to scrubbing only the secrets it is given.
+    held = "operators-own-store-passphrase-7731"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+    code = f"import sys\nprint('{held} on stdout')\nsys.stderr.write('Traceback: {held} on stderr\\n')\nsys.exit(1)"
+    report, _ = _run(tmp_path, phases_override=_scripted(code))
+    assert report["status"] == "failed"
+    assert held not in json.dumps(report) and held not in json.dumps(report, ensure_ascii=False)
+    assert "on stderr" in json.dumps(report), "the engine's other words stay"
+
+
+def test_a_runner_failure_and_a_phase_that_cannot_start_are_written_through_the_shared_scrub(tmp_path, monkeypatch):
+    # The two handlers that write a caught exception: `exception_text` takes out the throwaway key AND the held ones.
+    # MUTATION TARGET: either handler back to a hand-made `f"{type(exc).__name__}: {exc}"`.
+    key_text = "a-key-the-operator-made-9921"
+    held = "the-sessions-own-passphrase-4410"
+    key = tmp_path / "k"
+    key.write_text(key_text, "utf-8")
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _boom(*a, **kw):
+        raise RuntimeError(f"engine said {key_text} and {held}")
+
+    monkeypatch.setattr(R, "run_phase", _boom)
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "failed" and "RuntimeError" in report["reason"]
+    assert key_text not in json.dumps(report) and held not in json.dumps(report)
+    monkeypatch.undo()
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _no_exec(*a, **kw):
+        raise OSError(f"cannot execute with {key_text} and {held}")
+
+    monkeypatch.setattr(R.subprocess, "Popen", _no_exec)
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "failed" and "could not be started" in report["reason"] and "OSError" in report["reason"]
+    assert key_text not in json.dumps(report) and held not in json.dumps(report)
+
+
+def test_the_commands_refusal_line_takes_out_a_held_passphrase(tmp_path, monkeypatch):
+    held = "held-by-the-process-for-the-refusal-5502"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _refuse(**kw):
+        raise ValueError(f"the workdir {held} cannot be used")
+
+    monkeypatch.setattr(R, "run", _refuse)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 2 and held not in out and "refused:" in out
+    monkeypatch.setattr(R, "run", lambda **kw: (_ for _ in ()).throw(UnicodeEncodeError("ascii", "pässword", 1, 2, "x")))
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 2 and "UnicodeEncodeError" in out and "ä" not in out and "ordinal" not in out and "position" not in out
+
+
+def test_the_commands_country_refusal_line_takes_out_a_held_passphrase(tmp_path, monkeypatch):
+    # `country_codes` names the value it was given; a passphrase typed as the country must not reach the terminal.
+    held = "held-and-typed-as-the-country-8841"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", held)
+    assert rc == 2 and out.startswith("refused:") and "not an ISO 3166-1" in out
+    assert held not in out and held.upper() not in out
+
+
+def test_the_commands_country_refusal_line_writes_a_unicode_error_by_class_alone(tmp_path, monkeypatch):
+    # The engine text of a UnicodeError names a letter and an offset that no exact-match scrub takes out: only
+    # `exception_text` writes it by class. MUTATION TARGET: the line back to `R.scrub(str(exc))`.
+    import src.osm.ingest as ingest
+
+    def _bad(_code):
+        raise UnicodeEncodeError("ascii", "pässword", 1, 2, "ordinal not in range")
+
+    monkeypatch.setattr(ingest, "country_codes", _bad)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ")
+    assert rc == 2 and "UnicodeEncodeError" in out
+    for leaked in ("ä", "position", "ordinal", "pässword"):
+        assert leaked not in out, leaked
+
+
+def test_the_command_writes_a_crash_as_a_typed_failure_not_a_refusal_and_not_a_traceback(tmp_path, monkeypatch):
+    # `_run` records every Exception; the command's own handler must be as wide (a RuntimeError, a KeyError...), but a
+    # crash is not an operator's refusal: it is typed and exits 1. MUTATION TARGET: the handler back to
+    # `except (OSError, ValueError)` (a traceback), or the wide branch printing "refused:" and exiting 2.
+    held = "held-by-the-process-for-a-runtime-error-3307"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", held)
+
+    def _boom(**kw):
+        raise RuntimeError(f"engine said {held}")
+
+    monkeypatch.setattr(R, "run", _boom)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 1 and out.startswith("failed: RuntimeError") and held not in out
+
+
+def test_the_raw_logs_go_when_the_deletion_stops_short_and_a_failing_removal_never_costs_the_report(tmp_path, monkeypatch):
+    # MUTATION TARGET: the `_remove_logs` call after a deletion that did not complete (the store is left, logs and all).
+    secret = "short-deletion-log-secret-2208"
+    code = f"import sys\nsys.stderr.write('{secret}\\n')\nprint('x')"
+    monkeypatch.setattr(R, "_delete_store", lambda run_dir, probe: {"deleted": False, "error": "the deletion stopped: OSError"})
+    report, kept = _run(tmp_path, phases_override=_scripted(code))
+    try:
+        assert report["store"]["deleted"] is False and report["store"]["logs_removed"] is True
+        assert not (kept / "logs").exists()
+    finally:
+        monkeypatch.undo()
+        R.cleanup(kept)
+    # A listing that fails is a recorded "not removed", never an exception out of the finally.
+    (tmp_path / "logs").mkdir()
+    monkeypatch.setattr(Path, "glob", lambda self, pat: (_ for _ in ()).throw(OSError("listing failed")))
+    out = R._remove_logs(tmp_path)
+    assert out["logs_removed"] is False and "could not be removed" in out["logs_note"]
+
+
+def test_the_third_signal_removes_the_raw_logs_before_the_runner_goes(tmp_path):
+    # No report is coming after a third signal, so the unscrubbed logs must not wait for one.
+    # MUTATION TARGET: drop the `_remove_logs(_INT.run_dir)` in the handler's third-signal branch.
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "ingest.err").write_text("the passphrase-bearing words\n", "utf-8")
+    code = (
+        "import signal, sys\nfrom pathlib import Path\nfrom src.osm import reference_run as R\n"
+        "with R._terminating_signals():\n"
+        "    h = signal.getsignal(signal.SIGTERM)\n"
+        f"    R._INT.run_dir = Path({str(tmp_path)!r})\n"
+        "    R._INT.count = 2\n"
+        "    h(signal.SIGTERM, None)\n"
+        "print('survived the third')\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+    assert done.returncode == -15 and "survived" not in done.stdout
+    assert not logs.exists()
+
+
+# `getattr`: the decorator runs at import, before the module's Linux-only skip applies, and Windows has no SIGQUIT.
+_SIGQUIT = getattr(signal, "SIGQUIT", None)
+
+
+@pytest.mark.parametrize("sig,expected", [
+    (signal.SIGINT, -signal.SIGINT),
+    pytest.param(_SIGQUIT, 128 + signal.SIGTERM, marks=pytest.mark.skipif(_SIGQUIT is None, reason="no SIGQUIT on this platform")),
+])
+def test_a_third_signal_arms_the_way_out_before_the_log_removal_can_block(tmp_path, sig, expected):
+    # A full or hung disk is exactly when the way out is needed: the removal may block, and the NEXT signal must still end
+    # the process (SIGQUIT by exit status 143, never by its core-dumping default).
+    # MUTATION TARGET: the removal moved back before the default action / the SIGQUIT handler is armed.
+    code = (
+        "import signal, sys, time\nfrom pathlib import Path\nfrom src.osm import reference_run as R\n"
+        "def _stuck(run_dir):\n    print('blocked', flush=True)\n    time.sleep(120)\n"
+        "R._remove_logs = _stuck\n"
+        "with R._terminating_signals():\n"
+        "    h = signal.getsignal(signal.SIGTERM)\n"
+        f"    R._INT.run_dir = Path({str(tmp_path)!r})\n"
+        "    R._INT.count = 2\n"
+        "    h(signal.SIGTERM, None)\n"
+        "print('survived the third')\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", code], cwd=str(ROOT), stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.stdout.readline().strip() == "blocked"
+        time.sleep(0.5)  # past the debounce: a separate event
+        proc.send_signal(sig)
+        # 20 s: the stub sleeps 120 s, so a process still alive at 20 s can only be blocked; the slack covers a loaded runner.
+        assert proc.wait(timeout=20) == expected
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def test_a_secret_under_the_floor_withholds_the_whole_text_it_is_found_in(tmp_path):
+    # A two-character key cannot be taken out of free text without ruining it, so any text holding it is withheld whole.
+    # MUTATION TARGET: `scrub` back to a per-needle loop (which would leave the surrounding words).
+    key = tmp_path / "short.key"
+    key.write_text("q7", "utf-8")
+    code = "import sys\nsys.stderr.write('Traceback q7 then trailing-words\\n')\nprint('fine words')\nsys.exit(1)"
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted(code))
+    text = json.dumps(report)
+    assert report["status"] == "failed"
+    assert "trailing-words" not in text and SS.UNREADABLE_TEXT in text
+
+
+def test_a_passphrase_that_is_a_verdict_word_leaves_the_finished_report_alone(tmp_path, monkeypatch):
+    # The finished pass is paths only: a key `ok` (the word of a good verdict) must not rewrite a status the exit code reads.
+    # The process HOLDS `ok` (the environment's), so a finished pass that scrubbed secrets would withhold the status.
+    # MUTATION TARGET: the finished pass back to `paths_only=False`.
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "ok")
+    key = tmp_path / "ok.key"
+    key.write_text("ok", "utf-8")
+    report, _ = _run(tmp_path, passphrase_file=key, phases_override=_scripted("print(1)"))
+    assert report["status"] == "ok" and report["phases"][0]["status"] == "ok"
+    assert report["store"]["deleted"] is True
 
 
 def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, monkeypatch):

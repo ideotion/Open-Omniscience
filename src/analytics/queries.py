@@ -1572,6 +1572,20 @@ def article_graph(
     return graph
 
 
+def _empty_ring_caveat(session, ring_id: str, noun: str) -> str:
+    """Why a ring resolved to no keyword: the corpus has not indexed its words yet, or it has them and the stoplist
+    (or the user's exclusions) hides every one. The second must not read as the first (R111 step T2)."""
+    from src.analytics.group_stats import hidden_group_keyword_count
+
+    n = hidden_group_keyword_count(session, ring_id)
+    if n:
+        return (
+            f"Every keyword of this {noun} in your corpus ({n}) is hidden by the stoplist or your own exclusions, "
+            "so there is nothing to count."
+        )
+    return f"No indexed keywords in this {noun} yet for your corpus."
+
+
 def ring_country_split(session, *, ring_id: str, days: int | None = None, limit: int = 40) -> dict:
     """Split a cross-language equivalence RING's coverage by the SOURCE country.
 
@@ -1590,6 +1604,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     country are bucketed honestly as ``null`` (unlocated), never dropped or guessed.
     """
     from src.analytics import equivalence
+    from src.analytics.filters import hidden_set
 
     ring = equivalence.ring_meta(ring_id)
     if ring is None:
@@ -1599,11 +1614,16 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     # Pre-filter in SQL to this ring's member terms, then confirm the language-qualified
     # ring membership in Python (so a term shared across rings/languages is attributed
     # correctly, never fabricated).
-    cand = (
-        session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
+    # A member the stoplist hides (`news` in `news-media`) is left out (R111 step T2), as in
+    # group_stats.resolve_group_keyword_ids: the list only, not a listing's length rule.
+    hidden = hidden_set()
+    cand = [
+        c
+        for c in session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
         .filter(Keyword.normalized_term.in_(member_terms))
         .all()
-    )
+        if c[2] not in hidden
+    ]
     kw_ids = [kid for kid, lang, norm in cand if equivalence.ring_of(lang, norm) == ring_id]
     languages = sorted({lang for _kid, lang, norm in cand
                         if equivalence.ring_of(lang, norm) == ring_id and lang})
@@ -1614,7 +1634,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         return {"ring_id": ring_id, "found": True, "countries": [], "n_keywords": 0,
                 "languages": languages, "n_countries": 0, "countries_listed": 0,
                 "truncated": False,
-                "caveat": "No indexed keywords in this ring yet for your corpus."}
+                "caveat": _empty_ring_caveat(session, ring_id, "ring")}
     q = (
         session.query(
             Source.country,
@@ -1722,7 +1742,7 @@ def ring_country_article_ids(
         return {
             "ring_id": ring_id, "found": True, "country": country,
             "article_ids": [], "returned_count": 0, "bounded": False,
-            "caveat": "No indexed keywords in this group yet for your corpus.",
+            "caveat": _empty_ring_caveat(session, ring_id, "group"),
         }
 
     # .distinct() the QUERY method (SELECT DISTINCT), never a bare func.distinct()
