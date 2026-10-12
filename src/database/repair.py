@@ -359,7 +359,7 @@ def _open_probe(target: Path) -> _Probe:
             "unwatchable",
             f"the library file could not be opened to tell whether it is written to while it is copied ({type(exc).__name__}), so "
             "nothing was switched",
-        ) from exc
+        ) from None
 
 
 def fingerprint(path: Path) -> dict[str, int] | None:
@@ -830,7 +830,7 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         report.update(outcome="failed", reason="copy-failed", failure=failure)
         # The TYPE only, never the text or a traceback: the copy runs on keyed connections, so what a driver says (and the error it
         # was raised from, which a traceback prints too) can carry a statement that holds the passphrase. The record above carries
-        # the driver's first line, scrubbed; this log carries neither.
+        # the class and a fixed label of the driver's error (no word of its text); this log carries the class alone.
         _LOG.warning("database repair failed (%s)", type(exc).__name__)
         raise
     finally:
@@ -1276,14 +1276,14 @@ def _swap(
                 twin, original = fingerprint(kept), fingerprint(live)
                 if twin is None or original is None or twin["ino"] != original["ino"]:
                     raise  # a different file already has that name: never overwrite it
-            except OSError as exc:
+            except OSError:
                 for extra in made:
                     with contextlib.suppress(OSError):
                         extra.unlink()
                 for spent in (finished, sidecar):
                     with contextlib.suppress(OSError):
                         spent.unlink()
-                raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from exc
+                raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
         _note_what_was_set_aside(report, damaged)
 
         def written_to_since() -> None:
@@ -1297,7 +1297,7 @@ def _swap(
                 # file is still the one the sidecar recorded, or discards it if not.
                 raise Declined(
                     "writer-busy", f"another connection kept the library's write lock, so it could not be told whether it was written to ({type(exc).__name__})"
-                ) from exc
+                ) from None
             if moved or fingerprint(target) != now:
                 raise Declined(
                     "saved-during-the-copy",

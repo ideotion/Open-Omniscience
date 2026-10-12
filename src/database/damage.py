@@ -279,7 +279,7 @@ def corruption_of(exc: BaseException | None) -> dict[str, Any] | None:
 
 # SQLite's own constants ("SQLITE_IOERR_READ"): a name from a fixed set, never a message. Anything that does not look like one is dropped, so
 # a driver that put text in the attribute adds none.
-_SQLITE_NAME = re.compile(r"^SQLITE_[A-Z0-9_]{1,40}$")
+_SQLITE_NAME = re.compile(r"SQLITE_[A-Z0-9_]{1,40}")
 
 
 def failure_text(exc: BaseException) -> str:
@@ -294,7 +294,7 @@ def failure_text(exc: BaseException) -> str:
     if found is not None:
         return f"{type(driver).__name__}: {found['message']}"
     name = getattr(driver, "sqlite_errorname", None)
-    if isinstance(name, str) and _SQLITE_NAME.match(name):
+    if isinstance(name, str) and _SQLITE_NAME.fullmatch(name):
         return f"{type(driver).__name__}: {name}"
     return failure_label(driver)
 

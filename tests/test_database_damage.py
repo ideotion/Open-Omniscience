@@ -865,6 +865,23 @@ def test_no_logging_call_of_the_damage_chain_asks_for_a_traceback():
         assert not found, f"src/database/{name}.py asks for a traceback in a log: {found}"
 
 
+def test_no_raise_of_the_damage_chain_chains_a_driver_error():
+    """The job runner writes a failed job with its TRACEBACK (``secret_scrub.log_failure``: the cause and the context included, with the
+    passphrases taken out and nothing else), so a ``raise X from exc`` over a driver's error puts the engine's own line (a schema object's
+    name and a fragment of its definition) in a record that rides the bundle. The paths that classify a driver's error say its class and
+    a fixed label in their own exception and drop the chain: ``from None``. Only an exception of ours may be a cause."""
+    import re
+
+    ours = {"None", "refusal", "busy"}  # a Declined from the SalvageRefused it was made from; a Declined from a WriteGateBusy
+    for name in ("damage", "repair", "verify", "salvage", "article_indexes"):
+        text = (ROOT / "src" / "database" / f"{name}.py").read_text(encoding="utf-8")
+        code = "\n".join(line.split("  #")[0] for line in text.splitlines() if not line.lstrip().startswith("#"))
+        # a ``raise`` that ends in ``from <name>``, on its own line or on the closing line of a statement that spans several
+        found = [a or b for a, b in re.findall(r"\braise\b[^\n]*\bfrom\s+(\w+)\s*$|^\s*\)\s*from\s+(\w+)\s*$", code, re.MULTILINE)]
+        found = [m for m in found if m not in ours]
+        assert not found, f"src/database/{name}.py chains {found} to a raised exception: write `from None`"
+
+
 # --------------------------------------------------------------------------- #
 #  containment: the guard, per file
 # --------------------------------------------------------------------------- #

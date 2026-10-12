@@ -55,7 +55,7 @@ _LOG = logging.getLogger(__name__)
 
 # SQLite's own constants ("SQLITE_IOERR_READ"): a name from a fixed set, never a message. Anything
 # that does not look like one is dropped, so a driver that put text in the attribute adds none.
-_SQLITE_NAME = re.compile(r"^SQLITE_[A-Z0-9_]{1,40}$")
+_SQLITE_NAME = re.compile(r"SQLITE_[A-Z0-9_]{1,40}")
 
 # The route the current request is serving, set by the request middleware BEFORE it
 # calls the endpoint. Starlette runs the endpoint in a task created after the set and
@@ -235,7 +235,7 @@ def _failure_code(orig: BaseException | None) -> str | None:
     Never raises (a hostile attribute reads as ``None``)."""
     try:
         name = getattr(orig, "sqlite_errorname", None)
-        if isinstance(name, str) and _SQLITE_NAME.match(name):
+        if isinstance(name, str) and _SQLITE_NAME.fullmatch(name):
             return name
         code = orig.errno if isinstance(orig, OSError) else None
         return errno.errorcode.get(code) if isinstance(code, int) else None

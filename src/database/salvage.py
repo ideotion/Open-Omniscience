@@ -291,7 +291,7 @@ class Salvage:
         except (SalvageRefused, SalvageStopped, SalvageFailed):
             raise
         except Exception as exc:  # noqa: BLE001 - nothing past this point may be read as "an unreadable page"
-            raise self._classify("the copy", exc) from exc
+            raise self._classify("the copy", exc) from None
         finally:
             self.src.close()
             if self.dst is not None:
@@ -319,8 +319,8 @@ class Salvage:
                 # The first statement that reads the schema (a PRAGMA does) failed on a damaged schema page.
                 raise SalvageRefused(
                     "schema-unreadable", "the list of tables in the damaged file cannot be read, so nothing can be copied"
-                ) from exc
-            raise SalvageRefused("cannot-open", f"the damaged file could not be opened for reading ({damage.failure_text(exc)})") from exc
+                ) from None
+            raise SalvageRefused("cannot-open", f"the damaged file could not be opened for reading ({damage.failure_text(exc)})") from None
         self.encrypted = bool(conn_mod.is_encrypted_file(self.source))
 
     def _read_schema(self) -> tuple[list[_Table], list[tuple[str, str, str, str]]]:
@@ -336,8 +336,8 @@ class Salvage:
             if self._is_corrupt(exc):
                 raise SalvageRefused(
                     "schema-unreadable", "the list of tables in the damaged file cannot be read, so nothing can be copied"
-                ) from exc
-            raise self._classify("the schema", exc) from exc
+                ) from None
+            raise self._classify("the schema", exc) from None
         self._read_table_kinds(master)
         tables: list[_Table] = []
         others: list[tuple[str, str, str, str]] = []
@@ -355,8 +355,8 @@ class Salvage:
             if self._is_corrupt(exc):
                 raise SalvageRefused(
                     "schema-unreadable", "the list of columns of a table in the damaged file cannot be read, so nothing can be copied"
-                ) from exc
-            raise self._classify("the schema", exc) from exc
+                ) from None
+            raise self._classify("the schema", exc) from None
         by_name = {t.name: t for t in tables}
         self._autoincrement = {t.name for t in tables if t.autoincrement}
         self._row_id_alias = {t.name: t.alias for t in tables if t.alias and not t.without_rowid}
@@ -451,7 +451,7 @@ class Salvage:
             raw.execute("DROP TABLE _salvage_header")
             raw.commit()
         except sqlite3.Error as exc:
-            raise self._classify("the new file", exc) from exc
+            raise self._classify("the new file", exc) from None
         finally:
             raw.close()
 
@@ -469,8 +469,8 @@ class Salvage:
     def _raise_for_target(self, where: str, exc: BaseException) -> None:
         self._check_stop()
         if str(exc).lower().startswith("interrupted"):
-            raise SalvageStopped from exc
-        raise self._classify(where, exc) from exc
+            raise SalvageStopped from None
+        raise self._classify(where, exc) from None
 
     # -- the rows --------------------------------------------------------------------------------
     def _copy_all(self, tables: list[_Table]) -> None:
@@ -524,14 +524,14 @@ class Salvage:
             lo = self.src.con.execute(f"SELECT min({t.rid}) FROM {q}").fetchone()[0]
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
-                raise self._classify(f"table {t.name}", exc) from exc
+                raise self._classify(f"table {t.name}", exc) from None
             self.src.reopen()
             lo, note = 1, "its first row id could not be read; ids from 1 were looked for"
         try:
             hi = self.src.con.execute(f"SELECT max({t.rid}) FROM {q}").fetchone()[0]
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
-                raise self._classify(f"table {t.name}", exc) from exc
+                raise self._classify(f"table {t.name}", exc) from None
             self.src.reopen()
             hi = None
             note = (note + "; " if note else "") + "its last row id could not be read; the search ran to the end of the id space"
@@ -578,7 +578,7 @@ class Salvage:
             raise
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
-                raise self._classify(f"table {t.name}", exc) from exc
+                raise self._classify(f"table {t.name}", exc) from None
             failed = True
             self.src.reopen()
         if buf:
@@ -607,7 +607,7 @@ class Salvage:
             row = self.src.con.execute(sql, (x,)).fetchone()
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
-                raise self._classify(f"table {t.name}", exc) from exc
+                raise self._classify(f"table {t.name}", exc) from None
             self.src.reopen()
             return False, None
         return True, (int(row[0]) if row is not None else None)
@@ -620,7 +620,7 @@ class Salvage:
             row = self.src.con.execute(sql, (rid,)).fetchone()
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
-                raise self._classify(f"table {t.name}", exc) from exc
+                raise self._classify(f"table {t.name}", exc) from None
             self.src.reopen()
             return False
         if row is None:
@@ -713,7 +713,7 @@ class Salvage:
             raise
         except Exception as exc:  # noqa: BLE001
             if not self._is_corrupt(exc):
-                raise self._classify(f"table {t.name}", exc) from exc
+                raise self._classify(f"table {t.name}", exc) from None
             entry["note"] = (
                 f"kept {entry['kept'] + len(buf)} rows; the rest of this table could not be read "
                 + ("(a table without row ids is read in order and cannot step past an unreadable page)")
@@ -731,7 +731,7 @@ class Salvage:
                 self.dst.execute(sql)
             except Exception as exc:  # noqa: BLE001
                 self._check_stop()
-                raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from exc
+                raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from None
         t.indexes = []  # created: the later pass skips them
 
     def _create_rest(self, tables: list[_Table], others: list[tuple[str, str, str, str]]) -> None:
@@ -746,7 +746,7 @@ class Salvage:
                     self.dst.execute(sql)
                 except Exception as exc:  # noqa: BLE001
                     self._check_stop()
-                    raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from exc
+                    raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from None
                 done += 1
         self.report["indexes_seconds"] = round(time.monotonic() - t0, 1)
         for kind, name, _tbl, sql in others:

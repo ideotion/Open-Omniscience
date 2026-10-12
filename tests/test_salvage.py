@@ -824,12 +824,29 @@ class _FailsOnTheArticleRead:
             setattr(self._real, name, value)
 
 
+_MARK = "MARKER-77-bound-value"
+
+
+def _driver_error(message: str, code: int | None = None, name: str | None = None) -> sqlite3.OperationalError:
+    exc = sqlite3.OperationalError(message)
+    if code is not None:
+        exc.sqlite_errorcode = code  # type: ignore[attr-defined]
+        exc.sqlite_errorname = name  # type: ignore[attr-defined]
+    return exc
+
+
 @pytest.mark.parametrize(
-    "error",
-    [MemoryError(), sqlite3.OperationalError("disk I/O error"), sqlite3.OperationalError("database is locked")],
-    ids=["memory", "disk-io", "locked"],
+    ("error", "reason"),
+    [
+        pytest.param(MemoryError(_MARK), "MemoryError", id="memory"),
+        pytest.param(_driver_error(f"disk I/O error {_MARK}"), "OperationalError", id="disk-io-without-a-code"),
+        pytest.param(_driver_error(f"disk I/O error {_MARK}", 10, "SQLITE_IOERR"), "OperationalError: SQLITE_IOERR", id="disk-io-with-a-code"),
+        pytest.param(_driver_error(f"database is locked {_MARK}"), "OperationalError", id="locked-without-a-code"),
+        pytest.param(_driver_error(f"database is locked {_MARK}", 5, "SQLITE_BUSY"), "OperationalError: SQLITE_BUSY", id="locked-with-a-code"),
+        pytest.param(_driver_error(f"near \"{_MARK}\": syntax error", 1, "SQLITE_ERROR"), "OperationalError: SQLITE_ERROR", id="generic-with-a-code"),
+    ],
 )
-def test_a_failure_that_is_not_corruption_aborts_instead_of_dropping_rows(tmp_path, plain_pristine, monkeypatch, error):
+def test_a_failure_that_is_not_corruption_aborts_instead_of_dropping_rows(tmp_path, plain_pristine, monkeypatch, error, reason):
     real_open = salvage._Reader.open
 
     def patched(self):
@@ -841,7 +858,82 @@ def test_a_failure_that_is_not_corruption_aborts_instead_of_dropping_rows(tmp_pa
     with pytest.raises(SalvageFailed) as caught:
         Salvage(plain_pristine, out).run()
     assert "articles" in caught.value.where
-    assert caught.value.reason, "the failure keeps its reason"
+    # the reason is the driver's class and a fixed label, never a word of its text: the repair record writes it as it is
+    assert caught.value.reason == reason
+    assert _MARK not in caught.value.reason and _MARK not in str(caught.value) and _MARK not in repr(caught.value)
+
+
+class _FailsOnCreateIndex:
+    """The destination connection, except that building an index dies with the given error."""
+
+    def __init__(self, real, error):
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "_error", error)
+
+    def execute(self, sql, *args):
+        if str(sql).lstrip().upper().startswith(("CREATE INDEX", "CREATE UNIQUE INDEX")):
+            raise self._error
+        return self._real.execute(sql, *args)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._real, name, value)
+
+
+@pytest.mark.parametrize("budget", [None, 0], ids=["indexes-after-the-rows", "indexes-before-the-rows"])
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        pytest.param(_driver_error(f"index {_MARK} is corrupt"), "OperationalError", id="without-a-code"),
+        pytest.param(_driver_error(f"database or disk is full {_MARK}", 13, "SQLITE_FULL"), "OperationalError: SQLITE_FULL", id="with-a-code"),
+    ],
+)
+def test_a_failed_index_build_names_the_index_and_the_class_of_the_error_and_no_word_of_its_text(
+    tmp_path, plain_pristine, monkeypatch, error, reason, budget
+):
+    """Both sites that build an index (before the rows when the sort would not fit in memory, and after them): ``SalvageFailed.reason`` is
+    ``damage.failure_text``, and the repair record writes it as it is (``{where}: {reason}``)."""
+    real_open = Salvage._open_target
+
+    def patched(self):
+        real_open(self)
+        self.dst = _FailsOnCreateIndex(self.dst, error)
+
+    monkeypatch.setattr(Salvage, "_open_target", patched)
+    kwargs = {} if budget is None else {"sort_budget": lambda: budget}
+    with pytest.raises(SalvageFailed) as caught:
+        Salvage(plain_pristine, tmp_path / "out.partial", **kwargs).run()
+    assert caught.value.where.startswith("index ") and _MARK not in caught.value.where
+    assert caught.value.reason == reason
+    assert _MARK not in str(caught.value) and _MARK not in repr(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__, "the chain is dropped: a traceback would print the error's words"
+
+
+@pytest.mark.parametrize(
+    ("error", "detail"),
+    [
+        pytest.param(_driver_error(f"unable to open database file {_MARK}"), "the damaged file could not be opened for reading (OperationalError)", id="without-a-code"),
+        pytest.param(
+            _driver_error(f"unable to open database file {_MARK}", 14, "SQLITE_CANTOPEN"),
+            "the damaged file could not be opened for reading (OperationalError: SQLITE_CANTOPEN)",
+            id="with-a-code",
+        ),
+        pytest.param(OSError(13, f"Permission denied {_MARK}", f"/home/{_MARK}/store.db"), "the damaged file could not be opened for reading (PermissionError EACCES)", id="an-oserror-with-a-path"),
+    ],
+)
+def test_a_file_that_cannot_be_opened_is_refused_with_the_class_and_no_word_of_the_errors_text(tmp_path, plain_pristine, monkeypatch, error, detail):
+    def refusing(self):
+        raise error
+
+    monkeypatch.setattr(salvage._Reader, "open", refusing)
+    with pytest.raises(SalvageRefused) as caught:
+        Salvage(plain_pristine, tmp_path / "out.partial").run()
+    assert caught.value.code == "cannot-open"
+    assert caught.value.detail == detail
+    assert _MARK not in str(caught.value) and _MARK not in repr(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
 
 
 def test_cancel_stops_the_copy_and_leaves_the_source_alone(tmp_path, plain_pristine):
@@ -1047,6 +1139,25 @@ def test_a_failure_is_recorded_as_the_drivers_class_and_a_fixed_label_never_a_wo
             assert marker not in text and "first-half-of-the-key" not in text and "second-half-of-the-key" not in text, (what, text)
     finally:
         connect.set_passphrase(previous)
+
+
+def test_a_refusal_carries_no_driver_error_in_its_traceback(tmp_path, enc_pristine):
+    """The job runner writes a failed job with its traceback, cause and context included. A refusal that names the driver's error as its
+    cause would put the engine's own line in that record; the refusal says the class and a fixed label and the chain is dropped."""
+    import traceback
+
+    from src.database import connect
+
+    previous = connect.get_passphrase()
+    connect.set_passphrase("a different passphrase entirely")
+    try:
+        with pytest.raises(SalvageRefused) as caught:
+            Salvage(enc_pristine, tmp_path / "out.partial").run()
+    finally:
+        connect.set_passphrase(previous)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+    text = "".join(traceback.format_exception(caught.value))
+    assert "sqlcipher3" not in text and "sqlite3" not in text and "not a database" not in text.lower(), text
 
 
 def test_a_wrong_key_refuses_to_open_and_writes_nothing(tmp_path, enc_pristine):
