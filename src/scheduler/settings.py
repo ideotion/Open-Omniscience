@@ -65,6 +65,10 @@ class SchedulerSettingsError(ValueError):
     """Raised when a scheduler settings update carries an invalid value."""
 
 
+class _DamagedSchedulerSettingsError(SchedulerSettingsError):
+    """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
+
+
 @dataclass
 class SchedulerSettings:
     """Operator-controlled scheduling preferences."""
@@ -394,14 +398,12 @@ def _read_raw_strict() -> dict | None:
     instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
     if not _use_kv():
         return _read_json_file()
-    from src.config.kv_store import kv_get_json_strict, kv_set_json
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
 
     try:
         raw = kv_get_json_strict(_KV_KEY)
     except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise SchedulerSettingsError(
-            f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
-        ) from None
+        raise (_DamagedSchedulerSettingsError if is_damaged(exc) else SchedulerSettingsError)(refusal_text(exc)) from None
     if raw is not None:
         return raw
     raw = _read_json_file()
@@ -851,7 +853,7 @@ def _coerce_retired_mode(value) -> str:
     return value if isinstance(value, str) and value in _RETIRED_MODE_SENTENCES else ""
 
 
-def save_settings(updates: dict) -> SchedulerSettings:
+def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
     # A RETIRED key is REFUSED BY NAME, never accepted and dropped. Pydantic would drop an
     # undeclared field silently and this endpoint would answer 200 having changed nothing,
@@ -863,7 +865,17 @@ def save_settings(updates: dict) -> SchedulerSettings:
             raise SchedulerSettingsError(
                 f"{key} has been retired and can no longer be set. {_RETIRED_KEYS[key]}"
             )
-    current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    reset: list[str] = []
+    try:
+        current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    except _DamagedSchedulerSettingsError:
+        if not replace_damaged:
+            raise
+        # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset.
+        current = SchedulerSettings()
+        reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+    current.reset_fields = reset
 
     # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a
     # caller still sending it would otherwise get a 200 that changed nothing.

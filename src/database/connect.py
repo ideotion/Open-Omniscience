@@ -181,9 +181,11 @@ def set_passphrase(p: str | None) -> None:
     with _lock:
         _passphrase = p or None
     try:  # a store that was locked may read now: do not serve the held failure of the old key
-        from src.config.kv_store import clear_failures
+        from src.config.kv_store import clear_failures, forget_stores
 
         clear_failures()
+        if p:
+            forget_stores()  # a key is actually set (unlock, create): the store seen before is not this one
     except Exception:  # noqa: BLE001, S110 - never a reason for the key to be refused
         pass
     # The scrub keeps ONE cache entry: the passphrases it last took out of a text and the shapes it made of them. A failed

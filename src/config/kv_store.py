@@ -199,11 +199,29 @@ def _parsed(raw: str | None) -> dict | None:
 
 
 def clear_failures() -> None:
-    """Forget the failed reads held for :data:`_FAIL_HOLD_S` and the stores seen (the key changed, or the store was erased or
-    created: a store that was locked may read now, and one that is gone is not a vanished one)."""
+    """Forget the failed reads held for :data:`_FAIL_HOLD_S` (the key changed: a store that was locked may read now)."""
     with _lock:
         _failed.clear()
+
+
+def forget_stores() -> None:
+    """Forget the stores seen: one that was erased or created is not a vanished one. Called where a passphrase is actually set,
+    a store is created, or the crypto-erase ran, never on a failed unlock's clearing of the key."""
+    with _lock:
         _seen.clear()
+
+
+def is_damaged(exc: BaseException) -> bool:
+    """Whether a failed strict read means the value is THERE and cannot be parsed (as against a store that could not be opened)."""
+    return isinstance(exc, ValueError) or bool(getattr(exc, "damaged", False))
+
+
+def refusal_text(exc: BaseException) -> str:
+    """The class of a failed read, and the way out when the value is damaged; never the engine's words."""
+    out = f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
+    if is_damaged(exc):
+        out += " - choose the settings again and save to replace them"
+    return out
 
 
 def kv_get_json(key: str) -> dict | None:

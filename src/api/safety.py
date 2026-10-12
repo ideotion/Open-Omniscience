@@ -105,7 +105,8 @@ def update_settings(body: SettingsUpdate) -> dict:
         s = safety_settings.save_settings(body.model_dump(exclude_unset=True))
     except safety_settings.SafetySettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _settings_payload(s)
+    # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
+    return {**_settings_payload(s), "reset": list(getattr(s, "reset_fields", []) or [])}
 
 
 @router.post("/backup/encrypted")

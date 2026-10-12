@@ -79,6 +79,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -729,8 +730,8 @@ def _write(state: dict[str, Any], path: Path | None = None) -> None:
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
         os.replace(tmp, target)
-    except OSError:
-        _LOG.debug("could not persist %s", target.name, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"could not persist {target.name}", exc, level=logging.DEBUG)
 
 
 def _read_record() -> dict[str, Any] | None:
@@ -1169,8 +1170,8 @@ def capture_previous() -> dict[str, Any] | None:
         for stale in (_pressure_path(), _light_path()):
             try:
                 stale.unlink(missing_ok=True)
-            except OSError:
-                _LOG.debug("could not reset %s", stale.name, exc_info=True)
+            except OSError as exc:
+                log_failure(_LOG, f"could not reset {stale.name}", exc, level=logging.DEBUG)
         return _PREV
 
 
@@ -1231,8 +1232,9 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                     # (retried at the next 15 s claim, which ``_light_due`` already made). Never silent: the
                     # first failure of a session is a WARNING and every one is counted in the marks, because
                     # "no light snapshot" must not read the same as "never near the line".
-                    _LOG.debug("light pressure snapshot failed", exc_info=True)
-                    first = str(exc).splitlines()[0][:160] if str(exc) else ""
+                    log_failure(_LOG, "light pressure snapshot failed", exc, level=logging.DEBUG)
+                    said = exception_text(exc, typed=False)  # through the one scrub, THEN cut to its first line
+                    first = said.splitlines()[0][:160] if said else ""
                     light_failure = f"{type(exc).__name__}: {first}"
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
@@ -1349,8 +1351,8 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
             _write(light_doc, _light_path())
         if snapshot:
             _write(snapshot)
-    except Exception:  # noqa: BLE001 - a forensic sidecar never raises into its caller
-        _LOG.debug("session high-water observe failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a forensic sidecar never raises into its caller
+        log_failure(_LOG, "session high-water observe failed", exc, level=logging.DEBUG)
 
 
 def flush() -> None:
@@ -1363,8 +1365,8 @@ def flush() -> None:
             _LAST_WRITE = time.monotonic()
             snapshot = dict(_MARKS)
         _write(snapshot)
-    except Exception:  # noqa: BLE001
-        _LOG.debug("session high-water flush failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "session high-water flush failed", exc, level=logging.DEBUG)
 
 
 def current() -> dict[str, Any]:

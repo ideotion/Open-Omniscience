@@ -40,5 +40,9 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
         # exists -- in a `finally` because a partial wipe still removed it.
         invalidate_header_cache()
         from src.config.kv_store import kv_invalidate
+        from src.ingest import activate_kill_switch
 
         kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
+        # The next settings read is a first run (defaults, which are direct). A wipe takes the app offline for good: a process that is
+        # still running online must not rebuild a followed session (wiki, ORES, hazards, markets) from that read and leave Tor.
+        activate_kill_switch()

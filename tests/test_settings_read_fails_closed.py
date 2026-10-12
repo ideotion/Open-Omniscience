@@ -337,14 +337,19 @@ def test_a_held_session_is_returned_on_a_failed_read_only_for_the_user_agent_it_
     assert other is not good and other.transport_refusal and other.headers["User-Agent"] == "ua-two"
 
 
-def test_no_settings_module_writes_a_traceback_around_the_store():
-    """MUTATION TARGET: ``exc_info=`` back on a log line of a settings reader (a keyed open chains the driver's own error)."""
+def test_no_module_that_logs_around_the_store_or_the_ledger_writes_a_traceback():
+    """MUTATION TARGET: ``exc_info=`` back on a log line of one of these (a keyed open chains the driver's own error; the session
+    ledger's records are in the bundle). ``log_failure`` writes the same traceback with every passphrase out of it."""
     import src.config.app_settings as a
     import src.custody.settings as c
+    import src.monitoring.session_hwm as hwm
     import src.scheduler.settings as sch
 
-    for mod in (kv_store, S, a, c, sch):
-        assert "exc_info" not in Path(mod.__file__).read_text(encoding="utf-8"), mod.__name__
+    for mod in (kv_store, S, a, c, sch, hwm):
+        text = Path(mod.__file__).read_text(encoding="utf-8")
+        assert "exc_info" not in text, mod.__name__
+    assert "str(exc)" not in Path(hwm.__file__).read_text(encoding="utf-8")
+
 
 
 # --- fold 14 ------------------------------------------------------------------------------------------------------------ #
@@ -403,13 +408,114 @@ def test_the_environment_decides_before_a_failed_read_does(env):
     assert s.is_protected and s.http_proxy == SOCKS and not s.read_failed
 
 
-def test_a_store_that_is_erased_or_created_is_not_a_vanished_one(env, tmp_path):
+def test_a_store_that_is_created_or_erased_is_not_a_vanished_one_and_a_failed_unlock_does_not_forget_it(env, tmp_path):
+    """The stores seen are forgotten where a key is actually set (unlock, create) and where the crypto-erase ran, never on a failed
+    unlock's clearing of the key (``set_passphrase(None)``), which would blind the vanished-store check."""
     from src.database import connect as connect_mod
 
     _store(env)
     S.load_settings()
     (tmp_path / "open_omniscience.db").unlink()
-    connect_mod.set_passphrase(None)  # what the crypto-erase and the create-db route do
     with kv_store._lock:
         kv_store._cache.clear()
+    connect_mod.set_passphrase(None)  # a failed unlock clears the key
+    assert S.load_settings().read_failed, "the vanished store went unnoticed after a failed unlock"
+    kv_store.forget_stores()  # what the crypto-erase and a set key do
+    with kv_store._lock:
+        kv_store._failed.clear()
     assert not S.load_settings().read_failed
+    _store(env)
+    S.load_settings()
+    (tmp_path / "open_omniscience.db").unlink()
+    with kv_store._lock:
+        kv_store._cache.clear()
+    connect_mod.set_passphrase("a passphrase long enough for the test")
+    try:
+        assert not S.load_settings().read_failed
+    finally:
+        connect_mod.set_passphrase(None)
+
+
+def test_the_crypto_erase_forgets_the_stores_seen_and_the_panic_wipe_goes_offline_for_good(env, tmp_path):
+    """After a wipe the next settings read is a first run (the defaults, which are direct): the panic route engages the kill switch
+    so a process still running online cannot rebuild a followed session from that read and leave Tor. MUTATION TARGET: the
+    ``activate_kill_switch`` in ``panic_wipe``'s ``finally``, or the ``kv_invalidate`` beside it."""
+    from src import ingest as I
+    from src.safety import panic_wipe
+
+    _store(env)
+    session = following_session("wiki", "ua")
+    assert session.transport_proxy == SOCKS
+    I.clear_kill_switch()
+    try:
+        panic_wipe(tmp_path, confirm=True)
+        assert I.kill_switch_active(), "the wipe left the app online"
+        assert not kv_store._seen and not kv_store._cache, "the wiped store is still remembered"
+        with pytest.raises(Exception, match=r"(?i)airplane|offline|kill|blocked"):
+            following_session("wiki", "ua").get("https://example.org/", timeout=2)
+    finally:
+        I.clear_kill_switch()
+
+
+# --- fold 15: the other three preference modules ------------------------------------------------------------------------ #
+_MODULES = [
+    ("src.config.app_settings", "AppSettingsError", {"theme": "dark"}, "theme"),
+    ("src.scheduler.settings", "SchedulerSettingsError", {"auto_run_market_rules": False}, "auto_run_market_rules"),
+    ("src.custody.settings", "CustodySettingsError", {"auto_log_on_ingest": True}, "auto_log_on_ingest"),
+]
+
+
+@pytest.mark.parametrize(("module", "error", "update", "field"), _MODULES)
+def test_a_damaged_value_is_replaced_by_the_users_own_save_and_refused_to_anything_else(env, tmp_path, module, error, update, field):
+    """MUTATION TARGET: ``replace_damaged`` ignored (a damaged value refuses every save for good) or assumed (an automated save
+    writes the defaults over it)."""
+    import importlib
+    import sqlite3
+
+    mod = importlib.import_module(module)
+    mod.save_settings(update)
+    kv_store.kv_invalidate()
+    con = sqlite3.connect(tmp_path / "open_omniscience.db")
+    con.execute("UPDATE app_state SET value = ? WHERE key = ?", ('{"truncat', mod._KV_KEY))
+    con.commit()
+    con.close()
+    kv_store.kv_invalidate()
+    with pytest.raises(getattr(mod, error)) as err:
+        mod.save_settings(update)  # an automated caller: refused
+    assert "choose the settings again" in str(err.value) and "JSONDecodeError" in str(err.value)
+    saved = mod.save_settings(update, replace_damaged=True)  # the user's save
+    assert getattr(saved, field) == update[field]
+    assert field not in saved.reset_fields and saved.reset_fields, "what the save did not supply is reported as reset"
+    kv_store.kv_invalidate()
+    assert getattr(mod.load_settings(), field) == update[field]
+    mod.save_settings(update)  # and the next automated save is fine
+
+
+@pytest.mark.parametrize(("module", "error", "update", "field"), _MODULES)
+def test_a_locked_store_is_never_replaced_even_by_the_users_save(env, module, error, update, field):
+    import importlib
+
+    mod = importlib.import_module(module)
+    mod.save_settings(update)
+    kv_store.kv_invalidate()
+
+    def boom(key):
+        raise RuntimeError("database is locked")
+
+    env.setattr(kv_store, "kv_get_json_strict", boom)
+    with pytest.raises(getattr(mod, error)) as err:
+        mod.save_settings(update, replace_damaged=True)
+    assert "choose the settings again" not in str(err.value)
+
+
+def test_the_users_routes_ask_for_the_replacement_and_serve_what_was_reset():
+    """The routes are the user's own save; the internal callers (the LLM installer, the OSM picker) are not."""
+    import inspect
+
+    from src.api import custody as r_custody
+    from src.api import scheduler as r_sched
+    from src.api import settings as r_app
+
+    for fn in (r_app.update_settings, r_custody.put_settings, r_sched.scheduler_update_config):
+        src = inspect.getsource(fn)
+        assert "replace_damaged=True" in src and '"reset"' in src, fn.__name__

@@ -291,6 +291,9 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         from src.database.connect import set_passphrase
 
         set_passphrase(None)
+        from src.config.kv_store import forget_stores
+
+        forget_stores()  # the store is gone by design, not vanished
         passphrase_cleared = True
 
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The

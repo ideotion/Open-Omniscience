@@ -579,7 +579,7 @@ def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
     """Apply a partial config update (validated; a running loop picks up changes)."""
     fields = update.model_dump(exclude_unset=True)
     try:
-        save_settings(fields)
+        saved = save_settings(fields, replace_damaged=True)
     except SchedulerSettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if "wiki_lane_state" in fields and fields["wiki_lane_state"] is not None:
@@ -591,7 +591,8 @@ def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
         # and the stream itself refuses BY NAME under the kill switch, so this can
         # never bring the app online.
         _apply_wiki_lane_state(str(fields["wiki_lane_state"]))
-    return _config_payload()
+    # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
+    return {**_config_payload(), "reset": list(getattr(saved, "reset_fields", []) or [])}
 
 
 def _apply_wiki_lane_state(state: str) -> None:

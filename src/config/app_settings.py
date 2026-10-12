@@ -53,6 +53,10 @@ class AppSettingsError(ValueError):
     """Raised when a settings update carries an invalid value."""
 
 
+class _DamagedAppSettingsError(AppSettingsError):
+    """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
+
+
 @dataclass
 class AppSettings:
     """Operator-controlled UI preferences."""
@@ -275,14 +279,12 @@ def _read_raw_strict() -> dict | None:
     instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
     if not _use_kv():
         return _read_json_file()
-    from src.config.kv_store import kv_get_json_strict, kv_set_json
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
 
     try:
         raw = kv_get_json_strict(_KV_KEY)
     except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise AppSettingsError(
-            f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
-        ) from None
+        raise (_DamagedAppSettingsError if is_damaged(exc) else AppSettingsError)(refusal_text(exc)) from None
     if raw is not None:
         return raw
     # No DB row yet: migrate the legacy JSON file if present (best-effort, one-time).
@@ -447,9 +449,19 @@ def load_settings(*, strict: bool = False) -> AppSettings:
     )
 
 
-def save_settings(updates: dict) -> AppSettings:
+def save_settings(updates: dict, *, replace_damaged: bool = False) -> AppSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
-    current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    reset: list[str] = []
+    try:
+        current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    except _DamagedAppSettingsError:
+        if not replace_damaged:
+            raise
+        # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset.
+        current = AppSettings()
+        reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+    current.reset_fields = reset
 
     if "theme" in updates and updates["theme"] is not None:
         theme = str(updates["theme"])

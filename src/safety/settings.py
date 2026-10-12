@@ -151,15 +151,14 @@ def _read_raw_strict() -> dict | None:
     """``_read_raw`` for a caller that will REWRITE what it read: a stored blob that cannot be read raises ``SafetySettingsError``
     (the class only, never the engine's text) instead of reading as the defaults, because writing the defaults back over a saved
     protected mode and proxy list is the loss this prevents."""
-    from src.config.kv_store import kv_get_json_strict, kv_set_json
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json
 
     def refused(exc: BaseException) -> SafetySettingsError:
-        damaged = isinstance(exc, ValueError) or bool(getattr(exc, "damaged", False))
-        err = (_DamagedSettings if damaged else SafetySettingsError)(
+        damaged = is_damaged(exc)
+        return (_DamagedSettings if damaged else SafetySettingsError)(
             f"the stored safety settings could not be read ({type(exc).__name__}); nothing was changed"
             + (" - choose the connection again in the safety settings to replace them" if damaged else "")
         )
-        return err
 
     if not _use_kv():
         try:
@@ -237,13 +236,18 @@ def save_settings(updates: dict) -> SafetySettings:
     """Apply a partial update and persist atomically. Validates before writing."""
     from src.safety.fetcher import validate_socks_pool
 
+    reset: list[str]
     try:
         stored = _read_raw_strict()
     except _DamagedSettings:
         if updates.get("fetch_mode") is None or updates.get("http_proxy") is None:
             raise  # a partial update would write the defaults over what the damaged value may still say
         stored = None  # the whole choice is supplied: it replaces the damaged value
+        reset = [f for f in ("http_proxies", "discovery_external_enabled") if updates.get(f) is None]
+    else:
+        reset = []
     current = _settings_from(stored)
+    current.reset_fields = reset
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
         if mode not in VALID_MODES:

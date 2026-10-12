@@ -45,6 +45,10 @@ class CustodySettingsError(ValueError):
     """Raised when a settings update is invalid (e.g. an unknown anchoring mode)."""
 
 
+class _DamagedCustodySettingsError(CustodySettingsError):
+    """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
+
+
 @dataclass
 class CustodySettings:
     """Operator-controlled custody preferences (requests, not guarantees)."""
@@ -113,14 +117,12 @@ def _read_raw_strict() -> dict | None:
     instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
     if not _use_kv():
         return _read_json_file()
-    from src.config.kv_store import kv_get_json_strict, kv_set_json
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
 
     try:
         raw = kv_get_json_strict(_KV_KEY)
     except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise CustodySettingsError(
-            f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
-        ) from None
+        raise (_DamagedCustodySettingsError if is_damaged(exc) else CustodySettingsError)(refusal_text(exc)) from None
     if raw is not None:
         return raw
     raw = _read_json_file()
@@ -188,7 +190,7 @@ def load_settings(*, strict: bool = False) -> CustodySettings:
     )
 
 
-def save_settings(updates: dict) -> CustodySettings:
+def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySettings:
     """Apply a partial update to the stored preferences and persist them.
 
     Only keys present in ``updates`` are changed; unknown keys are ignored.
@@ -211,7 +213,17 @@ def save_settings(updates: dict) -> CustodySettings:
     saving while it stays "local", never needs it. ``ots_consent`` itself is never
     persisted -- it is a one-shot instruction to this call, not a preference.
     """
-    current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    reset: list[str] = []
+    try:
+        current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    except _DamagedCustodySettingsError:
+        if not replace_damaged:
+            raise
+        # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset.
+        current = CustodySettings()
+        reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+    current.reset_fields = reset
 
     if "anchoring_mode" in updates and updates["anchoring_mode"] is not None:
         mode = str(updates["anchoring_mode"])

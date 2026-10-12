@@ -150,10 +150,11 @@ def get_settings() -> dict:
 def put_settings(req: SettingsUpdate) -> dict:
     """Update custody preferences (partial). Returns the new effective state."""
     try:
-        save_settings(req.model_dump(exclude_unset=True))
+        saved = save_settings(req.model_dump(exclude_unset=True), replace_damaged=True)
     except CustodySettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _settings_status()
+    # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
+    return {**_settings_status(), "reset": list(getattr(saved, "reset_fields", []) or [])}
 
 
 #: How many owed entries one reconcile request writes. Each is a signed, committed
