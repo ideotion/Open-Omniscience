@@ -63,7 +63,16 @@ def article_keyword_sets(session, period: Period) -> dict[int, set[int]]:
     top ``_TERMS_PER_ARTICLE`` by mention count; ties broken by keyword id so the
     grouping is deterministic across runs, which is what lets an edition be
     regenerated and come out the same.
+
+    A keyword the stoplist hides (R111 step T2) takes no slot: it is dropped BEFORE the top
+    ``_TERMS_PER_ARTICLE`` is taken. Left in, two unrelated articles that both repeat a
+    hidden word (`news`, a LaTeX macro) overlapped on it and could join one story, and the
+    terms a story names as shared would have listed it. The shared terms are the
+    intersection of these sets, so they inherit the rule. The listing's length rule applies too:
+    two-letter terms (`eu`, `un`, `ai`) no longer take part in grouping.
     """
+    from src.analytics.queries import _hidden_predicate
+
     lo, hi = period.start, period.end
     rows = (
         session.query(
@@ -72,8 +81,22 @@ def article_keyword_sets(session, period: Period) -> dict[int, set[int]]:
         .filter(and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi))
         .all()
     )
-    per: dict[int, list[tuple[int, int]]] = {}
+    # One lookup per DISTINCT keyword, small columns only, chunked under the variable cap.
+    is_hidden = _hidden_predicate()
+    distinct = sorted({int(kid) for _aid, kid, _cnt in rows})
+    hidden_ids: set[int] = set()
+    for i in range(0, len(distinct), 900):
+        for kid, norm in session.query(Keyword.id, Keyword.normalized_term).filter(
+            Keyword.id.in_(distinct[i : i + 900])
+        ):
+            if is_hidden(norm):
+                hidden_ids.add(int(kid))
+    # An article whose every keyword is hidden stays in the answer with an EMPTY set: the period's
+    # article count (``articles_in_period``) is exact, and ``cluster_articles`` skips an empty set.
+    per: dict[int, list[tuple[int, int]]] = {int(aid): [] for aid, _kid, _cnt in rows}
     for aid, kid, cnt in rows:
+        if int(kid) in hidden_ids:
+            continue
         per.setdefault(int(aid), []).append((int(cnt or 0), int(kid)))
     out: dict[int, set[int]] = {}
     for aid, pairs in per.items():
@@ -139,13 +162,14 @@ def build_stories(
     """
     sets = article_keyword_sets(session, period)
     total_articles = len(sets)
-    compared = sets
+    # An article with no visible keyword (empty set) is counted in the period and compared on nothing.
+    compared = {a: s for a, s in sets.items() if s}
     bounded = False
-    if total_articles > max_articles:
+    if len(compared) > max_articles:
         # Take the articles with the richest keyword sets: an article with two
         # indexed terms cannot characterise a story anyway. Deterministic tie-break.
-        keep = sorted(sets, key=lambda a: (-len(sets[a]), a))[:max_articles]
-        compared = {a: sets[a] for a in keep}
+        keep = sorted(compared, key=lambda a: (-len(compared[a]), a))[:max_articles]
+        compared = {a: compared[a] for a in keep}
         bounded = True
 
     clusters = cluster_articles(compared, threshold=threshold)
