@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.osm import tags as T
 from src.osm.geometry import Border, BorderError, encode_coords, representative_point, stitch
 from src.osm.pbf import Node, Relation, Way
@@ -310,8 +311,10 @@ def ingest_country(
         report.status = "complete"
     except Exception as exc:
         report.status = "failed"
-        report.error = f"{type(exc).__name__}: {exc}"
-        _LOG.warning("the %s cut from %s failed: %s", alpha2, path.name, exc)
+        # Written through the shared helper: this runs in a child that holds the store's passphrase, and the parent's report
+        # carries ``report.error`` on; a UnicodeError is recorded by class alone (its message names a letter and an offset).
+        report.error = exception_text(exc)
+        _LOG.warning("the %s cut from %s failed: %s", alpha2, path.name, report.error)
         raise
     finally:
         locations.close()
@@ -336,15 +339,15 @@ def ingest_country(
             from src.osm.places import build_search_index
 
             report.search_index = build_search_index(alpha3)
-        except Exception:  # noqa: BLE001 - the cut is complete; only its index is missing
-            _LOG.warning("the %s search index was not built", alpha3, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the cut is complete; only its index is missing
+            log_failure(_LOG, f"the {alpha3} search index was not built", exc, level=logging.WARNING)
         # The map reads its R*Tree (src/osm/view.py, S6) the same way.
         try:
             from src.osm.view import build_view_index
 
             report.view_index = build_view_index(alpha3)
-        except Exception:  # noqa: BLE001 - the cut is complete; only its view index is missing
-            _LOG.warning("the %s view index was not built", alpha3, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the cut is complete; only its view index is missing
+            log_failure(_LOG, f"the {alpha3} view index was not built", exc, level=logging.WARNING)
     return report
 
 
