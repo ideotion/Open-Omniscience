@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import scrub_text, scrub_value
+from src.monitoring.secret_scrub import exception_text, scrubbed, scrubbed_value
 
 _LOG = logging.getLogger("monitoring.p0_validation")
 
@@ -280,7 +280,8 @@ def validate_dest_dir(dest_dir: str | Path) -> Path:
 #  P0.1 — backup (+ incremental refresh) + verify
 # --------------------------------------------------------------------------- #
 def _exception_text(exc: BaseException, passphrase: str) -> str:
-    """What a caught exception says, for a report: ``Name: message`` with the passphrase taken out of it.
+    """What a caught exception says, for a report: ``Name: message`` with the passphrase taken out of it, and every
+    other one the process holds (the backup's key is not always the corpus's).
 
     The four checks that are handed the passphrase (the backup, its refresh, the verify and the restore
     probe) catch whatever the engine raises and write its words into the report, which is a file the debug
@@ -288,8 +289,9 @@ def _exception_text(exc: BaseException, passphrase: str) -> str:
     passphrase in a message today; this is the net where the text is MADE, so a message that did cannot
     reach any of those. Done on the text, never on the finished report: a report holds verdicts (``pass``,
     ``fail``) that code and the panel compare, and an exact-match scrub of a short passphrase (``a``,
-    ``pass``) would rewrite them."""
-    return scrub_text(f"{type(exc).__name__}: {exc}", passphrase)
+    ``pass``) would rewrite them. A text that cannot be checked is the exception's class and none of its
+    words."""
+    return exception_text(exc, passphrase)
 
 
 def _check_backup(
@@ -444,7 +446,16 @@ def _check_backup(
     # them (a decrypt failure) carries the exception's own words: the engine scrubs it where it makes it, and
     # this is the net where the lines are copied, line by line, never the verdicts and the success sentence
     # around them (the coordinator's delta check of #1312, F2; its check of #1318, B1).
-    problems = scrub_value(None if vrep is None else vrep.get("problems"), passphrase)
+    raw_problems = None if vrep is None else vrep.get("problems")
+    problems = scrubbed_value(raw_problems, passphrase)
+    # A passphrase that holds "; " can END one line and START the next (the join below is "; " only), and no line holds either
+    # half whole. The lines read as one text are the check the line-by-line pass cannot make, and it is made on the RAW lines:
+    # once an item has been scrubbed of another secret ("half" out of "left half"), the join of the scrubbed items no longer
+    # holds the key either. When the clean text differs from the join of the scrubbed items, the measurement is the clean text
+    # alone, so no half of the key stays in any item of the list.
+    clean_joined = scrubbed(_joined_problems(raw_problems), passphrase)
+    if isinstance(problems, list) and problems and clean_joined != _joined_problems(problems):
+        problems = [clean_joined]
     verify_measurements = {
         "duration_s": round(time.monotonic() - vt0, 3),
         "ok": None if vrep is None else vrep.get("ok"),
@@ -470,9 +481,9 @@ def _check_backup(
             bars["p0_1_verify"],
         )
     else:
-        # The join puts two lines side by side, so the tail is scrubbed once more (a passphrase that holds "; "
-        # could end one line and start the next); the lead is the check's own words and is left alone.
-        probs = scrub_text("; ".join(problems or ["unknown"]), passphrase)
+        # The join puts two lines side by side, so the tail is the join of the RAW lines scrubbed as one text (above); the lead
+        # is the check's own words and is left alone.
+        probs = clean_joined if raw_problems else "unknown"  # no lines: the check's own word, which no key is a piece of
         verify_check = _verdict(
             "fail", f"verification failed: {probs}", verify_measurements, bars["p0_1_verify"]
         )
@@ -482,6 +493,11 @@ def _check_backup(
 # --------------------------------------------------------------------------- #
 #  P0.2 — staged restore round-trip + dry-run merge preview (never commits)
 # --------------------------------------------------------------------------- #
+def _joined_problems(problems: Any) -> str:
+    """The engine's failure lines as ONE text, the way the reason prints them (``"unknown"`` when it gave none)."""
+    return "; ".join(str(p) for p in problems) if isinstance(problems, list) and problems else "unknown"
+
+
 def _check_restore(
     ctx: Any, dest_dir: Path, passphrase: str, staging_root: Path
 ) -> dict:
@@ -694,7 +710,7 @@ def _check_unlock() -> dict:
     except Exception as exc:  # noqa: BLE001
         return _verdict(
             "not-measurable",
-            f"could not read the unlock instrumentation: {type(exc).__name__}: {exc}. "
+            f"could not read the unlock instrumentation: {exception_text(exc)}. "
             + _COLD_BOOT_HOWTO,
             {"how_to_time_next_cold_boot": _COLD_BOOT_HOWTO},
             _acceptance_bars()["p0_4_unlock"],
@@ -840,7 +856,7 @@ def _check_collector() -> dict:
     except Exception as exc:  # noqa: BLE001
         return _verdict(
             "not-measurable",
-            f"could not read the collector instrumentation: {type(exc).__name__}: {exc}. "
+            f"could not read the collector instrumentation: {exception_text(exc)}. "
             + _SOAK_HOWTO,
             {"how_to_soak": _SOAK_HOWTO},
             _acceptance_bars()["p0_3_collector"],
@@ -1017,7 +1033,7 @@ def last_p0_validation_report() -> dict:
         report["source_file"] = files[-1].name
         return report
     except Exception as exc:  # noqa: BLE001
-        return {"schema": P0_VALIDATION_SCHEMA, "available": False, "error": str(exc)[:300]}
+        return {"schema": P0_VALIDATION_SCHEMA, "available": False, "error": exception_text(exc, typed=False, limit=300)}
 
 
 # --------------------------------------------------------------------------- #

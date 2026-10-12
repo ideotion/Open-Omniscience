@@ -363,7 +363,13 @@ def scan_live_corpus(db) -> dict:
     the bundle's import position, which the Q1139 split guard pins (it caught exactly
     that, by name, before this existed).
     """
-    return scan_country_code_duplicates(db.connection().connection, schema="main")
+    from src.database import damage
+
+    conn = db.connection()
+    # The scan drives the DRIVER's connection, so a damaged page raises past the engine's damage observer: the
+    # guard discards the poisoned pooled connection and names the file, as the observer does for the ORM.
+    with damage.guard_raw_driver(conn):
+        return scan_country_code_duplicates(conn.connection, schema="main")
 
 
 def scan_country_code_duplicates(con: sqlite3.Connection, *, schema: str = "main") -> dict:

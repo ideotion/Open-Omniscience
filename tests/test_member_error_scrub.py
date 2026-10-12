@@ -175,10 +175,25 @@ def _engine_text(secret: str) -> str:
     )
 
 
+def _under_the_floor(secret: str) -> bool:
+    """A key shorter than ``MIN_SECRET_CHARS`` cannot be taken out of a text (one letter is in every sentence), so the scrub
+    withholds the text whole instead (src/monitoring/secret_scrub.py)."""
+    from src.monitoring.secret_scrub import MIN_SECRET_CHARS
+
+    return sum(1 for ch in secret if not ch.isspace()) < MIN_SECRET_CHARS  # counted the way the scrub counts
+
+
+def _assert_withheld_whole(out: str) -> None:
+    assert "withheld" in out and "PRAGMA" not in out and "syntax error" not in out and "near" not in out, out
+
+
 @pytest.mark.parametrize("secret", TRICKY)
 def test_every_form_the_passphrase_is_written_in_is_taken_out(monkeypatch, secret):
     monkeypatch.setattr(_connect, "_passphrase", secret)
     out = _bundle._all_diag_err_str(RuntimeError(_engine_text(secret)))
+    if _under_the_floor(secret):
+        _assert_withheld_whole(out)
+        return
     for form in _forms_of(secret):
         assert form not in out, f"the form {form!r} is still in {out!r}"
     assert "withheld" not in out, "the scrub ran: the text is changed, not withheld"
@@ -188,6 +203,9 @@ def test_every_form_the_passphrase_is_written_in_is_taken_out(monkeypatch, secre
 def test_the_environments_copy_is_taken_out_in_every_form_too(monkeypatch, secret):
     monkeypatch.setenv("OO_DB_PASSPHRASE", secret)
     out = _bundle._all_diag_err_str(RuntimeError(_engine_text(secret)))
+    if _under_the_floor(secret):
+        _assert_withheld_whole(out)
+        return
     for form in _forms_of(secret):
         assert form not in out
 
@@ -423,17 +441,27 @@ def test_the_gates_estimate_error_is_scrubbed_and_so_is_its_log_line(monkeypatch
     monkeypatch.setattr(_connect, "_passphrase", SECRET)
     name = "keyword-log-digest.json"
 
-    def boom(_db):
-        raise RuntimeError(f"[SQL: PRAGMA key = '{SECRET}']")
+    # the estimator takes the memory the gate read (``estimator(db, avail)``): a stub that takes one argument
+    # raises TypeError before it reaches the secret, and every assertion below would pass for that reason
+    seen: dict = {}
+
+    def boom(_db, _avail=None):
+        seen["called"] = True
+        # long enough that the reading's own cut (160 characters) falls INSIDE the key statement
+        raise RuntimeError("y" * 130 + f" [SQL: PRAGMA key = '{SECRET}']")
 
     monkeypatch.setitem(_bundle._MEMBER_NEED_ESTIMATORS, name, boom)
     monkeypatch.setitem(_bundle._MEMBER_RSS_NEED_MB, name, 3322.8)
     reading: dict = {}
     with caplog.at_level(logging.DEBUG, logger=_bundle._LOG.name):
         _bundle.ram_declined_reason(name, db=object(), total_mb=4029.0, available_mb=10.0, reading=reading)
-    assert reading.get("estimate_error"), "the estimator failed, so the reading names the failure"
-    assert SECRET not in json.dumps(reading)
-    assert SECRET not in caplog.text, "the debug line carried the traceback, and the traceback the key"
+    assert seen.get("called") is True
+    assert reading["estimate_error"].startswith("RuntimeError: "), reading  # the estimator's own failure, not another's
+    assert "y" * 100 in reading["estimate_error"] and len(reading["estimate_error"]) <= len("RuntimeError: ") + 160
+    assert SECRET not in json.dumps(reading) and SECRET[:6] not in json.dumps(reading)
+    lines = [rec.getMessage() for rec in caplog.records if "need estimate" in rec.getMessage()]
+    assert lines and "y" * 100 in lines[0], "the debug line is the scrubbed text, and it was written"
+    assert SECRET not in caplog.text and SECRET[:6] not in caplog.text, "the debug line carried the traceback, and the traceback the key"
     assert all(rec.exc_info is None for rec in caplog.records if "need estimate" in rec.getMessage())
 
 

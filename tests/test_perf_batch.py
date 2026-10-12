@@ -537,7 +537,7 @@ def test_performance_report_carries_the_gate_reading_for_the_keyword_export_prob
     monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: 512.0)
     monkeypatch.setattr("src.database.maintenance._available_mb", lambda: 64.0)
     monkeypatch.setattr("src.database.maintenance._read_memory_floor_mb", lambda: 256.0)
-    monkeypatch.setitem(bundle_mod._MEMBER_NEED_ESTIMATORS, "keyword-log-digest.json", lambda _db: 900.0)
+    monkeypatch.setitem(bundle_mod._MEMBER_NEED_ESTIMATORS, "keyword-log-digest.json", lambda _db, _avail=None: 900.0)
     st = client.get("/api/diagnostics/performance").json()["data"]["selftest"]
     gate = st["keyword_export_gate"]
     assert gate["decision"] == "declined" and gate["need_mb"] == 900.0

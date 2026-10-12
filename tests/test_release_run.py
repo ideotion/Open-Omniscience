@@ -558,13 +558,23 @@ def client(monkeypatch, tmp_path):
 
 def test_start_refuses_a_bad_profile_and_a_destination_inside_the_data_dir(client, tmp_path):
     r = client.post("/api/diagnostics/release-run",
-                    json={"dest_dir": str(tmp_path / "elsewhere"), "passphrase": "x", "profile": "huge"})
+                    json={"dest_dir": str(tmp_path / "elsewhere"), "passphrase": NEEDLE, "profile": "huge"})
     assert r.status_code == 400
     r = client.post("/api/diagnostics/release-run",
-                    json={"dest_dir": str(tmp_path / "data" / "in"), "passphrase": "x"})
+                    json={"dest_dir": str(tmp_path / "data" / "in"), "passphrase": NEEDLE})
     assert r.status_code == 400 and "overlaps" in r.json()["detail"]
     r = client.post("/api/diagnostics/release-run", json={"dest_dir": str(tmp_path / "elsewhere"), "passphrase": ""})
     assert r.status_code == 400
+
+
+def test_a_refusal_for_a_passphrase_under_the_floor_withholds_the_words_it_would_have_said(client, tmp_path):
+    """A passphrase of one to three characters cannot be taken out of the refusal's text (``x`` is in nearly every word of a
+    path), so the route answers 400 with the fixed words of ``secret_scrub`` and not the text: the refusal is still a refusal.
+    MUTATION TARGET: the route's ``scrubbed`` call, which leaves such a text as it is."""
+    from src.monitoring import secret_scrub
+
+    r = client.post("/api/diagnostics/release-run", json={"dest_dir": str(tmp_path / "data" / "in"), "passphrase": "x"})
+    assert r.status_code == 400 and r.json()["detail"] == secret_scrub.UNREADABLE_TEXT, r.text
 
 
 def test_start_launches_the_job_and_the_status_carries_no_secret(client, tmp_path, monkeypatch):
@@ -1577,6 +1587,10 @@ _OK_CHILD = {"ok": True, "restore": {"kind": "volume-set", "committed": True},
              "country_code_scan": {"duplicates": 0}, "peak_rss_mb": 120.0}
 
 
+#: The keyword arguments of every child the stand-in below was asked to start.
+_SPAWNED: list[dict] = []
+
+
 def _child_process(monkeypatch, *, payload, returncode,
                    stderr="INFO  [alembic.runtime.migration] Context impl SQLiteImpl."):
     """Put a stand-in for the restore child behind the REAL ``_fresh_install_restore``: a
@@ -1588,6 +1602,7 @@ def _child_process(monkeypatch, *, payload, returncode,
     class _Proc:
         def __init__(self, argv, **kw):
             self.returncode = returncode
+            _SPAWNED.append(kw)
             if payload is not None:
                 Path(kw["env"]["OO_RELEASE_RUN_OUT"]).write_text(json.dumps(payload), encoding="utf-8")
 
@@ -1595,7 +1610,9 @@ def _child_process(monkeypatch, *, payload, returncode,
             return self.returncode
 
         def communicate(self, timeout=None):
-            return (json.dumps(payload) if payload is not None else ""), stderr
+            # The pipes are read as BYTES (no ``text=True``); ``stderr`` may be given as bytes to say what a code page wrote.
+            said = stderr if isinstance(stderr, bytes) else stderr.encode("utf-8")
+            return (json.dumps(payload).encode("utf-8") if payload is not None else b""), said
 
     monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
         Popen=_Proc, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
@@ -1997,9 +2014,14 @@ def test_a_failed_start_removes_the_directory_with_rmdir_so_nothing_in_it_is_eve
     assert (fresh / "something.txt").read_text(encoding="utf-8") == "not this call's to delete"
 
 
-def test_a_failure_that_does_not_name_the_passphrase_is_logged_with_its_traceback_as_before(fast, caplog):
-    """The scrubbing replaces the record only where the passphrase is in it: the error log keeps a
-    traceback's tail, and every failure that never named the passphrase keeps it."""
+def test_a_failure_is_logged_through_log_failure_with_its_traceback_on_the_record(fast, caplog):
+    """Every failure of a phase is logged the one way ``secret_scrub.log_failure`` does it, whether or not it names the
+    passphrase: the exception's own line leads the message (the error log cuts a message at 500 characters), the traceback the
+    error log keeps the tail of rides the record as ``scrubbed_traceback`` with the frames that say where it happened, and the
+    record has no ``exc_info``, which is how an exception is written as it made its message. MUTATION TARGET: ``log_failure``
+    -> ``_LOG.warning(..., exc_info=True)`` in ``_run_phase``."""
+    from src.monitoring import secret_scrub
+
     run = rr._Run(rr.RunParams(**_params(fast["dest"])))
 
     def boom():
@@ -2008,8 +2030,55 @@ def test_a_failure_that_does_not_name_the_passphrase_is_logged_with_its_tracebac
     with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
         rr._run_phase(run, FakeCtx(), "ordinary", boom)
     (record,) = [r for r in caplog.records if "ordinary" in r.getMessage()]
-    assert record.exc_info and record.exc_info[0] is RuntimeError, "the traceback rides the record, not the text"
+    assert record.exc_info is None, "the exception is not written as it made its message"
+    assert record.getMessage().startswith("release run phase ordinary failed: RuntimeError: an ordinary failure")
+    tb = getattr(record, secret_scrub.TRACEBACK_ATTRIBUTE)
+    assert "Traceback (most recent call last)" in tb and "in boom" in tb and "RuntimeError: an ordinary failure" in tb
     assert "an ordinary failure" in caplog.text
+
+
+def test_a_failure_that_names_the_passphrase_is_logged_and_recorded_with_it_taken_out_of_both(fast, caplog):
+    """The log line, its traceback, the phase's detail and the report: none holds the passphrase, and the line still says what
+    failed. MUTATION TARGET: the secret handed to ``log_failure`` or ``scrubbed`` in ``_run_phase``."""
+    from src.monitoring import secret_scrub
+
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+
+    def boom():
+        raise RuntimeError(f"could not open {NEEDLE} for reading")
+
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        ph = rr._run_phase(run, FakeCtx(), "names-it", boom)
+    (record,) = [r for r in caplog.records if "names-it" in r.getMessage()]
+    written = [caplog.text, record.getMessage(), getattr(record, secret_scrub.TRACEBACK_ATTRIBUTE), json.dumps(ph)]
+    assert not [w for w in written if NEEDLE in w], written
+    assert ph["status"] == "error" and ph["detail"] == f"RuntimeError: could not open {secret_scrub.REDACTED} for reading"
+    assert record.getMessage().startswith(f"release run phase names-it failed: RuntimeError: could not open {secret_scrub.REDACTED}")
+
+
+def test_a_failure_whose_text_holds_a_short_passphrase_is_recorded_as_its_class_and_none_of_its_words(fast, caplog):
+    """A passphrase of one to three characters cannot be taken out of a text (``secret_scrub.MIN_SECRET_CHARS``), so the phase
+    records the exception's class and none of its words: the detail, the log line and its traceback. A failure whose text holds no
+    shape of it is recorded as it was. MUTATION TARGET: the ``withheld`` words in ``_run_phase``, or a ``scrubbed`` that passes a
+    text through for a secret under the floor."""
+    from src.monitoring import secret_scrub
+
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], passphrase="zq")))
+
+    def holds_it():
+        raise RuntimeError("could not open the zq file")
+
+    def does_not():
+        raise RuntimeError("could not open the file")
+
+    with caplog.at_level(logging.WARNING, logger="monitoring.release_run"):
+        held = rr._run_phase(run, FakeCtx(), "short-held", holds_it)
+        clean = rr._run_phase(run, FakeCtx(), "short-clean", does_not)
+    assert held["detail"] == "RuntimeError: its text is withheld"
+    assert clean["detail"] == "RuntimeError: could not open the file"
+    (record,) = [r for r in caplog.records if "short-held" in r.getMessage()]
+    assert "zq" not in record.getMessage().replace("short-held", "") and "zq" not in getattr(record, secret_scrub.TRACEBACK_ATTRIBUTE)
+    assert record.getMessage().startswith("release run phase short-held failed: RuntimeError: its text is withheld")
 
 
 def test_the_real_child_on_a_missing_backup_exits_nonzero_and_reads_as_a_failed_restore(fast, tmp_path):
@@ -2214,13 +2283,17 @@ def _no_write_leaked(writes: list[str]) -> None:
     assert {"state", "interim", "final"} <= set(writes), f"the watcher saw too little to mean anything: {writes}"
 
 
-def test_the_release_run_scrubs_with_the_shared_helper():
-    """One definition of the scrub (``src/monitoring/secret_scrub.py``, tested in test_secret_scrub.py),
-    used by the parent that records the child's words and by the child that writes them."""
+def test_the_release_run_scrubs_with_the_shared_helpers():
+    """One definition of the scrub (``src/monitoring/secret_scrub.py``, tested in test_secret_scrub.py), used by the parent that
+    records the child's words and by the child that writes them: the helpers that take out every passphrase the process holds
+    (``scrubbed``, ``scrubbed_value``, ``log_failure``) for what is written, and the per-needle one only for the files a kept
+    install leaves, where the needle is the run's own."""
     from src.monitoring import secret_scrub
 
-    assert rr._scrub_value is secret_scrub.scrub_value
-    assert rr._scrub_value(f"a {NEEDLE} b", NEEDLE) == "a ***redacted*** b"
+    assert rr.scrubbed is secret_scrub.scrubbed and rr.scrubbed_value is secret_scrub.scrubbed_value
+    assert rr.log_failure is secret_scrub.log_failure and rr._scrub_file is secret_scrub.scrub_file
+    assert not hasattr(rr, "_scrub_value"), "the per-needle helper credits nothing a handler writes"
+    assert rr.scrubbed(f"a {NEEDLE} b", NEEDLE) == "a ***redacted*** b"
 
 
 def test_a_restore_child_that_echoes_the_passphrase_leaves_it_in_no_state_report_or_log(fast, monkeypatch, caplog):
@@ -2294,6 +2367,7 @@ def test_the_child_scrubs_its_own_error_text_before_cutting_it_to_600_characters
     assert len(text) == 600 and "hunter" not in text and "***red" in text, text[580:]
     assert child._error_text(RuntimeError("boom"), "") == "RuntimeError: boom", "no passphrase, nothing replaced"
     assert child._error_text(RuntimeError(f"key {NEEDLE} refused"), NEEDLE) == "RuntimeError: key ***redacted*** refused"
+    assert child._error_text(RuntimeError("key zq refused"), "zq") == "RuntimeError: its text is withheld", "under the floor"
 
 
 def test_a_resume_owes_the_passphrase_for_a_pre_migration_restore_it_has_not_finished(fast, monkeypatch):
@@ -2380,7 +2454,10 @@ def test_a_passphrase_that_is_a_piece_of_a_field_name_hides_no_failure_either(fa
     _child_process(monkeypatch, payload=payload, returncode=rc)
     rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=needle))["report"]
     phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
-    assert phase["status"] == "error" and fragment in phase["detail"], (needle, shape, phase)
+    # A needle under the floor (``ok``) cannot be taken out of a text, so a detail that holds it is withheld whole: the status
+    # and the exit status are the facts, and they are still there; the words are the class's.
+    withheld = phase["detail"] == "_PhaseError: its text is withheld" and needle == "ok"
+    assert phase["status"] == "error" and (fragment in phase["detail"] or withheld), (needle, shape, phase)
     assert rep["phase_results"]["fresh_install_restore"]["returncode"] == rc
     rows = {r["row"]: r for r in rep["board_rows"]}
     assert rows["A"]["status"] == "error" and rows["I"]["status"] == "error"
@@ -2732,3 +2809,198 @@ def test_the_child_writes_a_result_with_the_passphrase_taken_out_of_every_string
     assert out["restore"] == {"refused": "bad ***redacted***", "committed": False}
     assert out["rows"] == ["***redacted***!", 1.5, None] and out["n"] == 2
     assert json.loads(child._result_text({"ok": True}, "")) == {"ok": True}, "no passphrase, nothing replaced"
+
+
+def test_a_kept_install_that_holds_a_passphrase_under_the_floor_loses_the_files_that_hold_it(tmp_path):
+    """A passphrase of one to three characters cannot be taken out of a file (it is a piece of nearly every line), and the
+    run's own is typed by the operator with no minimum: a kept install must not carry it, so the file that holds it is REMOVED
+    and the report names the file, and a file that holds none is left as it was. MUTATION TARGET: ``scrub_file`` leaving the
+    file as it is, a refusal that reads the needle and not the file, the caller's removal."""
+    short = "zq7"
+    fresh, out_json, journal, beat, report, other = _kept_install_with(tmp_path, needle=short)
+    before = {p: p.stat().st_mtime_ns for p in (beat, other, out_json)}
+    done = rr._scrub_kept_install(fresh, out_json, short)
+    assert done == {"rewritten": [], "removed": ["imp-1.jsonl", "restore-1.json"], "failed": []}, done
+    assert not journal.exists() and not report.exists()
+    assert beat.exists() and out_json.exists() and other.exists()
+    assert {p: p.stat().st_mtime_ns for p in (beat, other, out_json)} == before
+
+
+HELD = "held-session-key-Wm3#"
+
+
+def test_the_passphrase_the_process_holds_is_taken_out_of_what_the_child_hands_back_beside_the_typed_one(fast, monkeypatch):
+    """The backup's passphrase and the corpus's are two keys, and the child's stderr and its result can quote either.
+    MUTATION TARGET: a scrub that knows only the typed one (``scrub_text`` or a bare ``replace`` in place of ``scrubbed``)."""
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+    _child_process(monkeypatch, payload={"ok": False, "error": f"boom {HELD}"}, returncode=1, stderr=f"trace {HELD} end")
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    assert "trace ***redacted*** end" in rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert HELD not in json.dumps(rep)
+
+
+def test_the_child_takes_the_passphrases_the_process_holds_out_of_its_error_and_its_result(monkeypatch):
+    from src.monitoring import release_run_fresh_restore as child
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+    assert child._error_text(RuntimeError(f"key {HELD} refused"), NEEDLE) == "RuntimeError: key ***redacted*** refused"
+    out = json.loads(child._result_text({"error": f"x {HELD}", "n": 1, "rows": [HELD, {"k": HELD}]}, NEEDLE))
+    assert out == {"error": "x ***redacted***", "n": 1, "rows": ["***redacted***", {"k": "***redacted***"}]}
+
+
+def test_the_pause_and_resume_handlers_take_the_held_passphrase_out_and_cut_after_it(monkeypatch):
+    """Handlers that hold no passphrase of their own wrote the exception by hand (``f"{type(exc).__name__}: {exc}"[:300]``);
+    all go through ``exception_text`` now, which takes out what the process holds BEFORE the cut. The held key here starts at
+    character 294 of the text, so a cut at 300 first would keep its first six characters. MUTATION TARGET: a handler that
+    makes the text by hand again, a cut before the scrub."""
+    import src.scheduler.runner as runner
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+
+    def boom():
+        raise RuntimeError("x" * 280 + HELD + " tail")
+
+    monkeypatch.setattr(runner, "get_scheduler", boom)
+    paused = rr._pause_collection()
+    resumed = rr._resume_collection({"scheduler_was_running": True, "wiki_lane_was_streaming": False})
+    for said in (paused["scheduler_error"], resumed["scheduler_error"]):
+        assert said.startswith("RuntimeError: xxx") and len(said) == 300, said
+        assert HELD not in said and HELD[:6] not in said and said.endswith("***red"), said
+
+
+def test_the_wiki_lane_handlers_and_the_last_report_take_the_held_passphrase_out_and_cut_after_it(monkeypatch):
+    """The two wiki-lane handlers (the pause and the resume) and the last-report reader write the exception through the helper as
+    well, and the scheduler's pair above is not those lines: each is DRIVEN here with the held key at character 294. MUTATION
+    TARGET: any of the three making the text by hand (a cut before the scrub, or none)."""
+    import src.wiki.service as wiki_service
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+
+    def boom(*_a, **_k):
+        raise RuntimeError("x" * 280 + HELD + " tail")
+
+    monkeypatch.setattr(wiki_service, "lane_service_status", boom)
+    monkeypatch.setattr(wiki_service, "start_wiki_lane", boom)
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    paused = rr._pause_collection()
+    resumed = rr._resume_collection({"scheduler_was_running": False, "wiki_lane_was_streaming": True})
+
+    def boom_untyped(*_a, **_k):
+        raise RuntimeError("x" * 294 + HELD + " tail")
+
+    monkeypatch.setattr(rr, "read_state", lambda: {})  # the live run is read outside the handler
+    monkeypatch.setattr(rr, "_run_dir", boom_untyped)  # no class in front, so the key starts at 294 here too
+    last = rr.last_release_run_report()
+    for said in (paused["wiki_lane_error"], resumed["wiki_lane_error"], last["error"]):
+        assert len(said) == 300, said
+        assert HELD not in said and HELD[:6] not in said and said.endswith("***red"), said
+    assert paused["wiki_lane_error"].startswith("RuntimeError: xxx") and last["error"].startswith("xxx"), last
+
+
+MIXED_KEY = "k\u00e9y-\u0416-7x9"  # a letter of the ANSI page (cp1252) and one outside it
+
+
+def test_the_child_writes_utf8_and_its_stderr_is_read_as_bytes_so_a_mixed_page_key_is_taken_out(fast, monkeypatch):
+    """On Windows the child's stderr is the ANSI page with a backslash escape for a letter outside it, so a key that mixes a cp1252
+    letter with one outside the page reached the report as raw text plus an escape, a form no carrier writes. The child is told to
+    write UTF-8, its pipes are read as bytes and decoded strictly, so the key is in the one form the scrub takes out. MUTATION
+    TARGET: the pipe encoding setting, the child's UTF-8 mode (the parent's, not a fixed one), the bytes read (``text=True`` again), the strict decode."""
+    _SPAWNED.clear()
+    params = _params(fast["dest"], passphrase=MIXED_KEY)
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=f"trace {MIXED_KEY} end")
+    rep = rr.run_release_run(FakeCtx(), **params)["report"]
+    kw = _SPAWNED[-1]
+    assert kw["env"]["PYTHONIOENCODING"] == "utf-8", kw["env"]
+    assert kw["env"]["PYTHONUTF8"] == str(int(sys.flags.utf8_mode)), "the child decodes its environment as the parent encoded it"
+    assert not kw.get("text") and not kw.get("universal_newlines") and not kw.get("encoding"), kw
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert tail == "trace ***redacted*** end", tail
+    assert MIXED_KEY not in json.dumps(rep) and "7x9" not in json.dumps(rep)
+
+
+@pytest.mark.skipif(not hasattr(os, "environb"), reason="the child reads its environment as bytes, which only POSIX has")
+def test_a_non_ascii_key_reaches_the_child_byte_for_byte(fast, monkeypatch):
+    """A REAL child reports the bytes of the key it was handed, and they are ``os.fsencode(key)``, unchanged. Whether the child
+    DECODES them the way the parent encoded them is the mode it is given, pinned by the test above (``PYTHONUTF8`` is the
+    parent's own). MUTATION TARGET: a handover that re-encodes or changes the key."""
+    real_popen = subprocess.Popen
+    script = (
+        "import json, os\n"
+        "open(os.environ['OO_RELEASE_RUN_OUT'], 'w', encoding='utf-8').write(json.dumps("
+        "{'ok': False, 'error': 'handed ' + os.environb[b'OO_DB_PASSPHRASE'].hex()}))\n"
+    )
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=lambda argv, **kw: real_popen([sys.executable, "-c", script], **kw),
+        PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], passphrase=MIXED_KEY)))
+    ctx = FakeCtx()
+    try:
+        _REAL_RESTORE(ctx, run, fast["dest"] / "backup", label="own-backup")
+    except rr._PhaseError as err:  # the stand-in child says ok False, which is the phase's failure
+        handed = err.partial["child"]["error"]
+    assert handed == "handed " + os.fsencode(MIXED_KEY).hex(), handed
+
+
+def test_a_key_the_locale_cannot_hand_to_the_child_is_recorded_by_class_alone(fast, monkeypatch):
+    """On a POSIX locale whose charset cannot encode a letter of the key, starting the child raises a ``UnicodeEncodeError`` whose
+    text names that letter and its offset, a form of the key no scrub knows, and the phase writes the error's text into the
+    report. The class is recorded with a fixed reason. MUTATION TARGET: the handler that lets the error through."""
+
+    def cannot_encode(*a, **k):
+        raise UnicodeEncodeError("ascii", MIXED_KEY, 1, 2, "ordinal not in range(128)")
+
+    monkeypatch.setattr(rr, "subprocess", types.SimpleNamespace(
+        Popen=cannot_encode, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(rr, "_fresh_install_restore", _REAL_RESTORE)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
+    phase = {ph["name"]: ph for ph in rep["phases"]}["fresh_install_restore"]
+    assert phase["status"] == "error" and "UnicodeEncodeError" in phase["detail"], phase
+    assert "restore child" in phase["detail"], phase  # the handler's own reason, not the writers' generic note
+    shown = json.dumps(rep)
+    assert "\\xe9" not in shown and "u00e9" not in shown and "\\u0416" not in shown, shown
+    assert "can't encode character" not in shown, shown
+    assert not list(fast["dest"].glob(".restore-release-run-*")), "the directory made for the child is taken away"
+
+
+@pytest.mark.parametrize("mode", [0, 1])
+def test_the_child_gets_the_parents_utf8_mode_whichever_it_is(fast, monkeypatch, mode):
+    """The runner's own mode is whatever it is (0 on most machines), so a comparison with it cannot tell a mirrored mode from a
+    fixed one: the parent's flag is set to each value here. MUTATION TARGET: a fixed ``PYTHONUTF8``, either value."""
+    _SPAWNED.clear()
+    fake_sys = types.SimpleNamespace(executable=sys.executable, flags=types.SimpleNamespace(utf8_mode=mode), platform=sys.platform)
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1)
+    monkeypatch.setattr(rr, "sys", fake_sys)
+    rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    assert _SPAWNED[-1]["env"]["PYTHONUTF8"] == str(mode), _SPAWNED[-1]["env"]["PYTHONUTF8"]
+
+
+def test_a_stderr_that_is_not_valid_utf8_is_withheld_whole(fast, monkeypatch):
+    """The key as a code page wrote it (cp1252 for the letter, an escape for the other) is not UTF-8: the tail is withheld whole,
+    never decoded with replacement characters around a form the scrub does not know. MUTATION TARGET: a lenient decode."""
+    written = ("trace k\u00e9y-\\u0416-7x9 end").encode("cp1252")
+    assert b"\xe9" in written
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=written)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], passphrase=MIXED_KEY))["report"]
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert tail == rr.STDERR_NOT_UTF8 and "UTF-8" in tail, tail
+    assert "7x9" not in json.dumps(rep)
+
+
+def test_a_held_passphrase_a_cut_would_split_is_taken_out_before_the_child_s_stderr_is_cut(fast, monkeypatch):
+    """The stderr tail keeps the last 4,000 characters, and the whole result is scrubbed again afterwards, which cannot match half
+    of a passphrase: the scrub of the tail itself comes first, so a held passphrase that starts before the cut and ends after it
+    leaves no fragment. MUTATION TARGET: a scrub of the tail that knows the typed passphrase only (the later scrub hides it from
+    every test that does not put the key across the cut)."""
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: (HELD,))
+    _child_process(monkeypatch, payload={"ok": False, "error": "boom"}, returncode=1, stderr=HELD + "y" * 3990)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
+    assert len(tail) == 4000 and "y" * 100 in tail
+    assert HELD[-8:] not in tail and HELD[:8] not in tail, tail[:30]

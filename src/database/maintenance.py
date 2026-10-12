@@ -2179,6 +2179,7 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
     if engine.url.get_backend_name() != "sqlite":
         return {"skipped": "unsupported-backend"}
 
+    from src.database.damage import guard_raw_driver as damage_guard
     from src.database.writer import write_lock
 
     try:
@@ -2229,12 +2230,18 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
                     "refusing rather than falling back to the single-page path"
                 )
             raw_cur = dbapi_conn.cursor()
-            try:
-                raw_cur.execute(f"PRAGMA incremental_vacuum({pages})")
-                while raw_cur.fetchmany(1000):
-                    pass
-            finally:
-                raw_cur.close()
+            # A raw driver cursor raises past the engine's damage observer; the guard discards a poisoned
+            # connection and names the file for it (src/database/damage.py). It sits OUTSIDE the cursor's own
+            # try/finally: the cursor is closed while its connection is still open, and only then does the guard
+            # invalidate the connection. The other order closes the cursor on a connection the guard has already
+            # closed, and that ProgrammingError replaces the real (code 11) error.
+            with damage_guard(conn, statement=f"PRAGMA incremental_vacuum({pages})"):
+                try:
+                    raw_cur.execute(f"PRAGMA incremental_vacuum({pages})")
+                    while raw_cur.fetchmany(1000):
+                        pass
+                finally:
+                    raw_cur.close()
             freelist_after = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
             reclaimed = max(freelist_before - freelist_after, 0)
             page_size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
