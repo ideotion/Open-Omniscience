@@ -488,7 +488,12 @@ _ONLINE_OFF_ON_REPLACE: tuple[str, ...] = (
     "auto_track_law",
     "auto_import_calendars",
     "crawl_supplement",
+    "auto_refresh_stat_subscriptions",
 )
+# NOT in the tuple, on purpose: the per-pass counts (``discovery_per_run``, ``world_discovery_per_pass``, ``country_data_per_pass``,
+# ``archive_backfill_per_pass``) and ``qualification_budget_auto`` are sizes of the work a pass does, not switches that begin one:
+# a pass starts only from ``continuous`` (written off above), ``autostart`` (off by default) or the user's own run-now, and
+# the network is gated by the airplane state besides. Zeroing them would silently switch those lanes off for good.
 
 
 def _require_wiki_lane_state(value) -> str:
@@ -886,7 +891,7 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         # value another process repaired in the meantime is kept, not overwritten.
         from src.config.kv_store import kv_invalidate
 
-        kv_invalidate()
+        kv_invalidate(_KV_KEY)
         try:
             current = load_settings(strict=True)
         except _DamagedSchedulerSettingsError:

@@ -600,7 +600,7 @@ def test_the_scheduler_replacement_writes_the_online_fields_it_was_not_given_off
     kv_store.kv_invalidate()
     again = SCH.load_settings()
     assert saved.auto_track_law and again.auto_track_law, "what the user supplied stays as supplied"
-    for off in ("continuous", "auto_track_signals", "auto_import_calendars", "crawl_supplement"):
+    for off in ("continuous", "auto_track_signals", "auto_import_calendars", "crawl_supplement", "auto_refresh_stat_subscriptions"):
         assert getattr(again, off) is False, off
     assert again.wiki_lane_state == "halted"
 

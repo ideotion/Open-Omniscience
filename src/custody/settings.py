@@ -224,7 +224,7 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySet
         # value another process repaired in the meantime is kept, not overwritten.
         from src.config.kv_store import kv_invalidate
 
-        kv_invalidate()
+        kv_invalidate(_KV_KEY)
         try:
             current = load_settings(strict=True)
         except _DamagedCustodySettingsError:
