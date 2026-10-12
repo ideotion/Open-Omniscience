@@ -147,6 +147,22 @@ def test_the_groups_panel_totals_agree_with_the_observatory_resolver(s):
     assert mention_by_id[press.id] == 3
 
 
+# ------------------------------------------------------------------ the ring-level readers (one ring)
+
+
+def test_the_ring_readers_leave_out_a_hidden_member_too(s):
+    """`/ring-stats` (group_stats) and the country split read ONE ring; they must count the words the
+    super-group holding that ring counts, or the same ring shows two totals."""
+    from src.analytics.group_stats import resolve_group_keyword_ids
+    from src.analytics.queries import ring_country_split
+
+    news, press = _kw(s, "news"), _kw(s, VISIBLE)
+    assert resolve_group_keyword_ids(s, "news-media") == {press.id}
+    split = ring_country_split(s, ring_id="news-media")
+    assert split["n_keywords"] == 1, "the hidden `news` was counted as a keyword of the ring"
+    assert news.id not in resolve_member_keyword_ids(s, [("news-media", "news-media")])["news-media"]
+
+
 # ------------------------------------------------------------------------------- source topics
 
 
@@ -192,16 +208,17 @@ def test_a_short_topic_tagged_keyword_is_still_evidence(s):
     assert [r["topics"] for r in derive_source_topics(s, min_articles=5)] == [["technology"]]
 
 
-def test_an_article_with_a_hidden_and_a_visible_keyword_of_one_topic_is_counted_once(s):
-    """The reason the filter is in SQL: subtracting afterwards would count this article twice or not at all."""
-    src, arts = _articles(s, 5)
+def test_an_article_carrying_a_hidden_and_a_visible_keyword_of_one_topic_is_counted_once(s):
+    """Visible `press` on articles 0-3 (four), hidden `mathcal` on 3-5 (three), one article in common.
+    Without the hide the topic has six distinct articles and clears the floor of five; with it, four.
+    The overlap is the point of filtering in SQL: a count subtracted afterwards would be wrong here."""
+    src, arts = _articles(s, 6)
     visible, hidden = _kw(s, VISIBLE), _kw(s, HIDDEN)
-    for kw in (visible, hidden):
+    for kw, chosen in ((visible, arts[:4]), (hidden, arts[3:])):
         s.add(KeywordTag(keyword_id=kw.id, axis="topic", tag="politics", source="baseline"))
-        for a in arts:
+        for a in chosen:
             s.add(KeywordMention(keyword_id=kw.id, article_id=a.id, count=1,
                                  observed_on=date.today(), source_id=src.id))
     s.commit()
-    rows = derive_source_topics(s, min_articles=5)
-    assert len(rows) == 1 and rows[0]["topics"] == ["politics"], "five articles carry the visible keyword"
-    assert derive_source_topics(s, min_articles=6) == [], "and the count is five, not ten"
+    assert derive_source_topics(s, min_articles=5) == []
+    assert len(derive_source_topics(s, min_articles=4)) == 1, "the four visible articles are counted, once each"

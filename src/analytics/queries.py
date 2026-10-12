@@ -1590,6 +1590,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     country are bucketed honestly as ``null`` (unlocated), never dropped or guessed.
     """
     from src.analytics import equivalence
+    from src.analytics.filters import hidden_set
 
     ring = equivalence.ring_meta(ring_id)
     if ring is None:
@@ -1599,11 +1600,16 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     # Pre-filter in SQL to this ring's member terms, then confirm the language-qualified
     # ring membership in Python (so a term shared across rings/languages is attributed
     # correctly, never fabricated).
-    cand = (
-        session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
+    # A member the stoplist hides (`news` in `news-media`) is left out (R111 step T2), as in
+    # group_stats.resolve_group_keyword_ids: the list only, not a listing's length rule.
+    hidden = hidden_set()
+    cand = [
+        c
+        for c in session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
         .filter(Keyword.normalized_term.in_(member_terms))
         .all()
-    )
+        if c[2] not in hidden
+    ]
     kw_ids = [kid for kid, lang, norm in cand if equivalence.ring_of(lang, norm) == ring_id]
     languages = sorted({lang for _kid, lang, norm in cand
                         if equivalence.ring_of(lang, norm) == ring_id and lang})

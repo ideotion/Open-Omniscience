@@ -115,8 +115,12 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
         .where(KeywordTag.axis == "topic")
         .group_by(Source.domain, KeywordTag.tag)
     )
-    for i in range(0, len(hidden_ids), 900):
-        stmt = stmt.where(KeywordTag.keyword_id.notin_(hidden_ids[i : i + 900]))
+    if hidden_ids:
+        # ONE NOT IN. WHAT BOUNDS IT: the topic axis is curated (the baseline files carry about a hundred
+        # entries across seven languages, each tagging a few keywords), so the hidden ones are a handful,
+        # and SQLite 3.32+ and SQLCipher 4 bind 32766 variables per statement. Chunking would not bound it:
+        # ANDed chunks are still one statement.
+        stmt = stmt.where(KeywordTag.keyword_id.notin_(hidden_ids))
     rows = session.execute(stmt).all()  # Row objects unpack as (domain, tag, count)
     return aggregate_source_topics(rows, min_articles=min_articles, top_n=top_n)
 

@@ -73,8 +73,14 @@ def resolve_group_keyword_ids(db, ring_id: str) -> set[int]:
     fetch every Keyword whose normalized_term is one of the ring's declared member
     terms, then keep only the ones whose OWN stored language actually matches that
     member's declared language (``equivalence.ring_of``). A term that happens to
-    collide with another ring/language is never fabricated into this group."""
+    collide with another ring/language is never fabricated into this group.
+
+    A member the stoplist hides (a shipped stopword or the user's exclusions: `news` in
+    `news-media`) is left out (R111 step T2), the rule the super-group readers apply, so the
+    ring and the group that holds it count the same words. Only the list hides, not a
+    listing's length rule: a ring member is a deliberate pick."""
     from src.analytics import equivalence
+    from src.analytics.filters import hidden_set
     from src.database.models import Keyword
 
     ring = equivalence.ring_meta(ring_id)
@@ -83,6 +89,7 @@ def resolve_group_keyword_ids(db, ring_id: str) -> set[int]:
     member_terms = {term for _lang, term in ring.members}
     if not member_terms:
         return set()
+    hidden = hidden_set()
     ids: set[int] = set()
     for chunk in _chunks(list(member_terms)):
         rows = (
@@ -91,7 +98,7 @@ def resolve_group_keyword_ids(db, ring_id: str) -> set[int]:
             .all()
         )
         for kid, lang, norm in rows:
-            if equivalence.ring_of(lang, norm) == ring_id:
+            if norm not in hidden and equivalence.ring_of(lang, norm) == ring_id:
                 ids.add(int(kid))
     return ids
 
