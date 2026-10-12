@@ -93,14 +93,23 @@ def _use_kv() -> bool:
 
 
 def _read_json_file() -> dict | None:
+    """The legacy ``safety_settings.json``: ``None`` when there is no file. A file that is there and cannot be read, or is not a
+    JSON object, raises ``KvReadError`` (the class only): it is the user's saved choice, damaged, and reading it as the defaults
+    would be the direct connection."""
+    from src.config.kv_store import KvReadError
+
     path = _path()
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("safety_settings.json unreadable; using defaults", exc_info=True)
-        return None
+        raw = json.loads(path.read_text("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - failed closed, by class
+        _LOG.warning("safety_settings.json unreadable (%s); the transport stays closed", type(exc).__name__)
+        raise KvReadError(type(exc).__name__) from None
+    if not isinstance(raw, dict):
+        _LOG.warning("safety_settings.json is not an object; the transport stays closed")
+        raise KvReadError("NotAnObject")
+    return raw
 
 
 def _read_raw() -> dict | None:
@@ -118,8 +127,8 @@ def _read_raw() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("safety_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("safety_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 
@@ -137,25 +146,34 @@ def _read_raw_strict() -> dict | None:
     """``_read_raw`` for a caller that will REWRITE what it read: a stored blob that cannot be read raises ``SafetySettingsError``
     (the class only, never the engine's text) instead of reading as the defaults, because writing the defaults back over a saved
     protected mode and proxy list is the loss this prevents."""
-    if not _use_kv():
-        return _read_json_file()
     from src.config.kv_store import kv_get_json_strict, kv_set_json
 
+    def refused(exc: BaseException) -> SafetySettingsError:
+        return SafetySettingsError(
+            f"the stored safety settings could not be read ({type(exc).__name__}); nothing was changed"
+        )
+
+    if not _use_kv():
+        try:
+            return _read_json_file()
+        except Exception as exc:  # noqa: BLE001 - refused, by class
+            raise refused(exc) from None
     try:
         raw = kv_get_json_strict(_KV_KEY)
     except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise SafetySettingsError(
-            f"the stored safety settings could not be read ({type(exc).__name__}); nothing was changed"
-        ) from None
+        raise refused(exc) from None
     if raw is not None:
         return raw
-    raw = _read_json_file()
+    try:
+        raw = _read_json_file()
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise refused(exc) from None
     if raw is None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("safety_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("safety_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 

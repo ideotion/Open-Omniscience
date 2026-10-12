@@ -239,8 +239,8 @@ def _read_json_file() -> dict | None:
         return None
     try:
         return json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not take down the API
-        _LOG.warning("app_settings.json is unreadable; using defaults", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not take down the API
+        _LOG.warning("app_settings.json is unreadable; using defaults (%s)", type(exc).__name__)
         return None
 
 
@@ -265,8 +265,8 @@ def _read_raw() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)  # adopt into the durable store
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("app_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("app_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 
@@ -291,8 +291,8 @@ def _read_raw_strict() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)  # adopt into the durable store
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("app_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("app_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 

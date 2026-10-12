@@ -125,6 +125,8 @@ class KvReadError(Exception):
 #: failing store each time. It protects the store from a retry storm and nothing else: a write or an invalidation clears it.
 _FAIL_HOLD_S = 2.0
 _failed: dict[tuple[str, str], tuple[float, str]] = {}
+#: Store files read or written in this process: one of them gone later is a failure, where one never there is a first run.
+_seen: set[str] = set()
 
 #: The failures of a READ-ONLY open that a read-write open can get past (a hot rollback journal to recover, a directory the
 #: process cannot write the ``-shm`` into). Anything else (a wrong key, a lock, a busy timeout, a damaged file) is not retried:
@@ -151,7 +153,7 @@ def kv_get_json_checked(key: str) -> dict | None:
     ck = (path, key)
     with _lock:
         if ck in _cache:
-            return _loads(_cache[ck])
+            return _parsed(_cache[ck])
         held = _failed.get(ck)
         if held is not None and held[0] > time.monotonic():
             raise KvReadError(held[1])
@@ -165,7 +167,11 @@ def kv_get_json_checked(key: str) -> dict | None:
             raw = _read_value(path, key, read_only=False)
     except Exception as exc:  # noqa: BLE001 - absent is a value; the rest is a failure
         if isinstance(exc, FileNotFoundError) or "no such table" in str(exc).lower():
-            return None
+            with _lock:
+                vanished = path in _seen
+            if not vanished:
+                return None  # a first run: nothing stored yet
+            # The store was read (or written) earlier in this process and is gone now: that is a failure, not a first run.
         what = type(exc).__name__
         _LOG.debug("kv_get_json(%r) unreadable (%s)", key, what)
         with _lock:
@@ -174,7 +180,22 @@ def kv_get_json_checked(key: str) -> dict | None:
     with _lock:
         _cache[ck] = raw
         _failed.pop(ck, None)
-    return _loads(raw)
+        _seen.add(path)
+    return _parsed(raw)
+
+
+def _parsed(raw: str | None) -> dict | None:
+    """``None`` only for an absent value. A value that is there and is not a JSON object is a failed read (damaged), by class."""
+    try:
+        return _loads_strict(raw)
+    except ValueError:
+        raise KvReadError("ValueError") from None
+
+
+def clear_failures() -> None:
+    """Forget the failed reads held for :data:`_FAIL_HOLD_S` (the key changed: a store that was locked may read now)."""
+    with _lock:
+        _failed.clear()
 
 
 def kv_get_json(key: str) -> dict | None:
@@ -262,6 +283,7 @@ def kv_set_json(key: str, obj: dict) -> None:
     with _lock:
         _cache[(path, key)] = value
         _failed.pop((path, key), None)
+        _seen.add(path)
 
 
 def kv_delete(key: str) -> None:
@@ -299,6 +321,7 @@ def kv_invalidate(key: str | None = None) -> None:
         if key is None:
             _cache.clear()
             _failed.clear()
+            _seen.clear()
         else:
             for ck in [ck for ck in _failed if ck[1] == key]:
                 _failed.pop(ck, None)

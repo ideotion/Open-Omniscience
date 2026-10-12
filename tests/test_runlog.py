@@ -144,7 +144,7 @@ def test_a_run_that_finished_with_a_muted_journal_says_so():
     """The inverse: a run that DID complete while its journal was muted must not
     be retroactively minted a crash by the next boot."""
     rl = runlog.begin("import", label="x")
-    rl._disable("beats", OSError("No space left on device"))
+    rl._disable("beats", "OSError: No space left on device")
     rl.end("ok")
     recs = _lines(rl.milestone_path)
     assert recs[-1]["ev"] == "run_end"

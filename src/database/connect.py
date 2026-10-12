@@ -180,6 +180,12 @@ def set_passphrase(p: str | None) -> None:
         _guard_the_key()  # before the process holds the key, not after
     with _lock:
         _passphrase = p or None
+    try:  # a store that was locked may read now: do not serve the held failure of the old key
+        from src.config.kv_store import clear_failures
+
+        clear_failures()
+    except Exception:  # noqa: BLE001, S110 - never a reason for the key to be refused
+        pass
     # The scrub keeps ONE cache entry: the passphrases it last took out of a text and the shapes it made of them. A failed
     # unlock or create and the crypto-erase clear the session's passphrase here, so they clear that copy too (a core dump is in
     # the rule). Outside the lock, and never a reason for the call to fail.

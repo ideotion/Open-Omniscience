@@ -91,7 +91,7 @@ def _settings_payload(s: safety_settings.SafetySettings) -> dict:
     leaves, read through the fetch path's own reader (the consent popup's lane lines)."""
     from src.safety.fetcher import transport_summary
 
-    return {**s.to_dict(), "note": _PROXY_NOTE, "transport": transport_summary(s)}
+    return {**s.to_dict(), "note": _PROXY_NOTE, "transport": transport_summary(s), "read_failed": bool(s.read_failed)}
 
 
 @router.get("/settings")

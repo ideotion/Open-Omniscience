@@ -112,6 +112,23 @@ def test_the_traceback_is_scrubbed_before_it_is_cut(tmp_path):
     assert len(tail) == 8000 and tail.endswith("z\n")
 
 
+def test_a_scrub_that_cannot_run_writes_the_class_and_none_of_the_words(tmp_path, monkeypatch):
+    """MUTATION TARGET: ``runlog.run`` writing the message or the traceback when the scrub could not be checked. The journal never
+    fails the block it observes and never writes a text it could not check: the block's own error still propagates, and the record
+    is the class, a fixed line and a class-only traceback. The contract lives in ``secret_scrub``; this runs ``run`` with it broken."""
+
+    def broken(secrets):
+        raise RuntimeError("the scrub broke")
+
+    monkeypatch.setattr(S, "_forms_now", broken)
+    with pytest.raises(ValueError, match="the engine said"), runlog.run("verify", label="unscrubbable", secrets=(PASS,)):
+        raise ValueError(f"the engine said {PASS}")
+    assert PASS not in _journal(tmp_path)
+    err = _error(tmp_path)
+    assert err["cls"] == "ValueError" and err["msg"] == "ValueError: its text is withheld"
+    assert "the engine said" not in err["traceback"] and "ValueError" in err["traceback"]
+
+
 def _unicode_cause():
     """The ``UnicodeEncodeError`` a passphrase with a lone surrogate raises: its text names the character and its offset."""
     try:
@@ -163,6 +180,7 @@ def test_the_single_file_restore_journals_its_failure_without_the_passphrase_it_
 
     monkeypatch.setattr(r, "read_artifact", lambda data, passphrase=None: SimpleNamespace(corpus_path=tmp_path / "c.db"))
     monkeypatch.setattr(r, "cleanup_staging", lambda staged: None)
+    monkeypatch.setattr(r, "check_memory_before_staging", lambda: None)
 
     def boom(*a, **k):
         raise RuntimeError(f"the merge could not open the corpus with {PASS}")

@@ -205,9 +205,8 @@ def test_a_wrong_key_read_of_an_encrypted_store_with_a_leftover_log_fails_closed
     deletes it, with a wrong key too (measured in ``test_connect_read_only``), and that log is the evidence of how the last session
     ended. On a REAL keyed store."""
     pytest.importorskip("sqlcipher3")
-    from tests.test_connect_read_only import _KEY, _crashed, _fingerprint
-
     from src.database import connect as connect_mod
+    from tests.test_connect_read_only import _KEY, _crashed, _fingerprint
 
     folder = tmp_path / "enc"
     db = _crashed(folder, _KEY)
@@ -228,3 +227,109 @@ def test_a_wrong_key_read_of_an_encrypted_store_with_a_leftover_log_fails_closed
     finally:
         connect_mod.set_passphrase(None)
     assert _fingerprint(db) == before, "a failed read moved the file or consumed its log"
+
+
+# --- fold 13 ------------------------------------------------------------------------------------------------------------ #
+def _damage_the_stored_value(tmp_path, text):
+    import sqlite3
+
+    con = sqlite3.connect(tmp_path / "open_omniscience.db")
+    con.execute("UPDATE app_state SET value = ? WHERE key = ?", (text, S._KV_KEY))
+    con.commit()
+    con.close()
+    kv_store.kv_invalidate()
+
+
+@pytest.mark.parametrize("text", ['{"fetch_mode": "prot', "[1, 2]", "not json"], ids=["truncated", "not-an-object", "garbage"])
+def test_a_stored_value_that_is_there_and_damaged_fails_closed_not_as_the_defaults(env, tmp_path, text):
+    """MUTATION TARGET: ``kv_get_json_checked`` returning ``_loads(raw)`` (damaged reads as absent, then as the direct connection)."""
+    _store(env, "transparent")
+    _damage_the_stored_value(tmp_path, text)
+    with pytest.raises(kv_store.KvReadError):
+        kv_store.kv_get_json_checked(S._KV_KEY)
+    assert kv_store.kv_get_json(S._KV_KEY) is None, "the lenient reader keeps its old answer for other callers"
+    s = S.load_settings()
+    assert s.read_failed and s.is_protected and not s.http_proxy
+
+
+def test_a_corrupt_legacy_settings_file_fails_closed(env, tmp_path):
+    (tmp_path / "safety_settings.json").write_text('{"fetch_mode": "prot', encoding="utf-8")
+    s = S.load_settings()
+    assert s.read_failed and s.is_protected
+    (tmp_path / "safety_settings.json").write_text("[1]", encoding="utf-8")
+    assert S.load_settings().read_failed
+    with pytest.raises(S.SafetySettingsError) as err:
+        S.save_settings({"discovery_external_enabled": True})
+    assert "JSONDecodeError" in str(err.value) or "NotAnObject" in str(err.value) or "KvReadError" in str(err.value)
+
+
+def test_a_store_that_was_read_and_is_gone_fails_closed_and_one_never_there_is_a_first_run(env, tmp_path):
+    first = S.load_settings()
+    assert not first.read_failed and not first.is_protected, "a first run keeps the defaults"
+    _store(env)
+    S.load_settings()
+    (tmp_path / "open_omniscience.db").unlink()
+    with kv_store._lock:
+        kv_store._cache.clear()
+    assert S.load_settings().read_failed
+
+
+def test_the_first_run_defaults_send_nothing_because_the_app_starts_offline(env):
+    """R117: a first run has no store, so the defaults (direct) apply; what keeps them from sending is the airplane switch the boot
+    engages, which the session refuses under."""
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    assert not S.load_settings().read_failed
+    activate_kill_switch()
+    try:
+        with pytest.raises(Exception, match=r"(?i)airplane|offline|kill|blocked"):
+            guarded_session().get("https://example.org/", timeout=2)
+    finally:
+        clear_kill_switch()
+
+
+def test_the_refusal_of_an_unreadable_store_says_so_and_does_not_tell_the_user_to_set_a_proxy(env):
+    from src.safety.fetcher import NO_PROXY_REFUSAL, READ_FAILED_REFUSAL, transport_summary
+
+    _store(env)
+    _fail_reads(env)
+    kv_store.kv_invalidate()
+    s = S.load_settings()
+    assert guarded_session().transport_refusal == READ_FAILED_REFUSAL != NO_PROXY_REFUSAL
+    assert "no proxy" not in READ_FAILED_REFUSAL and "could not be read" in READ_FAILED_REFUSAL
+    assert transport_summary(s) == {"kind": "unknown", "reason": "unreadable"}
+    from src.api import safety as api
+
+    assert api._settings_payload(s)["read_failed"] is True
+
+
+def test_a_good_unlock_clears_the_held_failure_so_fetches_do_not_refuse_for_two_more_seconds(env):
+    from src.database import connect as connect_mod
+
+    _store(env)
+    _fail_reads(env)
+    kv_store.kv_invalidate()
+    assert S.load_settings().read_failed
+    env.setattr(kv_store, "_read_value", _REAL["read"])  # the store reads now, but the failure is held
+    assert S.load_settings().read_failed
+    connect_mod.set_passphrase(None)
+    assert not S.load_settings().read_failed
+
+
+def test_a_held_session_is_returned_on_a_failed_read_only_for_the_user_agent_it_was_built_with(env):
+    _store(env)
+    good = following_session("wiki", "ua-one")
+    _fail_reads(env)
+    kv_store.kv_invalidate()
+    other = following_session("wiki", "ua-two")
+    assert other is not good and other.transport_refusal and other.headers["User-Agent"] == "ua-two"
+
+
+def test_no_settings_module_writes_a_traceback_around_the_store():
+    """MUTATION TARGET: ``exc_info=`` back on a log line of a settings reader (a keyed open chains the driver's own error)."""
+    import src.config.app_settings as a
+    import src.custody.settings as c
+    import src.scheduler.settings as sch
+
+    for mod in (kv_store, S, a, c, sch):
+        assert "exc_info" not in Path(mod.__file__).read_text(encoding="utf-8"), mod.__name__

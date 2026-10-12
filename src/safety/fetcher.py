@@ -67,6 +67,14 @@ NO_PROXY_REFUSAL = (
 )
 
 
+#: The refusal when the stored transport choice could not be READ (a locked, damaged or vanished store): the user's setting is
+#: unknown, not absent, so nothing is sent until it reads again. Not "no proxy is configured": the store is the problem.
+READ_FAILED_REFUSAL = (
+    "the stored safety settings could not be read, so this request was refused instead of being sent directly "
+    "(nothing leaves until they can be read again)"
+)
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -226,6 +234,8 @@ def _protected_transport(settings: SafetySettings) -> tuple[str | None, tuple[st
     statistics, DuckDuckGo discovery, the AI installer) out directly while articles went
     through the pool.
     """
+    if getattr(settings, "read_failed", False):
+        return None, (), READ_FAILED_REFUSAL
     # ``getattr``: a stand-in settings object without the field has no pool, which is
     # the reading that cannot widen what a session reaches.
     pool = tuple(getattr(settings, "http_proxies", None) or ())
@@ -257,6 +267,8 @@ def transport_summary(settings: SafetySettings) -> dict[str, Any]:
     text: that text comes from an exception and quotes the stored entry it refused, and
     the popup draws its own translated sentence for each kind anyway.
     """
+    if getattr(settings, "read_failed", False):
+        return {"kind": "unknown", "reason": "unreadable"}  # the UI's own "settings could not be read" line
     if not settings.is_protected:
         return {"kind": "direct"}
     _single, pool, refusal = _protected_transport(settings)
@@ -435,7 +447,7 @@ def following_session(owner: str, user_agent: str) -> GuardedSession:
     name = f"session/{owner}"
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(name)
-        if getattr(s, "read_failed", False) and held is not None:
+        if getattr(s, "read_failed", False) and held is not None and held[0][-1] == user_agent:
             return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
         if held is None or held[0] != key:
             held = (key, _session_for(s, user_agent=user_agent))
