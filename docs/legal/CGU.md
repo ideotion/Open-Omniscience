@@ -84,7 +84,7 @@ dans le prolongement des sections **15 et 16 de la GPL v3** (exclusion de garant
 limitation de responsabilité).
 
 4.2. **Stade de développement.** Le Logiciel est **jeune et expérimental** : son propre
-numéro de version (`0.0.x`, pré-alpha) signale délibérément une **maturité réduite**, et
+numéro de version (`0.x`, alpha) signale délibérément une **maturité réduite**, et
 sa documentation indique que certaines fonctions sont incomplètes ou en cours de
 construction. L'Éditeur ne garantit **ni l'adéquation à un usage particulier, ni
 l'exactitude des résultats, ni la disponibilité, ni l'absence d'erreurs ou

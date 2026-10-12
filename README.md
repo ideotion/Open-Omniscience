@@ -36,7 +36,9 @@
 > languages, Equal Earth maps with contested borders, a rebuilt import and export, and the
 > interface's remaining strings translated into all twelve languages. The release gate,
 > [`docs/product/RELEASE_0.4_GATE.md`](docs/product/RELEASE_0.4_GATE.md), lists the operator
-> runs that were still open when it was tagged.
+> runs that were still open when it was tagged. **The `0.5` cycle is now open** — its board
+> is [`docs/product/RELEASE_0.5_GATE.md`](docs/product/RELEASE_0.5_GATE.md) ("the
+> investigator's desk").
 
 > **`v0.3.0` — measured & verified, tagged 2026-08-23.** The `0.3` cycle turned the
 > instruments built so far into a standing improvement loop: the recursive SENSE→VERIFY
