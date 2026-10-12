@@ -23,6 +23,18 @@ KEY_PASS = "Zk4#signing-wrap-taken'Rt7"
 
 _CHILD = """
 import os, subprocess, sys
+def _environ_of(pid):
+    # A process in the middle of its exec has an empty environment: read until it has one (PATH is always passed), so "clean" is never
+    # the answer for a process that was read too early.
+    import time
+    data = b''
+    for _ in range(100):
+        data = open(f'/proc/{{pid}}/environ', 'rb').read()
+        if b'PATH=' in data:
+            break
+        time.sleep(0.05)
+    assert b'PATH=' in data, 'the environment never appeared'
+    return data
 from src.database import connect
 from src.monitoring import secret_scrub as S
 assert 'OO_DB_PASSPHRASE' not in os.environ and 'OO_KEY_PASSPHRASE' not in os.environ, 'still in the environment'
@@ -36,13 +48,13 @@ if sys.platform.startswith('linux'):
     from multiprocessing import resource_tracker
     resource_tracker.ensure_running()
     pid = resource_tracker._resource_tracker._pid
-    environ = open(f'/proc/{{pid}}/environ', 'rb').read()
+    environ = _environ_of(pid)
     assert b'PASSPHRASE' not in environ and {passphrase!r}.encode() not in environ, 'the resource tracker holds it'
     from multiprocessing import forkserver
     forkserver.ensure_running()
     fpid = forkserver._forkserver._forkserver_pid
     assert fpid and fpid != pid
-    fenv = open(f'/proc/{{fpid}}/environ', 'rb').read()
+    fenv = _environ_of(fpid)
     assert b'PASSPHRASE' not in fenv and {passphrase!r}.encode() not in fenv, 'the forkserver holds it'
 print('ok')
 """
@@ -270,11 +282,23 @@ def test_a_failed_import_of_the_take_leaves_a_record_end_to_end(tmp_path):
 _FORKSERVER_ONLY = """
 {prelude}
 import os
+def _environ_of(pid):
+    # A process in the middle of its exec has an empty environment: read until it has one (PATH is always passed), so "clean" is never
+    # the answer for a process that was read too early.
+    import time
+    data = b''
+    for _ in range(100):
+        data = open(f'/proc/{{pid}}/environ', 'rb').read()
+        if b'PATH=' in data:
+            break
+        time.sleep(0.05)
+    assert b'PATH=' in data, 'the environment never appeared'
+    return data
 from src.database import connect
 from multiprocessing import forkserver
 forkserver.ensure_running()
 fpid = forkserver._forkserver._forkserver_pid
-environ = open(f'/proc/{{fpid}}/environ', 'rb').read()
+environ = _environ_of(fpid)
 print('forkserver-holds-it' if b'PASSPHRASE' in environ or {passphrase!r}.encode() in environ else 'forkserver-clean')
 """
 
