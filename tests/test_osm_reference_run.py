@@ -1351,7 +1351,14 @@ def test_the_third_signal_removes_the_raw_logs_before_the_runner_goes(tmp_path):
     assert not logs.exists()
 
 
-@pytest.mark.parametrize("sig,expected", [(signal.SIGINT, -signal.SIGINT), (signal.SIGQUIT, 128 + signal.SIGTERM)])
+# `getattr`: the decorator runs at import, before the module's Linux-only skip applies, and Windows has no SIGQUIT.
+_SIGQUIT = getattr(signal, "SIGQUIT", None)
+
+
+@pytest.mark.parametrize("sig,expected", [
+    (signal.SIGINT, -signal.SIGINT),
+    pytest.param(_SIGQUIT, 128 + signal.SIGTERM, marks=pytest.mark.skipif(_SIGQUIT is None, reason="no SIGQUIT on this platform")),
+])
 def test_a_third_signal_arms_the_way_out_before_the_log_removal_can_block(tmp_path, sig, expected):
     # A full or hung disk is exactly when the way out is needed: the removal may block, and the NEXT signal must still end
     # the process (SIGQUIT by exit status 143, never by its core-dumping default).
