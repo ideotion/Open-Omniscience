@@ -480,6 +480,16 @@ def _coerce_list(value) -> list[str]:
 #: with the state is how a UI comes to show a fourth thing the backend cannot store.
 WIKI_LANE_STATES: tuple[str, ...] = ("running", "halted", "stopped")
 
+# The fields that make a pass reach the network on their own. A replacement of a damaged value (the user's own save) writes the
+# ones the save did not supply OFF: the defaults are "on", and a repair must not start network work nobody asked for.
+_ONLINE_OFF_ON_REPLACE: tuple[str, ...] = (
+    "continuous",
+    "auto_track_signals",
+    "auto_track_law",
+    "auto_import_calendars",
+    "crawl_supplement",
+)
+
 
 def _require_wiki_lane_state(value) -> str:
     """Refuse anything outside :data:`WIKI_LANE_STATES`, by name."""
@@ -872,10 +882,23 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         if not replace_damaged:
             raise
         # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
-        # defaults. Nothing readable is lost; what this save does not supply is reported as reset.
-        current = SchedulerSettings()
-        reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
-    current.reset_fields = reset
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset. One uncached read first, so a
+        # value another process repaired in the meantime is kept, not overwritten.
+        from src.config.kv_store import kv_invalidate
+
+        kv_invalidate()
+        try:
+            current = load_settings(strict=True)
+        except _DamagedSchedulerSettingsError:
+            current = SchedulerSettings()
+            reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+            # A replacement never starts network work the user's save did not ask for: what it does not supply is written OFF.
+            for off in _ONLINE_OFF_ON_REPLACE:
+                if updates.get(off) is None:
+                    setattr(current, off, False)
+            if updates.get("wiki_lane_state") is None:
+                current.wiki_lane_state = "halted"
+    current.reset_fields = reset  # type: ignore[attr-defined]
 
     # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a
     # caller still sending it would otherwise get a 200 that changed nothing.

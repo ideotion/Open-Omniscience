@@ -366,6 +366,7 @@ def test_choosing_the_connection_again_replaces_a_damaged_value_and_the_next_rea
         S.save_settings({"fetch_mode": "protected"})  # half a choice
     saved = S.save_settings({"fetch_mode": "protected", "http_proxy": SOCKS})
     assert saved.is_protected and saved.http_proxy == SOCKS
+    assert saved.reset_fields == ["http_proxies", "discovery_external_enabled"], "what the save did not supply is reported as reset"
     kv_store.kv_invalidate()
     again = S.load_settings()
     assert not again.read_failed and again.http_proxy == SOCKS
@@ -460,8 +461,8 @@ def test_the_crypto_erase_forgets_the_stores_seen_and_the_panic_wipe_goes_offlin
 # --- fold 15: the other three preference modules ------------------------------------------------------------------------ #
 _MODULES = [
     ("src.config.app_settings", "AppSettingsError", {"theme": "dark"}, "theme"),
-    ("src.scheduler.settings", "SchedulerSettingsError", {"auto_run_market_rules": False}, "auto_run_market_rules"),
-    ("src.custody.settings", "CustodySettingsError", {"auto_log_on_ingest": True}, "auto_log_on_ingest"),
+    ("src.scheduler.settings", "SchedulerSettingsError", {"auto_run_market_rules": True}, "auto_run_market_rules"),
+    ("src.custody.settings", "CustodySettingsError", {"auto_log_on_ingest": False}, "auto_log_on_ingest"),
 ]
 
 
@@ -519,3 +520,134 @@ def test_the_users_routes_ask_for_the_replacement_and_serve_what_was_reset():
     for fn in (r_app.update_settings, r_custody.put_settings, r_sched.scheduler_update_config):
         src = inspect.getsource(fn)
         assert "replace_damaged=True" in src and '"reset"' in src, fn.__name__
+
+
+# --- fold 16 ------------------------------------------------------------------------------------------------------------ #
+def _damage_row(tmp_path, key):
+    import sqlite3
+
+    con = sqlite3.connect(tmp_path / "open_omniscience.db")
+    con.execute("UPDATE app_state SET value = ? WHERE key = ?", ('{"truncat', key))
+    con.commit()
+    con.close()
+    kv_store.kv_invalidate()
+
+
+_ROUTES = [
+    ("put", "/api/safety/settings", {"fetch_mode": "protected", "http_proxy": SOCKS}, "src.safety.settings"),
+    ("put", "/api/settings", {"theme": "dark"}, "src.config.app_settings"),
+    ("put", "/api/custody/settings", {"auto_log_on_ingest": False}, "src.custody.settings"),
+    ("put", "/api/scheduler/config", {"auto_run_market_rules": True}, "src.scheduler.settings"),
+]
+
+
+@pytest.mark.parametrize(("verb", "url", "body", "module"), _ROUTES, ids=[r[1] for r in _ROUTES])
+def test_the_users_route_over_a_damaged_value_replaces_it_and_serves_what_was_reset(env, tmp_path, verb, url, body, module):
+    """The routes themselves, over a real damaged row (MUTATION TARGET: a route that drops ``replace_damaged=True`` answers 400
+    for good; one that drops ``"reset"`` replaces silently)."""
+    import importlib
+
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    mod = importlib.import_module(module)
+    env.setenv("OO_NO_SCHEDULER", "1")
+    # a good value first, so the row exists; the safety module has its own seed
+    if module == "src.safety.settings":
+        _store(env)
+    else:
+        mod.save_settings(next(iter([{k: (not v) if isinstance(v, bool) else "light" for k, v in body.items()}])))
+    kv_store.kv_invalidate()
+    _damage_row(tmp_path, mod._KV_KEY)
+    with TestClient(app) as c:
+        r = getattr(c, verb)(url, json=body)
+    assert r.status_code == 200, r.text
+    reset = r.json()["reset"]
+    assert isinstance(reset, list)
+    if module == "src.safety.settings":
+        assert reset == ["http_proxies", "discovery_external_enabled"]
+    else:
+        assert reset and not set(body) & set(reset)
+    kv_store.kv_invalidate()
+    again = mod.load_settings()
+    assert not getattr(again, "read_failed", False)
+    for k, v in body.items():
+        assert getattr(again, k) == v
+
+
+def test_only_the_three_users_routes_ask_for_the_replacement():
+    """MUTATION TARGET: ``replace_damaged=True`` appearing in an automated caller (the LLM installer, the OSM picker, a scheduler
+    loop), which would write the defaults over a damaged value without the user having chosen anything."""
+    root = Path(__file__).resolve().parent.parent / "src"
+    allowed = {"api/settings.py", "api/custody.py", "api/scheduler.py"}
+    found = {
+        str(p.relative_to(root)).replace("\\", "/")
+        for p in root.rglob("*.py")
+        if "replace_damaged=True" in p.read_text(encoding="utf-8")
+    }
+    assert found == allowed, found
+
+
+def test_the_scheduler_replacement_writes_the_online_fields_it_was_not_given_off(env, tmp_path):
+    """A repair must not start network work nobody asked for: the defaults are ``on``."""
+    from src.scheduler import settings as SCH
+
+    SCH.save_settings({"auto_run_market_rules": True})
+    kv_store.kv_invalidate()
+    _damage_row(tmp_path, SCH._KV_KEY)
+    saved = SCH.save_settings({"auto_run_market_rules": True, "auto_track_law": True}, replace_damaged=True)
+    kv_store.kv_invalidate()
+    again = SCH.load_settings()
+    assert saved.auto_track_law and again.auto_track_law, "what the user supplied stays as supplied"
+    for off in ("continuous", "auto_track_signals", "auto_import_calendars", "crawl_supplement"):
+        assert getattr(again, off) is False, off
+    assert again.wiki_lane_state == "halted"
+
+
+def test_a_value_repaired_in_the_meantime_is_not_overwritten(env, tmp_path):
+    """The replacement reads once more, uncached, first. MUTATION TARGET: the ``kv_invalidate`` before that read."""
+    from src.config import app_settings as A
+
+    A.save_settings({"theme": "dark"})
+    kv_store.kv_invalidate()
+    _damage_row(tmp_path, A._KV_KEY)
+    with pytest.raises(A._DamagedAppSettingsError):
+        A.load_settings(strict=True)  # the cache now holds the failure
+    import sqlite3
+
+    con = sqlite3.connect(tmp_path / "open_omniscience.db")  # another process repaired it, behind this one's cached failure
+    con.execute("UPDATE app_state SET value = ? WHERE key = ?", ('{"theme": "light"}', A._KV_KEY))
+    con.commit()
+    con.close()
+    saved = A.save_settings({"language": "fr"}, replace_damaged=True)
+    assert saved.theme == "light" and not saved.reset_fields
+
+
+def test_the_custody_replacement_keeps_the_no_record_default(env, tmp_path, monkeypatch):
+    from src.custody import settings as C
+
+    monkeypatch.setattr(C, "_legacy_auto_log_default", lambda: False)
+    C.save_settings({"pqc_enabled": True})
+    kv_store.kv_invalidate()
+    _damage_row(tmp_path, C._KV_KEY)
+    saved = C.save_settings({"pqc_enabled": True}, replace_damaged=True)
+    assert saved.auto_log_on_ingest is False
+
+
+def test_the_default_dir_crypto_erase_still_overwrites_when_forgetting_the_stores_fails(env, tmp_path, monkeypatch):
+    """MUTATION TARGET: ``forget_stores()`` outside its guard in ``quick_crypto_erase`` (a raise there would skip the overwrite of
+    everything under the data dir)."""
+    from src.safety.crypto_erase import quick_crypto_erase
+
+    _store(env)
+    side = tmp_path / "side.txt"
+    side.write_text("x" * 64, encoding="utf-8")
+
+    def boom():
+        raise RuntimeError("bookkeeping broke")
+
+    monkeypatch.setattr(kv_store, "forget_stores", boom)
+    report = quick_crypto_erase(confirm=True)  # data_dir=None: the default store (OO_DATA_DIR)
+    assert not side.exists(), "the overwrite was skipped"
+    assert report is not None

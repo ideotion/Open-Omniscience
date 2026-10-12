@@ -247,7 +247,7 @@ def save_settings(updates: dict) -> SafetySettings:
     else:
         reset = []
     current = _settings_from(stored)
-    current.reset_fields = reset
+    current.reset_fields = reset  # type: ignore[attr-defined]
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
         if mode not in VALID_MODES:

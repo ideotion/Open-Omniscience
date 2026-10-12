@@ -290,10 +290,16 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     if data_dir is None:
         from src.database.connect import set_passphrase
 
-        set_passphrase(None)
-        from src.config.kv_store import forget_stores
+        try:
+            set_passphrase(None)
+        finally:
+            # the store is gone by design, not vanished; this must never skip the overwrite below
+            try:
+                from src.config.kv_store import forget_stores
 
-        forget_stores()  # the store is gone by design, not vanished
+                forget_stores()
+            except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
+                pass
         passphrase_cleared = True
 
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The

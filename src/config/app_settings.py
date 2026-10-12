@@ -458,10 +458,17 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> AppSetting
         if not replace_damaged:
             raise
         # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
-        # defaults. Nothing readable is lost; what this save does not supply is reported as reset.
-        current = AppSettings()
-        reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
-    current.reset_fields = reset
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset. One uncached read first, so a
+        # value another process repaired in the meantime is kept, not overwritten.
+        from src.config.kv_store import kv_invalidate
+
+        kv_invalidate()
+        try:
+            current = load_settings(strict=True)
+        except _DamagedAppSettingsError:
+            current = AppSettings()
+            reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+    current.reset_fields = reset  # type: ignore[attr-defined]
 
     if "theme" in updates and updates["theme"] is not None:
         theme = str(updates["theme"])
