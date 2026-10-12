@@ -6,3 +6,11 @@ server log lines              : 20,929
 lines containing "error" or "traceback" (case-insensitive) : 0
 distinct hosts in any http(s) URL in the log : 1 (127.0.0.1)
 Method: python regex over the saved log; the log itself is not committed (20k lines of request lines).
+
+# The second and third boots (the 80-run look and its mutation checks; a probe of a 10 px heading), read after the runs
+Same state directory, same environment, same port; each boot answered online:false at the start of every browser context
+and at the end of every run (two checks per run in look-results.json, one per mutation run in mutation-results.json).
+second boot (the 80-run look, then the four mutation runs and their control) : 14,574 log lines, 0 lines containing "error"
+    or "traceback" (case-insensitive), 1 distinct host in any http(s) URL (127.0.0.1)
+third boot (a three-theme probe at 320 px with a 10 px heading, see README)  :    543 log lines, 0 error/traceback lines, 1 host (127.0.0.1)
+Method: python regex over each saved log, as for the first boot; the logs themselves are not committed.

@@ -2317,7 +2317,7 @@
 .lane-search { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
 .lane-search h3 { margin: 0 0 4px; font-size: 15px; }
 .wiki-table-wrap { max-width: 100%; overflow-x: auto; }
-/* Phone width: the two analytics tables (one item across editions, most-viewed beside the corpus) were wider than their frame at 390 px
+/* Phone width (9 px headings at <= 340 px are the floor: 10 px leaves +4 px in the ink theme at 320 px): the two analytics tables (one item across editions, most-viewed beside the corpus) were wider than their frame at 390 px
    (24 and 48 px) and still were at 360 and 320 px with only the padding tightened, which cut the last column (the figure the table is
    for) off behind a sideways scroll. Measured headroom (frame minus the narrowest the table can be drawn) after this rule, the smallest
    over 15 themes and both languages (divergence / attention): 390 px +62/+56, 360 px +32/+26, 320 px +16/+18 (docs/audit/analytics45-look-2026-10-12/). */

@@ -48,8 +48,8 @@ judges **28 checks (29 in Arabic)**, **2,245 in all**:
 ## Result
 
 **80 runs, 2,245 checks, 0 FAIL, 0 console lines in 80 files, 0 CSP events, 0 requests off the loopback
-origin; the app's server log (14,574 lines, the second boot) holds no error and one host, `127.0.0.1`**
-(`server-log-check.txt` is the first boot's). The look script was edited after this run only in its
+origin; the app's server logs (three boots, 14,574 lines for the one that served this run) hold no error and one host,
+`127.0.0.1`** (`server-log-check.txt`). The look script was edited after this run only in its
 `--serve` handler (a route-handler argument fix found by the mutation script), which this run does not use.
 
 **The look can fail.** `mutation_checks.py` serves the page a broken copy of one file at a time and needs the
@@ -75,7 +75,10 @@ at 390 px (headroom +25 and **+1** px) but not at 360 px (−5 and −29) or 320
 11 px, 9 px, 1 px), scoped to the two tables (`.wiki-table-wrap .living-table`; no other table uses that
 wrapper). Smallest headroom over the 15 themes and both languages, divergence / attention:
 **390 px +62 / +56, 360 px +32 / +26, 320 px +16 / +18**; at 768 px and above the tables fit with 263 px or
-more to spare. The cost is smaller type on a phone (11–12 px text), chosen over a clipped last column.
+more to spare. The cost is smaller type on a phone (11–12 px text, 9 px headings at ≤ 340 px), chosen over a clipped last column.
+**9 px is the floor and it is the app's smallest text** (the headings are uppercase labels over figures that stay 11 px): 10 px
+headings were measured at 320 px and leave +4 px in the ink theme in English (+8 / +33 in Arabic), a margin a font fallback
+would spend, against +16 / +18 px at 9 px.
 `tests/test_analytics45_seed.py` pins the rules and keeps the seed's truth equal to what the readers answer.
 
 ## What the look does not show
