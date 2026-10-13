@@ -198,6 +198,10 @@ def test_t1_t7_kill_leaves_live_db_untouched(corpora, kill_at):
     _run(a, "merge", str(art), "--passphrase", "pw-torture", "--commit",
          "--kill-at", kill_at, expect_kill=True)
     assert _file_sha(live) == before, f"live DB changed after SIGKILL at {kill_at}"
+    # A write the killed run made to the live store but left in the -wal (the _merge_wiki kill comes
+    # before the pre-swap checkpoint) is invisible to the hash above, so fold the log in and look again.
+    _run(a, "settle")
+    assert _file_sha(live) == before, f"live DB written before the swap, SIGKILL at {kill_at}"
     # The crashed run's staging dir is left behind -- the boot janitor reclaims it.
     leftovers = list(a.glob(".restore-*"))
     assert leftovers, "expected an orphaned staging dir from the killed run"

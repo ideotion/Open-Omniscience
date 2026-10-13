@@ -473,7 +473,7 @@ def main() -> None:
             "check-scoped": cmd_check_scoped,
             "merge": cmd_merge,
             "dump": cmd_dump,
-        "settle": cmd_settle,
+            "settle": cmd_settle,
             "fts-find": cmd_fts_find,
             "verify-custody": cmd_verify_custody,
             "make-old": cmd_make_old,
