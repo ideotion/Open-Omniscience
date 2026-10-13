@@ -15,10 +15,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import importlib.util
-import os
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -137,37 +134,75 @@ def test_a_refused_capture_is_kept_verbatim_and_nothing_is_searched(corpus):
     assert len(report["captures"]) == 1 and "search_on_2019_day" not in report
 
 
-def _script(*args: str, data_dir: Path | None, online_env: bool = False) -> subprocess.CompletedProcess:
-    env = {**os.environ, "OO_DB_PLAINTEXT": "1", "OO_AUTOSEED": "0", "OO_NO_SCHEDULER": "1"}
-    env.pop("DATABASE_URL", None)
-    env.pop("OO_DATA_DIR", None)
-    if data_dir is not None:
-        env["OO_DATA_DIR"] = str(data_dir)
-    return subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "law_pit_real_run.py"), *args],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=120,
-    )
+def _main(monkeypatch, tmp_path, *args: str, data_dir: Path | None):
+    """The script's main() in this process with the fetcher replaced by one that fails the test if it is ever
+    built: a regressed guard then fails here, and cannot reach a network or write a default data directory."""
+    import src.ingest as ingest
+
+    def _never(*_a, **_k):
+        raise AssertionError("the guard did not hold: the fetcher was built")
+
+    monkeypatch.setattr(ingest, "EthicalFetcher", _never)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    if data_dir is None:
+        monkeypatch.delenv("OO_DATA_DIR", raising=False)
+    else:
+        monkeypatch.setenv("OO_DATA_DIR", str(data_dir))
+    with pytest.raises(SystemExit) as exc:
+        R.main(list(args))
+    return str(exc.value)
 
 
-def test_it_refuses_without_online_and_names_the_host(tmp_path):
-    done = _script(data_dir=tmp_path / "fresh")
-    assert done.returncode != 0
-    named = re.search(r"contacts (\S+) \(", done.stderr)
-    assert "--online" in done.stderr and named and named.group(1) in R._HOSTS
+def test_it_refuses_without_online_and_names_the_host(monkeypatch, tmp_path):
+    said = _main(monkeypatch, tmp_path, data_dir=tmp_path / "fresh")
+    named = re.search(r"contacts (\S+) \(", said)
+    assert "--online" in said and named and named.group(1) in R._HOSTS
     fresh = tmp_path / "fresh"
     assert not fresh.exists() or not any(fresh.iterdir())  # no database, no setting: nothing was written
 
 
-def test_it_refuses_a_store_someone_uses(tmp_path):
+def test_it_refuses_a_store_someone_uses(monkeypatch, tmp_path):
     (tmp_path / "keep.txt").write_text("x", encoding="utf-8")
-    done = _script("--online", data_dir=tmp_path)
-    assert done.returncode != 0 and "not empty" in done.stderr
+    assert "not empty" in _main(monkeypatch, tmp_path, "--online", data_dir=tmp_path)
     assert (tmp_path / "keep.txt").read_text(encoding="utf-8") == "x"
 
 
-def test_it_refuses_without_a_scratch_directory_at_all():
-    done = _script("--online", data_dir=None)
-    assert done.returncode != 0 and "OO_DATA_DIR" in done.stderr
+def test_it_refuses_without_a_scratch_directory_at_all(monkeypatch, tmp_path):
+    assert "OO_DATA_DIR" in _main(monkeypatch, tmp_path, "--online", data_dir=None)
+
+
+def test_a_phrase_given_that_the_current_text_also_holds_is_not_decisive(corpus):
+    f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")})
+    with corpus() as s:
+        report = R.run(s, f, _ROW, phrase="This Act establishes the standards", today="2025-01-01")
+    assert report["verdict"] == "not-decisive", report
+
+
+def test_the_index_and_the_picker_read_words_alike():
+    """A hyphen separates words and a number is a word, as in the FTS5 tokenizer, so a phrase cannot differ
+    between the texts by punctuation alone and cannot span a number the index would keep."""
+    assert R.pick_phrase("the data-protection authority shall publish a list", "the data protection authority shall publish a list") is None
+    phrase = R.pick_phrase("processing under subsection 2 by a organisation is lawful", "processing under subsection 2 by a processor is lawful")
+    assert phrase and "2" in phrase.split()
+
+
+def test_found_needs_today_to_find_nothing(corpus, monkeypatch):
+    """Mutation guard: if today's search finds the words in ANY version, the verdict is not `found`."""
+    import src.law.pit_search as pit
+
+    real = pit.search
+
+    def _everywhere(db, query, *, on=None, **kw):
+        out = real(db, query, on=on, **kw)
+        if on == "2025-01-01":
+            out = {**out, "matched": 1, "hits": [{"version_id": -1}]}
+        return out
+
+    monkeypatch.setattr(pit, "search", _everywhere)
+    f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")})
+    with corpus() as s:
+        report = R.run(s, f, _ROW, day="2019-06-01", today="2025-01-01")
+    assert report["verdict"] == "not-found", report
 
 
 def test_the_default_act_is_in_the_catalogue_on_the_publishers_host():

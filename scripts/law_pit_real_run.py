@@ -17,18 +17,20 @@ it joins no operator step). It uses the app's own paths end to end and nothing o
 
 The verdict is one word from a closed vocabulary, with its reason; there is no score:
 
-  found                 the phrase is in force-and-held on the 2019 day (the 2019 capture, dated by the
-                        source), and is NOT found on today's date
+  found                 the phrase is placed on the 2019 day (the 2019 capture, dated by the source), and
+                        a search "on" today finds it nowhere
   not-found             both captures held, but the 2019 day did not find the 2019 words (the reason says
                         whether the source's date was read or the version was dated by observation)
-  not-decisive          the 2019 and current texts are the same, or no phrase differs: this Act is the
-                        wrong specimen for the check (try another with --title)
+  not-decisive          the 2019 and current texts are the same, no phrase differs, or the phrase given
+                        is also in the current text: this Act or phrase cannot show the check (try
+                        another with --title or --phrase)
   fetch-refused         a capture was refused or empty (the refusal is kept verbatim, whether it is the
                         site's, the robots rules' or this environment's network policy)
 
-It egresses to ONE host and says which before it asks. It refuses without --online, refuses while the
-global kill switch is engaged, and writes only into a NEW, EMPTY scratch data directory (never a store
-someone uses):
+It asks ONE host and says which before it asks (the fetcher follows only public redirects). It refuses
+without --online (the operator's consent for this run; the app's own airplane state lives in the app's
+process and is not visible from here, so run it with the app stopped), and writes only into a NEW, EMPTY
+scratch data directory (never a store someone uses):
 
     OO_DATA_DIR=/tmp/oo-law-pit/state OO_DB_PLAINTEXT=1 OO_AUTOSEED=0 OO_NO_SCHEDULER=1 \\
         python scripts/law_pit_real_run.py --online --out /tmp/oo-law-pit/report.json
@@ -53,7 +55,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 DEFAULT_TITLE = "Data Protection Act 2018"
 DEFAULT_DAY = "2019-06-01"
-_WORD = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", re.UNICODE)
+# The search index's own word rule (FTS5 unicode61): letters and digits, everything else separates.
+# A phrase is chosen and checked with it, so "data-protection" and "data protection" are the same words here
+# exactly as they are to the index, and a number inside a phrase stays inside it.
+_WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _PHRASE_WORDS = 5
 #: The publisher's host, compared whole (never as a substring of a URL).
 _HOSTS = {"legislation.gov.uk", "www.legislation.gov.uk"}
@@ -76,6 +81,11 @@ def pick_phrase(old_text: str, new_text: str) -> str | None:
         if " ".join(run) not in new and sum(len(w) for w in run) >= 25:
             return " ".join(run)
     return None
+
+
+def _in_text(phrase: str, text: str) -> bool:
+    """Is ``phrase`` a run of whole words of ``text``, by the index's own word rule?"""
+    return " ".join(_WORD.findall(phrase.lower())) in " ".join(_WORD.findall(text.lower()))
 
 
 def _capture(session, fetcher, doc, url: str) -> dict:
@@ -128,6 +138,11 @@ def run(session, fetcher, doc_row: dict, *, day: str = DEFAULT_DAY, phrase: str 
         report["verdict"] = "not-decisive"
         report["why"] = "no run of words in the 2019 text is missing from the current one"
         return report
+    if _in_text(chosen, new.full_text or "") or not _in_text(chosen, old.full_text or ""):
+        report["verdict"] = "not-decisive"
+        report["phrase"] = chosen
+        report["why"] = "the phrase is in the current text too, or not in the 2019 text, so it cannot tell the two days apart"
+        return report
     query = f'"{chosen}"'
     then = search(session, query, on=day)
     now = search(session, query, on=today)
@@ -136,7 +151,7 @@ def run(session, fetcher, doc_row: dict, *, day: str = DEFAULT_DAY, phrase: str 
     report["search_on_today"] = {"matched": now["matched"], "versions": [h["version_id"] for h in now["hits"]]}
     dated = [v["dating"] for v in report["versions"]]
     found_then = old.id in [h["version_id"] for h in then["hits"]]
-    found_now = old.id in [h["version_id"] for h in now["hits"]]
+    found_now = now["matched"] > 0  # ANY version placed on today that holds the words, not only the old one
     if found_then and not found_now:
         report["verdict"] = "found"
         report["why"] = (
@@ -187,17 +202,15 @@ def main(argv: list[str] | None = None) -> int:
     host = urlparse(row["official_url"]).hostname
     if not args.online:
         sys.exit(f"refusing: this contacts {host} (two GETs of the Act's CLML, through the ethical fetcher); say --online to allow it")
-    from src.ingest import EthicalFetcher, kill_switch_active
+    from src.ingest import EthicalFetcher
 
-    if kill_switch_active():
-        sys.exit("refusing: the global kill switch (airplane mode) is engaged")
+    fetcher = EthicalFetcher(timeout=45.0)  # before any write: nothing is created if this cannot be built
 
     from src.database.session import SessionLocal, init_db
     from src.versioned.store import create_lane
 
     init_db()
     create_lane("law")
-    fetcher = EthicalFetcher(timeout=45.0)
     with SessionLocal() as session:
         report = run(session, fetcher, row, day=args.day, phrase=args.phrase)
     text = json.dumps(report, indent=1, default=str)
