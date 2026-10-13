@@ -66,7 +66,6 @@ def test_import_queue_scrubs_the_backups_passphrase(tmp_path, monkeypatch, caplo
     mgr = import_queue.ImportQueueManager(state_path=tmp_path / "state.json")
     monkeypatch.setattr(mgr, "_drive", lambda: None)
     mgr._passphrase = PASS
-    with caplog.at_level(logging.WARNING):
-        with contextlib.suppress(Exception):  # only the log line is under test
-            mgr._run()
+    with caplog.at_level(logging.WARNING), contextlib.suppress(Exception):  # only the log line is under test
+        mgr._run()
     assert "the exclusive window for the import failed" in _no_leak(caplog)
