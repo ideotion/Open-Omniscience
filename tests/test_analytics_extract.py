@@ -335,6 +335,38 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         "їхня", "їхні", "їхній",
         # and the curly-apostrophe spelling of each apostrophe word of batch 3, which the module adds on load.
         "ljudstva’",
+        # stoplist batch 4 (2026-10-13, R131, language group 3: sr bg el): function words, number and month
+        # words and site chrome the triage called noise twice, kept only where the log shows no other-language
+        # content sense; evidence in configs/stopwords_extra/PROVENANCE.md (the curly spelling of an apostrophe
+        # word is listed beside the straight one).
+        "avgusta", "bili", "biće", "bude", "budu", "deset", "devet", "drugih", "duž", "dva", "dve",
+        "hiljada", "iako", "ispred", "jeste", "jula", "kad", "koga", "koje", "kojeg", "kojem", "koji",
+        "kojih", "kojim", "kojima", "kojoj", "koju", "koliko", "mene", "meni", "među", "međutim", "miliona",
+        "moja", "moje", "najčitanije", "naša", "naše", "našeg", "naši", "naših", "našim", "našoj", "našu",
+        "nedelju", "nego", "neke", "neki", "nekih", "neko", "neće", "nešto", "nijesu", "nisam", "nismo",
+        "nisu", "njega", "njegov", "njegova", "njegove", "njegovim", "njemu", "njen", "njene", "njih",
+        "njihove", "njima", "nju", "odnosno", "odsto", "oktobar", "oktobra", "onaj", "onih", "osam", "osim",
+        "ovih", "ovim", "ovog", "ovom", "ovu", "podeli", "pogledajte", "poput", "pored", "posle", "poslije",
+        "povodom", "pošto", "pratite", "pre", "pred", "pretplatite", "pridružite", "prije", "prilikom",
+        "pročitaj", "sebe", "sedam", "septembra", "svaka", "svi", "svih", "svim", "svima", "svog", "svoje",
+        "svojih", "svojim", "svojoj", "svoju", "svom", "takva", "takve", "tih", "toj", "tri", "tvoje",
+        "ukoliko", "umesto", "unutar", "uoči", "uprkos", "vam", "zato", "ćemo", "čega", "čemu", "četiri",
+        "čija", "čiji", "čim", "čime", "šest", "άλλο", "άλλοι", "άλλους", "άλλων", "άρα", "έναντι", "έξι",
+        "έχω", "έως", "ανά", "ανάμεσα", "αντί", "απ'", "απέναντι", "απ’", "αυγούστου", "αυτά", "αυτές",
+        "αυτήν", "αυτής", "αυτοί", "αυτού", "αυτόν", "αυτός", "αυτών", "αφού", "γιατί", "δέκα", "δευτέρας",
+        "δηλαδή", "δισ", "διότι", "δυο", "δύο", "εάν", "είμαι", "είμαστε", "είτε", "είχα", "είχαν", "εγώ",
+        "εκατ", "εκείνη", "εκτός", "εμείς", "εναντίον", "εντός", "επειδή", "επτά", "εφόσον", "ιουλίου",
+        "κάθε", "κάποια", "καθ'", "καθ’", "καμία", "καν", "κανείς", "κατ'", "κατ’", "κυριακή", "κυριακής",
+        "λοιπόν", "λόγω", "μένα", "μέσω", "μέχρι", "οκτωβρίου", "οκτώ", "οποίες", "οποίοι", "οποίος",
+        "οποίων", "οπότε", "ούτε", "πάρα", "πέμπτη", "πέντε", "παρ'", "παρασκευή", "παρ’", "πού",
+        "προκειμένου", "πόσο", "πότε", "πώς", "σάββατο", "σαββάτου", "σεπτεμβρίου", "τέσσερα", "τέσσερις",
+        "τίποτα", "τρία", "τρεις", "τριών", "υπέρ", "χωρίς", "ωστόσο", "όλες", "όλη", "όλων", "όμως",
+        "όπου", "όσα", "όσο", "όσοι", "όσον", "όσους", "όσων", "όχι", "ώστε", "ама", "април", "бих", "биха",
+        "бях", "бяхме", "вашата", "влезете", "девет", "декември", "десет", "едни", "извън", "какви",
+        "когото", "милиона", "моята", "нали", "нашите", "нашия", "нашият", "неговите", "негово", "нека",
+        "октомври", "онова", "относно", "пет", "петък", "понеделник", "самият", "своето", "своите", "своя",
+        "своята", "септември", "спрямо", "сряда", "събота", "такова", "трима", "февруари", "четири",
+        "чиито", "чиято", "щеше", "юли", "юни", "януари",
     })
     assert added_since_migration <= _EXTRA_STOPWORDS, (
         "a declared post-migration addition is missing from the data files"

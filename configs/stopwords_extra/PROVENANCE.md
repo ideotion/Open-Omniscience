@@ -401,3 +401,18 @@ Croatian "strong" and "collar"), cs `mimo` (Spanish and Italian "mime", Spanish 
 content sense in another language in the log or in the reader's knowledge of those languages.
 
 Nothing is filed in `_multilingual.yml`: every word is in the script of its language's file.
+
+## Stoplist batch 4: function words, number and month words and site chrome in Serbian, Bulgarian and Greek (2026-10-13, R131, language group 3)
+
+290 words from the same triage and the same method as batches 2 and 3 (read batch 2 first: the merged log `6467504ab8ab`, the verdict gate, the tool's refusals, and the rule that each word's other languages
+are read by a person): sr 134, bg 49, el 107. By the triage's codes: 221 function words (`koji`, `među`, `своя`, `извън`, `όμως`, `χωρίς`; four of them elided Greek forms with their apostrophe, `απ'`, `κατ'`,
+`καθ'`, `παρ'`), 32 number words, 29 calendar words (the genitive month names Serbian and Greek write dates in, and the weekdays), 8 site chrome (`podeli`, `pročitaj`, `pratite`, `pridružite`, `pogledajte`,
+`pretplatite`, `najčitanije`, `влезете`).
+
+**Left out after reading each word's other languages (the tool listed some, the rest are a person's reading):** sr `kod` (Swedish, Norwegian, Polish and Turkish "code"), `dok` (Dutch and Indonesian "dock"),
+`ono` (the Japanese surname Ono), `ove` (the Scandinavian given name), `toga` (English "toga"), `smo` (the acronym SMO, "special military operation"), `niko` (the given name), `niti` (NITI Aayog, Indian
+policy commission), `iza` (the Polish given name), `bile` (English "bile"), `tome` (English "tome"), `neka` (Swedish "deny"), `ovi` (Finnish "door"); bg `шест` (Russian "pole"), `ото` (a glued suffix and the
+Russian name Ото), `макар` (the Russian and Ukrainian given name Makar); el `microgreens` and `servicers` (English words in the Greek log, the `lng` group left out by ruling). The tool itself refused
+sr `joj` (French "joy", an entity there), `kome`, `kom` and `sva` (keywords in Norwegian, Dutch and Swedish), bg `неговата` and `против` (keywords in English), and every phrase.
+
+Nothing is filed in `_multilingual.yml`: every word is in the script of its language's file.
