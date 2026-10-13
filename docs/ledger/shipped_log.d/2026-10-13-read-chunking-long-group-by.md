@@ -1,4 +1,4 @@
-## 2026-10-13 — read chunking: the two reads the pin reports named (PR #NNNN)
+## 2026-10-13 — read chunking: the two reads the pin reports named (PR #1360)
 
 - **2026-10-06 · wal-disk-pool/read-chunking (WAL / disk thread, the two reads the 10-06 pin reports named).**
 `trending()._counts` now reads its date window as one short statement per day per 10,000-keyword-id range (`windowed_group_counts` in `database/query.py`) and `corpus_keywords` reads its article set 100 articles at a time (`_corpus_keyword_rows`), adding the
