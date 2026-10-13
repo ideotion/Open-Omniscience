@@ -40,6 +40,13 @@ HISTORY_KEY = "search.history"
 HISTORY_MAX = 100
 
 
+def is_history_key(key: str) -> bool:
+    """Whether ``key`` is the one ``app_state`` key the history lives under. A restore asks this to carry THIS machine's own live
+    history into the copy it swaps in (so searches saved after the snapshot are not lost) without naming the key itself: the
+    value travels as an opaque row, is never read, and nothing is adopted from the backup (``app_state`` is not merged)."""
+    return key == HISTORY_KEY
+
+
 # --------------------------------------------------------------------------- #
 # Facets
 # --------------------------------------------------------------------------- #
