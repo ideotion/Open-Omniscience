@@ -1593,7 +1593,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
 #: Marker files the bundle writes IN PLACE of a member it could not collect. Each is a
 #: few dozen bytes, so a "zero-byte member" check never sees the member was missing.
 _MARKER_SUFFIXES = {".skipped-deadline.txt": "skipped-deadline", ".error.txt": "error",
-                    ".declined.txt": "declined"}
+                    ".declined.txt": "declined", ".skipped-budget.txt": "skipped-budget"}
 
 
 def _read_bundle_archive(path: str) -> dict[str, Any]:
@@ -1643,6 +1643,10 @@ def _read_bundle_archive(path: str) -> dict[str, Any]:
         out["skipped_deadline_members"] = sorted(by_outcome.get("skipped-deadline", []))
         out["error_members"] = sorted(by_outcome.get("error", []))
         out["partial_members"] = sorted(by_outcome.get("partial-deadline", []))
+        # The scans a Quick build did not reach (R124): ABSENT from the archive, named here so the
+        # row cannot read a Quick bundle as a whole one. `mode` is None for an archive that predates it.
+        out["skipped_budget_members"] = sorted(by_outcome.get("skipped-budget", []))
+        out["mode"] = man.get("mode")
         # WHICH PROFILE THIS ARCHIVE IS (ruling R28, 2026-09-22). The run ASKS for a
         # full bundle, but when one is already building it RIDES that one -- and an
         # operator may have started a LIGHT bundle a minute earlier. A declined member

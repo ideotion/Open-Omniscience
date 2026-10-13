@@ -1423,8 +1423,8 @@ def _previous_for_member() -> tuple[dict[str, Any], str | None]:
 def diagnostics_member(max_bytes: int) -> dict[str, Any]:
     """The pressure TAIL as one diagnostics-bundle member (the slot contract planned for the single
     Diagnostics zip of R119: ``(max_bytes) -> dict``, never raises, keeps the newest, names the cut).
-    It is not called at this head: the slot table is built with the button (PR D of the
-    diagnostics-redesign plan), which says which member carries what.
+    The slot table (``src/api/diagnostics_slots.py``, ``pressure-light.json``) calls it with the
+    row's budget.
 
     It carries the minutes before a kill and nothing else about memory: the LIGHT snapshots of this
     session and of the previous one (the previous session's tail is the one an unclean end is read

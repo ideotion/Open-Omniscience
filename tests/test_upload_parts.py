@@ -70,9 +70,11 @@ def test_names_carry_position_and_total_and_sort_in_order():
     assert up.parse_part_name("oo-x-manifest.zip") is None
 
 
-def test_the_cap_is_the_users_number_with_a_margin_under_what_failed():
-    assert up.UPLOAD_PART_BYTES == 1_000_000
-    assert up.UPLOAD_PART_BYTES < 1_200_000, "files of about 1.2 MB and up failed to upload"
+def test_the_cap_is_the_users_number_with_a_margin_under_what_they_stated():
+    """R119 (2026-10-06): "less than 4 MB each" (R115 had 1 MB, after uploads of about 1.2 MB failed).
+    4,000,000 and not 4 * 2**20 keeps a margin under either reading of "4 MB"."""
+    assert up.UPLOAD_PART_BYTES == 4_000_000
+    assert up.UPLOAD_PART_BYTES < 4 * 2**20
 
 
 # --------------------------------------------------------------- the bound
@@ -314,7 +316,8 @@ def test_the_cap_cannot_be_smaller_than_a_part_s_own_index(tmp_path):
 def test_parts_are_filled_to_the_cap_at_the_real_cap(tmp_path):
     rnd = random.Random(22)
     cap = up.UPLOAD_PART_BYTES
-    _w, manifest = _write(tmp_path, {"en": _records(rnd, 36_000, dense=True)}, cap=cap)
+    # 36,000 dense records made three parts at a megabyte; the same three parts at the real cap
+    _w, manifest = _write(tmp_path, {"en": _records(rnd, 36_000 * (cap // 1_000_000), dense=True)}, cap=cap)
     sizes = [p["bytes"] for p in manifest["parts"]]
     assert len(sizes) >= 3
     assert max(sizes) <= cap
@@ -441,8 +444,9 @@ def test_no_part_is_over_the_cap_on_incompressible_records(tmp_path, cap):
     """R115 follow-up S5: the bound was pinned on text that deflates 3x to 20x; a part of data that
     does not shrink is where a bound that leans on the compression ratio would be over."""
     rnd = random.Random(cap)
-    groups = {"en": _incompressible_records(rnd, 3_000, size=(30, 600)),
-              "fr": _incompressible_records(rnd, 200, size=(2_000, 9_000))}
+    scale = max(1, cap // 1_000_000)  # the fixture that did not fit one part of 1 MB, scaled to the real cap
+    groups = {"en": _incompressible_records(rnd, 3_000 * scale, size=(30, 600)),
+              "fr": _incompressible_records(rnd, 200 * scale, size=(2_000, 9_000))}
     _w, manifest = _write(tmp_path, groups, cap=cap)
     sizes = [p.stat().st_size for p in _parts(tmp_path, manifest)]
     assert max(sizes) <= cap, (cap, max(sizes))
@@ -460,9 +464,10 @@ def test_no_part_is_over_the_cap_on_incompressible_records(tmp_path, cap):
         ]
 
 
-def test_one_incompressible_record_of_three_megabytes_goes_out_in_pieces_under_the_real_cap(tmp_path):
+def test_one_incompressible_record_four_times_the_cap_goes_out_in_pieces_under_the_real_cap(tmp_path):
     rnd = random.Random(31)
-    big = _incompressible_records(rnd, 1, size=(3_000_000, 3_000_001))[0]
+    # three times the cap in raw bytes is four times the cap as base64 text that does not shrink
+    big = _incompressible_records(rnd, 1, size=(3 * up.UPLOAD_PART_BYTES, 3 * up.UPLOAD_PART_BYTES + 1))[0]
     groups = {"en": [*_incompressible_records(rnd, 5, size=(30, 600)), big]}
     _w, manifest = _write(tmp_path, groups, cap=up.UPLOAD_PART_BYTES)
     assert max(p["bytes"] for p in manifest["parts"]) <= up.UPLOAD_PART_BYTES

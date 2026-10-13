@@ -608,7 +608,10 @@ def test_the_journal_rides_the_all_diagnostics_bundle_automatically():
     from src.api import diagnostics
 
     src = inspect.getsource(diagnostics._all_diagnostics_members)
-    assert '"run-journal.json"' in src and '"run-journal-raw.json"' in src
+    assert '"run-journal.json"' in src
+    # R119 (2026-10-06): the raw lines ride the SAME member, under ``raw``; the old name stays listed.
+    merged = inspect.getsource(diagnostics._run_journal_member)
+    assert '"run-journal-raw.json"' in merged and "_run_journal_raw()" in merged
 
 
 def test_incomplete_runs_are_marked_at_boot_before_any_unlock():

@@ -508,7 +508,7 @@ def test_the_text_window_is_bounded_too():
 
 
 def test_the_self_test_leaves_what_this_process_recorded_exactly_as_it_was():
-    """The diagnostics export runs this self-test (inside `recursive-loop.json`) BEFORE it reads
+    """The diagnostics export runs this self-test (inside `selftests.json`) BEFORE it reads
     `search-timing.json`. It used to empty the window it was about to be read from, so `searches`
     read 0 on 16 of 16 instances whatever had been searched."""
     search_timing.record_search_phases(_record("text"))

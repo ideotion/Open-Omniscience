@@ -715,11 +715,14 @@ def chronology(*, anchor: str = "run", now: float | None = None, bar_hours: floa
 #: reader's time (a part's own limit, ``UPLOAD_PART_BYTES``, is the volume writer's business, and it cuts
 #: what does not fit), against the one member that grows with the ledger and not with a number someone chose
 #: (the ledger keeps 4,000 lines, about 1,300 sessions, and measured 4.27 MB of JSON on a synthetic ledger
-#: whose ends carry 1.3 KB of ``previous_peaks`` each, about 0.9 MB, and up to three times that at the 4 KB an
-#: end may carry). 1.5 MB is before compression, which these repeated records shrink several times over.
+#: whose ends carried their stacks and pressure snapshots inside ``previous_peaks``, 1.3 KB each, about 0.9 MB of
+#: it. An end now carries only the marks there; its memory makeup and its newest snapshot ride the ledger and
+#: ``boots.json`` as ``previous_at_peak`` and ``previous_pressure``, which this member does not copy. The figure
+#: is kept as the bound the member was sized against, not as a measure of what it grows to today).
+#: 1.5 MB is before compression, which these repeated records shrink several times over.
 CHRONOLOGY_MEMBER_BYTES = 1_500_000
-#: The newest unclean ends that keep their ``previous_peaks`` when the member has to be thinned: the
-#: stacks and pressure snapshots of the latest crashes are what a crash loop is read from.
+#: The newest unclean ends that keep their ``previous_peaks`` (the marks and when each was set) when the member
+#: has to be thinned: the marks of the latest crashes are what a crash loop is read from.
 CHRONOLOGY_KEEP_PEAKS = 10
 
 
@@ -759,8 +762,8 @@ def bounded_for_member(doc: dict[str, Any], max_bytes: int = CHRONOLOGY_MEMBER_B
     whole ledger; only this copy is cut.
 
     Two steps, the cheaper loss first. (1) The ``previous_peaks`` of every unclean end but the newest
-    ``CHRONOLOGY_KEEP_PEAKS`` are replaced by ``{"omitted_for_size": true}``: they are the largest part of
-    an end and the oldest of them are the least read. (2) Whatever is still too big loses its OLDEST
+    ``CHRONOLOGY_KEEP_PEAKS`` are replaced by ``{"omitted_for_size": true}``: the oldest of them are the
+    least read (they hold the marks only: an end's memory makeup and snapshot are not copied here). (2) Whatever is still too big loses its OLDEST
     sessions, with the events and gaps older than the first session kept: one time cut for all three, so no
     row is left without the session it belongs to, and the fewest sessions that bring it under the bound.
     A bound that cannot be met (the newest session alone is over it) is said with the exact size."""

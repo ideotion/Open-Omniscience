@@ -6,7 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 WHY THIS EXISTS. The 2026-08-03 field import was reported as "3h30 to import 650 MB,
 and I had to abort it". Every number needed to correct that was already in the run
 journal -- and getting them out took an afternoon of hand-arithmetic over
-``run-journal-raw.json``:
+the ``raw`` lines of ``run-journal.json``:
 
     all eighteen stages, summed        118.6 s
     total elapsed when killed       11,006.9 s

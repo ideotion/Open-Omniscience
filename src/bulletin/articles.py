@@ -80,17 +80,30 @@ def _keywords(session, ids: list[int], per: int) -> dict[int, list[dict]]:
 
     Joins keyword_mentions to keywords — the SMALL table — and never to articles,
     so this costs no article page read beyond the one the caller already pays.
+
+    A keyword the stoplist hides (R111 step T2) is skipped BEFORE the per-article cut, so
+    the ``per`` shown are the best ``per`` of what is left, not ``per`` minus the hidden ones.
     """
+    from src.analytics.queries import _hidden_predicate
+
+    is_hidden = _hidden_predicate()
     out: dict[int, list[dict]] = {}
     for chunk in _chunks(ids):
         rows = (
-            session.query(KeywordMentionRead.article_id, Keyword.term, KeywordMentionRead.count)
+            session.query(
+                KeywordMentionRead.article_id,
+                Keyword.term,
+                KeywordMentionRead.count,
+                Keyword.normalized_term,
+            )
             .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
             .filter(KeywordMentionRead.article_id.in_(chunk))
             .order_by(KeywordMentionRead.article_id, KeywordMentionRead.count.desc(), Keyword.term)
             .all()
         )
-        for aid, term, count in rows:
+        for aid, term, count, norm in rows:
+            if is_hidden(norm):
+                continue
             bucket = out.setdefault(int(aid), [])
             if len(bucket) < per:
                 bucket.append({"term": term, "mentions": int(count or 0)})

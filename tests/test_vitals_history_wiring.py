@@ -92,6 +92,8 @@ def test_the_route_and_the_member_serve_the_same_document(monkeypatch, tmp_path)
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
     v.reset_for_tests()
     served = d.vitals_history_report()
-    member = b._vitals_history_member()
+    from src.api import diagnostics_slots as slots
+
+    member = dict(slots.members())["vitals.json"]()  # the slot's own producer
     assert served["schema"] == member["schema"] == v.SCHEMA
     assert served["columns"] == member["columns"] == list(v.COLUMNS)

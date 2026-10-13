@@ -27,3 +27,39 @@ stopwords:
   - uden
   - vores
   - været
+  # batch da-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - abonneret
+  - artikeldel
+  - dani'
+  - den'
+  - det'
+  - dobbeltfejl'
+  - foruden
+  - fødselsdagen'
+  - george'
+  - helvede'
+  - hinanden
+  - hverken
+  - hvilke
+  - hvilket
+  - igennem
+  - imens
+  - imod
+  - inden
+  - indtil
+  - kunnet
+  - ligesom
+  - marts
+  - mellem
+  - mennesker'
+  - muligt'
+  - nu'
+  - requiem'
+  - rivalerne'
+  - rolig'
+  - samme
+  - selvom
+  - trods
+  - udvekslingspraktikant'
+  - ukendt'
+  - vegetaren'

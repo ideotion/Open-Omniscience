@@ -252,8 +252,14 @@ def test_rides_the_debug_bundle_and_the_all_diagnostics_zip(db):
     import src.api.diagnostics as diag
     from tests.diagnostics_source import diagnostics_source
 
-    names = [n for n, _fn in diag._all_diagnostics_members(db)]
-    assert "storage-composition.json" in names
+    members = dict(diag._all_diagnostics_members(db))
+    # R119 (2026-10-06): the composition is a SECTION of storage.json now (with the footprint, the
+    # data volume and the persistence check: one subject), and the old name stays listed.
+    assert "storage.json" in members and "storage-composition.json" not in members
+    member = members["storage.json"]()
+    assert "storage-composition.json" in member["merged"]["replaces"]
+    section = member["sections"]["storage-composition"]
+    assert section["kind"] == "storage-composition" and "error" not in section
 
     # Q1139 split: read the whole package, not the package's __init__.
     src_text = diagnostics_source()

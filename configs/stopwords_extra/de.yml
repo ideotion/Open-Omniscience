@@ -136,3 +136,44 @@ stopwords:
   - zur
   - zwischen
   - über
+  # batch de-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - abo
+  - abonnieren
+  - angesichts
+  - anmelden
+  - artikeltyp
+  - aufgrund
+  - aufs
+  - bevor
+  - desto
+  - dürfte
+  - fürs
+  - hinaus
+  - hingegen
+  - hinzufügen
+  - hundert
+  - innerhalb
+  - jährig
+  - jährigen
+  - könne
+  - könnten
+  - lesezeit
+  - mehreren
+  - milliarde
+  - millionen
+  - monat
+  - müsse
+  - obwohl
+  - prozent
+  - registrieren
+  - solle
+  - tausend
+  - trotz
+  - ums
+  - unserem
+  - unseren
+  - weder
+  - wobei
+  - woche
+  - wären
+  - zufolge

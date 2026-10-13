@@ -1168,6 +1168,10 @@ def build_quality_report_files(
         terms = ck.get("terms", [])
         per_source_top[sid] = [t["normalized"] for t in terms]
         per_source_top_full[sid] = terms
+    # ``corpus_keywords`` hands the session's connection back between slices, which expires every entity this
+    # session had loaded: the report below reads the sources' fields, one refresh SELECT each and a raise if one
+    # was deleted meanwhile. They are loaded AGAIN here, once; a source deleted since reads as unknown (``src is None``).
+    sources = {int(s.id): s for s in session.query(Source)}
     cross_df = compute_cross_source_df(per_source_top)
     furniture_ubiquity_cut = max(
         FURNITURE_MIN_SOURCES, int(round(FURNITURE_UBIQUITY_FRAC * len(per_source_top)))

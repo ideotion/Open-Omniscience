@@ -137,6 +137,29 @@ def test_download_404_until_ready_then_serves(tiny_members):
         job._result = None
 
 
+def test_the_status_names_the_newest_archive_on_disk_whatever_the_process_knows(tiny_members):
+    """The panel shows its «again» link from ``last_archive`` alone: the job object lives as long as the process and the
+    archive outlives a restart, so the status reads the disk. None with nothing on disk; the name as a person receives it, the
+    size and a time otherwise; a ``.part`` (a build in flight) is never an archive."""
+    job = d._ALL_DIAG_JOB
+    with job._lock:
+        job._state = "idle"
+        job._result = None
+    assert json.loads(bytes(d.all_diagnostics_job_status().body))["last_archive"] is None
+    (tiny_members / "oo-all-diagnostics-20261006-120000.zip.part").write_bytes(b"PK")
+    assert json.loads(bytes(d.all_diagnostics_job_status().body))["last_archive"] is None, "a .part is not an archive"
+    older = tiny_members / "oo-all-diagnostics-20261006-120000.zip"
+    newer = tiny_members / "oo-all-diagnostics-20261007-090000.zip"
+    older.write_bytes(b"PK\x03\x04old")
+    newer.write_bytes(b"PK\x03\x04newer-archive")
+    os.utime(older, (1_000_000_000, 1_000_000_000))
+    os.utime(newer, (1_000_000_500, 1_000_000_500))
+    last = json.loads(bytes(d.all_diagnostics_job_status().body))["last_archive"]
+    assert last["name"] == "oo-diagnostics-20261007-090000.zip", "the newest, under the name a person receives it by"
+    assert last["bytes"] == newer.stat().st_size
+    assert last["modified"].startswith("2001-09-09T01:55:00")  # 1_000_000_500 s after the epoch, in UTC
+
+
 # --------------------------------------------------------------------------- #
 # DIAGNOSE-THE-DIAGNOSTICS (2026-07-20): the per-member ENVELOPE, the durable
 # begin/end JOURNAL, per-member DEADLINES (DB inline vs non-DB threaded), and the

@@ -27,3 +27,47 @@ stopwords:
   - són
   - tota
   - totes
+  # batch ca-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - 11a
+  - agost
+  - ahir
+  - algú
+  - bé'
+  - cinc
+  - damunt
+  - davant
+  - dijous
+  - dilluns
+  - dimarts
+  - dimecres
+  - dissabte
+  - diumenge
+  - divendres
+  - dotze
+  - ell
+  - familia'
+  - fos
+  - hagin
+  - hauria
+  - haurien
+  - haurà
+  - havien
+  - juliol
+  - juny
+  - maig
+  - març
+  - milers
+  - minuts'
+  - ningú
+  - port'
+  - qualsevol
+  - rere
+  - segons
+  - serà
+  - setembre
+  - seues
+  - siguin
+  - sinó
+  - tothom
+  - vint
+  - vuit

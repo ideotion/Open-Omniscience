@@ -1,0 +1,17 @@
+## 2026-10-12 — A TEST THAT SAYS "EVERY MEMBER IS NAMED IN THE SOURCE" BREAKS THE DAY A MEMBER MOVES TO A TABLE, AND ONLY A GUARD OVER THE BYTES FINDS THE COPIES A NAME CHECK NEVER SAW (the zip's members, 2026-10-06, `bundle.py`, `diagnostics_slots.py`)
+
+(1) **The old zip carried the same bytes in four places, and no test noticed because every test looked at names**: the storage footprint and the persistence check (inside session-forensics and again in the
+storage reads), the rolling log's counts (the debug bundle and frontend-errors, one `errorlog.summary()` read a moment apart), eight sections the debug bundle embedded of members that stand alone (408 KB raw
+on one machine), and a five-minute series of 330 KB that covered five minutes. The guard that found them is a walk over the members' JSON for any object or list of 300 bytes or more that appears, byte for
+byte, in more than one member (`tests/test_diagnostic_slots.py`), run on a real build of the record members and on a synthetic duplicate so it cannot pass by looking at nothing; two copies inside ONE member
+are not its business. Mutation-checked: removing any pointer makes it fail. (2) **A section named as a pointer must not be BUILT**, or the work is paid twice and only the bytes are saved (the pointer is made in
+the one guarded wrapper, so no call site changes shape and the source guards that pin `threaded=False` on the database members still read what they read); a pointer says where the section is (`see`, `section`),
+and is never an empty section. (3) **"Slim" is an explicit True and nothing else**: called directly, a FastAPI `Query(False)` default is a truthy sentinel OBJECT, and a caller that forgot the argument must get
+the whole document, not a slim one that points at members it was never asked to be one of. (4) **A source guard of the form `'"name.json"' in the member list` is a statement about HOW members are listed, not
+about WHICH are written**: when owners add a member by a row in a table (`diagnostics_slots`) the literal is no longer there, so the runtime coverage report and the repo invariant both accept a name that is a
+slot AND in this build, and a map value naming a slot whose module is absent is reported missing, never counted as covered by a file that is not written. (5) **A slot is one of three things and the third is
+loud**: a member (module and function here), a NAMED absence (module not in this build: no file, a line in the manifest's `slots`), or an ERROR (module here, function missing: an `error` member with the
+reason). A typo in the FUNCTION name is loud; a typo in the MODULE path reads as the named absence (the module is not found), so a slot built at a head is NAMED in `test_every_slot_is_a_member_of_this_build_or_named_absent_and_never_both` and fails there, and a row not built yet shows its typo only in its owner's PR. (6) **A budget that stays says what it protects, and the one you can measure you measure**: the pressure tail's 40,000 bytes is 16 snapshots measured at 664
+bytes each (10.6 KB) with four times the room for a real stack, not a guess; the producers that state their own default are held equal to the table by a test, and the budgets are held under a stated total.
+(7) **A default that must hold in a FRESH process is tested in one**: the suite resets module state between tests, so a test of an import-time default (`TAIL_IN` naming the pressure member) passed with the
+default gone, and only a mutation run showed it; the test now reads the value in a subprocess.

@@ -68,7 +68,7 @@ def test_a_finished_build_is_recorded_as_done_with_its_size_and_member_outcomes(
 def test_the_begin_line_is_on_disk_before_the_build_does_anything(monkeypatch):
     seen: list[list[dict]] = []
 
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         seen.append(r._read_lines())
         return {"path": "x", "bytes": 5, "members": [], "filename": fname}
 
@@ -87,7 +87,7 @@ def test_a_cancelled_build_is_recorded_as_cancelled(tiny_build):
 
 
 def test_a_build_that_raises_is_recorded_as_failed_with_its_reason_and_still_raises(monkeypatch):
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         raise RuntimeError("the disk\nexploded")
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -106,7 +106,7 @@ def test_a_failure_that_names_the_passphrase_or_the_persons_folder_is_recorded_w
     monkeypatch.setattr(_connect, "_passphrase", secret)
     home = str(Path.home())
 
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         raise RuntimeError(
             f"cannot open {home}/oo/data.db: PRAGMA key = '{secret.replace(chr(39), chr(39) * 2)}' and {secret!r}"
         )
@@ -127,7 +127,7 @@ def test_a_failure_whose_text_cannot_be_checked_for_the_passphrase_is_withheld(m
     monkeypatch.setattr(secret_scrub, "_redacted", lambda text, forms: text)  # the scrub removes nothing
     monkeypatch.setenv("OO_DB_PASSPHRASE", "pa55-phrase")
 
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         raise RuntimeError("context pa55-phrase")
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -146,7 +146,7 @@ def test_a_long_failure_is_scrubbed_whole_and_cut_last_by_the_record(monkeypatch
     monkeypatch.setattr(_connect, "_passphrase", secret)
 
     def failing(message: str):
-        def build(ctx, profile, fname):
+        def build(ctx, profile, fname, mode="thorough"):
             raise RuntimeError(message)
 
         monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -178,7 +178,7 @@ def test_the_build_hands_the_record_the_failure_uncut_for_the_record_to_cut_last
         handed.update(kwargs)
         return True
 
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         raise RuntimeError(long_text)
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -199,7 +199,7 @@ def test_a_unicode_error_that_fails_the_build_is_recorded_as_fixed_words(monkeyp
     fixed words (``exc_line``), not the exception's own text."""
     from src.monitoring.secret_scrub import UNICODE_WITHHELD
 
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         raise UnicodeEncodeError("ascii", "caf\u00e9", 3, 4, "ordinal not in range(128)")
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -214,7 +214,7 @@ def test_a_base_exception_ends_the_record_too_and_is_not_swallowed(monkeypatch):
     class _Killed(BaseException):
         pass
 
-    def build(ctx, profile, fname):
+    def build(ctx, profile, fname, mode="thorough"):
         raise _Killed("stopped from outside")
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -348,6 +348,9 @@ def test_the_route_is_registered_and_classified():
 
 def test_the_route_and_the_member_serve_the_same_document(tiny_build):
     d._all_diagnostics_worker(_Ctx())
-    served, member = d.diagnostics_runs_report(), b._runs_member()
+    served = d.diagnostics_runs_report()
+    from src.api import diagnostics_slots as slots
+
+    member = dict(slots.members())["runs.json"]()  # the slot's own producer
     assert served["schema"] == member["schema"] == r.SCHEMA
     assert [x["id"] for x in served["runs"]] == [x["id"] for x in member["runs"]]
