@@ -34,6 +34,7 @@ from typing import Any
 from sqlalchemy import and_, func
 
 from src.bulletin.period import Period
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -298,12 +299,12 @@ def by_topic_tag(session, period: Period) -> dict:
             or 0
         )
     except Exception as exc:  # noqa: BLE001 - a section degrades, never loses the edition
-        _LOG.warning("bulletin: by_topic_tag failed", exc_info=True)
+        log_failure(_LOG, "bulletin: by_topic_tag failed", exc, level=logging.WARNING)
         return {
             "section": "by_topic_tag",
             "window": _window_of(period),
             "topics": [],
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
         }
 
     topics = [
@@ -381,8 +382,8 @@ def changes_of_record(session, period: Period) -> dict:
             for r in rows
         ]
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: law changes unreadable", exc_info=True)
-        out["law_error"] = f"{type(exc).__name__}: {exc}"
+        log_failure(_LOG, "bulletin: law changes unreadable", exc, level=logging.WARNING)
+        out["law_error"] = type(exc).__name__
 
     try:
         wiki_q = session.query(WikiRevision).filter(
@@ -417,8 +418,8 @@ def changes_of_record(session, period: Period) -> dict:
             for r in rows
         ]
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: wiki changes unreadable", exc_info=True)
-        out["wiki_error"] = f"{type(exc).__name__}: {exc}"
+        log_failure(_LOG, "bulletin: wiki changes unreadable", exc, level=logging.WARNING)
+        out["wiki_error"] = type(exc).__name__
 
     out["examples_limit"] = _EXAMPLES
     out["method"] = (
@@ -485,12 +486,12 @@ def alerts(session, period: Period) -> dict:
             by_type[key] = by_type.get(key, 0) + 1
         rows = rows[:_EXAMPLES]
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: alerts unreadable", exc_info=True)
+        log_failure(_LOG, "bulletin: alerts unreadable", exc, level=logging.WARNING)
         return {
             "section": "alerts",
             "window": _window_of(period),
             "events": 0,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
         }
 
     return {
@@ -596,12 +597,12 @@ def through_time(session, period: Period, *, years_back: int = 5) -> dict:
             .all()
         )
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: through_time unreadable", exc_info=True)
+        log_failure(_LOG, "bulletin: through_time unreadable", exc, level=logging.WARNING)
         return {
             "section": "through_time",
             "window": _window_of(period),
             "years": [],
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
         }
 
     years = [{"year": int(y), "articles": int(n or 0)} for y, n in rows if y]
@@ -712,8 +713,8 @@ def build_sections(session, period: Period, **options) -> list[dict]:
         try:
             bundle = build(session, period, ctx)
         except Exception as exc:  # noqa: BLE001 - one section never loses the edition
-            _LOG.warning("bulletin: section %s failed", key, exc_info=True)
-            bundle = {"section": key, "error": f"{type(exc).__name__}: {exc}"}
+            log_failure(_LOG, f"bulletin: section {key} failed", exc, level=logging.WARNING)
+            bundle = {"section": key, "error": type(exc).__name__}
         ctx[key] = bundle
         if key == "rising_concepts":
             ctx["rising"] = bundle

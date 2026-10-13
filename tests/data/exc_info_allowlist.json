@@ -179,10 +179,6 @@
   "count": 1,
   "owner": "rc-sweep"
  },
- "src/briefing/card_audit.py": {
-  "count": 2,
-  "owner": "export"
- },
  "src/briefing/catalog.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -227,10 +223,6 @@
   "count": 3,
   "owner": "rc-sweep"
  },
- "src/bulletin/facts.py": {
-  "count": 4,
-  "owner": "export"
- },
  "src/bulletin/introduction.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -246,10 +238,6 @@
  "src/bulletin/privacy.py": {
   "count": 1,
   "owner": "rc-sweep"
- },
- "src/bulletin/sections.py": {
-  "count": 6,
-  "owner": "export"
  },
  "src/bulletin/store.py": {
   "count": 1,

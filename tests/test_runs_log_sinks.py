@@ -692,6 +692,21 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
     assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
 
 
+#: The bulletin's facts and sections and the card audit, which ride the diagnostics bundle: no log call asks for a traceback and no
+#: record carries a caught exception's words (``tests/test_bulletin_sink_sites.py`` drives each site with a held passphrase).
+_SWEEP_MODULES = (
+    "src/briefing/card_audit.py",
+    "src/bulletin/facts.py",
+    "src/bulletin/sections.py",
+)
+
+
+@pytest.mark.parametrize("rel", _SWEEP_MODULES)
+def test_the_bulletin_facts_and_sections_and_the_card_audit_log_no_traceback_and_keep_no_caught_exception_raw(rel):
+    found = _leaks((ROOT / rel).read_text(encoding="utf-8"))
+    assert found == [], f"{rel}: {found}"
+
+
 #: The modules whose ``diagnostics_member`` a slot runs and that no other list above reads (the vitals and runs producers are in
 #: :data:`_WITNESS_MODULES`). The slot net scrubs what reaches the ZIP; this reads what the producer does with a caught failure on
 #: the way (a log line, a traceback, the exception's words handed on), which the net does not see.
