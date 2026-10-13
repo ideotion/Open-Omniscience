@@ -259,7 +259,7 @@ def test_the_carry_runs_once_after_the_checkpoint_and_right_before_the_swap():
     assert len(hold) == len(quiet) == len(ckpt) == 1
     assert quiet[0] < ckpt[0] < hold[0], "as late as the swap allows: the checkpoint can take a minute"
     # and it is reported, never silent
-    assert 'report["settings_carry"] = carry' in _MERGE_PY.read_text(encoding="utf-8")
+    assert 'report["settings_carry"] = _carry_live_settings(working)' in _MERGE_PY.read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #

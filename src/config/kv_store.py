@@ -45,6 +45,9 @@ import json
 import logging
 import os
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 _LOG = logging.getLogger(__name__)
@@ -55,6 +58,115 @@ TABLE = "app_state"
 # ``OO_DATA_DIR`` isolation holds and two data dirs never share a row.
 _lock = threading.Lock()
 _cache: dict[tuple[str, str], str | None] = {}
+#: Moves on every :func:`kv_invalidate`. A read or a write notes it BEFORE it touches the file and fills the cache only if it has
+#: not moved since: a reader that missed the cache just before a restore replaced the file would otherwise store the old file's
+#: value AFTER the invalidation and serve it for the life of the process.
+_epoch = 0
+
+
+# --------------------------------------------------------------------------- #
+#  A restore's hold on settings writes
+# --------------------------------------------------------------------------- #
+#: How long a settings save waits for a restore that is switching the corpus file before it is refused (nothing written). The
+#: restore's own file waits can reach minutes (a handle another process holds), and a request must not hang for them.
+KV_WRITE_WAIT_S = float(os.environ.get("OO_KV_WRITE_WAIT_S", "30") or 30)
+#: Set (to ``1``) by the test suite: a settings write entered by a thread that already holds the single-writer gate raises
+#: ``AssertionError``, so the suite itself finds every caller that breaks the contract in :func:`kv_set_json`'s docstring.
+_STRICT_GATE_ENV = "OO_KV_STRICT_GATE_ORDER"
+
+
+class KvWriteRefused(RuntimeError):
+    """A settings write was refused, with nothing written, because a restore is switching the corpus file. The words are fixed
+    and carry nothing from the engine; the API answers them as a 503 with this text as the detail, which the UI shows."""
+
+
+class KvWriteBusy(RuntimeError):
+    """:func:`hold_writes` could not start within its budget: a settings save was still in flight (it may be waiting for the
+    single-writer gate behind a long writer). Nothing was held."""
+
+
+_hold = threading.Condition()  # guards the three names below; notified when a hold ends or a write finishes
+_hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
+_inflight = 0  # settings writes between their start and their end (they may be waiting for the gate)
+
+
+@contextmanager
+def _write_slot() -> Iterator[int]:
+    """Around ONE settings write (before the gate is taken, never inside it): waits, bounded by :data:`KV_WRITE_WAIT_S`, while a
+    restore holds settings writes, then counts the write as in flight so the restore waits for it to finish. Yields the cache epoch
+    noted before the file was touched. The thread that holds the writes passes through (it is the one switching the file).
+
+    NO LOCK IS HELD WHILE WAITING FOR THE GATE: the count is all a restore looks at, so a write queued behind a long writer
+    blocks nobody else and nobody blocks it; the gate stays free for the threads that hold a connection to the old file and
+    must take it to be refused and let go (a restore that held the gate itself would wait for exactly those handles)."""
+    global _inflight
+    me = threading.get_ident()
+    if os.environ.get(_STRICT_GATE_ENV) == "1":
+        from src.database.writer import write_gate
+
+        if write_gate.held_here():
+            raise AssertionError("a settings write was entered by a thread that holds the single-writer gate (see kv_set_json)")
+    passthrough = False
+    with _hold:
+        if _hold_by == me:
+            passthrough = True
+        elif _hold_by is not None:
+            from src.database.writer import write_gate
+
+            if write_gate.held_here():  # waiting here would make the restore wait for this thread's connection: refuse now
+                raise KvWriteRefused(_REFUSED_TEXT)
+            deadline = time.monotonic() + KV_WRITE_WAIT_S
+            while _hold_by is not None:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise KvWriteRefused(_REFUSED_TEXT)
+                _hold.wait(left)
+        if not passthrough:
+            _inflight += 1
+    with _lock:
+        epoch = _epoch
+    try:
+        yield epoch
+    finally:
+        if not passthrough:
+            with _hold:
+                _inflight -= 1
+                _hold.notify_all()
+
+
+_REFUSED_TEXT = (
+    "Your corpus is being replaced by an import right now, so this was not saved — nothing was written. "
+    "Try again when the import has finished."
+)
+
+
+@contextmanager
+def hold_writes(timeout: float) -> Iterator[None]:
+    """Hold settings writes for the calling thread (a restore, from before it reads the live settings to after it has switched the
+    file): a write that starts meanwhile waits (:data:`KV_WRITE_WAIT_S`) and then lands in the NEW file, or is refused with nothing
+    written. Waits, up to ``timeout``, for the writes already in flight to finish; raises :class:`KvWriteBusy` (and holds nothing)
+    when they do not. ``0`` does not wait: it holds only if no settings write is in flight. Not reentrant, and it takes no lock
+    the single-writer gate or the corpus knows about."""
+    global _hold_by
+    me = threading.get_ident()
+    deadline = time.monotonic() + max(0.0, timeout)
+    with _hold:
+        if _hold_by is not None:
+            raise RuntimeError("settings writes are already held")
+        _hold_by = me  # from here a new write waits at the door
+        while _inflight:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                _hold_by = None
+                _hold.notify_all()
+                raise KvWriteBusy("a settings save was still in flight")
+            _hold.wait(left)
+    try:
+        yield
+    finally:
+        with _hold:
+            _hold_by = None
+            _hold.notify_all()
 
 
 def _db_path() -> str | None:
@@ -163,6 +275,7 @@ def kv_get_json_checked(key: str) -> dict | None:
         held = _failed.get(ck)
         if held is not None and held[0] > time.monotonic():
             raise KvReadError(held[1])
+        epoch = _epoch
     try:
         try:
             raw = _read_value(path, key, read_only=True)
@@ -184,9 +297,10 @@ def kv_get_json_checked(key: str) -> dict | None:
             _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what)
         raise KvReadError(what) from None
     with _lock:
-        _cache[ck] = raw
-        _failed.pop(ck, None)
-        _seen.add(path)
+        if _epoch == epoch:  # an invalidation since the read began: what it read may be the file that was replaced
+            _cache[ck] = raw
+            _failed.pop(ck, None)
+            _seen.add(path)
     return _parsed(raw)
 
 
@@ -254,6 +368,7 @@ def kv_get_json_strict(key: str) -> dict | None:
     with _lock:
         if ck in _cache:
             return _loads_strict(_cache[ck])
+        epoch = _epoch
     conn = _open(path)
     try:
         try:
@@ -269,7 +384,8 @@ def kv_get_json_strict(key: str) -> dict | None:
     finally:
         conn.close()
     with _lock:
-        _cache[ck] = raw
+        if _epoch == epoch:
+            _cache[ck] = raw
     return _loads_strict(raw)
 
 
@@ -284,7 +400,13 @@ def kv_set_json(key: str, obj: dict) -> None:
     would let this open a SECOND raw connection whose INSERT then contends with the still-
     open ORM writer on the one SQLite file (busy_timeout stall → OperationalError). Every
     current caller loads/saves settings OUTSIDE a write txn (after commit, or on the
-    network/fetcher path); keep it that way.
+    network/fetcher path); keep it that way. The test suite sets ``OO_KV_STRICT_GATE_ORDER=1``, which makes a call from a thread that
+    holds the gate raise, so a caller that breaks this fails a test; a restore that is switching the corpus file refuses such a call
+    at once (:class:`KvWriteRefused`) rather than wait for it.
+
+    A restore HOLDS settings writes (:func:`hold_writes`) while it reads the live settings and switches the file: a save that
+    arrives then waits, up to ``OO_KV_WRITE_WAIT_S``, and lands in the NEW file; one that cannot wait is refused with nothing
+    written (:class:`KvWriteRefused`, answered by the API as a 503 whose detail the UI shows).
     """
     path = _db_path()
     if path is None:
@@ -293,23 +415,25 @@ def kv_set_json(key: str, obj: dict) -> None:
     now = datetime.now(UTC).isoformat()
     from src.database.writer import write_lock
 
-    with write_lock():
-        conn = _open(path)
-        try:
-            _ensure_table(conn)
-            conn.execute(
-                f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; values are bound params
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
-                "updated_at = excluded.updated_at",
-                (key, value, now),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    with _lock:
-        _cache[(path, key)] = value
-        _failed.pop((path, key), None)
-        _seen.add(path)
+    with _write_slot() as epoch:
+        with write_lock():
+            conn = _open(path)
+            try:
+                _ensure_table(conn)
+                conn.execute(
+                    f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; values are bound params
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                    "updated_at = excluded.updated_at",
+                    (key, value, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        with _lock:
+            if _epoch == epoch:  # an invalidation since the write began: the next read goes to the file that is live
+                _cache[(path, key)] = value
+                _failed.pop((path, key), None)
+                _seen.add(path)
 
 
 def kv_delete(key: str) -> None:
@@ -319,23 +443,24 @@ def kv_delete(key: str) -> None:
         return
     from src.database.writer import write_lock
 
-    with write_lock():
-        try:
-            conn = _open(path)
+    with _write_slot():
+        with write_lock():
             try:
-                _ensure_table(conn)
-                conn.execute(
-                    f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
-                    (key,),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001 - delete is best-effort; the class only (a keyed open chains the driver's error)
-            _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
-    with _lock:
-        _cache.pop((path, key), None)
-        _failed.pop((path, key), None)
+                conn = _open(path)
+                try:
+                    _ensure_table(conn)
+                    conn.execute(
+                        f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                        (key,),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as exc:  # noqa: BLE001 - delete is best-effort; the class only (a keyed open chains the driver's error)
+                _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
+        with _lock:
+            _cache.pop((path, key), None)
+            _failed.pop((path, key), None)
 
 
 def kv_invalidate(key: str | None = None) -> None:
@@ -343,7 +468,9 @@ def kv_invalidate(key: str | None = None) -> None:
 
     ``None`` clears everything; a key clears just that key's entries across data dirs.
     """
+    global _epoch
     with _lock:
+        _epoch += 1
         if key is None:
             _cache.clear()
             _failed.clear()

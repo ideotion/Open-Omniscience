@@ -70,6 +70,9 @@ os.environ.setdefault("OO_AUTOSEED", "0")
 # SQLCipher paths are exercised by tests/test_sqlcipher.py with their own
 # passphrases and data dirs.
 os.environ.setdefault("OO_DB_PLAINTEXT", "1")
+# A settings write (kv_set_json / kv_delete) entered by a thread that holds the single-writer gate raises: the suite itself finds every
+# caller that breaks the contract in kv_set_json's docstring (lock order: a restore's settings hold, then the gate, never the reverse).
+os.environ.setdefault("OO_KV_STRICT_GATE_ORDER", "1")
 
 # --- Optional-extra test isolation (findings TEST-06 + OO-D15-005) ----------- #
 # The analysis/nlp extras (numpy/scipy/pandas/scikit-learn/statsmodels/networkx/
