@@ -716,6 +716,7 @@ class DamageRegistry:
         known["repeats"] = int(known.get("repeats") or 0) + 1
         known["last_at"] = at
         known.pop("superseded", None)  # a failed read after the answer is a new reason to check at the next start
+        known.pop("answered_by", None)  # and nothing answered it any more
         now = self._mono()
         if self._last_flush_mono is None or (now - self._last_flush_mono) >= FLUSH_EVERY_S:
             self._last_flush_mono = now

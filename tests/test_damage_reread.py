@@ -554,6 +554,7 @@ def test_a_failed_read_after_the_answer_makes_the_incident_unanswered_again(reg,
     assert _fail(reg, healthy)
     [inc] = reg.state(detail=True)["incidents"]
     assert not inc.get("superseded") and inc["repeats"] == 1
+    assert "answered_by" not in inc, "and nothing answers it any more"
 
 
 def test_a_clean_re_read_answers_the_failed_read_it_was_made_for_and_not_an_earlier_unread_one(tmp_path, monkeypatch):
