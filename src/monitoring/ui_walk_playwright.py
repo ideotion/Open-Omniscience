@@ -45,6 +45,7 @@ import contextlib
 import logging
 from pathlib import Path
 
+from src.monitoring.path_tokens import tokenise_paths
 from src.monitoring.secret_scrub import log_failure
 from src.monitoring.ui_walk import Surface
 
@@ -93,7 +94,7 @@ class PlaywrightUiWalkDriver:
 
     def __init__(
         self,
-        page: "Page",
+        page: Page,
         *,
         base_url: str,
         screenshot_dir: Path | None = None,
@@ -113,7 +114,7 @@ class PlaywrightUiWalkDriver:
         self._console_lines: list[str] = []
         self.last_pageerrors: list[str] = []
         self.last_console_error_lines: list[str] = []
-        page.on("pageerror", lambda exc: self._pageerrors.append(str(exc)))
+        page.on("pageerror", lambda exc: self._pageerrors.append(tokenise_paths(str(exc))))
         page.on("console", self._on_console)
         # Only auto-boot when a REAL base_url is configured (the actual app-walking case) --
         # an empty base_url (a hermetic test against a page whose content was set directly via

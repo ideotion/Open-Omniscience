@@ -312,7 +312,7 @@
   "owner": "rc-sweep"
  },
  "src/database/fts_norm.py": {
-  "count": 2,
+  "count": 1,
   "owner": "rc-sweep"
  },
  "src/database/fts_reindex.py": {
@@ -326,6 +326,10 @@
  "src/database/read_snapshot.py": {
   "count": 1,
   "owner": "rc-sweep"
+ },
+ "src/database/repair.py": {
+  "count": 2,
+  "owner": "wal"
  },
  "src/database/session.py": {
   "count": 3,

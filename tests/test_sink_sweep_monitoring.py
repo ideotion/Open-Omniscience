@@ -102,11 +102,16 @@ def test_a_soak_block_that_crashed_names_no_passphrase():
     assert out["measured"] is False and _PW not in out["block_error"] and _PW not in str(out)
 
 
-def test_a_selftest_row_is_cut_after_the_paths_are_tokenised(monkeypatch):
-    """A cut at 300 inside a path would leave a fragment (``/home/ali``) no tokenising recognises."""
-    from src.monitoring import recursive_loop
+@pytest.mark.parametrize("pad", range(250, 300, 7))
+def test_a_selftest_row_is_cut_after_the_paths_are_tokenised(monkeypatch, pad):
+    """A cut at 300 inside a path would leave a fragment (``/opt/accounts/alice.mar``) that no tokenising recognises, whatever the
+    home directory is called and wherever the path falls across the cut."""
+    from src.monitoring import path_tokens, recursive_loop
 
-    home = "/home/alice-secret-project"
-    exc = RuntimeError("x" * 280 + f" {home}/data/db.sqlite")
+    home = "/opt/accounts/alice.martin"
+    monkeypatch.setenv("HOME", home)
+    monkeypatch.setattr(path_tokens, "_homes", lambda: [home])
+    exc = RuntimeError("x" * pad + f" {home}/data/corpus.db and more")
     text = recursive_loop._failure_text(exc)
-    assert len(text) <= 300 and "alice" not in text and "/home/al" not in text
+    assert len(text) <= 300
+    assert "alice" not in text and "/opt/acc" not in text, text

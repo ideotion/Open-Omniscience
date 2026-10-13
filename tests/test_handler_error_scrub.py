@@ -129,20 +129,57 @@ def _handler_classes(base=logging.Handler):
         yield from _handler_classes(cls)
 
 
+def _classes_defining_handle_error(source: str) -> list[str]:
+    """Classes whose body defines ``handleError`` by ``def``, ``async def``, assignment (``handleError = lambda ...``) or annotated
+    assignment."""
+    import ast
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for item in node.body:
+            names = (
+                [item.name]
+                if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                else [t.id for t in item.targets if isinstance(t, ast.Name)]
+                if isinstance(item, ast.Assign)
+                else [item.target.id]
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+                else []
+            )
+            if "handleError" in names:
+                found.append(node.name)
+    return found
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "def handleError(self, record): pass",
+        "async def handleError(self, record): pass",
+        "handleError = lambda self, record: None",
+        "handleError: object = None",
+    ],
+)
+def test_the_override_scan_sees_every_way_to_define_it(body):
+    """MUTATION TARGET: a form dropped from ``_classes_defining_handle_error``."""
+    assert _classes_defining_handle_error(f"class H:\n    {body}\n") == ["H"]
+    assert _classes_defining_handle_error("class H:\n    def emit(self, record): pass\n") == []
+
+
 def test_no_handler_in_src_overrides_handle_error():
     """A handler class that defines its own ``handleError`` would bypass the replacement. Read from the source, so a module that
     cannot be imported here (an optional dependency) is covered as well."""
-    import ast
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     own = []
     for path in sorted((root / "src").rglob("*.py")):
-        if path.relative_to(root).as_posix() == "src/monitoring/secret_scrub.py":
-            continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.ClassDef) and any(
-                isinstance(b, ast.FunctionDef) and b.name == "handleError" for b in node.body
-            ):
-                own.append(f"{path.relative_to(root).as_posix()}:{node.name}")
+        rel = path.relative_to(root).as_posix()
+        if rel != "src/monitoring/secret_scrub.py":
+            own += [
+                f"{rel}:{name}"
+                for name in _classes_defining_handle_error(path.read_text(encoding="utf-8"))
+            ]
     assert not own, own
