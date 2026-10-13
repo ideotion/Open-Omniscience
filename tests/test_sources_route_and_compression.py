@@ -150,12 +150,24 @@ async def _raw_asgi_get(path: str, accept_encoding: str) -> tuple[dict, bytes]:
     messages is therefore the only place the transferred size actually exists.
     """
     sent: list[dict] = []
+    request_given = False
+    response_done = asyncio.Event()
 
     async def receive():
-        return {"type": "http.request", "body": b"", "more_body": False}
+        # What a server does: the request once, then nothing until the client is
+        # gone. An endless ``http.request`` is not ASGI, and Starlette's
+        # middleware (1.8.0 on) rejects it when anything asks a second time.
+        nonlocal request_given
+        if not request_given:
+            request_given = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await response_done.wait()
+        return {"type": "http.disconnect"}
 
     async def send(message):
         sent.append(message)
+        if message["type"] == "http.response.body" and not message.get("more_body", False):
+            response_done.set()
 
     scope = {
         "type": "http",
