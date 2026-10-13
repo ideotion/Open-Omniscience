@@ -54,8 +54,15 @@ from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
 from src.database.stand_in import ARTICLE_HASH_END, ARTICLE_HASH_PREFIX
-from src.monitoring.engine_text import engine_text
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, unicode_note
+from src.monitoring.secret_scrub import (
+    exception_text,
+    is_driver_error,
+    log_failure,
+    quotes_a_driver,
+    record_text,
+    scrubbed,
+    unicode_note,
+)
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -534,6 +541,9 @@ def classify_restore_error(action: str, exc: Exception) -> str:
         return f"could not {action} this backup: {note}"
     msg = str(exc)
     low = msg.lower()
+    # The classification above reads the real text; what is WRITTEN is the class only when the failure is a database driver's, whose words
+    # can quote a fragment of a statement that no scrub finds (``secret_scrub.record_text``).
+    shown = record_text(exc, typed=False) if (is_driver_error(exc) or quotes_a_driver(exc)) else msg
     # A real version/schema gap: a staged migration failed, or the corpus uses a
     # table/column this build doesn't know. "incompatible version" is accurate here.
     is_version = (
@@ -556,17 +566,17 @@ def classify_restore_error(action: str, exc: Exception) -> str:
             f"your corpus is exactly as it was. Close any other window or copy of the "
             f"app (and anything reading data/open_omniscience.db), then import again."
             f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "
-            f"released: {msg}"
+            f"released: {shown}"
         )
     if isinstance(exc, _db_integrity_error_types()):
         return (
             f"the backup's data conflicts with your corpus on a database constraint "
             f"(e.g. a duplicate row) while merging — this is a data-merge issue, not a "
-            f"version mismatch: {msg}"
+            f"version mismatch: {shown}"
         )
     if is_version:
-        return f"could not {action} this backup (it may be from an incompatible version): {msg}"
-    return f"could not {action} this backup: {msg}"
+        return f"could not {action} this backup (it may be from an incompatible version): {shown}"
+    return f"could not {action} this backup: {shown}"
 
 
 def restore_failure_text(action: str, failure: Exception, *secrets: str | None) -> str:
@@ -762,7 +772,7 @@ def prepare_staged_corpus(
         with _sub("prepare_staged:validate"):
             validate_sqlite_file(staged.corpus_path)
     except BackupError as exc:
-        raise MergeError(str(exc)) from exc
+        raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
 
     original_rev = file_revision(staged.corpus_path)
     if original_rev is None:
@@ -1808,7 +1818,7 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
         traced = False
     try:
         yield
-    except Exception as exc:
+    except Exception:
         # Deliberately NOT `except sqlite3.OperationalError`. The merge connection
         # comes from the raw connect() factory, so on an encrypted store it is a
         # SQLCIPHER3 connection, and sqlcipher3 raises its OWN exception classes --
@@ -1824,7 +1834,7 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
             raise MergeStepStopped(
                 f"stopped during the merge (inside the '{name}' step) — "
                 "nothing was written to your corpus"
-            ) from exc
+            ) from None  # the cause is a driver interrupt: its words are not carried
         raise
     finally:
         # Close out the statement still in flight, so the LAST one in a step is
@@ -5586,7 +5596,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 else:
                     ann["kept_local"] += 1
             except Exception as exc:  # noqa: BLE001 - each author independent, reported
-                ann["errors"].append(f"{name}: {exc}")
+                ann["errors"].append(f"{name}: {record_text(exc)}")
         else:
             local.parent.mkdir(parents=True, exist_ok=True)
             tmp = local.with_name(local.name + ".tmp")
@@ -5655,7 +5665,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 os.replace(tmp, local)
                 restored += 1
             except OSError as exc:
-                refused.append(f"{name}: {exc}")
+                refused.append(f"{name}: {exception_text(exc, typed=False)}")
         docs[role] = {"restored": restored, "kept_local": kept_local, "refused": refused}
     report["documents"] = docs
 
@@ -5737,7 +5747,7 @@ def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:
             tmp.write_bytes(path.read_bytes())
             os.replace(tmp, target)
         except OSError as exc:
-            out["refused"].append({"name": name, "reason": f"write failed: {exc}"})
+            out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})
             continue
         out["restored"].append(name)
         placed_any = True
@@ -6600,8 +6610,9 @@ def _backlog_engine() -> str:
 
         return baseline_engine_id()
     except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
-        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        _LOG.warning("could not compute the engine identity for the backlog: %s", engine_text(exc, typed=True))
+        # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not compute the engine identity for the backlog: %s", said)
         return "<unknown>"
 
 
@@ -6647,8 +6658,9 @@ def pending_reindex_batches() -> list[dict]:
             for r in rows
         ]
     except Exception as exc:  # noqa: BLE001
-        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
+        # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not read the re-index backlog: %s", said)
         return []
 
 
@@ -6673,8 +6685,9 @@ def reindex_backlog() -> dict:
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
         # because the root error handler writes the traceback, which ends with the engine's own words
-        reason = engine_text(exc)
-        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
+        reason = record_text(exc)
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not read the re-index backlog: %s", said)
         return {"available": False, "reason": reason}
     owed = [int(r[2]) - int(r[3]) - int(r[4]) for r in rows]
     certified = [int(r[3]) for r in rows]
@@ -7721,11 +7734,11 @@ def run_restore(
                 # which no connection is being opened and every connection made before it is refused: a save that waited out the
                 # restore fails loudly instead of committing into a file nobody reads (the deep read of E3, B1 and NEW-1).
                 swap_in_corpus(working, target)
-            except LibraryBusy as busy:
+            except LibraryBusy:
                 raise RestoreRefused(
                     "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
                     "switched — nothing was written to your corpus. Import again."
-                ) from busy
+                ) from None
             init_db()
 
         report["committed"] = True

@@ -345,7 +345,8 @@ _SCOPES = (
     ("src/monitoring/keyword_write_cost.py", None, 5),
     ("src/analytics/reindex_job.py", None, 1),
     ("src/analytics/store.py", ("_skip_error", "maybe_cleanup_keywords"), 1),
-    ("src/backup/merge.py", ("reindex_backlog", "pending_reindex_batches", "_backlog_engine"), 3),
+    # src/backup/merge.py's three backlog handlers left this list on 2026-10-13: they write through log_failure and record_text (a
+    # database driver is its class only), which tests/test_sink_sweep_records.py reads more strictly than this scan did.
     ("src/analytics/stoplist_recompute.py", ("maybe_recompute_top_keywords",), 1),
 )
 _ALLOWED_HELPERS = {"_cut_reason", "_skip_error"}  # each routes its argument through engine_text
@@ -633,3 +634,25 @@ def test_the_fallback_when_the_scrub_cannot_be_loaded_is_cut_too(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", _no_scrub)
     out = engine_text(ValueError("x"), 20, typed=True)
     assert len(out) == 20 and "ValueError" in out
+
+
+def test_a_backlog_read_failing_with_a_driver_error_logs_its_class_only(monkeypatch, caplog):
+    import logging
+    import sqlite3
+
+    from src.backup import merge
+
+    caplog.set_level(logging.DEBUG)
+
+    class _Boom:
+        def __enter__(self):
+            raise sqlite3.OperationalError('near "horse-battery": syntax error')
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("src.database.session.session_scope", lambda *a, **k: _Boom())
+    merge.reindex_backlog()
+    merge.pending_reindex_batches()
+    assert "horse-battery" not in caplog.text and "OperationalError" in caplog.text
+    assert not any(r.exc_info for r in caplog.records)

@@ -109,7 +109,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure, traceback_text
+from src.monitoring.secret_scrub import exception_text, log_failure, record_text, record_traceback
 
 _LOG = logging.getLogger(__name__)
 
@@ -905,8 +905,8 @@ def run(
         milestone(
             "error",
             cls=type(exc).__name__,
-            msg=exception_text(exc, *secrets, typed=False, limit=FAILURE_MSG_KEEP),
-            traceback=traceback_text(exc, *secrets)[-FAILURE_TRACEBACK_KEEP:],
+            msg=record_text(exc, *secrets, typed=False, limit=FAILURE_MSG_KEEP),
+            traceback=record_traceback(exc, *secrets)[-FAILURE_TRACEBACK_KEEP:],
         )
         end("error", cls=type(exc).__name__)
         raise

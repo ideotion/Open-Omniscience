@@ -651,6 +651,8 @@ _SCRUBBING_CALLS_OVER_SECRETS = {
     "exception_text": (0, 1),  # the exception's own text, each secret taken out and THEN cut (the helper the three modules use)
     "scrubbed_value": (0, 1),  # a structure with each secret taken out of every string in it
     "traceback_text": (0, 1),  # the traceback of the exception, scrubbed
+    "record_text": (0, 1),  # a driver's error as its class only, anything else scrubbed then cut
+    "record_traceback": (0, 1),  # the frames of every link, a driver's header as its class only, the rest scrubbed
     "log_failure": (2, 3),  # logs the whole chain, with each secret out of it (the logger, then the words)
     "restore_failure_text": (1, 2),  # merge: the sentence a failed restore is answered with (the action, then the exception)
     "_restore_error": (1, 2),  # backup_v2: the 500 the legacy restore answers with, its detail scrubbed (the action, then the exception)

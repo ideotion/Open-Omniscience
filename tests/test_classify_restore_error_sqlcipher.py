@@ -33,7 +33,8 @@ def test_classify_restore_error_recognizes_stdlib_sqlite3_integrity_error():
         "restore", sqlite3.IntegrityError("UNIQUE constraint failed: keyword_mentions.keyword_id")
     )
     assert "data-merge issue, not a version mismatch" in detail
-    assert "UNIQUE constraint failed" in detail  # the original detail is kept, not lost
+    assert "UNIQUE constraint failed" not in detail  # a driver's words are never recorded
+    assert "IntegrityError (a database driver's text is withheld)" in detail
 
 
 def test_classify_restore_error_recognizes_a_sqlcipher3_style_integrity_error(monkeypatch):
@@ -73,3 +74,15 @@ def test_classify_restore_error_falls_back_honestly_for_unrelated_exceptions():
     detail = classify_restore_error("restore", RuntimeError("disk full"))
     assert "data-merge issue" not in detail
     assert "could not restore this backup" in detail
+
+
+def test_a_wrapper_that_quotes_a_chained_driver_error_is_shown_as_the_class_only():
+    """S1 of the read: the classification reads the real text, what is WRITTEN never carries the driver's words."""
+    try:
+        try:
+            raise sqlite3.OperationalError('near "horse-battery": syntax error')
+        except sqlite3.OperationalError as driver:
+            raise RuntimeError(f"x: {driver}") from driver
+    except RuntimeError as exc:
+        detail = classify_restore_error("restore", exc)
+    assert "horse-battery" not in detail, detail

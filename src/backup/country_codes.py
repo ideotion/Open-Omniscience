@@ -43,6 +43,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from src.catalog.countries import to_iso2, to_iso3
+from src.monitoring.secret_scrub import record_text
 
 #: The store's canonical country form. **ONE constant, ONE read** (``_converter``):
 #: the 0.5 storage half (Q301 = c, brief ``S05-02``) flips this literal and nothing
@@ -231,8 +232,9 @@ def _convert_row_by_row(
         except Exception as exc:  # noqa: BLE001 - one row's collision is not the restore's
             con.execute("ROLLBACK TO oo_country_norm_row")
             con.execute("RELEASE oo_country_norm_row")
-            if str(exc) not in reasons:
-                reasons.append(str(exc))
+            said = record_text(exc)
+            if said not in reasons:
+                reasons.append(said)
             continue
         con.execute("RELEASE oo_country_norm_row")
         done += 1
@@ -309,7 +311,7 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                         con, schema, table, column, value, target
                     )
                     converted[key] = converted.get(key, 0) + n_rows
-                    for reason in row_collisions or [str(exc)]:
+                    for reason in row_collisions or [record_text(exc)]:
                         collisions.append(
                             {"column": key, "from": str(value), "to": target,
                              "reason": reason}

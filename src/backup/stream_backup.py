@@ -87,7 +87,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import is_driver_error, log_failure
 
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
     from src.backup.artifact import StagedArtifact
@@ -2312,15 +2312,14 @@ def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
     candidate key in order. Fails loudly (naming the fix) when none opens it."""
     from src.database.connect import WrongPassphraseError, connect
 
-    last: Exception | None = None
+    last: str | None = None
     for key in dict.fromkeys(keys):
         try:
             conn = connect(src, key=key, check_same_thread=False)
-        except WrongPassphraseError as exc:
-            last = exc
+        except WrongPassphraseError:
             continue
-        except Exception as exc:  # noqa: BLE001 - driver/file trouble: keep the cause
-            last = exc
+        except Exception as exc:  # noqa: BLE001 - file trouble is named by its class; a driver's words are not carried
+            last = None if is_driver_error(exc) else type(exc).__name__
             continue
         try:
             dest.unlink(missing_ok=True)
@@ -2338,4 +2337,5 @@ def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
         "the corpus member is SQLCipher-encrypted and none of the available "
         "passphrases open it — the backup carries the source store's own "
         "encryption; pass that passphrase (corpus_passphrase) to restore"
-    ) from last
+        + (f" (opening it also failed with {last}, which is not a wrong passphrase)" if last else "")
+    ) from None

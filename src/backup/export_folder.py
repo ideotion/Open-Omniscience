@@ -40,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -123,11 +123,11 @@ def allocate_export_folder(
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise ExportFolderError(f"Cannot use destination {base}: {exc}") from exc
+        raise ExportFolderError(f"Cannot use destination {base}: {exception_text(exc, typed=False)}") from None
     if not base.is_dir():
         raise ExportFolderError(f"{base} is not a folder.")
     when = now or datetime.now()
-    first: OSError | None = None
+    first: str | None = None
     for ordinal in range(1, _MAX_ORDINAL + 1):
         candidate = base / folder_name(when, ordinal=ordinal)
         try:
@@ -138,7 +138,7 @@ def allocate_export_folder(
             # A real filesystem refusal (permissions, read-only drive, full disk).
             # Reported as itself rather than retried under another name, which would
             # spin _MAX_ORDINAL times and then blame the ordinals.
-            first = exc
+            first = exception_text(exc, typed=False)
             break
         return candidate
     if first is not None:
