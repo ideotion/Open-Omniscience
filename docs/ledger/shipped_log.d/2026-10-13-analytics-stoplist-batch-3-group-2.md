@@ -1,4 +1,4 @@
-## 2026-10-13 — analytics/stoplist: stoplist batch 3, language group 2 (PR #1357)
+## 2026-10-13 — analytics/stoplist: stoplist batch 3, language group 2 (PR #1358)
 
 - **2026-10-13 · analytics/stoplist (R131, the second of the T5 batches; the stoplist thread, one independent read).** 419 words appended to the six files ru uk pl cs sk sl (ru 28, uk 125, pl 65, cs 89, sk 54, sl 58) from the
 triage's accepted candidates, judged against the same merged log as group 1 (sha256 6467504ab8ab, verdicts sha256 beb3efd563e5 as cited in each batch comment). By the triage's codes: 281 function words, 69 number words, 49 calendar
