@@ -469,3 +469,18 @@ loses no statement. The suicide-prevention footer lines (`生命線專線`, `自
 it would also drop a phrase such as `不正 ログイン` (unauthorised login); `お知らせ`, `購読料`, `オススメ`, `閉じる` and ko `등록번호` are marginal labels that can also be words, hidden at read time and so reversible. Not done
 and for a later batch: the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious; `々` (as in 人々) is not yet allowed in
 `ja.yml` by the script guard. Hiding is retroactive with no re-index; extraction also drops them from now on.
+
+## Stoplist batch 7: function words, number words and calendar words in Amharic, Basque, Faroese, Galician, Hausa, Kazakh, Macedonian, Kinyarwanda and Swahili (2026-10-13, R131, language group 6)
+
+352 words from the same triage and the same method as batches 2 to 6 (read batch 2 first): am 29, eu 57, fo 15, gl 10, ha 25, kk 78, mk 59, rw 14, sw 65, in eight NEW files (the loader unions every file in the directory;
+`sw.yml` existed). By the triage's codes: 264 function words (Basque `baina`, `zein`, Kazakh `және`, `үшін`, Macedonian `што`, `дека`, Swahili `kuhusu`, `ambapo`, Amharic `ውስጥ`, Faroese `frá`), 42 number words (`ehun`, `мың`,
+`dubu`, Swahili shilling amounts `sh50`), 38 weekday and month names (`astelehena`, `сенбі`, `мај`, `satumba`, `jumamosi`) and 8 attribution verbs and button labels (Kazakh `деді`, `айтты`, `бөлісу`, `көшіру`, Swahili
+`ilisema`, Amharic `ብሏል`). Every word of these nine languages has ONE reader in the triage (the `single_reader` flag, 100 % of their candidates), so the batch was read a second time by hand, word by word, the way the
+earlier groups read the "also read in" notes; the 352 are the words both readings accepted, and the independent read of the PR diff is the third.
+
+**Left out:** the triage's fragments (am `ኛውን` and `ከፉልሃም` "from Fulham"; the closing-quote forms eu `ilargia'`, `katana'`, `plague'`, gl `pasar'`, `xerión'`, sw `samantha'`, `uzungu'`); eu `hamar` (ten, but also the Norwegian
+town, read in Norwegian articles) and `elkar` (each other, but also the Basque publisher Elkar); ha `kuma` (and, but read in 5 English articles) and `inda` (read in 3 Spanish
+articles); kk `бес` (five, but also the Russian "demon", a content word). The tool itself refused every word with a content sense in a language it knows (gl 139 of 151, mk 159 of 218, eu 122 of 184).
+
+**Kept on purpose:** the Kazakh, Basque and Macedonian words the notes show in Russian-, Spanish- and English-tagged articles are those languages' function words quoted or mis-tagged, not a second sense. The script guard
+and the tool's script map gain Ethiopic (am) and Cyrillic (kk, mk). Hiding is retroactive with no re-index; extraction also drops them from now on.
