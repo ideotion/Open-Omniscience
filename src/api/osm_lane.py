@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.monitoring.secret_scrub import exception_text
 
 router = APIRouter(prefix="/api/osm", tags=["osm"])
 
@@ -63,7 +64,7 @@ def country_completeness(code: str) -> dict:
     try:
         _a2, a3 = country_codes(code)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
     return tag_completeness(a3)
 
 
@@ -79,11 +80,11 @@ def count_admin1(code: str) -> dict:
     try:
         _a2, a3 = country_codes(code)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
     try:
         return start_count(a3)
     except Admin1Error as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from None
+        raise HTTPException(status_code=409, detail=exception_text(exc, typed=False)) from None
 
 
 @router.get("/search")
@@ -112,7 +113,7 @@ def osm_view(
     try:
         return view(w, s, e, n)
     except ViewError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
 
 
 @router.get("/objects/{osm_type}/{osm_id}")
@@ -123,7 +124,7 @@ def object_card(osm_type: str, osm_id: int) -> dict:
     try:
         out = _card(f"{osm_type}/{osm_id}")
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
     if out is None:
         raise HTTPException(status_code=404, detail="the OpenStreetMap lane holds no such object")
     return out
@@ -157,7 +158,7 @@ def set_countries(payload: CountrySelection) -> dict:
     try:
         chosen = save_selection(payload.countries)
     except PickerError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
     return {"countries": chosen, "enabled": bool(chosen)}
 
 
