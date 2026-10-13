@@ -163,8 +163,8 @@ def hold_writes(timeout: float) -> Iterator[None]:
         with _hold:
             if _hold_by is not None:
                 raise RuntimeError("settings writes are already held")
+            held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
-            held = True
         with _hold:
             while _inflight:
                 left = deadline - time.monotonic()
@@ -175,7 +175,8 @@ def hold_writes(timeout: float) -> Iterator[None]:
     finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         if held:  # never clears another thread's hold (the "already held" refusal above)
             with _hold:
-                _hold_by = None
+                if _hold_by == me:  # held is set one statement before the hold: another thread may own it by now
+                    _hold_by = None
                 _hold.notify_all()
 
 
