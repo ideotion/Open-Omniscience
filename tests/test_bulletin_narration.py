@@ -139,7 +139,7 @@ def test_a_model_failure_degrades_to_the_template():
         backend="fake",
     )
     assert out["narrated"] is False
-    assert "backend down" in out["fallback_reason"]
+    assert out["fallback_reason"] == "the model call failed (RuntimeError)"
     assert out["text"] == deterministic_paragraph(_STORY)
 
 
@@ -167,7 +167,7 @@ def test_no_backend_degrades_whole_and_states_the_reason_once(monkeypatch):
     )
     out = narrate([_STORY, _STORY], lambda _s: _EVIDENCE)
     assert out["available"] is False
-    assert "nothing reachable" in out["reason"]
+    assert out["reason"] == "no local model is available (RuntimeError)"
     assert out["stories_narrated"] == 0
     assert all(p["text"] == deterministic_paragraph(_STORY) for p in out["paragraphs"])
 
@@ -181,7 +181,7 @@ def test_evidence_that_cannot_be_built_costs_one_story_not_the_run():
     other = dict(_STORY, article_ids=[3, 4])
     out = narrate([_STORY, other], _evidence, client=_Fake("Rescuers worked in Valencia."))
     assert out["paragraphs"][0]["narrated"] is False
-    assert "unreadable" in out["paragraphs"][0]["fallback_reason"]
+    assert out["paragraphs"][0]["fallback_reason"] == "evidence unavailable (RuntimeError)"
     assert out["paragraphs"][1]["narrated"] is True
 
 
@@ -382,6 +382,6 @@ def test_a_clustering_failure_leaves_the_record_intact(monkeypatch):
     )
     out = build_edition(s, resolve_period("weekly", end=date(2026, 8, 1)), narrate=True)
     assert out["masthead"]["articles"] == 0, "the deterministic record survives"
-    assert "clustering exploded" in out["stories"]["error"]
+    assert out["stories"]["error"] == "RuntimeError"
     assert out["narration"]["available"] is False
     assert edition_mod is not None

@@ -389,7 +389,7 @@ def test_one_failing_section_is_reported_in_place_and_the_rest_still_run(monkeyp
     )
     out = sections.build_sections(_session(), _period())
     failed = next(b for b in out if b["section"] == "by_topic_tag")
-    assert "topics exploded" in failed["error"]
+    assert failed["error"] == "RuntimeError", "the class, not the words (tests/test_bulletin_sink_sites.py)"
     assert len(out) == len(sections.SECTIONS), "a failing section is reported, never dropped"
 
 

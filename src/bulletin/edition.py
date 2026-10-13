@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from src.bulletin.period import Period
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -76,8 +77,8 @@ def build_edition(
         from src.bulletin.introduction import opening_block
 
         edition["introduction"] = opening_block(edition)
-    except Exception:  # noqa: BLE001 - the record survives a failed opening
-        _LOG.warning("bulletin: could not compose the opening paragraph", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the record survives a failed opening
+        log_failure(_LOG, "bulletin: could not compose the opening paragraph", exc, level=logging.WARNING)
 
     # The refusal is applied HERE rather than at the call site so exactly one place
     # composes the document's account of its own narration — the recorded defect was
@@ -115,8 +116,8 @@ def build_edition(
     try:
         stories = build_stories(session, period, limit=max_stories)
     except Exception as exc:  # noqa: BLE001 - the record survives a clustering failure
-        _LOG.warning("bulletin: story clustering failed", exc_info=True)
-        edition["stories"] = {"stories": [], "error": f"{type(exc).__name__}: {exc}"}
+        log_failure(_LOG, "bulletin: story clustering failed", exc, level=logging.WARNING)
+        edition["stories"] = {"stories": [], "error": type(exc).__name__}
         if narrate:
             edition["narration"] = {
                 "layer": "B",
@@ -139,8 +140,9 @@ def build_edition(
                 story["article_rows"] = article_rows(
                     session, list(story.get("article_ids") or []), limit=int(story_articles)
                 )
-            except Exception:  # noqa: BLE001
-                _LOG.debug("bulletin: could not describe a story's articles", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                if _LOG.isEnabledFor(logging.DEBUG):
+                    log_failure(_LOG, "bulletin: could not describe a story's articles", exc, level=logging.DEBUG)
 
     if not narrate:
         return edition
@@ -201,8 +203,8 @@ def _attribution(session, period: Period, edition: dict | None = None) -> tuple[
         # not a bulletin this app may write.
         raise
     except Exception as exc:  # noqa: BLE001 - the record survives a failed licence query
-        _LOG.warning("bulletin: could not compute the attribution lines", exc_info=True)
-        return attribution_dicts(card_signals), f"{type(exc).__name__}: {exc}"
+        log_failure(_LOG, "bulletin: could not compute the attribution lines", exc, level=logging.WARNING)
+        return attribution_dicts(card_signals), type(exc).__name__
 
 
 def attach_narration(edition: dict) -> dict:

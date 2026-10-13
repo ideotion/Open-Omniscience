@@ -53,6 +53,7 @@ from typing import Any
 
 from src.bulletin.articles import ARTICLE_CAVEAT, article_rows
 from src.bulletin.period import Period
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -157,10 +158,10 @@ def cards_by_type(
         # that carries one and never present in one that does not.
         cards, stats = run_all_bounded(session, deadline=deadline, as_of=period.end, lanes=True)
     except Exception as exc:  # noqa: BLE001 - the record survives the card layer
-        _LOG.warning("bulletin: the card layer failed", exc_info=True)
+        log_failure(_LOG, "bulletin: the card layer failed", exc, level=logging.WARNING)
         return {
             "section": "cards",
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
             # No producer ran, so nothing is known about anchoring. The MIXED wording
             # would claim a split that was never measured; this says the section
             # failed and stops.

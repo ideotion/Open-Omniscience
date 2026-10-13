@@ -28,8 +28,8 @@ neither diagnostic has any row for a producer that emitted nothing. That is this
 project's own recorded lesson — "AN AGGREGATION THAT OMITS ZERO-EVIDENCE ENTRIES
 MAKES 'ABSENT' READ AS 'PASSED'" — sitting live in the card path. The
 ``producer_inventory`` block below closes it: EVERY registered producer gets a row,
-with an outcome of ``ok`` / ``no-signal`` / ``error`` (and the exception type +
-message when it errored), so silence is never mistaken for health.
+with an outcome of ``ok`` / ``no-signal`` / ``error`` (and the exception type when it
+errored; its words are in the scrubbed log), so silence is never mistaken for health.
 
 THE SIX VALIDATION DIMENSIONS
 -----------------------------
@@ -90,9 +90,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 SCHEMA = "oo-card-audit-1"
+
+#: What a report row says where a failure's words would be. The words of a failed producer or section can quote the statement the
+#: database ran (a keyed open's driver error carries the passphrase), and the report rides the diagnostics bundle, so a row keeps
+#: the exception's CLASS and the words go to the scrubbed log line (``log_failure``), which is where a reader looks for them.
+_WORDS_NOT_KEPT = "the exception's words are not kept in this report (they can quote the database's statement); the log has them"
 
 #: Report depths. ``summary`` carries NO article content and is the only depth the
 #: all-diagnostics bundle ever uses; ``standard`` adds a bounded excerpt per
@@ -540,13 +547,15 @@ def observe_producers(session) -> list[ProducerOutcome]:
             with _wal_guard(session):
                 produced = producer(session) or []
         except Exception as exc:  # noqa: BLE001 - the point: capture, never abort
+            # ``name`` is a registered producer's name (the registry's literal tables), the code's own words
+            log_failure(_LOG, f"card_audit: producer {name!r} failed", exc, level=logging.WARNING)
             out.append(
                 ProducerOutcome(
                     name=name,
                     outcome="error",
                     elapsed_s=time.monotonic() - started,
                     error_type=type(exc).__name__,
-                    error_message=str(exc)[:500],
+                    error_message=_WORDS_NOT_KEPT,
                 )
             )
             _release_transaction(session)
@@ -642,10 +651,10 @@ def _safe_section(name: str, fn):
     except StatementTimeout:
         raise
     except Exception as exc:  # noqa: BLE001 - a failing section must not abort the report
-        _LOG.warning("card_audit: section %r failed", name, exc_info=True)
+        log_failure(_LOG, f"card_audit: section {name!r} failed", exc, level=logging.WARNING)
         return {
             "section_ok": False,
-            "error": f"{type(exc).__name__}: {exc}"[:400],
+            "error": type(exc).__name__,
             "note": f"the {name!r} section could not be computed; every other section is unaffected",
         }
 
@@ -1377,8 +1386,8 @@ def card_audit_report(
         from src.briefing.service import dismissed_ids
 
         dismissed = dismissed_ids()
-    except Exception:  # noqa: BLE001 - a dismissal file must never break the audit
-        _LOG.warning("card_audit: dismissed ids unreadable", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a dismissal file must never break the audit
+        log_failure(_LOG, "card_audit: dismissed ids unreadable", exc, level=logging.WARNING)
 
     from src.briefing.leads import cluster_by_article_ids, explain_order, is_major, order_key
 
@@ -1554,7 +1563,7 @@ def card_audit_report(
                 "warning and contributes [] — exactly what a producer with no signal "
                 "contributes, so a producer crashing on every run is indistinguishable from a "
                 "quiet one in every other card diagnostic. Here 'error' carries the exception "
-                "type and message; 'no-signal' means it ran cleanly and had nothing to say; "
+                "type (its words are in the scrubbed log, not in this report); 'no-signal' means it ran cleanly and had nothing to say; "
                 "'skipped-budget' means the statement budget was spent before it ran, so it "
                 "says nothing about the producer."
             ),
@@ -1927,7 +1936,7 @@ def last_card_audit_report() -> dict:
         d = _report_dir()
         files = sorted(d.glob("oo-card-audit-*.json"))
     except Exception as exc:  # noqa: BLE001 - a missing data dir is not an error here
-        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+        return {"available": False, "reason": f"the report folder could not be read ({type(exc).__name__})"}
     if not files:
         return {
             "available": False,
@@ -1941,7 +1950,18 @@ def last_card_audit_report() -> dict:
     try:
         payload = json.loads(newest.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - a corrupt saved file must degrade, not raise
-        return {"available": False, "reason": f"unreadable report {newest.name}: {exc}"}
+        return {"available": False, "reason": f"unreadable report {newest.name} ({type(exc).__name__})"}
+    inventory = {
+        k: v for k, v in (payload.get("producer_inventory") or {}).items()
+        if k in ("total", "outcome_tallies", "errored", "silent", "note")
+    }
+    if isinstance(inventory.get("errored"), list):
+        # A report saved by an older build carries the failure's own words in ``error_message`` (they can quote the
+        # database's statement, passphrase included); a report is read back whatever wrote it, so no row passes them on.
+        inventory["errored"] = [
+            {**row, "error_message": _WORDS_NOT_KEPT} if isinstance(row, dict) and row.get("error_message") else row
+            for row in inventory["errored"]
+        ]
     return {
         "available": True,
         "filename": newest.name,
@@ -1950,10 +1970,7 @@ def last_card_audit_report() -> dict:
         "generated_at": payload.get("generated_at"),
         "depth": payload.get("depth"),
         "parameters": payload.get("parameters"),
-        "producer_inventory": {
-            k: v for k, v in (payload.get("producer_inventory") or {}).items()
-            if k in ("total", "outcome_tallies", "errored", "silent", "note")
-        },
+        "producer_inventory": inventory,
         "validation_summary": payload.get("validation_summary"),
         "content_notice": payload.get("content_notice"),
         "method": payload.get("method"),

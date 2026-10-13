@@ -274,7 +274,7 @@ def test_a_failing_probe_reports_none_with_its_error_never_zero(monkeypatch):
     )
     d = facts.disclosures(_corpus(), _period())
     assert d["baseline_coverage"]["complete"] is None
-    assert "range unreadable" in d["baseline_coverage"]["error"]
+    assert d["baseline_coverage"]["error"] == "RuntimeError", "the class, not the words (tests/test_bulletin_sink_sites.py)"
     assert d["quarantined_in_period"] == 1, "the other probes still reported"
 
 
@@ -337,7 +337,7 @@ def test_one_failing_section_does_not_lose_the_edition(monkeypatch):
     )
     out = facts.layer_a(_corpus(), _period())
     assert out["masthead"]["articles"] == 7
-    assert "trending exploded" in out["sections"][0]["error"]
+    assert out["sections"][0]["error"] == "RuntimeError", "the class, not the words (tests/test_bulletin_sink_sites.py)"
 
 
 def test_no_score_shaped_field_anywhere_in_the_payload():

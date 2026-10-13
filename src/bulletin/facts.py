@@ -51,6 +51,7 @@ from sqlalchemy import and_, func
 from src.bulletin.period import Period, baseline_coverage, top_share
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Article, Source
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -294,9 +295,9 @@ def disclosures(session, period: Period) -> dict:
             or 0
         )
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: quarantine count failed", exc_info=True)
+        log_failure(_LOG, "bulletin: quarantine count failed", exc, level=logging.WARNING)
         out["quarantined_in_period"] = None
-        out["quarantined_error"] = str(exc)
+        out["quarantined_error"] = type(exc).__name__
 
     try:
         out["mentions_without_a_date"] = int(
@@ -306,23 +307,28 @@ def disclosures(session, period: Period) -> dict:
             or 0
         )
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: undated-mention count failed", exc_info=True)
+        log_failure(_LOG, "bulletin: undated-mention count failed", exc, level=logging.WARNING)
         out["mentions_without_a_date"] = None
-        out["mentions_without_a_date_error"] = str(exc)
+        out["mentions_without_a_date_error"] = type(exc).__name__
 
     try:
         from src.backup.merge import reindex_backlog
 
-        out["reindex_backlog"] = reindex_backlog()
+        backlog = reindex_backlog()
+        if isinstance(backlog, dict) and backlog.get("available") is False:
+            # ``reindex_backlog`` catches its own failure and puts the engine's (scrubbed) words in ``reason``, and logs them;
+            # this record keeps none of them
+            backlog = {**backlog, "reason": "the backlog could not be read"}
+        out["reindex_backlog"] = backlog
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: re-index backlog unreadable", exc_info=True)
-        out["reindex_backlog"] = {"available": False, "reason": str(exc)}
+        log_failure(_LOG, "bulletin: re-index backlog unreadable", exc, level=logging.WARNING)
+        out["reindex_backlog"] = {"available": False, "reason": f"the backlog could not be read ({type(exc).__name__})"}
 
     try:
         out["baseline_coverage"] = baseline_coverage(period, _corpus_earliest(session))
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("bulletin: baseline coverage failed", exc_info=True)
-        out["baseline_coverage"] = baseline_coverage(period, None) | {"error": str(exc)}
+        log_failure(_LOG, "bulletin: baseline coverage failed", exc, level=logging.WARNING)
+        out["baseline_coverage"] = baseline_coverage(period, None) | {"error": type(exc).__name__}
 
     out["method"] = (
         "each exclusion counted directly; a probe that cannot read reports None with "

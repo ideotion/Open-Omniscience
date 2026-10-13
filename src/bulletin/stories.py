@@ -35,6 +35,7 @@ from src.bulletin.period import Period
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Article, Keyword, Source
 from src.database.stand_in import not_a_stand_in_article_id
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -296,8 +297,8 @@ def story_evidence(session, article_ids: list[int], *, budget_chars: int) -> dic
             continue
         try:
             text = (art.get_content() or "").strip()
-        except Exception:  # noqa: BLE001 - one unreadable article never loses the story
-            _LOG.warning("bulletin: article %s unreadable for narration", aid, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one unreadable article never loses the story
+            log_failure(_LOG, f"bulletin: article {aid} unreadable for narration", exc, level=logging.WARNING)
             continue
         take = text[:per]
         used += len(take)

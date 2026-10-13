@@ -231,5 +231,6 @@ def test_a_failed_source_query_still_leaves_the_card_credit_and_says_it_failed(m
 
     monkeypatch.setattr(EV, "period_source_rows", boom)
     lines, err = E._attribution(None, None, _LANE_EDITION)
-    assert [x["key"] for x in lines] == ["openstreetmap"] and "statement deadline" in err
-    assert E._attribution(None, None, {"sections": []}) == ([], "RuntimeError: statement deadline")
+    # The edition keeps the failure's class and none of its words (they are in the scrubbed log line).
+    assert [x["key"] for x in lines] == ["openstreetmap"] and err == "RuntimeError"
+    assert E._attribution(None, None, {"sections": []}) == ([], "RuntimeError")

@@ -420,8 +420,10 @@ def test_a_crashing_gpu_probe_refuses_with_the_failure_NAMED_never_a_fake_no_gpu
     monkeypatch.setattr(B, "detect_apple_silicon", lambda: _NOT_APPLE)
     cap = B.inference_capability()
     assert cap["practical"] is False
-    assert "GPU probe failed" in cap["reason"]
-    assert "nvidia-smi exploded" in cap["reason"]
+    # The failure is NAMED by its class: the reason rides the capability dict into the edition's gate record, the backup and the
+    # diagnostics bundle, so its own words are in the scrubbed log line instead (tests/test_bulletin_sink_sites_rest.py).
+    assert "GPU probe failed (RuntimeError)" in cap["reason"]
+    assert "nvidia-smi exploded" not in cap["reason"]
 
 
 def test_a_timing_out_nvidia_smi_is_reported_as_a_timeout(monkeypatch):
@@ -442,7 +444,7 @@ def test_a_crashing_platform_probe_degrades_instead_of_raising(monkeypatch):
     monkeypatch.setattr(B.platform, "system", _boom)
     r = B.detect_apple_silicon()
     assert r["available"] is False
-    assert "platform probe failed" in r["reason"]
+    assert r["reason"] == "platform probe failed (OSError)"
 
     monkeypatch.setattr(B, "detect_gpu", lambda: _NO_GPU)
     assert B.inference_capability()["practical"] is False  # never raises
