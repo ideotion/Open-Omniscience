@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,database,Sink sweep 5/n slice 3: the records guard reads src/database,shipped,PR #1384,tests/test_sink_sweep_records.py;src/database/fts_norm.py,"The strict records guard now reads src/database (repair.py joins with the WAL thread's PR): the damage lane's classifiers and walks are counted line by line, the stored records were already class-only by design (failure_label/failure_text/corruption_of), so no stored text changed; the segmenter fallback word reads cleanly."
