@@ -111,3 +111,20 @@ stopwords:
   - uno
   - voi
   - è
+  # batch it-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - alcun
+  - alcune
+  - all'11
+  - anzi
+  - attualita'
+  - dell'
+  - dell'11
+  - dell'8
+  - dieci
+  - entro
+  - mese
+  - mille
+  - molte
+  - ovvero
+  - presso
+  - quei

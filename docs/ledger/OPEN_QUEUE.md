@@ -16490,6 +16490,15 @@ take part in story grouping; and `articles_in_period` counts every article of th
 
 **FOR THE T5 LAYOUT WORK (found by the coordinator's check of #1341, 2026-10-12):** `ring_country_split` and `ring_country_article_ids` now return a caveat that says every keyword of a ring is hidden by the stoplist or the user's exclusions (`queries._empty_ring_caveat`), but the concept map never shows it: an empty split draws "No located sources for this concept yet." The caveat is an f-string with a count, so whoever renders it needs a `tf` template (×12 locales), not the raw English string. Until then the wording is reachable only through the API.
 
+**T5 IS BACK (R131, the maintainer's card tap 2026-10-13 01:45 UTC: «Go now» on question 39, "Start the remaining keyword cleanup (T5) for more languages?"; supersedes the 2026-10-01 pause of the T5 batches and the T5 layout PR).**
+Order: the stoplist batches first, ONE LANGUAGE GROUP PER PR, then the layout PR (the "all hidden" ring caveat as a `tf` template ×12, and the coordinator's marker brief for the converter). Each PR gets one independent read of its
+diff before it is marked ready; one PR on the branch at a time, the next batch waits as a bundle in the pool folder. **Group 1 (de fr es it pt nl sv da ca nb, 309 words, #1352) is the first.** Method for every group, as measured on it:
+(1) rebuild the merged log (`/mnt/project-files/keyword-session/t5-group1-2026-10-13/combine_logs.py`) so the tool's cross-language check sees every shard; (2) run `stopword_batch.py` without `--apply`; (3) READ every
+word that carries "also read in articles tagged ..." against what you know of those languages and leave out any with a content sense there (the tool cannot: a log row has one language); (4) leave out the `lng` words and the
+mojibake fragments, by the batch 1 ruling; (5) `--apply`, strip the model names the tool writes into the batch comment (no model names in anything pushed), declare the words and their curly spellings in
+`test_analytics_extract.py`, write the PROVENANCE section. **Left for groups 2 onward:** the Slavic and Greek group (ru uk pl cs sk sl sr bg el, mostly readable), the Asian group (ja ko zh id ms vi tl, where the `bp` and mojibake
+codes dominate and the reading is "partial"), and the single-reader languages (am eu fo gl ha kk mk rw sw), which carry the `single_reader` flag and want a second look before they ship.
+
 - **DAMAGED DATABASE, SLICE E2: WHAT THE CHECK AFTER AN UNEXPECTED STOP DOES NOT DO, AND THE DEFAULTS TAKEN (WAL / DISK THREAD, 2026-10-06; the
   plan is `/mnt/project-files/wal-disk-pool/PLAN-damaged-database.md`; QUESTION 26 (check the library before collecting again, a at start-up while
   offline / b in the background) WAS ANSWERED a (`R120`, 2026-10-06): the check runs at start-up while the app is still offline; `OO_BOOT_VERIFY=0` turns it off).** (a) The check is `PRAGMA quick_check(<table>)` per table: it reads the structure of each table and
