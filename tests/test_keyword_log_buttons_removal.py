@@ -20,10 +20,12 @@ it states the one thing the digest does NOT carry, so the removal is not read as
 
 WHERE THE DIGEST DOES NOT RUN this proves nothing, and the texts that rely on it say "when the build ran it":
 a Quick build on a large corpus can leave it out for time (``skipped-budget`` in the scan table,
-``tests/test_diagnostics_modes.py``) and a machine without the memory declines it (``declined-ram``,
-``ram_declined_reason``, ``tests/test_keyword_export_bounded.py``). There
-"All keywords" is the way to the keywords. Thorough undoes the first (it runs every scan) and not the second:
-the memory gate declines the digest on Thorough too, unless ``OO_ALLOW_BIG_SCANS=1`` is set.
+``tests/test_diagnostics_modes.py``), it can run past its own member time limit (``skipped-deadline``, the
+time the Quick budget had left or ``OO_ALL_DIAG_DB_MEMBER_DEADLINE_S``), and a machine without the memory
+declines it (``declined-ram``, ``ram_declined_reason``, ``tests/test_keyword_export_bounded.py``). There
+"All keywords" is the way to the keywords. Thorough undoes the first (it runs every scan) and not the memory
+gate, which declines the digest on Thorough too, unless ``OO_ALLOW_BIG_SCANS=1`` is set; the time limit
+applies on Thorough as well.
 
 No fixed number is asserted that the code does not state itself: the sample size is ``_DIGEST_SAMPLE``, and
 the window the digest uses is the constant the module states (patched small here for the corpus whose
@@ -211,8 +213,21 @@ def test_the_two_descriptions_that_differ_say_how_the_file_was_made(name, corpus
     digest = _digest(db)
     db.close()
     # method: the export's text, then the digest's own sentence naming the sample and the count of the rest.
-    assert digest["method"].startswith(log["method"])
-    tail = digest["method"][len(log["method"]) :]
+    # The window clause in front says how each file was made, so it may differ (the removed button's zip had
+    # the 9 MB attachment cap and says a cap may trim; the digest has none and holds every keyword of a
+    # language that fits the window); everything after it is the same text.
+    window_clause = re.compile(r"^All gathered keywords \((.*?); the quota is PER dominant signature language")
+    log_window, digest_window = (window_clause.match(m).group(1) for m in (log["method"], digest["method"]))
+    cap_clause = "; the byte cap may trim the lowest-mention entries of every language"
+    if name == "beyond-the-window":
+        assert digest_window == f"top {window:,}"
+        assert log_window.startswith(f"top {window:,}{cap_clause}")
+    else:
+        assert digest_window.startswith("every keyword, the largest language holds ")
+        assert log_window.startswith("no language exceeds the window, the largest holds ") and cap_clause in log_window
+    rest = log["method"].split("; the quota is PER", 1)[1]
+    assert digest["method"].split("; the quota is PER", 1)[1].startswith(rest)
+    tail = digest["method"].split("; the quota is PER", 1)[1][len(rest) :]
     assert "DIGEST MODE" in tail and f"top {_DIGEST_SAMPLE} keywords by mentions" in tail
     assert "keywords_digest" in tail
     # families_provenance: the same measured facts, the digest adding that its list is not a sample to reason from.
@@ -257,7 +272,6 @@ def test_the_per_keyword_list_is_a_labelled_top_sample_of_the_entries_the_log_he
         assert log_summary["corpus"]["capped_languages"] and len(entries) < corpus_total
     else:
         assert not log_summary["corpus"]["capped_languages"] and len(entries) == corpus_total
-    assert digest["corpus"]["keywords_total"] == corpus_total
     # Each is the log's own entry (same term, counts, dates, language signature), not a rewrite.
     by_key = {(e["language"], e["normalized"], e["kind"]): e for e in entries}
     assert len(by_key) == len(entries)
@@ -284,6 +298,17 @@ def _parts_in_order(data_dir: Path, listing: dict) -> list[tuple[str, int, int, 
     return out
 
 
+def _set_summary(data_dir: Path, listing: dict) -> dict:
+    """The ``summary.json`` ``data`` a numbered set carries (in one of its files)."""
+    for f in listing["files"]:
+        if f["kind"] != "part":
+            continue
+        with zipfile.ZipFile(data_dir / listing["set"] / f["name"]) as z:
+            if "summary.json" in z.namelist():
+                return json.loads(z.read("summary.json"))["data"]
+    raise AssertionError("the numbered set carries no summary.json")
+
+
 def _per_language(parts) -> dict[str, list[dict]]:
     """The entries of ``parts`` per language, in the order the files meet them."""
     out: dict[str, list[dict]] = {}
@@ -302,9 +327,10 @@ def test_all_keywords_begins_with_the_entries_the_removed_button_gave(corpus, da
     window = 40
     monkeypatch.setattr(kle, "PARTS_ROUND_RECORDS", window)
     db = _session(corpus["larger"])
-    log_parts = _parts_in_order(data_dir, json.loads(_log(db, fmt="parts", per_lang=window).body))
-    all_parts = _parts_in_order(data_dir, json.loads(_log(db, fmt="parts", per_lang=1_000_000_000, max_mb=0).body))
+    log_listing = json.loads(_log(db, fmt="parts", per_lang=window).body)
+    all_listing = json.loads(_log(db, fmt="parts", per_lang=1_000_000_000, max_mb=0).body)
     db.close()
+    log_parts, all_parts = _parts_in_order(data_dir, log_listing), _parts_in_order(data_dir, all_listing)
     # the removed button's set is one round: every slice starts inside the window
     assert log_parts and all(f < window and t <= window for _l, f, t, _e in log_parts)
     # ...All keywords is several: the files meet round one first (in NUMBER order, not re-sorted here), and the
@@ -313,12 +339,62 @@ def test_all_keywords_begins_with_the_entries_the_removed_button_gave(corpus, da
     assert rounds == sorted(rounds), "a record of round two is met before the last of round one"
     assert max(rounds) >= 1, "the all-keywords set must go beyond the window"
     round_one = [part for part in all_parts if part[1] < window]
-    assert round_one == all_parts[: len(round_one)]
     log_set, first_round = _per_language(log_parts), _per_language(round_one)
     assert set(log_set) == set(first_round)
     for lang, entries in log_set.items():
-        assert len(entries) <= window
         assert first_round[lang][: len(entries)] == entries, f"{lang}: the first files of All keywords differ"
+    # ...and the SUMMARY is the part that is not the same, as the docstring says: the window's set cut the
+    # languages that exceed it and says so, the all-keywords set cut none and says that it holds every
+    # keyword (so its summary is not read as the window's).
+    window_summary, all_summary = _set_summary(data_dir, log_listing), _set_summary(data_dir, all_listing)
+    assert window_summary["corpus"]["capped_languages"], "the window must cut a language for this to mean anything"
+    assert window_summary["corpus"]["keywords_exported"] < window_summary["corpus"]["keywords_total"]
+    assert f"top {window}" in window_summary["method"]
+    assert all_summary["corpus"]["capped_languages"] == []
+    assert all_summary["corpus"]["keywords_exported"] == all_summary["corpus"]["keywords_total"]
+    assert all_summary["corpus"]["keywords_total"] == window_summary["corpus"]["keywords_total"]
+    assert "(every keyword, the largest language holds " in all_summary["method"]
+    assert f"top {_MAX_KEYWORDS_PER_LANG:,}" not in all_summary["method"]
+
+
+def test_a_later_page_names_the_ranks_it_holds_not_a_top(corpus, data_dir):
+    """Page two of a window holds ranks 41 to 80 of each language: a summary that said "top 40" over it
+    would describe the first page's files."""
+    db = _session(corpus["larger"])
+    files = _zip(_log(db, per_lang=40, page=2, max_mb=0))
+    summary = json.loads(files["summary.json"])["data"]
+    assert summary["corpus"]["exported_per_language"], "page two must hold something for this to mean anything"
+    assert "(ranks 41 to 80, page 2; the quota is PER dominant signature language" in summary["method"]
+    assert "top 40" not in summary["method"] and "byte cap" not in summary["method"], "max_mb=0 is no cap"
+    # ...and under the 9 MB default cap the same page says the cap may trim it
+    files = _zip(_log(db, per_lang=40, page=2))
+    assert "(ranks 41 to 80, page 2; the byte cap may trim" in json.loads(files["summary.json"])["data"]["method"]
+    db.close()
+
+
+@pytest.mark.parametrize("fmt", ["zip", "parts"])
+def test_a_summary_does_not_claim_every_keyword_where_the_byte_cap_trimmed_the_files(fmt, corpus, data_dir):
+    """No language reaches the window, so the window cuts nothing, but the attachment cap (the 9 MB default
+    of a zip or parts build, made small here) then drops the lowest-mention entries of every language AFTER the
+    summary's text is fixed: that text must state the window and the cap, not "every keyword" over files that
+    hold fewer (the files and the manifest count what was omitted)."""
+    db = _session(corpus["larger"])
+    resp = _log(db, fmt=fmt, per_lang=1_000_000, max_mb=0.03)
+    if fmt == "zip":
+        files = _zip(resp)
+        summary = json.loads(files["summary.json"])["data"]
+        held = sum(len(json.loads(files[n])["keywords"]) for n in files if n.startswith("keywords/"))
+    else:
+        listing = json.loads(resp.body)
+        summary = _set_summary(data_dir, listing)
+        held = sum(len(e) for _l, _f, _t, e in _parts_in_order(data_dir, listing))
+    db.close()
+    total = summary["corpus"]["keywords_total"]
+    assert not summary["corpus"]["capped_languages"], "the window must cut nothing for this to be the byte cap's doing"
+    assert held < total, "the cap must have trimmed for this to mean anything"
+    assert "every keyword" not in summary["method"]
+    assert "no language exceeds the window" in summary["method"] and "byte cap may trim" in summary["method"]
+    assert "keywords_omitted_to_fit in the export manifest" in summary["method"]
 
 
 # --------------------------------------------------------------------------- low memory (R130 = 36a)
@@ -372,6 +448,9 @@ def test_the_panel_keeps_one_text_link_and_the_routes_stay():
     # ...and says the digest is there WHEN THE BUILD RAN IT (the evidence calls the route; the build's Quick
     # budget and its memory gate sit in front of it), never that it always is.
     assert "when the build ran it" in button.group(1)
+    # The three ways the build leaves it out (the Quick time, its own time limit, the memory) are the three the
+    # hover names; a fourth reason would have to be added here and in the 12 locales together.
+    assert "did not fit the Quick time, its own time limit or the memory" in button.group(1)
     # The routes the buttons called stay (R123: "the routes stay"), and so does the routine and its whitelist entry.
     for module in ("keyword_parts", "keywords"):  # importing a module registers its routes
         importlib.import_module(f"src.api.diagnostics.{module}")
@@ -383,3 +462,52 @@ def test_the_panel_keeps_one_text_link_and_the_routes_stay():
     js = (_STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
     assert "/api/diagnostics/keywords?format=parts" in js and "/api/diagnostics/keywords/parts/latest" in js
     assert '"downloadKeywordParts"' in (_STATIC / "oo-on.js").read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- the keys nothing renders any more
+
+#: The beginnings of the locale keys of the keyword-log buttons and hovers (this PR's two labels and their
+#: hover texts, and the same buttons' earlier 1 MB wordings, "Download ... (.zip/.json)" labels and hover
+#: texts that earlier Diagnostics PRs left behind), the "All diagnostics" labels and the status lines that
+#: named them, the 1 MB hover of the All keywords link and the parts-ready line with the old size slot, plus
+#: two Diagnostics hover texts no control carries since the button is one. Each was grepped across ``src``
+#: before it went: no source renders it.
+_ORPHAN_KEY_PREFIXES = (
+    "All diagnostics (1 MB files)",
+    "All diagnostics, again (last build, 1 MB files)",
+    "All keywords (.zip)",
+    "All keywords (1 MB files)",
+    "Download ALL keywords (.zip)",
+    "Download keyword log (.json)",
+    "Download keyword log (.zip)",
+    "Every diagnostics log in one archive — one click instead of nine.",
+    "Every diagnostics log, built as a BACKGROUND job",
+    "Every keyword in the corpus (not just the top 5000 per language), as numbered .zip files of at most 1 MB each",
+    "Keyword log (1 MB files)",
+    "Keyword log (4 MB files)",
+    "Last keyword files, again",
+    "No archive to split yet \u2014 build one with the All diagnostics button first.",
+    "The archive is ready. Press \u201cAll diagnostics, again\u201d to save it as numbered files.",
+    "{n} files of at most 1 MB each are ready",
+    "Saves the diagnostics archive built last as numbered .zip files of at most 1 MB each, again",
+    "Saves the numbered keyword files built last time again",
+    "The top 5,000 keywords per language, as numbered .zip files of at most 1 MB each (about ten files",
+    "The top 5,000 keywords per language, as numbered .zip files of at most 4 MB each, five to a click",
+)
+
+
+def test_the_locale_keys_of_the_removed_buttons_are_gone_and_nothing_renders_them():
+    """Removing a control removes its keys: a key left in the 12 locales is a reviewed translation nothing
+    shows (and, for the old Diagnostics hover, an unconditional claim about the digest that the live text
+    no longer makes). The precedent is ``test_clickthrough_b14_fixes.py``'s orphan-key test."""
+    locales = sorted((_STATIC / "locales").glob("*.json"))
+    assert len(locales) == 12
+    for path in locales:
+        keys = json.loads(path.read_text(encoding="utf-8")).keys()
+        for prefix in _ORPHAN_KEY_PREFIXES:
+            left = [k for k in keys if k.startswith(prefix)]
+            assert not left, f"{path.stem}.json still carries the orphan key {left[0][:80]!r}"
+    for path in [*_STATIC.rglob("*.js"), *_STATIC.rglob("*.html")]:
+        src = path.read_text(encoding="utf-8")
+        for prefix in _ORPHAN_KEY_PREFIXES:
+            assert prefix not in src, f"{path.relative_to(_STATIC)} renders {prefix!r}, so it was not an orphan"

@@ -470,8 +470,8 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(refused).__name__,
-                msg=exception_text(refused, passphrase, typed=False, limit=2000),
-                traceback=traceback_text(refused, passphrase)[-8000:],
+                msg=exception_text(refused, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                traceback=traceback_text(refused, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(refused).__name__)
             with self._lock:
@@ -483,8 +483,8 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=exception_text(exc, passphrase, typed=False, limit=2000),
-                traceback=traceback_text(exc, passphrase)[-8000:],
+                msg=exception_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                traceback=traceback_text(exc, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
@@ -1004,8 +1004,8 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=2000),
-                traceback=traceback_text(exc, passphrase, corpus_passphrase)[-8000:],
+                msg=exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                traceback=traceback_text(exc, passphrase, corpus_passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:

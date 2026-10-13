@@ -304,3 +304,64 @@ def test_a_run_given_secrets_scrubs_them_and_never_writes_them_to_the_header(tmp
         raise _quoting(_PW)
     journal = "\n".join(p.read_text(encoding="utf-8") for p in Path(runlog.run_logs_dir()).glob("*.jsonl"))
     assert "driver said" in journal and not _leaks(journal, _PW)
+
+
+# ---------------------------------------------------------------------------------------------- #
+#  the cuts are the stated ones, at every site
+# ---------------------------------------------------------------------------------------------- #
+def _journalled_error() -> dict:
+    """The one ``error`` milestone the run journals hold."""
+    rows = [
+        json.loads(line)
+        for p in runlog.run_logs_dir().glob("*.jsonl")
+        if not p.name.endswith(".beat.jsonl")
+        for line in p.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    errors = [r for r in rows if r.get("ev") == "error"]
+    assert len(errors) == 1, [p.name for p in runlog.run_logs_dir().glob('*')]
+    return errors[0]
+
+
+def test_the_volume_job_cuts_a_failure_at_the_stated_numbers_not_at_literals_of_its_own(tmp_path, monkeypatch):
+    """The cuts were literals (2000, 8000) beside the constants that state what they protect; a number
+    that stays says what it protects, so the job's journal lines follow the constants. The constants are
+    made small here: a literal left in the job would keep its old length and fail these bounds, and the
+    message and the traceback are each long enough to be cut, so the bounds are met by cutting."""
+    from src.backup.newsletter_export import MESSAGE_SPACE, NewsletterFilterRefused
+
+    monkeypatch.setattr(runlog, "FAILURE_MSG_KEEP", 120)
+    monkeypatch.setattr(runlog, "FAILURE_TRACEBACK_KEEP", 300)
+    long_text = "driver said: " + "q" * 400
+
+    def fail(*_a, **_k):
+        raise RuntimeError(long_text)
+
+    def refuse(*_a, **_k):
+        # the refusal carries the server's own fixed sentence (its text argument is not served), which is
+        # longer than the message cut: the case means something only while that stays true
+        raise NewsletterFilterRefused(long_text, space=True)
+
+    assert len(MESSAGE_SPACE) > 120, "the newsletter-free case no longer has a message longer than the cut"
+    # (name, how it is run, the bound on the error the job SERVES: the refusal is served whole by design)
+    cases = {
+        "backup": (lambda m: m._run_backup(tmp_path / "drive", _PW, True, 0.1, [], False, fail), 120),
+        "newsletter-free backup": (
+            lambda m: m._run_backup(tmp_path / "drive", "newsletters", True, 0.1, [], False, refuse),
+            None,
+        ),
+        "restore": (lambda m: m._run_restore(tmp_path / "set", _PW, False, _CORPUS_PW, fail), 120),
+    }
+    for name, (run, served_bound) in cases.items():
+        for p in runlog.run_logs_dir().glob("*.jsonl"):
+            p.unlink()
+        mgr = VolumeBackupManager()
+        run(mgr)
+        err = _journalled_error()
+        assert 0 < len(err["msg"]) <= 120, f"{name}: the message is not cut at FAILURE_MSG_KEEP ({len(err['msg'])})"
+        assert 0 < len(err["traceback"]) <= 300, f"{name}: the traceback is not cut at FAILURE_TRACEBACK_KEEP"
+        served = mgr.status().get("error") or ""
+        if served_bound is None:
+            assert served == MESSAGE_SPACE, f"{name}: the refusal is served whole"
+        else:
+            assert 0 < len(served) <= served_bound, f"{name}: the served error is not cut at FAILURE_MSG_KEEP"

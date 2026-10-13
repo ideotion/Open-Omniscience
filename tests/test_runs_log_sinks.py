@@ -896,28 +896,42 @@ _SLOT_PRODUCER_SCRUBS = {
     "src/database/damage.py": {"failure_label", "note_raw_driver_error"},
     "src/monitoring/boots.py": {"_error_text"},
 }
-#: A line the guard reports in these modules that is not a leak, with why. A table entry that no longer matches a hit fails below.
-_SLOT_PRODUCER_ALLOWED = {
-    ("src/monitoring/session_hwm.py", "read = getattr(pool, name, None)"): (
-        "reads a counter off the connection pool by a name from the module's own tuple of counter names, not a log method"
+#: A line the guard reports in these modules that is not a leak, with why. Keyed like :data:`_BUNDLE_ALLOWED`: by (the module, the
+#: function the line stands in, the line's text) with the NUMBER of hits it excuses. The same text copied into another function (a raw
+#: use dressed as an allowed line), or a second use in the same one, is reported, and so is an allowance that no longer matches a hit
+#: or matches fewer than it counts: the table cannot outlive the code it excuses.
+_SLOT_PRODUCER_ALLOWED: dict[tuple[str, str, str], tuple[int, str]] = {
+    ("src/monitoring/session_hwm.py", "_holders_view", "read = getattr(pool, name, None)"): (
+        1,
+        "reads a counter off the connection pool by a name from the module's own tuple of counter names, not a log method",
     ),
 }
 
 
-def _slot_producer_hits(rel: str, source: str) -> list[tuple[str, str]]:
+def _slot_producer_hits(rel: str, source: str) -> dict[tuple[str, str], list[str]]:
+    """The hits of the guard on one slot producer, grouped by (the function they stand in, the text of their line)."""
     lines = source.splitlines()
-    got = []
+    owner = _qualified_names(ast.parse(source))
+    out: dict[tuple[str, str], list[str]] = {}
     for hit in _leaks(source, also_scrubbing=_SLOT_PRODUCER_SCRUBS.get(rel, set())):
-        text = lines[int(hit.split(":", 1)[0]) - 1].strip()
-        if (rel, text) not in _SLOT_PRODUCER_ALLOWED:
-            got.append((text, hit))
-    return got
+        number = int(hit.split(":", 1)[0])
+        out.setdefault((owner.get(number, "<module>"), lines[number - 1].strip()), []).append(hit)
+    return out
+
+
+def _slot_producer_not_excused(rel: str, got: dict[tuple[str, str], list[str]]) -> dict[tuple[str, str], list[str]]:
+    """The hits the table does not excuse: a line it does not name in that function of that module, or more hits than it counts."""
+    return {
+        k: v
+        for k, v in got.items()
+        if (rel, *k) not in _SLOT_PRODUCER_ALLOWED or len(v) > _SLOT_PRODUCER_ALLOWED[(rel, *k)][0]
+    }
 
 
 @pytest.mark.parametrize("rel", _SLOT_PRODUCER_MODULES)
 def test_the_slot_producers_log_no_traceback_and_print_no_caught_exception_raw(rel):
     source = (ROOT / rel).read_text(encoding="utf-8")
-    assert _slot_producer_hits(rel, source) == [], rel
+    assert _slot_producer_not_excused(rel, _slot_producer_hits(rel, source)) == {}, rel
 
 
 @pytest.mark.parametrize("rel", _SLOT_PRODUCER_MODULES)
@@ -927,18 +941,42 @@ def test_a_raw_use_planted_in_a_slot_producer_is_reported(rel):
         "\n\ndef _planted():\n    try:\n        go()\n    except OSError as exc:\n        return {'error': str(exc)}\n",
         "\n\ndef _planted():\n    _LOG.debug('x', exc_info=True)\n",
     ):
-        assert _slot_producer_hits(rel, source + planted), rel
+        assert _slot_producer_not_excused(rel, _slot_producer_hits(rel, source + planted)), rel
 
 
-def test_every_allowance_for_a_slot_producer_still_stands_where_it_is_written():
-    stale = []
-    for (rel, text), _why in _SLOT_PRODUCER_ALLOWED.items():
-        source = (ROOT / rel).read_text(encoding="utf-8")
-        lines = source.splitlines()
-        hits = [lines[int(h.split(":", 1)[0]) - 1].strip() for h in _leaks(source, also_scrubbing=_SLOT_PRODUCER_SCRUBS.get(rel, set()))]
-        if text not in hits:
-            stale.append((rel, text))
-    assert stale == [], "an allowance that matches no hit any more"
+def test_every_allowance_for_a_slot_producer_still_stands_where_it_is_written_as_often_as_it_is_counted():
+    stale = {}
+    for (rel, fn, text), (count, _why) in _SLOT_PRODUCER_ALLOWED.items():
+        found = len(_slot_producer_hits(rel, (ROOT / rel).read_text(encoding="utf-8")).get((fn, text), []))
+        if found != count:
+            stale[(rel, fn, text)] = (count, found)
+    assert stale == {}, "an allowance that no longer matches the code: (counted, found)"
+
+
+def test_an_allowed_slot_producer_line_copied_into_another_function_or_used_twice_is_still_reported():
+    """The table excuses a line where it stands, as often as it counts: not wherever its text appears (a raw use dressed as the
+    allowed line), and not a second time in the function that is allowed one."""
+    (rel, fn, line), (count, _why) = next(iter(_SLOT_PRODUCER_ALLOWED.items()))
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    assert count == 1 and source.count(line) == 1, "the case below doubles a line the table counts once"
+    # the text is allowed, the function is not
+    planted = source + f"\n\ndef _planted(pool, name):\n    {line}\n"
+    got = _slot_producer_hits(rel, planted)
+    assert ("_planted", line) in got and _slot_producer_not_excused(rel, got) == {("_planted", line): got[("_planted", line)]}
+    # the function is allowed, a second use of the text in it is not
+    at = source.index(line)
+    indent = source[source.rindex("\n", 0, at) + 1 : at]
+    doubled = source.replace(line, line + "\n" + indent + line, 1)
+    got = _slot_producer_hits(rel, doubled)
+    assert len(got[(fn, line)]) == 2 and _slot_producer_not_excused(rel, got) == {(fn, line): got[(fn, line)]}
+    assert _slot_producer_not_excused(rel, _slot_producer_hits(rel, source)) == {}
+    # the line MOVED into a method of another class that has the allowed function's name is not the allowed place
+    start = source.rindex("\n", 0, at) + 1
+    moved = source.replace(source[start : at + len(line)], f"{indent}pass", 1)
+    moved += f"\n\nclass _Elsewhere:\n    def {fn}(self, pool, name):\n        {line}\n"
+    got = _slot_producer_hits(rel, moved)
+    assert (f"_Elsewhere.{fn}", line) in got
+    assert _slot_producer_not_excused(rel, got) == {(f"_Elsewhere.{fn}", line): got[(f"_Elsewhere.{fn}", line)]}
 
 
 def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
@@ -951,7 +989,9 @@ def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
 
 
 def _qualified_names(tree: ast.AST) -> dict[int, str]:
-    """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``)."""
+    """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``,
+    ``Class.method``): a class is part of the name, so a method of another class that happens to share a
+    function's name is a different owner."""
     owner: dict[int, str] = {}
 
     def walk(node: ast.AST, prefix: str) -> None:
@@ -961,6 +1001,8 @@ def _qualified_names(tree: ast.AST) -> dict[int, str]:
                 for line in range(child.lineno, (child.end_lineno or child.lineno) + 1):
                     owner[line] = name
                 walk(child, name)
+            elif isinstance(child, ast.ClassDef):
+                walk(child, f"{prefix}.{child.name}" if prefix else child.name)
             else:
                 walk(child, prefix)
 

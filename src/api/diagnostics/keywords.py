@@ -880,8 +880,27 @@ def keyword_log(
             # operator hid are exactly what grouping fixes need to see — flag, not omit.
             is_hidden = q._hidden_predicate()
 
+            # The window, said as it was built (the digest's is the module's own constant, an
+            # archive's the one it was asked for or clamped to). A file set that cut no language and
+            # has no byte cap holds every keyword, and its summary.json must not say "top 5,000"
+            # over all of them; one WITH a byte cap may still be trimmed after this text is fixed
+            # (the lowest-mention entries of every language), so it states the window, not the whole.
+            largest = max(per_lang_seen.values(), default=0)
+            if lo == 0 and not capped_langs and max_bytes is None:
+                window_text = f"every keyword, the largest language holds {largest:,}"
+            elif lo == 0 and not capped_langs:
+                window_text = f"no language exceeds the window, the largest holds {largest:,}"
+            elif lo == 0:
+                window_text = f"top {hi:,}"
+            else:
+                window_text = f"ranks {lo + 1:,} to {hi:,}, page {page}"
+            if max_bytes is not None:
+                window_text += (
+                    "; the byte cap may trim the lowest-mention entries of every language, and "
+                    "keywords_omitted_to_fit in the export manifest says how many"
+                )
             method = (
-                f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
+                f"All gathered keywords ({window_text}; the quota is PER dominant signature "
                 "language — a global cap would anglicise the export) with real "
                 "counts; language_signature = distinct articles per ARTICLE language "
                 "(the trans-language disambiguation evidence); language_mismatch flags a "
