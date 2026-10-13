@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ def _check_host_robots(fetcher, host: str) -> dict:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - one host must not stop the sweep
         rec["robots"] = "unreachable"
-        rec["error"] = str(exc)[:200]
+        rec["error"] = exception_text(exc, limit=200, typed=False)
     return rec
 
 
@@ -127,8 +128,8 @@ def _feed_targets() -> tuple[list[dict], list[dict]]:
                     "host": urlparse(f.url).netloc,
                 }
             )
-    except Exception:  # noqa: BLE001
-        _LOG.warning("market feed catalog unavailable for preflight", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "market feed catalog unavailable for preflight", exc, level=logging.WARNING)
     calendar = []
     try:
         from src.events.feeds import load_families
@@ -143,8 +144,8 @@ def _feed_targets() -> tuple[list[dict], list[dict]]:
                         "host": urlparse(fd["url"]).netloc,
                     }
                 )
-    except Exception:  # noqa: BLE001
-        _LOG.warning("calendar catalog unavailable for preflight", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "calendar catalog unavailable for preflight", exc, level=logging.WARNING)
     return market, calendar
 
 
@@ -217,7 +218,7 @@ def run_feed_preflight(
             records.append({**t, **verdict})
             calendar_checked += 1
         except Exception as exc:  # noqa: BLE001
-            records.append({**t, "status": "error", "error": str(exc)[:200]})
+            records.append({**t, "status": "error", "error": exception_text(exc, limit=200, typed=False)})
 
     market_checked = 0
     if progress is not None:
@@ -237,7 +238,7 @@ def run_feed_preflight(
             rec["bytes"] = len(body.encode("utf-8", "ignore"))
         except Exception as exc:  # noqa: BLE001
             rec["status"] = "unreachable"
-            rec["error"] = str(exc)[:200]
+            rec["error"] = exception_text(exc, limit=200, typed=False)
         records.append(rec)
         market_checked += 1
 

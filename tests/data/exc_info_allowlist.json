@@ -407,41 +407,9 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/monitoring/activity_ledger.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/monitoring/collect_perf.py": {
-  "count": 5,
-  "owner": "rc-sweep"
- },
  "src/monitoring/expedition.py": {
   "count": 3,
   "owner": "export"
- },
- "src/monitoring/feed_preflight.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/monitoring/preflight_job.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/monitoring/search_timing.py": {
-  "count": 3,
-  "owner": "rc-sweep"
- },
- "src/monitoring/server_load.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/monitoring/session_history.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/monitoring/soak_window.py": {
-  "count": 8,
-  "owner": "rc-sweep"
  },
  "src/safety/crypto_erase.py": {
   "count": 2,

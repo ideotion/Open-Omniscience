@@ -710,6 +710,8 @@ def log_failure(
     :data:`TRACEBACK_ATTRIBUTE`, and the log takes its tail from there (the frames that say WHERE the failure
     happened are the part a developer reads the bundle for). ``what`` is the code's own words, never built from
     the exception. When the scrub cannot run the record carries the exception's class and none of its words."""
+    if not log.isEnabledFor(level):
+        return
     head: str | None
     tb: str | None
     try:

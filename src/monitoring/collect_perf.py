@@ -35,6 +35,7 @@ import time
 from contextlib import suppress
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
 from src.scheduler import process_budget
 
 _LOG = logging.getLogger("monitoring.collect_perf")
@@ -300,8 +301,8 @@ def _append_jsonl(record: dict) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, separators=(",", ":")) + "\n")
-    except Exception:  # noqa: BLE001 - logging must never break a pass
-        _LOG.debug("collect_perf append failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - logging must never break a pass
+        log_failure(_LOG, "collect_perf append failed", exc, level=logging.DEBUG)
 
 
 def _trim_jsonl() -> None:
@@ -312,8 +313,8 @@ def _trim_jsonl() -> None:
         lines = path.read_text(encoding="utf-8").splitlines()
         if len(lines) > _CAP_LINES:
             path.write_text("\n".join(lines[-_CAP_LINES:]) + "\n", encoding="utf-8")
-    except Exception:  # noqa: BLE001
-        _LOG.debug("collect_perf trim failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "collect_perf trim failed", exc, level=logging.DEBUG)
 
 
 class CollectionMonitor:
@@ -485,8 +486,8 @@ class CollectionMonitor:
         while not self._stop.wait(self._interval):
             try:
                 self._tick()
-            except Exception:  # noqa: BLE001 - a monitoring fault must never abort a pass
-                _LOG.debug("collect_perf tick failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a monitoring fault must never abort a pass
+                log_failure(_LOG, "collect_perf tick failed", exc, level=logging.DEBUG)
 
     def _tick(self) -> None:
         rate = self._measure_rate()
@@ -526,8 +527,8 @@ class CollectionMonitor:
                 mem_avail_mb=mem_avail,
                 mem_total_mb=vit.get("mem_total_mb"),
             )
-        except Exception:  # noqa: BLE001
-            _LOG.debug("memory-guard observe failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "memory-guard observe failed", exc, level=logging.DEBUG)
 
         # Per-tick deltas of the gate's cumulative wait/contention counters.
         now_mono = self._now()
@@ -738,7 +739,7 @@ class CollectionMonitor:
             threshold_ms, _ = loop_lag_thresholds()
             return latency.loop_pressure(threshold_ms, since=self._started_mono)
         except Exception as exc:  # noqa: BLE001
-            _LOG.debug("loop-pressure read failed", exc_info=True)
+            log_failure(_LOG, "loop-pressure read failed", exc, level=logging.DEBUG)
             return {"measured": False, "reason": f"loop-lag read failed: {exc}"}
 
     def _loop_lag_gate(self, lagging: bool, fraction: float | None) -> bool:

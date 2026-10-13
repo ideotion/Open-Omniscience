@@ -27,6 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
+from src.monitoring.secret_scrub import exception_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                     raise  # the budget ran out: the enclosing deadline types it (INT-1)
                 rows = []
                 drift_count_status = "error"
-                report["counter_drift_error"] = str(exc)[:200]
+                report["counter_drift_error"] = exception_text(exc, limit=200, typed=False)
                 # C5 reconciliation: this failure previously reached only the report
                 # dict, never the standard `logging` module -- so it never landed in
                 # app_errors.jsonl and `errorlog.interrupted_errors_total` (which scans

@@ -45,6 +45,8 @@ from dataclasses import dataclass
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import exception_text
+
 # How many times each case runs. Run 1 is the COLD path (may pay for SQLite page-cache
 # warming); the warm aggregate over runs 2..N is reported separately so a one-off cold
 # spike is not mistaken for the steady-state cost.
@@ -149,7 +151,7 @@ def _time_case(case: _Case, repeats: int) -> dict:
             err_row: dict = {
                 "case": case.key, "label": case.label,
                 "optimized_this_session": case.optimized, "heavy": case.heavy,
-                "ok": False, "error": str(exc)[:200],
+                "ok": False, "error": exception_text(exc, limit=200, typed=False),
             }
             if case.note:
                 err_row["note"] = case.note
@@ -377,14 +379,14 @@ def _scaling_context(session: Session) -> dict:
     try:
         ctx["keyword_counters"] = counter_envelope(session).to_dict()
     except Exception as exc:  # noqa: BLE001
-        ctx["keyword_counters"] = {"error": str(exc)[:160]}
+        ctx["keyword_counters"] = {"error": exception_text(exc, limit=160, typed=False)}
     try:
         from src.analytics import columnar
         from src.database.connect import get_passphrase
 
         ctx["columnar"] = columnar.status(get_passphrase())
     except Exception as exc:  # noqa: BLE001
-        ctx["columnar"] = {"error": str(exc)[:160]}
+        ctx["columnar"] = {"error": exception_text(exc, limit=160, typed=False)}
     term, mentions = _top_term(session)
     ctx["busiest_keyword"] = {"term": term, "mention_count": mentions}
     return ctx
@@ -403,11 +405,11 @@ def run_benchmark(session: Session, *, repeats: int = _DEFAULT_REPEATS) -> dict:
     try:
         host = _host()
     except Exception as exc:  # noqa: BLE001
-        host = {"error": str(exc)[:160]}
+        host = {"error": exception_text(exc, limit=160, typed=False)}
     try:
         store, corpus = _store_and_corpus(session)
     except Exception as exc:  # noqa: BLE001
-        store, corpus = {"error": str(exc)[:160]}, {"error": str(exc)[:160]}
+        store, corpus = {"error": exception_text(exc, limit=160, typed=False)}, {"error": exception_text(exc, limit=160, typed=False)}
     scaling = _scaling_context(session)
 
     results = [_time_case(c, repeats) for c in _build_cases(session)]
