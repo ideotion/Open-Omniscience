@@ -1,6 +1,6 @@
-## 2026-10-13 — browse reads no row it does not show (PR #1348)
+## 2026-10-13 — browse reads no row it does not show (PR #1349)
 
-- **2026-10-06 · api/browse-reads-no-row-it-does-not-show (WAL / disk thread, diagnostics rank 9; restacked 2026-10-13 on the merged repaired-database work, PR #1348).**
+- **2026-10-06 · api/browse-reads-no-row-it-does-not-show (WAL / disk thread, diagnostics rank 9; restacked 2026-10-13 on the merged repaired-database work, PR #1349).**
 `GET /api/articles` no longer reads an article row it does not return. The quarantine exclusion is answered from the covering
 `idx_article_quarantined` by id (the old `IS NOT 1` read each candidate row, and its flag sits after the body, so every skipped row paid
 its overflow chain), and a paged browse asks for ids first and loads the page's rows by id, so a sort or a language filter never carries
