@@ -889,15 +889,16 @@ def keyword_log(
             if lo == 0 and not capped_langs and max_bytes is None:
                 window_text = f"every keyword, the largest language holds {largest:,}"
             elif lo == 0 and not capped_langs:
-                window_text = (
-                    f"no language reaches the window, the largest holds {largest:,}; the byte cap may "
-                    "trim the lowest-mention entries of every language, and keywords_omitted_to_fit "
-                    "in the manifest says how many"
-                )
+                window_text = f"no language exceeds the window, the largest holds {largest:,}"
             elif lo == 0:
                 window_text = f"top {hi:,}"
             else:
                 window_text = f"ranks {lo + 1:,} to {hi:,}, page {page}"
+            if max_bytes is not None:
+                window_text += (
+                    "; the byte cap may trim the lowest-mention entries of every language, and "
+                    "keywords_omitted_to_fit in the export manifest says how many"
+                )
             method = (
                 f"All gathered keywords ({window_text}; the quota is PER dominant signature "
                 "language — a global cap would anglicise the export) with real "

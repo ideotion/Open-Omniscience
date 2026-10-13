@@ -218,11 +218,13 @@ def test_the_two_descriptions_that_differ_say_how_the_file_was_made(name, corpus
     # language that fits the window); everything after it is the same text.
     window_clause = re.compile(r"^All gathered keywords \((.*?); the quota is PER dominant signature language")
     log_window, digest_window = (window_clause.match(m).group(1) for m in (log["method"], digest["method"]))
+    cap_clause = "; the byte cap may trim the lowest-mention entries of every language"
     if name == "beyond-the-window":
-        assert log_window == digest_window == f"top {window:,}"
+        assert digest_window == f"top {window:,}"
+        assert log_window.startswith(f"top {window:,}{cap_clause}")
     else:
         assert digest_window.startswith("every keyword, the largest language holds ")
-        assert log_window.startswith("no language reaches the window, the largest holds ")
+        assert log_window.startswith("no language exceeds the window, the largest holds ") and cap_clause in log_window
     rest = log["method"].split("; the quota is PER", 1)[1]
     assert digest["method"].split("; the quota is PER", 1)[1].startswith(rest)
     tail = digest["method"].split("; the quota is PER", 1)[1][len(rest) :]
@@ -360,11 +362,14 @@ def test_a_later_page_names_the_ranks_it_holds_not_a_top(corpus, data_dir):
     would describe the first page's files."""
     db = _session(corpus["larger"])
     files = _zip(_log(db, per_lang=40, page=2, max_mb=0))
-    db.close()
     summary = json.loads(files["summary.json"])["data"]
     assert summary["corpus"]["exported_per_language"], "page two must hold something for this to mean anything"
     assert "(ranks 41 to 80, page 2; the quota is PER dominant signature language" in summary["method"]
-    assert "top 40" not in summary["method"]
+    assert "top 40" not in summary["method"] and "byte cap" not in summary["method"], "max_mb=0 is no cap"
+    # ...and under the 9 MB default cap the same page says the cap may trim it
+    files = _zip(_log(db, per_lang=40, page=2))
+    assert "(ranks 41 to 80, page 2; the byte cap may trim" in json.loads(files["summary.json"])["data"]["method"]
+    db.close()
 
 
 @pytest.mark.parametrize("fmt", ["zip", "parts"])
@@ -388,7 +393,8 @@ def test_a_summary_does_not_claim_every_keyword_where_the_byte_cap_trimmed_the_f
     assert not summary["corpus"]["capped_languages"], "the window must cut nothing for this to be the byte cap's doing"
     assert held < total, "the cap must have trimmed for this to mean anything"
     assert "every keyword" not in summary["method"]
-    assert "no language reaches the window" in summary["method"] and "byte cap may trim" in summary["method"]
+    assert "no language exceeds the window" in summary["method"] and "byte cap may trim" in summary["method"]
+    assert "keywords_omitted_to_fit in the export manifest" in summary["method"]
 
 
 # --------------------------------------------------------------------------- low memory (R130 = 36a)
@@ -462,8 +468,10 @@ def test_the_panel_keeps_one_text_link_and_the_routes_stay():
 
 #: The beginnings of the locale keys of the keyword-log buttons and hovers (this PR's two labels and their
 #: hover texts, and the same buttons' earlier 1 MB wordings, "Download ... (.zip/.json)" labels and hover
-#: texts that earlier Diagnostics PRs left behind) plus two Diagnostics hover texts no control carries
-#: since the button is one. Each was grepped across ``src`` before it went: no source renders it.
+#: texts that earlier Diagnostics PRs left behind), the "All diagnostics" labels and the status lines that
+#: named them, the 1 MB hover of the All keywords link and the parts-ready line with the old size slot, plus
+#: two Diagnostics hover texts no control carries since the button is one. Each was grepped across ``src``
+#: before it went: no source renders it.
 _ORPHAN_KEY_PREFIXES = (
     "All diagnostics (1 MB files)",
     "All diagnostics, again (last build, 1 MB files)",
@@ -478,6 +486,8 @@ _ORPHAN_KEY_PREFIXES = (
     "Keyword log (1 MB files)",
     "Keyword log (4 MB files)",
     "Last keyword files, again",
+    "No archive to split yet \u2014 build one with the All diagnostics button first.",
+    "The archive is ready. Press \u201cAll diagnostics, again\u201d to save it as numbered files.",
     "{n} files of at most 1 MB each are ready",
     "Saves the diagnostics archive built last as numbered .zip files of at most 1 MB each, again",
     "Saves the numbered keyword files built last time again",
