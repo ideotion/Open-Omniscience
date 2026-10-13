@@ -23,9 +23,15 @@ const STATIC = path.join(__dirname, "..", "src", "static");
 const read = (name) => fs.readFileSync(path.join(STATIC, name), "utf-8");
 const INS = read("app-insights.js");
 const I18N = read("i18n.js");
-const CODES = ["ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"];
+// Every shipped locale, read from the directory: a 13th locale is rendered without anyone editing this list.
+const CODES = fs.readdirSync(path.join(STATIC, "locales")).filter((f) => f.endsWith(".json"))
+  .map((f) => f.slice(0, -5)).sort();
+// The caveat of a ring that has mention rows: handed over by tests/test_ring_caveat_i18n.py from
+// src/analytics/queries.py (_RING_COUNTRY_CAVEAT), so the fixtures carry the sentence the endpoint really sends.
+const STANDARD = process.env.RING_COUNTRY_CAVEAT || "";
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 
+if (!STANDARD) { console.error("FAIL: RING_COUNTRY_CAVEAT is not set (run tests/test_ring_caveat_i18n.py)"); process.exit(1); }
 let passed = 0;
 function assert(cond, msg) { if (!cond) { console.error("FAIL: " + msg); process.exit(1); } }
 function test(name, fn) {
@@ -73,6 +79,25 @@ async function render(payload, code, opts) {
   return { host: els["sg-ringmap"].innerHTML, detail: els["sg-ringmap-detail"].innerHTML, drawn };
 }
 
+const REPAINT = extract("repaintRingMapFromCache", "function repaintRingMapFromCache(", INS);
+
+// A reader's session: one set of elements and one _ringMapLast, so a language switch can repaint what is on screen.
+function session(code, apiFn) {
+  const map = {};
+  const load = (c) => { Object.keys(map).forEach((k) => delete map[k]); if (c !== "en") Object.assign(map, LOCALE(c)); };
+  load(code);
+  const tf = new Function("map", TF_SRC + "; return tf;")(map);
+  const t = (s) => (map[s] == null ? s : map[s]);
+  const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
+  const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
+    "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
+    "let _ringMapLast = null; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
+  const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, async () => {},
+    (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
+  return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
+           switchTo: (c) => load(c), host: () => els["sg-ringmap"].innerHTML };
+}
+
 const HIDDEN = {
   found: true, ring_id: "news-media", countries: [], n_keywords: 0, languages: [], n_countries: 0, countries_listed: 0,
   truncated: false,
@@ -86,14 +111,25 @@ const NONE = {
   caveat: "No indexed keywords in this group yet for your corpus.",
   caveat_i18n: "No indexed keywords in this group yet for your corpus.", caveat_vars: {},
 };
-const STANDARD = "Coverage by producing-source country, never a credibility ranking or score. Articles whose source has no country are counted under 'Not mapped'.";
+// The populated shapes carry what the endpoint always sends: label, method and the standard caveat.
+const METHOD = "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.";
 const UNLOCATED_ONLY = {
-  found: true, ring_id: "news-media", n_keywords: 3, languages: ["en"], n_countries: 0, countries_listed: 0, truncated: false,
-  countries: [{ country: null, articles: 4, mentions: 9 }], caveat: STANDARD,
+  found: true, ring_id: "news-media", label: "News media", n_keywords: 3, languages: ["en"], n_countries: 0,
+  countries_listed: 0, truncated: false, countries: [{ country: null, articles: 4, mentions: 9 }],
+  method: METHOD, caveat: STANDARD,
 };
 const LOCATED = {
-  found: true, ring_id: "news-media", n_keywords: 3, languages: ["en"], n_countries: 1, countries_listed: 1, truncated: false,
-  countries: [{ country: "FR", articles: 4, mentions: 9 }], caveat: STANDARD,
+  found: true, ring_id: "news-media", label: "News media", n_keywords: 3, languages: ["en"], n_countries: 1,
+  countries_listed: 1, truncated: false, countries: [{ country: "FR", articles: 4, mentions: 9 }],
+  method: METHOD, caveat: STANDARD,
+};
+// Keywords are indexed but none has a mention row (e.g. the day window is empty): the endpoint answers with the
+// standard caveat and no bucket at all. The sentence names a "Not mapped" bucket that is not on screen then; it stays
+// shown because it is still true of the figures (documented, harmless; the unlocated-only case above is the one that
+// has the bucket).
+const NO_MENTIONS = {
+  found: true, ring_id: "news-media", label: "News media", n_keywords: 3, languages: ["en"], n_countries: 0,
+  countries_listed: 0, truncated: false, countries: [], method: METHOD, caveat: STANDARD,
 };
 
 (async () => {
@@ -113,7 +149,49 @@ const LOCATED = {
       const r = await render(NONE, code);
       assert(r.host.includes(ESC(expected)), code + ": " + r.host);
     });
+    await test(code + ": an unlocated-only payload shows the translated standard caveat beside the Not mapped bucket (decided: yes)", async () => {
+      // The state draws no map (nothing is located), but it does show counts the caveat governs: 'Not mapped'
+      // is exactly what the standard sentence explains, so informed consent keeps it visible here too.
+      const map = code === "en" ? {} : LOCALE(code);
+      const expected = map[STANDARD] || STANDARD;
+      if (code !== "en") assert(map[STANDARD] && map[STANDARD] !== STANDARD, code + ": the standard caveat is not translated");
+      const r = await render(UNLOCATED_ONLY, code);
+      assert(r.drawn.length === 0, "nothing is located, so no map is drawn");
+      assert(r.host.includes(ESC(expected)), code + ": the standard caveat is missing from the unlocated-only state: " + r.host);
+      assert(r.detail.length > 0, code + ": the Not mapped bucket must stay reachable");
+    });
+    await test(code + ": a ring with keywords but no mention rows shows the same standard caveat (no bucket to explain, documented)", async () => {
+      const map = code === "en" ? {} : LOCALE(code);
+      const r = await render(NO_MENTIONS, code);
+      assert(r.drawn.length === 0 && r.host.includes(ESC(map[STANDARD] || STANDARD)), code + ": " + r.host);
+    });
+    await test(code + ": a located payload hands the translated caveat to the map", async () => {
+      const map = code === "en" ? {} : LOCALE(code);
+      const r = await render(LOCATED, code);
+      assert(r.drawn.length === 1 && r.drawn[0].caveat === (map[STANDARD] || STANDARD), code + ": " + JSON.stringify(r.drawn));
+    });
   }
+  await test("a language switch repaints the empty state and its caveat in the new language", async () => {
+    const sess = session("en", async () => HIDDEN);
+    await sess.show("news-media");
+    assert(sess.host().includes("hidden by the stoplist"), sess.host());
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    const expected = LOCALE("fr")[HIDDEN.caveat_i18n].replace("{n}", "7");
+    assert(sess.host().includes(ESC(expected)), "the empty state stayed in the previous language: " + sess.host());
+  });
+  await test("a language switch never resurrects a group that is no longer on screen", async () => {
+    let answer = HIDDEN;
+    const sess = session("en", async () => answer);
+    await sess.show("news-media");
+    answer = { found: false };
+    await sess.show("another-group");
+    const before = sess.host();
+    assert(before.includes("No cross-country coverage"), before);
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(!sess.host().includes("hidden") && sess.host() === before, "the previous group came back: " + sess.host());
+  });
   await test("the 'all hidden' and the 'nothing indexed' states read differently (R111 T2)", async () => {
     const a = (await render(HIDDEN, "en")).host, b = (await render(NONE, "en")).host;
     assert(a.includes("hidden by the stoplist") && !b.includes("hidden by the stoplist"), a + " | " + b);
@@ -122,18 +200,6 @@ const LOCATED = {
   await test("a missing tf falls back to the plain sentence, never a literal {n}", async () => {
     const r = await render(HIDDEN, "fr", { noTf: true });
     assert(r.host.includes("(7)") && !r.host.includes("{n}"), r.host);
-  });
-  await test("an unlocated-only payload shows the standard caveat beside the Not mapped bucket (decided: yes)", async () => {
-    // The state draws no map (nothing is located), but it does show counts the caveat governs: 'Not mapped'
-    // is exactly what the standard sentence explains, so informed consent keeps it visible here too.
-    const r = await render(UNLOCATED_ONLY, "en");
-    assert(r.host.includes("No located sources"), r.host);
-    assert(r.host.includes(ESC(STANDARD)), "the standard caveat is missing from the unlocated-only state: " + r.host);
-    assert(r.detail.includes("Not mapped"), "the Not mapped bucket must stay reachable: " + r.detail);
-  });
-  await test("a located payload hands the caveat to the map", async () => {
-    const r = await render(LOCATED, "en");
-    assert(r.drawn.length === 1 && r.drawn[0].caveat === STANDARD, JSON.stringify(r.drawn));
   });
   console.log(passed + " passed");
 })().catch((e) => { console.error("FAIL: " + (e && e.stack || e)); process.exit(1); });
