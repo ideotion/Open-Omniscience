@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import sqlite3
 import threading
@@ -238,6 +239,144 @@ def test_a_failed_read_that_an_invalidation_overtook_is_not_held_against_the_liv
     with pytest.raises(kv_store.KvReadError):
         kv_store.kv_get_json_checked("settings.l1")
     assert (str(store), "settings.l1") not in kv_store._failed
+
+
+def _reader_that_read_the_old_file_then_waits(monkeypatch, read):
+    """Run ``read()`` on a thread whose file read has finished (with the OLD value) and waits before it can fill the cache; returns a
+    function that lets it go and returns the thread's result."""
+    real = kv_store._read_value
+    read_done, go = threading.Event(), threading.Event()
+    out: dict = {}
+
+    def slow(path, key, *, read_only):
+        got = real(path, key, read_only=read_only)
+        read_done.set()
+        assert go.wait(_PATIENCE_S)
+        return got
+
+    monkeypatch.setattr(kv_store, "_read_value", slow)
+    t = threading.Thread(target=lambda: out.setdefault("v", read()))
+    t.start()
+    assert read_done.wait(_PATIENCE_S)
+
+    def release():
+        go.set()
+        t.join(_PATIENCE_S)
+        monkeypatch.setattr(kv_store, "_read_value", real)
+        return out.get("v")
+
+    return release
+
+
+def test_a_reader_that_read_the_file_before_a_save_cannot_fill_the_cache_over_it(store, monkeypatch):
+    """The reader-over-writer race the first epoch left open (F1): the reader read the OLD file, the save committed and filled the cache with
+    the NEW value, and the reader then stored its older one for the life of the process."""
+    kv_store.kv_set_json("settings.r", {"v": 1})
+    kv_store.kv_invalidate()  # cold cache: the next read goes to the file
+    release = _reader_that_read_the_old_file_then_waits(monkeypatch, lambda: kv_store.kv_get_json_checked("settings.r"))
+    kv_store.kv_set_json("settings.r", {"v": 2})
+    assert release() == {"v": 1}, "the reader answers what it read; only the cache fill is refused"
+    assert _stored(store, "settings.r") == '{"v": 2}'
+    assert kv_store.kv_get_json("settings.r") == {"v": 2}, "the older value was stored over the save"
+
+
+def test_a_reader_that_read_the_file_before_a_delete_cannot_bring_the_key_back(store, monkeypatch):
+    kv_store.kv_set_json("settings.d", {"v": 1})
+    kv_store.kv_invalidate()
+    release = _reader_that_read_the_old_file_then_waits(monkeypatch, lambda: kv_store.kv_get_json_checked("settings.d"))
+    kv_store.kv_delete("settings.d")
+    release()
+    assert kv_store.kv_get_json("settings.d") is None, "a deleted key was served from the cache"
+
+
+def test_the_strict_reader_cannot_fill_the_cache_over_a_save_either(store, monkeypatch):
+    kv_store.kv_set_json("settings.s", {"v": 1})
+    kv_store.kv_invalidate()
+    real_open = kv_store._open
+    read_done, go = threading.Event(), threading.Event()
+
+    def open_then_wait(path, **kw):
+        conn = real_open(path, **kw)
+        (value,) = conn.execute("SELECT value FROM app_state WHERE key = 'settings.s'").fetchone()
+        conn.close()
+        read_done.set()
+        assert go.wait(_PATIENCE_S)
+        return _Fixed(value)
+
+    class _Fixed:
+        """A connection that answers the row it read BEFORE the save, whatever the file holds now."""
+
+        def __init__(self, value):
+            self.value = value
+
+        def execute(self, *a, **k):
+            return self
+
+        def fetchone(self):
+            return (self.value,)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(kv_store, "_open", open_then_wait)
+    out: dict = {}
+    t = threading.Thread(target=lambda: out.setdefault("v", kv_store.kv_get_json_strict("settings.s")))
+    t.start()
+    assert read_done.wait(_PATIENCE_S)
+    monkeypatch.setattr(kv_store, "_open", real_open)
+    kv_store.kv_set_json("settings.s", {"v": 2})
+    go.set()
+    t.join(_PATIENCE_S)
+    assert out["v"] == {"v": 1}
+    assert kv_store.kv_get_json_strict("settings.s") == {"v": 2}
+
+
+def test_the_cache_is_filled_inside_the_gate_so_two_saves_of_one_key_fill_in_the_order_they_committed():
+    """Deterministic pin: outside the gate the earlier save could fill LAST and serve the older value. The behavioural twin below is a stress."""
+    import ast
+    import inspect
+    import textwrap
+
+    for fn in (kv_store.kv_set_json, kv_store.kv_delete):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        gated = [
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.With) and any("write_lock" in ast.unparse(i.context_expr) for i in n.items)
+        ]
+        assert gated, f"{fn.__name__} lost its write_lock block"
+        inside = any(
+            isinstance(m, ast.With) and any(ast.unparse(i.context_expr) == "_lock" for i in m.items)
+            for g in gated for m in ast.walk(g)
+        )
+        assert inside, f"{fn.__name__} fills the cache outside the gate: two saves of one key can fill in the wrong order"
+
+
+def test_concurrent_saves_of_one_key_leave_the_cache_equal_to_the_file(store):
+    errors: list[str] = []
+
+    def hammer(base):
+        for i in range(25):
+            kv_store.kv_set_json("settings.c", {"v": base + i})
+
+    for _round in range(6):
+        threads = [threading.Thread(target=hammer, args=(b * 100,)) for b in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(_PATIENCE_S)
+        cached = kv_store.kv_get_json("settings.c")
+        if cached != json.loads(_stored(store, "settings.c")):
+            errors.append(f"cache {cached} != file {_stored(store, 'settings.c')}")
+    assert not errors, errors
+
+
+def test_a_violation_names_the_code_that_made_the_write_not_only_the_test_that_found_it(store):
+    with write_lock(), contextlib.suppress(Exception):
+        kv_store.kv_set_json("settings.who", {"v": 1})
+    (line,) = kv_store.STRICT_VIOLATIONS
+    kv_store.STRICT_VIOLATIONS.clear()
+    assert "test_kv_store_write_hold.py:" in line and "in test_a_violation_names_the_code" in line, line
+    assert "kv_store.py" not in line, "the caller is the frame outside kv_store"
 
 
 def test_an_interrupt_during_the_drain_does_not_leave_the_hold_set(store):
