@@ -216,7 +216,10 @@ def test_a_failed_restore_writes_neither_passphrase_to_its_status_its_log_or_its
     assert PASS not in written and CORPUS not in written
     driver = isinstance(exc, sqlite3.Error)
     if driver:
-        assert "IntegrityError (a database driver's text is withheld)" in written, "the log half names the class, not nothing"
+        assert "IntegrityError (a database driver's text is withheld)" in st["error"]
+        logged = "\n".join(f"{r.getMessage()}\n{getattr(r, 'scrubbed_traceback', '')}" for r in caplog.records)
+        assert "IntegrityError: its text is withheld" in logged, "the LOG names the class (it is not empty, and not the engine's words)"
+        assert "UNIQUE constraint failed" not in logged
     else:
         assert REDACTED in written, "the texts are scrubbed, not dropped"
     if state == "error" and driver:

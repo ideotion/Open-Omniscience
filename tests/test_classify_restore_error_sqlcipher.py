@@ -74,3 +74,15 @@ def test_classify_restore_error_falls_back_honestly_for_unrelated_exceptions():
     detail = classify_restore_error("restore", RuntimeError("disk full"))
     assert "data-merge issue" not in detail
     assert "could not restore this backup" in detail
+
+
+def test_a_wrapper_that_quotes_a_chained_driver_error_is_shown_as_the_class_only():
+    """S1 of the read: the classification reads the real text, what is WRITTEN never carries the driver's words."""
+    try:
+        try:
+            raise sqlite3.OperationalError('near "horse-battery": syntax error')
+        except sqlite3.OperationalError as driver:
+            raise RuntimeError(f"x: {driver}") from driver
+    except RuntimeError as exc:
+        detail = classify_restore_error("restore", exc)
+    assert "horse-battery" not in detail, detail

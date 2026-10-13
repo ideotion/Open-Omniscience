@@ -634,3 +634,25 @@ def test_the_fallback_when_the_scrub_cannot_be_loaded_is_cut_too(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", _no_scrub)
     out = engine_text(ValueError("x"), 20, typed=True)
     assert len(out) == 20 and "ValueError" in out
+
+
+def test_a_backlog_read_failing_with_a_driver_error_logs_its_class_only(monkeypatch, caplog):
+    import logging
+    import sqlite3
+
+    from src.backup import merge
+
+    caplog.set_level(logging.DEBUG)
+
+    class _Boom:
+        def __enter__(self):
+            raise sqlite3.OperationalError('near "horse-battery": syntax error')
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("src.database.session.session_scope", lambda *a, **k: _Boom())
+    merge.reindex_backlog()
+    merge.pending_reindex_batches()
+    assert "horse-battery" not in caplog.text and "OperationalError" in caplog.text
+    assert not any(r.exc_info for r in caplog.records)

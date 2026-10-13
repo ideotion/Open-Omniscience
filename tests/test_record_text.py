@@ -145,3 +145,67 @@ def test_a_wrapper_with_words_of_its_own_keeps_them():
             raise RuntimeError("the swap was refused") from driver
     except RuntimeError as exc:
         assert record_text(exc, PASS) == "RuntimeError: the swap was refused" or "the swap was refused" in record_text(exc, PASS)
+
+
+def test_log_failure_writes_a_driver_link_as_its_class_in_the_message_and_in_the_traceback_attribute():
+    import logging
+
+    from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, log_failure
+
+    records: list[logging.LogRecord] = []
+
+    class _Keep(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    log = logging.getLogger("test_record_text.log_failure")
+    log.addHandler(_Keep())
+    log.setLevel(logging.DEBUG)
+    log_failure(log, "the step failed", _driver_under_oserror(), PASS)
+    text = records[0].getMessage() + getattr(records[0], TRACEBACK_ATTRIBUTE)
+    assert FRAGMENT not in text, text
+    assert "OperationalError: its text is withheld" in text
+    assert "the disk said no to /data/corpus.db" in text, "the other link keeps its words"
+
+
+def test_a_note_that_quotes_a_driver_is_a_quote():
+    from src.monitoring.secret_scrub import quotes_a_driver
+
+    try:
+        try:
+            raise sqlite3.OperationalError(f'near "{FRAGMENT}": syntax error')
+        except sqlite3.OperationalError as driver:
+            wrapper = RuntimeError("failed")
+            wrapper.add_note(f'details: near "{FRAGMENT}": syntax error')
+            raise wrapper from driver
+    except RuntimeError as exc:
+        assert quotes_a_driver(exc)
+        assert FRAGMENT not in record_traceback(exc, PASS)
+
+
+def test_a_quote_past_the_old_2000_character_cut_is_still_found():
+    from src.monitoring.secret_scrub import quotes_a_driver
+
+    try:
+        try:
+            raise sqlite3.OperationalError(f'near "{FRAGMENT}": syntax error')
+        except sqlite3.OperationalError as driver:
+            raise RuntimeError("x" * 5000 + f' near "{FRAGMENT}": syntax error') from driver
+    except RuntimeError as exc:
+        assert quotes_a_driver(exc)
+
+
+def test_quotes_a_driver_never_raises_and_fails_closed():
+    from src.monitoring.secret_scrub import quotes_a_driver
+
+    class _Bad(sqlite3.OperationalError):
+        def __str__(self):
+            raise ValueError("no text")
+
+    try:
+        try:
+            raise _Bad("x")
+        except _Bad as driver:
+            raise RuntimeError("fine") from driver
+    except RuntimeError as exc:
+        assert quotes_a_driver(exc) is True

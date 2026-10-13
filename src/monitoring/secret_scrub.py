@@ -101,7 +101,6 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import difflib
 import functools
 import hmac
 import json
@@ -735,24 +734,42 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
     return exception_text(exc, *secrets, limit=limit, typed=typed)
 
 
+#: A text longer than this is not read for a quoted run: it is taken to quote the driver (fail closed), so no cut can hide a piece.
+_QUOTE_READ_LIMIT = 200_000
+_QUOTE_RUN = 12
+
+
+def _text_and_notes(exc: BaseException) -> str:
+    notes = getattr(exc, "__notes__", None)
+    extra = "\n".join(n for n in notes if isinstance(n, str)) if isinstance(notes, list) else ""
+    return str(exc) + ("\n" + extra if extra else "")
+
+
 def quotes_a_driver(exc: BaseException) -> bool:
-    """``True`` when a database driver's exception sits in ``exc``'s chain and ``exc``'s own text repeats that driver's text
-    (``raise BackupError(f"...: {driver_error}") from driver_error``): the words of the driver are then in the message, whatever
-    the class of the exception that carries them."""
-    own = str(exc)
-    for link in _reachable(exc):
-        if link is exc or not is_driver_error(link):
-            continue
-        said = str(link)
-        if len(said) < 4:
-            continue
-        if said in own or said.split("\n[SQL:", 1)[0] in own:
-            return True
-        # a cut or re-quoted copy: a long run of the driver's words repeated in the message is the driver's text
-        a, b = said[:2000], own[:2000]
-        if difflib.SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b)).size >= 12:
-            return True
-    return False
+    """``True`` when a database driver's exception sits in ``exc``'s chain and ``exc``'s own text (or its notes) repeats a run of
+    that driver's text (``raise BackupError(f"...: {driver_error}") from driver_error``, or a cut or re-quoted copy of it, a run of
+    :data:`_QUOTE_RUN` characters): the words of the driver are then in the message, whatever the class of the exception that
+    carries them. Fails closed: anything that cannot be read, or is too long to read, answers ``True``. Never raises."""
+    try:
+        own = _text_and_notes(exc)
+        grams: set[str] | None = None
+        for link in _reachable(exc):
+            if link is exc or not is_driver_error(link):
+                continue
+            said = _text_and_notes(link)
+            if len(said) < 4:
+                continue
+            if said in own or said.split("\n[SQL:", 1)[0] in own:
+                return True
+            if len(said) > _QUOTE_READ_LIMIT or len(own) > _QUOTE_READ_LIMIT:
+                return True
+            if grams is None:
+                grams = {own[i : i + _QUOTE_RUN] for i in range(max(len(own) - _QUOTE_RUN + 1, 0))}
+            if any(said[i : i + _QUOTE_RUN] in grams for i in range(max(len(said) - _QUOTE_RUN + 1, 0))):
+                return True
+        return False
+    except Exception:  # noqa: BLE001 - a text that cannot be read is treated as quoting
+        return True
 
 
 def _printed_links(exc: BaseException) -> list[BaseException]:
@@ -778,6 +795,22 @@ def _printed_links(exc: BaseException) -> list[BaseException]:
     return order
 
 
+def _last_line(link: BaseException) -> str:
+    """The line a link's print ends with, as a RECORD keeps it: a driver's (or one that quotes a driver's) as its class only."""
+    if is_driver_error(link) or quotes_a_driver(link):
+        return _driver_line(link)
+    return "".join(traceback.format_exception_only(link)).rstrip("\n")
+
+
+def _links_text(exc: BaseException) -> str:
+    """The traceback of every link of the chain as its frames, each link's last line per :func:`_last_line`. Not scrubbed."""
+    parts: list[str] = []
+    for link in _printed_links(exc):
+        frames = "".join(traceback.format_tb(link.__traceback__))
+        parts.append("Traceback (most recent call last):\n" + frames + _last_line(link) + "\n")
+    return "\n".join(parts)
+
+
 def record_traceback(exc: BaseException, *secrets: str | None) -> str:
     """The traceback a RECORD keeps: every link of the chain as its FRAMES (file, line, function and the source line: our code, not
     engine text), each link's last line written per :func:`record_text` (a database driver's exception is its class only; any
@@ -788,15 +821,7 @@ def record_traceback(exc: BaseException, *secrets: str | None) -> str:
         fixed = _unicode_withheld(exc)
         if fixed is not None:
             return _withheld_traceback(exc, fixed)
-        parts: list[str] = []
-        for link in _printed_links(exc):
-            frames = "".join(traceback.format_tb(link.__traceback__))
-            if is_driver_error(link) or quotes_a_driver(link):
-                last = _driver_line(link)
-            else:
-                last = "".join(traceback.format_exception_only(link)).rstrip("\n")
-            parts.append("Traceback (most recent call last):\n" + frames + last + "\n")
-        text = "\n".join(parts)
+        text = _links_text(exc)
     except Exception:  # noqa: BLE001 - a traceback that cannot be made is not kept
         return _class_only(exc)
     return scrubbed(text, *secrets, withheld=_class_only(exc))
@@ -825,8 +850,9 @@ def log_failure(
         if fixed is not None:
             head, tb = fixed, _withheld_traceback(exc, fixed)
         else:
-            head = _checked("".join(traceback.format_exception_only(exc)).strip(), secrets)
-            tb = _checked("".join(traceback.format_exception(exc)), secrets)
+            # a log is a record too (the error log rides the bundle): a database driver's link is its class only, as in a record
+            head = _checked(_last_line(exc).strip(), secrets)
+            tb = _checked(_links_text(exc), secrets)
     except Exception:  # noqa: BLE001 - the text could not be made: the class says what failed
         head = tb = None
     if head is None or tb is None:
