@@ -57,6 +57,14 @@ def _populate_incoming(path: Path) -> None:
         s.add(a)
         s.flush()
         s.add(ArticleIndexStamp(article_id=a.id, engine="e1", inputs="i1", stamped_at=_T0))
+        # A second stamped article: the live corpus holds one article of its own, so the incoming
+        # articles land as local ids 2 and 3, and the stamp of incoming article 2 is the one an
+        # unqualified DELETE (ids taken from the local merge) would remove from the BACKUP.
+        b = Article(url="https://s.example/2", canonical_url="https://s.example/2",
+                    source_id=src.id, title="T2", content="c", hash="h2")
+        s.add(b)
+        s.flush()
+        s.add(ArticleIndexStamp(article_id=b.id, engine="e1", inputs="i2", stamped_at=_T0))
         s.add(ArticleTitleTranslation(article_id=a.id, source_lang="fr", target_lang="en",
                                       title="T", summary="s", model="m", prompt_version="v1",
                                       created_at=_T0))
@@ -102,7 +110,7 @@ def test_a_table_only_the_backup_has_is_never_written_to(tmp_path, missing):
     _seed_live_article(live)
     _drop(live, missing)
     before = _counts(inc)
-    assert before[missing] == 1
+    assert before[missing] >= 1
 
     counts, _ = merge_corpus(inc, live, _META)
 
@@ -125,7 +133,7 @@ def test_every_table_missing_at_once_still_merges_the_rest(tmp_path):
         assert domain not in counts, f"{domain} is reported only when both sides hold the table"
     con = sqlite3.connect(live)
     try:
-        assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 2, "the articles still arrive"
+        assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 3, "the articles still arrive"
     finally:
         con.close()
 
