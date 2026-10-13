@@ -73,6 +73,8 @@ KV_WRITE_WAIT_S = float(os.environ.get("OO_KV_WRITE_WAIT_S", "30") or 30)
 #: Set (to ``1``) by the test suite: a settings write entered by a thread that already holds the single-writer gate raises
 #: ``AssertionError``, so the suite itself finds every caller that breaks the contract in :func:`kv_set_json`'s docstring.
 _STRICT_GATE_ENV = "OO_KV_STRICT_GATE_ORDER"
+#: What strict mode saw (one line each); the suite's fixture asserts it empty after every test and empties it.
+STRICT_VIOLATIONS: list[str] = []
 
 
 class KvWriteRefused(RuntimeError):
@@ -104,31 +106,37 @@ def _write_slot() -> Iterator[int]:
     if os.environ.get(_STRICT_GATE_ENV) == "1":
         from src.database.writer import write_gate
 
-        if write_gate.held_here():
-            raise AssertionError("a settings write was entered by a thread that holds the single-writer gate (see kv_set_json)")
+        if write_gate.held_by_current_thread():
+            # RECORDED as well as raised: an ``except Exception`` between here and the test (thirteen callers wrap a save) swallows the
+            # AssertionError, so ``tests/conftest.py`` fails the test that left a violation in the list.
+            what = "a settings write was entered by a thread that holds the single-writer gate (see kv_set_json)"
+            STRICT_VIOLATIONS.append(what)
+            raise AssertionError(what)
     passthrough = False
-    with _hold:
-        if _hold_by == me:
-            passthrough = True
-        elif _hold_by is not None:
-            from src.database.writer import write_gate
-
-            if write_gate.held_here():  # waiting here would make the restore wait for this thread's connection: refuse now
-                raise KvWriteRefused(_REFUSED_TEXT)
-            deadline = time.monotonic() + KV_WRITE_WAIT_S
-            while _hold_by is not None:
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    raise KvWriteRefused(_REFUSED_TEXT)
-                _hold.wait(left)
-        if not passthrough:
-            _inflight += 1
-    with _lock:
-        epoch = _epoch
+    counted = False
     try:
+        with _hold:
+            if _hold_by == me:
+                passthrough = True
+            elif _hold_by is not None:
+                from src.database.writer import write_gate
+
+                if write_gate.held_by_current_thread():  # waiting here would make the restore wait for this thread's connection: refuse now
+                    raise KvWriteRefused(_REFUSED_TEXT)
+                deadline = time.monotonic() + KV_WRITE_WAIT_S
+                while _hold_by is not None:
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        raise KvWriteRefused(_REFUSED_TEXT)
+                    _hold.wait(left)
+            if not passthrough:
+                _inflight += 1
+                counted = True
+        with _lock:
+            epoch = _epoch
         yield epoch
     finally:
-        if not passthrough:
+        if counted:
             with _hold:
                 _inflight -= 1
                 _hold.notify_all()
@@ -154,16 +162,15 @@ def hold_writes(timeout: float) -> Iterator[None]:
         if _hold_by is not None:
             raise RuntimeError("settings writes are already held")
         _hold_by = me  # from here a new write waits at the door
-        while _inflight:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                _hold_by = None
-                _hold.notify_all()
-                raise KvWriteBusy("a settings save was still in flight")
-            _hold.wait(left)
     try:
+        with _hold:
+            while _inflight:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise KvWriteBusy("a settings save was still in flight")
+                _hold.wait(left)
         yield
-    finally:
+    finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         with _hold:
             _hold_by = None
             _hold.notify_all()
@@ -294,7 +301,8 @@ def kv_get_json_checked(key: str) -> dict | None:
         what = type(exc).__name__
         _LOG.debug("kv_get_json(%r) unreadable (%s)", key, what)
         with _lock:
-            _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what)
+            if _epoch == epoch:  # a read the swap broke is not held against the file that is live now
+                _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what)
         raise KvReadError(what) from None
     with _lock:
         if _epoch == epoch:  # an invalidation since the read began: what it read may be the file that was replaced
@@ -430,10 +438,14 @@ def kv_set_json(key: str, obj: dict) -> None:
             finally:
                 conn.close()
         with _lock:
-            if _epoch == epoch:  # an invalidation since the write began: the next read goes to the file that is live
+            if _epoch == epoch:
                 _cache[(path, key)] = value
-                _failed.pop((path, key), None)
                 _seen.add(path)
+            else:
+                # An invalidation landed since the write began (a restore's, or another key's: the epoch is global). The value is not
+                # cached, and an OLDER one must not stay: it would be served for the life of the process over what was just saved.
+                _cache.pop((path, key), None)
+            _failed.pop((path, key), None)
 
 
 def kv_delete(key: str) -> None:

@@ -7779,7 +7779,7 @@ def run_restore(
             why: list[str] = []
             if not _checkpoint_before_swap(why=why):
                 raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
-            # The carry and the replace under one hold of the write gate, so a settings save in between waits for the new file.
+            # The carry and the replace under one hold of settings writes, so a settings save in between waits for the new file.
             _carry_and_swap(working, target, report)
             init_db()
 

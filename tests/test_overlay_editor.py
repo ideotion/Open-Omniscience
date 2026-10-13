@@ -571,3 +571,18 @@ def test_the_overlay_routes_are_registered_before_the_by_id_route() -> None:
         f"an /overlay route ({paths[first_overlay]}) is registered after "
         f"{paths[first_by_id]}; FastAPI matches in order, so it will answer 422"
     )
+
+
+def test_revert_saves_the_preference_after_it_commits_never_while_its_session_holds_the_write_gate() -> None:
+    """The queries above flush the revert, so the session holds the single-writer gate until it commits; a settings save made then opens a
+    second connection that waits on this session's write lock (a 30 s stall, then OperationalError, the preference never saved). The suite's
+    own session does not take the gate, so the order is pinned from the source."""
+    import ast
+    import inspect
+
+    from src.catalog.qualification_overlay import revert_overlay as fn
+
+    tree = ast.parse(inspect.getsource(fn))
+    commit = [c.lineno for c in ast.walk(tree) if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "commit"]
+    save = [c.lineno for c in ast.walk(tree) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "save_settings"]
+    assert len(commit) == 1 and len(save) == 1 and commit[0] < save[0]

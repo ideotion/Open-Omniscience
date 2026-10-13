@@ -59,6 +59,18 @@ def test_a_settings_write_entered_with_the_gate_held_fails_the_suite(store):
     with write_lock(), pytest.raises(AssertionError, match="holds the single-writer gate"):
         kv_store.kv_delete("settings.x")
     assert _stored(store, "settings.x") is None
+    assert len(kv_store.STRICT_VIOLATIONS) == 2, "the violation is recorded where an `except Exception` cannot swallow it"
+    kv_store.STRICT_VIOLATIONS.clear()  # provoked on purpose: the suite's fixture would otherwise fail this test
+
+
+def test_an_except_exception_around_a_save_does_not_hide_the_violation(store):
+    with write_lock():
+        try:
+            kv_store.kv_set_json("settings.y", {"v": 1})
+        except Exception:  # noqa: BLE001 - what thirteen callers do
+            pass
+    assert kv_store.STRICT_VIOLATIONS
+    kv_store.STRICT_VIOLATIONS.clear()
 
 
 def test_without_a_hold_a_write_goes_straight_through_and_fills_the_cache(store):
@@ -156,7 +168,7 @@ def test_a_thread_that_holds_the_gate_is_refused_at_once_during_a_hold(store, mo
         t.start()
         t.join(_PATIENCE_S)
     assert out and out[0] < 5, "it waited out the wait instead of being refused"
-    assert not write_gate.held_here()
+    assert not write_gate.held_by_current_thread()
 
 
 def test_the_hold_is_not_reentrant_and_is_let_go_on_every_exit(store):
@@ -180,6 +192,79 @@ def test_an_invalidation_during_a_write_keeps_its_value_out_of_the_cache(store, 
     monkeypatch.setattr(kv_store, "_open", open_then_invalidate)
     kv_store.kv_set_json("settings.skip", {"v": 6})
     assert (str(store), "settings.skip") not in kv_store._cache
+
+
+def test_a_save_that_lands_after_another_keys_invalidation_does_not_leave_the_old_value_cached(store, monkeypatch):
+    """The independent read's B1: the epoch is global, so ``kv_invalidate(other_key)`` during a save skipped its fill and left the OLDER value
+    cached: the file said 2, the process served 1."""
+    kv_store.kv_set_json("settings.k", {"v": 1})
+    assert kv_store.kv_get_json("settings.k") == {"v": 1}
+    real = kv_store._open
+
+    def open_after_an_unrelated_invalidation(path, **kw):
+        kv_store.kv_invalidate("some.other.key")
+        return real(path, **kw)
+
+    monkeypatch.setattr(kv_store, "_open", open_after_an_unrelated_invalidation)
+    kv_store.kv_set_json("settings.k", {"v": 2})
+    monkeypatch.setattr(kv_store, "_open", real)
+    assert _stored(store, "settings.k") == '{"v": 2}'
+    assert kv_store.kv_get_json("settings.k") == {"v": 2}, "the old value stayed cached over what was just saved"
+
+
+def test_the_strict_read_does_not_fill_the_cache_after_an_invalidation(store, monkeypatch):
+    con = sqlite3.connect(store)
+    con.execute("INSERT INTO app_state VALUES ('spell.s', '{\"from\": \"old\"}', 'x')")
+    con.commit()
+    con.close()
+    kv_store.kv_invalidate()
+    real = kv_store._open
+
+    def open_then_invalidate(path, **kw):
+        conn = real(path, **kw)
+        kv_store.kv_invalidate()  # lands while the read is in flight
+        return conn
+
+    monkeypatch.setattr(kv_store, "_open", open_then_invalidate)
+    assert kv_store.kv_get_json_strict("spell.s") == {"from": "old"}
+    assert (str(store), "spell.s") not in kv_store._cache
+
+
+def test_a_failed_read_that_an_invalidation_overtook_is_not_held_against_the_live_file(store, monkeypatch):
+    real = kv_store._read_value
+
+    def failing(path, key, *, read_only):
+        kv_store.kv_invalidate()
+        raise OSError("the file was switched under it")
+
+    monkeypatch.setattr(kv_store, "_read_value", failing)
+    with pytest.raises(kv_store.KvReadError):
+        kv_store.kv_get_json_checked("settings.l1")
+    assert (str(store), "settings.l1") not in kv_store._failed
+
+
+def test_an_interrupt_during_the_drain_does_not_leave_the_hold_set(store):
+    """A BaseException (the main thread's KeyboardInterrupt) while the hold waits for a write in flight: every later save would wait."""
+    slot = kv_store._write_slot()
+    slot.__enter__()
+
+    class Interrupted(BaseException):
+        pass
+
+    real_wait = kv_store._hold.wait
+
+    def interrupted(timeout=None):
+        raise Interrupted
+
+    kv_store._hold.wait = interrupted  # type: ignore[method-assign]
+    try:
+        with pytest.raises(Interrupted), kv_store.hold_writes(5):
+            pass
+    finally:
+        kv_store._hold.wait = real_wait  # type: ignore[method-assign]
+        slot.__exit__(None, None, None)
+    assert kv_store._hold_by is None and kv_store._inflight == 0
+    kv_store.kv_set_json("settings.after", {"v": 1})  # and a save is not made to wait
 
 
 def test_both_writers_go_through_the_write_slot():

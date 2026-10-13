@@ -522,9 +522,12 @@ def revert_overlay(
         ):
             ev.undone_at = undone
             admissions_undone += 1
-    # Turned off HERE rather than by the caller, so the preference and the restore land in
-    # one operation: a revert whose second half depends on a separate call is a revert that
-    # can half-happen.
+    # Turned off HERE rather than by the caller, so the preference and the restore land in one operation: a revert whose second
+    # half depends on a separate call is a revert that can half-happen. AFTER the commit, never before it: the queries above flushed
+    # the changes, so this session holds the single-writer gate until it commits, and a settings save made while it does opens a
+    # second connection that waits on this session's write lock (a 30 s stall, then ``OperationalError``, and the preference never
+    # saved). ``kv_set_json``'s own constraint.
+    session.commit()
     try:
         from src.config.app_settings import save_settings
 
@@ -534,7 +537,6 @@ def revert_overlay(
         preference_held = False
     else:
         preference_held = True
-    session.commit()
     still_collecting = (
         session.query(Source.id)
         .filter(Source.id.in_(ids), Source.enabled.is_(True), Source.status == STATUS_QUALIFIED)

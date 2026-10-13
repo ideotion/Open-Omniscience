@@ -425,3 +425,17 @@ def _pool_watch_isolated():
     pool_watch._reset_for_tests()
     yield
     pool_watch._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _no_settings_write_is_entered_holding_the_single_writer_gate():
+    """``OO_KV_STRICT_GATE_ORDER=1`` (set at the top of this file) makes ``kv_store`` record every settings write entered by a thread that
+    holds the gate. It also raises, but thirteen callers wrap a save in ``except Exception``, which swallows the raise: the list is what
+    cannot be swallowed. A test that PROVOKES the violation on purpose empties the list itself."""
+    from src.config import kv_store
+
+    kv_store.STRICT_VIOLATIONS.clear()
+    yield
+    seen = list(kv_store.STRICT_VIOLATIONS)
+    kv_store.STRICT_VIOLATIONS.clear()
+    assert not seen, f"a settings write was entered holding the single-writer gate {len(seen)} time(s) (see kv_store.kv_set_json)"

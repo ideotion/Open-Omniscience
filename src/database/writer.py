@@ -305,11 +305,6 @@ class WriterGate:
         with self._cond:
             return self._owner == threading.get_ident()
 
-    def held_here(self) -> bool:
-        """Does the calling thread hold the window right now (at any reentrant depth)?"""
-        with self._cond:
-            return self._owner == threading.get_ident()
-
     def waiters(self) -> int:
         """Threads blocked RIGHT NOW waiting to write: the one number a long holder needs to know whether to let go.
 
