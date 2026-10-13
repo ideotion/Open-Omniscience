@@ -4,6 +4,9 @@ text makers are sinks (``data/app_errors.jsonl`` rides the diagnostics bundle, a
 
 The files that still have sites are listed in ``tests/data/exc_info_allowlist.json`` (count + owner), a RATCHET with zero
 slack: a new site fails, a converted site that leaves its entry too high fails, and the entry goes when its count is zero.
+
+What the counts protect: that no new raw sink lands while the sweep converts the old ones. They are a measured ceiling that only
+falls, never a budget; the sweep ends with an empty list and the list goes.
 """
 
 from __future__ import annotations
