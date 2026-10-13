@@ -8,15 +8,25 @@ built (``format=parts``, whose content is ``format=zip``'s, pinned in ``test_key
 it states the one thing the digest does NOT carry, so the removal is not read as a claim it does not make:
 
 * every summary the log held (corpus counts, families, the user's corrections, super-groups, per-source
-  concentration, stop-word and ring candidates) is in the digest, equal to the export's;
-* the per-keyword list is a top-``_DIGEST_SAMPLE`` sample by mentions, byte-for-byte the export's entries,
-  with ``keywords_digest`` saying how many were left out; the rest of the list is the "All keywords" link,
-  whose first files are the log the removed button gave;
+  concentration, stop-word and ring candidates) is in the digest, equal to the export's, on a corpus whose
+  languages fit the window and on one where they exceed it;
+* the per-keyword list is a top-``_DIGEST_SAMPLE`` sample by mentions, the export's own entries, with
+  ``keywords_digest`` saying how many were left out; the rest of the list is the "All keywords" link, whose
+  first files hold the entries the removed button gave (a superset where that button's 9 MB aim trimmed a
+  language's tail), but whose own ``summary.json`` is built over every keyword, not over the window;
 * on a computer short of memory the families are grouped over the first keywords of each language only,
   the digest says so and points at "All keywords" (R130 = 36a), and the export it replaces is partial in
-  exactly the same way, so nothing is lost relative to the button.
+  the same way, so where the digest runs nothing is lost relative to the button.
 
-No fixed number is asserted that the code does not state itself: the sample size is ``_DIGEST_SAMPLE``.
+WHERE THE DIGEST DOES NOT RUN this proves nothing, and the texts that rely on it say "when the build ran it":
+a Quick build on a large corpus can leave it out for time (``skipped-budget`` in the scan table,
+``tests/test_diagnostics_modes.py``) and a machine without the memory declines it (``declined-ram``,
+``ram_declined_reason``, ``tests/test_keyword_export_bounded.py``). There
+"All keywords" is the way to the keywords, and Thorough the way to the digest.
+
+No fixed number is asserted that the code does not state itself: the sample size is ``_DIGEST_SAMPLE``, and
+the window the digest uses is the constant the module states (patched small here for the corpus whose
+languages exceed it, which at the real 5,000 would need a corpus of tens of thousands of keywords).
 """
 
 from __future__ import annotations
@@ -58,6 +68,10 @@ _DIGEST_ADDS = {"families_summary", "keywords", "keywords_digest"}
 _DESCRIBE_THE_FILE = {"method", "families_provenance"}
 
 _CORPORA = {"larger": (11, 220, 1_800), "smaller": (12, 60, 400)}
+#: ``name -> (corpus, window)``: the window is the real one (``None``) or a small one that the larger
+#: corpus's languages EXCEED, which is the regime of a real install (``capped_languages`` non-empty) and the
+#: only one in which the digest's count of what it left out can differ from the corpus's keyword total.
+_CASES = {"larger": ("larger", None), "smaller": ("smaller", None), "beyond-the-window": ("larger", 60)}
 
 
 def _plant_corrections(path: Path) -> None:
@@ -113,9 +127,18 @@ def _digest(db) -> dict:
     return json.loads(_drain_body(resp))["data"]
 
 
-def _archive(db) -> tuple[dict, list[dict]]:
+def _case(name, corpus, monkeypatch):
+    """``(session, window)`` for a case of ``_CASES``; a small window is patched into the module the digest
+    reads it from (the export takes its window from the call, the digest from the module's constant)."""
+    source, window = _CASES[name]
+    if window is not None:
+        monkeypatch.setattr(kw_mod, "_MAX_KEYWORDS_PER_LANG", window)
+    return _session(corpus[source]), (_MAX_KEYWORDS_PER_LANG if window is None else window)
+
+
+def _archive(db, window: int = _MAX_KEYWORDS_PER_LANG) -> tuple[dict, list[dict]]:
     """``(summary data, every per-keyword entry)`` of the export the removed button built."""
-    files = _zip(_log(db))
+    files = _zip(_log(db, per_lang=window))
     summary = json.loads(files["summary.json"])["data"]
     entries = [
         entry
@@ -153,10 +176,10 @@ def test_the_bundle_member_is_the_call_this_evidence_makes():
     assert default.default == _MAX_KEYWORDS_PER_LANG == kle.PARTS_ROUND_RECORDS
 
 
-@pytest.mark.parametrize("name", list(_CORPORA))
-def test_the_digest_carries_every_summary_the_keyword_log_held_unchanged(name, corpus, data_dir):
-    db = _session(corpus[name])
-    log, _entries = _archive(db)
+@pytest.mark.parametrize("name", list(_CASES))
+def test_the_digest_carries_every_summary_the_keyword_log_held_unchanged(name, corpus, data_dir, monkeypatch):
+    db, window = _case(name, corpus, monkeypatch)
+    log, _entries = _archive(db, window)
     digest = _digest(db)
     db.close()
     # The two key sets are PINNED, so a key the export gains (or the digest loses) fails here and asks
@@ -165,17 +188,24 @@ def test_the_digest_carries_every_summary_the_keyword_log_held_unchanged(name, c
     assert set(digest) == _LOG_SUMMARY_KEYS | _DIGEST_ADDS
     for key in sorted(_LOG_SUMMARY_KEYS - _DESCRIBE_THE_FILE):
         assert digest[key] == log[key], f"{key}: the digest no longer carries what the log held"
-    # Not a vacuous comparison: the parts that matter are populated on this corpus.
-    assert log["corpus"] and log["families"] and log["per_source_concentration"]
-    assert log["stopword_candidates"] and log["ring_candidates"]
+    # Not a vacuous comparison: what each summary is about is POPULATED on this corpus. (The dicts with fixed
+    # keys -- corpus, per_source_concentration, stopword_candidates, ring_candidates -- are always truthy, so
+    # the lists inside them are what is asserted.)
+    assert log["corpus"]["keywords_total"] > 0 and log["families"]
+    assert log["per_source_concentration"]["suspects"]
+    for key in ("stopword_candidates", "ring_candidates"):
+        assert any(v["candidates"] for v in log[key]["by_language"].values()), key
     assert [o["normalized_term"] for o in log["overrides"]] == ["term5", "term6", "term7"]
     assert log["supergroups"] == [{"name": "A theme of the user", "members": ["term5", "term9"]}]
+    # The two regimes really are two: where a language exceeds the window the export names it as capped (and
+    # so does the digest, being equal), where none does the list is empty.
+    assert bool(log["corpus"]["capped_languages"]) is (name == "beyond-the-window")
 
 
-@pytest.mark.parametrize("name", list(_CORPORA))
-def test_the_two_descriptions_that_differ_say_how_the_file_was_made(name, corpus, data_dir):
-    db = _session(corpus[name])
-    log, _entries = _archive(db)
+@pytest.mark.parametrize("name", list(_CASES))
+def test_the_two_descriptions_that_differ_say_how_the_file_was_made(name, corpus, data_dir, monkeypatch):
+    db, window = _case(name, corpus, monkeypatch)
+    log, _entries = _archive(db, window)
     digest = _digest(db)
     db.close()
     # method: the export's text, then the digest's own sentence naming the sample and the count of the rest.
@@ -199,10 +229,12 @@ def test_the_two_descriptions_that_differ_say_how_the_file_was_made(name, corpus
 # --------------------------------------------------------------------------- what it does not carry
 
 
-@pytest.mark.parametrize("name", list(_CORPORA))
-def test_the_per_keyword_list_is_a_labelled_top_sample_of_the_entries_the_log_held(name, corpus, data_dir):
-    db = _session(corpus[name])
-    _log_summary, entries = _archive(db)
+@pytest.mark.parametrize("name", list(_CASES))
+def test_the_per_keyword_list_is_a_labelled_top_sample_of_the_entries_the_log_held(
+    name, corpus, data_dir, monkeypatch
+):
+    db, window = _case(name, corpus, monkeypatch)
+    log_summary, entries = _archive(db, window)
     digest = _digest(db)
     db.close()
     sample, meta = digest["keywords"], digest["keywords_digest"]
@@ -216,6 +248,14 @@ def test_the_per_keyword_list_is_a_labelled_top_sample_of_the_entries_the_log_he
         "sort": "mentions desc",
     }
     assert len(sample) == _DIGEST_SAMPLE
+    # The whole is what the LOG held (the window), not the corpus's keyword total: where a language exceeds
+    # the window the two differ, and the label must count the first.
+    corpus_total = log_summary["corpus"]["keywords_total"]
+    if name == "beyond-the-window":
+        assert log_summary["corpus"]["capped_languages"] and len(entries) < corpus_total
+    else:
+        assert not log_summary["corpus"]["capped_languages"] and len(entries) == corpus_total
+    assert digest["corpus"]["keywords_total"] == corpus_total
     # Each is the log's own entry (same term, counts, dates, language signature), not a rewrite.
     by_key = {(e["language"], e["normalized"], e["kind"]): e for e in entries}
     assert len(by_key) == len(entries)
@@ -227,9 +267,10 @@ def test_the_per_keyword_list_is_a_labelled_top_sample_of_the_entries_the_log_he
     assert shown == sorted((e["mentions"] for e in entries), reverse=True)[:_DIGEST_SAMPLE]
 
 
-def _parts_by_language(data_dir: Path, listing: dict) -> dict[str, list[dict]]:
-    """Every per-keyword entry of a numbered set, per language, in rank order."""
-    pieces: dict[str, list[tuple[int, list[dict]]]] = {}
+def _parts_in_order(data_dir: Path, listing: dict) -> list[tuple[str, int, int, list[dict]]]:
+    """``(language, slice_from, slice_to, entries)`` of every keyword member of a numbered set, in the order a
+    person who saves the files in number order meets them."""
+    out = []
     for f in listing["files"]:
         if f["kind"] != "part":
             continue
@@ -237,32 +278,45 @@ def _parts_by_language(data_dir: Path, listing: dict) -> dict[str, list[dict]]:
             for member in z.namelist():
                 if member.startswith("keywords/"):
                     doc = json.loads(z.read(member))
-                    pieces.setdefault(doc["language"], []).append((doc["slice_from"], doc["keywords"]))
-    return {
-        lang: [e for _from, chunk in sorted(chunks, key=lambda c: c[0]) for e in chunk]
-        for lang, chunks in pieces.items()
-    }
+                    out.append((doc["language"], doc["slice_from"], doc["slice_to"], doc["keywords"]))
+    return out
 
 
-def test_all_keywords_begins_with_the_log_the_removed_button_gave(corpus, data_dir, monkeypatch):
+def _per_language(parts) -> dict[str, list[dict]]:
+    """The entries of ``parts`` per language, in the order the files meet them."""
+    out: dict[str, list[dict]] = {}
+    for lang, _from, _to, entries in parts:
+        out.setdefault(lang, []).extend(entries)
+    return out
+
+
+def test_all_keywords_begins_with_the_entries_the_removed_button_gave(corpus, data_dir, monkeypatch):
     """The per-keyword list beyond the digest's sample is not lost with the button: the files of "All
-    keywords" are numbered rank-major, round one being every language's default window, which is exactly
-    what "Keyword log (4 MB files)" built. A small window stands for the default one here."""
+    keywords" are numbered rank-major, round one being every language's default window, which is what
+    "Keyword log (4 MB files)" built. A small window stands for the default one here (that the real round IS
+    the default window is pinned in ``test_keyword_parts_route.py``, and the route's default above). The
+    entries are the same; the SUMMARY is not: the first files' ``summary.json`` is built over every keyword
+    of the corpus, which is why the texts send a person to the digest (or Thorough) for the log's summary."""
     window = 40
     monkeypatch.setattr(kle, "PARTS_ROUND_RECORDS", window)
     db = _session(corpus["larger"])
-    log_listing = json.loads(_log(db, fmt="parts", per_lang=window).body)
-    log_set = _parts_by_language(data_dir, log_listing)
-    all_listing = json.loads(_log(db, fmt="parts", per_lang=1_000_000_000, max_mb=0).body)
-    all_set = _parts_by_language(data_dir, all_listing)
+    log_parts = _parts_in_order(data_dir, json.loads(_log(db, fmt="parts", per_lang=window).body))
+    all_parts = _parts_in_order(data_dir, json.loads(_log(db, fmt="parts", per_lang=1_000_000_000, max_mb=0).body))
     db.close()
-    assert set(log_set) == set(all_set)
-    assert any(len(entries) > window for entries in all_set.values()), "the all-keywords set must go beyond the window"
+    # the removed button's set is one round: every slice starts inside the window
+    assert log_parts and all(f < window and t <= window for _l, f, t, _e in log_parts)
+    # ...All keywords is several: the files meet round one first (in NUMBER order, not re-sorted here), and the
+    # set goes on beyond it
+    rounds = [f // window for _l, f, _t, _e in all_parts]
+    assert rounds == sorted(rounds), "a record of round two is met before the last of round one"
+    assert max(rounds) >= 1, "the all-keywords set must go beyond the window"
+    round_one = [part for part in all_parts if part[1] < window]
+    assert round_one == all_parts[: len(round_one)]
+    log_set, first_round = _per_language(log_parts), _per_language(round_one)
+    assert set(log_set) == set(first_round)
     for lang, entries in log_set.items():
         assert len(entries) <= window
-        assert all_set[lang][: len(entries)] == entries, f"{lang}: the first files of All keywords differ from the log"
-    # the log's window is the default window the route (and so the removed button) used
-    assert kle.PARTS_ROUND_RECORDS == window  # (patched here; the real constant is pinned equal to the default above)
+        assert first_round[lang][: len(entries)] == entries, f"{lang}: the first files of All keywords differ"
 
 
 # --------------------------------------------------------------------------- low memory (R130 = 36a)
@@ -313,6 +367,9 @@ def test_the_panel_keeps_one_text_link_and_the_routes_stay():
     # The Diagnostics button's own hover text still tells where the full dump is.
     button = re.search(r'<button id="all-diag-btn"[^>]*title="([^"]*)"', html)
     assert button and "keyword digest" in button.group(1) and "'All keywords'" in button.group(1)
+    # ...and says the digest is there WHEN THE BUILD RAN IT (the evidence calls the route; the build's Quick
+    # budget and its memory gate sit in front of it), never that it always is.
+    assert "when the build ran it" in button.group(1)
     # The routes the buttons called stay (R123: "the routes stay"), and so does the routine and its whitelist entry.
     from src.api.diagnostics import keyword_parts, keywords  # noqa: F401  (importing registers the routes)
     from src.api.diagnostics._base import router

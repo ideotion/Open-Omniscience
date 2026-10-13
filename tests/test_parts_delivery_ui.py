@@ -25,7 +25,7 @@ _LOCALES = _STATIC / "locales"
 _STRINGS = [
     "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.",
     "Looking for the last keyword files…",
-    "No keyword files are kept on this machine yet — build them with one of the keyword buttons.",
+    "No keyword files are kept on this machine yet — build them with the All keywords link.",
     "Ready — preparing the download…",
     "Save all the rest",
     "Save the next 5",
