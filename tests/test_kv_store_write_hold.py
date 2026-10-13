@@ -351,8 +351,9 @@ def test_the_cache_is_filled_inside_the_gate_so_two_saves_of_one_key_fill_in_the
         ]
         assert books, f"{fn.__name__} keeps its bookkeeping outside the gate or outside a finally: two saves can fill in the wrong order"
         steps = [ast.unparse(st) for st in books[0].body]
-        pop = next(i for i, st in enumerate(steps) if st.startswith("_cache.pop("))
-        bump = next(i for i, st in enumerate(steps) if st.startswith("_wver[path, key] ="))
+        pop = next((i for i, st in enumerate(steps) if st.startswith("_cache.pop(")), None)
+        bump = next((i for i, st in enumerate(steps) if st.startswith("_wver[path, key] =")), None)
+        assert pop is not None and bump is not None, f"{fn.__name__} lost the cache drop or the version bump from its bookkeeping: {steps}"
         assert pop < bump, f"{fn.__name__} moves the version before it drops the older entry: a signal between them keeps the older entry"
 
 
