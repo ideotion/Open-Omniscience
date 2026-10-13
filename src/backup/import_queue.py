@@ -336,7 +336,7 @@ class ImportQueueManager:
             tmp.write_text(json.dumps(payload), encoding="utf-8")
             os.replace(tmp, p)
         except Exception as exc:  # noqa: BLE001 - never break an import over its own log
-            log_failure(_LOG, "could not persist the import queue state", exc, level=logging.WARNING)
+            log_failure(_LOG, "could not persist the import queue state", exc, self._passphrase, level=logging.WARNING)
 
     def _load_persisted(self) -> None:
         try:
@@ -512,7 +512,7 @@ class ImportQueueManager:
             try:
                 cancel()
             except Exception as exc:  # noqa: BLE001 - one manager's refusal must not block the others
-                log_failure(_LOG, "cancelling a sub-job during import stop failed", exc, level=logging.WARNING)
+                log_failure(_LOG, "cancelling a sub-job during import stop failed", exc, self._passphrase, level=logging.WARNING)
 
     # -- sub-manager seams (overridable in tests) ---------------------------- #
     def _cancel_volume(self) -> None:
@@ -550,7 +550,7 @@ class ImportQueueManager:
                 drove = True
                 self._drive()
         except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-            log_failure(_LOG, "the exclusive window for the import failed", exc, level=logging.WARNING)
+            log_failure(_LOG, "the exclusive window for the import failed", exc, self._passphrase, level=logging.WARNING)
         finally:
             with self._lock:
                 self._collection_paused = False
@@ -576,7 +576,7 @@ class ImportQueueManager:
                 "started" if started else f"not started ({detail})",
             )
         except Exception as exc:  # noqa: BLE001
-            log_failure(_LOG, "could not start the post-import re-index drain", exc, level=logging.WARNING)
+            log_failure(_LOG, "could not start the post-import re-index drain", exc, self._passphrase, level=logging.WARNING)
 
     def _drive(self) -> None:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
@@ -776,7 +776,7 @@ class ImportQueueManager:
             with session_scope() as session:
                 self._tuned = optimize_after_bulk(session)
         except Exception as exc:  # noqa: BLE001 - tuning is never load-bearing
-            log_failure(_LOG, "post-import tuning pass failed", exc, level=logging.WARNING)
+            log_failure(_LOG, "post-import tuning pass failed", exc, self._passphrase, level=logging.WARNING)
         finally:
             with self._lock:
                 self._live = None
@@ -880,7 +880,7 @@ class ImportQueueManager:
             try:
                 guard.close()
             except Exception as exc:  # noqa: BLE001 - a registry release must never fail a run
-                log_failure(_LOG, "releasing the checkpoint group's staging guard failed", exc, level=logging.WARNING)
+                log_failure(_LOG, "releasing the checkpoint group's staging guard failed", exc, self._passphrase, level=logging.WARNING)
         return group
 
     #: How much of a failure's own text a discarded or errored item keeps (the discard reason and
@@ -1081,7 +1081,7 @@ class ImportQueueManager:
             prev = item.get("stage_reached")
             item["stage_reached"] = s if not isinstance(prev, int) else max(prev, s)
         except Exception as exc:  # noqa: BLE001 - bookkeeping must never cost an import
-            log_failure(_LOG, "could not record the import stage", exc, level=logging.DEBUG)
+            log_failure(_LOG, "could not record the import stage", exc, self._passphrase, level=logging.DEBUG)
 
     def _await(self, status_fn, cancel_fn, *, poll: float = 0.4) -> dict:
         """Drive one sub-manager to a terminal state, mirroring its live progress.
@@ -1105,7 +1105,7 @@ class ImportQueueManager:
                 try:
                     cancel_fn()
                 except Exception as exc:  # noqa: BLE001
-                    log_failure(_LOG, "cancelling a sub-job failed", exc, level=logging.WARNING)
+                    log_failure(_LOG, "cancelling a sub-job failed", exc, self._passphrase, level=logging.WARNING)
             time.sleep(poll)
 
     def _run_corpus(self, item: dict, *, hold: bool = False) -> dict:

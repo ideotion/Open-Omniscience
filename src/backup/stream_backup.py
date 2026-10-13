@@ -971,7 +971,7 @@ def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], s
     try:
         conn = connect(path, key=key, check_same_thread=False)
     except Exception as exc:  # noqa: BLE001 - stats are descriptive; bytes are still protected
-        log_failure(_LOG, "backup: could not open the corpus for stats", exc, level=logging.WARNING)
+        log_failure(_LOG, "backup: could not open the corpus for stats", exc, key, level=logging.WARNING)
         return {"tables": counts, "articles_commitment": None}, None
     try:
         cur = conn.cursor()
@@ -1019,7 +1019,7 @@ def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], s
         finally:
             cur.close()
     except Exception as exc:  # noqa: BLE001 - stats stay descriptive, never fail the backup
-        log_failure(_LOG, "backup: corpus stats failed", exc, level=logging.WARNING)
+        log_failure(_LOG, "backup: corpus stats failed", exc, key, level=logging.WARNING)
     finally:
         conn.close()
     return {"tables": counts, "articles_commitment": commitment}, rev
