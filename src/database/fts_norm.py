@@ -389,11 +389,13 @@ def _normalize_sql(text: str | None, mask: int) -> str | None:
     try:
         return normalize(text, mask)
     except SegmenterMissing as exc:
+        # The name is one of the two fixed literals raised above; anything else is not repeated.
+        named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "the segmenter"
         log_failure(
             logger,
-            "search index: a document was indexed with a segmenter this install "
+            f"search index: a document was indexed with the {named} segmenter, which this install "
             "no longer has, so the write that changes it is refused rather than risk the "
-            "index. Install it again (sudachipy comes with the [segmentation] extra).",
+            f"index. Install {named} again (sudachipy comes with the [segmentation] extra).",
             exc,
         )
         raise
