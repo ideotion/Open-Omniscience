@@ -31,6 +31,7 @@ languages exceed it, which at the real 5,000 would need a corpus of tens of thou
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 import re
@@ -371,7 +372,8 @@ def test_the_panel_keeps_one_text_link_and_the_routes_stay():
     # budget and its memory gate sit in front of it), never that it always is.
     assert "when the build ran it" in button.group(1)
     # The routes the buttons called stay (R123: "the routes stay"), and so does the routine and its whitelist entry.
-    from src.api.diagnostics import keyword_parts, keywords  # noqa: F401  (importing registers the routes)
+    for module in ("keyword_parts", "keywords"):  # importing a module registers its routes
+        importlib.import_module(f"src.api.diagnostics.{module}")
     from src.api.diagnostics._base import router
 
     paths = {getattr(r, "path", "") for r in router.routes}
