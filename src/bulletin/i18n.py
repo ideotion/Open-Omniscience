@@ -44,11 +44,14 @@ app wrote itself.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import log_failure
+
+_LOG = logging.getLogger(__name__)
 
 #: Where a catalog lives. One flat JSON object per locale: English → translation.
 CATALOG_DIR = Path(__file__).resolve().parents[2] / "configs" / "bulletin_i18n"
@@ -237,8 +240,11 @@ class Translator:
         try:
             return frame.format_map(_Missing(values))
         except (IndexError, ValueError) as exc:  # a malformed frame, e.g. a lone "{"
-            # The words of a format error in a template this app ships ("Single '}' encountered"): kept, through the one scrub.
-            self._rejected.setdefault(template, exception_text(exc, limit=300))
+            # The reason rides the language report into the diagnostics bundle (bulletin-language.json), which is a record: it keeps the
+            # failure's class, and the words ("Single '}' encountered") go to the scrubbed log line, once per frame.
+            if template not in self._unresolved:
+                log_failure(_LOG, "bulletin: a frame could not be filled", exc, level=logging.WARNING)
+            self._rejected.setdefault(template, f"the frame could not be filled ({type(exc).__name__})")
             self._unresolved.setdefault(template, None)
             return template
 

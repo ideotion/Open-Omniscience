@@ -10,10 +10,12 @@ the edition, the annexes, the evidence archive, the narration layers and the job
 keyed open's driver error carries the passphrase.
 
 A log line now goes through ``secret_scrub.log_failure``; a record keeps the exception's CLASS and none of its words (the words are in
-the scrubbed log line). Two places answer the OPERATOR who just asked and keep no record: a route's refusal and the evidence plan's
-"this folder cannot be written". They keep the failure's words, through ``exception_text``, so that the person who chose the folder is
-told why it fails; the held passphrase is out of those words and the chained cause is not raised. Every site is driven here with a held
-passphrase, a key statement and a sentence of the engine's own words inside the failure. ``test_runs_log_sinks.py`` reads the same modules
+the scrubbed log line). Three places answer the OPERATOR who just asked and keep no record: a route's refusal, the route's "built but
+not saved" answer (``persist_error``) and the evidence plan's "this folder cannot be written". They keep the failure's words, through
+``exception_text``, so that the person who chose the folder is told why it fails; the held passphrase is out of those words and the chained
+cause is not raised. A frame the translator cannot fill is NOT one of them: its reason rides ``bulletin-language.json`` in the diagnostics
+bundle, so it is a record and keeps the class. Every site is driven here with a held passphrase, a key statement and a sentence of the
+engine's own words inside the failure. ``test_runs_log_sinks.py`` reads the same modules
 for the shape of the code (``_SWEEP_MODULES``).
 """
 
@@ -33,6 +35,7 @@ from tests.test_bulletin_sink_sites import (  # noqa: F401  (``_held`` is an aut
     STATEMENT,
     WORDS,
     _class_only,
+    _class_only_absent,
     _failure,
     _held,
     _is_the_class,
@@ -152,16 +155,38 @@ def test_an_unreadable_article_body_is_logged_scrubbed_at_debug_and_costs_one_ro
     assert len([r for r in caplog.records if "article 11 body unreadable" in r.getMessage()]) == 2
 
 
-def test_an_unreadable_article_body_costs_nothing_when_debug_is_off(monkeypatch, caplog):
-    """``log_failure`` makes the whole traceback text, so the per-body sites build it only when DEBUG is on."""
-    from src.bulletin import articles
+def test_the_debug_sites_cost_nothing_when_debug_is_off(monkeypatch, caplog):
+    """``log_failure`` makes the whole traceback text, so every DEBUG site (the per-body ones, the temp sweep, the story's article
+    rows) builds it only when DEBUG is on: each is driven here with its module's ``log_failure`` replaced by a recorder."""
+    from src.bulletin import articles, store
+    from src.bulletin import edition as edition_mod
     from src.database.models import Article
 
     called = []
-    monkeypatch.setattr(articles, "log_failure", lambda *a, **k: called.append(a))
+    for module in (articles, edition_mod, store):
+        monkeypatch.setattr(module, "log_failure", lambda *a, **k: called.append(a))
     monkeypatch.setattr(Article, "get_content", _raise)
-    articles.article_rows(_corpus_with_one_article(), [11])
-    assert called == [] and caplog.records == []
+    session = _corpus_with_one_article()
+    articles.article_rows(session, [11])
+    assert called == [], "article_rows"
+    articles.article_bodies(session, [11])
+    assert called == [], "article_bodies"
+
+    class _Folder:
+        def glob(self, _pattern):
+            raise _failure()
+
+    store._sweep(_Folder())
+    assert called == [], "the temp sweep"
+
+    monkeypatch.setattr("src.bulletin.facts.layer_a", lambda *_a, **_k: {"masthead": {}})
+    monkeypatch.setattr("src.bulletin.edition._attribution", lambda *_a, **_k: ([], None))
+    monkeypatch.setattr("src.bulletin.introduction.opening_block", lambda _e: {})
+    monkeypatch.setattr("src.bulletin.stories.build_stories", lambda *_a, **_k: {"stories": [{"article_ids": [1]}]})
+    monkeypatch.setattr("src.bulletin.articles.article_rows", _raise)
+    edition_mod.build_edition(object(), _period(), narrate=False)
+    assert called == [], "the story's article rows"
+    assert caplog.records == []
 
 
 def test_an_article_that_cannot_be_read_for_narration_is_logged_scrubbed_and_skipped(monkeypatch, caplog):
@@ -289,10 +314,36 @@ def test_a_hardware_probe_that_raises_degrades_with_the_class_and_logs_the_words
     _scrubbed(_logged(caplog, "src.bulletin.gate", "hardware capability probe failed"))
 
 
+def test_the_gate_record_keeps_no_word_of_a_probe_that_failed_inside_the_capability_check(monkeypatch, caplog):
+    """The capability dict is stored in the edition (``edition["gate"]``), so it rides the backup, the evidence archive and the diagnostics
+    bundle: the probes' own handlers run here (``inference_capability`` is not replaced), which is the shape a stand-in would skip."""
+    from src.bulletin.gate import bulletin_available
+
+    monkeypatch.setattr("src.llm.backend.detect_gpu", _raise)
+    monkeypatch.setattr("src.llm.backend.platform.system", _raise)
+    out = bulletin_available()
+    warned = " ".join(out["warnings"])
+    assert f"GPU probe failed ({CLASS})" in warned and f"platform probe failed ({CLASS})" in warned, warned
+    _class_only(out)
+    for fragment in ("the GPU probe failed", "the platform probe failed"):
+        _scrubbed(_logged(caplog, "src.llm.backend", fragment))
+
+
+def test_an_apple_silicon_probe_that_raises_keeps_the_class_in_the_capability(monkeypatch, caplog):
+    from src.llm import backend
+
+    monkeypatch.setattr(backend, "detect_gpu", lambda: {"available": False, "reason": "no nvidia-smi on this machine"})
+    monkeypatch.setattr(backend, "detect_apple_silicon", _raise)
+    cap = backend.inference_capability()
+    assert f"Apple Silicon probe failed ({CLASS})" in " ".join(cap["warnings"]), cap["warnings"]
+    _class_only(cap)
+    _scrubbed(_logged(caplog, "src.llm.backend", "the Apple Silicon probe failed"))
+
+
 # --------------------------------------------------------------------------- #
-#  the translator: a format error in a template this app ships keeps its words, scrubbed
+#  the translator: a frame it cannot fill keeps the class in the language report, which rides the diagnostics bundle
 # --------------------------------------------------------------------------- #
-def test_a_format_error_in_a_frame_keeps_its_words_through_the_scrub():
+def test_a_format_error_in_a_frame_keeps_the_class_in_the_report_and_its_words_in_the_scrubbed_log(caplog):
     from src.bulletin.i18n import Translator
 
     class _Boom:
@@ -301,10 +352,16 @@ def test_a_format_error_in_a_frame_keeps_its_words_through_the_scrub():
 
     tr = Translator("fr")  # English reports a bare count; a translated locale lists each refused frame with its reason
     assert tr.f("{x}", x=_Boom()) == "{x}", "a frame that cannot be filled comes back as it is"
+    assert tr.f("{x}", x=_Boom()) == "{x}", "asked again, it answers the same and logs once"
     (row,) = tr.report()["rejected_strings"]
     assert row["text"] == "{x}"
-    _no_passphrase(row["reason"])
-    assert row["reason"].startswith("ValueError: ") and WORDS in row["reason"]
+    assert row["reason"] == "the frame could not be filled (ValueError)"
+    _class_only_absent(row)
+    from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE
+
+    rec = _logged(caplog, "src.bulletin.i18n", "a frame could not be filled")
+    text = logging.Formatter("%(message)s").format(rec) + str(getattr(rec, TRACEBACK_ATTRIBUTE, ""))
+    assert rec.exc_info is None and "ValueError" in text and WORDS in text and SECRET not in text, text
 
 
 # --------------------------------------------------------------------------- #
@@ -486,7 +543,8 @@ def test_an_edition_that_cannot_be_written_is_returned_with_the_class_and_the_sc
     monkeypatch.setattr("src.bulletin.store.persist_edition", _os_raise)
     body = api.post("/api/bulletin/generate?cadence=weekly")
     _told(body, 200)
-    assert body.json()["persisted"] is False and body.json()["persist_error"].startswith("OSError: ")
+    persist_error = body.json()["persist_error"]
+    assert body.json()["persisted"] is False and persist_error.startswith("OSError: ") and WORDS in persist_error, persist_error
 
 
 def test_an_edition_on_disk_that_cannot_be_read_says_so_and_chains_no_cause(api, monkeypatch):
@@ -498,6 +556,22 @@ def test_an_edition_on_disk_that_cannot_be_read_says_so_and_chains_no_cause(api,
 
     monkeypatch.setattr("src.bulletin.store.read_edition", _missing)
     assert "no such edition" in _told(api.get("/api/bulletin/editions/x.json"), 404)
+
+
+@pytest.mark.parametrize("reading", ["unreadable", "missing"])
+def test_the_edition_routes_raise_their_refusal_with_no_cause_chained_on(api, monkeypatch, reading):
+    """``from None`` sets ``__suppress_context__``; ``from exc`` would set ``__cause__``, and a traceback prints the cause's message."""
+    from fastapi import HTTPException
+
+    from src.api import bulletin as route
+
+    def _missing(*_a, **_k):
+        raise FileNotFoundError(f"{WORDS}: {SECRET}")
+
+    monkeypatch.setattr("src.bulletin.store.read_edition", _value_raise if reading == "unreadable" else _missing)
+    with pytest.raises(HTTPException) as caught:
+        route.edition("x.json")
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__ is True
 
 
 def test_a_narration_refusal_tells_the_operator_the_words_without_the_passphrase(api, monkeypatch):
