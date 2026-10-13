@@ -143,6 +143,12 @@ def cmd_build(args) -> None:
     (data_dir() / "app_settings.json").write_text(
         json.dumps({"version": "oo-app-settings-1",
                     "theme": "dark" if mode == "B" else "light"}), "utf-8")
+    # The first settings read of a process adopts this legacy file into the corpus (app_state), which is
+    # a write. Make that read now, so the corpus a test hashes is the settled one and a merge run's own
+    # first read (run_restore's trust_backup_fetch_history) has nothing left to adopt.
+    from src.config.app_settings import load_settings
+
+    load_settings()
     (data_dir() / "calendar_feed_imports.json").write_text(
         json.dumps({"holidays": {"name": "Holidays", "events": {
             "fp-shared": {"title": "New Year", "date": "2026-01-01",
@@ -173,6 +179,14 @@ def cmd_build(args) -> None:
         out["artifact"] = args.artifact
         out["members"] = len(env["manifest"]["members"])
     _emit(out)
+
+
+def cmd_settle(args) -> None:
+    """Open the corpus and end cleanly, so the main file alone holds everything a later hash compares."""
+    from src.database.session import init_db
+
+    init_db()
+    _emit({"settled": True})
 
 
 def cmd_merge(args) -> None:
@@ -442,6 +456,7 @@ def main() -> None:
     bs.add_argument("--passphrase", default="-")
     sub.add_parser("check-scoped")
     sub.add_parser("dump")
+    sub.add_parser("settle")
     f = sub.add_parser("fts-find")
     f.add_argument("token")
     sub.add_parser("verify-custody")
@@ -458,6 +473,7 @@ def main() -> None:
             "check-scoped": cmd_check_scoped,
             "merge": cmd_merge,
             "dump": cmd_dump,
+        "settle": cmd_settle,
             "fts-find": cmd_fts_find,
             "verify-custody": cmd_verify_custody,
             "make-old": cmd_make_old,
@@ -465,7 +481,7 @@ def main() -> None:
     finally:
         # Only the runs that BUILD a corpus close it. A merge run must end the way a real one can:
         # the tests that hash the live file around it compare it with the settled file the build left.
-        if args.cmd in ("build", "build-scoped", "make-old"):
+        if args.cmd in ("build", "build-scoped", "make-old", "settle"):
             _close_engine()
 
 
