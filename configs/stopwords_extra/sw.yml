@@ -40,7 +40,6 @@ stopwords:
   - chake
   - dhidi
   - halafu
-  - hawa
   - hayo
   - hicho
   - hii
@@ -60,9 +59,7 @@ stopwords:
   - jumamosi
   - jumanne
   - jumatatu
-  - kabla
   - kuhusu
-  - kumi
   - kupitia
   - kwake
   - kwani
@@ -81,7 +78,6 @@ stopwords:
   - sh722
   - tarehe
   - tatu
-  - tisa
   - vya
   - watano
   - watatu
