@@ -1459,6 +1459,7 @@ class EthicalFetcher:
                         kwargs["proxies"] = proxies
                     if stream and self._real_session:
                         kwargs["stream"] = True
+                    self._refuse_parser_mismatch(current)
                     resp = self.session.get(current, **kwargs)
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
@@ -1476,6 +1477,30 @@ class EthicalFetcher:
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
         raise FetchFailed(f"too many redirects for {url}")
+
+    @staticmethod
+    def _refuse_parser_mismatch(url: str) -> None:
+        """Refuse a URL that ``urlparse`` and ``urllib3`` read as two different hosts.
+
+        ``_guard_target`` is handed ``urlparse(url).hostname`` while the connection is
+        made to the host ``requests``/``urllib3`` parse out of the same string, and
+        the two disagree on a backslash before an ``@`` (``https://evil.test\\@good.org/``
+        is ``good.org`` to the first and ``evil.test`` to the second). The connect-time
+        guard still catches an internal address, but not where it stands down (a
+        hostname proxy), so the disagreement itself is refused, on the first request
+        and on every redirect hop.
+        """
+        if any(ch == "\\" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in url):
+            raise BlockedTarget("URL contains a backslash, whitespace or control character")
+        from urllib3.util import parse_url
+
+        try:
+            theirs = (parse_url(url).host or "").lower()
+        except Exception:  # noqa: BLE001 - an unparsable URL is refused, not fetched
+            raise BlockedTarget("URL is not parsable by the HTTP client") from None
+        ours = (urlparse(url).hostname or "").lower()
+        if ours.isascii() and theirs.strip("[]") != ours.strip("[]"):
+            raise BlockedTarget("URL host is read differently by two parsers")
 
     def _request_proxy_endpoints(
         self, url: str, explicit: dict[str, str] | None
