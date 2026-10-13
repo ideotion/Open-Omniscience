@@ -65,6 +65,18 @@ def _populate_incoming(path: Path) -> None:
         s.commit()
 
 
+def _seed_live_article(path: Path) -> None:
+    """One local article, so the two corpora give the incoming article DIFFERENT ids: with equal ids a
+    write meant for ``main`` and the same write into the backup look alike."""
+    with _corpus(path)() as s:
+        src = Source(name="L", domain="l.example")
+        s.add(src)
+        s.flush()
+        s.add(Article(url="https://l.example/0", canonical_url="https://l.example/0",
+                      source_id=src.id, title="L", content="c", hash="h0"))
+        s.commit()
+
+
 def _counts(path: Path) -> dict[str, int]:
     con = sqlite3.connect(path)
     try:
@@ -87,7 +99,7 @@ def _drop(path: Path, *tables: str) -> None:
 def test_a_table_only_the_backup_has_is_never_written_to(tmp_path, missing):
     inc, live = tmp_path / "inc.db", tmp_path / "live.db"
     _populate_incoming(inc)
-    _corpus(live)
+    _seed_live_article(live)
     _drop(live, missing)
     before = _counts(inc)
     assert before[missing] == 1
@@ -102,7 +114,7 @@ def test_a_table_only_the_backup_has_is_never_written_to(tmp_path, missing):
 def test_every_table_missing_at_once_still_merges_the_rest(tmp_path):
     inc, live = tmp_path / "inc.db", tmp_path / "live.db"
     _populate_incoming(inc)
-    _corpus(live)
+    _seed_live_article(live)
     _drop(live, *_TABLES)
     before = _counts(inc)
 
@@ -113,7 +125,7 @@ def test_every_table_missing_at_once_still_merges_the_rest(tmp_path):
         assert domain not in counts, f"{domain} is reported only when both sides hold the table"
     con = sqlite3.connect(live)
     try:
-        assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 1, "the articles still arrive"
+        assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 2, "the articles still arrive"
     finally:
         con.close()
 
@@ -121,17 +133,46 @@ def test_every_table_missing_at_once_still_merges_the_rest(tmp_path):
 def test_the_carry_says_why_it_declined_when_this_corpus_has_no_stamps(tmp_path):
     inc, live = tmp_path / "inc.db", tmp_path / "live.db"
     _populate_incoming(inc)
-    _corpus(live)
+    _seed_live_article(live)
     _drop(live, "article_index_stamps")
 
     counts, _ = merge_corpus(inc, live, _META)
 
-    assert counts["_derived_carry"]["reason"] == "this corpus has no engine stamps to compare against"
+    assert counts["_derived_carry"]["reason"] == "this corpus has no stamps table to record a carry in"
+
+
+def test_an_alternate_for_a_table_this_corpus_lacks_is_deferred_not_fatal(tmp_path):
+    """An ordinary backup that carries one alternate for ``places`` reaches the alternates loop; without
+    the skip the lookup raises (or, unqualified, finds the BACKUP's row and records a pointer to it)."""
+    inc, live = tmp_path / "inc.db", tmp_path / "live.db"
+    _populate_incoming(inc)
+    con = sqlite3.connect(inc)
+    try:
+        con.execute(
+            "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"
+            " provenance, origin, status, created_at) VALUES (1, 'places', ?, 1, ?, ?, 'machine-B',"
+            " 'pending', '2026-09-01 00:00:00')",
+            ('{"place_id": "node/1"}', '{"name": "There", "kind": null, "qid": null,'
+             ' "names_json": null, "population": null}', '{"v": 1, "kind": "x"}'),
+        )
+        con.commit()
+    finally:
+        con.close()
+    _seed_live_article(live)
+    _drop(live, "places")
+    before = _counts(inc)
+
+    counts, _ = merge_corpus(inc, live, _META)
+
+    assert counts["metadata_alternates"]["deferred"] == 1
+    assert counts["metadata_alternates"]["new"] == 0
+    assert _counts(inc) == before
 
 
 def test_the_alternates_path_reads_the_table_info_of_main():
-    """Source pin for the one clause a row-level test cannot reach without a hostile backup: the
-    NOT NULL probe must name ``main``, or a corpus lacking a table would read the backup's columns."""
+    """Source pin for the clause a row-level test cannot tell apart (the probe's columns are the same
+    in a test corpus): the NOT NULL probe must name ``main``, or a corpus lacking a table would read the
+    backup's columns."""
     src = (Path(__file__).resolve().parents[1] / "src" / "backup" / "merge.py").read_text(encoding="utf-8")
     assert 'PRAGMA main.table_info({tbl})' in src
     assert 'PRAGMA table_info({tbl})' not in src

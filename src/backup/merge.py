@@ -2445,6 +2445,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     )
     here_origin, here_at, here_version = here[0] if here else ("unsigned", None, None)
     notnull: dict[str, set[str]] = {}
+    on_main: dict[str, bool] = {}
     incoming = _q(
         con,
         "SELECT table_name, identity, fields, provenance, origin FROM inc.metadata_alternates"
@@ -2468,7 +2469,9 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         ):
             r.duplicate += 1
             continue
-        if not _local_has_table(con, table):
+        if table not in on_main:
+            on_main[table] = _local_has_table(con, table)
+        if not on_main[table]:
             # Named for `main`, never the attached backup: an unqualified name would fall
             # through to the incoming file's table when this corpus lacks it.
             r.deferred += 1
@@ -3598,7 +3601,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         plan["reason"] = "the backup predates engine stamps"
         return
     if not _local_has_table(con, "article_index_stamps"):
-        plan["reason"] = "this corpus has no engine stamps to compare against"
+        plan["reason"] = "this corpus has no stamps table to record a carry in"
         return
     try:
         from src.analytics.engine_identity import baseline_engine_id
