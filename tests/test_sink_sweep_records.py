@@ -40,17 +40,44 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 }
 
 #: Functions that take a caught exception to CLASSIFY it (a bool, an enum, an int, a class name) or to build an in-memory dedupe
-#: key, and return no record text: read by name, so a new function is held to the rule. Each reason was read in the code.
-CLASSIFIERS: dict[str, frozenset[str]] = {
-    # ``err`` is the refresh-error DICT (class only), not an exception.
-    "src/scheduler/plan_cache.py": frozenset({"_label"}),
-    # disk-full / I/O classification (bool, kind) and the per-path dedupe key kept in memory; the words go to log_failure.
-    "src/scheduler/storage_guard.py": frozenset({
-        "_dbapi_cause", "_disk_full_detail", "_first_line_detail", "_io_error_detail", "_os_error_behind", "_text_head",
-        "is_disk_full", "is_io_error", "log_failure_once", "note_error", "note_io_error",
-    }),
-    "src/wiki/history.py": frozenset({"retry_after_of"}),  # an int, capped
-    "src/wiki/walk.py": frozenset({"_http_status", "_is_json_error", "refusal_detail", "refusal_token"}),  # constants and the class
+#: key, and return no record text. Allowed LINE BY LINE (function plus exact line text, counted), never by function name, so a new
+#: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
+CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    "src/scheduler/plan_cache.py": {
+        ('_label', 'if err is not None:'): 1,
+        ('_label', 'out["refresh_error"] = err'): 1,
+    },
+    "src/scheduler/storage_guard.py": {
+        ('_text_head', 'return str(exc).split("\\n[SQL:", 1)[0]'): 1,
+        ('is_disk_full', 'cur = exc'): 1,
+        ('_dbapi_cause', 'cur = exc'): 1,
+        ('is_io_error', 'cur = exc'): 1,
+        ('_os_error_behind', 'cur = exc'): 1,
+        ('_first_line_detail', 'if exc is None:'): 1,
+        ('_first_line_detail', 'orig = _dbapi_cause(exc)'): 1,
+        ('_first_line_detail', 'os_error = _os_error_behind(exc)'): 1,
+        ('_first_line_detail', 'shown, text = exc, quoted'): 1,
+        ('_first_line_detail', 'quoted = _text_head(exc).rpartition("Original exception was: ")[2]'): 1,
+        ('_io_error_detail', 'return _first_line_detail(exc)'): 1,
+        ('_disk_full_detail', 'return _first_line_detail(exc, quote_head=True)'): 1,
+        ('note_error', 'if is_disk_full(exc):'): 1,
+        ('note_error', 'return self.note_io_error(exc, where)'): 1,
+        ('note_error', 'self.note_disk_full(f"{where + \': \' if where else \'\'}{_disk_full_detail(exc)}")'): 1,
+        ('note_io_error', 'if not is_io_error(exc):'): 1,
+        ('note_io_error', '"detail": _io_error_detail(exc),'): 1,
+        ('log_failure_once', 'first = (str(exc).splitlines() or [""])[0][:80]'): 1,
+    },
+    "src/wiki/history.py": {
+        ('retry_after_of', 'response = getattr(exc, "response", None)'): 1,
+    },
+    "src/wiki/walk.py": {
+        ('_http_status', 'status = getattr(getattr(exc, "response", None), "status_code", None)'): 1,
+        ('_is_json_error', 'return isinstance(exc, json.JSONDecodeError) or (hasattr(exc, "doc") and hasattr(exc, "pos"))'): 2,
+        ('refusal_token', 'status = _http_status(exc)'): 1,
+        ('refusal_token', 'if isinstance(exc, ValueError) and (not isinstance(exc, OSError) or _is_json_error(exc)):'): 1,
+        ('refusal_token', 'raise exc'): 1,
+        ('refusal_detail', 'status = _http_status(exc)'): 1,
+    },
 }
 
 #: Operator-facing text that nothing stores: the unlock answer and the start-up status the lock screen shows, a dump lookup's HTTP
@@ -80,29 +107,28 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 }
 
 
-def _spans(source: str, names: frozenset[str]) -> list[tuple[int, int]]:
-    return [
-        (n.lineno, n.end_lineno)
-        for n in ast.walk(ast.parse(source))
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names
-    ]
-
-
 def _found(rel: str, source: str) -> list[str]:
     table = {k: v for k, v in KEPT.get(rel, {}).items() if v}
-    spans = _spans(source, CLASSIFIERS.get(rel, frozenset()))
+    lines = source.splitlines()
+    fns = [n for n in ast.walk(ast.parse(source)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    allowed = dict(CLASSIFIED.get(rel, {}))
     out = []
     seen: dict[str, int] = {}
     for finding in _leaks(source, only_scrubbing=CALLS, words_kept=table or None, params=True):
         line, _, message = finding.partition(": ")
-        if line.isdigit() and any(lo <= int(line) <= hi for lo, hi in spans):
-            continue
+        if line.isdigit():
+            enclosing = sorted((n for n in fns if n.lineno <= int(line) <= n.end_lineno), key=lambda n: n.end_lineno - n.lineno)
+            key = (enclosing[0].name if enclosing else "", lines[int(line) - 1].strip())
+            if allowed.get(key, 0) > 0:
+                allowed[key] -= 1
+                continue
         if message in NOT_RECORDS.get(rel, {}):
             seen[message] = seen.get(message, 0) + 1
             if seen[message] <= NOT_RECORDS[rel][message]:
                 continue
         out.append(finding)
     out += [f"0: {m!r} expected {n} time(s), found {seen.get(m, 0)}" for m, n in NOT_RECORDS.get(rel, {}).items() if seen.get(m, 0) < n]
+    out += [f"0: classifier line {k!r} expected but not found ({n} left)" for k, n in allowed.items() if n > 0]
     return out
 
 

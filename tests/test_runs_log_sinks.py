@@ -645,7 +645,7 @@ def _enclosing_function(node: ast.AST, parent: dict) -> str:
 
 
 #: Parameter names read as a caught exception when ``params`` is on.
-_EXC_PARAMS = frozenset({"exc", "exception", "error", "err", "exc_value"})
+_EXC_PARAMS = frozenset({"exc", "exception", "error", "err", "exc_value", "e", "ex", "cause"})
 
 
 def _leaks(

@@ -502,7 +502,7 @@ def test_a_failed_checkpoint_falls_back_to_the_close_that_always_ran():
         def close(self):
             calls.append("close")
 
-    _close_after_checkpoint(Conn())
+    _close_after_checkpoint(Conn(), None)
     assert calls == ["execute", "close"]
 
 
@@ -522,7 +522,7 @@ def test_a_failed_checkpoint_is_logged_not_swallowed(caplog):
             pass
 
     with caplog.at_level(logging.WARNING, logger="api.unlock"):
-        _close_after_checkpoint(Conn())
+        _close_after_checkpoint(Conn(), None)
     (rec,) = [r for r in caplog.records if "written back" in r.getMessage()]
     assert rec.levelno == logging.WARNING
     assert "RuntimeError: disk I/O error" in rec.getMessage()

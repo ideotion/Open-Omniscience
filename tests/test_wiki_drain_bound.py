@@ -567,7 +567,11 @@ def test_a_savepoint_that_CANNOT_be_rolled_back_fails_the_drain_loudly(lane, mon
             raise OperationalError("ROLLBACK TO SAVEPOINT", {}, Exception("no such savepoint"))
 
     monkeypatch.setattr(pipeline_mod, "store_version", boom)
-    with pytest.raises(pipeline_mod.LaneTransactionLost), lane_session("wiki") as db:
+    with pytest.raises(pipeline_mod.LaneTransactionLost) as lost, lane_session("wiki") as db:
         real_begin = db.begin_nested
         monkeypatch.setattr(db, "begin_nested", lambda: Savepoint(real_begin()))
         drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    # The message names the two failures by CLASS (their words are in the log lines) and the raise is `from None`, so no traceback
+    # chain prints the engine's text.
+    assert str(lost.value).endswith(": RuntimeError; then the savepoint rollback failed: OperationalError"), str(lost.value)
+    assert lost.value.__cause__ is None and lost.value.__suppress_context__

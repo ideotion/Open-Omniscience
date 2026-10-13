@@ -558,7 +558,7 @@ def _close_serves_of_the_cleared_key() -> None:
     close_serves_for_cleared_key()
 
 
-def _close_after_checkpoint(conn, passphrase: str | None = None) -> None:
+def _close_after_checkpoint(conn, passphrase: str | None) -> None:
     """Close the verify connection, writing the recovered log back into the database FIRST, through
     ``execute``, and NEVER waiting for a reader.
 
