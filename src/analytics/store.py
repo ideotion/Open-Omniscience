@@ -1299,11 +1299,9 @@ def reindex_articles(
                 return
             try:
                 _t_c = time.monotonic()
-                try:
-                    session.commit()
-                finally:
-                    _note_hold()  # a commit that raises ends the hold too, and it is the long ones that fail
+                session.commit()
                 _apply_commit_s += time.monotonic() - _t_c
+                _note_hold()
                 # Counted where the commit LANDED, like the mentions: a batch that rolled back and was redone one article at a time
                 # is not a commit of this width, and its redo holds the gate per article.
                 _batch_commits += 1
@@ -1314,6 +1312,7 @@ def reindex_articles(
                     mention_diff[_k] += _v
             except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
                 session.rollback()
+                _note_hold()  # a commit that raises ends the hold too, and it is the long holds that fail
                 # The rollback un-wrote every staged mention; _redo_committed counts
                 # what it re-writes, so banking them here too would double-count.
                 _redo_committed(list(pending))
