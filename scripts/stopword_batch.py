@@ -56,8 +56,17 @@ word is refused, with the reason, when adding it would hide signal:
 * ``single_source``    one source holds most of its mentions: that is that source's boilerplate,
                        which a global stopword must not hide (needs ``top_source_share``, which
                        the diagnostics gains in a later update; absent = not judged, and said so);
+* ``standing_refusal`` one of the four words PROVENANCE.md keeps out of this union for good
+                       (sea, tom, fin, laut): a function word in one language, content in another;
 * ``already_hidden``   nothing to add;
 * ``phrase``           multi-word entries are refused until the hide path is verified for them.
+
+The report also prints, for every word, the OTHER languages whose articles it was read in
+("also read in articles tagged id (71)"), from the log's ``language_signature``. It is evidence for a
+reader and decides nothing: an article tagged English that quotes a German word is in that list too,
+and a word that is content in a language the log holds no row for (``laut`` in Indonesian) shows there
+and nowhere else. A word with a real content sense in a language listed there is for the reader to
+refuse by leaving it out of the words file.
 
 A maintainer can override ``content_elsewhere`` and ``also_an_entity`` for a word with
 ``--allow WORD`` (recorded in the batch comment), and lift ``platform_name`` for the names the
@@ -104,6 +113,12 @@ KEEP_FILE = ROOT / "configs" / "stopword_batches" / "_keep_platform_names.yml"
 ELSEWHERE_MIN_ARTICLES = 3
 # A source holding at least this share of a term's mentions makes it that source's boilerplate.
 SINGLE_SOURCE_SHARE = 0.5
+# Words the standing ruling keeps OUT of this directory (configs/stopwords_extra/PROVENANCE.md,
+# "The four standing cross-language refusals"): each is a function word in one language and a
+# content word in another, so it belongs in a language-scoped list and never in this union. The log
+# cannot always see the other sense (``laut`` is Indonesian for "sea" and no Indonesian row holds
+# it), so the refusal is written down here, with no override.
+STANDING_REFUSALS = frozenset({"sea", "tom", "fin", "laut"})
 # A language code names a file in configs/stopwords_extra, so it may never carry a path. The
 # 16-character ceiling protects only that: it is longer than any BCP 47 language-plus-script tag
 # the app stores, and short enough that a code can never be mistaken for a sentence.
@@ -360,6 +375,12 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
         if k.get("kind") not in (None, "term") and _articles(k) >= ELSEWHERE_MIN_ARTICLES
     ]
     spreads = [k for k in own if k.get("top_source_share") is not None]
+    read_in: Counter[str] = Counter()
+    for k in own:
+        sig = k.get("language_signature")
+        for code, n in (sig.items() if isinstance(sig, dict) else ()):
+            if code not in (lang, "?") and isinstance(n, int) and n >= ELSEWHERE_MIN_ARTICLES:
+                read_in[str(code)] += n
     return {
         "term": word,
         "articles": sum(_articles(k) for k in own),
@@ -367,6 +388,7 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
         "sources": max((int(k["sources"]) for k in own if k.get("sources") is not None), default=None),
         "top_source_share": max((float(k["top_source_share"]) for k in spreads), default=None),
         "content_elsewhere": elsewhere,
+        "read_in": sorted(read_in.items(), key=lambda u: (-u[1], u[0])),
         "entities": entities,
         "de_elided": _de_elided(spelling(word)),
         "already_hidden": not _de_elided(spelling(word)) and _is_listed(spelling(word), hidden_in_lang),
@@ -408,6 +430,8 @@ def refusals(word: str, ev: dict[str, Any], *, ring_words: frozenset[str], platf
         out.append("platform_name")
     if key in ring_words:
         out.append("ring_member")
+    if key in STANDING_REFUSALS:
+        out.append("standing_refusal")
     if not ev["articles"]:
         out.append("not_in_log")
     if ev["content_elsewhere"] and key not in allow:
@@ -669,6 +693,8 @@ def main(argv: list[str] | None = None) -> int:
         extra = ""
         if r["content_elsewhere"]:
             extra += "; also a keyword in " + _more([f"{u['language']} ({u['articles']})" for u in r["content_elsewhere"]])
+        if r["read_in"]:
+            extra += "; also read in articles tagged " + _more([f"{c} ({n})" for c, n in r["read_in"]])
         if r["entities"]:
             extra += "; also an entity in " + _more([f"{u['language']} {u['kind']} ({u['articles']})" for u in r["entities"]], 3)
         if r["top_source_share"] is None and not r["refused"]:

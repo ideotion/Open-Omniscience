@@ -358,3 +358,27 @@ verdict gate with no `unstable` or `not_repeated` flag and `scripts/stopword_bat
 
 A stoplist word is language-agnostic in effect (`global_stopwords()` unions every file), so each of these is hidden in every language. That is safe for the
 words above (none is a word of the app's shipped rings or a platform name; the tool checks both), and it is the reason `table` stayed out.
+
+## Stoplist batch 2: function words, number and month words, site chrome in ten languages (2026-10-13, R131, language group 1)
+
+313 words from the same triage (two blind reads of a language's high-confidence "noise" rows; every word passed the verdict gate with no `unstable` or `not_repeated`
+flag, and `scripts/stopword_batch.py` refused none of them): de 40, fr 43, es 7, it 16, pt 25, nl 56, sv 36, da 35, ca 44, nb 11. By the triage's codes: about 160 function
+words (`laut` excepted, below: `trotz`, `obwohl`, `malgré`, `lorsque`, `trods`, `waarin`), about 40 month and weekday names and 30 number words (`maand`, `dilluns`, `söndagen`, `dertien`), 25
+site chrome (`abo`, `anmelden`, `leestijd`, `klicka`, `prenumerant`), 25 stems glued to a suffix, and the rest apostrophe debris (`nu'`, `dell'`, `site'`). A word with an apostrophe
+is declared in the test beside its curly spelling, which the module adds on load.
+
+The evidence is ONE log, `combine_logs.py` over the 79 shards of 09-30 (`log sha256 6467504ab8ab`; script and per-language tool output in
+`/mnt/project-files/keyword-session/t5-group1-2026-10-13/`), because the tool's `content_elsewhere` check can only see the rows it is given: one shard holds a language's top 5,000, so a
+combined log is the stronger cross-language test. It is still a sample, and a log row carries ONE language (the dominant one), so a word that is content in a language with no row of
+its own never shows there. The tool now prints, per word, the other languages whose articles the word was read in (`language_signature`), as evidence for the reader and a decision for
+no one (an English-tagged article quoting a French word is in that list too), and it refuses the four words of the standing ruling above (`sea` `tom` `fin` `laut`) with no override:
+before this batch it ACCEPTED `laut` (934 articles in German, and 71 Indonesian articles read it as "sea").
+
+**Left out after reading each word's other languages (the words files in the pool folder omit them):** de `falls` (the English verb and noun), fr `moi` (a surname, 53 English-tagged
+articles), sv `borde` (Spanish "edge", 88 articles) and `medan` (the Indonesian city), ca `gener` (Swedish "genes"), `sis` (the SIS acronym) and `dues` (English "dues"); nl `results`,
+`readers`, `donating`, `femmes` (foreign words in the Dutch log: the `lng` group stays out by the batch 1 ruling); ca `instal`, `ligència`, `lacions`, `lícula` (a middle dot splitting
+`intel·ligència` and `pel·lícula`: the cause is upstream, and a stoplist word per fragment hides the symptom one spelling at a time).
+
+**What a reader of the lists will see change.** The 39 month and weekday names and 30 number words are no longer keywords in any language; `hos` and `samt` style words that two Nordic
+languages share are hidden in both, which is where they are function words (a Norwegian article reading `hos` loses it too). Hiding is retroactive with no re-index (`hidden_set()` unions the list at query time); extraction also drops
+them from now on.

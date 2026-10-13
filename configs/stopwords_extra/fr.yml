@@ -164,3 +164,47 @@ stopwords:
   - était
   - été
   - être
+  # batch fr-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - abonner
+  - abstractfr
+  - ait
+  - aucun
+  - auprès
+  - auraient
+  - aurait
+  - autour
+  - avais
+  - avons
+  - ayant
+  - cela
+  - chacun
+  - contre
+  - derrière
+  - devant
+  - durant
+  - dès
+  - envers
+  - eux
+  - fut
+  - hors
+  - lequel
+  - lorsque
+  - malgré
+  - mois
+  - parmi
+  - pourquoi
+  - qu'
+  - quand
+  - quel
+  - rien
+  - résuméen
+  - résuméfr
+  - sauf
+  - semaine
+  - serait
+  - soient
+  - today11
+  - étaient
+  - étais
+  - étant
+  - êtes
