@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Source
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.ingest.email import (
     count_imported_newsletters,
@@ -69,7 +70,7 @@ class IngestEmailRequest(BaseModel):
 
 
 def _get_source(db: Session, source_id: int) -> Source:
-    source = db.query(Source).filter_by(id=source_id).first()
+    source = db.query(Source).filter_by(id=source_id).filter(not_a_stand_in_source()).first()  # a repair's stand-in is not a source
     if source is None:
         raise HTTPException(status_code=404, detail=f"Source id {source_id} not found.")
     return source
@@ -124,7 +125,7 @@ def ingest_batch_endpoint(
     aggregate: dict[str, int] = {}
     ingested = 0
     for sid in ids:
-        source = db.query(Source).filter_by(id=sid).first()
+        source = db.query(Source).filter_by(id=sid).filter(not_a_stand_in_source()).first()
         if source is None:
             results.append({"source_id": sid, "status": "not_found"})
             continue

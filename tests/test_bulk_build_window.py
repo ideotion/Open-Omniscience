@@ -365,6 +365,6 @@ def test_the_boot_path_calls_the_heal():
     src = Path("src/database/session.py").read_text(encoding="utf-8")
     assert "from src.analytics.bulk_build import heal_bulk_build" in src
     assert "heal_bulk_build(engine)" in src
-    assert src.index("ensure_hot_indexes(engine)") < src.index("heal_bulk_build(engine)"), (
+    assert src.index("ensure_hot_indexes(engine, include_deferred=False)") < src.index("heal_bulk_build(engine)"), (
         "the hot-index heal runs first; this one finishes what it cannot cover"
     )

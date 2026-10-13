@@ -52,6 +52,7 @@ from src.database import damage as _damage
 # Before any engine exists: every pool's new connections get the search index's transform
 # functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
 from src.database import fts_norm as _fts_norm  # noqa: F401
+from src.database import library_generation as _library_generation
 from src.database.pool_reserve import ReservingQueuePool
 from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
 from src.paths import data_dir, default_sqlite_url
@@ -123,7 +124,8 @@ def _build_engine() -> Engine:
         return create_engine(
             DATABASE_URL,
             future=True,
-            creator=_creator,
+            # Opened under the library lock, stamped with the generation read under it (``database/library_generation.py``).
+            creator=_library_generation.guarded_creator(_creator),
             pool_size=int(_b["db_pool_size"]),
             max_overflow=int(_b["db_max_overflow"]),
             pool_timeout=_pool_timeout_s(),
@@ -272,6 +274,10 @@ def _storage_guard_on_disk_full(context) -> None:
 # A failed statement whose DRIVER error is SQLITE_CORRUPT names the corpus file as damaged and pauses
 # its writers (``database/damage.py``). Observes only: the error still propagates unchanged.
 _damage.attach(engine, _damage.FILE_CORPUS)
+
+# A connection made before a repair (or a restore) switched the library to a new file must not be used after it: its statements and
+# its COMMIT would land in the file that is now kept under a second name (``database/library_generation.py``).
+_library_generation.attach(engine)
 
 
 @event.listens_for(engine, "reset")
@@ -446,7 +452,10 @@ def init_db() -> None:
 
     ensure_derived_views(engine)
 
-    ensure_hot_indexes(engine)
+    # The two article-list indexes (R128) are left to the ``article-indexes`` start-up step, which shows
+    # its progress in the task manager; building them here would be a silent wait inside opening the
+    # database, on a big store minutes long (src/database/article_indexes.py).
+    ensure_hot_indexes(engine, include_deferred=False)
 
     # R23 / PR 5: finish a bulk build that a crash interrupted with its indexes dropped.
     #

@@ -184,6 +184,7 @@ def _per_id_mentions(
 
 def _distinct_source_count(db, keyword_ids) -> int:
     from src.database.derived_views import KeywordMentionRead
+    from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -192,7 +193,12 @@ def _distinct_source_count(db, keyword_ids) -> int:
     for chunk in _chunks(ids):
         for (sid,) in (
             db.query(KeywordMentionRead.source_id)
-            .filter(KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.source_id.isnot(None))
+            # a mention kept for a lost article is no independent outlet: this is the breadth every galaxy and group is ranked by
+            .filter(
+                KeywordMentionRead.keyword_id.in_(chunk),
+                KeywordMentionRead.source_id.isnot(None),
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            )
             .distinct()
         ):
             seen.add(int(sid))

@@ -32,6 +32,7 @@ from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
 from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
+from src.database.stand_in import not_a_stand_in_article_id
 from src.monitoring.engine_text import engine_text
 
 _LOG = logging.getLogger(__name__)
@@ -868,7 +869,9 @@ def index_article(
 
 def _unindexed_query(session: Session):
     indexed = session.query(KeywordMention.article_id).distinct()
-    return session.query(Article).filter(~Article.id.in_(indexed))
+    # A stand-in article (the place-holder a salvage copy writes at a lost id) has no text: indexing it would find no terms and stamp an attempt on a
+    # row that is not an article, and it is never waiting to be indexed.
+    return session.query(Article).filter(~Article.id.in_(indexed), not_a_stand_in_article_id(Article.id))
 
 
 def _mark_index_attempt(session: Session, article_id: int) -> None:
@@ -1064,6 +1067,10 @@ def reindex_articles(
     total = len(article_ids)
     reindexed = 0
     failed = 0
+    #: Ids of the windows this call walked that name no article it could load: an article deleted since the caller listed it, or a stand-in
+    #: (which is never re-indexed). Reported through ``stats["absent"]``: a caller that stamps a batch complete when ``reindexed + failed``
+    #: reaches its total must count them, or a batch holding one is never finished.
+    absent = 0
     # Bound HERE, above the nested helpers that declare them ``nonlocal``, not beside
     # the other timers further down. Python resolves a ``nonlocal`` to a binding
     # anywhere in the enclosing scope regardless of order, but mypy only walks
@@ -1348,12 +1355,14 @@ def reindex_articles(
         _by_id: dict[int, Article] = {}
         for _c in range(0, len(window_ids), _ID_CHUNK):
             _chunk = window_ids[_c : _c + _ID_CHUNK]
-            for _a in session.query(Article).filter(Article.id.in_(_chunk)).all():
+            # A stand-in is never re-indexed: its text is empty, so the pass would replace the mentions a salvage copy KEPT for the lost article with none.
+            for _a in session.query(Article).filter(Article.id.in_(_chunk), not_a_stand_in_article_id(Article.id)).all():
                 _by_id[_a.id] = _a
         for aid in window_ids:
             art = _by_id.get(aid)
             if art is not None:
                 articles.append(art)
+        absent += len(window_ids) - len(articles)
         _load_s += time.monotonic() - _t0
         if not articles:
             continue
@@ -1422,6 +1431,8 @@ def reindex_articles(
         elapsed = time.monotonic() - _t_all
         stats.update({
             "articles": done,
+            # Requested ids that named no article (deleted since, or a stand-in): not part of the return, which stays {"reindexed", "failed"}.
+            "absent": absent,
             "wall_s": round(elapsed, 3),
             "load_s": round(_load_s, 3),
             "precompute_s": round(_pre_s, 3),
@@ -2537,7 +2548,7 @@ def reconcile_article_language(
         int(r[0])
         for r in (
             session.query(Article.id)
-            .filter(Article.id > after_id, _empty_lang, _empty_det)
+            .filter(Article.id > after_id, _empty_lang, _empty_det, not_a_stand_in_article_id(Article.id))
             .order_by(Article.id)
             .limit(max(1, limit))
             .all()
@@ -2619,7 +2630,7 @@ def reconcile_article_language(
 
     remaining = (
         session.query(Article.id)
-        .filter(Article.id > last_id, _empty_lang, _empty_det)
+        .filter(Article.id > last_id, _empty_lang, _empty_det, not_a_stand_in_article_id(Article.id))
         .count()
     )
     return {

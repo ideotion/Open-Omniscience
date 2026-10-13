@@ -55,17 +55,19 @@ def search_facets(db: Session = Depends(get_db)) -> dict:
     from src.config.app_settings import load_settings
     from src.database.fts import FIELD_MODES, FIELDS, NEAR_MAX, NEAR_MIN
     from src.database.models import Article, Source
+    from src.database.stand_in import not_a_stand_in_source
 
+    # A repair's stand-in source is a place-holder, never an option to search by: every Source query here leaves it out.
     sources = [
         {"id": sid, "name": name, "domain": domain, "articles": int(n or 0)}
         for sid, name, domain, n in db.query(
             Source.id, Source.name, Source.domain, Source.article_count
-        ).order_by(Source.article_count.desc().nullslast(), Source.name)
+        ).filter(not_a_stand_in_source()).order_by(Source.article_count.desc().nullslast(), Source.name)
     ]
     countries: dict[str, dict] = {}
     for code, n in (
         db.query(Source.country, func.count(Source.id))
-        .filter(Source.country.isnot(None), Source.country != "")
+        .filter(Source.country.isnot(None), Source.country != "", not_a_stand_in_source())
         .group_by(Source.country)
     ):
         key = str(code).lower()
@@ -79,7 +81,7 @@ def search_facets(db: Session = Depends(get_db)) -> dict:
     regions = [
         {"region": r, "sources": int(n)}
         for r, n in db.query(Source.region, func.count(Source.id))
-        .filter(Source.region.isnot(None), Source.region != "")
+        .filter(Source.region.isnot(None), Source.region != "", not_a_stand_in_source())
         .group_by(Source.region).order_by(func.count(Source.id).desc())
     ]
     asserted = {

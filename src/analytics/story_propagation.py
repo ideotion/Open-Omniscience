@@ -34,6 +34,7 @@ from sqlalchemy import distinct, func
 
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Keyword, Source
+from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -93,6 +94,8 @@ def find_story_propagation(
         KeywordMentionRead.observed_on < hi,
         KeywordMentionRead.source_id.isnot(None),
         KeywordMentionRead.observed_on.isnot(None),
+        # a mention kept for a lost article is no source, no first sighting and no article of the story
+        not_a_stand_in_article_id(KeywordMentionRead.article_id),
     ]
 
     # Candidate terms: mentioned across >= min_sources distinct sources in the window.
@@ -234,6 +237,7 @@ def _term_article_ids(session, kid: int, cutoff, hi, cap: int) -> list[int]:
             KeywordMentionRead.keyword_id == kid,
             KeywordMentionRead.observed_on >= cutoff,
             KeywordMentionRead.observed_on < hi,
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
         )
         .distinct()
         .limit(cap)

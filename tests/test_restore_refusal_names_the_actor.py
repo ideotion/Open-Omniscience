@@ -162,7 +162,9 @@ def test_both_swap_barriers_raise_the_refusal_not_the_operators_stop():
         assert len(hits) == 1, f"expected exactly one {needle} call in run_restore, got {hits}"
         return hits[0]
 
-    start, end = _line_of("wait_for_quiescence"), _line_of("_replace_live_corpus")
+    # The commit point is the call of the ONE swap helper (``swap_in_corpus``: the engine's disposal, the side files and the replace
+    # inside the library's swap window); the replace itself moved into it with the E3 fold, so the helper's call is the anchor.
+    start, end = _line_of("wait_for_quiescence"), _line_of("swap_in_corpus")
     assert start < end
 
     barrier_raises = [

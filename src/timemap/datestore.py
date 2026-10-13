@@ -18,6 +18,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, ArticleMentionedDate
+from src.database.stand_in import not_a_stand_in_article
 from src.timemap.dateextract import extract_dates
 
 VALID_STATUS = ("candidate", "confirmed", "rejected")
@@ -175,7 +176,7 @@ def articles_for_date(
     q = (
         db.query(ArticleMentionedDate, Article)
         .join(Article, Article.id == ArticleMentionedDate.article_id)
-        .filter(ArticleMentionedDate.mentioned_on == on)
+        .filter(ArticleMentionedDate.mentioned_on == on, not_a_stand_in_article())
     )
     if precision:
         q = q.filter(ArticleMentionedDate.precision == precision)
@@ -231,6 +232,7 @@ def upcoming_deduced(
             ArticleMentionedDate.mentioned_on >= t0,
             ArticleMentionedDate.mentioned_on <= horizon,
             ArticleMentionedDate.status != "rejected",
+            not_a_stand_in_article(),
         )
         .group_by(ArticleMentionedDate.mentioned_on)
         .having(func.count(func.distinct(ArticleMentionedDate.article_id)) >= min_articles)
@@ -243,9 +245,11 @@ def upcoming_deduced(
         aids = [
             a
             for (a,) in db.query(ArticleMentionedDate.article_id)
+            .join(Article, Article.id == ArticleMentionedDate.article_id)
             .filter(
                 ArticleMentionedDate.mentioned_on == on,
                 ArticleMentionedDate.status != "rejected",
+                not_a_stand_in_article(),
             )
             .distinct()
             .limit(200)

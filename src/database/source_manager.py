@@ -48,6 +48,7 @@ from src.database.models import (
     get_session,
     source_group_association,
 )
+from src.database.stand_in import not_a_stand_in_source
 
 # Import logging config
 from src.utils.logging_config import setup_logging
@@ -100,8 +101,9 @@ class SourceManager:
     # ==================== SOURCE OPERATIONS ====================
 
     def get_source_by_id(self, source_id: int) -> Source | None:
-        """Get a source by its ID."""
-        return self.session.query(Source).filter_by(id=source_id).first()
+        """Get a source by its ID. A repair's stand-in source is a place-holder, not a source: it is not found by its id (the readers
+        and every writer of one source start here, so a stand-in is not updated, deleted, put in a group or given metadata either)."""
+        return self.session.query(Source).filter_by(id=source_id).filter(not_a_stand_in_source()).first()
 
     def get_source_by_domain(self, domain: str) -> Source | None:
         """Get a source by its domain."""
@@ -112,8 +114,8 @@ class SourceManager:
         return self.session.query(Source).filter_by(name=name).first()
 
     def get_all_sources(self, limit: int | None = None, offset: int = 0) -> list[Source]:
-        """Get all sources with optional pagination."""
-        query = self.session.query(Source)
+        """Get all sources with optional pagination (a repair's stand-in source is not one)."""
+        query = self.session.query(Source).filter(not_a_stand_in_source())
         if limit:
             query = query.limit(limit)
         if offset:
@@ -140,26 +142,26 @@ class SourceManager:
 
         if match_all:
             # Sources must have all tags
-            query = self.session.query(Source)
+            query = self.session.query(Source).filter(not_a_stand_in_source())
             for condition in conditions:
                 query = query.filter(condition)
             return query.all()
         else:
             # Sources must have any tag
-            return self.session.query(Source).filter(or_(*conditions)).all()
+            return self.session.query(Source).filter(or_(*conditions), not_a_stand_in_source()).all()
 
     def get_sources_by_group(self, group_id: int) -> list[Source]:
         """Get all sources in a specific group."""
         group = self.session.query(SourceGroup).filter_by(id=group_id).first()
         if group:
-            return group.sources.all()
+            return group.sources.filter(not_a_stand_in_source()).all()
         return []
 
     def get_sources_by_group_name(self, group_name: str) -> list[Source]:
         """Get all sources in a group by group name."""
         group = self.session.query(SourceGroup).filter_by(name=group_name).first()
         if group:
-            return group.sources.all()
+            return group.sources.filter(not_a_stand_in_source()).all()
         return []
 
     def create_source(self, name: str, domain: str, **kwargs) -> Source:
@@ -218,7 +220,7 @@ class SourceManager:
         Returns:
             The updated Source object, or None if not found
         """
-        source = self.session.query(Source).filter_by(id=source_id).first()
+        source = self.get_source_by_id(source_id)
         if not source:
             logger.warning(f"Source with ID {source_id} not found")
             return None
@@ -241,7 +243,7 @@ class SourceManager:
         Returns:
             True if deleted, False if not found
         """
-        source = self.session.query(Source).filter_by(id=source_id).first()
+        source = self.get_source_by_id(source_id)
         if not source:
             logger.warning(f"Source with ID {source_id} not found")
             return False
@@ -261,11 +263,11 @@ class SourceManager:
             source_ids: List of source IDs to enable
 
         Returns:
-            Number of sources updated
+            Number of sources updated (a repair's stand-in source is never one of them)
         """
         result = (
             self.session.query(Source)
-            .filter(Source.id.in_(source_ids))
+            .filter(Source.id.in_(source_ids), not_a_stand_in_source())
             .update({"enabled": True}, synchronize_session=False)
         )
         self.session.commit()
@@ -280,11 +282,11 @@ class SourceManager:
             source_ids: List of source IDs to disable
 
         Returns:
-            Number of sources updated
+            Number of sources updated (a repair's stand-in source is never one of them)
         """
         result = (
             self.session.query(Source)
-            .filter(Source.id.in_(source_ids))
+            .filter(Source.id.in_(source_ids), not_a_stand_in_source())
             .update({"enabled": False}, synchronize_session=False)
         )
         self.session.commit()
@@ -300,11 +302,11 @@ class SourceManager:
             priority: Priority level (1 = high, 3 = low)
 
         Returns:
-            Number of sources updated
+            Number of sources updated (a repair's stand-in source is never one of them)
         """
         result = (
             self.session.query(Source)
-            .filter(Source.id.in_(source_ids))
+            .filter(Source.id.in_(source_ids), not_a_stand_in_source())
             .update({"priority": priority}, synchronize_session=False)
         )
         self.session.commit()
@@ -320,11 +322,11 @@ class SourceManager:
             rate_limit_ms: Rate limit in milliseconds
 
         Returns:
-            Number of sources updated
+            Number of sources updated (a repair's stand-in source is never one of them)
         """
         result = (
             self.session.query(Source)
-            .filter(Source.id.in_(source_ids))
+            .filter(Source.id.in_(source_ids), not_a_stand_in_source())
             .update({"rate_limit_ms": rate_limit_ms}, synchronize_session=False)
         )
         self.session.commit()
@@ -342,8 +344,8 @@ class SourceManager:
         Returns:
             Number of sources updated
         """
-        # Get current tags for each source
-        sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        # Get current tags for each source (a repair's stand-in source is not one: it is never written to)
+        sources = self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
         for source in sources:
             current_tags = source.tags.split(",") if source.tags else []
@@ -372,8 +374,8 @@ class SourceManager:
         Returns:
             Number of sources updated
         """
-        # Get current tags for each source
-        sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        # Get current tags for each source (a repair's stand-in source is not one: it is never written to)
+        sources = self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
         for source in sources:
             current_tags = source.tags.split(",") if source.tags else []
@@ -506,7 +508,8 @@ class SourceManager:
             logger.warning(f"Group with ID {group_id} not found")
             return 0
 
-        sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        # A stand-in source (the place-holder a salvage copy writes for a lost one) is put in no group.
+        sources = self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
         # Get current sources in group
         current_sources = group.sources.all()
@@ -539,7 +542,9 @@ class SourceManager:
             return 0
 
         # Get sources to remove
-        sources_to_remove = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        sources_to_remove = (
+            self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
+        )
         source_ids_to_remove = {s.id for s in sources_to_remove}
 
         # Get current sources in group
@@ -566,7 +571,7 @@ class SourceManager:
         Returns:
             Number of groups the source was added to
         """
-        source = self.session.query(Source).filter_by(id=source_id).first()
+        source = self.get_source_by_id(source_id)
         if not source:
             logger.warning(f"Source with ID {source_id} not found")
             return 0
@@ -594,7 +599,7 @@ class SourceManager:
         Returns:
             Number of groups the source was removed from
         """
-        source = self.session.query(Source).filter_by(id=source_id).first()
+        source = self.get_source_by_id(source_id)
         if not source:
             logger.warning(f"Source with ID {source_id} not found")
             return 0
@@ -613,7 +618,7 @@ class SourceManager:
 
     def get_source_groups(self, source_id: int) -> list[SourceGroup]:
         """Get all groups a source belongs to."""
-        source = self.session.query(Source).filter_by(id=source_id).first()
+        source = self.get_source_by_id(source_id)
         if source:
             return source.groups.all()
         return []
@@ -706,10 +711,15 @@ class SourceManager:
     # ==================== METADATA OPERATIONS ====================
 
     def get_metadata(self, source_id: int) -> SourceMetadata | None:
-        """Get metadata for a source."""
-        return self.session.query(SourceMetadata).filter_by(source_id=source_id).first()
+        """Get metadata for a source (none for a repair's stand-in source: its kept metadata row belongs to a source that was lost)."""
+        return (
+            self.session.query(SourceMetadata)
+            .join(Source, Source.id == SourceMetadata.source_id)
+            .filter(SourceMetadata.source_id == source_id, not_a_stand_in_source())
+            .first()
+        )
 
-    def create_metadata(self, source_id: int, **kwargs) -> SourceMetadata:
+    def create_metadata(self, source_id: int, **kwargs) -> SourceMetadata | None:
         """
         Create metadata for a source.
 
@@ -718,8 +728,12 @@ class SourceManager:
             **kwargs: Metadata attributes
 
         Returns:
-            The created SourceMetadata object
+            The created SourceMetadata object (the existing one if there is one), or None when there is no such source: a repair's
+            stand-in source is none, and a metadata row is never written for it
         """
+        if self.get_source_by_id(source_id) is None:
+            logger.warning(f"Source with ID {source_id} not found")
+            return None
         # Check if metadata already exists
         existing = self.session.query(SourceMetadata).filter_by(source_id=source_id).first()
         if existing:
@@ -749,7 +763,7 @@ class SourceManager:
         Returns:
             The updated SourceMetadata object, or None if not found
         """
-        metadata = self.session.query(SourceMetadata).filter_by(source_id=source_id).first()
+        metadata = self.get_metadata(source_id)
         if not metadata:
             logger.warning(f"Metadata for source {source_id} not found")
             return None
@@ -772,7 +786,7 @@ class SourceManager:
         Returns:
             True if deleted, False if not found
         """
-        metadata = self.session.query(SourceMetadata).filter_by(source_id=source_id).first()
+        metadata = self.get_metadata(source_id)
         if not metadata:
             logger.warning(f"Metadata for source {source_id} not found")
             return False
@@ -789,19 +803,19 @@ class SourceManager:
         cc = normalize_country(country) or country
         metadata_list = self.session.query(SourceMetadata).filter_by(country=cc).all()
         source_ids = [m.source_id for m in metadata_list]
-        return self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        return self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
     def get_sources_by_language(self, language: str) -> list[Source]:
         """Get sources by language code."""
         metadata_list = self.session.query(SourceMetadata).filter_by(language=language).all()
         source_ids = [m.source_id for m in metadata_list]
-        return self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        return self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
     def get_sources_robots_allowed(self, allowed: bool = True) -> list[Source]:
         """Get sources based on robots.txt permission."""
         metadata_list = self.session.query(SourceMetadata).filter_by(robots_allowed=allowed).all()
         source_ids = [m.source_id for m in metadata_list]
-        return self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+        return self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
 
     # ==================== BATCH GROUP OPERATIONS ====================
 
@@ -818,7 +832,7 @@ class SourceManager:
         sources = (
             self.session.query(Source)
             .join(source_group_association)
-            .filter(source_group_association.c.group_id.in_(group_ids))
+            .filter(source_group_association.c.group_id.in_(group_ids), not_a_stand_in_source())
             .all()
         )
 
@@ -838,7 +852,7 @@ class SourceManager:
         sources = (
             self.session.query(Source)
             .join(source_group_association)
-            .filter(source_group_association.c.group_id.in_(group_ids))
+            .filter(source_group_association.c.group_id.in_(group_ids), not_a_stand_in_source())
             .all()
         )
 
@@ -859,7 +873,7 @@ class SourceManager:
         sources = (
             self.session.query(Source)
             .join(source_group_association)
-            .filter(source_group_association.c.group_id.in_(group_ids))
+            .filter(source_group_association.c.group_id.in_(group_ids), not_a_stand_in_source())
             .all()
         )
 
@@ -880,7 +894,7 @@ class SourceManager:
         sources = (
             self.session.query(Source)
             .join(source_group_association)
-            .filter(source_group_association.c.group_id.in_(group_ids))
+            .filter(source_group_association.c.group_id.in_(group_ids), not_a_stand_in_source())
             .all()
         )
 
@@ -902,12 +916,15 @@ class SourceManager:
         Returns:
             List of sources with discovered RSS feeds
         """
+        # A stand-in source is never probed: its "domain" is the text "(lost sources N)", and a request would be made for https://(lost sources N).
         if source_ids:
-            sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
+            sources = (
+                self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
+            )
         else:
             sources = (
                 self.session.query(Source)
-                .filter(or_(Source.rss_url == None, Source.rss_url == ""))
+                .filter(or_(Source.rss_url == None, Source.rss_url == ""), not_a_stand_in_source())
                 .all()
             )
 
@@ -1113,19 +1130,21 @@ class SourceManager:
         Returns:
             Dictionary with various source statistics
         """
-        total_sources = self.session.query(Source).count()
-        enabled_sources = self.session.query(Source).filter_by(enabled=True).count()
+        # Every count is of the sources the user has: a repair's stand-in source is a place-holder and is left out of all of them.
+        real = self.session.query(Source).filter(not_a_stand_in_source())
+        total_sources = real.count()
+        enabled_sources = real.filter(Source.enabled.is_(True)).count()
         disabled_sources = total_sources - enabled_sources
 
         # Count by priority
         priority_counts = {}
         for priority in [1, 2, 3]:
-            count = self.session.query(Source).filter_by(priority=priority).count()
+            count = real.filter(Source.priority == priority).count()
             priority_counts[f"priority_{priority}"] = count
 
         # Count by tags
         all_tags: dict[str, int] = {}
-        sources = self.session.query(Source).all()
+        sources = real.all()
         for source in sources:
             if source.tags:
                 tags = [tag.strip() for tag in source.tags.split(",") if tag.strip()]
@@ -1137,19 +1156,14 @@ class SourceManager:
         tag_based_groups = self.session.query(SourceGroup).filter_by(is_tag_based=True).count()
 
         # Count sources with/without RSS
-        with_rss = (
-            self.session.query(Source).filter(Source.rss_url != None, Source.rss_url != "").count()
-        )
+        with_rss = real.filter(Source.rss_url != None, Source.rss_url != "").count()
         without_rss = total_sources - with_rss
 
         # Count by metadata
-        with_metadata = self.session.query(SourceMetadata).count()
-        with_country = (
-            self.session.query(SourceMetadata).filter(SourceMetadata.country != None).count()
-        )
-        with_language = (
-            self.session.query(SourceMetadata).filter(SourceMetadata.language != None).count()
-        )
+        metadata_of_real = self.session.query(SourceMetadata).join(Source, Source.id == SourceMetadata.source_id).filter(not_a_stand_in_source())
+        with_metadata = metadata_of_real.count()
+        with_country = metadata_of_real.filter(SourceMetadata.country != None).count()
+        with_language = metadata_of_real.filter(SourceMetadata.language != None).count()
 
         return {
             "total_sources": total_sources,

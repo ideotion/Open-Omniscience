@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.managed import normalize_lang
 from src.database.models import Article, Source
+from src.database.stand_in import not_a_stand_in_article
 
 # The sentiment engine is VADER, whose lexicon is English. Every other language is
 # an honest GAP, never a fabricated neutral — the scorer refuses rather than
@@ -61,7 +62,7 @@ def quarantine_composition(session: Session, *, limit: int = 40) -> dict:
             Article.quarantine_criteria_version.label("criteria_version"),
             func.count(Article.id).label("n"),
         )
-        .filter(Article.quarantined.is_(True))
+        .filter(Article.quarantined.is_(True), not_a_stand_in_article())  # a repair's stand-in is no reason the app judged
         .group_by(Article.quarantine_reason, Article.quarantine_criteria_version)
         .order_by(func.count(Article.id).desc())
         .limit(limit)

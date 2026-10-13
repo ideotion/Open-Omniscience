@@ -30,6 +30,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from src.database.damage import failure_text
 from src.database.maintenance import StatementTimeout, statement_deadline
 
 _LOG = logging.getLogger(__name__)
@@ -258,7 +259,9 @@ def storage_composition(session: Session) -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         out["available"] = False
-        out["reason"] = f"sqlite_master unreadable: {str(exc)[:200]}"
+        # The class and a fixed label, never the engine's line: a damaged schema is worded with the name of an object and a fragment
+        # of its definition, and this block rides the diagnostics bundle (engine text into a record is class-only).
+        out["reason"] = f"sqlite_master unreadable: {failure_text(exc)}"
         return out
 
     # The dbstat walk itself — aggregated form first (one row per btree; far fewer rows),
@@ -293,7 +296,7 @@ def storage_composition(session: Session) -> dict[str, Any]:
         out["available"] = False
         out["reason"] = (
             "dbstat virtual table unavailable (needs the SQLITE_ENABLE_DBSTAT_VTAB "
-            f"compile flag in this SQLite/SQLCipher build): {str(exc)[:200]}"
+            f"compile flag in this SQLite/SQLCipher build, or the walk met a damaged page): {failure_text(exc)}"
         )
         out["method"] = _METHOD
         out["caveat"] = _CAVEAT

@@ -884,6 +884,8 @@ _DB_WRITER_KINDS = ("collect", "import", "reindex", "quarantine") + (
     "mailbox-pull",
     "keyword-fold",
     "search-reindex",
+    "article-indexes",
+    "repair-database",
 )
 
 

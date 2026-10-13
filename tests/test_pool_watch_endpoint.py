@@ -17,6 +17,8 @@ PROPAGATION, the one property the whole instrument depends on.
 
 from __future__ import annotations
 
+import errno
+import json
 import logging
 import threading
 
@@ -149,14 +151,14 @@ def test_the_stack_at_checkout_is_off_by_default_and_recorded_when_asked(eng, mo
         c.close()
 
 
-def test_an_invalidation_is_logged_with_its_holder_and_the_drivers_own_message(eng, caplog):
+def test_an_invalidation_is_logged_with_its_holder_and_the_class_never_the_message(eng, caplog):
     before = pool_watch.invalidations()["total"]
     token = pool_watch.set_endpoint("GET /api/invalidating")
     try:
         c = eng.connect()
         c.exec_driver_sql("SELECT 1")
         with caplog.at_level(logging.WARNING, logger="src.database.pool_watch"):
-            c.invalidate(RuntimeError("disk I/O error"))
+            c.invalidate(RuntimeError("disk I/O error MARKER-IN-THE-WORDS"))
         c.close()
     finally:
         pool_watch.reset_endpoint(token)
@@ -165,19 +167,55 @@ def test_an_invalidation_is_logged_with_its_holder_and_the_drivers_own_message(e
     (rec,) = [r for r in inv["recent"] if r["held_by"]["endpoint"] == "GET /api/invalidating"]
     assert rec["held_by"]["thread"] == threading.current_thread().name
     assert rec["held_by"]["endpoint"] == "GET /api/invalidating"
-    assert rec["exception"] == "RuntimeError" and rec["message"] == "disk I/O error"
-    assert any("invalidated" in r.getMessage() and "GET /api/invalidating" in r.getMessage()
-               for r in caplog.records)
+    assert rec["exception"] == "RuntimeError" and rec["code"] is None
+    assert "message" not in rec
+    lines = [r for r in caplog.records if "invalidated" in r.getMessage()]
+    assert any("GET /api/invalidating" in r.getMessage() and "RuntimeError" in r.getMessage() for r in lines)
+    assert "MARKER-IN-THE-WORDS" not in caplog.text and "MARKER-IN-THE-WORDS" not in json.dumps(rec)
 
 
-def test_an_invalidation_keeps_the_dbapi_message_never_the_statement_or_parameters(eng):
+class _DriverError(Exception):
+    """A stand-in for the driver's exception: SQLite's code NAME in ``sqlite_errorname`` and the
+    engine's own line (a schema object's name and a fragment of its definition) as its message."""
+
+    def __init__(self, message, name):
+        super().__init__(message)
+        self.sqlite_errorname = name
+
+
+_ENGINE_LINE = "malformed database schema (secret_table_name) - near \"CREATE TABLE secret_table_name\""
+
+
+@pytest.mark.parametrize(
+    "exc, code",
+    [
+        pytest.param(_DriverError(_ENGINE_LINE, "SQLITE_CORRUPT"), "SQLITE_CORRUPT", id="a-constant-of-sqlite"),
+        pytest.param(_DriverError(_ENGINE_LINE, "SQLITE_IOERR_READ"), "SQLITE_IOERR_READ", id="an-extended-constant"),
+        # text put where the constant belongs is dropped, not kept
+        pytest.param(_DriverError(_ENGINE_LINE, "malformed database schema (secret_table_name)"), None, id="text-is-not-a-constant"),
+        pytest.param(_DriverError(_ENGINE_LINE, "sqlite_corrupt"), None, id="a-lower-case-name-is-not-one"),
+        pytest.param(_DriverError(_ENGINE_LINE, "SQLITE_CORRUPT secret_table_name"), None, id="a-name-with-text-after-it-is-not-one"),
+        pytest.param(_DriverError(_ENGINE_LINE, "SQLITE_" + "X" * 60), None, id="a-name-longer-than-any-is-not-one"),
+        pytest.param(OSError(errno.ENOSPC, "No space left on device", "/home/Person Name/data/x.db"), "ENOSPC", id="an-errno-name-not-the-path"),
+        pytest.param(OSError("only a message, /home/Person Name/x"), None, id="no-errno-no-code"),
+        pytest.param(RuntimeError(_ENGINE_LINE), None, id="any-other-class"),
+    ],
+)
+def test_an_invalidation_keeps_the_class_and_a_fixed_code_and_no_word_of_the_message(eng, caplog, exc, code):
     c = eng.connect()
-    try:
-        with pytest.raises(Exception):  # noqa: B017 - any DBAPI error will do
-            c.exec_driver_sql("INSERT INTO no_such_table(secret) VALUES (?)", ("hunter2",))
-    finally:
-        c.close()
-    # a failed statement is not an invalidation; force one carrying the wrapped error text
+    c.exec_driver_sql("SELECT 1")
+    with caplog.at_level(logging.WARNING, logger="src.database.pool_watch"):
+        c.invalidate(exc)
+    c.close()
+    rec = pool_watch.invalidations()["recent"][-1]
+    assert rec["exception"] == type(exc).__name__ and rec["code"] == code
+    assert any(type(exc).__name__ in r.getMessage() and (code is None or code in r.getMessage()) for r in caplog.records), "the line names them"
+    kept = json.dumps(rec) + caplog.text
+    for word in ("secret_table_name", "malformed database schema", "Person Name", "No space left", "CREATE TABLE"):
+        assert word not in kept, word
+
+
+def test_an_invalidation_through_the_wrapper_reads_the_drivers_class_and_keeps_no_statement_or_value(eng):
     c = eng.connect()
     wrapped = None
     try:
@@ -192,8 +230,11 @@ def test_an_invalidation_keeps_the_dbapi_message_never_the_statement_or_paramete
             if r["by_thread"] == threading.current_thread().name]
     assert mine, "the invalidation was not recorded"
     for rec in mine:
-        assert "hunter2" not in (rec["message"] or "")
-        assert "INSERT" not in (rec["message"] or "")
+        assert rec["exception"] == "OperationalError", "the driver's class, read through SQLAlchemy's wrapper"
+        assert rec["code"] == "SQLITE_ERROR", "and its code's NAME (Python 3.11 and later carry it)"
+        kept = json.dumps(rec)
+        for word in ("hunter2", "INSERT", "no_such_table"):
+            assert word not in kept
 
 
 def test_the_invalidation_ring_is_bounded(eng):
@@ -273,16 +314,24 @@ def test_the_write_gate_report_carries_the_recent_invalidations(eng):
     c.invalidate(RuntimeError("disk I/O error"))
     c.close()
     inv = write_gate_report()["invalidations"]
-    assert inv["total"] >= 1 and inv["recent"][-1]["message"] == "disk I/O error"
+    assert inv["total"] >= 1 and inv["recent"][-1]["exception"] == "RuntimeError"
+    assert "message" not in inv["recent"][-1]
 
 
 def test_an_exception_whose_text_cannot_be_read_still_counts_as_an_invalidation(eng):
     """The coordinator's check of #1289 (N8): the message was formatted INSIDE the lock, so a
-    ``__str__`` that raised lost the whole record (4 of 6 hostile inputs)."""
+    ``__str__`` that raised lost the whole record (4 of 6 hostile inputs). The record keeps no text now,
+    so nothing calls ``__str__`` at all, and a hostile attribute reads as no code."""
+    called = []
 
     class Hostile(Exception):
         def __str__(self):
+            called.append(1)
             raise RuntimeError("no text for you")
+
+        @property
+        def sqlite_errorname(self):
+            raise RuntimeError("no attribute for you")
 
     before = pool_watch.invalidations()["total"]
     c = eng.connect()
@@ -291,5 +340,5 @@ def test_an_exception_whose_text_cannot_be_read_still_counts_as_an_invalidation(
     c.close()
     inv = pool_watch.invalidations()
     assert inv["total"] == before + 1
-    assert inv["recent"][-1]["exception"] == "Hostile"
-    assert "could not be read" in inv["recent"][-1]["message"]
+    assert inv["recent"][-1]["exception"] == "Hostile" and inv["recent"][-1]["code"] is None
+    assert not called, "the record is the class and a code: the exception's text is never asked for"

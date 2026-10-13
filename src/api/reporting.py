@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_article
 from src.reporting.evidence import (
     BUNDLE_VERSION,
     ITEM_FIELDS,
@@ -41,14 +42,15 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     Selection is by explicit ``article_ids`` or by a Boolean ``query``. The
     returned bundle is independently verifiable (offline) with scripts/verify_evidence.py.
     """
+    # A repair's stand-in article is a place-holder for a lost row, never evidence: it is left out of every selection, by id or by query.
     if req.article_ids:
-        articles = db.query(Article).filter(Article.id.in_(req.article_ids)).all()
+        articles = db.query(Article).filter(Article.id.in_(req.article_ids), not_a_stand_in_article()).all()
     elif req.query:
         try:
-            ids = search_ids(db, req.query)
+            ids = search_ids(db, req.query, exclude_quarantined=True)
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
-        articles = db.query(Article).filter(Article.id.in_(ids or [])).all()
+        articles = db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
@@ -76,7 +78,7 @@ def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
     ids = _selected_ids(req, db)
     n_articles, n_sources = (
         db.query(func.count(Article.id), func.count(func.distinct(Article.source_id)))
-        .filter(Article.id.in_(ids))
+        .filter(Article.id.in_(ids), not_a_stand_in_article())
         .one()
     )
     if not n_articles:
@@ -122,7 +124,7 @@ def _selected_ids(req, db) -> list[int]:
         return list(req.article_ids)
     if req.query:
         try:
-            return list(search_ids(db, req.query) or [])
+            return list(search_ids(db, req.query, exclude_quarantined=True) or [])
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
     raise HTTPException(status_code=400, detail="Provide article_ids or query.")
@@ -131,13 +133,13 @@ def _selected_ids(req, db) -> list[int]:
 def _select_articles(req, db) -> list:
     """Shared selection: explicit ids, or a Boolean FTS query (same as evidence)."""
     if req.article_ids:
-        return db.query(Article).filter(Article.id.in_(req.article_ids)).all()
+        return db.query(Article).filter(Article.id.in_(req.article_ids), not_a_stand_in_article()).all()
     if req.query:
         try:
-            ids = search_ids(db, req.query)
+            ids = search_ids(db, req.query, exclude_quarantined=True)
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
-        return db.query(Article).filter(Article.id.in_(ids or [])).all()
+        return db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
     raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
 
@@ -156,7 +158,7 @@ def export_methods(req: MethodsRequest, db: Session = Depends(get_db)) -> dict:
     if not articles:
         raise HTTPException(status_code=404, detail="No matching articles.")
 
-    corpus_total = db.query(func.count(Article.id)).scalar() or 0
+    corpus_total = db.query(func.count(Article.id)).filter(not_a_stand_in_article()).scalar() or 0  # a stand-in is no article of the corpus
     row = db.query(func.min(Article.published_at), func.max(Article.published_at)).first()
     lo, hi = row if row is not None else (None, None)
     markdown = build_methods_markdown(

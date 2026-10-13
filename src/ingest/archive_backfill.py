@@ -144,6 +144,7 @@ def advance_backfill(
         return {"enabled": True, "skipped": "airplane mode engaged"}
 
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
     ingest = ingest_fn or _real_ingest
     discover = discover_fn or _enumerate
@@ -159,9 +160,9 @@ def advance_backfill(
         entry = queue.pop(0)
         state["queue"] = queue
         sid = int(entry["source_id"])
-        source = session.query(Source).filter_by(id=sid).first()
+        source = session.query(Source).filter_by(id=sid).filter(not_a_stand_in_source()).first()
         if source is None:
-            # The source vanished since it was queued -- nothing to backfill;
+            # The source vanished since it was queued (or is a stand-in, the place-holder a salvage copy writes at a lost id: no site to read) -- nothing to backfill;
             # move on (bounded to ONE queue advance this tick, never a spin
             # through a possibly-large stale backlog in one call).
             _save_state(state, state_path)
@@ -187,7 +188,7 @@ def advance_backfill(
         return {"enabled": True, "source_id": sid, "urls_found": len(urls), "enumerated": True}
 
     sid = int(active["source_id"])
-    source = session.query(Source).filter_by(id=sid).first()
+    source = session.query(Source).filter_by(id=sid).filter(not_a_stand_in_source()).first()
     if source is None:
         done.append(sid)
         state["done_sources"] = done

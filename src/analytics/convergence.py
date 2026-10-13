@@ -77,6 +77,7 @@ from src.database.models import (
     ArticleMentionedPlace,
     Source,
 )
+from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -298,6 +299,10 @@ def find_convergences(
         ArticleMentionedPlace.kind,
         ArticleMentionedPlace.lat,
         ArticleMentionedPlace.lon,
+    ).filter(
+        # The place rows a salvage copy kept for a lost article stay in the table: the stand-in is no article and its placeholder source is no
+        # independent outlet, so it never reaches the independence gate (it would have passed one real source plus a stand-in).
+        not_a_stand_in_article_id(ArticleMentionedPlace.article_id)
     ).all()
     if not place_rows:
         return _empty(window_days, min_articles, min_sources)

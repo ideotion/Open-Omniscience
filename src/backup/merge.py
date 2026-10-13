@@ -48,10 +48,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
+from typing import Any
 
 from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
+from src.database.stand_in import ARTICLE_HASH_END, ARTICLE_HASH_PREFIX
 from src.monitoring.engine_text import engine_text
 from src.monitoring.secret_scrub import exception_text, scrubbed, unicode_note
 from src.paths import data_dir
@@ -92,8 +94,73 @@ _SWAP_HANDLE_WAIT_S = float(os.environ.get("OO_SWAP_HANDLE_WAIT_S", "300") or 30
 _SWAP_CHECKPOINT_S = float(os.environ.get("OO_SWAP_CHECKPOINT_S", "60") or 60)
 
 
-def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
-    """Flush the live WAL into the database file. True if it completed.
+def _log_is_folded(record: Any, wal: Path | None) -> bool:
+    """Does the checkpoint's answer show that EVERY frame the live log held is now in the database file? That is the one condition under
+    which the log can be unlinked and nothing be lost, even if the replace then fails and the old file stays the library (the coordinator's
+    check of E3 fold 3, item 8: this used to return True whenever the checkpoint THREAD ended, whatever the checkpoint answered).
+
+    ``record`` is what :func:`checkpoint_wal` returned: ``busy`` 0 is a truncate that ran (the log is empty); ``busy`` 1 is a truncate a reader
+    kept from running, which is still all right when ``checkpointed_frames`` reached ``log_frames`` (every frame is in the file; only the
+    reset was blocked) and not otherwise; ``(-1, -1)`` is no log, or, with ``busy`` 1, a checkpoint lock another connection holds and
+    nothing ran. ``{"skipped": ...}`` is a checkpoint that could not take the write gate. ``None`` is a checkpoint that was disabled, was for
+    another kind of database or failed: nothing is known, so the log is accepted only if the file that would be unlinked is absent or empty."""
+    if isinstance(record, dict) and "skipped" not in record:
+        busy, logged, moved = record.get("busy"), record.get("log_frames"), record.get("checkpointed_frames")
+        if isinstance(busy, int) and isinstance(logged, int) and isinstance(moved, int):
+            if logged < 0 or moved < 0:
+                return not busy
+            return not busy or moved >= logged
+        return False
+    if record is not None:
+        return False
+    try:
+        return wal is None or not wal.exists() or wal.stat().st_size == 0
+    except OSError:
+        return False
+
+
+#: Why the checkpoint before the swap did not fold the log (what :func:`_checkpoint_before_swap` appends to its ``why`` list): the words of
+#: the refusal differ, because only the first two are about a writer or a reader that is active.
+_CKPT_TIMED_OUT = "timed-out"  # it did not finish within the budget
+_CKPT_BLOCKED = "blocked"  # it answered that a reader, a writer or the checkpoint lock kept it from moving every frame
+_CKPT_SWITCHED_OFF = "switched-off"  # OO_WAL_CHECKPOINT=0: nothing ran, and the log is not empty
+_CKPT_NO_ANSWER = "no-answer"  # nothing answered (the checkpoint failed, or the database is not SQLite) and the log is not empty
+
+
+def _swap_refusal(why: str) -> str:
+    """The restore's refusal when the log could not be folded into the file, in the words that are TRUE for the reason. «May still hold»,
+    where nothing answered: all that was seen is a log file that is not empty, and that is not the same as saves that are missing from the
+    file."""
+    nothing_written = "nothing was written to your corpus. "
+    if why == _CKPT_SWITCHED_OFF:
+        return (
+            "the write-ahead log of your corpus may still hold saves that are not in the file, and the step that moves them in "
+            "is turned off on this computer (the OO_WAL_CHECKPOINT=0 setting) — " + nothing_written +
+            "Remove that setting, restart the app and import again."
+        )
+    if why == _CKPT_NO_ANSWER:
+        return (
+            "the write-ahead log of your corpus may still hold saves that are not in the file, and the step that moves them in "
+            "did not answer (the log says why) — " + nothing_written + "Import again."
+        )
+    if why == _CKPT_TIMED_OUT:
+        return (
+            f"the step that moves the write-ahead log of your corpus into the file did not finish within {_SWAP_CHECKPOINT_S:.0f}s, so "
+            "the log may still hold saves that are not in the file — " + nothing_written +
+            "Import again; if it is slow every time, let any running job finish first."
+        )
+    return (
+        "your corpus is still being written to or read, so its write-ahead log "
+        f"could not be moved into the file completely within {_SWAP_CHECKPOINT_S:.0f}s — " + nothing_written +
+        "Let the running job finish, and import again."
+    )
+
+
+def _checkpoint_before_swap(timeout_s: float | None = None, why: list[str] | None = None) -> bool:
+    """Flush the live WAL into the database file. True only if the checkpoint COMPLETED and its answer shows every frame of the log in the
+    file (:func:`_log_is_folded`): the swap unlinks the log, and a log that still holds frames would take the old library's last saves
+    with it if the replace then failed. When it returns False and ``why`` is a list, the reason (one of the ``_CKPT_*`` names) is appended
+    to it, for :func:`_swap_refusal`.
 
     Bounded on purpose. ``checkpoint_wal`` takes the single-writer gate. That wait is bounded
     now (``OO_CKPT_GATE_TIMEOUT_S``, 30 s, ``0`` waits for ever), but the BACKFILL it then runs
@@ -113,19 +180,37 @@ def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
     with a later retry -- that retry runs THIS function first, and cannot succeed
     until the gate is free, which is only true once the stray one has finished.
     """
+    from src.backup.sqlite_backup import live_db_path
+
     budget = _SWAP_CHECKPOINT_S if timeout_s is None else timeout_s
     done = threading.Event()
+    answer: dict[str, Any] = {}
 
     def _run() -> None:
         try:
             from src.scheduler.hygiene import checkpoint_wal
 
-            checkpoint_wal(force=True)  # never raises, by its own contract
+            answer["record"] = checkpoint_wal(force=True)  # never raises, by its own contract
         finally:
             done.set()
 
+    def _because(reason: str) -> bool:
+        if why is not None:
+            why.append(reason)
+        return False
+
     threading.Thread(target=_run, name="oo-swap-checkpoint", daemon=True).start()
-    return done.wait(budget)
+    if not done.wait(budget):
+        return _because(_CKPT_TIMED_OUT)
+    live = live_db_path()
+    record = answer.get("record")
+    if _log_is_folded(record, Path(str(live) + "-wal") if live else None):
+        return True
+    if record is None:  # no answer at all: switched off, or it failed (the checkpoint never raises), and the log has content
+        from src.scheduler.hygiene import wal_checkpoint_enabled
+
+        return _because(_CKPT_NO_ANSWER if wal_checkpoint_enabled() else _CKPT_SWITCHED_OFF)
+    return _because(_CKPT_BLOCKED)
 
 
 def _file_is_locked(exc: BaseException) -> bool:
@@ -263,6 +348,36 @@ def _clear_stale_side_files(target: Path, *, wait_s: float | None = None) -> Non
         )
 
 
+def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | None = None) -> None:
+    """THE swap, for the restore and for the repair (``database/repair.py``): the library's name is moved onto ``working`` inside the
+    one window of ``database/library_generation.py``, and nowhere else.
+
+    WHY ONE HELPER. Both swaps had the same hazard, and the repair's read found it first (the deep read of E3, B1 and NEW-1): the pool's
+    ``dispose_engine`` closes idle connections only, so a connection a request has checked out stays on the OLD inode and, in WAL mode,
+    SQLite never notices that the name now points elsewhere; a connection OPENED between the removal of the live ``-wal``/``-shm`` and
+    the replace binds the new file's log names to the old file. Inside the window nothing is being opened or can be, every connection
+    made before it is refused from its first line (the generation moves FIRST), and a connection made after it opens the new file.
+    ``check``, if given, runs inside the window after the generation moved and before anything is changed on disk: the repair compares
+    the old file's data version there, so a save that landed in the old file can only have done so BEFORE the move, where the check
+    sees it. A raise from ``check`` leaves the file the library, and the window gives the earlier connections their validity back; a
+    replace that fails AFTER the live log names were removed does not (a pooled connection holds that log by an inode no name points at, so a
+    save through it would land where no later connection reads): the earlier connections stay refused and the work is done again.
+    ``library_generation.LibraryBusy`` is raised when a connection was still being opened after the wait."""
+    from src.database import library_generation
+    from src.database.session import dispose_engine
+
+    with library_generation.swap_window(working):
+        dispose_engine()
+        if check is not None:
+            check()
+        # ONE budget for the whole swap, not one per file: -wal, -shm and the replace all face the same holder, so a per-step budget would
+        # stall a doomed swap for three times as long while telling the operator it had waited once. Each step gets whatever is left.
+        swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
+        library_generation.disk_changing()  # from here a failed replace does not give the earlier connections their validity back
+        _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
+        _replace_live_corpus(working, target, wait_s=max(0.0, swap_deadline - time.monotonic()))  # atomic on the same filesystem
+
+
 def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = None) -> None:
     """Put the merged corpus in place, waiting out a lock on the DESTINATION.
 
@@ -307,7 +422,8 @@ def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = 
     # was about a file that no longer is. The first failed read of the new one puts it back.
     from src.database import damage
 
-    damage.registry.retry(reason="the corpus file was replaced", files=(damage.FILE_CORPUS,))
+    damage.registry.retry(reason="the corpus file was replaced", files=(damage.FILE_CORPUS,), file_replaced=True)
+    damage.registry.verification_forget(damage.FILE_CORPUS)  # a verdict on the file that was live is not one on this
 
 
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
@@ -6352,7 +6468,8 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: stamped by the engine a re-index would run -- carried at import, or re-indexed by an
 #: earlier run that was interrupted before it could stamp the batch complete. Those owe
 #: nothing, so the backlog is ``n - certified``. The join is on two narrow tables
-#: (merged_rows, article_index_stamps) and never touches an article row.
+#: (merged_rows, article_index_stamps) and never touches an article row (the stand-in question below reads the
+#: article hash index only: a covering range, no row page).
 _BACKLOG_SQL = (
     "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified"
     " FROM merge_batches b"
@@ -6364,6 +6481,25 @@ _BACKLOG_SQL = (
     " GROUP BY b.id, b.imported_at"
     " HAVING COUNT(m.row_id) > 0"
     " ORDER BY b.id"
+)
+
+#: ``lost``: of a batch's articles that are not certified, how many are stand-ins (the place-holder a salvage copy writes at a lost id, which a
+#: backup of that copy carries). A stand-in is never re-indexed, so it never owes one, and the owed count leaves it out. Asked from the STAND-IN
+#: side: the hash index names them (stand_in.py: a covering range, no article row), and each is looked up in ``merged_rows`` by
+#: (table_name, row_id), so the cost follows the number of stand-ins and not the number of pending articles. (Asked from the pending side, as
+#: ``m.row_id IN (<the range>)`` tested for every pending row, it cost 1.5 to 2.3 times the whole read at a million pending articles.)
+#:
+#: ``CROSS JOIN`` is the ORDER, not a product: SQLite never reorders a table across it, so ``articles`` is the outer loop whatever the planner
+#: knows. With statistics (``ANALYZE``) it chooses that order unforced; WITHOUT them (a salvage copy is a fresh file, and ``optimize_at_boot``
+#: only seeds them at the next boot; a merged file keeps the live file's old ones) it chose ``merged_rows`` first and fetched an article row
+#: for every pending row to test its hash: about 270 ms more than the read without the question at a million pending articles (481 and 507 ms
+#: against 216 and 214), and on a real store each of those fetches reads the article's page. ``tests/test_stand_in_rows.py`` asserts the plan with and without statistics.
+_BACKLOG_LOST_SQL = (
+    "SELECT m.batch_id, COUNT(*) FROM articles a"
+    " CROSS JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
+    " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine = :engine"
+    " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND st.article_id IS NULL"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
+    " GROUP BY m.batch_id"
 )
 
 
@@ -6381,6 +6517,24 @@ def _backlog_engine() -> str:
         return "<unknown>"
 
 
+def _backlog_rows(session) -> list[tuple]:
+    """The backlog read for :func:`pending_reindex_batches` and :func:`reindex_backlog`: one row per pending batch,
+    ``(id, imported_at, articles, certified, lost)`` -- the two statements above, so the two callers cannot drift apart. ``lost`` is the
+    stand-ins the batch lists that are not certified (:data:`_BACKLOG_LOST_SQL`); the owed count is ``articles - certified - lost``."""
+    from sqlalchemy import text
+
+    engine_id = _backlog_engine()
+    rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": engine_id}).fetchall()
+    if not rows:
+        return []
+    lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id})}
+    # The two statements share no snapshot, so ``lost`` is held to what the first one says the batch can owe (``articles - certified``): a race
+    # between them can make a batch owe less than it does for one poll, never a negative number. The one race found is a stamp deleted between
+    # the reads (a stand-in is never stamped and a merged batch gets no new rows): the first statement counted that article as certified, the
+    # second counts it as unstamped, and the raw figure would take it off the owed count twice.
+    return [(*r, min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3])))) for r in rows]
+
+
 def pending_reindex_batches() -> list[dict]:
     """Imports whose articles are merged but not confirmed re-indexed.
 
@@ -6394,17 +6548,13 @@ def pending_reindex_batches() -> list[dict]:
     tell the two apart with. That is the project's own degrade-sentinel lesson, and the
     wrapper below is the fix.)
     """
-    from sqlalchemy import text
-
     from src.database.session import session_scope
 
     try:
         with session_scope() as session:
-            rows = session.execute(
-                text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
-            ).fetchall()
+            rows = _backlog_rows(session)
         return [
-            {"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2]) - int(r[3]),
+            {"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2]) - int(r[3]) - int(r[4]),
              "certified": int(r[3])}
             for r in rows
         ]
@@ -6427,22 +6577,18 @@ def reindex_backlog() -> dict:
     ``available: false`` means the backlog could not be read (a locked or missing store),
     NOT that it is empty -- reporting the two the same way would be the exact
     fabricated-reassurance this guard exists to prevent."""
-    from sqlalchemy import text
-
     from src.database.session import session_scope
 
     try:
         with session_scope() as session:
-            rows = session.execute(
-                text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
-            ).fetchall()
+            rows = _backlog_rows(session)
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
         # because the root error handler writes the traceback, which ends with the engine's own words
         reason = engine_text(exc)
         _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
         return {"available": False, "reason": reason}
-    owed = [int(r[2]) - int(r[3]) for r in rows]
+    owed = [int(r[2]) - int(r[3]) - int(r[4]) for r in rows]
     certified = [int(r[3]) for r in rows]
     batches = [
         {"batch_id": int(r[0]), "created_at": str(r[1]) if r[1] is not None else None,
@@ -6505,9 +6651,12 @@ def reindex_imported_articles(
     from src.analytics.extract import get_extractor
     from src.analytics.store import reindex_articles
     from src.database.session import session_scope
+    from src.database.stand_in import stand_in_article_ids
 
     if commit_batch is None:
         commit_batch = _default_reindex_commit_batch()
+    if stats is None:
+        stats = {}  # the count of ids that named no article comes back through it (below)
 
     with session_scope() as session:
         rows = session.execute(
@@ -6534,7 +6683,9 @@ def reindex_imported_articles(
                 {"b": batch_id, "e": _backlog_engine()},
             ).fetchall()
         }
-        all_ids = sorted(batch_ids - certified)
+        # A stand-in (the place-holder a salvage copy writes at a lost id, which a backup of that copy carries and the merge records here) is
+        # never re-indexed: asked for, it would leave the batch one short of its total for ever and the batch would never be stamped done.
+        all_ids = sorted(batch_ids - certified - stand_in_article_ids(session))
         if not all_ids:
             mark_reindex_complete(batch_id)
             out0: dict = {"reindexed": 0, "failed": 0}
@@ -6579,8 +6730,15 @@ def reindex_imported_articles(
 
         def _tracked(done: int, _total: int) -> None:
             # Persist the watermark as the re-index advances, so a crash resumes here
-            # rather than redoing the batch. `done` counts FINALISED articles in list
-            # order, so ids[done-1] is the last one that completed.
+            # rather than redoing the batch. `done` counts the articles FINALISED (reindexed
+            # or failed), in list order, so ids[done-1] is the last one that completed --
+            # EXACTLY when every id of the list names an article. An id that names none (an
+            # imported article deleted since: ``merged_rows`` has no cascade) is not counted
+            # by the pass until the batch has ended, so after one `done` lags the list and
+            # ids[done-1] is an EARLIER id than the last that completed. That is the safe
+            # direction: a resume redoes the articles between (the re-index is idempotent)
+            # and can never skip one, which counting the absent id here, before the articles
+            # that precede it in the list are done, would (a crash would resume past them).
             if 0 < done <= total:
                 _save_reindex_cursor(
                     batch_id, last_id=ids[done - 1], done=already + done, total=len(all_ids)
@@ -6607,8 +6765,20 @@ def reindex_imported_articles(
         # Only a batch that reached the end is stamped done. Anything short of that
         # deliberately stays 'merged', so the backlog survives the interruption -- the
         # whole point of not merging the derived rows in the first place.
-        if int(result.get("reindexed", 0)) + int(result.get("failed", 0)) >= total:
+        # An id that named no article when its window was loaded (an imported article deleted before its batch drained: ``merged_rows`` has no
+        # cascade) is finished too: there is nothing to index, and counting it out is what lets such a batch ever be stamped done.
+        finalised = int(result.get("reindexed", 0)) + int(result.get("failed", 0))
+        if finalised + int(stats.get("absent", 0)) >= total:
             mark_reindex_complete(batch_id)
+            if finalised < total and progress_cb is not None:
+                # The pass never counts an id that named no article, so its last report ended short of the batch: say that the batch is done, so
+                # the bar a caller draws from it ends full. (Report-only, like the pass's own: it must never undo a stamp.)
+                try:
+                    progress_cb(len(all_ids), len(all_ids))
+                except Exception as exc:  # noqa: BLE001
+                    # The TYPE only, no exc_info: the callback is the caller's job-state writer, so what it raises is not ours, and a traceback
+                    # (and the error it was raised from) ends in the engine's own words.
+                    _LOG.debug("could not report the finished batch's progress (%s)", type(exc).__name__)
         if already:
             result["resumed_already_done"] = already
         if certified:
@@ -6969,7 +7139,8 @@ def run_restore(
     and states the range."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
-    from src.database.session import dispose_engine, init_db
+    from src.database.library_generation import LibraryBusy
+    from src.database.session import init_db
     from src.scheduler.runner import owns_the_machine
 
     # The journal sink is separate from on_start on purpose: on_start drives the
@@ -7382,23 +7553,19 @@ def run_restore(
             # other. Both said "cancelled" until the slice that changes them BOTH
             # (2026-09-07) gave the refusal its own class -- the operator cancelled
             # nothing, and the honest reason is the actionable half of the message.
-            if not _checkpoint_before_swap():
+            why: list[str] = []
+            if not _checkpoint_before_swap(why=why):
+                raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
+            try:
+                # The engine is disposed, the live log names cleared and the file replaced inside ONE window (swap_in_corpus), in
+                # which no connection is being opened and every connection made before it is refused: a save that waited out the
+                # restore fails loudly instead of committing into a file nobody reads (the deep read of E3, B1 and NEW-1).
+                swap_in_corpus(working, target)
+            except LibraryBusy as busy:
                 raise RestoreRefused(
-                    "your corpus is still being written to, so its write-ahead log "
-                    f"could not be flushed within {_SWAP_CHECKPOINT_S:.0f}s — nothing "
-                    "was written to your corpus. Let the running job finish, and "
-                    "import again."
-                )
-            dispose_engine()
-            # ONE budget for the whole swap, not one per file: -wal, -shm and the
-            # replace all face the same holder, so a per-step budget would stall a
-            # doomed swap for three times as long while telling the operator it had
-            # waited once. Each step gets whatever is left.
-            swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
-            _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
-            _replace_live_corpus(
-                working, target, wait_s=max(0.0, swap_deadline - time.monotonic())
-            )  # atomic on the same filesystem
+                    "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
+                    "switched — nothing was written to your corpus. Import again."
+                ) from busy
             init_db()
 
         report["committed"] = True

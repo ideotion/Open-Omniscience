@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article
 from src.database.session import get_db
+from src.database.stand_in import is_a_stand_in_article, not_a_stand_in_article
 from src.timemap import datestore
 
 router = APIRouter(prefix="/api/article-dates", tags=["article-dates"])
@@ -30,7 +31,9 @@ _CAVEAT = (
 
 @router.get("/article/{article_id}")
 def list_for_article(article_id: int, db: Session = Depends(get_db)) -> dict:
-    """The date tags already stored for one article."""
+    """The date tags already stored for one article. A stand-in article (the place-holder a salvage copy writes at a lost id) is not found."""
+    if is_a_stand_in_article(db, article_id):
+        raise HTTPException(status_code=404, detail="Article not found")
     return {
         "article_id": article_id,
         "tags": datestore.for_article(db, article_id),
@@ -41,7 +44,7 @@ def list_for_article(article_id: int, db: Session = Depends(get_db)) -> dict:
 @router.post("/article/{article_id}")
 def extract_for_article(article_id: int, db: Session = Depends(get_db)) -> dict:
     """Extract dates from one article's text now and store any new candidates."""
-    art = db.get(Article, article_id)
+    art = db.query(Article).filter_by(id=article_id).filter(not_a_stand_in_article()).first()
     if art is None:
         raise HTTPException(status_code=404, detail="Article not found")
     added = datestore.store_for_article(db, art)

@@ -66,6 +66,7 @@ def promises_due(session) -> list[Card]:
     if _disabled("promises_due"):
         return []
     from src.database.models import Article, ArticleMentionedDate
+    from src.database.stand_in import not_a_stand_in_article
 
     today = datetime.now(UTC).date()
     window_start = today - timedelta(days=7)
@@ -78,6 +79,7 @@ def promises_due(session) -> list[Card]:
             ArticleMentionedDate.mentioned_on >= window_start,
             ArticleMentionedDate.mentioned_on <= today,
             Article.published_at.isnot(None),
+            not_a_stand_in_article(),  # a stand-in carries no date of its own, but one given a date is still no promise by an article
         )
         .order_by(ArticleMentionedDate.mentioned_on.desc())
         .limit(50)

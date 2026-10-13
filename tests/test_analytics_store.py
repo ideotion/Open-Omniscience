@@ -815,7 +815,9 @@ def test_reindex_articles_loads_a_window_in_chunks_under_the_variable_ceiling(db
     ]
 
     # Observed at the SQL layer, because that is where the ceiling actually applies:
-    # count the bound parameters of every statement that selects articles by an IN.
+    # count the bound ids of every statement that selects articles by an IN. The stand-in
+    # condition adds two TEXT bounds (its hash range) to each statement; they are not ids,
+    # and 900 + 2 stays under the 999 ceiling.
     from sqlalchemy import event
 
     chunk_sizes: list[int] = []
@@ -823,7 +825,7 @@ def test_reindex_articles_loads_a_window_in_chunks_under_the_variable_ceiling(db
     def _on_exec(conn, cursor, statement, parameters, context, executemany):
         flat = " ".join(statement.split()).lower()
         if "from articles" in flat and "articles.id in" in flat:
-            chunk_sizes.append(len(parameters or ()))
+            chunk_sizes.append(sum(1 for p in (parameters or ()) if isinstance(p, int)))
 
     event.listen(db.get_bind(), "before_cursor_execute", _on_exec)
     try:

@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, Source
+from src.database.stand_in import not_a_stand_in_article
 
 # Human-readable, fixed buckets (a histogram the operator can eyeball to pick a
 # gate). Each is (label, lower_inclusive, upper_inclusive_or_None).
@@ -124,7 +125,7 @@ def article_length_report(session: Session) -> dict:
     # and a zero are different facts, and a reader who cannot see how much was held
     # out cannot judge what the distribution describes.
     excluded_quarantined = int(
-        session.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0
+        session.query(func.count(Article.id)).filter(Article.quarantined.is_(True), not_a_stand_in_article()).scalar() or 0
     )
     for wc, lang, sid in (
         session.query(Article.word_count, Article.language, Article.source_id)

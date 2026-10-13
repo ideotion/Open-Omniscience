@@ -16,6 +16,7 @@ answered: a test that raised a hand-built exception would pass for the wrong rea
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import random
@@ -285,6 +286,9 @@ def test_a_schema_row_that_names_nothing_real_is_damage_on_the_real_driver(tmp_p
         with pytest.raises(Exception), eng.connect() as conn:  # noqa: B017 - the engine's own error type
             conn.execute(text("SELECT count(*) FROM sqlite_master")).fetchall()
         assert registry.latched(FILE_CORPUS)
+        raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")  # the registry fixture's file
+        assert json.loads(raw)["incidents"][0]["message"] == damage.CORRUPT_SCHEMA
+        assert words not in raw and "ix_t" not in raw, "the driver's schema text reached the record"
     finally:
         eng.dispose()
 
@@ -616,6 +620,50 @@ def test_the_incident_record_keeps_no_value_and_no_passphrase(registry, tmp_path
     assert "INSERT INTO articles" in raw
 
 
+# The driver's own text, in the shapes SQLite gives it, each carrying a marker that must never reach a record: a schema object's
+# name and the fragment of its definition after it, a page number, a source line. The label is chosen by the CLASS of the first line.
+_DRIVER_TEXTS = [
+    pytest.param("database disk image is malformed", 11, damage.CORRUPT_IMAGE, id="image"),
+    pytest.param(f"database disk image is malformed {SECRET}", 267, damage.CORRUPT_IMAGE, id="image-extended-code-with-text"),
+    pytest.param(f'malformed database schema (ix_{SECRET}) - near "{SECRET}": syntax error', 11, damage.CORRUPT_SCHEMA, id="schema"),
+    pytest.param(f'malformed database schema (ix_{SECRET}) - near "{SECRET}": syntax error', None, damage.CORRUPT_SCHEMA, id="schema-no-code"),
+    pytest.param(f"database corruption at line 99 of [{SECRET}]", 11, damage.CORRUPT_OTHER, id="other-class-by-code"),
+    pytest.param(f"database disk image is malformed\n{SECRET} second line", 11, damage.CORRUPT_IMAGE, id="image-second-line"),
+    # the text-only fallback (a driver without ``sqlite_errorcode``) for the image class: the label, never the line
+    pytest.param(f"database disk image is malformed {SECRET}", None, damage.CORRUPT_IMAGE, id="image-no-code-with-text"),
+    pytest.param(f"database disk image is malformed\n{SECRET} second line", None, damage.CORRUPT_IMAGE, id="image-no-code-second-line"),
+]
+
+
+@pytest.mark.parametrize(("text_", "code", "label"), _DRIVER_TEXTS)
+def test_what_the_driver_said_is_classified_on_its_text_and_recorded_as_a_fixed_label(text_, code, label):
+    """Engine text into a record is class-only: the line is READ to tell the class, and the record carries the fixed label of that
+    class and the exception's class, never the line (a schema name, a fragment of a definition, a page, a source line)."""
+    found = corruption_of(_fake_driver_error(text_, code=code))
+    assert found is not None
+    assert found["message"] == label
+    assert found["driver_class"] == "DatabaseError"
+    assert SECRET not in repr(found) and "ix_" not in repr(found) and "line 99" not in repr(found)
+    assert label in (damage.CORRUPT_IMAGE, damage.CORRUPT_SCHEMA, damage.CORRUPT_OTHER)
+
+
+@pytest.mark.parametrize(("text_", "code", "label"), _DRIVER_TEXTS)
+def test_no_driver_text_reaches_the_incident_record_or_the_verdicts_reason(registry, tmp_path, text_, code, label):
+    from src.database import verify
+
+    exc = _fake_driver_error(text_, code=code)
+    ctx = type("Ctx", (), {})()
+    ctx.original_exception = exc
+    ctx.statement = "SELECT 1"
+    registry.on_engine_error(ctx, FILE_CORPUS)
+    raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")
+    inc = json.loads(raw)["incidents"][0]
+    assert inc["message"] == label and inc["driver_class"] == "DatabaseError"
+    assert SECRET not in raw and "ix_" not in raw and "line 99" not in raw and "second line" not in raw
+    verdict, reason = verify.classify_error(exc)
+    assert verdict == verify.VERDICT_DAMAGED and reason == label
+
+
 # --------------------------------------------------------------------------- #
 #  the registry: persistence, the latch, retry
 # --------------------------------------------------------------------------- #
@@ -704,14 +752,18 @@ def test_the_pause_has_its_own_switch_and_the_record_does_not(tmp_path, monkeypa
 
 def test_the_sentences_are_plain_and_name_what_is_true(registry):
     _note(registry, FILE_CORPUS)
-    [note] = registry.notes()
+
+    def about_the_damage():  # the repair's own sentences (E3) are tested in test_repair.py; this is what the damage says
+        return [n for n in registry.notes() if n["kind"] == "damage"]
+
+    [note] = about_the_damage()
     assert note["frame"] == damage.FRAME_DATA and note["vars"] == {}
     registry.retry(reason="t")
     _note(registry, FILE_CORPUS, statement="SELECT block FROM article_fts_data")
     assert registry.notes()[0]["frame"] == damage.FRAME_SEARCH_INDEX
     _note(registry, "wiki")
     _note(registry, "law")
-    frames = {n["file"]: n["frame"] for n in registry.notes()}
+    frames = {n["file"]: n["frame"] for n in about_the_damage()}
     assert frames == {
         FILE_CORPUS: damage.FRAME_SEARCH_INDEX,
         "wiki": damage.FRAME_WIKI,
@@ -719,7 +771,7 @@ def test_the_sentences_are_plain_and_name_what_is_true(registry):
     }
     # a file with no writer this module pauses is SAID, with a sentence that claims no pause
     _note(registry, "osm")
-    assert {n["file"]: n["frame"] for n in registry.notes()}["osm"] == damage.FRAME_RECORDED
+    assert {n["file"]: n["frame"] for n in about_the_damage()}["osm"] == damage.FRAME_RECORDED
     for frame in (
         damage.FRAME_DATA,
         damage.FRAME_SEARCH_INDEX,
@@ -755,9 +807,79 @@ def test_the_bundle_member_is_the_record_cut_oldest_first_and_names_the_cut(regi
     assert damage.diagnostics_member(0)["method"], "a nonsense budget is raised to the smallest, never an error"
 
 
-def test_the_bundle_member_never_raises(registry, monkeypatch):
-    monkeypatch.setattr(registry, "state", lambda **kw: (_ for _ in ()).throw(RuntimeError("boom\nsecond")))
-    assert damage.diagnostics_member(50_000) == {"error": "RuntimeError: boom"}
+def test_the_bundle_member_never_raises_and_says_the_class_of_a_failure_never_its_words(registry, monkeypatch):
+    """The member rides the bundle, so a failure of its own is the exception's class (and an OSError's errno name): never ``str(exc)``,
+    cut or not, which can be an engine's words or a path."""
+    marker = "MARKER-in-the-exception-text-9"
+    monkeypatch.setattr(registry, "state", lambda **kw: (_ for _ in ()).throw(RuntimeError(f"boom {marker}\nsecond")))
+    assert damage.diagnostics_member(50_000) == {"error": "RuntimeError"}
+    monkeypatch.setattr(registry, "state", lambda **kw: (_ for _ in ()).throw(OSError(errno.EIO, f"disk {marker}", f"/home/{marker}/x")))
+    out = damage.diagnostics_member(50_000)
+    assert out == {"error": "OSError EIO"} and marker not in json.dumps(out)
+
+
+def test_failure_label_is_the_class_and_for_an_os_error_the_errno_name_and_never_a_word_of_the_message():
+    marker = "MARKER-31"
+    assert damage.failure_label(OSError(errno.ENOSPC, f"no space {marker}", f"/p/{marker}")) == "OSError ENOSPC"
+    assert damage.failure_label(FileNotFoundError(errno.ENOENT, f"missing {marker}", f"/p/{marker}")) == "FileNotFoundError ENOENT"
+    assert damage.failure_label(OSError(f"no errno {marker}")) == "OSError"
+    assert damage.failure_label(RuntimeError(marker)) == "RuntimeError"
+    assert damage.failure_label(PermissionError(99999, marker)) == "PermissionError"  # an errno with no name in the table: the class alone
+
+
+def test_a_record_that_cannot_be_written_says_the_class_and_the_errno_name_never_the_message_or_the_path(tmp_path, caplog):
+    """``write_error`` rides the bundle (``state``), and an ``OSError``'s message names the path it failed on."""
+    import logging
+
+    marker = "MARKER-path-and-message-31"
+    reg = DamageRegistry(path_fn=lambda: tmp_path / marker / "rec.json")  # a folder that is not there: the write fails with ENOENT and its message names the path
+    with caplog.at_level(logging.DEBUG):
+        assert _note(reg)
+        reg._flush_latest()
+    st = reg.state(detail=True)
+    assert st["write_error"] == "FileNotFoundError ENOENT", st["write_error"]
+    assert marker not in json.dumps(st, default=str)
+
+    # the same for a failure of the thread that writes the record (any exception, not only an OSError)
+    def disk_full():
+        raise OSError(errno.ENOSPC, f"no space {marker}", f"/home/{marker}/rec.json.tmp")
+
+    reg._single_flight(("test-record",), disk_full)
+    assert reg.state()["write_error"] == "OSError ENOSPC"
+    reg._single_flight(("test-record-2",), lambda: (_ for _ in ()).throw(RuntimeError(f"an engine said {marker}")))
+    assert reg.state()["write_error"] == "RuntimeError"
+    assert marker not in caplog.text and marker not in json.dumps(reg.state(detail=True), default=str)
+    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error and the path"
+
+
+def test_no_logging_call_of_the_damage_chain_asks_for_a_traceback():
+    """An ``exc_info`` log is a sink: its record rides the diagnostics bundle (``data/app_errors.jsonl``) and a traceback prints the exception and
+    the error it was raised from, which for a database error ends in the engine's own words. These modules run on keyed connections, so they log
+    the class of a failure (``type(exc).__name__``) and nothing else."""
+    import re
+
+    for name in ("damage", "repair", "verify", "salvage", "article_indexes"):
+        text = (ROOT / "src" / "database" / f"{name}.py").read_text(encoding="utf-8")
+        code = "\n".join(line.split("  #")[0] for line in text.splitlines() if not line.lstrip().startswith("#"))
+        found = re.findall(r"exc_info\s*=\s*(?!False|None)\w+|\.exception\(", code)
+        assert not found, f"src/database/{name}.py asks for a traceback in a log: {found}"
+
+
+def test_no_raise_of_the_damage_chain_chains_a_driver_error():
+    """The job runner writes a failed job with its TRACEBACK (``secret_scrub.log_failure``: the cause and the context included, with the
+    passphrases taken out and nothing else), so a ``raise X from exc`` over a driver's error puts the engine's own line (a schema object's
+    name and a fragment of its definition) in a record that rides the bundle. The paths that classify a driver's error say its class and
+    a fixed label in their own exception and drop the chain: ``from None``. Only an exception of ours may be a cause."""
+    import re
+
+    ours = {"None", "refusal", "busy"}  # a Declined from the SalvageRefused it was made from; a Declined from a WriteGateBusy
+    for name in ("damage", "repair", "verify", "salvage", "article_indexes"):
+        text = (ROOT / "src" / "database" / f"{name}.py").read_text(encoding="utf-8")
+        code = "\n".join(line.split("  #")[0] for line in text.splitlines() if not line.lstrip().startswith("#"))
+        # a ``raise`` that ends in ``from <name>``, on its own line or on the closing line of a statement that spans several
+        found = [a or b for a, b in re.findall(r"\braise\b[^\n]*\bfrom\s+(\w+)\s*$|^\s*\)\s*from\s+(\w+)\s*$", code, re.MULTILINE)]
+        found = [m for m in found if m not in ours]
+        assert not found, f"src/database/{name}.py chains {found} to a raised exception: write `from None`"
 
 
 # --------------------------------------------------------------------------- #
@@ -1712,8 +1834,9 @@ def test_a_failure_inside_the_record_thread_is_said_not_only_debug_logged(tmp_pa
         assert _note(reg)
         _settle(reg)
     assert reg.latched(FILE_CORPUS), "the latch does not depend on the record"
-    assert reg.state()["write_error"] == "RuntimeError: boom"
+    assert reg.state()["write_error"] == "RuntimeError", "the class; the exception's words are not kept (they can carry a path)"
     assert any(r.levelno == logging.WARNING and "could not be written" in r.getMessage() for r in caplog.records)
+    assert "boom" not in caplog.text and "boom" not in repr(reg.state())
 
 
 def test_starting_collection_releases_only_the_files_it_paused(registry):
