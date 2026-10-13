@@ -11,6 +11,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import ast
 import time
 
 import pytest
@@ -28,9 +29,14 @@ _SECTIONS = (
 
 def test_debug_bundle_opens_the_db_read_only():
     # Source-pinned (the wiring lesson): the bundle must never take the write gate.
-    src = diagnostics_source()
-    signature = src.split("def debug_bundle(", 1)[1].split(") -> JSONResponse", 1)[0]
-    assert "db: Session = Depends(read_only_db)" in signature
+    # the parameter is read from the parsed signature (the route also takes `slim`; a text match on the
+    # whole line broke when it did)
+    tree = ast.parse(diagnostics_source())
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "debug_bundle")
+    # defaults belong to the LAST arguments, so both lists are read from the end; the shorter one ends the pairing
+    names = reversed([a.arg for a in fn.args.args])
+    defaults = dict(zip(names, reversed([ast.unparse(d) for d in fn.args.defaults]), strict=False))
+    assert defaults.get("db") == "Depends(read_only_db)"
 
 
 def test_a_raising_member_and_a_slow_member_yield_a_complete_bounded_bundle(monkeypatch):

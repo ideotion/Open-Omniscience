@@ -14,6 +14,8 @@ import pathlib
 import re
 import subprocess
 
+from tests.js_source_helper import function_body
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 _LOCALES = _STATIC / "locales"
@@ -183,11 +185,11 @@ def test_the_panel_has_one_diagnostics_button_a_thorough_box_and_two_text_links(
     assert "all-diag-light" not in html and "all-diag-light" not in js
     box = re.search(r'<input type="checkbox" id="diag-thorough"[^>]*>', html)
     assert box and "checked" not in box.group(0), "the Thorough box starts empty"
-    assert 'mode=" + mode' in js and "profile=" not in js[js.index("async function runAllDiagnostics("):]
+    assert 'mode=" + mode' in js and "profile=" not in js
     # never stored: the two functions that read and reset the box touch no browser storage, and the
-    # mode rides the start request only
-    run = js[js.index("async function runAllDiagnostics("):js.index("// P0 data-safety validation (S1.2)")]
-    opened_fn = js[js.index("async function diagnosticsPanelOpened("):js.index("function watchDiagnosticsJobs(")]
+    # mode rides the start request only (the shared slicer: a body brace-matched from its own declaration)
+    run = function_body(js, "runAllDiagnostics")
+    opened_fn = function_body(js, "diagnosticsPanelOpened")
     for body in (run, opened_fn):
         assert "localStorage" not in body and "sessionStorage" not in body
     assert run.count("diag-thorough") == 1, "the box is read once, at press time"
@@ -200,8 +202,7 @@ def test_the_panel_has_one_diagnostics_button_a_thorough_box_and_two_text_links(
         toggle[:toggle.index("});")],
         re.M,
     )
-    opened = js[js.index("async function diagnosticsPanelOpened("):js.index("function watchDiagnosticsJobs(")]
-    assert 'box.checked = false' in opened
+    assert 'box.checked = false' in opened_fn
     # «again» is a text link (never a second filled button), hidden until the server names an archive
     again = re.search(r'<button[^>]*id="all-diag-again"[^>]*>', html).group(0)
     assert 'class="linkish"' in again and " hidden" in again
