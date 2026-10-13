@@ -401,3 +401,21 @@ Croatian "strong" and "collar"), cs `mimo` (Spanish and Italian "mime", Spanish 
 content sense in another language in the log or in the reader's knowledge of those languages.
 
 Nothing is filed in `_multilingual.yml`: every word is in the script of its language's file.
+
+## Stoplist batch 4: function words, number and month words and site chrome in Serbian, Bulgarian and Greek (2026-10-13, R131, language group 3)
+
+288 words from the same triage and the same method as batches 2 and 3 (read batch 2 first: the merged log `6467504ab8ab`, the verdict gate, the tool's refusals, and the rule that each word's other languages
+are read by a person): sr 132, bg 49, el 107. By the triage's codes: 220 function words (`koji`, `među`, `своя`, `извън`, `όμως`, `χωρίς`; four of them elided Greek forms with their apostrophe, `απ'`, `κατ'`,
+`καθ'`, `παρ'`), 31 number words, 29 calendar words (the month names Serbian, Bulgarian and Greek write dates with, and the weekdays), 8 site chrome (`podeli`, `pročitaj`, `pratite`, `pridružite`, `pogledajte`,
+`pretplatite`, `najčitanije`, `влезете`).
+
+**Left out after reading each word's other languages (the tool listed some, the rest are a person's reading):** sr `tri` (the Indonesian given name and port name Tri Sakti, the French "tri" of sorting, the Vietnamese syllable of "tri thức"), `kojima` (the Japanese surname), `kod` (Swedish, Norwegian, Polish and Turkish "code"), `dok` (Dutch and Indonesian "dock"),
+`ono` (the Japanese surname Ono), `ove` (the Scandinavian given name), `toga` (English "toga"), `smo` (the acronym SMO, "special military operation"), `niko` (the given name), `niti` (NITI Aayog, Indian
+policy commission), `iza` (the Polish given name), `bile` (English "bile"), `tome` (English "tome"), `neka` (Swedish "deny"), `ovi` (Finnish "door"); bg `шест` (Russian "pole"), `ото` (a glued suffix and the
+Russian name Ото), `макар` (the Russian and Ukrainian given name Makar); el `microgreens` and `servicers` (English words in the Greek log, the `lng` group left out by ruling). The tool itself refused
+sr `joj` (a French entity, almost certainly the Youth Olympic Games acronym), `kome`, `kom` and `sva` (keywords in Norwegian, Dutch and Swedish), bg `неговата` and `против` (keywords in English), and every phrase.
+
+Nothing is filed in `_multilingual.yml`: every word is in the script of its language's file.
+
+**Kept on purpose after the independent read:** sr `koji` (a Japanese given name and a food term, but 725 articles in Serbian and no topical use found), `koga`, `neko`, `bude`, `osim`, `biće`, `nju`, `meni`;
+el `παρασκευή` (Friday; also "preparation" and a place and given name, kept for its use as the weekday) and `κυριακή`. `kad` is also Malay "kad" (card, as in "kad merah"), which the Malay group should read before it relies on this entry.
