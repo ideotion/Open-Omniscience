@@ -125,7 +125,8 @@ PREVIOUS_TAIL_MIN = 5
 #: clock steps recorded: each is one short row, bounded so a clock that keeps stepping cannot
 #: grow the file. Steps back and steps forward share the one list of ``CLOCK_STEPS_KEEP``, the
 #: newest kept; what the limit shrinks is what is printed, never what is counted
-#: (``clock_stepped_back`` and ``clock_stepped_forward`` count every step).
+#: (``clock_stepped_back`` and ``clock_stepped_forward`` count every step that was recorded, the
+#: ones the list no longer holds included).
 SESSIONS_KEEP = 30
 GAPS_KEEP = 50
 CLOCK_STEPS_KEEP = 20
@@ -147,18 +148,24 @@ CLOCK_HOLD_S = 2 * FINE_S
 #: new history at the first tick after the interval. One bucket holds at most this many extra
 #: seconds of ticks for that.
 REBASE_MIN_GAP_S = FINE_S
-#: The tick the history is fed at (``session_history.MEMORY_WATCH_S``; a test pins the two together).
-TICK_S = 5
 #: A step FORWARD of the wall clock, measured against the boot-time clock (which keeps counting
-#: through a suspend and never jumps) between two ticks, is recorded from this size. It is
-#: derived from the gap rule, not chosen: ``_gaps`` lists two rows more than ``2 * FINE_S`` apart,
-#: and the worst alignment (the last tick at the end of its bucket) takes a wall advance of
-#: ``2 * FINE_S + TICK_S`` = 605 s between two ticks to land three bucket starts on; the
-#: boot-time clock accounts for the ``TICK_S`` of it, so 600 s of step is the smallest that can
-#: turn up as a gap. Every forward step that could be mistaken for down time is therefore
-#: recorded, and a smaller one cannot be (``tests/test_vitals_history.py`` sweeps every alignment
-#: against ``_gaps`` and fails if either number moves without the other).
+#: through a suspend and never jumps) between two ticks, is recorded when it is at least this big,
+#: whatever the tick's place in its bucket: it is the span ``_gaps`` lists a gap from (two buckets).
+#: Below it a step is recorded in exactly one case: when it is what opened a listed gap (without
+#: it the tick's bucket would have been within ``_gaps``' reach of the open one; ``_opens_gap`` is
+#: the one rule both use). No constant can say how small that step is: it depends on where in its
+#: bucket the last tick fell and how late this one came (about 595 s at the 5 second cadence, less for
+#: a late tick, and any size where the process was also stalled), which is why a step of 600 s is
+#: not "the smallest that can open a gap" and the case below it is decided per tick.
 FORWARD_STEP_MIN_S = 2 * FINE_S
+#: A step smaller than this is never recorded: two reads of different clocks agree to milliseconds,
+#: and a stalled interval that happens to end on a bucket edge is not a clock event.
+FORWARD_STEP_FLOOR_S = 1.0
+#: The boot-time clock is read on both sides of the wall clock, and the pair is used only when the two
+#: readings are this close (they are microseconds apart): far above the time two reads in a row
+#: take, far below the smallest recorded step. A pause between them (the interpreter lock, a frozen
+#: process, a suspend) would otherwise look like a step of its own length.
+_BOOT_READ_SKEW_MAX_S = 1.0
 #: After a failed write the next try is this soon, not on every five-second tick.
 FLUSH_RETRY_S = 60.0
 #: What the member may weigh, raw JSON. Measured on the test's fixture
@@ -239,7 +246,7 @@ _MINUTES: list[dict[str, Any]] = []
 _SESSIONS: list[dict[str, Any]] = []
 _PREVIOUS: list[dict[str, Any]] = []
 _CLOCK_BACK = 0
-_CLOCK_FORWARD = 0
+_CLOCK_FORWARD: int | None = None  # None: never measured (no boot-time clock yet), never 0
 _CLOCK_HOLD = False
 #: The step the running hold recorded: a later rebase that is only that hold ending says when the
 #: new history began on this record, instead of recording the same step a second time.
@@ -711,9 +718,15 @@ def tick(now: float | None = None, mono: float | None = None, boot: Any = _AUTO)
         if not _STARTED:
             return
         started_wall, started_cpu = time.perf_counter(), _thread_cpu()
+        read_boot = boot is _AUTO and now is None and mono is None
         if boot is _AUTO:
-            boot = None if now is not None or mono is not None else boottime()
+            boot = None  # an injected wall or monotonic clock: see ``_AUTO``
+        boot_before = boottime() if read_boot else None
         wall = time.time() if now is None else now
+        if read_boot:
+            boot_after = boottime()
+            if boot_before is not None and boot_after is not None and abs(boot_after - boot_before) <= _BOOT_READ_SKEW_MAX_S:
+                boot = (boot_before + boot_after) / 2
         mono = time.monotonic() if mono is None else mono
         sample = _fast_readings()
         sample.update(_slow_readings(mono))
@@ -742,6 +755,8 @@ def tick(now: float | None = None, mono: float | None = None, boot: Any = _AUTO)
             else:
                 _CLOCK_HOLD = False
                 _HOLD_STEP = None
+            prev_t = _FINE_T
+            opens_gap = _FINE_ACC is not None and _opens_gap(prev_t, fine_t)  # this tick's row lies past a listed gap
             if _FINE_ACC is not None and fine_t != _FINE_T:
                 _close_fine()
             if _FINE_ACC is None:
@@ -755,11 +770,16 @@ def tick(now: float | None = None, mono: float | None = None, boot: Any = _AUTO)
                 _MIN_ACC, _MIN_T = _Acc(), max(minute_t, _MIN_T)
             _MIN_ACC.add(sample)
             if boot is not None and _LAST_BOOT is not None and _LAST_WALL is not None:
-                # the wall clock's advance beyond the boot-time clock's: 0 for a stalled thread, a frozen
-                # process and a suspend (the boot-time clock counts through all three), a number only
-                # where the wall clock itself was moved; a step back is the bucket logic's above
+                # the wall clock's advance beyond the boot-time clock's: 0 between two ticks of a stalled
+                # thread, a frozen process and a suspend the kernel measured (the boot-time clock counts
+                # through all three), a number only where the wall clock itself was moved; a step back is
+                # the bucket logic's above
+                if _CLOCK_FORWARD is None:
+                    _CLOCK_FORWARD = 0  # from here this install has measured, and 0 means none
                 stepped = (wall - _LAST_WALL) - (boot - _LAST_BOOT)
-                if stepped >= FORWARD_STEP_MIN_S:
+                without_step = int((wall - stepped) // FINE_S) * FINE_S  # the bucket this tick would have fallen in
+                made_the_gap = opens_gap and stepped >= FORWARD_STEP_FLOOR_S and not _opens_gap(prev_t, without_step)
+                if stepped >= FORWARD_STEP_MIN_S or made_the_gap:
                     _CLOCK_FORWARD += 1
                     _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(_LAST_WALL), "forward_s": int(stepped)})
                     _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
@@ -964,6 +984,19 @@ def _whole(raw: Any) -> int:
         return 0
 
 
+def _count(raw: Any) -> int:
+    """A counter of the file: a whole number, never below 0 (a hand-edited or another build's file can hold -3)."""
+    return max(0, _whole(raw))
+
+
+def _count_or_none(raw: Any) -> int | None:
+    """A counter that may be absent: its value, or ``None`` where the file holds none (a build that did not
+    measure it, or an install that never had the clock to) -- not measured, which is not 0."""
+    if isinstance(raw, int) and not isinstance(raw, bool) and 0 <= raw < _MAX_TICKS:
+        return raw
+    return None
+
+
 #: What a stored value may be before the row that carries it is dropped. What they protect: a hand-edited
 #: file or another build is a valid JSON document whose numbers can be absurd (an integer of 309 digits,
 #: a time in the year 10**8), and ``_iso`` or a float conversion raises on those, which would empty the
@@ -1024,7 +1057,7 @@ def start(now: float | None = None) -> None:
     the tests."""
     global _STARTED, _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS, _PREVIOUS, _LAST_FLUSH_AT
     global _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T, _HOUR_LOGS, _HOUR_LOGS_T, _CLOCK_BACK
-    global _CLOCK_STEPS, _LAST_WALL, _CLOCK_FORWARD, _LAST_BOOT
+    global _CLOCK_STEPS, _LAST_WALL, _CLOCK_FORWARD
     wall = time.time() if now is None else now
     with _LOCK:
         if _STARTED:
@@ -1035,8 +1068,8 @@ def start(now: float | None = None) -> None:
                 _FINE, _COARSE = _rows(prev.get("fine")), _rows(prev.get("coarse"))
                 _LOGS = _dicts(prev.get("logs"))
                 _SESSIONS = _dicts(prev.get("session_starts"))
-                _CLOCK_BACK = _whole(prev.get("clock_stepped_back"))
-                _CLOCK_FORWARD = _whole(prev.get("clock_stepped_forward"))
+                _CLOCK_BACK = _count(prev.get("clock_stepped_back"))
+                _CLOCK_FORWARD = _count_or_none(prev.get("clock_stepped_forward"))
                 _CLOCK_STEPS = _dicts(prev.get("clock_steps"))[-CLOCK_STEPS_KEEP:]
                 open_fine = _rows([prev.get("open_fine")])
                 if open_fine:
@@ -1075,18 +1108,25 @@ def start(now: float | None = None) -> None:
             _FINE, _COARSE, _LOGS, _SESSIONS, _PREVIOUS, _CLOCK_STEPS = [], [], [], [], [], []
             _FINE_ACC = _COARSE_ACC = None
             _FINE_T = _COARSE_T = _HOUR_LOGS_T = 0
-            _CLOCK_BACK = _CLOCK_FORWARD = 0
+            _CLOCK_BACK = 0
+            _CLOCK_FORWARD = None
             with _LOG_LOCK:
                 _HOUR_LOGS = {}
                 _HOUR_LOG_NAMES.clear()
         _MINUTES = []
-        _LAST_WALL = _LAST_BOOT = None  # a step is measured between two ticks of one session, never across a restart
+        _LAST_WALL = None  # a step is measured between two ticks of one session, never across a restart (no baseline without it)
         _SESSIONS.append({"t": int(wall), "pid": os.getpid()})
         _trim(_SESSIONS, SESSIONS_KEEP)
         _STARTED = True
     _ensure_handler()
     atexit.unregister(flush)
     atexit.register(flush)
+
+
+def _opens_gap(before_t: int, after_t: int) -> bool:
+    """Whether two rows' bucket starts are listed as a gap: more than two buckets apart. The one rule
+    ``_gaps`` lists by and ``tick`` decides by whether a forward step is what opened one."""
+    return after_t - before_t > 2 * FINE_S
 
 
 def _gaps(fine: list[list[Any]], steps: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -1100,7 +1140,7 @@ def _gaps(fine: list[list[Any]], steps: list[dict[str, Any]] | None = None) -> l
     times = [int(r[0]) for r in fine]
     stamps = [str(x) for st in steps or [] for x in (st.get("at"), st.get("was")) if x]
     for before, after in zip(times, times[1:], strict=False):
-        if after - before > 2 * FINE_S:
+        if _opens_gap(before, after):
             gap = {"from": _iso(before + FINE_S), "to": _iso(after), "seconds": after - before - FINE_S}
             if any(_iso(before) <= stamp <= _iso(after + FINE_S) for stamp in stamps):
                 gap["clock_step"] = True
@@ -1168,15 +1208,19 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "rate-limit window lands in no record; a held step also lengthens one minute row, "
                 "whose `n` says by how much) and where it stepped forward (`forward_s`: between two ticks "
                 "the wall clock advanced that much more than the machine's boot-time clock, which keeps counting "
-                "through a suspend, so a suspend and a stalled process record nothing; recorded from "
-                f"{FORWARD_STEP_MIN_S} s, the smallest step that can open a gap, only where the platform has a "
-                "boot-time clock (Linux), and never across a restart; no cause is claimed: a clock that was set, "
-                "a time correction and a virtual machine brought up to date after a pause read the same); "
-                "`clock_stepped_back` and `clock_stepped_forward` count every step while `clock_steps` keeps "
-                f"the newest {CLOCK_STEPS_KEEP} of both; a gap "
-                "marked `clock_step` is next to a recorded step, back or forward, and may be the clock's "
+                "through a suspend the kernel measured, so that and a stalled process record nothing; recorded "
+                f"from {FORWARD_STEP_MIN_S} s, and below that where the step is what opened a gap in the "
+                "five-minute rows; only where the platform has a boot-time clock (Linux), never across a "
+                "restart, and not for a tick whose two boot-time readings were more than a second apart; no "
+                "cause is claimed: a clock that was set, a time correction and a virtual machine brought up "
+                "to date after a pause read the same); `clock_stepped_forward` is `null` until a tick has had "
+                "a boot-time clock to compare with (a platform without one, a file of a build that did not "
+                "measure it), never 0 for a count nobody took; "
+                "`clock_stepped_back` and `clock_stepped_forward` count every recorded step, those the list no "
+                f"longer holds included, while `clock_steps` keeps the newest {CLOCK_STEPS_KEEP} of both; a gap "
+                "marked `clock_step` is next to a step still in that list, back or forward, and may be the clock's "
                 "correction and not down time, and a gap without the mark can still be one wherever a step "
-                "is not recorded (no boot-time clock, under the minimum, across a restart); `previous_sessions` holds the last "
+                "is not recorded (no boot-time clock, a step the list no longer holds, across a restart); `previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
                 "hour that was open at the last write."
             ),
@@ -1213,8 +1257,8 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "why": "no finer record of the minutes before a kill is built yet; this history is the only record",
             },
             "now": _iso(time.time()),
-            "clock_stepped_back": _whole(doc.get("clock_stepped_back")),
-            "clock_stepped_forward": _whole(doc.get("clock_stepped_forward")),
+            "clock_stepped_back": _count(doc.get("clock_stepped_back")),
+            "clock_stepped_forward": _count_or_none(doc.get("clock_stepped_forward")),
             "clock_steps": _dicts(doc.get("clock_steps")),
             "cost": cost,
             "errors": errors,
@@ -1296,7 +1340,8 @@ def reset_for_tests() -> None:
         _STARTED = False
         _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS = [], [], [], [], []
         _PREVIOUS = []
-        _CLOCK_BACK = _CLOCK_FORWARD = 0
+        _CLOCK_BACK = 0
+        _CLOCK_FORWARD = None
         _CLOCK_HOLD = False
         _HOLD_STEP = None
         _CLOCK_STEPS = []
