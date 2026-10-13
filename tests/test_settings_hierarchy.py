@@ -101,14 +101,15 @@ def test_nothing_was_lost_in_the_move():
     # The button, not the bare endpoint: "/api/insights/lunar-correlation" also appears
     # in prose ABOVE the first Settings view, and _view_of reads the first occurrence —
     # the needle has to be unique to the thing being located.
-    # The keyword exports became numbered 1 MB files (the page saves them five to a click), so
-    # their buttons call downloadKeywordParts rather than ooOpenUrl; they stay where they were.
+    # The keyword export became numbered files (the page saves them five to a click), so its link
+    # calls downloadKeywordParts rather than ooOpenUrl; it stays where it was. (R123: "Keyword log" and
+    # "Last keyword files, again" are gone, "All keywords" is the one left.)
     clicks = [f"ooOpenUrl('{endpoint}')" for endpoint in (
         "/api/diagnostics/rollup-benchmark",
         "/api/signals/flood",
         "/api/signals/bury",
         "/api/insights/lunar-correlation",
-    )] + [f"downloadKeywordParts(this, '{kind}')" for kind in ("default", "all", "again")]
+    )] + ["downloadKeywordParts(this, 'all')"]
     for click in clicks:
         assert HTML.count(click) == 1, f"{click} is not a unique anchor"
         assert _view_of(click) == "set-advanced", f"{click}'s button was left behind"

@@ -236,6 +236,7 @@
   "The count of keyword mentions with no date could not be read — unknown, not zero.": "Die Anzahl der Schlüsselwort-Nennungen ohne Datum konnte nicht gelesen werden — unbekannt, nicht null.",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} importierte(r) Artikel warten auf die Neuindizierung, tragen daher noch keine Schlüsselwörter und fehlen in allen Schlüsselwortzahlen hier.",
   "The re-index backlog could not be read — unknown, not zero.": "Der Rückstand der Neuindizierung konnte nicht gelesen werden — unbekannt, nicht null.",
+  "The baseline coverage could not be read — unknown, not assumed complete.": "Die Abdeckung der Vergleichsbasis konnte nicht gelesen werden — unbekannt, nicht als vollständig angenommen.",
   "Nothing excluded beyond what the methods above state.": "Nichts ausgeschlossen über das hinaus, was die Methoden oben angeben.",
   "the corpus's earliest observed date could not be read, so baseline coverage is unknown — not assumed complete": "das früheste beobachtete Datum des Korpus konnte nicht gelesen werden, die Abdeckung der Vergleichsbasis ist daher unbekannt — nicht als vollständig angenommen",
 

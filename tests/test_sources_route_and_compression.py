@@ -139,6 +139,9 @@ def test_static_assets_are_gzip_compressed_when_accepted(client):
     assert plain.content == raw
 
 
+_APP_ANSWERS_WITHIN_S = 30.0
+
+
 async def _raw_asgi_get(path: str, accept_encoding: str) -> tuple[dict, bytes]:
     """Drive the ASGI app directly and return ``(headers, THE BYTES ON THE WIRE)``.
 
@@ -187,7 +190,10 @@ async def _raw_asgi_get(path: str, accept_encoding: str) -> tuple[dict, bytes]:
         "server": ("127.0.0.1", 8000),
         "app": app,
     }
-    await app(scope, receive, send)
+    # The backstop: ``receive()`` waits for the response to finish, so an app that never finishes it (a future server
+    # version that waits on a disconnect this stand-in never sends) must end this test with a timeout and not hang
+    # the suite. A static file answers in milliseconds; the number protects the suite, it is not a speed claim.
+    await asyncio.wait_for(app(scope, receive, send), timeout=_APP_ANSWERS_WITHIN_S)
 
     start = next(m for m in sent if m["type"] == "http.response.start")
     headers = {k.decode().lower(): v.decode() for k, v in start["headers"]}

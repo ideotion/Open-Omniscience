@@ -202,6 +202,8 @@ def test_the_disclosures_are_rendered(fmt):
 
 _UNREAD_QUARANTINE = "The count of quarantined articles could not be read — unknown, not zero."
 _UNREAD_UNDATED = "The count of keyword mentions with no date could not be read — unknown, not zero."
+_UNREAD_BACKLOG = "The re-index backlog could not be read — unknown, not zero."
+_UNREAD_BASELINE = "The baseline coverage could not be read — unknown, not assumed complete."
 
 
 def _with_disclosures(**d) -> dict:
@@ -267,6 +269,65 @@ def test_a_baseline_coverage_that_could_not_be_measured_is_never_printed_as_noth
 
 
 @pytest.mark.parametrize("fmt", ["markdown", "html"])
+@pytest.mark.parametrize("cov", [{"complete": None}, {"complete": None, "note": ""}], ids=["no-note", "empty-note"])
+def test_an_unknown_baseline_with_no_note_still_says_it_is_unknown(fmt, cov):
+    """The note is how ``baseline_coverage`` names the cause; a record that says ``complete: None`` without one is still
+    "unknown, not assumed complete", in a fixed sentence, and never the closing "Nothing excluded"."""
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0, baseline_coverage=cov), fmt)
+    assert _UNREAD_BASELINE in text and "Nothing excluded" not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_the_fixed_baseline_sentence_is_only_for_a_record_with_no_note(fmt):
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0, baseline_coverage=_baseline(None)), fmt)
+    # (a slice of the note without the apostrophe the HTML form escapes)
+    assert "earliest observed date could not be read" in text and _UNREAD_BASELINE not in text
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0), fmt)
+    assert _UNREAD_BASELINE not in text, "an absent baseline record is not an unknown one"
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+@pytest.mark.parametrize(
+    "backlog",
+    [{"available": False}, {"available": None}, {"articles_pending": 4}, {}, None, "unreadable"],
+    ids=["false", "none", "no-available-key", "empty", "null", "not-a-mapping"],
+)
+def test_a_recorded_backlog_that_is_not_a_measurement_is_never_printed_as_nothing_excluded(fmt, backlog):
+    """Only ``available: True`` is a reading. A recorded backlog without it (False, None, missing, or no mapping at all)
+    is an unread one, like an unread count."""
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0, reindex_backlog=backlog), fmt)
+    assert _UNREAD_BACKLOG in text and "Nothing excluded" not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_a_measured_backlog_and_an_absent_one_do_not_claim_it_could_not_be_read(fmt):
+    measured_zero = _with_disclosures(quarantined_in_period=0, mentions_without_a_date=0)
+    text = render(measured_zero, fmt)
+    assert "Nothing excluded" in text and _UNREAD_BACKLOG not in text
+    pending = _with_disclosures(
+        quarantined_in_period=0, mentions_without_a_date=0, reindex_backlog={"available": True, "articles_pending": 7}
+    )
+    text = render(pending, fmt)
+    assert "7 imported article(s) await re-index" in text and _UNREAD_BACKLOG not in text
+    assert "Nothing excluded" not in text
+    absent = dict(_EDITION, disclosures={"quarantined_in_period": 0, "mentions_without_a_date": 0})
+    text = render(absent, fmt)
+    assert "Nothing excluded" in text and _UNREAD_BACKLOG not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_an_operator_exclusion_alone_keeps_the_closing_line_off(fmt):
+    """The closing "Nothing excluded" is for a section that states nothing; a selection line is a statement."""
+    edition = dict(
+        _EDITION,
+        disclosures={"quarantined_in_period": 0, "mentions_without_a_date": 0},
+        selection={"sections_shown": 1, "sections_total": 3},
+    )
+    text = render(edition, fmt)
+    assert "excluded by the operator" in text and "Nothing excluded" not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
 def test_a_baseline_the_corpus_spans_still_reads_as_nothing_excluded(fmt):
     from datetime import date
 
@@ -293,7 +354,7 @@ def test_the_unread_disclosure_sentences_are_translated_and_printed_translated_i
     from src.bulletin.i18n import Translator
 
     note = _baseline(None)["note"]
-    sentences = (_UNREAD_QUARANTINE, _UNREAD_UNDATED, note)
+    sentences = (_UNREAD_QUARANTINE, _UNREAD_UNDATED, note, _UNREAD_BACKLOG, _UNREAD_BASELINE)
     tr = Translator(lang)
     translated = [tr.t(sentence) for sentence in sentences]
     for sentence, got in zip(sentences, translated, strict=True):
@@ -301,10 +362,16 @@ def test_the_unread_disclosure_sentences_are_translated_and_printed_translated_i
     assert len(set(translated)) == len(translated), f"{lang}: two of the sentences share a translation"
     tr = Translator(lang)
     text = render(
-        _with_disclosures(quarantined_in_period=None, mentions_without_a_date=None, baseline_coverage=_baseline(None)),
+        _with_disclosures(
+            quarantined_in_period=None,
+            mentions_without_a_date=None,
+            reindex_backlog={"available": False},
+            baseline_coverage=_baseline(None),
+        ),
         "markdown",
         tr=tr,
     )
+    text += render(_with_disclosures(baseline_coverage={"complete": None}), "markdown", tr=tr)
     for got in translated:
         assert got in text, f"{lang}: {got!r} is not in the rendered document"
     assert not set(sentences) & set(tr.report()["missing_strings"])

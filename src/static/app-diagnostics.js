@@ -1009,9 +1009,13 @@
       if (typeof bar.scrollIntoView === "function") bar.scrollIntoView({block: "nearest"});
     }
 
-    // The keyword log as numbered files. mode: "default" (top 5,000 per language, aims under 9 MB
-    // in all), "all" (every keyword, no total cap) or "again" (the newest set still on this
-    // machine, saved again without rebuilding it, starting at the typed part number).
+    // The keyword log as numbered files. mode: "all" (every keyword, no total cap: the one that has a
+    // control, the "All keywords" link), "default" (top 5,000 per language, aims under 9 MB in all) or
+    // "again" (the newest set still on this machine, saved again without rebuilding it, starting at the
+    // typed part number). R123 (29b) took the other two keyword buttons out (the top-5,000 log and the one
+    // that saved the last set again): the Diagnostics archive carries the keyword digest where the build ran it (every
+    // summary, the top 100 keywords) and this link is the per-keyword list. Their routes stay, and so do these two
+    // modes (tests/parts_delivery_node_test.js).
     async function downloadKeywordParts(btn, mode) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -1039,7 +1043,7 @@
           if (gen !== _partsGen) return;
           const why = (e && (e.detail || e.message)) || t("unknown error");
           _partsStatus(e && e.status === 404 && mode === "again"
-            ? t("No keyword files are kept on this machine yet — build them with one of the keyword buttons.")
+            ? t("No keyword files are kept on this machine yet — build them with the All keywords link.")
             : tf("Could not build the keyword files: {why}", {why}));
           return;
         }
