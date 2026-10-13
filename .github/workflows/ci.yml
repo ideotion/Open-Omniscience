@@ -540,7 +540,7 @@ jobs:
         shell: python
         run: |
           import subprocess, sys
-          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sqlcipher3==0.6.2"])
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sqlcipher3==0.6.4"])
           import os, sqlite3, tempfile
           from sqlcipher3 import dbapi2 as sqc
           path = os.path.join(tempfile.mkdtemp(), "enc.db")
@@ -567,6 +567,49 @@ jobs:
           except sqlite3.DatabaseError:
               pass
           print("sqlcipher3 OK on", sys.platform, "| cipher:", ver[0])
+
+  # The damage lane is built on how the bundled SQLCipher REPORTS page damage, and sqlcipher3 is a wheel that
+  # carries its own engine (docs/ledger/OPEN_QUEUE.md, the 0.6.4 qualification). Two engines are therefore run
+  # against the two test files that encode those reports, so the next release shows up as ONE red lane here and
+  # never again as a wholesale red of `test` and Core-only (2026-10-13). The floor is BLOCKING (the oldest engine
+  # pyproject still allows); `newest` is the observation lane for the first release NOT yet qualified. Both
+  # install the project first and then force the driver with --no-deps, because the pyproject ceiling would
+  # refuse the newest release.
+  sqlcipher-engines:
+    if: github.event_name != 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {engine: floor, spec: "sqlcipher3==0.6.2", observe: false}
+          - {engine: newest, spec: "sqlcipher3", observe: true}
+    runs-on: ubuntu-latest
+    name: SQLCipher engine (${{ matrix.engine }})
+    continue-on-error: ${{ matrix.observe }}  # observation leg only: an unqualified release must be visible, not block
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + dev), then force the engine under test
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install --no-deps --upgrade "${{ matrix.spec }}"
+          python - <<'PY'
+          import importlib.metadata as md
+          from sqlcipher3 import dbapi2 as sqc
+          con = sqc.connect(":memory:")
+          con.execute("PRAGMA key = 'x'")
+          print("sqlcipher3", md.version("sqlcipher3"), "| cipher_version", con.execute("PRAGMA cipher_version").fetchone()[0])
+          PY
+
+      - name: Test (the two files that encode the engine's page-damage reports)
+        run: python -m pytest -q tests/test_poisoned_connection.py tests/test_database_verify_pages.py
 
   # A pinned lock file must INSTALL from a clean environment against public PyPI --
   # not just "the developer's existing venv still works" (audit finding OO-03:

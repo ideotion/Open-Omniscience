@@ -91,9 +91,10 @@ def _overwrite(path: Path, page: int) -> None:
     H.overwrite_pages(path, [page], PAGE)
 
 
-def _find_page(base: Path, tmp_path_factory, want: str, *, code: int | None) -> int:
+def _find_page(base: Path, tmp_path_factory, want: str, *, code: int | None, required: bool = True) -> int | None:
     """A page of ``articles`` whose overwriting makes its table check answer ``want`` (with the driver code ``code``), found by trying
-    pages in a seeded order: which pages do which is the driver's business, so the test asks it instead of assuming."""
+    pages in a seeded order: which pages do which is the driver's business, so the test asks it instead of assuming. ``None`` (or a
+    failure when ``required``) when the installed engine has no such page."""
     work = tmp_path_factory.mktemp("find") / "w.db"
     n = os.path.getsize(base) // PAGE
     for pg in random.Random(5).sample(range(2, n + 1), n - 1):
@@ -102,17 +103,59 @@ def _find_page(base: Path, tmp_path_factory, want: str, *, code: int | None) -> 
         r = verify.check_table(work, "articles")
         if r["verdict"] == want and r.get("sqlite_code") == code:
             return pg
-    pytest.fail(f"no page of the articles table made its check answer {want} (code {code})")
+    if required:
+        pytest.fail(f"no page of the articles table made its check answer {want} (code {code})")
+    return None
 
 
 @pytest.fixture(scope="module")
-def unchecked_page(base, tmp_path_factory) -> int:
-    return _find_page(base, tmp_path_factory, VERDICT_UNCHECKED, code=1)
+def real_unchecked_page(base, tmp_path_factory) -> int | None:
+    """A page whose damage makes THIS engine's table check raise the generic error (SQLCipher 4.12 does for most leaf pages), or ``None``:
+    SQLCipher 4.19 (sqlcipher3 0.6.4) answers ``damaged`` for every page it can read a row for and has no such page
+    (``docs/ledger/OPEN_QUEUE.md``, the sqlcipher3 qualification)."""
+    return _find_page(base, tmp_path_factory, VERDICT_UNCHECKED, code=1, required=False)
+
+
+@pytest.fixture(scope="module")
+def unchecked_page(base, tmp_path_factory, real_unchecked_page) -> int:
+    if real_unchecked_page is not None:
+        return real_unchecked_page
+    return _find_page(base, tmp_path_factory, VERDICT_DAMAGED, code=None)  # any page: the generic error is stood in below
 
 
 @pytest.fixture(scope="module")
 def damaged_page(base, tmp_path_factory) -> int:
     return _find_page(base, tmp_path_factory, VERDICT_DAMAGED, code=None)
+
+
+def _stand_in_the_generic_error(monkeypatch, damaged_copy: Path) -> None:
+    """On an engine whose table check never raises the generic error (SQLCipher 4.19), make it do so, for THIS file only: the rest of the
+    pass (the page check, the second read, the registry, the re-read) runs for real on the real damaged file. Said here and nowhere else:
+    the answer is the driver's, produced by hand, because the engine no longer produces it on demand."""
+    sha = H.sha(damaged_copy)
+    real_open = verify._open
+
+    class _Con:
+        def __init__(self, con):
+            self._con = con
+
+        def execute(self, sql, *args, **kwargs):
+            if str(sql).lstrip().upper().startswith("PRAGMA QUICK_CHECK") and "articles" in str(sql).lower():  # the damaged table only
+                raise _driver_error("SQL logic error", 1)
+            return self._con.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._con, name)
+
+    def opener(path):
+        con = real_open(path)
+        try:
+            same = H.sha(path) == sha
+        except OSError:
+            same = False
+        return _Con(con) if same else con
+
+    monkeypatch.setattr(verify, "_open", opener)
 
 
 @pytest.fixture
@@ -123,11 +166,14 @@ def healthy(tmp_path, base) -> Path:
 
 
 @pytest.fixture
-def unchecked(tmp_path, base, unchecked_page) -> Path:
-    """A copy with one page overwritten that the table check cannot answer for."""
+def unchecked(tmp_path, base, unchecked_page, real_unchecked_page, monkeypatch) -> Path:
+    """A copy with one page overwritten that the table check cannot answer for (on an engine that answers it for every readable page, the
+    generic error is stood in for this file: :func:`_stand_in_the_generic_error`)."""
     path = tmp_path / "corpus.db"
     shutil.copy(base, path)
     _overwrite(path, unchecked_page)
+    if real_unchecked_page is None:
+        _stand_in_the_generic_error(monkeypatch, path)
     return path
 
 
@@ -280,6 +326,25 @@ def test_the_list_of_tables_carries_the_generic_code_when_it_could_not_be_read_a
     for message, code in (("database is locked", 5), ("disk I/O error", 10), ("no such module: fts5", 1)):
         other = verify.inspect_file(path, opener=opener_raising(message, code))
         assert other["error"][0] == VERDICT_UNCHECKED and "sqlite_code" not in other, (message, other)
+
+
+def test_the_engines_answers_for_a_damaged_page_are_the_ones_the_module_knows(base, tmp_path):
+    """The qualification of a new engine, as a test: every page of ``articles`` overwritten, one at a time, and the table check answers
+    ``damaged``, ``ok`` (a page nothing reads) or ``unchecked`` WITH the generic code, never a third thing. SQLCipher 4.12 answers
+    ``unchecked`` for most leaf pages; 4.19 answers ``damaged`` for them (measured 2026-10-13: 53 of 69 against 0). A new engine that
+    answers something else fails here, by name, before it fails in a user's damaged file."""
+    work = tmp_path / "w.db"
+    n = os.path.getsize(base) // PAGE
+    seen: dict[tuple[str, int | None], int] = {}
+    for pg in range(2, n + 1):
+        shutil.copy(base, work)
+        _overwrite(work, pg)
+        r = verify.check_table(work, "articles")
+        key = (r["verdict"], r.get("sqlite_code"))
+        seen[key] = seen.get(key, 0) + 1
+    allowed = {(VERDICT_DAMAGED, None), (VERDICT_OK, None), (VERDICT_UNCHECKED, 1)}
+    assert set(seen) <= allowed, f"the engine answered something the module does not know: {sorted(seen.items(), key=str)}"
+    assert seen.get((VERDICT_DAMAGED, None), 0) > 0, "no overwritten page was filed damaged: the check reads nothing"
 
 
 def test_a_table_the_check_cannot_answer_for_carries_the_code_and_nothing_else_does(healthy, unchecked):
