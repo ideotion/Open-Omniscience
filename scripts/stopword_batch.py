@@ -36,7 +36,8 @@ reading this tool does not understand, and it must not pass), and a line the rea
 (no tab, a language column that is not a code, a row of another language with no verdict in its
 third column) stops the whole file. A word with no verdict row for the language, a verdict other
 than N, a confidence other than H, or a blocking flag is refused, and the batch comment records the
-verdict file's hash and the models named in it.
+verdict file's hash. The model column is read for its form only and is NOT written into the batch comment:
+no model name goes into a shipped file, and the hash pins the readers.
 Without ``--verdicts`` the tool only REPORTS, says so, and its table is not a decision.
 
 WHY THE REFUSALS EXIST. ``configs/stopwords_extra`` is a LANGUAGE-AGNOSTIC union
@@ -593,7 +594,7 @@ def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str],
     """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads.
 
     The comment is deterministic (no date, no file name): the same decision gives the same bytes
-    on any day. ``batch_id`` carries the date, and ``source`` is hashes and model names only."""
+    on any day. ``batch_id`` carries the date, and ``source`` is hashes and any single-reader words only."""
     path, after = prepare_append(lang, words, batch_id, allowed, source)
     path.write_text(after, "utf-8")
     return path
@@ -712,11 +713,8 @@ def main(argv: list[str] | None = None) -> int:
             print("nothing addable; nothing written")
             return 0
         used_allow = [w for w in addable if norm(w) in allow]
-        models = sorted({m for w in addable for m in verdicts[spelling(w)]["models"]}) if verdicts else []
         single = sorted(w for w in addable if verdicts and verdicts[spelling(w)]["single_reader"])
         source = f"log sha256 {file_hash(args.log)}; verdicts sha256 {file_hash(args.verdicts)}"
-        if models:
-            source += f"; models {', '.join(models)}"
         if single:
             source += f"; single reader: {', '.join(single)}"
         existed = (EXTRA_DIR / f"{lang}.yml").exists()
