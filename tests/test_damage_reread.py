@@ -478,6 +478,55 @@ def test_a_replaced_file_ends_the_claim_and_the_late_answer_is_dropped(reg, heal
     assert "auto_released" not in st and "reread" not in st, "an answer about a file that no longer is settles nothing"
 
 
+def test_a_read_that_lists_its_tables_after_the_file_was_replaced_and_latched_again_reads_nothing(reg, healthy, monkeypatch):
+    """The window the claim's token exists for: the first read is still listing the file when a restore swaps it, the new file latches
+    on a failed read that makes no claim of its own (no statement), and the first read then comes back with its table list. It must find
+    no claim of its own: no table set on the new latch, no read, and no release of a file it never looked at."""
+    gate = threading.Event()
+    entered = threading.Event()
+    real = verify.inspect_confirmed
+
+    def slow(path, **k):
+        entered.set()
+        assert gate.wait(60)
+        return real(path, **k)
+
+    monkeypatch.setattr(verify, "inspect_confirmed", slow)
+    reads: list[str] = []
+    real_check = verify.check_table
+    monkeypatch.setattr(verify, "check_table", lambda path, table, **kw: (reads.append(table), real_check(path, table, **kw))[1])
+    assert _fail(reg, healthy)
+    assert entered.wait(60)
+    assert reg.retry(reason="a restore swapped the file", file_replaced=True) == [FILE_CORPUS]
+    assert _fail(reg, healthy, None), "the replaced file fails a read of its own"
+    assert reg.latched(FILE_CORPUS) and not _file(reg).get("rechecking")
+    gate.set()
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and any(t.name == "oo-database-reread" and t.is_alive() for t in threading.enumerate()):
+        time.sleep(0.02)
+    st = _file(reg)
+    assert reg.latched(FILE_CORPUS), "the late first read releases nothing about a file it never read"
+    assert "check_tables" not in st and not reads, "and names no table on the new latch and reads none"
+    assert st["reread"]["why"] == "no-statement"
+
+
+def test_no_claim_is_made_against_a_check_that_is_running(reg, healthy, monkeypatch):
+    """The refusal is made where the claim is, not only where the thread would have started: a claim that existed for the instant between
+    the two would be a pause with an owner nobody had started."""
+    seen: list[object] = []
+    real = verify.reread
+
+    def spy(file_key, names, **k):
+        seen.append(_file(reg, file_key).get("rechecking"))
+        return real(file_key, names, **k)
+
+    monkeypatch.setattr(verify, "reread", spy)
+    reg.verification_arm("test")
+    assert _fail(reg, healthy)
+    assert all(rc is None for rc in seen), "the check is running: the latch carried no claim when the re-read was asked for"
+    assert _file(reg)["reread"]["why"] == "check-running"
+
+
 def test_a_table_that_could_not_be_read_keeps_the_latch_the_e1_way(reg, healthy, monkeypatch):
     unread = {"table": "articles", "verdict": damage.VERDICT_UNCHECKED, "seconds": 0.0, "detail": ["the file was busy"]}
     monkeypatch.setattr(verify, "check_table", lambda path, table, **k: dict(unread, table=table))
