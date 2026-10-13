@@ -23,8 +23,6 @@ _LOCALES = _STATIC / "locales"
 #: Every English string the delivery can put on screen (keys, with their {placeholders}). Keyed
 #: here rather than trusted to the i18n ratchets, which are MAXIMA.
 _STRINGS = [
-    "Keyword log (4 MB files)",
-    "Last keyword files, again",
     "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.",
     "Looking for the last keyword files…",
     "No keyword files are kept on this machine yet — build them with one of the keyword buttons.",
@@ -103,9 +101,7 @@ def test_the_page_uses_every_string_the_locales_carry() -> None:
 def test_the_buttons_and_the_bar_exist_and_use_no_inline_handlers() -> None:
     html = (_STATIC / "index.html").read_text(encoding="utf-8")
     for call in (
-        "downloadKeywordParts(this, 'default')",
         "downloadKeywordParts(this, 'all')",
-        "downloadKeywordParts(this, 'again')",
         "downloadDiagnosticsVolumes(this)",
         "runAllDiagnostics(this)",
         "partsSaveNext()",
@@ -140,8 +136,6 @@ def test_the_bar_sits_directly_under_the_buttons_that_fill_it() -> None:
     assert first < bar
     assert re.findall(r'data-on-click="([^"]+)"', html[first:bar]) == [
         "runAllDiagnostics(this)",
-        "downloadKeywordParts(this, 'default')",
-        "downloadKeywordParts(this, 'again')",
         "downloadDiagnosticsVolumes(this)",
         "downloadKeywordParts(this, 'all')",
     ], "only the buttons that fill the bar may sit between the first of them and the bar"

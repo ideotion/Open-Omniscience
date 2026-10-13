@@ -35,8 +35,9 @@ _KEYWORD_PARTS_GONE = (
 @router.get("/keywords/parts/latest")
 def keyword_parts_latest() -> JSONResponse:
     """The listing of the newest set still on disk (names, sizes, SHA-256), without rebuilding it:
-    what the page's "Last keyword files, again" button reads. A set stays until the next build
-    retires it or the sweep does, so this is the way to save the files a second time."""
+    what the page's "Last keyword files, again" button read until R123 (29b) took the button out.
+    The route stays, as the ruling says. A set stays until the next build retires it or the sweep
+    does, so this is the way to save the files a second time."""
     newest = None
     with contextlib.suppress(OSError):
         for d in _parts_root().iterdir():

@@ -3269,8 +3269,6 @@
           <input type="checkbox" id="diag-thorough"> Thorough
         </label>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>
-        <button class="secondary" data-on-click="downloadKeywordParts(this, 'default')" title="The top 5,000 keywords per language, as numbered .zip files of at most 4 MB each, five to a click, the manifest first. Each file opens on its own.">Keyword log (4 MB files)</button>
-        <button class="secondary" data-on-click="downloadKeywordParts(this, 'again')" title="Saves the numbered keyword files built last time again, without rebuilding them. They stay on this machine until the next build, or twelve hours after the last save. Type a part number in the box that appears to start from it.">Last keyword files, again</button>
       </div>
       <div class="row small" style="margin-top:2px">
         <button type="button" id="all-diag-again" class="linkish" data-on-click="downloadDiagnosticsVolumes(this)" hidden title="Saves the Diagnostics built last again, without a new build: the same one file, or the same numbered .zip files of at most 4 MB each (type a part number in the box that appears to start from it; every file opens on its own in any unzip tool). It never starts a new build.">Save the last Diagnostics again</button>

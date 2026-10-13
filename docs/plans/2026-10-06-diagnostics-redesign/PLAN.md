@@ -72,7 +72,7 @@ Moving the misfiled actions (Enrich, Discover, clean-up, fold, re-index) out of 
 | All diagnostics, again | **becomes a text link** under the button, shown only when a built archive exists, with its time and size | the first-run report shows why "again" has to exist; it should not be a second button |
 | Session forensics (view) | stays | a view of the previous session; no download |
 | Session forensics, Download (.txt) | removed | the zip carries it (asked for) |
-| Keyword log, Last keyword files again | **removed (R123 = 29b)** in the PR where the digest member is shown to carry what they gave | R111 says nobody is asked for per-keyword exports; the routes stay |
+| Keyword log, Last keyword files again | **removed (R123 = 29b)** in the PR whose test (`tests/test_keyword_log_buttons_removal.py`) shows what the digest member carries: every summary the log held, equal to the export's, and the top 100 keywords by mentions, labelled with how many are left out. The per-keyword list beyond those is the "All keywords" link, whose first files are the log the removed button gave | R111 says nobody is asked for per-keyword exports; the routes stay; on a computer short of memory the families summary is partial and says so (R130) |
 | All keywords | **stays, as a small text link under the button** (R123) | Quick may skip the digest on a large corpus (it is a scan); the link is the way to get it whole, so no one is left without it |
 | Bulletin language & render (.json), Windows file locks (.json) | removed | both are members already |
 | Source & article quality (.zip), TEMP | removed | its own label says delete after the analyst used it; route stays |
