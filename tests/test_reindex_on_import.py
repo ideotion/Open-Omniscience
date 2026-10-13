@@ -184,6 +184,7 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
             captured["commit_batch"] = commit_batch
             captured["workers"] = workers
             captured["progress_cb"] = progress_cb
+            captured["should_flush"] = kw.get("should_flush")
             return real_reindex_articles(
                 session, extractor=extractor, article_ids=article_ids,
                 commit_batch=commit_batch, workers=workers, progress_cb=progress_cb,
@@ -203,6 +204,7 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
         assert captured["commit_batch"] == 5
         assert captured["workers"] == 0
         assert progress_seen == [(1, 1)]
+        assert captured["should_flush"] is None, "an import that owns the machine passes no early-commit policy"
 
         # commit_batch=None (the default) reads OO_REINDEX_COMMIT_BATCH.
         # Since R24 the first call CERTIFIED the article, and a certified article is
@@ -216,6 +218,20 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
         monkeypatch.setenv("OO_REINDEX_COMMIT_BATCH", "7")
         merge_mod.reindex_imported_articles(batch_id, workers=0)
         assert captured["commit_batch"] == 7
+
+        # The drain's early-commit policy reaches the pass untouched (write-gate holds): the caller owns it.
+        with session_scope() as s:
+            s.query(ArticleIndexStamp).filter_by(article_id=merged_id).delete()
+            s.commit()
+        policy_asked: list[tuple[int, float]] = []
+
+        def _policy(staged: int, held_s: float) -> bool:
+            policy_asked.append((staged, held_s))
+            return False
+
+        merge_mod.reindex_imported_articles(batch_id, workers=0, commit_batch=5, should_flush=_policy)
+        assert captured["should_flush"] is _policy
+        assert [n for n, _ in policy_asked] == [1], "asked once, after the one article the batch staged"
     finally:
         with session_scope() as s:
             if merged_id is not None:

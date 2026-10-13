@@ -250,6 +250,8 @@ class WriterGate:
 
     def release(self) -> None:
         me = threading.get_ident()
+        # (holder name, seconds) of the hold that ended on THIS call, for the line written after the lock is dropped.
+        released: tuple[str | None, float] | None = None
         with self._cond:
             if self._owner != me:
                 # Defensive: only the owner releases. A non-owner call is a
@@ -258,6 +260,7 @@ class WriterGate:
             self._depth -= 1
             if self._depth == 0:
                 held = None
+                holder = self._holder
                 if self._held_since is not None:
                     held = time.monotonic() - self._held_since
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
@@ -275,11 +278,16 @@ class WriterGate:
                 # AFTER the gate is free and the next waiter woken: this bookkeeping can never
                 # leave the gate held, whatever it does.
                 if held is not None:
+                    released = (holder, held)
                     watched = self._watched.get(me)
                     if watched is not None:
                         watched["held_s"] += held
                         if held > watched["longest_s"]:
                             watched["longest_s"] = held
+        # OUTSIDE the lock: a log handler that blocks (a full pipe, a slow terminal) must not hold the gate's lock, and the gate is
+        # already free and its next waiter woken. The cheap comparison first, so a normal hold (milliseconds) never reads the environment.
+        if released is not None and released[1] >= _RELEASE_LINE_FLOOR_S:
+            _log_long_release(*released)
 
     def _wake_head(self) -> None:
         """Wake EXACTLY the queue head. Caller holds the lock.
@@ -296,6 +304,16 @@ class WriterGate:
     def held_by_current_thread(self) -> bool:
         with self._cond:
             return self._owner == threading.get_ident()
+
+    def waiters(self) -> int:
+        """Threads blocked RIGHT NOW waiting to write: the one number a long holder needs to know whether to let go.
+
+        A snapshot under the gate's own lock; it can change the moment it returns, which is fine for the one question it answers
+        ("is anyone waiting behind this batch?"). A holder that commits on a non-zero answer never starves anyone, because the
+        gate is first-in-first-out and the waiter is handed the window the instant the batch's transaction ends.
+        """
+        with self._cond:
+            return self._waiters
 
     def _reset_for_tests(self) -> None:
         """Test-only: forcibly clear ownership so a gate leaked by a buggy test
@@ -429,6 +447,11 @@ def write_gate_stats() -> dict:
     return write_gate.stats()
 
 
+def write_gate_waiters() -> int:
+    """How many threads are blocked waiting for the write window right now (see ``WriterGate.waiters``)."""
+    return write_gate.waiters()
+
+
 def watch_holder(ident: int) -> None:
     """Ask the gate to keep the holds of the thread with this ident (see ``take_watched_holder``)."""
     write_gate.watch(ident)
@@ -487,6 +510,27 @@ def _watchdog_threshold_s() -> float:
         return max(0.0, float(os.getenv("OO_WRITE_GATE_WARN_S", "") or 60.0))
     except (TypeError, ValueError):
         return 60.0
+
+
+#: Holds shorter than this never reach the release line's threshold check (which reads the environment): the line is for holds of
+#: the watchdog threshold, 60 s by default, and a hold of milliseconds is the normal case on a path every writer takes.
+_RELEASE_LINE_FLOOR_S = 1.0
+
+
+def _log_long_release(holder: str | None, held: float) -> None:
+    """Say how long a hold that reached the watchdog threshold actually lasted, once, when it ends.
+
+    THE WATCHDOG CANNOT SAY IT. It warns once per hold, at the first sample at or past the threshold, so its "held 66.0s" is when the
+    hold was noticed (the threshold plus up to one tick): a hold of 40 minutes logs the same line as one of 61 seconds, and the logs of
+    the 30 Sep crash read "60.3 to 73.3 s" for holds nobody could size. The gate keeps only the longest hold of the process
+    (``max_hold_s``), so every other length was lost. This line is the length of every hold at or past the threshold (and at least
+    ``_RELEASE_LINE_FLOOR_S``, so a threshold set under one second does not make every millisecond hold speak).
+
+    Only the holder's thread name and the seconds are written: no exception, no statement, no engine text, so a hold that ended in an
+    error says no more than one that did not. Never raises."""
+    with suppress(Exception):
+        if held >= _watchdog_threshold_s():
+            _LOG.warning("write gate released after %.1fs by %r", held, holder)
 
 
 def _watchdog_interval_s() -> float:
