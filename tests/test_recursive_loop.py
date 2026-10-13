@@ -108,5 +108,11 @@ def test_aggregator_carries_the_recursive_loop_instruments():
     start = src.index("def _all_diagnostics_members")
     end = src.index("def _all_diagnostics_manifest", start)
     body = src[start:end]
-    for member in ("article-length.json", "keyword-growth.json", "recursive-loop.json"):
+    for member in ("article-length.json", "keyword-growth.json", "selftests.json"):
         assert f'"{member}"' in body, f"{member} dropped from the all-diagnostics aggregator"
+    # R119 (2026-10-06): the loop's self-inventory is one SECTION of selftests.json now, not a
+    # member of its own; it must stay in that member's calls and its old name must stay listed.
+    from src.api import diagnostics as diag
+
+    assert "recursive-loop" in [name for name, _fn in diag._selftest_calls()]
+    assert diag._DIAG_COVERAGE_MAP["/recursive-loop"] == "selftests.json"

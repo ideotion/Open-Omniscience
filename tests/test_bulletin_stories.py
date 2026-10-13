@@ -215,10 +215,12 @@ def test_the_shown_limit_is_separate_from_the_number_found():
     _seed(
         s,
         {
-            "a": ["p", "q", "r", "s"],
-            "b": ["p", "q", "r", "s"],
-            "c": ["t", "u", "v", "w"],
-            "d": ["t", "u", "v", "w"],
+            # Words of three or more letters: the read hides what the keyword filter calls
+            # too short (R111 step T2), so one-letter terms would not be keywords here.
+            "a": ["pear", "quince", "rowan", "sorrel"],
+            "b": ["pear", "quince", "rowan", "sorrel"],
+            "c": ["tansy", "urchin", "vetch", "willow"],
+            "d": ["tansy", "urchin", "vetch", "willow"],
         },
     )
     out = build_stories(s, _P, limit=1)
@@ -292,7 +294,7 @@ def test_keyword_sets_are_read_without_touching_article_text(monkeypatch):
     """The grouping must cost no article decrypt — that is what makes it cheap
     enough to run over a whole period."""
     s = _session()
-    _seed(s, {"a": ["x", "y"], "b": ["x", "y"]})
+    _seed(s, {"a": ["xenon", "yarrow"], "b": ["xenon", "yarrow"]})
     monkeypatch.setattr(
         Article, "get_content", lambda self: (_ for _ in ()).throw(AssertionError("decrypted!"))
     )

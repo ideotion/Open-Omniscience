@@ -120,6 +120,18 @@ def _build_read_engine(url: str) -> Engine:
     return eng
 
 
+def holds_snapshot(bind) -> bool:
+    """Whether ``bind`` is one of this module's read engines, whose one explicit BEGIN holds a snapshot.
+
+    A reader made of several statements (``database.query.windowed_group_counts``) hands its connection back
+    between pieces on an ordinary session, and must NOT on one of these: ending the transaction would give
+    the next piece, and everything the caller reads after, a newer snapshot than the one the export is
+    reading. ``False`` for any other bind, and for every bind before the first snapshot session exists.
+    (Off SQLite the read engine IS the main engine, so there it answers ``True`` for every session: the
+    release is declined, slower and never wrong.)"""
+    return any(bind is eng for eng in list(_engines.values()))
+
+
 def _factory(url: str | None = None) -> sessionmaker:
     if url is None:
         from src.database.session import DATABASE_URL

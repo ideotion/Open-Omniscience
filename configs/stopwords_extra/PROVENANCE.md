@@ -358,3 +358,46 @@ verdict gate with no `unstable` or `not_repeated` flag and `scripts/stopword_bat
 
 A stoplist word is language-agnostic in effect (`global_stopwords()` unions every file), so each of these is hidden in every language. That is safe for the
 words above (none is a word of the app's shipped rings or a platform name; the tool checks both), and it is the reason `table` stayed out.
+
+## Stoplist batch 2: function words, number and month words, site chrome in ten languages (2026-10-13, R131, language group 1)
+
+309 words from the same triage (two blind reads of a language's high-confidence "noise" rows; every word passed the verdict gate with no `unstable` or `not_repeated`
+flag, and `scripts/stopword_batch.py` refused none of them): de 40, fr 42, es 6, it 16, pt 24, nl 56, sv 36, da 35, ca 43, nb 11. By the triage's codes: 160 function
+words (`trotz`, `obwohl`, `malgré`, `lorsque`, `trods`, `waarin`), 38 calendar words (30 month and weekday names, `dilluns`, `söndagen`, `setembro`, and 8 generic time words: `monat`, `woche`,
+`mois`, `semaine`, `mese`, `maand`, `vecka`, `ahir`), 29 number words (`dertien`, `nueve`, `tausend`), 25 site chrome (`abo`, `anmelden`, `leestijd`, `klicka`, `prenumerant`), 21 `fr` rows
+(a stem glued to a suffix, or an apostrophe left on a word), 2 others, and 34 that a count by code could not place (all apostrophe debris whose spelling the tool normalises: `nu'`, `dell'`, `site'`). 46 words carry
+an apostrophe; each is declared in the test beside its curly spelling, which the module adds on load, and each hides only the debris token, never the bare word.
+
+The evidence is ONE log, `combine_logs.py` over the 79 shards of 09-30 (`log sha256 6467504ab8ab`; script and per-language tool output in
+`/mnt/project-files/keyword-session/t5-group1-2026-10-13/`), because the tool's `content_elsewhere` check can only see the rows it is given: one shard holds a language's top 5,000, so a
+combined log is the stronger cross-language test. It is still a sample, and a log row carries ONE language (the dominant one), so a word that is content in a language with no row of
+its own never shows there. The tool now prints, per word, the other languages whose articles the word was read in (`language_signature`), as evidence for the reader and a decision for
+no one (an English-tagged article quoting a French word is in that list too, and a Norwegian article under `no` or `nn` is listed beside `nb`), and it refuses the four words of the standing
+ruling above (`sea` `tom` `fin` `laut`) with no override: before this batch it ACCEPTED `laut` (934 articles in German, and 71 Indonesian articles read it as "sea").
+
+**Left out after reading each word's other languages (the words files in the pool folder omit them, and every language file was written by `--apply` from them):** de `falls` (the English
+verb and noun); fr `moi` (a surname, 53 English-tagged articles) and `durant` (Kevin Durant); es `diez` (a surname); pt `maio` (Luigi Di Maio); ca `hagi` (Gheorghe and Ianis Hagi, in Romanian
+articles), `gener` (Swedish "genes"), `sis` (the SIS acronym) and `dues` (English "dues"); sv `borde` (Spanish "edge", 88 articles) and `medan` (the Indonesian city); nl `results`, `readers`,
+`donating`, `femmes` (foreign words in the Dutch log: the `lng` group stays out by the batch 1 ruling); ca `instal`, `ligència`, `lacions`, `lícula` (a middle dot splitting
+`intel·ligència` and `pel·lícula`: the cause is upstream, and a stoplist word per fragment hides the symptom one spelling at a time). The names matter beyond the keyword itself: a stopword also
+drops every phrase that contains it, so `hagi` would take "gheorghe hagi" with it. Read and KEPT, as the stronger case for noise: `mil` (a Scandinavian mile, but also the top number word
+of es), `fut`, `vore`, `abo`.
+
+**What a reader of the lists will see change.** The 30 month and weekday names and 29 number words are no longer keywords in any language; words two Nordic languages share (`hos`, `samt`) are
+hidden in both, which is where they are function words. Hiding is retroactive with no re-index (`hidden_set()` unions the list at query time); extraction also drops them from now on.
+
+## Stoplist batch 3: function words, number and month words, reporting verbs and site chrome in six Slavic languages (2026-10-13, R131, language group 2)
+
+415 words from the same triage and the same method as batch 2 (read it first: the merged log `6467504ab8ab`, the verdict gate, the tool's refusals, and the rule that each word's other languages
+are read by a person): ru 28, uk 124, pl 64, cs 87, sk 54, sl 58. By the triage's codes: 278 function words (`среди`, `щодо`, `dzięki`, `totiž`, `počas`, `kljub`), 69 number words, 48 calendar words (month
+names in the case the news writes them in, and the weekday: `июле`, `вересня`, `września`, `neděli`, `piatok`, `soboto`), 12 attribution verbs coded `ph` (`заявив`, `повідомив`, `uviedol`: "said", "reported"), 7 site
+chrome (`читайте`, `подписаться`, `czytaj`, `dodaj`, `wyślij`, `zobraziť`, `iskanja`) and 1 fragment. The attribution verbs are the one class batch 2 did not have; they carry no topic, but they are verbs the maintainers may
+want to see again if a reading finds a topical use.
+
+**Left out after reading each word's other languages:** the ten `lng` words the Russian and Ukrainian logs hold in another language (ru `noted`, `marking`, `guests`, `established`, `enabled`, `races`,
+`textbooks`; uk the Russian `сборной`, `оккупанты`, `воздушные`: a Russian word hidden here would be hidden in Russian too, where `оккупанты` is signal), the English `uploads` and the Latin fragments `secur` and
+`rippin'`, the Russian fragment `кий`, pl `maju` (Indonesian "forward", 18 articles) and `amet` (lorem ipsum, also a name), sl `glede` (Norwegian "joy", 17 articles). The independent read of the PR added four more: uk `ось` (the Russian noun "axis", already in 5 Russian-tagged articles), pl `jaka` (Serbian and
+Croatian "strong" and "collar"), cs `mimo` (Spanish and Italian "mime", Spanish "affection": es 11, pt 3) and cs `dubna` (the Russian science city Dubna, a place name). No other word of the six lists shows a
+content sense in another language in the log or in the reader's knowledge of those languages.
+
+Nothing is filed in `_multilingual.yml`: every word is in the script of its language's file.

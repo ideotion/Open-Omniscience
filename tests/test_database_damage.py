@@ -1889,6 +1889,8 @@ def _keys():
         damage.FRAME_LAW,
         damage.FRAME_RECORDED,
         damage.FRAME_PAUSE_OFF,
+        damage.FRAME_REREADING,
+        damage.FRAME_STAYED,
         sg.FRAME_OVERRIDE_DAMAGE,
         "Paused: the database reported damage",
         hover.group(1),

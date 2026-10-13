@@ -348,6 +348,10 @@
       // agenda -- and only when it was ever drawn, so a switch never fetches for them.
       try { if (typeof _renderWatches === "function") _renderWatches(); } catch (_e) {}
       try { if (typeof _anRepaintPrice === "function") _anRepaintPrice(); } catch (_e) {}
+      // The Diagnostics "save the last one again" line carries a size and an age built with tf() at
+      // paint time, so a switch left it in the old language (2026-10-06 walk); it redraws from the
+      // facts it last painted.
+      try { if (typeof _repaintDiagAgain === "function") _repaintDiagAgain(); } catch (_e) {}
       // The rest of the analysis window (the 2026-09-27 re-walk, N-4): the Articles list,
       // an open Trend chart and the Links, Sentiment and Sources panels, each redrawn from
       // the payload it last drew -- never a fetch, and nothing for a panel never drawn.
@@ -875,6 +879,7 @@
       const diag = document.querySelector('#set-advanced details.adv-sec[data-adv="diagnostics"]');
       if (diag) diag.addEventListener("toggle", () => {
         if (diag.open && typeof watchDiagnosticsJobs === "function") watchDiagnosticsJobs();
+        if (diag.open && typeof diagnosticsPanelOpened === "function") diagnosticsPanelOpened();
       });
     })();
 

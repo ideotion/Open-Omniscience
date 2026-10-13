@@ -15,7 +15,8 @@ the burst, though the bundle does not record which code made it.
 Four readers now ask only for what their own filters can keep: the flood and bury
 detectors put their count floors in a HAVING, the flood detector reads a prior share only
 for a pair that passed its recent filters, and ``trending`` and the emergence detector
-keep a group only when their loop would read it (``src.database.query.grouped_counts``).
+keep a group only when their loop would read it (``src.database.query.grouped_counts``; ``trending``
+reads it through ``windowed_group_counts``, the same rule in many short statements).
 
 Two kinds of test, because each alone proves too little:
 
@@ -87,6 +88,12 @@ def _unfiltered(monkeypatch) -> None:
     real = query_mod.grouped_counts
     monkeypatch.setattr(
         query_mod, "grouped_counts", lambda session, stmt, keep: real(session, stmt, lambda k, v: True)
+    )
+    # trending reads its windows as short statements now (``windowed_group_counts``), which does not
+    # go through ``grouped_counts``: keep every group there too, or the control stops being one.
+    real_windowed = query_mod.windowed_group_counts
+    monkeypatch.setattr(
+        query_mod, "windowed_group_counts", lambda session, **kw: real_windowed(session, **{**kw, "keep": lambda k, v: True})
     )
 
 

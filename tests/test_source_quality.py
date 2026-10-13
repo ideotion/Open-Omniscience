@@ -358,6 +358,25 @@ def test_build_report_end_to_end_and_newsletter_text_gate():
     assert nl_on and any(r["text_head"] for r in nl_on)
 
 
+def test_the_report_does_not_refresh_its_sources_one_at_a_time_after_the_keyword_reads():
+    """The deep delta read's S3: ``corpus_keywords`` hands the session's connection back between slices, which expires
+    every entity the session had loaded, and the report then read each Source's fields: one refresh SELECT per
+    source, and a raise if one was deleted meanwhile. The sources are loaded again once, after the keyword reads."""
+    from sqlalchemy import event
+
+    s = _corpus()
+    refreshes: list[str] = []
+
+    def count(conn, cur, st, params, ctx, many):  # noqa: ANN001
+        if "FROM sources" in st and "WHERE sources.id = ?" in st:
+            refreshes.append(st)
+
+    event.listen(s.get_bind(), "before_cursor_execute", count)
+    files = build_quality_report_files(s, generated_at="2026-07-13T12:00:00", seed=20260713, floor=3)
+    assert files["per_source_summary.jsonl"], "the report did not build"
+    assert refreshes == [], f"{len(refreshes)} per-source refresh SELECTs: the entities were read while expired"
+
+
 def test_fingerprint_sample_is_bounded_and_disclosed(monkeypatch):
     # Skeptic MED regression: a source with more than the cap gets a bounded, seeded fingerprint
     # sample (so the corpus_keywords IN(...) can't blow SQLite's variable limit), and it is

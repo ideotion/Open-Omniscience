@@ -113,30 +113,44 @@ def _terms(
       same ``where`` — one extra query per merged ring, never per row.
     """
     from src.analytics import equivalence
-    from src.analytics.queries import _ring_lang_of
+    from src.analytics.queries import _hidden_predicate, _ring_lang_of
 
+    is_hidden = _hidden_predicate()
     in_window = [
         KeywordMentionRead.observed_on >= period.start,
         KeywordMentionRead.observed_on < period.end,
         *where,
     ]
-    # Headroom so a ring member below `limit` still merges (the trending rule).
-    rows = (
-        session.query(
-            Keyword.id,
-            Keyword.term,
-            Keyword.normalized_term,
-            Keyword.language,
-            func.sum(KeywordMentionRead.count),
-            func.count(func.distinct(KeywordMentionRead.article_id)),
+    # Headroom so a ring member below `limit` still merges (the trending rule). A keyword the
+    # stoplist hides (R111 step T2) is dropped BEFORE that headroom is counted: the fetch widens
+    # until it holds `limit * 4` VISIBLE rows or the window has no more, so hidden words never
+    # eat the headroom a ring merge needs, and nothing visible is cut for their sake.
+    want = int(limit) * 4
+    fetch = want
+    # Each round re-runs the window's GROUP BY with a wider LIMIT: about log4 rounds per column, and a
+    # window of only hidden words reads every keyword row once into Python before it stops.
+    while True:
+        fetched = (
+            session.query(
+                Keyword.id,
+                Keyword.term,
+                Keyword.normalized_term,
+                Keyword.language,
+                func.sum(KeywordMentionRead.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
+            )
+            .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
+            .filter(*in_window)
+            .group_by(Keyword.id)
+            .order_by(func.sum(KeywordMentionRead.count).desc(), Keyword.normalized_term)
+            .limit(fetch)
+            .all()
         )
-        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
-        .filter(*in_window)
-        .group_by(Keyword.id)
-        .order_by(func.sum(KeywordMentionRead.count).desc(), Keyword.normalized_term)
-        .limit(int(limit) * 4)
-        .all()
-    )
+        rows = [r for r in fetched if not is_hidden(r[2])]
+        if len(rows) >= want or len(fetched) < fetch:
+            break
+        fetch *= 4
+    rows = rows[:want]
     cand = [
         {
             "id": int(r[0]),

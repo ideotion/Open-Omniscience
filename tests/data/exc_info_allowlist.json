@@ -291,10 +291,6 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/geo/osm_downloads.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
  "src/hazards/ingest.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -386,10 +382,6 @@
  "src/markets/pipeline.py": {
   "count": 2,
   "owner": "rc-sweep"
- },
- "src/monitoring/expedition.py": {
-  "count": 3,
-  "owner": "export"
  },
  "src/safety/crypto_erase.py": {
   "count": 2,

@@ -83,7 +83,18 @@ began end (the thread is a daemon): :func:`stop` gives the attempt back at once,
 the file again; only a kill counts. The progress line names the pass (``(pages)``) while it runs, and the app serves from the moment
 the boot sequence's thread starts: only collection waits for the check, as it already does.
 
-WHAT IT DOES NOT DO. It does not repair or salvage (E3), and it does not release a latch: a clean verdict
+THE RE-READ OF A FIRST FAILED READ (:func:`reread`, the E1 latch's own follow-up, ruled 2026-10-13). A corruption error that a read
+meets while the app runs latches its file AT ONCE (the writers stop before anything is read: a provisional pause), and the tables that
+statement WRITES (:func:`damage.statement_names`, intersected with the tables the file has) are read again here, each on a fresh read-only
+connection, through the same ``check_table`` and the same two-read rule (R100). When every one reads clean, the pause ends by itself, the
+failed read's incident is answered and the file's record says ``reread: clean``; a table that reads damaged keeps the latch as the check's
+finding (``check_tables``); a table that could not be read, a statement that names no table of the file, a switch, a stop or a failure
+keeps the latch exactly as a first failed read leaves it, so the operator's start releases it, with the reason in the record. A table that
+was released this way and fails again in the same process latches and STAYS, with no second automatic re-read. WHAT IT COSTS: a table's
+``quick_check`` holds a read snapshot for the whole table (the log cannot be written back past it for that long); the writers it would pin
+are the ones the latch has just stopped. A table's read costs what the check's costs (the 61 tables of the file below took 12.6 s).
+
+WHAT IT DOES NOT DO. It does not repair or salvage (E3), and the check at start-up does not release a latch: a clean verdict
 says what this read found, not that an earlier error was wrong. It checks the STRUCTURE of each table and
 its indexes (``quick_check``): that the pages of each b-tree are well formed and its records readable. It does NOT
 check that an index agrees with its table, or every row's content. The search index is a virtual table, and from
@@ -1239,6 +1250,135 @@ def _recheck_main(plan: list[tuple[str, Path, list[str]]], reason: str, claims: 
             _LOG.warning("database check: the re-read of the %s file failed (%s)", key, type(exc).__name__)
         finally:
             reg.recheck_abandoned(key, token)  # a no-op after an answer: ends THIS claim whatever happened
+
+
+# --- the re-read of a first failed read -----------------------------------------------------------------------
+
+
+def reread(file_key: str, names: frozenset[str], *, token: int, path: Path | None = None) -> str:
+    """Re-read, on fresh connections, the tables of ``file_key`` that a failed read's statement named (``names``: its identifiers,
+    lower-cased, :func:`damage.statement_names`), on a thread of their own. ``DamageRegistry`` claimed the re-read when it latched the
+    file (``token``): the writers are already stopped, so the pause is provisional, and this read decides whether it ends by itself
+    (``recheck_finished``: every table read clean, twice where it read damaged, R100) or stays. ``path`` is the file the failing engine is
+    over; the key's usual file when it is not given. Never blocks (it touches no file: the failing statement's own thread may hold the write
+    gate and the drive may be the failing one, so the file is looked at on the re-read's own thread) and never raises. ``"started"`` when a
+    thread is reading, else the fixed reason none was made (the latch stays exactly as a first failed read leaves it; the caller records
+    the reason):
+
+    * ``switched-off``: ``OO_BOOT_VERIFY=0``, the check's own switch, which this read follows.
+    * ``check-running``: the start-up check is armed or reading; it decides.
+    * ``no-thread``: the thread could not be started.
+
+    The thread ends its claim the same way, with ``no-file`` (there is no file to read, or an empty one: a check must never be what makes a
+    data file exist) or ``unexaminable`` (the file could not be examined; an I/O error is no answer).
+    """
+    try:
+        if not switch_on():
+            return "switched-off"
+        if damage.registry.verifying():
+            return "check-running"
+        t = threading.Thread(target=_reread_main, args=(file_key, path, names, token), name="oo-database-reread", daemon=True)
+        try:
+            t.start()
+        except Exception as exc:  # noqa: BLE001 - no thread, no read: the latch stays
+            _LOG.warning("database check: could not start the re-read of a failed read (%s)", type(exc).__name__)
+            return "no-thread"
+        return "started"
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("database check: could not plan the re-read of a failed read (%s)", type(exc).__name__)
+        return "unexaminable"
+
+
+#: The suffixes of the tables FTS5 keeps beside a virtual table ``<name>`` (``article_fts_data`` and the rest).
+_FTS_SHADOW_TAILS = ("data", "idx", "docsize", "config", "content")
+
+
+def _reread_main(file_key: str, path: Path | None, names: frozenset[str], token: int) -> None:
+    """The thread body of :func:`reread`: list the file's tables on a fresh connection, read the ones the statement named (each on its own
+    read-only connection, :func:`check_table`), and give the registry the answers. A stop, a table list that cannot be read, a statement
+    that names no table of the file or a failure ends the claim without an answer (``reread_ended``), so the latch stays."""
+    reg = damage.registry
+    why: str | None = "failed"
+    try:
+        if _CANCEL.is_set():
+            why = "stopped"
+            return
+        path = path if path is not None else _path_of(file_key)
+        try:
+            readable = path is not None and path.is_file() and path.stat().st_size > 0
+        except OSError as exc:
+            _LOG.warning("database check: could not examine the %s file for the re-read of a failed read (%s)", file_key, type(exc).__name__)
+            why = "unexaminable"
+            return
+        if not readable or path is None:
+            why = "no-file"
+            return
+        info = inspect_confirmed(path)
+        err = info.get("error")
+        if err is not None and err[0] == VERDICT_DAMAGED:
+            # The table list itself reads as damage on two connections (``inspect_confirmed`` answers damaged only when a second read agreed):
+            # that IS the re-read's answer, filed the way the start's re-read files it, as a damaged ``(schema)``. The latch holds as the
+            # check's finding, a start reads every table, and the record says damaged, not that no re-read was made.
+            if reg.reread_tables(file_key, [SCHEMA_ENTRY], token):
+                reg.recheck_finished(
+                    file_key,
+                    [
+                        {
+                            "table": SCHEMA_ENTRY,
+                            "verdict": VERDICT_DAMAGED,
+                            "seconds": 0.0,
+                            "detail": [str(err[1])[:DETAIL_CHARS]],
+                            "second_read": SECOND_READ_AGREED,
+                        }
+                    ],
+                    path=path,
+                    token=token,
+                )
+            why = None
+            return
+        if err is not None or info.get("second_read") == SECOND_READ_CLEAN:
+            # A schema that cannot be listed for another reason, or that two connections disagree about, is no table to read: the damage
+            # (or the doubt) is not in a table the statement named. The latch stays; the per-table check and the start decide.
+            why = "list-unreadable"
+            return
+        named = {n.lower() for n in info["names"] if n.lower() in names}
+        # A full-text table is read with its shadow tables: on a SQLite older than 3.44 ``quick_check`` of the virtual table reads
+        # nothing, and the shadow tables are all there is to read (the check at start-up lists them as tables of their own).
+        named |= {f"{n}_{tail}" for n in named for tail in _FTS_SHADOW_TAILS}
+        present = [n for n in info["names"] if n.lower() in named]  # the file's own spelling, in the order the check reads them
+        if not present:
+            why = "no-table-named"  # the statement names nothing the file has: a name that is not there is never a clean table
+            return
+        if not reg.reread_tables(file_key, present, token):
+            why = None  # the latch was released or the file replaced while this listed it: nothing is this read's to settle
+            return
+        answers: list[dict[str, Any]] = []
+        for i, name in enumerate(present, 1):
+            if _CANCEL.is_set():
+                why = "stopped"
+                return
+            reg.recheck_progress(file_key, i, token)
+            answers.append(check_table(path, name, cancel=_CANCEL))
+        pages = page_check(path, answers, cancel=_CANCEL)
+        if pages is not None:
+            answers.append(pages)
+        if _CANCEL.is_set():
+            why = "stopped"
+            return
+        released = reg.recheck_finished(file_key, answers, path=path, token=token)
+        why = None
+        _LOG.info(
+            "database check: the %s file's failed read was re-read on a new connection: %s",
+            file_key,
+            "clean, released" if released else "latch stays",
+        )
+    except Exception as exc:  # noqa: BLE001 - a re-read that failed gives no answer, and the latch stays
+        # The TYPE only: the re-read opens keyed connections (see ``run_armed``).
+        _LOG.warning("database check: the re-read of a failed read in the %s file failed (%s)", file_key, type(exc).__name__)
+    finally:
+        if why is not None:
+            reg.reread_ended(file_key, token, why)
+        reg.recheck_abandoned(file_key, token)  # a no-op after an answer: ends THIS claim whatever happened
 
 
 def _reset_for_tests() -> None:
