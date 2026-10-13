@@ -162,10 +162,12 @@ FILE_SCRIPTS: dict[str, tuple[str, ...]] = {
     "bn": ("BENGALI",),
     "el": ("GREEK",),
     "hi": ("DEVANAGARI",),
+    "ja": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
     "ko": ("HANGUL",),
     "mr": ("DEVANAGARI",),
     "ru": ("CYRILLIC",),
     "uk": ("CYRILLIC",),
+    "zh": ("CJK",),
 }
 
 sys.path.insert(0, str(ROOT))

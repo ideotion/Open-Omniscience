@@ -45,10 +45,12 @@ _NON_LATIN_FILES = {
     "bn.yml": ("BENGALI",),
     "el.yml": ("GREEK",),
     "hi.yml": ("DEVANAGARI",),
+    "ja.yml": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
     "ko.yml": ("HANGUL",),
     "mr.yml": ("DEVANAGARI",),
     "ru.yml": ("CYRILLIC",),
     "uk.yml": ("CYRILLIC",),
+    "zh.yml": ("CJK",),
 }
 
 #: Deliberately unchecked, with the reason. ``_multilingual.yml`` is the ONE file whose
