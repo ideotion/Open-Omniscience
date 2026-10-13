@@ -2,65 +2,115 @@
 
 ``exc_info=True`` (and ``Logger.exception``) hand the log record a live exception whose text and traceback a handler formats
 with no scrub: a keyed open's driver error chains the passphrase, and ``data/app_errors.jsonl`` rides the diagnostics bundle.
-``secret_scrub.log_failure`` is the one way a failure is logged; this finds everything else."""
+``secret_scrub.log_failure`` is the one way a failure is logged; this finds everything else.
+
+WHAT IT SEES: ``exc_info=`` with any value but a false constant; ``**`` unpacked into a log call and the string ``"exc_info"``
+used as a key (the same keyword by another door); ``.exception(msg)`` on ANY receiver (a ``Future``'s ``.exception()`` takes no
+message, a logger's always does) and ``logging.exception``; and the ``traceback`` / ``sys`` text makers
+(:data:`TRACEBACK_MAKERS`, :data:`SYS_MAKERS`), resolved through the file's own imports so ``import traceback as tb`` and
+``from sys import exc_info`` are the same sink. Every call node counts once, so two sinks on one line are two.
+
+WHAT IT DOES NOT: ``stack_info=True`` prints the current call stack (files, lines, source), not an exception, so it cannot carry
+the words an exception carries; ``log.warning("%s", exc)`` is a different rule (the text made by hand), covered where the text
+enters a record. A swap inside one file (one site converted, another added) keeps its count; the diff is where that is read."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-#: Names a logger is bound to in this code base (``log``, ``_LOG``, ``logger``, ``logging`` itself, ``self.log``...).
-_LOGGER_HINTS = ("log", "logger", "logging")
-#: ``traceback`` helpers that turn an exception into text: in a log argument they are the same sink as ``exc_info``.
-_TEXT_MAKERS = {
-    "format_exc",
-    "print_exc",
-    "format_exception",
-    "print_exception",
-    "format_tb",
-    "print_tb",
-}
+#: ``traceback`` helpers that turn an exception into text or print it: in a log argument they are the same sink as ``exc_info``.
+TRACEBACK_MAKERS = frozenset(
+    {
+        "format_exc",
+        "print_exc",
+        "format_exception",
+        "format_exception_only",
+        "print_exception",
+        "format_tb",
+        "print_tb",
+        "TracebackException",
+    }
+)
+#: ``sys`` readers of the exception being handled.
+SYS_MAKERS = frozenset({"exc_info", "exception"})
+SYS_ATTRIBUTES = frozenset({"last_exc", "last_value", "last_traceback"})
+_LOG_METHODS = frozenset(
+    {"debug", "info", "warning", "warn", "error", "critical", "exception", "log", "fatal"}
+)
 #: The modules that ARE the scrub (they read an exception to scrub it) or read a record's ``exc_info`` back; nothing else.
 EXEMPT = {"src/monitoring/secret_scrub.py", "src/monitoring/errorlog.py"}
-
-
-def _receiver(node: ast.expr) -> str:
-    if isinstance(node, ast.Name):
-        return node.id.lower().lstrip("_")
-    if isinstance(node, ast.Attribute):
-        return node.attr.lower().lstrip("_")
-    return ""
-
-
-def _is_logger(node: ast.expr) -> bool:
-    name = _receiver(node)
-    return bool(name) and any(h in name for h in _LOGGER_HINTS)
 
 
 def _falsy(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and not node.value
 
 
-def scan_source(text: str) -> list[tuple[int, str]]:
-    """Every (line, kind) in ``text`` that writes an exception unscrubbed."""
+def _aliases(tree: ast.AST) -> dict[str, str]:
+    """Local name -> the dotted thing it stands for, for the two modules whose readers are sinks."""
+    out: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name in {"traceback", "sys", "logging"}:
+                    out[a.asname or a.name] = a.name
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module in {"traceback", "sys", "logging"}
+            and node.level == 0
+        ):
+            for a in node.names:
+                out[a.asname or a.name] = f"{node.module}.{a.name}"
+    return out
+
+
+def _qualified(node: ast.expr, alias: dict[str, str]) -> str:
+    """``tb.format_exc`` -> ``traceback.format_exc`` through the file's imports; "" when it is not one of them."""
+    if isinstance(node, ast.Name):
+        return alias.get(node.id, "")
+    if isinstance(node, ast.Attribute):
+        base = _qualified(node.value, alias)
+        return f"{base}.{node.attr}" if base else ""
+    return ""
+
+
+def scan_source(text: str, name: str = "<source>") -> list[tuple[int, str]]:
+    """Every (line, kind) in ``text`` that writes an exception unscrubbed, one per offending node."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise SyntaxError(
+            f"{name}: the exception-sink guard cannot parse it ({exc.msg}, line {exc.lineno})"
+        ) from None
+    alias = _aliases(tree)
     found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(text)):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value == "exc_info":
+            found.append((node.lineno, "exc_info-key"))
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr in SYS_ATTRIBUTES
+            and _qualified(node, alias) == f"sys.{node.attr}"
+        ):
+            found.append((node.lineno, "sys." + node.attr))
         if not isinstance(node, ast.Call):
             continue
         func = node.func
+        method = func.attr if isinstance(func, ast.Attribute) else ""
         for kw in node.keywords:
             if kw.arg == "exc_info" and not _falsy(kw.value):
                 found.append((node.lineno, "exc_info"))
-        if isinstance(func, ast.Attribute):
-            if func.attr == "exception" and _is_logger(func.value):
-                found.append((node.lineno, "exception"))
-            if func.attr == "exc_info" and _receiver(func.value) == "sys":
-                found.append((node.lineno, "sys.exc_info"))
-            if func.attr in _TEXT_MAKERS and _receiver(func.value) == "traceback":
-                found.append((node.lineno, func.attr))
-        elif isinstance(func, ast.Name) and func.id in _TEXT_MAKERS:
-            found.append((node.lineno, func.id))
-    return sorted(set(found))
+            elif kw.arg is None and method in _LOG_METHODS:
+                found.append((node.lineno, "kwargs-unpack"))
+        qual = _qualified(func, alias)
+        mod, _, leaf = qual.rpartition(".")
+        if qual == "logging.exception" or (method == "exception" and node.args):
+            found.append((node.lineno, "exception"))
+        elif mod == "traceback" and leaf in TRACEBACK_MAKERS:
+            found.append((node.lineno, leaf))
+        elif mod == "sys" and leaf in SYS_MAKERS:
+            found.append((node.lineno, "sys." + leaf))
+    return sorted(found)
 
 
 def scan_tree(root: Path) -> dict[str, list[tuple[int, str]]]:
@@ -69,7 +119,7 @@ def scan_tree(root: Path) -> dict[str, list[tuple[int, str]]]:
         rel = path.relative_to(root).as_posix()
         if rel in EXEMPT:
             continue
-        hits = scan_source(path.read_text(encoding="utf-8"))
+        hits = scan_source(path.read_text(encoding="utf-8"), rel)
         if hits:
             out[rel] = hits
     return out
