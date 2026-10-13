@@ -43,11 +43,26 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed
+from src.monitoring import secret_scrub
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, log_failure, scrubbed
 
 _LOG = logging.getLogger(__name__)
 
 _CHUNK = 1024 * 1024  # 1 MiB
+
+
+def _clean_extra(value):
+    """``value`` (read from a state file, so JSON: dicts, lists, strings, numbers) with every held passphrase taken out of every
+    string in it AND out of every dict key; a key that holds one (or that cannot be checked) is dropped with its value, since a
+    key cannot be rewritten to something else without becoming another key. The scrub never raises (``scrubbed`` returns the
+    withheld marker for a text it cannot check); a value nested past what the interpreter can walk is raised to the caller."""
+    if isinstance(value, str):
+        return scrubbed(value)
+    if isinstance(value, dict):
+        return {k: _clean_extra(v) for k, v in value.items() if not isinstance(k, str) or scrubbed(k) == k}
+    if isinstance(value, list):
+        return [_clean_extra(v) for v in value]
+    return value
 
 # OSM extracts are large (continents are multi-GB, the planet ~72 GB), so the
 # default parallelism is conservative; raise via OO_OSM_CONCURRENCY. Parallel
@@ -114,8 +129,22 @@ class OsmDownloadEntry:
     mirrors: list[str] = field(default_factory=list)
     expected_sha256: str = ""
 
+    def __post_init__(self) -> None:
+        # Not dataclass fields (``asdict`` skips them): the keys a NEWER build wrote beside the ones this build knows, kept so
+        # that a rewrite by this build hands them back; and the stored error text this process could not check.
+        self._extra: dict = {}
+        self._unchecked_error: str | None = None
+
+    def state_dict(self) -> dict:
+        """What the state file holds for this entry: the fields this build declares, and every key a newer build added."""
+        return {**self._extra, **asdict(self)}
+
     def to_dict(self) -> dict:
         d = asdict(self)
+        if self._unchecked_error is not None and self.error == self._unchecked_error:
+            # The words on disk were written by an earlier build and cannot be checked for a passphrase now: the page gets the
+            # marker, the file keeps the words (they come back readable once what the process holds can be read again).
+            d["error"] = UNREADABLE_TEXT
         d["paused_by"] = self.paused_by if self.status == "paused" else None
         d["percent"] = (
             round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
@@ -171,6 +200,9 @@ class OsmDownloadManager:
             max_concurrent if max_concurrent and max_concurrent > 0 else _DEFAULT_OSM_CONCURRENCY
         )
         self._order: list[str] = []
+        self._extra_state: dict = {}  # top-level keys a newer build wrote beside ``entries`` / ``queue_order``
+        # True while a stored text was kept AS IT WAS because the held passphrases could not be read: the next save checks it again.
+        self._unchecked_pending = False
         self._load()
 
     # -- state ------------------------------------------------------------- #
@@ -182,20 +214,16 @@ class OsmDownloadManager:
                 raw = json.loads(self.state_path.read_text("utf-8"))
                 if isinstance(raw, dict) and "entries" in raw:
                     self._order = [k for k in raw.get("queue_order", []) if isinstance(k, str)]
+                    self._extra_state = {k: v for k, v in raw.items() if k not in ("entries", "queue_order")}
                     raw = raw["entries"]
                 for k, v in raw.items():
-                    self._entries[k] = OsmDownloadEntry(
-                        **{f: v[f] for f in OsmDownloadEntry.__annotations__ if f in v}
-                    )
+                    entry = OsmDownloadEntry(**{f: v[f] for f in OsmDownloadEntry.__annotations__ if f in v})
+                    entry._extra = {f: val for f, val in v.items() if f not in OsmDownloadEntry.__annotations__}
+                    self._entries[k] = entry
                 parsed = True
             except Exception as exc:  # noqa: BLE001 - a bad state file must not crash startup
                 log_failure(_LOG, "OSM downloads state unreadable; ignoring", exc, level=logging.WARNING)
-        changed = False
-        for e in self._entries.values():
-            if e.error:  # an error stored by a build that wrote it unscrubbed is read, served and written back scrubbed
-                clean = scrubbed(e.error)
-                changed = changed or clean != e.error
-                e.error = clean
+        changed = self._scrub_stored()
         # No worker thread survives a process restart, so a persisted
         # "downloading" status is stale -- demote it to "paused" (the partial file
         # is kept and resumable) rather than leaving a phantom blocking a slot.
@@ -211,15 +239,61 @@ class OsmDownloadManager:
             except Exception as save_exc:  # noqa: BLE001 - startup must not fail on its own bookkeeping
                 log_failure(_LOG, "OSM downloads state could not be rewritten after a scrub", save_exc, level=logging.WARNING)
 
+    def _scrub_stored(self, *, mark: bool = True) -> bool:
+        """Take the passphrases this process holds out of every text the state file keeps beyond what this build writes fresh: each
+        entry's ``error`` (an older build stored it unscrubbed) and the keys a newer build added (``_extra``, ``_extra_state``:
+        values, nested values and key names). Returns whether anything changed.
+
+        When what the process holds could not be read the texts cannot be checked AT ALL: they stay as they are (they were already
+        in the file and go nowhere new; ``to_dict`` serves the marker for an error) and the next save checks them again. Only that
+        case: a text that WAS checked and has to be withheld whole (it holds a secret under the floor, or none can be taken out
+        cleanly) is written as the marker, so no readable passphrase stays in the file. An extra that cannot be walked is dropped.
+
+        ``mark`` is True only at load, where the texts are the ones read from disk: a save that finds the holdings unreadable again
+        must not mask an error stored since (the class-only text of a failed download is already clean)."""
+        if secret_scrub.held_passphrases() is None:
+            self._unchecked_pending = True
+            if mark:
+                for e in self._entries.values():
+                    if e.error:
+                        e._unchecked_error = e.error
+            return False
+        changed = False
+        for e in self._entries.values():
+            if e.error:
+                clean = scrubbed(e.error)
+                changed = changed or clean != e.error
+                e.error = clean
+            # The mask comes off AFTER the clean text is in: a reader (``list`` holds another lock than a save) that looks in
+            # between would otherwise be served the words as they were.
+            e._unchecked_error = None
+            try:
+                extra = _clean_extra(e._extra)
+            except Exception:  # noqa: BLE001 - an extra that cannot be walked cannot be checked: dropped, never kept
+                extra = {}
+            changed = changed or extra != e._extra
+            e._extra = extra
+        try:
+            top = _clean_extra(self._extra_state)
+        except Exception:  # noqa: BLE001 - as above
+            top = {}
+        changed = changed or top != self._extra_state
+        self._extra_state = top
+        self._unchecked_pending = False
+        return changed
+
     def _save(self) -> None:
         # Serialized under one lock so each written state file is internally
         # consistent (the worker thread and the API thread both write it).
         with self._save_lock:
+            if self._unchecked_pending:
+                self._scrub_stored(mark=False)  # what could not be read at load may be readable now
             tmp = self.state_path.with_suffix(".json.tmp")
             tmp.write_text(
                 json.dumps(
                     {
-                        "entries": {k: asdict(e) for k, e in self._entries.items()},
+                        **self._extra_state,
+                        "entries": {k: e.state_dict() for k, e in self._entries.items()},
                         "queue_order": list(self._order),
                     },
                     indent=2,

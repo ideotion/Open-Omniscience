@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,osm-lane,OSM downloads state file keeps a newer build's keys and an unchecked stored error,shipped (draft PR),PR #1363,src/geo/osm_downloads.py;tests/test_osm_downloads_state_file.py,A rewrite of downloads.json by this build hands back the keys a newer build added (entry and top level); a stored error text that cannot be checked because the held passphrases cannot be read is served as the marker and left as it is on disk instead of being overwritten by it. Tests fail without either change.
