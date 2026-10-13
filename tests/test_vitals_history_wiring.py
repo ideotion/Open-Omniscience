@@ -76,6 +76,39 @@ def test_a_liveness_thread_a_test_left_running_is_stopped_before_it_can_tick_the
         sh._reset_for_tests()
 
 
+def test_the_helper_waits_for_a_tick_in_flight_and_keeps_a_thread_that_outlives_the_wait(monkeypatch, tmp_path):
+    """Finding L2 of the read. The join is what makes the stop real (a tick in flight must finish before the
+    recorder is reset), and a thread still alive after the wait stays recorded as the process's thread, so a
+    later ``start_liveness`` does not start a second one."""
+    import time
+
+    from tests.conftest import _stop_leaked_liveness_thread
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    sh._reset_for_tests()
+    v.reset_for_tests()
+    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.01)
+    inside = threading.Event()
+
+    def slow_observe(*_a, **_k):
+        inside.set()
+        time.sleep(0.4)
+
+    monkeypatch.setattr(session_hwm, "observe", slow_observe)
+    monkeypatch.setattr(v, "tick", lambda *a, **k: None)
+    try:
+        assert sh.start_liveness() is True
+        assert inside.wait(5.0)
+        thread = sh._THREAD
+        _stop_leaked_liveness_thread(timeout=0.01)  # the tick in flight outlives this wait
+        assert thread is not None and thread.is_alive() and sh._THREAD is thread
+        assert sh.start_liveness() is False  # no second thread
+        _stop_leaked_liveness_thread()  # the real wait: the tick finishes, the loop ends
+        assert not thread.is_alive() and sh._THREAD is None
+    finally:
+        sh._reset_for_tests()
+
+
 def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_recorder():
     """A source guard on the fixture itself (a fixture cannot be called from a test): the stop is there,
     and ahead of the reset, so a tick in flight finishes before the recorder is wiped."""

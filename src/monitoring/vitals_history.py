@@ -797,7 +797,14 @@ def tick(now: float | None = None, mono: float | None = None, boot: Any = _AUTO)
                 base_wall, base_boot = _BOOT_BASE
                 stepped = (wall - base_wall) - (boot - base_boot)
                 without_step = int((wall - stepped) // FINE_S) * FINE_S  # the bucket this tick would have fallen in
-                made_the_gap = opens_gap and stepped >= FORWARD_STEP_FLOOR_S and not _opens_gap(prev_t, without_step)
+                # only against the PREVIOUS tick's own reading: across ticks without a usable pair that tick's bucket may
+                # already hold the step, and the gap it sits behind is the absence's
+                made_the_gap = (
+                    base_wall == _LAST_WALL
+                    and opens_gap
+                    and stepped >= FORWARD_STEP_FLOOR_S
+                    and not _opens_gap(prev_t, without_step)
+                )
                 if stepped >= FORWARD_STEP_MIN_S or made_the_gap:
                     _CLOCK_FORWARD += 1
                     _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(base_wall), "forward_s": int(stepped)})
@@ -1138,7 +1145,7 @@ def start(now: float | None = None) -> None:
                 _HOUR_LOGS = {}
                 _HOUR_LOG_NAMES.clear()
         _MINUTES = []
-        _LAST_WALL = None  # a step is measured between two ticks of one session, never across a restart (no baseline without it)
+        _LAST_WALL = None  # a step back is measured between two ticks of one session, never across a restart
         _SESSIONS.append({"t": int(wall), "pid": os.getpid()})
         _trim(_SESSIONS, SESSIONS_KEEP)
         _STARTED = True
@@ -1239,7 +1246,7 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "platform has a boot-time clock (Linux) and never across a restart; a tick whose two "
                 f"boot-time readings were more than {_BOOT_READ_SKEW_MAX_S:g} s apart compares nothing and is counted in "
                 "`clock_boot_pairs_refused`, and the next tick compares with the last good reading, so a step "
-                "in between is not lost; no "
+                f"of {FORWARD_STEP_MIN_S} s or more in between is not lost; no "
                 "cause is claimed: a clock that was set, a time correction and a virtual machine brought up "
                 "to date after a pause read the same); `clock_stepped_forward` is `null` until a tick has had "
                 "a boot-time clock to compare with (a platform without one, a file of a build that did not "
@@ -1249,7 +1256,8 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "marked `clock_step` is next to a step still in that list, back or forward, and may be the clock's "
                 "correction and not down time, and a gap without the mark can still be one wherever a step "
                 "is not recorded (no boot-time clock, a step the list no longer holds, a step under "
-                f"{FORWARD_STEP_MIN_S} s inside a gap the process's absence opened anyway, across a restart); "
+                f"{FORWARD_STEP_MIN_S} s inside a gap the process's absence opened anyway, across a restart, a gap "
+                "strictly between the two stamps of a step that spans ticks without a boot-time reading); "
                 "`previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
                 "hour that was open at the last write."

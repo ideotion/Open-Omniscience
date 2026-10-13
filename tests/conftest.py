@@ -321,7 +321,7 @@ def _isolated_robots_cache_path(tmp_path, monkeypatch):
     monkeypatch.setattr(_ingest_mod, "_robots_cache_path", lambda: tmp_path / "robots_cache.json")
 
 
-def _stop_leaked_liveness_thread() -> None:
+def _stop_leaked_liveness_thread(timeout: float = 5.0) -> None:
     """Stop the session ledger's liveness thread a test left running.
 
     ``record_boot`` starts it (a daemon thread, one per process) unless ``OO_SESSION_LIVENESS=0``, and
@@ -339,8 +339,9 @@ def _stop_leaked_liveness_thread() -> None:
     if sh is None or thread is None or not thread.is_alive():
         return
     sh._STOP.set()  # ``start_liveness`` clears it again
-    thread.join(timeout=5.0)
-    sh._THREAD = None
+    thread.join(timeout=timeout)
+    if not thread.is_alive():  # one that outlived the wait is still the process's thread: say so, never a second one
+        sh._THREAD = None
 
 
 @pytest.fixture(autouse=True)

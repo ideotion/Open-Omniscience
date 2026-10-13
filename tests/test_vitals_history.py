@@ -1879,6 +1879,29 @@ def test_a_tick_without_a_boot_time_reading_leaves_the_last_good_one_and_a_step_
     assert m["clock_steps"][0]["was"] == v._iso(wall) and m["clock_steps"][0]["forward_s"] == 3600
 
 
+@pytest.mark.parametrize(("step", "recorded"), [(300.0, 0), (700.0, 1)])
+def test_a_step_across_ticks_without_a_reading_blames_the_clock_only_from_the_minimum(hist, step, recorded):
+    """Finding S1 of the read of the next PR. A usable reading (A), a tick without one (B, the clock set forward
+    ``step`` s between A and B), a usable one 900 s later (C). Against A the step is found, but B's bucket already
+    holds it, so the 600 s gap from B to C is the process's absence, not the clock's: a step under the minimum is
+    not recorded and the gap stays unmarked; from the minimum it is recorded whatever the stretch."""
+    hist["fast"] = {"rss": 500.0}
+    a_wall, a_boot = float(HOUR0), 10_000.0
+    _beat(a_wall, a_boot)
+    b_wall = a_wall + 5 + step
+    _beat(b_wall, None)  # no usable reading
+    c_wall = b_wall + 900.0
+    _beat(c_wall, a_boot + 5 + 900.0)
+    m = _member()
+    assert m["gaps"], "the layout opens a gap between B and C"
+    assert m["clock_stepped_forward"] == recorded and len(m["clock_steps"]) == recorded
+    assert bool(m["gaps"][-1].get("clock_step")) is bool(recorded)
+    if recorded:
+        assert m["clock_steps"][0]["was"] == v._iso(a_wall) and m["clock_steps"][0]["forward_s"] == 700
+    assert "a step of 600 s or more in between is not lost" in m["method"]
+    assert "strictly between the two stamps of a step that spans ticks without a boot-time reading" in m["method"]
+
+
 def test_a_session_without_any_reading_never_compares(hist):
     hist["fast"] = {"rss": 500.0}
     _beat(float(HOUR0), None)
