@@ -96,7 +96,7 @@ def test_scanner_flags_every_sink_shape(snippet, kind):
 def test_the_named_text_makers_are_exactly_these():
     """MUTATION TARGET: a maker dropped from the scanner's set. The parametrised cases above are built from the set, so the set
     itself is pinned here by name; a new maker is added in both places."""
-    assert scan.TRACEBACK_MAKERS == {
+    assert {
         "format_exc",
         "print_exc",
         "format_exception",
@@ -105,12 +105,12 @@ def test_the_named_text_makers_are_exactly_these():
         "format_tb",
         "print_tb",
         "TracebackException",
-    }
-    assert scan.SYS_MAKERS == {"exc_info", "exception"} and scan.SYS_ATTRIBUTES == {
+    } == scan.TRACEBACK_MAKERS
+    assert {"exc_info", "exception"} == scan.SYS_MAKERS and {
         "last_exc",
         "last_value",
         "last_traceback",
-    }
+    } == scan.SYS_ATTRIBUTES
 
 
 def test_two_sinks_on_one_line_are_two():
