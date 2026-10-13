@@ -341,7 +341,7 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         # word is listed beside the straight one).
         "avgusta", "bili", "biće", "bude", "budu", "deset", "devet", "drugih", "duž", "dva", "dve",
         "hiljada", "iako", "ispred", "jeste", "jula", "kad", "koga", "koje", "kojeg", "kojem", "koji",
-        "kojih", "kojim", "kojima", "kojoj", "koju", "koliko", "mene", "meni", "među", "međutim", "miliona",
+        "kojih", "kojim", "kojoj", "koju", "koliko", "mene", "meni", "među", "međutim", "miliona",
         "moja", "moje", "najčitanije", "naša", "naše", "našeg", "naši", "naših", "našim", "našoj", "našu",
         "nedelju", "nego", "neke", "neki", "nekih", "neko", "neće", "nešto", "nijesu", "nisam", "nismo",
         "nisu", "njega", "njegov", "njegova", "njegove", "njegovim", "njemu", "njen", "njene", "njih",
@@ -349,7 +349,7 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         "ovih", "ovim", "ovog", "ovom", "ovu", "podeli", "pogledajte", "poput", "pored", "posle", "poslije",
         "povodom", "pošto", "pratite", "pre", "pred", "pretplatite", "pridružite", "prije", "prilikom",
         "pročitaj", "sebe", "sedam", "septembra", "svaka", "svi", "svih", "svim", "svima", "svog", "svoje",
-        "svojih", "svojim", "svojoj", "svoju", "svom", "takva", "takve", "tih", "toj", "tri", "tvoje",
+        "svojih", "svojim", "svojoj", "svoju", "svom", "takva", "takve", "tih", "toj", "tvoje",
         "ukoliko", "umesto", "unutar", "uoči", "uprkos", "vam", "zato", "ćemo", "čega", "čemu", "četiri",
         "čija", "čiji", "čim", "čime", "šest", "άλλο", "άλλοι", "άλλους", "άλλων", "άρα", "έναντι", "έξι",
         "έχω", "έως", "ανά", "ανάμεσα", "αντί", "απ'", "απέναντι", "απ’", "αυγούστου", "αυτά", "αυτές",

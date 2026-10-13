@@ -86,7 +86,6 @@ stopwords:
   - koji
   - kojih
   - kojim
-  - kojima
   - kojoj
   - koju
   - koliko
@@ -178,7 +177,6 @@ stopwords:
   - takve
   - tih
   - toj
-  - tri
   - tvoje
   - ukoliko
   - umesto
