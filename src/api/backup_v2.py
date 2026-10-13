@@ -903,7 +903,9 @@ def reindex_backlog_status() -> dict:
     return reindex_backlog()
 
 
-def _accumulate(run: dict, st: dict, *, commit_batch: int | None, idle: bool) -> None:
+def _accumulate(
+    run: dict, st: dict, *, commit_batch: int | None, idle: bool, hold_target_s: float | None = None
+) -> None:
     """Fold ONE batch's ``reindex_articles`` stats into the run-level accumulator.
 
     FULL PRECISION IN, ROUNDING ONLY ON THE WAY OUT (:func:`_drain_metrics`) -- the
@@ -942,6 +944,17 @@ def _accumulate(run: dict, st: dict, *, commit_batch: int | None, idle: bool) ->
     if commit_batch:
         widths.add(int(commit_batch))
     run["commit_batch_seen"] = sorted(widths)
+    # HOW THE BATCHES ENDED (write-gate holds). `longest_batch_s` is a MAX, never a sum: it is the worst hold of the run, and a sum
+    # of holds says nothing about how long any one writer waited. Absent from a batch that reached no commit, so it is not
+    # averaged in as a zero.
+    for k in ("batch_commits", "early_batch_commits"):
+        run[k] = int(run.get(k, 0)) + int(st.get(k, 0) or 0)
+    if st.get("longest_batch_s") is not None:
+        run["longest_batch_s"] = max(float(run.get("longest_batch_s", 0.0)), float(st["longest_batch_s"]))
+    if hold_target_s is not None:
+        targets = set(run.get("hold_target_seen") or ())
+        targets.add(float(hold_target_s))
+        run["hold_target_seen"] = sorted(targets)
     # WHICH precompute path ran, summed across batches. "pool" versus "serial" is the
     # difference between every core and one, and a pool that quietly fell back is the
     # exact degradation the split exists to expose rather than average away.
@@ -982,6 +995,12 @@ def _drain_metrics(run: dict) -> dict | None:
     out["exclusive_articles"] = int(run.get("exclusive_articles", 0))
     out["shared_articles"] = int(run.get("shared_articles", 0))
     out["commit_batch_seen"] = list(run.get("commit_batch_seen") or [])
+    out["batch_commits"] = int(run.get("batch_commits", 0))
+    out["early_batch_commits"] = int(run.get("early_batch_commits", 0))
+    if run.get("longest_batch_s") is not None:
+        out["longest_batch_s"] = round(float(run["longest_batch_s"]), 3)
+    if run.get("hold_target_seen"):
+        out["hold_target_seen"] = list(run["hold_target_seen"])
     if run.get("precompute_by_path"):
         out["precompute_by_path"] = dict(run["precompute_by_path"])
     wall = float(run.get("wall_s") or 0.0)
@@ -1011,6 +1030,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         default_reindex_commit_batch,
         import_reindex_commit_batch,
         reindex_backlog,
+        reindex_flush_policy,
+        reindex_hold_target_s,
         reindex_imported_articles,
     )
     from src.database.corpus_lease import corpus_lease
@@ -1168,12 +1189,19 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # (if an earlier batch opened one) simply stays open until the final
             # reconcile -- a mixed run is still honest, just less deferred.
             defer = _open_deferral_once() if idle else False
+            # THE WRITER THAT ARRIVES (write-gate holds). The width above is the CEILING on a batch; a batch also commits once it
+            # has held the gate for the hold target or another writer is queued behind it, so a save from the UI never waits for
+            # 200 articles. Resolved here, per batch, beside the width, for the same reason: the operator may change the knob
+            # between batches, and the value used is PUBLISHED with the seconds it produced.
+            hold_target = reindex_hold_target_s()
+            flush_policy = reindex_flush_policy(hold_target)
             st: dict = {}
             with corpus_lease("reindex-resume"):
                 res = reindex_imported_articles(
                     bid,
                     commit_batch=commit_batch,
                     defer_counters=defer,
+                    should_flush=flush_policy,
                     stats=st,
                     # ONE epoch bump per RUN (below), not one per batch: the bump takes the
                     # single-writer gate and commits, and a backlog of many imports is ONE
@@ -1196,7 +1224,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             )
             out["articles_reindexed"] += int(res.get("reindexed") or 0)
             out["articles_failed"] += int(res.get("failed") or 0)
-            _accumulate(run, st, commit_batch=commit_batch, idle=idle)
+            _accumulate(run, st, commit_batch=commit_batch, idle=idle, hold_target_s=hold_target)
             ctx.set_metrics(_drain_metrics(run))
         clean_end = not out["stopped"]
     finally:

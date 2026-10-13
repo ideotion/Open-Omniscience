@@ -1000,6 +1000,7 @@ def reindex_articles(
     should_stop: Callable[[], bool] | None = None,
     bump_epoch: bool = True,
     defer_counters: bool = False,
+    should_flush: Callable[[int, float], bool] | None = None,
 ) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
@@ -1052,6 +1053,20 @@ def reindex_articles(
     "stopped early" from "finished" by comparing the returned total against the
     ids it asked for.
 
+    ``should_flush(staged, held_s)`` (2026-10-13, write-gate holds): asked after every article a batch
+    has staged, with the number of articles the open batch holds and the seconds since the batch took
+    the single-writer gate (taken before its first article is read, with the wait for it left out, so
+    that is how long THIS batch has held it). It is asked between articles: a hold is the target plus
+    the article in flight plus the commit.
+    ``True`` commits the batch NOW, however few articles it holds; the batch is never empty when it is
+    asked, so the floor is one article. It exists so the CALLER owns the policy -- a drain that runs
+    ``commit_batch=200`` because nothing is collecting still has to give the gate back to a writer that
+    arrives (a UI save, a settings write), and 200 articles are 36 s of gate at the 333 articles a minute
+    the field measured and 60 to 175 s on the machine that crashed. ``commit_batch`` stays the CEILING; this
+    can only make a commit earlier, never later. A callable that raises is dropped for the rest of the
+    call (a policy bug must not abort a re-index, and must not be asked again on every article) and the
+    batch width alone then decides. ``None`` (the default) is the count rule byte-for-byte.
+
     ``bump_epoch`` (default True = the original behaviour, byte-identical) lets a
     caller that LOOPS over this function take the corpus-epoch bump itself, ONCE per
     run, instead of paying it once per call. The bump takes the single-writer gate and
@@ -1079,6 +1094,12 @@ def reindex_articles(
     # that runs correctly. Keep these two beside ``reindexed``/``failed``, which are
     # accumulators of the same kind and already had to live up here for that reason.
     _apply_index_s = _apply_commit_s = 0.0
+    # How the BATCHED path ended its batches (write-gate holds): commits that landed, how many of them ``should_flush`` ended early, and
+    # the longest a batch held the gate -- from the moment it took the gate for its first article to the commit or rollback that ended
+    # it, a failed commit included. None until a batch has ended: the one-commit-per-article path (``commit_batch`` 1) commits inside
+    # ``index_article`` and measures nothing here, and a zero would read as an instant hold.
+    _batch_commits = _early_batch_commits = 0
+    _longest_batch_s: float | None = None
     # Mention rows the committed articles NOW HOLD (rows left alone included: it is the
     # keywords/h numerator the job reports, so the figure keeps meaning "keywords processed"
     # across the change to a diff write; ``mention_diff`` below says how many were rewritten).
@@ -1238,24 +1259,60 @@ def reindex_articles(
                 _report()
             return
 
+        from src.database.writer import hold_write_window
+
         pending: list[tuple[Article, ArticleDerivatives | None]] = []
         staged_mentions = 0  # this batch's mentions, banked only if the commit lands
         staged_diff = dict.fromkeys(mention_diff, 0)  # likewise, mutated in place
+        # When the batch in flight took the gate: stamped at the first article of every batch, after ``hold_write_window`` has
+        # returned, so another writer's hold that this batch queued behind is not counted as the drain's. Never carried over.
+        batch_opened = time.monotonic()
+        hold_open = False  # ``batch_opened`` is a real stamp: a batch has taken the gate and nothing has ended its hold yet
+        early_flush = False  # the open batch is being committed because ``should_flush`` said so, not because it is full
+
+        def _wants_flush() -> bool:
+            """The caller's early-commit policy, asked of a non-empty batch; never raises."""
+            nonlocal should_flush
+            if should_flush is None:
+                return False
+            try:
+                return bool(should_flush(len(pending), time.monotonic() - batch_opened))
+            except Exception as exc:  # noqa: BLE001 - a policy bug must not abort a re-index
+                # The TYPE only (the passphrase rule: a callable's own words are not ours to record), and dropped for the rest of
+                # the call, so a broken policy costs one line rather than one per article.
+                _LOG.warning("the early-commit policy raised %s; the batch width decides from here", type(exc).__name__)
+                should_flush = None
+                return False
+
+        def _note_hold() -> None:
+            """The batch's gate hold ended (a commit or a rollback): keep the longest one this call has seen."""
+            nonlocal _longest_batch_s, hold_open
+            if not hold_open:  # the window was never taken (it failed, or this is a second end for one hold)
+                return
+            hold_open = False
+            held = time.monotonic() - batch_opened
+            _longest_batch_s = held if _longest_batch_s is None else max(_longest_batch_s, held)
 
         def _flush() -> None:
-            nonlocal reindexed, _apply_commit_s, mentions_written, staged_mentions
+            nonlocal reindexed, _apply_commit_s, mentions_written, staged_mentions, _batch_commits, _early_batch_commits
             if not pending:
                 return
             try:
                 _t_c = time.monotonic()
                 session.commit()
                 _apply_commit_s += time.monotonic() - _t_c
+                _note_hold()
+                # Counted where the commit LANDED, like the mentions: a batch that rolled back and was redone one article at a time
+                # is not a commit of this width, and its redo holds the gate per article.
+                _batch_commits += 1
+                _early_batch_commits += 1 if early_flush else 0
                 reindexed += len(pending)
                 mentions_written += staged_mentions
                 for _k, _v in staged_diff.items():
                     mention_diff[_k] += _v
             except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
                 session.rollback()
+                _note_hold()  # a commit that raises ends the hold too, and it is the long holds that fail
                 # The rollback un-wrote every staged mention; _redo_committed counts
                 # what it re-writes, so banking them here too would double-count.
                 _redo_committed(list(pending))
@@ -1269,6 +1326,13 @@ def reindex_articles(
             terms, sentiment, www = _derived_args(deriv)
             _t_i = time.monotonic()
             try:
+                if not pending:
+                    # This article opens a batch: take the gate now (index_article would, a moment later, and finds it taken) so the
+                    # clock starts when it is HELD, not when it was asked for. Inside the try because a store that fails here
+                    # fails the article, like any other read.
+                    hold_write_window(session)
+                    batch_opened = time.monotonic()
+                    hold_open = True
                 _res = index_article(
                     session,
                     art,
@@ -1295,6 +1359,7 @@ def reindex_articles(
                 # survivors one at a time, COMMITTED, exactly like reindex_all_batch's
                 # proven fallback, rather than silently losing them.
                 session.rollback()
+                _note_hold()
                 staged_mentions = 0  # rolled away with the batch
                 staged_diff.update(dict.fromkeys(staged_diff, 0))
                 redo = list(pending)
@@ -1306,6 +1371,10 @@ def reindex_articles(
                 continue
             if len(pending) >= commit_batch:
                 _flush()
+            elif _wants_flush():
+                early_flush = True
+                _flush()
+                early_flush = False
         _flush()
 
     _pre_stats: dict = {}
@@ -1442,6 +1511,13 @@ def reindex_articles(
             # point -- a residual nobody can name is exactly what an aggregate hides.
             "apply_index_s": round(_apply_index_s, 3),
             "apply_commit_s": round(_apply_commit_s, 3),
+            # How the batches ended (write-gate holds): commits that landed, how many ``should_flush`` ended early, and the longest a
+            # batch held the gate (taken to commit or rollback), None when no batch ran: width 1 measures nothing here, and a zero would
+            # read as an instant hold. ``commit_batch`` alone cannot say it, because the same width is seconds on one machine and minutes
+            # on another.
+            "batch_commits": _batch_commits,
+            "early_batch_commits": _early_batch_commits,
+            "longest_batch_s": round(_longest_batch_s, 3) if _longest_batch_s is not None else None,
             "precompute": _pre_stats,
             # A rate ONLY when both sides of the division are real. A zero-article or
             # zero-elapsed run reports None -- never a fabricated or infinite rate.

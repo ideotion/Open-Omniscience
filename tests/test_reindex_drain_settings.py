@@ -261,7 +261,10 @@ def test_workers_are_left_alone(drain):
     # The knob set is pinned too, so a future knob has to be added HERE deliberately
     # rather than arriving unnoticed -- which is what the original `extra == {}` was
     # really guarding, before R22 gave this call site its first legitimate extra.
-    assert [set(c["extra"]) for c in rec["calls"]] == [{"defer_counters"}, {"defer_counters"}]
+    assert [set(c["extra"]) for c in rec["calls"]] == [
+        {"defer_counters", "should_flush"},
+        {"defer_counters", "should_flush"},
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -686,3 +689,86 @@ def test_the_persisted_rollup_is_still_off_so_a_lost_end_bump_is_still_bounded()
         "warning): a failed open is logged there with exc_info=True, and its "
         "ATTACH statement carries the derived key, so route that log through the scrubber first."
     )
+
+
+# --------------------------------------------------------------------------- #
+# 5. The writer that arrives (write-gate holds, 2026-10-13)                   #
+# --------------------------------------------------------------------------- #
+#
+# The drain's width is the CEILING on a batch; the policy it hands every batch lets the batch end early, at the hold
+# target or when a writer is queued. The policy is the same on the exclusive path and the shared one: an operator who
+# sets OO_REINDEX_COMMIT_BATCH=200 with the collector running has the most writers waiting of all.
+
+
+def test_every_batch_gets_the_early_commit_policy_shared_or_exclusive(drain, monkeypatch):
+    state, rec = drain
+    monkeypatch.delenv("OO_REINDEX_HOLD_TARGET_S", raising=False)
+    monkeypatch.setattr("src.database.writer.write_gate_waiters", lambda: 0)  # the real gate is the process's: a leaked waiter is not this test's
+    _goes_online_after_the_first_read(monkeypatch)
+
+    bv2._reindex_resume_worker(_Ctx())
+
+    assert [c["commit_batch"] for c in rec["calls"]] == [200, 1], "one exclusive batch, one shared"
+    policies = [c["extra"]["should_flush"] for c in rec["calls"]]
+    assert all(callable(p) for p in policies), "both batches are handed the policy, the width alone is not enough"
+    assert policies[0](3, 10.0) is True and policies[0](3, 9.0) is False, "the default target, ten seconds"
+
+
+def test_a_target_of_zero_hands_the_drain_no_policy(drain, monkeypatch):
+    state, rec = drain
+    monkeypatch.setenv("OO_REINDEX_HOLD_TARGET_S", "0")
+
+    ctx = _Ctx()
+    bv2._reindex_resume_worker(ctx)
+
+    assert [c["extra"]["should_flush"] for c in rec["calls"]] == [None, None], "0 is today's count-only rule"
+    assert ctx.metrics["hold_target_seen"] == [0.0], "and the rule that ran is published beside the seconds"
+
+
+def test_the_target_is_re_read_per_batch_and_published(drain, monkeypatch):
+    """The operator may change the knob while a drain that runs for days is between two batches."""
+    state, rec = drain
+    monkeypatch.setattr("src.database.writer.write_gate_waiters", lambda: 0)
+    targets = iter([25.0, 4.0])
+    monkeypatch.setattr("src.backup.merge.reindex_hold_target_s", lambda: next(targets))
+
+    ctx = _Ctx()
+    bv2._reindex_resume_worker(ctx)
+
+    first, second = (c["extra"]["should_flush"] for c in rec["calls"])
+    assert first(1, 24.9) is False and first(1, 25.0) is True
+    assert second(1, 3.9) is False and second(1, 4.0) is True
+    assert ctx.metrics["hold_target_seen"] == [4.0, 25.0]
+
+
+def test_how_the_batches_ended_is_published_and_the_longest_is_a_max_not_a_sum(drain):
+    state, rec = drain
+    state["stats"] = {**state["stats"], "batch_commits": 3, "early_batch_commits": 2, "longest_batch_s": 8.5}
+    ctx = _Ctx()
+
+    bv2._reindex_resume_worker(ctx)
+
+    assert ctx.metrics["batch_commits"] == 6 and ctx.metrics["early_batch_commits"] == 4
+    assert ctx.metrics["longest_batch_s"] == 8.5, "two batches of 8.5 s are 8.5 s of worst hold, not 17"
+
+
+def test_accumulate_keeps_the_worst_hold_and_skips_a_batch_that_measured_none():
+    run: dict = {}
+    bv2._accumulate(run, {"articles": 2, "longest_batch_s": 3.0, "batch_commits": 1}, commit_batch=200, idle=True)
+    bv2._accumulate(run, {"articles": 2, "longest_batch_s": 11.0, "batch_commits": 2}, commit_batch=200, idle=True)
+    # The width-1 path times no batch: ``reindex_articles`` says so with None (never 0.0, which would read as an instant hold).
+    bv2._accumulate(run, {"articles": 2, "batch_commits": 0, "longest_batch_s": None}, commit_batch=1, idle=False)
+    out = bv2._drain_metrics(run)
+    assert out["longest_batch_s"] == 11.0
+    assert out["batch_commits"] == 3
+    assert "hold_target_seen" not in out, "a caller that passed no target publishes none"
+
+
+def test_a_drain_of_width_one_batches_publishes_no_longest_hold_rather_than_an_instant_one():
+    """A max against 0.0 would hide the skip in the test above: this run has nothing to be the maximum OF."""
+    run: dict = {}
+    for _ in range(2):
+        bv2._accumulate(run, {"articles": 3, "batch_commits": 0, "longest_batch_s": None}, commit_batch=1, idle=False)
+    out = bv2._drain_metrics(run)
+    assert "longest_batch_s" not in out, "the collector was running: every article held the gate and no batch was timed"
+    assert out["batch_commits"] == 0
