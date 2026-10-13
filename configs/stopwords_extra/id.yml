@@ -81,3 +81,52 @@ stopwords:
   - untuk
   - yang
   - zbog
+  # batch id-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - agustus
+  - ahad
+  - besok
+  - delapan
+  - enam
+  - halo'
+  - juta
+  - ke-10
+  - ke-11
+  - ke-12
+  - ke-14
+  - ke-15
+  - ke-16
+  - ke-18
+  - ke-19
+  - ke-20
+  - ke-51
+  - ke-65
+  - ke-7
+  - ke-80
+  - ke-81
+  - ke-90
+  - lantaran
+  - maret
+  - miliar
+  - puluh
+  - ribu
+  - rp10
+  - rp100
+  - rp12
+  - rp15
+  - rp17
+  - rp18
+  - rp2
+  - rp22
+  - rp23
+  - rp231
+  - rp25
+  - rp3
+  - rp314
+  - rp5
+  - rp500
+  - rp56
+  - rp6
+  - rp62
+  - rp7
+  - sih
+  - tujuh

@@ -419,3 +419,19 @@ Nothing is filed in `_multilingual.yml`: every word is in the script of its lang
 
 **Kept on purpose after the independent read:** sr `koji` (a Japanese given name and a food term, but 725 articles in Serbian and no topical use found), `koga`, `neko`, `bude`, `osim`, `biće`, `nju`, `meni`;
 el `παρασκευή` (Friday; also "preparation" and a place and given name, kept for its use as the weekday) and `κυριακή`. `kad` is also Malay "kad" (card, as in "kad merah"), which the Malay group should read before it relies on this entry.
+
+## Stoplist batch 5: function words, number and calendar words in Indonesian, Malay and Tagalog (2026-10-13, R131, language group 4)
+
+150 words from the same triage and the same method as batches 2 to 4 (read batch 2 first): id 48, ms 64, tl 38, in two NEW files (`ms.yml`, `tl.yml`; the loader unions every file in the directory). By the triage's codes: 65
+function words (`sebelum`, `daripada`, `kerana`, `dahil`, `upang`, `habang`), 69 number words (the Indonesian ordinals `ke-18` and rupiah amounts `rp5`, the Malay ringgit amounts `rm39`, the Tagalog clock times `alas-9` and
+ordinals `ika-24`, and the number words themselves), 9 calendar words (`agustus`, `ogos`, `julai`, `setyembre`, `biyernes`), 2 attribution verbs (`berkata`, `ujarnya`) and 5 quoted-word debris with a trailing apostrophe
+(`halo'`, `comel'`, `guru'`, `seeding'`, `vibe'`).
+
+**Left out after reading each word's other languages:** id `isn` (the acronym) and the Arabic `اللَّهُمَّ` and `لَنَا` (a prayer widget's text, content in Arabic); tl `rin` (the Japanese given name), `naman` (the Indian given name), `kanya`
+(Hindi "Virgo"), `halos` (English "halos") and `mula` (Spanish "mule"). The tool itself refused every phrase and, in tl, `nito`, `saan` and `itong` (keywords in other languages) and the English words in the Tagalog log.
+
+**Left out on purpose, not decided: Vietnamese.** The triage coded 73 of its 82 candidates `fr` (fragments), but every Vietnamese syllable is a word and the keywords are made of them: `thủ` is inside "thủ tướng"
+(prime minister), `nẵng` inside "Đà Nẵng", `phương` is also a given name. A stopword drops every phrase that contains it, so hiding a syllable hides the names built on it, and nothing in the log can say which. The
+Vietnamese list waits for a reader of Vietnamese. The Japanese, Korean and Chinese lists (1,333 candidates, mostly `bp` chrome and `fr` fragments of a script with no spaces) are the next group's.
+
+Hiding is retroactive with no re-index; extraction also drops them from now on. The two Arabic-script words the triage accepted for id are not here, so nothing is filed in `_multilingual.yml` by this batch. Batch 4 flagged Serbian `kad` as also the Malay "kad" (card, as in "kad merah", red card): the Malay list here does not contain it, and the Serbian entry stays; whether the Malay card sense matters is for a reader of Malay to weigh when the next Malay batch is read.
