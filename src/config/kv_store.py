@@ -66,7 +66,8 @@ _epoch = 0
 #: Moves, for ONE key, at every settings write of that key (save or delete). A reader notes it BEFORE it reads the file and fills the
 #: cache only if it has not moved: a reader that read the file before a writer's commit could otherwise store its older value after the
 #: writer's own fill and serve it for the life of the process. Never cleared (a reset could meet a noted number again); one int per
-#: key ever written, and the keys are the dozen settings namespaces.
+#: key ever written. The keys are the settings namespaces, but some namespaces write one key per run (qualification_integrity writes one
+#: per repair run and never deletes it), so it grows by one small int each time.
 _wver: dict[tuple[str, str], int] = {}
 
 
@@ -448,31 +449,42 @@ def kv_set_json(key: str, obj: dict) -> None:
     from src.database.writer import write_lock
 
     with _write_slot() as epoch, write_lock():
-        conn = _open(path)
+        committed = False
         try:
-            _ensure_table(conn)
-            conn.execute(
-                f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; values are bound params
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
-                "updated_at = excluded.updated_at",
-                (key, value, now),
-            )
-            conn.commit()
+            conn = _open(path)
+            try:
+                _ensure_table(conn)
+                conn.execute(
+                    f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; values are bound params
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                    "updated_at = excluded.updated_at",
+                    (key, value, now),
+                )
+                conn.commit()
+                committed = True
+            finally:
+                conn.close()
         finally:
-            conn.close()
-        # Filled INSIDE the gate: two saves of one key leave the file in the order they held the gate, and their fills must follow
-        # that order (outside it, the earlier save could fill last and serve the older value). The leaf lock below is never held
-        # while anything waits for the gate, so taking it here adds no order.
-        with _lock:
-            _wver[(path, key)] = _wver.get((path, key), 0) + 1
-            if _epoch == epoch:
-                _cache[(path, key)] = value
-                _seen.add(path)
-            else:
-                # An invalidation landed since the write began (a restore's, or another key's: the epoch is global). The value is
-                # not cached, and an OLDER one must not stay: it would be served for the life of the process over what was just saved.
-                _cache.pop((path, key), None)
-            _failed.pop((path, key), None)
+            # Runs however the write ended, so a failure AFTER the commit landed (the close, an interrupt) cannot leave the older
+            # value cached over what the file now holds, nor let a reader that noted the version before the commit fill its older
+            # value: the version always moves, and the entry is filled only by a commit that is known to have landed.
+            #
+            # Filled INSIDE the gate: two saves of one key leave the file in the order they held the gate, and their fills must
+            # follow that order (outside it, the earlier save could fill last and serve the older value). With OO_WRITE_GATE=0 the
+            # gate does not serialise, and two saves of one key can still fill out of order: the gate is what this relies on. The
+            # leaf lock below is never held while anything waits for the gate, so taking it here adds no order.
+            with _lock:
+                _wver[(path, key)] = _wver.get((path, key), 0) + 1
+                if committed and _epoch == epoch:
+                    _cache[(path, key)] = value
+                    _seen.add(path)
+                else:
+                    # Not committed, or an invalidation landed since the write began (a restore's, or another key's: the epoch is
+                    # global). The value is not cached, and an OLDER one must not stay: it would be served for the life of the
+                    # process over what was just saved.
+                    _cache.pop((path, key), None)
+                if committed:
+                    _failed.pop((path, key), None)
 
 
 def kv_delete(key: str) -> None:
@@ -484,22 +496,24 @@ def kv_delete(key: str) -> None:
 
     with _write_slot(), write_lock():
         try:
-            conn = _open(path)
             try:
-                _ensure_table(conn)
-                conn.execute(
-                    f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
-                    (key,),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001 - delete is best-effort; the class only (a keyed open chains the driver's error)
-            _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
-        with _lock:  # inside the gate, like the save's fill
-            _wver[(path, key)] = _wver.get((path, key), 0) + 1
-            _cache.pop((path, key), None)
-            _failed.pop((path, key), None)
+                conn = _open(path)
+                try:
+                    _ensure_table(conn)
+                    conn.execute(
+                        f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                        (key,),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as exc:  # noqa: BLE001 - delete is best-effort; the class only (a keyed open chains the driver's error)
+                _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
+        finally:
+            with _lock:  # inside the gate, like the save's fill, and however the delete ended (a BaseException after the commit too)
+                _wver[(path, key)] = _wver.get((path, key), 0) + 1
+                _cache.pop((path, key), None)
+                _failed.pop((path, key), None)
 
 
 def kv_invalidate(key: str | None = None) -> None:

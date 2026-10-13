@@ -351,6 +351,98 @@ def test_the_cache_is_filled_inside_the_gate_so_two_saves_of_one_key_fill_in_the
         assert inside, f"{fn.__name__} fills the cache outside the gate: two saves of one key can fill in the wrong order"
 
 
+def _make_close_fail(monkeypatch):
+    """From now on a connection opened by the settings writer raises on ``close()`` AFTER closing: a save whose commit landed and whose
+    cleanup then failed."""
+    real_open = kv_store._open
+
+    class _CloseFails:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def close(self):
+            self._conn.close()
+            raise OSError("close failed after the commit")
+
+    monkeypatch.setattr(kv_store, "_open", lambda path, **k: _CloseFails(real_open(path, **k)))
+
+
+def test_two_saves_of_one_key_fill_the_cache_in_the_order_they_held_the_gate_even_when_the_first_is_slow_to_fill(store, monkeypatch):
+    """Deterministic: save A holds the gate first, save B queues for it. A is made slow AFTER it releases the gate, until B has saved;
+    with the fill outside the gate A would then fill last and the cache would serve A's older value over B's."""
+    from src.database import writer
+
+    real = writer.write_lock
+    a_in_gate, b_done = threading.Event(), threading.Event()
+
+    @contextlib.contextmanager
+    def lagging(timeout=None):
+        with real(timeout):
+            if threading.current_thread().name == "save-A":
+                a_in_gate.set()
+            yield
+        if threading.current_thread().name == "save-A":
+            assert b_done.wait(_PATIENCE_S)
+
+    monkeypatch.setattr(writer, "write_lock", lagging)
+    a = threading.Thread(target=lambda: kv_store.kv_set_json("settings.o", {"v": "A"}), name="save-A")
+
+    def save_b():
+        kv_store.kv_set_json("settings.o", {"v": "B"})
+        b_done.set()
+
+    b = threading.Thread(target=save_b, name="save-B")
+    a.start()
+    assert a_in_gate.wait(_PATIENCE_S)
+    b.start()
+    a.join(_PATIENCE_S)
+    b.join(_PATIENCE_S)
+    assert json.loads(_stored(store, "settings.o")) == {"v": "B"}
+    assert kv_store.kv_get_json("settings.o") == {"v": "B"}, "the cache serves the older save over the file"
+
+
+def test_a_save_whose_commit_landed_but_whose_close_failed_does_not_leave_the_older_value_cached(store, monkeypatch):
+    kv_store.kv_set_json("settings.k", {"v": 1})
+    assert kv_store.kv_get_json("settings.k") == {"v": 1}  # cached
+    real_open = kv_store._open
+    _make_close_fail(monkeypatch)
+    with pytest.raises(OSError, match="close failed"):
+        kv_store.kv_set_json("settings.k", {"v": 2})
+    monkeypatch.setattr(kv_store, "_open", real_open)
+    assert json.loads(_stored(store, "settings.k")) == {"v": 2}
+    assert kv_store.kv_get_json("settings.k") == {"v": 2}, "the older value stayed cached over what the commit wrote"
+
+
+def test_a_reader_that_read_before_a_commit_whose_save_then_failed_cannot_fill_its_older_value(store, monkeypatch):
+    kv_store.kv_set_json("settings.r", {"v": 1})
+    kv_store.kv_invalidate()
+    release = _reader_that_read_the_old_file_then_waits(monkeypatch, lambda: kv_store.kv_get_json_checked("settings.r"))
+    real_open = kv_store._open
+    _make_close_fail(monkeypatch)
+    with pytest.raises(OSError, match="close failed"):
+        kv_store.kv_set_json("settings.r", {"v": 2})
+    monkeypatch.setattr(kv_store, "_open", real_open)
+    release()
+    assert kv_store.kv_get_json("settings.r") == {"v": 2}
+
+
+def test_a_failed_read_that_a_save_of_the_same_key_overtook_is_not_held_against_the_file(store, monkeypatch):
+    kv_store.kv_set_json("settings.f", {"v": 1})
+    kv_store.kv_invalidate()
+
+    def failing(path, key, *, read_only):
+        kv_store.kv_set_json("settings.f", {"v": 2})
+        raise OSError("the read failed while the file moved on")
+
+    monkeypatch.setattr(kv_store, "_read_value", failing)
+    with pytest.raises(kv_store.KvReadError):
+        kv_store.kv_get_json_checked("settings.f")
+    assert (str(store), "settings.f") not in kv_store._failed
+
+
 def test_concurrent_saves_of_one_key_leave_the_cache_equal_to_the_file(store):
     errors: list[str] = []
 
