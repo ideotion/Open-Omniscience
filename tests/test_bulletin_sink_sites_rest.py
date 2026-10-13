@@ -35,6 +35,7 @@ from tests.test_bulletin_sink_sites import (  # noqa: F401  (``_held`` is an aut
     _class_only,
     _failure,
     _held,
+    _is_the_class,
     _logged,
     _period,
     _Poisoned,
@@ -181,7 +182,7 @@ def test_a_card_layer_failure_keeps_the_class_and_logs_it_scrubbed(monkeypatch, 
 
     monkeypatch.setattr("src.briefing.registry.run_all_bounded", _raise)
     out = cards_by_type(object(), _period())
-    _class_only(out["error"])
+    _is_the_class(out["error"])
     _scrubbed(_logged(caplog, "src.bulletin.cards", "the card layer failed"))
 
 
@@ -195,7 +196,7 @@ def test_the_edition_keeps_the_class_of_a_failed_opening_and_a_failed_licence_qu
     monkeypatch.setattr("src.bulletin.introduction.opening_block", _raise)
     monkeypatch.setattr("src.bulletin.stories.build_stories", lambda *_a, **_k: {"stories": []})
     out = edition_mod.build_edition(_Poisoned(), _period(), narrate=False)
-    _class_only(out["attribution_error"])
+    _is_the_class(out["attribution_error"])
     _no_secret(out)
     _scrubbed(_logged(caplog, "src.bulletin.edition", "could not compose the opening paragraph"))
     _scrubbed(_logged(caplog, "src.bulletin.edition", "could not compute the attribution lines"))
@@ -209,7 +210,7 @@ def test_the_edition_keeps_the_class_of_a_failed_clustering_and_logs_it_scrubbed
     monkeypatch.setattr("src.bulletin.introduction.opening_block", lambda _e: {})
     monkeypatch.setattr("src.bulletin.stories.build_stories", _raise)
     out = edition_mod.build_edition(object(), _period(), narrate=True)
-    _class_only(out["stories"]["error"])
+    _is_the_class(out["stories"]["error"])
     _no_secret(out)
     _scrubbed(_logged(caplog, "src.bulletin.edition", "story clustering failed"))
 
@@ -237,7 +238,7 @@ def test_the_evidence_plan_keeps_the_class_of_each_failure_and_logs_it_scrubbed(
     monkeypatch.setattr(evidence, "_period_article_ids", lambda *_a, **_k: [1, 2])
     monkeypatch.setattr("src.bulletin.privacy.export_privacy", _raise)
     out = evidence.evidence_plan(_Poisoned(), _period())
-    _class_only(out["privacy"]["error"])
+    _is_the_class(out["privacy"]["error"])
     _no_secret(out)
     assert out["estimated_bytes"] is None, "an estimate that cannot be made is unknown, never zero"
     _scrubbed(_logged(caplog, "src.bulletin.evidence", "evidence size estimate failed"))
@@ -282,7 +283,7 @@ def test_a_hardware_probe_that_raises_degrades_with_the_class_and_logs_the_words
     monkeypatch.setattr("src.llm.backend.inference_capability", _raise)
     out = bulletin_available()
     assert out["available"] is False and out["narration_available"] is False
-    _class_only(out["reason"])
+    assert out["reason"] == f"the hardware capability probe failed ({CLASS})"
     assert out["narration_reason"] == out["reason"]
     _no_secret(out)
     _scrubbed(_logged(caplog, "src.bulletin.gate", "hardware capability probe failed"))

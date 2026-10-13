@@ -314,7 +314,12 @@ def disclosures(session, period: Period) -> dict:
     try:
         from src.backup.merge import reindex_backlog
 
-        out["reindex_backlog"] = reindex_backlog()
+        backlog = reindex_backlog()
+        if isinstance(backlog, dict) and backlog.get("available") is False:
+            # ``reindex_backlog`` catches its own failure and puts the engine's (scrubbed) words in ``reason``, and logs them;
+            # this record keeps none of them
+            backlog = {**backlog, "reason": "the backlog could not be read"}
+        out["reindex_backlog"] = backlog
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "bulletin: re-index backlog unreadable", exc, level=logging.WARNING)
         out["reindex_backlog"] = {"available": False, "reason": f"the backlog could not be read ({type(exc).__name__})"}

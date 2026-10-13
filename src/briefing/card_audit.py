@@ -28,8 +28,8 @@ neither diagnostic has any row for a producer that emitted nothing. That is this
 project's own recorded lesson — "AN AGGREGATION THAT OMITS ZERO-EVIDENCE ENTRIES
 MAKES 'ABSENT' READ AS 'PASSED'" — sitting live in the card path. The
 ``producer_inventory`` block below closes it: EVERY registered producer gets a row,
-with an outcome of ``ok`` / ``no-signal`` / ``error`` (and the exception type +
-message when it errored), so silence is never mistaken for health.
+with an outcome of ``ok`` / ``no-signal`` / ``error`` (and the exception type when it
+errored; its words are in the scrubbed log), so silence is never mistaken for health.
 
 THE SIX VALIDATION DIMENSIONS
 -----------------------------
@@ -547,6 +547,8 @@ def observe_producers(session) -> list[ProducerOutcome]:
             with _wal_guard(session):
                 produced = producer(session) or []
         except Exception as exc:  # noqa: BLE001 - the point: capture, never abort
+            # ``name`` is a registered producer's name (the registry's literal tables), the code's own words
+            log_failure(_LOG, f"card_audit: producer {name!r} failed", exc, level=logging.WARNING)
             out.append(
                 ProducerOutcome(
                     name=name,
@@ -1561,7 +1563,7 @@ def card_audit_report(
                 "warning and contributes [] — exactly what a producer with no signal "
                 "contributes, so a producer crashing on every run is indistinguishable from a "
                 "quiet one in every other card diagnostic. Here 'error' carries the exception "
-                "type and message; 'no-signal' means it ran cleanly and had nothing to say; "
+                "type (its words are in the scrubbed log, not in this report); 'no-signal' means it ran cleanly and had nothing to say; "
                 "'skipped-budget' means the statement budget was spent before it ran, so it "
                 "says nothing about the producer."
             ),
@@ -1949,6 +1951,17 @@ def last_card_audit_report() -> dict:
         payload = json.loads(newest.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - a corrupt saved file must degrade, not raise
         return {"available": False, "reason": f"unreadable report {newest.name} ({type(exc).__name__})"}
+    inventory = {
+        k: v for k, v in (payload.get("producer_inventory") or {}).items()
+        if k in ("total", "outcome_tallies", "errored", "silent", "note")
+    }
+    if isinstance(inventory.get("errored"), list):
+        # A report saved by an older build carries the failure's own words in ``error_message`` (they can quote the
+        # database's statement, passphrase included); a report is read back whatever wrote it, so no row passes them on.
+        inventory["errored"] = [
+            {**row, "error_message": _WORDS_NOT_KEPT} if isinstance(row, dict) and row.get("error_message") else row
+            for row in inventory["errored"]
+        ]
     return {
         "available": True,
         "filename": newest.name,
@@ -1957,10 +1970,7 @@ def last_card_audit_report() -> dict:
         "generated_at": payload.get("generated_at"),
         "depth": payload.get("depth"),
         "parameters": payload.get("parameters"),
-        "producer_inventory": {
-            k: v for k, v in (payload.get("producer_inventory") or {}).items()
-            if k in ("total", "outcome_tallies", "errored", "silent", "note")
-        },
+        "producer_inventory": inventory,
         "validation_summary": payload.get("validation_summary"),
         "content_notice": payload.get("content_notice"),
         "method": payload.get("method"),

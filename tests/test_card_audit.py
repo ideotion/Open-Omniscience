@@ -23,6 +23,7 @@ import pytest
 
 from src.briefing.card import Card
 from src.briefing.card_audit import (
+    _WORDS_NOT_KEPT,
     DEPTHS,
     SCHEMA,
     ProducerOutcome,
@@ -98,7 +99,7 @@ def test_producer_inventory_separates_error_from_no_signal(clean_registry):
     assert outcomes["boom"].error_type == "ValueError"
     # the class says what failed; the words ("this producer is broken") are in the scrubbed log line, not in the report
     assert "this producer is broken" not in (outcomes["boom"].error_message or "")
-    assert outcomes["boom"].error_message
+    assert outcomes["boom"].error_message == _WORDS_NOT_KEPT
     assert outcomes["boom"].cards_proposed == 0
 
     # The quiet producer is NOT reported as an error.

@@ -634,11 +634,21 @@ def _is_not_the_text_of_the_failure(use: ast.Name, parent: dict[ast.AST, ast.AST
     return isinstance(up, ast.Subscript) and up.value is attr and isinstance(parent.get(up), ast.Raise)
 
 
-def _leaks(source: str, *, handlers: bool = True, also_scrubbing: frozenset[str] | set[str] = frozenset()) -> list[str]:
+def _leaks(
+    source: str,
+    *,
+    handlers: bool = True,
+    also_scrubbing: frozenset[str] | set[str] = frozenset(),
+    only_scrubbing: frozenset[str] | set[str] | None = None,
+) -> list[str]:
     """The ways a module of the witnesses could print a failure raw: a log call asked for the traceback (``exc_info`` that is not
     the constant False/None, ``.exception()``, the ``traceback`` module however it is imported, ``exc_info()`` however it is
     imported, a ``**`` mapping a log call could carry ``exc_info`` in, a log method reached through ``getattr`` or kept in a name),
-    and a handler's bound exception used anywhere but as an argument of a scrubbing call or of ``type()``/``isinstance()``."""
+    and a handler's bound exception used anywhere but as an argument of a scrubbing call or of ``type()``/``isinstance()``.
+
+    ``only_scrubbing`` is the STRICT reading the bulletin sweep uses: the calls named there are the only ones that may be handed the
+    exception (``_SCRUBBING_CALLS`` and ``also_scrubbing`` are not consulted), and ``log_failure`` takes it as its THIRD argument, where
+    the exception goes, never as the first words (``log_failure(_LOG, exc, exc)`` writes the unscrubbed words into the line)."""
     tree = ast.parse(source)
     parent = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
     out: list[str] = []
@@ -681,7 +691,10 @@ def _leaks(source: str, *, handlers: bool = True, also_scrubbing: frozenset[str]
                     if not (isinstance(use, ast.Name) and use.id == node.name and isinstance(use.ctx, ast.Load)):
                         continue
                     call = parent.get(use)
-                    if isinstance(call, ast.Call) and _call_name(call) in _SCRUBBING_CALLS | also_scrubbing and use in call.args:
+                    allowed = (_SCRUBBING_CALLS | also_scrubbing) if only_scrubbing is None else only_scrubbing
+                    if isinstance(call, ast.Call) and _call_name(call) in allowed and use in call.args:
+                        if only_scrubbing is not None and _call_name(call) == "log_failure" and call.args.index(use) != 2:
+                            out.append(f"{use.lineno}: the caught exception {node.name!r} is handed to log_failure as its words, not as the failure")
                         continue
                     if _is_not_the_text_of_the_failure(use, parent):
                         continue
@@ -701,6 +714,7 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
 #: held passphrase). The bulletin directory is READ, not listed, so a module added to it is held to the rule from its first commit.
 _SWEEP_MODULES = (
     "src/briefing/card_audit.py",
+    "src/briefing/card_audit_diff.py",
     "src/api/bulletin.py",
     *sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src" / "bulletin").glob("*.py")),
 )
@@ -709,14 +723,42 @@ _SWEEP_MODULES = (
 def test_the_sweep_reads_the_whole_bulletin_directory():
     names = {rel for rel in _SWEEP_MODULES if rel.startswith("src/bulletin/")}
     assert {"src/bulletin/facts.py", "src/bulletin/sections.py", "src/bulletin/narration_job.py", "src/bulletin/gate.py"} <= names, names
-    assert {"src/api/bulletin.py", "src/briefing/card_audit.py"} <= set(_SWEEP_MODULES), "the routes and the card audit are read too"
+    assert {"src/api/bulletin.py", "src/briefing/card_audit.py", "src/briefing/card_audit_diff.py"} <= set(_SWEEP_MODULES), "the routes and the card audit are read too"
+
+
+#: STRICT: a record of these modules keeps the exception's CLASS (``type``) and a log line goes through ``log_failure``; nothing else
+#: may be handed a caught exception, except where the person who just asked is told the words (the scrub keeps the sentence and takes
+#: the held passphrase out of it): a route's refusal, the evidence plan's folder check, a translator's refused frame.
+_SWEEP_CALLS = {"type", "isinstance", "log_failure"}
+_SWEEP_WORDS_KEPT = {
+    "src/api/bulletin.py": {"exception_text", "_scope_mismatch_detail"},
+    "src/bulletin/evidence.py": {"exception_text"},
+    "src/bulletin/i18n.py": {"exception_text"},
+    "src/briefing/card_audit_diff.py": {"exception_text"},
+}
 
 
 @pytest.mark.parametrize("rel", _SWEEP_MODULES)
 def test_the_bulletin_its_routes_and_the_card_audit_log_no_traceback_and_keep_no_caught_exception_raw(rel):
-    extra = _EXTRA_SCRUBBING_CALLS.get(rel, set())
-    found = _leaks((ROOT / rel).read_text(encoding="utf-8"), also_scrubbing=extra)
+    allowed = _SWEEP_CALLS | _SWEEP_WORDS_KEPT.get(rel, set())
+    found = _leaks((ROOT / rel).read_text(encoding="utf-8"), only_scrubbing=allowed)
     assert found == [], f"{rel}: {found}"
+
+
+@pytest.mark.parametrize(
+    ("snippet", "flagged"),
+    [
+        ("def f():\n    try:\n        pass\n    except Exception as exc:\n        log_failure(_LOG, 'x', exc)\n", False),
+        ("def f():\n    try:\n        pass\n    except Exception as exc:\n        return {'error': type(exc).__name__}\n", False),
+        ("def f():\n    try:\n        pass\n    except Exception as exc:\n        log_failure(_LOG, exc, exc)\n", True),
+        ("def f():\n    try:\n        pass\n    except Exception as exc:\n        return {'error': exception_text(exc)}\n", True),
+        ("def f():\n    try:\n        pass\n    except Exception as exc:\n        return {'error': traceback_text(exc)}\n", True),
+        ("def f():\n    try:\n        pass\n    except Exception as exc:\n        return {'error': str(exc)[:12]}\n", True),
+    ],
+    ids=["log_failure", "class", "exc-as-words", "exception_text", "traceback_text", "cut-words"],
+)
+def test_the_strict_reading_flags_what_a_record_must_not_carry(snippet, flagged):
+    assert bool(_leaks(snippet, only_scrubbing=_SWEEP_CALLS)) is flagged
 
 
 #: The modules whose ``diagnostics_member`` a slot runs and that no other list above reads (the vitals and runs producers are in
