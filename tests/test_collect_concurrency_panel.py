@@ -131,7 +131,7 @@ def test_the_status_block_swallows_a_failure_and_names_it(monkeypatch):
     )
     block = runner._concurrency_block(SchedulerSettings(collect_parallelism=50))
     assert block["read"] is False
-    assert "psutil exploded" in block["reason"]
+    assert block["reason"] == "RuntimeError"  # the class only: the words go to the log, not the polled payload
 
 
 def test_the_block_rides_the_status_payload_the_window_already_polls():

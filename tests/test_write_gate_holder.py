@@ -134,7 +134,7 @@ def test_checkpoint_wal_records_an_honest_skip_when_the_gate_is_busy(monkeypatch
     assert out is not None, "a busy gate must not read as 'not due' (None)"
     assert out["skipped"] == "gate busy"
     assert out["waited_s"] == pytest.approx(0.1)
-    assert "field-writer" in out["detail"]
+    assert out["detail"] == "WriteGateBusy"  # the class only: the holder's name is words, kept out of the record
     assert elapsed < 3.0
     eng.dispose()
 
