@@ -7156,7 +7156,7 @@ def reindex_hold_target_s() -> float:
         except ValueError:
             return REINDEX_HOLD_TARGET_S
         if math.isfinite(value) and value >= 0:
-            return value
+            return value if value > 0 else 0.0  # "-0" parses to -0.0, which the drain would publish as the target in force
     return REINDEX_HOLD_TARGET_S
 
 
