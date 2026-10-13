@@ -199,6 +199,20 @@ def label_of_pool(pool: Any) -> str:
     return "corpus"
 
 
+def _scrubbed_thread(name: Any) -> Any:
+    """A thread's name as a diagnostics reader may show it: the passphrases the process holds taken out. A name is a code constant
+    or a catalogue/request key (``oo-osm-{code}``), so none is expected to carry one; the checkout hook (the hot path) keeps the
+    thread's own name and every reader that hands it out scrubs it here, cold. A name that cannot be checked is withheld. Never raises."""
+    if not isinstance(name, str):
+        return name
+    try:
+        from src.monitoring.secret_scrub import scrubbed
+
+        return scrubbed(name)
+    except Exception:  # noqa: BLE001 - a name that cannot be checked is not shown
+        return "(name withheld)"
+
+
 def _on_checkout(dbapi_connection, connection_record, _connection_proxy) -> None:
     # On the pool's hot path: an instrument must never be the reason a checkout fails.
     try:
@@ -295,7 +309,7 @@ def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
         if log_it:
             _LOG.warning(
                 "pool connection invalidated: held by %s (route %s), %s%s%s",
-                held_by["thread"],
+                _scrubbed_thread(held_by["thread"]),
                 held_by["endpoint"],
                 rec["exception"],
                 f" {rec['code']}" if rec["code"] else "",
@@ -330,7 +344,18 @@ def checked_out() -> list[dict[str, Any]]:
     was serving at checkout (``None`` for a thread the app started itself), and ``ident``
     lets a caller ask for that thread's stack on demand (:func:`stacks_for`) without this
     module storing one (``stack_at_checkout`` appears only under ``OO_POOL_WATCH_STACKS=1``).
+    ``thread`` is the thread's name with the passphrases the process holds taken out (scrubbed here, after the lock, because every
+    caller of this reader writes the name into a record, a log or the bundle).
     """
+    rows = _live_rows()
+    for row in rows:
+        row["thread"] = _scrubbed_thread(row["thread"])
+    return rows
+
+
+def _live_rows() -> list[dict[str, Any]]:
+    """:func:`checked_out`'s rows with the thread names as the threads were called: for the callers that count or age rows and
+    publish no name."""
     global _PRUNED
     now = time.monotonic()
     with _LOCK:
@@ -379,15 +404,27 @@ def standing_holders(min_age_s: float = STANDING_AGE_S) -> int | None:
         return None
     return sum(
         1
-        for r in checked_out()
+        for r in _live_rows()
         if not r["collector"] and r["pool"] == "corpus" and r["age_s"] >= min_age_s
     )
 
 
 def invalidations() -> dict[str, Any]:
-    """The last pool invalidations (newest last) and the total since start."""
+    """The last pool invalidations (newest last) and the total since start. The thread names (``by_thread``, ``held_by.thread``) have
+    the passphrases the process holds taken out, as :func:`checked_out`'s do."""
     with _LOCK:
-        return {"total": _INVALIDATED, "recent": list(_INVALIDATIONS)}
+        total, recent = _INVALIDATED, list(_INVALIDATIONS)
+    return {
+        "total": total,
+        "recent": [
+            {
+                **rec,
+                "by_thread": _scrubbed_thread(rec.get("by_thread")),
+                "held_by": {**rec.get("held_by", {}), "thread": _scrubbed_thread((rec.get("held_by") or {}).get("thread"))},
+            }
+            for rec in recent
+        ],
+    }
 
 
 def pruned_total() -> int:

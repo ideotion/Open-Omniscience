@@ -152,6 +152,8 @@ _LAST_WRITE_OK_AT: str | None = None
 _INTERNAL_FAILURES = 0
 _LAST_INTERNAL_FAILURE: str | None = None
 _WRITER_DEATHS = 0
+_READ_FAILURES = 0  # reads that left the file unread because of an I/O error that outlasted the looks: nothing is written over it
+_LAST_READ_FAILURE: str | None = None
 
 
 def _now() -> str:
@@ -246,33 +248,39 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
     return earlier, since if isinstance(since, str) else None
 
 
-def _read_file() -> tuple[dict[str, dict[str, Any]], str | None, str]:
-    """Read the file once: ``(kinds, since, how it read)``. No lock is held (it is disk), and every entry an earlier process left open
-    is closed as "not recorded". Never raises: an unreadable file reads as empty and says why (the class of the failure, never its
-    text). An I/O error is looked at again :data:`READ_ATTEMPTS` times before the file is called unreadable."""
+def _read_file() -> tuple[dict[str, dict[str, Any]], str | None, str, bool]:
+    """Read the file once: ``(kinds, since, how it read, retry later)``. No lock is held (it is disk), and every entry an earlier
+    process left open is closed as "not recorded". Never raises, and says why a file read as empty (the class of the failure, never its
+    text). An I/O error is looked at again :data:`READ_ATTEMPTS` times; if it outlasts them, or the data directory cannot even be
+    named, the file is NOT known to be empty or damaged, only unread: ``retry later`` is True and the caller must not write over it.
+    A file that is missing, damaged, too large or not this journal reads as empty and is replaced by the next write."""
     last = "missing"
     for attempt in range(READ_ATTEMPTS):
         try:
             path = _path()
+        except Exception as exc:  # noqa: BLE001 - a data volume that is not there: no file was read and none can be written
+            return {}, None, f"unreadable ({_label(exc)})", True
+        try:
             size = path.stat().st_size
             if size > MAX_FILE_BYTES:
-                return {}, None, f"unreadable (larger than {MAX_FILE_BYTES} bytes)"
+                return {}, None, f"unreadable (larger than {MAX_FILE_BYTES} bytes)", False
             data = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return {}, None, "missing"
+            return {}, None, "missing", False
         except OSError as exc:
             last = f"unreadable ({_label(exc)})"
             if attempt + 1 < READ_ATTEMPTS:
                 time.sleep(READ_RETRY_S)
             continue
-        except Exception as exc:  # noqa: BLE001 - bad JSON or UTF-8 (ValueError), nesting too deep (RecursionError), a missing data volume
-            return {}, None, f"unreadable ({_label(exc)})"
+        except Exception as exc:  # noqa: BLE001 - bad JSON or UTF-8 (ValueError), nesting too deep (RecursionError): damaged
+            return {}, None, f"unreadable ({_label(exc)})", False
         try:
             earlier, since = _parse_kinds(data)
         except Exception as exc:  # noqa: BLE001 - a file of ours in a shape ours never wrote (skew or damage): not read back, never fatal
-            return {}, None, "unreadable (not this journal)" if isinstance(exc, ValueError) else f"unreadable ({_label(exc)})"
-        return earlier, since, "ok"
-    return {}, None, last
+            how = "unreadable (not this journal)" if isinstance(exc, ValueError) else f"unreadable ({_label(exc)})"
+            return {}, None, how, False
+        return earlier, since, "ok", False
+    return {}, None, last, True
 
 
 def _ensure_loaded(generation: int | None = None) -> None:
@@ -280,8 +288,10 @@ def _ensure_loaded(generation: int | None = None) -> None:
     never replaces the history with this process's events alone; the member before it answers). A recording never calls this: it does
     no disk I/O, so the measured site, which can hold the gate's lock or the guard's, cannot wait on a disk through it.
     ``generation`` is the one the caller saw: a reset since then makes the call a no-op (a stale writer neither reads the file of
-    the state that replaced its own nor applies what it read)."""
-    global _LOADED, _EARLIER, _SINCE_FILE, _READ_STATE
+    the state that replaced its own nor applies what it read). A file that could not be READ (an I/O error that outlasted the looks)
+    leaves the journal not loaded: the failure is counted and shown, the history is not assumed empty, and the next caller reads it
+    again, so no write replaces a history that is only unreadable for now."""
+    global _LOADED, _EARLIER, _SINCE_FILE, _READ_STATE, _READ_FAILURES, _LAST_READ_FAILURE
     if _LOADED:
         return
     with _LOAD_LOCK:
@@ -290,11 +300,16 @@ def _ensure_loaded(generation: int | None = None) -> None:
         seen = _GENERATION if generation is None else generation
         if seen != _GENERATION:
             return
-        earlier, since, how = _read_file()  # disk, no journal lock held
+        earlier, since, how, retry_later = _read_file()  # disk, no journal lock held
         with _LOCK:
             if seen != _GENERATION:
                 return  # reset while the file was being read: the next caller reads it again
-            _EARLIER, _SINCE_FILE, _READ_STATE, _LOADED = earlier, since, how, True
+            _READ_STATE = how
+            if retry_later:
+                _READ_FAILURES += 1
+                _LAST_READ_FAILURE = how
+                return
+            _EARLIER, _SINCE_FILE, _LOADED = earlier, since, True
 
 
 def _combined_locked() -> tuple[dict[str, dict[str, Any]], str | None]:
@@ -364,15 +379,20 @@ def _flusher_loop() -> None:
             if generation != _GENERATION:
                 continue
             _ensure_loaded(generation)  # the file's history first, so the write below extends it and never replaces it
+            snap = None
             with _LOCK:
-                if generation != _GENERATION or not _LOADED or not _DIRTY:
-                    continue  # reset, or written by a flush(), while this waited: nothing is left to write
-                snap = _snapshot_locked()  # a copy: the lock is dropped before any disk is touched
-                _clear_dirty_locked()
-            if _write(*snap):
+                if generation != _GENERATION:
+                    continue  # reset while this waited: what was waiting to be written is gone
+                if _LOADED:
+                    if not _DIRTY:
+                        continue  # written by a flush() while this waited: nothing is left to write
+                    snap = _snapshot_locked()  # a copy: the lock is dropped before any disk is touched
+                    _clear_dirty_locked()
+            # Either the file could not be read (counted in _ensure_loaded: the history is not known, so nothing is written over
+            # it) or the write failed (counted in _write): the change is still not in the file, so it is wanted again, later.
+            if snap is not None and _write(*snap):
                 failures = 0
                 continue
-            # The write failed (counted in _write): the change is still not in the file, so it is wanted again, later.
             failures += 1
             with _LOCK:
                 if generation == _GENERATION:
@@ -717,7 +737,9 @@ _CAVEAT = (
     "A process kill loses the last second of events when writes succeed (a failed write is tried again, doubling to a minute), and a "
     "power loss can lose more or leave an unreadable file (no fsync). An event is a count, a duration or a name; a hold is attributed to the thread that held "
     "the gate, not to the code that was running (the frames are the watchdog's sample and are absent for a hold it never saw "
-    "while it lasted). The file is read once at the first use after a start: events of earlier processes are marked 'earlier'."
+    "while it lasted). The file is read once at the first use after a start: events of earlier processes are marked 'earlier'. A file "
+    "that cannot be READ (an I/O error that outlasts three looks) is not written over: 'history_loaded' is false, 'read_failures' counts "
+    "the tries, and the events shown are this process's only."
 )
 
 
@@ -748,6 +770,9 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                 }
             file_state = {
                 "read_at_first_use": _READ_STATE,
+                "history_loaded": _LOADED,
+                "read_failures": _READ_FAILURES,
+                "last_read_failure": _LAST_READ_FAILURE,
                 "last_write_ok_at": _LAST_WRITE_OK_AT,
                 "write_failures": _WRITE_FAILURES,
                 "last_write_failure": _LAST_WRITE_FAILURE,
@@ -783,6 +808,7 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
     simulates a restart: memory gone, file kept)."""
     global _LOADED, _STATE, _EARLIER, _SINCE, _SINCE_FILE, _READ_STATE, _OPEN, _VERSION, _WRITTEN_VERSION, _GENERATION, _DIRTY
     global _WRITE_FAILURES, _LAST_WRITE_FAILURE, _LAST_WRITE_OK_AT, _INTERNAL_FAILURES, _LAST_INTERNAL_FAILURE, _WRITER_DEATHS
+    global _READ_FAILURES, _LAST_READ_FAILURE
     with _LOCK:
         _LOADED = False
         _STATE = {}
@@ -798,6 +824,8 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
         _INTERNAL_FAILURES = 0
         _LAST_INTERNAL_FAILURE = None
         _WRITER_DEATHS = 0
+        _READ_FAILURES = 0
+        _LAST_READ_FAILURE = None
         _COND.notify_all()  # a writer waiting out its delay for what was just forgotten goes back to waiting for a change
     with _WRITE_LOCK:
         _WRITTEN_VERSION = 0

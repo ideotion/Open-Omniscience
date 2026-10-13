@@ -90,6 +90,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
+from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 
@@ -377,12 +378,27 @@ class WriterGate:
             return self._watched.pop(ident, None)
 
     def stats(self) -> dict:
-        """A point-in-time copy of the gate's counters (honest, no estimates)."""
+        """A point-in-time copy of the gate's counters (honest, no estimates).
+
+        The thread names in it (``holder``, ``max_hold_holder``, ``by_holder[].holder``) are copied raw under the gate's lock and
+        scrubbed of the passphrases the process holds AFTER it is released: ``served_cache.change_probe`` reads these stats two or
+        three times per cached read, and the scrub (a few microseconds a name) is not work to do while a writer waits on the lock."""
         with self._cond:
             held_for = (
                 None if self._held_since is None else round(time.monotonic() - self._held_since, 4)
             )
-            return {
+            holder, max_hold_holder = self._holder, self._max_hold_holder
+            # Who used the window, most seconds first: holds finished, seconds held and the longest hold, by thread name.
+            # Cumulative like ``total_held_s``; a name past the table's bound is summed under "(others)". Seconds OTHERS waited
+            # are not attributed to a holder: under FIFO handoff a wait spans several holders, and ``total_wait_s`` stays the
+            # one honest figure for it. ROWS, not a dict keyed by name: a thread name is the one string here a caller chooses
+            # (``oo-osm-{code}``), and a dict KEY is not scrubbed by the bundle's net, where a row's VALUE is, so the name is
+            # scrubbed here, at the source, before it is anywhere.
+            by_holder = [
+                (name, int(r[0]), round(r[1], 3), round(r[2], 3))
+                for name, r in sorted(self._by_holder.items(), key=lambda kv: kv[1][1], reverse=True)
+            ]
+            out: dict[str, Any] = {
                 "held": self._owner is not None,
                 "waiters": self._waiters,
                 "peak_waiters": self._peak_waiters,
@@ -397,28 +413,21 @@ class WriterGate:
                 # S2.6: the name, not just the number. ``holder``/``held_for_s``
                 # are None when the gate is free -- absent state, never a 0 that
                 # would read as "held for no time".
-                "holder": _scrubbed_name(self._holder),
+                "holder": None,
                 "held_for_s": held_for,
                 "max_hold_s": round(self._max_hold_s, 4),
-                "max_hold_holder": _scrubbed_name(self._max_hold_holder),
+                "max_hold_holder": None,
                 "queued": len(self._queue),
                 "timeouts": self._timeouts,
-                # Who used the window, most seconds first: holds finished, seconds held and the longest hold, by thread name.
-                # Cumulative like ``total_held_s``; a name past the table's bound is summed under "(others)". Seconds OTHERS waited
-                # are not attributed to a holder: under FIFO handoff a wait spans several holders, and ``total_wait_s`` stays the
-                # one honest figure for it. ROWS, not a dict keyed by name: a thread name is the one string here a caller chooses
-                # (``oo-osm-{code}``), and a dict KEY is not scrubbed by the bundle's net, where a row's VALUE is, so the name is
-                # scrubbed here, at the source, before it is anywhere.
-                "by_holder": [
-                    {
-                        "holder": _scrubbed_name(name),
-                        "holds": int(r[0]),
-                        "held_s": round(r[1], 3),
-                        "longest_s": round(r[2], 3),
-                    }
-                    for name, r in sorted(self._by_holder.items(), key=lambda kv: kv[1][1], reverse=True)
-                ],
+                "by_holder": [],
             }
+        out["holder"] = _scrubbed_name(holder)
+        out["max_hold_holder"] = _scrubbed_name(max_hold_holder)
+        out["by_holder"] = [
+            {"holder": _scrubbed_name(name), "holds": holds, "held_s": held_s, "longest_s": longest_s}
+            for name, holds, held_s, longest_s in by_holder
+        ]
+        return out
 
     def _holder_snapshot(self) -> tuple[str | None, float | None, int | None]:
         """(name, held_SINCE, thread ident) under the lock -- for the watchdog.

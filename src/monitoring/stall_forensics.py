@@ -170,7 +170,7 @@ def _pool_evidence() -> dict[str, Any]:
 
         if not pool_watch.is_registered():
             return {"available": True, "attached": False}
-        rows = pool_watch.checked_out()
+        rows = pool_watch.checked_out()  # the thread names arrive scrubbed of the passphrases the process holds
         out: dict[str, Any] = {
             "available": True,
             "attached": True,

@@ -413,7 +413,7 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 38,317 bytes with ordinary names and 83,027 with every name at the cut,
+    every kind, with the events the hooks write. Measured 38,578 bytes with ordinary names and 83,288 with every name at the cut (a byte or two either way: every event carries the process id),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 90,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
     from src.api import diagnostics_slots as slots
 
@@ -1247,6 +1247,109 @@ def test_a_thread_named_with_the_passphrase_is_scrubbed_in_the_gate_stats_the_re
     assert MARKER.encode() not in bundle._member_bytes(bundle._contention_member())
 
 
+def test_the_gate_stats_scrub_the_names_after_the_lock_is_released(monkeypatch):
+    """``served_cache.change_probe`` reads the stats two or three times per cached read: the scrub is not work to do under the lock
+    the writers queue on. The probe asks, from ANOTHER thread, whether the gate's condition is free at the moment each name is scrubbed."""
+    from src.database import writer
+
+    gate = writer.WriterGate()
+    free_at_scrub: list[bool] = []
+
+    def probe(name):
+        answer: list[bool] = []
+
+        def ask():
+            got = gate._cond.acquire(blocking=False)
+            if got:
+                gate._cond.release()
+            answer.append(got)
+
+        t = threading.Thread(target=ask, daemon=True)
+        t.start()
+        t.join(5)
+        free_at_scrub.append(answer == [True])
+        return name
+
+    monkeypatch.setattr(writer, "_scrubbed_name", probe)
+    with _Holder(gate, "a-holder"):
+        gate.stats()
+    after = gate.stats()
+    assert after["by_holder"][0]["holder"] == "a-holder" and after["max_hold_holder"] == "a-holder"
+    assert len(free_at_scrub) >= 5 and all(free_at_scrub), "every name was scrubbed with the gate's lock free"
+
+
+def _marker_named_pool_holder(eng, name: str):
+    """A thread called ``name`` that invalidates one pooled connection (the pool watch records who held it) and then holds another
+    until told to let go. Returns ``(thread, let_go)``."""
+    taken, let_go = threading.Event(), threading.Event()
+
+    def run():
+        first = eng.raw_connection()
+        first.invalidate()
+        first.close()
+        held = eng.raw_connection()
+        taken.set()
+        let_go.wait(10)
+        held.close()
+
+    t = threading.Thread(target=run, name=name, daemon=True)
+    t.start()
+    assert taken.wait(5)
+    return t, let_go
+
+
+def test_a_thread_holding_a_pooled_connection_and_named_with_the_passphrase_is_scrubbed_in_every_pool_reader(
+    journal, held_passphrase, caplog
+):
+    """The coordinator's check of 05cc79399: ``contention.json`` carried raw holder thread names from the pool watch
+    (``pool[].thread``, ``invalidations.recent[].held_by.thread`` / ``by_thread``, the stall record's ``holders[].thread``), the same
+    class as B1 through a thread that holds a CONNECTION rather than the gate. The name is scrubbed where the pool watch hands it out,
+    in the line it logs, and again by the member's net."""
+    import logging
+
+    from src.api.diagnostics import bundle, write_gate_report
+    from src.database import pool_watch
+    from src.monitoring import stall_forensics as sf
+
+    sf._reset_for_tests()
+    name = f"oo-osm-{MARKER}"
+    eng = _pool_engine(timeout=2.0)
+    pool_watch.register(eng, label="events-test")
+    caplog.set_level(logging.DEBUG, logger="src.database.pool_watch")
+    t, let_go = _marker_named_pool_holder(eng, name)
+    try:
+        rows = pool_watch.checked_out()
+        assert len(rows) == 1 and rows[0]["thread"].startswith("oo-osm-") and MARKER not in rows[0]["thread"]
+        recent = pool_watch.invalidations()["recent"]
+        assert len(recent) == 1
+        assert recent[0]["held_by"]["thread"].startswith("oo-osm-") and recent[0]["by_thread"].startswith("oo-osm-")
+        assert MARKER not in json.dumps(pool_watch.invalidations(), default=str)
+        # The stall record files who held the pool at the moment, and the report serves it.
+        filed = sf.note_stall("GET /api/x", 200, 10_000_000.0)
+        assert filed is not None and filed["evidence"]["pool"]["holders"][0]["thread"].startswith("oo-osm-")
+        assert MARKER not in json.dumps(sf.report(limit=200), default=str)
+        assert MARKER not in json.dumps(write_gate_report(), default=str)
+        member = bundle._member_bytes(bundle._contention_member())
+        assert MARKER.encode() not in member and b"oo-osm-" in member, "the name is there, the passphrase is not"
+        assert MARKER not in caplog.text, "the line logged for the invalidation"
+    finally:
+        let_go.set()
+        t.join(5)
+        eng.dispose()
+        sf._reset_for_tests()
+
+
+def test_the_contention_member_scrubs_a_name_the_readers_did_not(held_passphrase, monkeypatch):
+    """The net under the member: a reader that hands out a raw name (a stall filed before the passphrase was set, a future field)
+    still cannot put the passphrase into ``contention.json``."""
+    from src.api.diagnostics import bundle
+
+    leaky = {"gate": {"by_holder": [{"holder": f"oo-osm-{MARKER}"}]}, "pool": [{"thread": f"oo-osm-{MARKER}"}]}
+    monkeypatch.setattr(bundle, "write_gate_report", lambda: leaky)
+    member = bundle._member_bytes(bundle._contention_member())
+    assert MARKER.encode() not in member and b"oo-osm-" in member
+
+
 def test_a_hold_that_ended_while_the_watchdog_was_still_sampling_it_leaves_one_closed_entry_and_nothing_open(journal, monkeypatch):
     """M1: the watchdog reads the holder, then spends time on the gate's stats, the route and the frames before it records; the holder's
     release can come in between. The late sample must not open a second entry, which would stay open for ever and read like a kill in
@@ -1350,9 +1453,10 @@ def test_a_persistent_write_failure_backs_off_instead_of_writing_every_delay(jou
     assert 2 <= calls["n"] <= 6, f"{calls['n']} attempts in a second"
 
 
-def test_a_data_directory_that_cannot_be_resolved_is_a_failed_write_not_a_dead_writer(journal, monkeypatch):
-    """L3: ``_path()`` is ``data_dir() / name`` and can raise (a missing data volume); it is inside the guarded block, so it is counted
-    as the write failure it is."""
+def test_a_data_directory_that_cannot_be_resolved_at_the_write_is_a_failed_write_not_a_dead_writer(journal, monkeypatch):
+    """L3: ``_path()`` is ``data_dir() / name`` and can raise (a missing data volume); at the write it is inside the guarded block, so
+    it is counted as the write failure it is."""
+    _member()  # the file is read (it is missing) while the volume is there
 
     def gone():
         raise RuntimeError(f"the data volume is not mounted {MARKER}")
@@ -1362,6 +1466,32 @@ def test_a_data_directory_that_cannot_be_resolved_is_a_failed_write_not_a_dead_w
     assert _wait_until(lambda: se._WRITE_FAILURES >= 1)
     assert se._INTERNAL_FAILURES == 0 and _member()["file"]["last_write_failure"] == "RuntimeError"
     assert MARKER not in json.dumps(_member())
+
+
+def test_a_data_directory_that_cannot_be_resolved_at_the_read_leaves_the_history_unread_and_is_tried_again(journal, monkeypatch):
+    """Low 2: no file was read, so none is assumed empty: nothing is written, the failure is counted by class, and the writer asks again."""
+    state = {"gone": True}
+
+    def maybe_gone():
+        if state["gone"]:
+            raise RuntimeError(f"the data volume is not mounted {MARKER}")
+        return journal
+
+    journal.write_text(
+        json.dumps({"schema": se.SCHEMA, "since": "2026-10-01T00:00:00+00:00", "kinds": {"guard": {"total": 6, "events": []}}}),
+        encoding="utf-8",
+    )
+    before = journal.read_bytes()
+    monkeypatch.setattr(se, "_path", maybe_gone)
+    se.record("guard", {"n": 1})
+    assert _wait_until(lambda: se._READ_FAILURES >= 2), "the writer asked again"
+    assert se._WRITE_FAILURES == 0 and se._INTERNAL_FAILURES == 0 and se._THREAD is not None and se._THREAD.is_alive()
+    f = _member()["file"]
+    assert f["history_loaded"] is False and f["last_read_failure"] == "unreadable (RuntimeError)" and f["read_failures"] >= 2
+    assert MARKER not in json.dumps(_member())
+    state["gone"] = False
+    assert _wait_until(lambda: _file_total(journal, "guard") == 7), "the history the file held is extended once the volume is back"
+    assert before != journal.read_bytes() and _member()["file"]["history_loaded"] is True
 
 
 def test_a_read_that_fails_with_an_io_error_is_looked_at_again_before_the_file_is_called_unreadable(journal, monkeypatch):
@@ -1401,6 +1531,66 @@ def test_a_read_that_keeps_failing_is_called_unreadable_by_class_after_three_loo
     monkeypatch.setattr(se, "READ_RETRY_S", 0.001)
     monkeypatch.setattr(se, "_path", lambda: Broken())
     assert _member()["file"]["read_at_first_use"] == "unreadable (PermissionError EACCES)" and Broken.looks == se.READ_ATTEMPTS
+
+
+def _unreadable_for_now(monkeypatch, journal):
+    """``journal`` reads with an I/O error (EIO) while the returned flag is set, and normally once it is cleared. Only this one file is
+    affected (``Path.read_text`` is the class's, so the patch is routed by path); ``stat`` and the writes are the real ones."""
+    import pathlib
+
+    flag = {"broken": True, "reads": 0}
+    real = pathlib.Path.read_text
+
+    def read_text(self, *a, **k):
+        if flag["broken"] and self == journal:
+            flag["reads"] += 1
+            raise OSError(errno.EIO, f"I/O error {MARKER}")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(se, "READ_RETRY_S", 0.001)
+    return flag
+
+
+def test_a_file_that_stays_unreadable_is_never_written_over_and_is_read_again_when_it_can_be(journal, monkeypatch):
+    """Low 2 (the coordinator's check of 05cc79399): three looks at a persistent I/O error used to leave the journal 'loaded' and empty,
+    so the next write replaced a history that was only unreadable for now. It stays unloaded, the writer retries with backoff, and
+    neither the writer nor ``flush()`` writes until the file has been read."""
+    journal.write_text(
+        json.dumps({"schema": se.SCHEMA, "since": "2026-10-01T00:00:00+00:00", "kinds": {"guard": {"total": 6, "events": []}}}),
+        encoding="utf-8",
+    )
+    before = journal.read_bytes()
+    flag = _unreadable_for_now(monkeypatch, journal)
+    se.record("guard", {"n": 1})
+    assert _wait_until(lambda: se._READ_FAILURES >= 3), "the writer asks again, with a longer wait each time"
+    se.flush()  # the clean stop: it must not overwrite either
+    assert journal.read_bytes() == before, "the file is exactly as it was"
+    assert se._WRITE_FAILURES == 0 and se._WRITTEN_VERSION == 0 and se._INTERNAL_FAILURES == 0
+    f = _member()["file"]
+    assert f["history_loaded"] is False and f["last_read_failure"] == "unreadable (OSError EIO)" and f["read_at_first_use"] == f["last_read_failure"]
+    assert MARKER not in json.dumps(_member()) and flag["reads"] >= 3 * se.READ_ATTEMPTS
+    flag["broken"] = False  # the disk recovers
+    assert _wait_until(lambda: _file_total(journal, "guard") == 7), "the next attempt reads the history and extends it"
+    m = _member()
+    assert m["file"]["history_loaded"] is True and m["file"]["read_at_first_use"] == "ok" and m["kinds"]["guard"]["total"] == 7
+    assert m["file"]["read_failures"] >= 3, "the failures stay counted"
+
+
+def test_a_file_that_is_damaged_is_known_to_be_damaged_and_the_next_write_replaces_it(journal):
+    """The other side of Low 2: damaged JSON, a file that is not this journal and an oversize one are READ (and found unusable), so the
+    journal starts empty and the next write replaces them. Only a file that could not be read at all is kept."""
+    for name, body in (
+        ("damaged", b"{not json"),
+        ("alien", json.dumps({"schema": "something-else", "kinds": {}}).encode()),
+        ("oversize", b" " * (se.MAX_FILE_BYTES + 1)),
+    ):
+        se.reset_for_tests(keep_file=True)
+        journal.write_bytes(body)
+        se.record("guard", {"n": 1})
+        se.flush()
+        assert _file_total(journal, "guard") == 1, f"the {name} file was replaced"
+        assert _member()["file"]["history_loaded"] is True and se._READ_FAILURES == 0
 
 
 def test_the_pools_own_error_is_the_one_raised_after_the_journal_has_its_record(journal):
@@ -1453,25 +1643,30 @@ def test_a_pool_timeout_counts_its_own_pools_checkouts_and_names_only_its_own_ho
 
 
 def test_a_backup_whose_truncate_raised_is_journaled_as_failed_not_done(journal, monkeypatch, tmp_path):
-    """L6: ``_wal_row`` swallows the exception and answers None; the journal said ``done``."""
+    """L6, through the real ``_drain_wal`` (the coordinator's check of 05cc79399: calling ``_journal_drain(failed=True)`` directly left
+    the test green with ``failed=row is None`` gone): ``_wal_row`` swallows the exception and answers None, and the journal used to
+    say ``done``. A TRUNCATE that ANSWERED, with frames still in the log, is a checkpoint that ran: ``done``."""
     from src.backup import stream_backup
 
     db = tmp_path / "x.db"
     db.write_bytes(b"x")
     rows = iter([(0, 5, 5)])  # PASSIVE answers; every TRUNCATE after it raises (swallowed into None)
-
-    def wal_row(mode):
-        return next(rows, None)
-
+    monkeypatch.setattr(stream_backup, "_wal_row", lambda mode: next(rows, None))
     monkeypatch.setattr(stream_backup, "_wal_complete", lambda _db, row: False)
     monkeypatch.setattr(stream_backup, "_CHECKPOINT_WAIT_S", 5.0)
     monkeypatch.setattr(stream_backup.time, "sleep", lambda _s: None)
-    stream_backup._journal_drain((0, 5, 5), None, 1, time.monotonic() - 0.1, failed=True)
+    assert stream_backup._drain_wal(db) == tmp_path / "x.db-wal", "the main file alone is not a complete image"
     (e,) = _events("checkpoint")
-    assert e["outcome"] == "failed" and e["error"] == "the TRUNCATE gave no row"
+    assert e["trigger"] == "backup" and e["outcome"] == "failed" and e["error"] == "the TRUNCATE gave no row"
+    assert e["passive"] == [0, 5, 5] and e["truncate_tries"] == 1
     assert _member()["kinds"]["checkpoint_notable"]["total"] == 1, "a failed checkpoint is kept among the notable ones"
-    stream_backup._journal_drain((0, 5, 5), (0, 5, 5), 1, time.monotonic() - 0.1)
-    assert _events("checkpoint")[-1]["outcome"] == "done"
+    # The other end: the TRUNCATE answered (a reader still pins frames) and the wait is over: it ran, so it is not 'failed'.
+    rows = iter([(0, 5, 5), (1, 9, 4)])
+    monkeypatch.setattr(stream_backup, "_wal_row", lambda mode: next(rows, None))
+    monkeypatch.setattr(stream_backup, "_CHECKPOINT_WAIT_S", 0.0)
+    assert stream_backup._drain_wal(db) == tmp_path / "x.db-wal"
+    last = _events("checkpoint")[-1]
+    assert last["outcome"] == "done" and "error" not in last and last["truncate"] == [1, 9, 4]
 
 
 def test_the_process_token_is_unique_even_for_two_starts_in_the_same_second():
