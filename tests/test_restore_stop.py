@@ -148,7 +148,9 @@ def test_there_is_deliberately_NO_abort_point_after_the_swap():
     # is what caught it rather than letting the split silently match nothing -- which
     # is the whole reason it is there. The property is unchanged: this still names the
     # single point past which there is no undo.
-    SWAP = "_replace_live_corpus("
+    # RE-ANCHORED AGAIN 2026-10-06 (E3): the replace moved into ONE helper shared with the repair (``swap_in_corpus``, which holds
+    # the swap window), so run_restore's commit point is the helper's call; the property is unchanged.
+    SWAP = "swap_in_corpus("
     assert body.count(SWAP) == 1, "the anchor must be the single commit point, or the split lies"
     after_swap = body.split(SWAP, 1)[1]
     assert "_abort_point(" not in after_swap, (

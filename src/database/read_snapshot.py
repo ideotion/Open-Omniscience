@@ -44,6 +44,7 @@ from sqlalchemy.orm import Session as SASession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
+from src.database import library_generation as _library_generation
 from src.database import pool_watch as _pool_watch
 from src.database.session import get_db
 
@@ -68,7 +69,7 @@ def _build_read_engine(url: str) -> Engine:
 
         return connect(db_path, check_same_thread=False, timeout=30)
 
-    eng = create_engine(url, future=True, creator=_creator, poolclass=NullPool)
+    eng = create_engine(url, future=True, creator=_library_generation.guarded_creator(_creator), poolclass=NullPool)
     # This engine's read transaction is held across a WHOLE export, which is exactly the
     # shape that pins the WAL (a snapshot taken at the first read, kept to the last). The
     # pin report (storage guard, hygiene's checkpoint record) lists pooled checkouts, so an
@@ -82,6 +83,9 @@ def _build_read_engine(url: str) -> Engine:
     from src.database import damage as _damage
 
     _damage.attach(eng, _damage.FILE_CORPUS)
+    # An export that holds a read connection across a repair's or a restore's swap fails loudly instead of reading the old file, and a
+    # connection is never opened between the removal of the live log names and the replace (``database/library_generation.py``).
+    _library_generation.attach(eng)
 
     @event.listens_for(eng, "connect")
     def _read_pragmas(dbapi_connection, _record) -> None:  # noqa: ANN001

@@ -376,6 +376,7 @@ def boot_state(monkeypatch):
 
     monkeypatch.setattr(vj, "start_reindex_drain", fake)
     monkeypatch.setattr(boot_sequence, "_rollup_first_build", lambda: None)
+    monkeypatch.setattr(boot_sequence, "_article_indexes", lambda: None)  # its own tests: test_article_indexes.py
     return boot_sequence, calls
 
 

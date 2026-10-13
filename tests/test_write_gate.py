@@ -256,6 +256,94 @@ def test_bulk_dml_never_locked_against_a_long_held_writer(tmp_path):
     engine.dispose()
 
 
+def test_a_textual_write_takes_the_gate_and_a_textual_read_does_not(tmp_path):
+    """The deep read of E3 (2026-10-06): ``is_insert`` and its siblings are False for ``text()``, so ``session.execute(text("DELETE ..."))``
+    ran outside the gate, and a repair that holds the gate for the whole copy could not hold it back."""
+    from sqlalchemy import text
+
+    engine, Maker = _wired_sessionmaker(tmp_path)
+    with Maker() as seed:
+        seed.add_all([_Row(writer=1), _Row(writer=2)])
+        seed.commit()
+    writes = [
+        "DELETE FROM gate_test_row WHERE writer = 1",
+        "  \n\tdelete from gate_test_row where writer = 1",
+        "-- a note\nUPDATE gate_test_row SET writer = 5 WHERE writer = 2",
+        "/* a note */ INSERT INTO gate_test_row (writer) VALUES (9)",
+        "REPLACE INTO gate_test_row (id, writer) VALUES (1, 4)",
+        "WITH ids AS (SELECT 1) UPDATE gate_test_row SET writer = 0 WHERE id IN (SELECT * FROM ids)",
+        "CREATE INDEX IF NOT EXISTS ix_rows_writer ON gate_test_row (writer)",
+        "DROP INDEX IF EXISTS ix_rows_writer",
+        "ALTER TABLE gate_test_row ADD COLUMN extra INTEGER",
+    ]
+    for sql in writes:
+        s = Maker()
+        try:
+            s.execute(text(sql))
+            assert s.info.get("_oo_write_gate_held"), f"a textual write took no gate: {sql!r}"
+            assert write_gate.held_by_current_thread()
+            s.commit()
+            assert not write_gate.held_by_current_thread()
+        finally:
+            s.close()
+    reads = [
+        "SELECT count(*) FROM gate_test_row",
+        "  -- insert here\nSELECT 1",
+        "WITH ids AS (SELECT 1) SELECT * FROM ids",
+        "PRAGMA table_info(gate_test_row)",
+        "EXPLAIN SELECT 1",
+    ]
+    before = write_gate.stats()["grants"]
+    for sql in reads:
+        s = Maker()
+        try:
+            s.execute(text(sql)).fetchall()
+            assert not s.info.get("_oo_write_gate_held"), f"a textual read took the gate: {sql!r}"
+            s.commit()
+        finally:
+            s.close()
+    assert write_gate.stats()["grants"] == before
+    engine.dispose()
+
+
+def test_a_textual_write_waits_for_a_holder_of_the_gate_as_an_orm_write_does(tmp_path):
+    from sqlalchemy import text
+
+    engine, Maker = _wired_sessionmaker(tmp_path)
+    with Maker() as seed:
+        seed.add(_Row(writer=1))
+        seed.commit()
+    in_gate, release, done = threading.Event(), threading.Event(), threading.Event()
+
+    def holder():
+        write_gate.acquire()
+        in_gate.set()
+        release.wait(5)
+        write_gate.release()
+
+    def writer():
+        in_gate.wait(5)
+        s = Maker()
+        try:
+            s.execute(text("DELETE FROM gate_test_row WHERE writer = 1"))
+            s.commit()
+        finally:
+            s.close()
+            done.set()
+
+    th, tw = threading.Thread(target=holder), threading.Thread(target=writer)
+    th.start()
+    tw.start()
+    assert not done.wait(0.4), "a textual write went through while the gate was held"
+    release.set()
+    th.join(5)
+    tw.join(5)
+    assert done.is_set()
+    with Maker() as s:
+        assert s.query(_Row).filter_by(writer=1).count() == 0
+    engine.dispose()
+
+
 def test_read_only_transaction_does_not_take_the_gate(tmp_path):
     engine, Maker = _wired_sessionmaker(tmp_path)
     before = write_gate.stats()

@@ -404,6 +404,7 @@
   // is offered while one holds.
   function storagePausedText(phase, g) {
     if (phase === "paused-damaged") return "Paused: the database reported damage"; // see app-core.js
+    if (phase === "paused-verifying") return "Paused: checking the data files after an unexpected stop";
     if (g && g.overridden) return null; // see app-core.js _storagePausedText
     return { "paused-wal-pinned": "Paused: the database log has grown too large",
              "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
@@ -412,10 +413,16 @@
   function damageHtml(a) {
     var d = a && a.storage_guard && a.storage_guard.database_damage;
     if (!d || !d.notes || !d.notes.length) return "";
-    var lines = d.notes.map(function (n) {
-      return '<div class="vwarn">' + esc(tf(n.frame, {})) + "</div>";
+    // The check after an unexpected stop says how far it is in a line of its own, without the damage hover.
+    var checking = d.notes.filter(function (n) { return n.kind === "verifying"; }).map(function (n) {
+      return '<div class="vnote">' + esc(tf(n.frame, n.vars || {})) + "</div>";
     }).join("");
-    return '<div title="' + esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. The app does not check or repair anything yet: it pauses only collection's writes to the file named in the sentence, so as not to make it worse, and it deletes nothing because of it. Where the sentence says how to try again, doing so releases the pause; if the damage is still there it stops again at the first failed read. Each incident is recorded, without any article text, in the file database-damage.json in your data folder.")) + '">' + lines + "</div>";
+    var damaged = d.notes.filter(function (n) { return n.kind !== "verifying"; });
+    if (!damaged.length) return checking;
+    var lines = damaged.map(function (n) {
+      return '<div class="vwarn">' + esc(tf(n.frame, n.vars || {})) + "</div>";
+    }).join("");
+    return checking + '<div title="' + esc(t("The database reported that it could not read part of one of your data files (SQLite’s “database disk image is malformed”). An unexpected stop, a failing drive or a copy made while the file was changing can leave that behind. After an unexpected stop the app reads each table of your data files once before collection writes to them again; that check writes nothing of its own, and the pause ends by itself when it ends. The app pauses collection's writes to the file named in the sentence, so as not to make it worse. At its next start it repairs a library file the start-up check confirmed damaged: it copies every row it can still read into a new file, checks the new file and switches to it, keeps the damaged file beside it for 30 days after the new file first reads clean, and then removes that one file (and nothing else); you can remove it sooner. If the drive itself could not read a page of the damaged file, the app does not remove that file at all and says so, because a failing drive, not the file, may be why those pages could not be read. Where the sentence says how to try again, doing so tries once more: a pause the start-up check set ends only when the tables it named read clean again, and any other pause ends and stops again at the first failed read if the damage is still there. Each incident is recorded, without any article text, in the file database-damage.json in your data folder.")) + '">' + lines + "</div>";
   }
   function storageGuardHtml(a) {
     // Only while collection is meant to be running (see app-core.js _storageGuardHtml).

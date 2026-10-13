@@ -60,6 +60,7 @@ def cited_domain_stats(session) -> dict[str, dict]:
     """
     from src.catalog.normalize import registrable_domain
     from src.database.models import Article, ArticleLink
+    from src.database.stand_in import not_a_stand_in_article_id
 
     # article_id -> source_id, via the covering source_id index (no row decrypt).
     art_source: dict[int, int] = dict(session.query(Article.id, Article.source_id))
@@ -73,8 +74,10 @@ def cited_domain_stats(session) -> dict[str, dict]:
     # ``yield_per`` the ORM fetches every row before it yields the first one.
     from src.database.query import keyset_scan
 
+    # A stand-in article (the placeholder a salvage copy writes for a lost one) is no outlet: the links kept for it are left out, so its
+    # placeholder source never counts as a distinct citer and never promotes a domain into a new source.
     q = session.query(ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id).filter(
-        ArticleLink.link_type == "external"
+        ArticleLink.link_type == "external", not_a_stand_in_article_id(ArticleLink.article_id)
     )
     for _link_id, nu, aid in keyset_scan(q, ArticleLink.id):
         dom = registrable_domain(nu)

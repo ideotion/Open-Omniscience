@@ -192,7 +192,16 @@ class BackgroundJob:
                 target=self._run, args=(ctx, kwargs), name=f"bgjob-{self.kind}", daemon=True
             )
             self._thread = t
-            t.start()
+            try:
+                t.start()
+            except BaseException as exc:
+                # The worker never ran: leave no phantom "running" job (it would hold ``db_writers_busy`` for the life
+                # of the process, and a caller that joins it would raise).
+                self._thread = None
+                self._state = "error"
+                self._error = f"{type(exc).__name__}: could not start the worker thread"[:300]
+                self._ended_at = time.time()
+                raise
         return self.status()
 
     def _run(self, ctx: JobContext, kwargs: dict) -> None:
@@ -247,6 +256,17 @@ class BackgroundJob:
                 self.kind,
                 type(failure).__name__,
             )
+
+    def join(self, timeout: float | None = None) -> bool:
+        """Wait for the worker thread to end (a caller that runs in a sequence needs the result before
+        it goes on). ``True`` once no run is in flight, also when none ever started; ``False`` when
+        ``timeout`` ran out first."""
+        with self._lock:
+            t = self._thread
+        if t is None:
+            return True
+        t.join(timeout)
+        return not t.is_alive()
 
     def cancel(self) -> None:
         """Ask the worker to stop at its next safe point (cooperative; never kills a thread)."""

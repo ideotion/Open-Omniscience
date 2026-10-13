@@ -26,12 +26,28 @@ import json
 import os
 import signal
 import sqlite3
+import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 
 def _emit(obj: dict) -> None:
     print(json.dumps(obj))
+
+
+def _close_engine() -> None:
+    """Close the pooled connections the way a clean stop does, so the last close folds the log.
+
+    A process that simply ends leaves its connections to the garbage collector, and the -wal it
+    wrote stays beside the main file. The next run's pre-swap checkpoint then folds that log into
+    the main file, which is the product working as designed but makes a "byte-identical live DB"
+    comparison taken before it compare an unsettled file against a settled one. A SIGKILLed run
+    never gets here, which is the point of the kill scenarios.
+    """
+    mod = sys.modules.get("src.database.session")
+    engine = getattr(mod, "engine", None)
+    if engine is not None:
+        engine.dispose()
 
 
 def _h(text: str) -> str:
@@ -435,16 +451,22 @@ def main() -> None:
     o.add_argument("--strip-version", action="store_true")
     o.add_argument("--alien-version", action="store_true")
     args = p.parse_args()
-    {
-        "build": cmd_build,
-        "build-scoped": cmd_build_scoped,
-        "check-scoped": cmd_check_scoped,
-        "merge": cmd_merge,
-        "dump": cmd_dump,
-        "fts-find": cmd_fts_find,
-        "verify-custody": cmd_verify_custody,
-        "make-old": cmd_make_old,
-    }[args.cmd](args)
+    try:
+        {
+            "build": cmd_build,
+            "build-scoped": cmd_build_scoped,
+            "check-scoped": cmd_check_scoped,
+            "merge": cmd_merge,
+            "dump": cmd_dump,
+            "fts-find": cmd_fts_find,
+            "verify-custody": cmd_verify_custody,
+            "make-old": cmd_make_old,
+        }[args.cmd](args)
+    finally:
+        # Only the runs that BUILD a corpus close it. A merge run must end the way a real one can:
+        # the tests that hash the live file around it compare it with the settled file the build left.
+        if args.cmd in ("build", "build-scoped", "make-old"):
+            _close_engine()
 
 
 if __name__ == "__main__":

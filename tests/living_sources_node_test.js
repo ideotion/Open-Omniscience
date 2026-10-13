@@ -453,6 +453,30 @@ const WIKI = {
     "the walk took a download's cause line: it is not a download");
 }
 
+// --- 11b. the article list's index build draws its detail in the in-app window too ----- //
+// (the caveat while it runs, and the keyed reason a refusal for space carries: its error is English only)
+{
+  const why = R._jobWhy({ kind: "article-indexes", state: "failed", error: "Declined: the database volume has 5 bytes free",
+    detail: "The article list's indexes were not built: 5 MB free.", detail_i18n: "The article list's indexes were not built: 5 MB free.",
+    detail_vars: {} }, t);
+  assert.ok(visible(why).includes("were not built"), "the refusal's reason was not drawn for the index build");
+  assert.ok(!visible(why).includes("Declined"), "the English error string was drawn instead of the keyed detail");
+  assert.strictEqual(R._jobWhy({ kind: "article-indexes", state: "running" }, t), "", "a row with no detail drew a line");
+}
+
+// --- 11c. the repair of a damaged library file draws its detail the same way (R121/R129) ----- //
+{
+  const detail = "Repairing the damaged library file: table 2 of 9 (articles), 120 rows copied so far, 3 entries could not be read.";
+  const why = R._jobWhy({ kind: "repair-database", state: "running", detail, detail_i18n: detail, detail_vars: {} }, t);
+  assert.ok(visible(why).includes("table 2 of 9"), "the repair's progress line was not drawn");
+  const refused = R._jobWhy({ kind: "repair-database", state: "failed", error: "Declined: no-room",
+    detail: "The app did not repair your damaged library file: the drive has 1 MB free.", detail_i18n: "The app did not repair your damaged library file: the drive has 1 MB free.",
+    detail_vars: {} }, t);
+  assert.ok(visible(refused).includes("did not repair"), "the refusal's keyed reason was not drawn for the repair");
+  assert.ok(!visible(refused).includes("Declined"), "the English error string was drawn instead of the keyed detail");
+  assert.strictEqual(R._jobWhy({ kind: "repair-database", state: "running" }, t), "", "a row with no detail drew a line");
+}
+
 // --- 12. the other changed pages (Q707's WARM tier): counts, and absence as a word --- //
 {
   // No fetcher in this process, or an older server with no warm block: a word, never a zero.

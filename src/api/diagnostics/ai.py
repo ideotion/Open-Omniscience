@@ -96,8 +96,11 @@ def qualification_assist_run(body: QualificationAssistBody, db: Session = Depend
     (``Source.status``/``Source.tags`` are never touched). 404 if the source
     does not exist."""
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
-    if db.get(Source, body.source_id) is None:
+    # The id is taken from the body, not the path: it is a by-id route all the same, and a stand-in source (the place-holder a salvage copy
+    # writes for a lost one) answers as not found, so no run is made and no proposals artifact is written for it.
+    if db.query(Source.id).filter(Source.id == body.source_id, not_a_stand_in_source()).first() is None:
         raise HTTPException(status_code=404, detail=f"no source with id {body.source_id}")
     from src.ai_layer.qualification_assist import run_and_persist_qualification_assist
 

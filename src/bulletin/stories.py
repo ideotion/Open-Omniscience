@@ -34,6 +34,7 @@ from sqlalchemy import and_, func
 from src.bulletin.period import Period
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Article, Keyword, Source
+from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -78,7 +79,12 @@ def article_keyword_sets(session, period: Period) -> dict[int, set[int]]:
         session.query(
             KeywordMentionRead.article_id, KeywordMentionRead.keyword_id, KeywordMentionRead.count
         )
-        .filter(and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi))
+        .filter(
+            and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi),
+            # the mentions kept for a lost article: a stand-in is no article, so it joins no story, is no source of one (``single_source`` could
+            # flip on its placeholder source) and is not read for narration
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
+        )
         .all()
     )
     # One lookup per DISTINCT keyword, small columns only, chunked under the variable cap.

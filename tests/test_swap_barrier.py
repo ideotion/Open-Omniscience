@@ -181,7 +181,9 @@ def test_the_swap_waits_and_refuses_rather_than_replacing_under_a_writer() -> No
     # argument list breaks on the next one while saying nothing about the property it is
     # named for. `_replace_live_corpus(working, target` would not match at all -- the
     # call spans a line break.
-    CALL, SWAP = "wait_for_quiescence(_SWAP_QUIESCE_S", "_replace_live_corpus("
+    # Re-anchored 2026-10-06 (E3): the replace is inside ONE helper shared with the repair (``swap_in_corpus``), so the call of the
+    # helper is the commit point in run_restore; the ordering property is the same.
+    CALL, SWAP = "wait_for_quiescence(_SWAP_QUIESCE_S", "swap_in_corpus("
     assert src.count(CALL) == 1 and src.count(SWAP) == 1
     # The barrier is INSIDE the timed swap stage (the wait is real time that stage
     # spends) but before the commit point. That ordering is the whole property: waiting

@@ -330,6 +330,7 @@ def build_trail_bundle(session, ws: dict, *, full_text: bool = True, signer=None
     from src.bulletin.evidence import _attribution_markdown
     from src.bulletin.privacy import privacy_markdown
     from src.database.models import Article, Source
+    from src.database.stand_in import not_a_stand_in_article
     from src.weather.openmeteo import read_cached_slice
 
     article_ids = [int(a["id"]) for a in (ws.get("related") or {}).get("articles") or []]
@@ -347,7 +348,7 @@ def build_trail_bundle(session, ws: dict, *, full_text: bool = True, signer=None
     rows = (
         session.query(Article, Source)
         .outerjoin(Source, Source.id == Article.source_id)
-        .filter(Article.id.in_(article_ids))
+        .filter(Article.id.in_(article_ids), not_a_stand_in_article())  # a repair's stand-in is never carried, whatever ids it is handed
         .all()
     )
     by_id = {int(a.id): (a, s) for a, s in rows}

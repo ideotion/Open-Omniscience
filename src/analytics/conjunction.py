@@ -46,6 +46,7 @@ from src.analytics.queries import (
 from src.database.derived_views import KeywordMentionRead
 from src.database.fts import _HAS_WORD_CHAR, _quote
 from src.database.models import Article
+from src.database.stand_in import not_a_stand_in_article_id
 
 ALGEBRA_OPS = ("intersection", "union", "difference")
 
@@ -254,7 +255,9 @@ def corpus_algebra(
 
 
 def _scoped(q, scope: dict | None):
-    """A KeywordMentionRead query restricted to a lens scope (joins Article only when needed)."""
+    """A KeywordMentionRead query restricted to a lens scope (joins Article only when needed). A mention kept for a lost article names no article, so the
+    one place every scan of the algebra passes through leaves it out of the sets, the candidate cap and the per-term counts."""
+    q = q.filter(not_a_stand_in_article_id(KeywordMentionRead.article_id))
     if not scope or scope.get("kind") == "all":
         return q
     if scope.get("article_ids") is not None:

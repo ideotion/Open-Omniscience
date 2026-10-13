@@ -64,6 +64,7 @@ def _first_citing_article(session, domain: str) -> dict | None:
     from src.catalog.normalize import registrable_domain
     from src.database.models import Article, ArticleLink, Source
     from src.database.query import keyset_scan
+    from src.database.stand_in import not_a_stand_in_article_id
     from src.utils.url_utils import is_equivalent_domain
 
     dom = domain.lower()
@@ -72,7 +73,11 @@ def _first_citing_article(session, domain: str) -> dict | None:
     rows = keyset_scan(
         session.query(
             ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id
-        ).filter(ArticleLink.link_type == "external"),
+        ).filter(
+            ArticleLink.link_type == "external",
+            # the links kept for a lost article: its stand-in has no date and would sort first as "the first article that cited" the domain
+            not_a_stand_in_article_id(ArticleLink.article_id),
+        ),
         ArticleLink.id,
     )
     matching_ids: set[int] = set()
@@ -116,8 +121,9 @@ def source_provenance(session, source_id: int) -> dict:
     provenance panel is exactly where "is this admitted yet" belongs).
     """
     from src.database.models import ExternalSource, Source, SourceCandidate
+    from src.database.stand_in import not_a_stand_in_source
 
-    source = session.query(Source).filter_by(id=source_id).first()
+    source = session.query(Source).filter_by(id=source_id).filter(not_a_stand_in_source()).first()  # a repair's stand-in is not a source
     if source is None:
         return {"found": False}
 
@@ -248,6 +254,7 @@ def source_citation_tally(session, source_id: int) -> dict:
     """
     from src.catalog.normalize import is_social, registrable_domain
     from src.database.models import Article, ArticleLink, Source
+    from src.database.stand_in import not_a_stand_in_source
     from src.discovery.channels import is_commerce_domain, is_infrastructure_domain
 
     # Domains are returned as dicts everywhere (never a bare string) so EVERY class
@@ -256,7 +263,7 @@ def source_citation_tally(session, source_id: int) -> dict:
     # citing articles) applies uniformly, not only to domains that matched a Source.
     _ARTICLE_SAMPLE_CAP = 10
 
-    source = session.query(Source).filter_by(id=source_id).first()
+    source = session.query(Source).filter_by(id=source_id).filter(not_a_stand_in_source()).first()  # a repair's stand-in is not a source
     if source is None:
         return {"found": False}
 

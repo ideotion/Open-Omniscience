@@ -638,6 +638,7 @@ def select_source_tag_candidates(
 
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, Source
+    from src.database.stand_in import not_a_stand_in_article_id, not_a_stand_in_source
     from src.services.stopwords import stopwords_manager
 
     agg_rows = (
@@ -646,7 +647,7 @@ def select_source_tag_candidates(
             func.count(func.distinct(KeywordMentionRead.article_id)),
             func.sum(KeywordMentionRead.count),
         )
-        .filter(KeywordMentionRead.source_id.isnot(None))
+        .filter(KeywordMentionRead.source_id.isnot(None), not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .group_by(KeywordMentionRead.source_id)
         .all()
     )
@@ -660,7 +661,9 @@ def select_source_tag_candidates(
     # STABLE total order: -article_count ascending (= article_count DESC) then
     # source id ascending (the tiebreaker that makes after_domain-based resumption
     # deterministic across calls).
-    sources = session.query(Source.id, Source.domain, Source.language).all()
+    # A stand-in source (the place-holder a salvage copy writes for a lost one) is no outlet: it is not offered for tagging, whatever mentions
+    # were kept for it (its own articles' source id stays on their mention rows).
+    sources = session.query(Source.id, Source.domain, Source.language).filter(not_a_stand_in_source()).all()
     ranked = sorted(
         sources, key=lambda r: (-counters.get(int(r[0]), (0, 0))[0], int(r[0]))
     )
@@ -689,7 +692,7 @@ def select_source_tag_candidates(
         term_rows = (
             session.query(Keyword.term, Keyword.language, func.sum(KeywordMentionRead.count).label("m"))
             .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
-            .filter(KeywordMentionRead.source_id == sid)
+            .filter(KeywordMentionRead.source_id == sid, not_a_stand_in_article_id(KeywordMentionRead.article_id))
             .group_by(Keyword.id)
             .order_by(func.sum(KeywordMentionRead.count).desc())
             .limit(top_n)

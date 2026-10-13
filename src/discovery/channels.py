@@ -305,6 +305,7 @@ def citation_candidates(
 
     from src.catalog.normalize import is_social, registrable_domain
     from src.database.models import ArticleLink
+    from src.database.stand_in import not_a_stand_in_article_id
 
     budget = budget_s if budget_s is not None else _citation_scan_budget_s()
     deadline = (_time.monotonic() + budget) if budget > 0 else None
@@ -313,7 +314,10 @@ def citation_candidates(
     by_domain: dict[str, set[int]] = defaultdict(set)
     rows_scanned = 0
     complete = True
-    q = session.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct()
+    # The links kept for a lost article are no citation: a stand-in is no article, so it adds nothing to a domain's ``min_citations``.
+    q = session.query(ArticleLink.normalized_url, ArticleLink.article_id).filter(
+        not_a_stand_in_article_id(ArticleLink.article_id)
+    ).distinct()
     for nu, aid in q.yield_per(2000):
         rows_scanned += 1
         dom = registrable_domain(nu)

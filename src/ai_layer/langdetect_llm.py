@@ -42,6 +42,7 @@ from src.ai_layer.sampling import sweep_options
 from src.ai_layer.translate import KNOWN_LANG_CODES, lang_name
 from src.database.models import AiKeyword, Article
 from src.database.session import session_scope
+from src.database.stand_in import not_a_stand_in_article_id
 from src.llm.ollama import LLMUnavailable
 
 # Bump when the prompt changes (provenance flag travels with each AI-derived result).
@@ -156,7 +157,12 @@ def unknown_language_work(
     left to attempt."""
     unset = lambda col: or_(col.is_(None), col == "")  # noqa: E731
     stmt = select(Article.id, Article.title, Article.content, Article.language).where(
-        unset(Article.language), unset(Article.detected_language), ~_already_labelled()
+        unset(Article.language),
+        unset(Article.detected_language),
+        ~_already_labelled(),
+        # a stand-in for a lost article has no text to read a language from, and it would be
+        # offered to the model again on every run: it is never part of the worklist
+        not_a_stand_in_article_id(Article.id),
     )
     if exclude_ids:
         stmt = stmt.where(~Article.id.in_(exclude_ids))

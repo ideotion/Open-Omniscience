@@ -65,6 +65,7 @@ from src.catalog.qualification import (
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
 )
+from src.database.stand_in import not_a_stand_in_source
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -264,6 +265,36 @@ def _newest_judging(session: Session, source_id: int):
     )
 
 
+def _inversion_candidates(session: Session) -> list[Any]:
+    """The ids of the sources whose newest JUDGING attempt names a verdict that is not their live status: ONE join, read by the report and by
+    the repair, so what one names the other can fix (two copies of it would let them disagree). A stand-in source (the place-holder a salvage
+    copy writes for a lost one) is left out: a judging attempt kept for it is no inversion, and its status is never written. The grouped MAX()
+    cannot break a same-timestamp tie on its own, so these are CANDIDATES and each caller re-reads the exact newest attempt (:func:`_newest_judging`)."""
+    from src.database.models import Source
+    from src.database.models import SourceQualificationAttempt as A
+
+    newest_at = (
+        session.query(
+            A.source_id.label("source_id"),
+            func.max(A.attempted_at).label("last_at"),
+        )
+        .filter(A.verdict.in_(JUDGING_VERDICTS))
+        .group_by(A.source_id)
+        .subquery()
+    )
+    return (
+        session.query(Source.id)
+        .join(newest_at, newest_at.c.source_id == Source.id)
+        .join(
+            A,
+            (A.source_id == Source.id) & (A.attempted_at == newest_at.c.last_at),
+        )
+        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict, not_a_stand_in_source())
+        .distinct()
+        .all()
+    )
+
+
 def qualification_integrity_report(
     session: Session, *, verified_sample: int = VERIFIED_SAMPLE
 ) -> dict[str, Any]:
@@ -313,26 +344,7 @@ def qualification_integrity_report(
     # candidate set is the finding set -- small by construction on a healthy corpus --
     # so re-reading each one's true newest attempt costs nothing and makes the answer
     # exact rather than probable.
-    newest_at = (
-        session.query(
-            A.source_id.label("source_id"),
-            func.max(A.attempted_at).label("last_at"),
-        )
-        .filter(A.verdict.in_(JUDGING_VERDICTS))
-        .group_by(A.source_id)
-        .subquery()
-    )
-    candidates = (
-        session.query(Source.id)
-        .join(newest_at, newest_at.c.source_id == Source.id)
-        .join(
-            A,
-            (A.source_id == Source.id) & (A.attempted_at == newest_at.c.last_at),
-        )
-        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict)
-        .distinct()
-        .all()
-    )
+    candidates = _inversion_candidates(session)
 
     laundered: list[dict[str, Any]] = []
     demoted: list[dict[str, Any]] = []
@@ -552,28 +564,8 @@ def repair_inversions(
     known-bad sources back into the trial queue on every run.
     """
     from src.database.models import Source
-    from src.database.models import SourceQualificationAttempt as A
 
-    newest_at = (
-        session.query(
-            A.source_id.label("source_id"),
-            func.max(A.attempted_at).label("last_at"),
-        )
-        .filter(A.verdict.in_(JUDGING_VERDICTS))
-        .group_by(A.source_id)
-        .subquery()
-    )
-    candidates = (
-        session.query(Source.id)
-        .join(newest_at, newest_at.c.source_id == Source.id)
-        .join(
-            A,
-            (A.source_id == Source.id) & (A.attempted_at == newest_at.c.last_at),
-        )
-        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict)
-        .distinct()
-        .all()
-    )
+    candidates = _inversion_candidates(session)
 
     restored_to_qualified: list[dict[str, Any]] = []
     restored_to_disqualified: list[dict[str, Any]] = []

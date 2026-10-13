@@ -337,10 +337,11 @@ def official_instruments_observable(
         observe_headlines,
     )
     from src.database.models import Article, Source
+    from src.database.stand_in import not_a_stand_in_source
 
     rows: list[dict] = []
     tally = {OBSERVED: 0, "none_observed": 0, NO_EVIDENCE: 0}
-    for source in db.query(Source).order_by(Source.id.asc()).limit(limit).all():
+    for source in db.query(Source).filter(not_a_stand_in_source()).order_by(Source.id.asc()).limit(limit).all():
         titles = [
             t for (t,) in db.query(Article.title)
             .filter(Article.source_id == source.id, Article.quarantined.isnot(True))
@@ -396,9 +397,11 @@ def country_domain_audit(
     """
     from src.catalog.country_domain_audit import audit_rows
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
     rows = (
         db.query(Source.id, Source.domain, Source.country)
+        .filter(not_a_stand_in_source())
         .order_by(Source.id.asc())
         .limit(limit)
         .all()
@@ -698,7 +701,9 @@ def list_sources(
             if priority is not None:
                 sources = [s for s in sources if s.priority == priority]
         else:
-            query = db.query(Source)
+            from src.database.stand_in import not_a_stand_in_source
+
+            query = db.query(Source).filter(not_a_stand_in_source())  # a repair's stand-in source is never listed
             if enabled is not None:
                 query = query.filter(Source.enabled.is_(enabled))
             if priority is not None:
@@ -805,8 +810,9 @@ def source_facets(
     no score. `enabled_only` restricts to the active set (the default shows everything so
     a user can find a disabled source to enable)."""
     from src.database.models import Source
+    from src.database.stand_in import not_a_stand_in_source
 
-    q = db.query(Source.language, Source.country, Source.source_type, Source.tags)
+    q = db.query(Source.language, Source.country, Source.source_type, Source.tags).filter(not_a_stand_in_source())
     if enabled_only:
         q = q.filter(Source.enabled.is_(True))
     lang_n: dict[str, int] = {}
@@ -838,7 +844,12 @@ def source_facets(
     }
 
 
-@router.get("/{source_id}", response_model=dict)
+# ``{source_id:int}``, not ``{source_id}``, on all three routes of the bare id path (get, put, delete): a bare parameter matches ANY one
+# segment, so the literal paths declared further down (``/export``, ``/stats``, ``/search``) were shadowed by it for as long as it was declared
+# above them, and answered 422 to every call. A path converter that only matches digits cannot shadow a literal, whatever the declaration
+# order, and a segment that is no id is never taken for one: on a name that is no route at all it answers 404 for every method, and on the
+# literal names (``/export``, ``/stats``, ``/search``) a method the literal does not declare answers 405, as any route does for a method it lacks.
+@router.get("/{source_id:int}", response_model=dict)
 @limiter.limit("100/hour")
 def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
@@ -996,7 +1007,7 @@ _SOURCE_UPDATE_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
 }
 
 
-@router.put("/{source_id}", response_model=dict)
+@router.put("/{source_id:int}", response_model=dict)
 @limiter.limit("50/hour")
 def update_source(
     request: Request, source_id: int, source_data: dict, db: Session = Depends(get_db)
@@ -1042,7 +1053,7 @@ def update_source(
         }
 
 
-@router.delete("/{source_id}", response_model=dict)
+@router.delete("/{source_id:int}", response_model=dict)
 @limiter.limit("20/hour")
 def delete_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
@@ -1170,6 +1181,8 @@ def list_groups(
     """
     logger.info(f"List groups request: tag_based={tag_based}")
 
+    from src.database.stand_in import not_a_stand_in_source
+
     with SourceManager(session=db) as manager:
         groups = manager.get_all_groups()
 
@@ -1187,7 +1200,7 @@ def list_groups(
                 "priority": g.priority,
                 "rate_limit_ms": g.rate_limit_ms,
                 "enabled": g.enabled,
-                "source_count": len(g.sources.all()) if g.sources else 0,
+                "source_count": g.sources.filter(not_a_stand_in_source()).count() if g.sources else 0,  # a stand-in source is no member
                 "created_at": g.created_at.isoformat() if g.created_at else None,
                 "updated_at": g.updated_at.isoformat() if g.updated_at else None,
             }
@@ -1205,12 +1218,14 @@ def get_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     logger.info(f"Get group request: group_id={group_id}")
 
+    from src.database.stand_in import not_a_stand_in_source
+
     with SourceManager(session=db) as manager:
         group = manager.get_group_by_id(group_id)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
 
-        sources = group.sources.all() if group.sources else []
+        sources = group.sources.filter(not_a_stand_in_source()).all() if group.sources else []
 
         result = {
             "id": group.id,
@@ -1348,6 +1363,8 @@ def add_source_to_groups(
     logger.info(f"Add source to groups: source {source_id} to groups {group_ids}")
 
     with SourceManager(session=db) as manager:
+        if manager.get_source_by_id(source_id) is None:  # a repair's stand-in source is none
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
         count = manager.add_source_to_groups(source_id, group_ids)
         return {"message": f"Added source {source_id} to {count} groups"}
 
@@ -1363,6 +1380,8 @@ def remove_source_from_groups(
     logger.info(f"Remove source from groups: source {source_id} from groups {group_ids}")
 
     with SourceManager(session=db) as manager:
+        if manager.get_source_by_id(source_id) is None:  # a repair's stand-in source is none
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
         count = manager.remove_source_from_groups(source_id, group_ids)
         return {"message": f"Removed source {source_id} from {count} groups"}
 
@@ -1481,6 +1500,8 @@ def create_metadata(
 
     with SourceManager(session=db) as manager:
         metadata = manager.create_metadata(source_id, **metadata_data)
+        if metadata is None:
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
         return {"source_id": metadata.source_id, "message": "Metadata created successfully"}
 
 
@@ -1816,15 +1837,21 @@ def get_source_statistics(request: Request, db: Session = Depends(get_db)):
 @router.get("/search", response_model=dict)
 @limiter.limit("50/hour")
 def search_sources(
-    request: Request, query: str, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)
+    request: Request,
+    query: str,
+    limit: int = Query(20, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
 ):
     """
     Search for sources by name, domain, or tags.
 
     Parameters:
     - query: Search query (matches against name, domain, and tags)
-    - limit: Maximum number of results
-    - offset: Offset for pagination
+    - limit: Maximum number of results (1 to 500)
+    - offset: Offset for pagination (0 or more)
+
+    ``total`` is every source the query matched; ``count`` is how many of them this page carries.
     """
     logger.info(f"Search sources: query={query}")
 
@@ -1835,17 +1862,17 @@ def search_sources(
         # Get all sources and filter in memory (for simplicity)
         all_sources = manager.get_all_sources()
 
-        results = []
+        matches = []
         for source in all_sources:
             if (
                 query_lower in source.name.lower()
                 or query_lower in source.domain.lower()
                 or (source.tags and query_lower in source.tags.lower())
             ):
-                results.append(source)
+                matches.append(source)
 
-        # Apply pagination
-        results = results[offset : offset + limit]
+        # Apply pagination; the total is what matched, never the page's own length
+        results = matches[offset : offset + limit]
 
         formatted_results = [
             {
@@ -1864,7 +1891,7 @@ def search_sources(
             "query": query,
             "results": formatted_results,
             "count": len(formatted_results),
-            "total": len(results),
+            "total": len(matches),
         }
 
 
@@ -1983,8 +2010,11 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
     # reads as a contradiction rather than as two different questions.
     counts = {"qualified": 0, "disqualified": 0, "unqualified": 0, "enabled": 0}
     collecting = 0
+    from src.database.stand_in import not_a_stand_in_source
+
     for status, enabled, n in (
         db.query(Source.status, Source.enabled, func.count())
+        .filter(not_a_stand_in_source())  # a repair's stand-in source is not a source the user saved
         .group_by(Source.status, Source.enabled)
         .all()
     ):

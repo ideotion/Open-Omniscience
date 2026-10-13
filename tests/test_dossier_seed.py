@@ -162,6 +162,38 @@ def test_a_QID_page_renders_from_fixture_rows_with_its_rails_and_passport(db, se
     assert d["method"] and d["caveat"]
 
 
+def _a_stand_in_with_the_rows_of_all_three_routes(db, kw_term="zedport-sur-mer"):
+    """What a salvage copy keeps for a lost article: the stand-in row it writes at the lost id (placeholder text for its hash, quarantined for
+    its own reason, under a stand-in source), and the entity, keyword-mention and place rows kept for that id."""
+    from src.database import stand_in
+
+    lost_src = Source(name="(lost sources 90)", domain="(lost sources 90)", enabled=False)
+    db.add(lost_src)
+    db.flush()
+    text = stand_in.lost_text("articles", 9000)
+    db.add(Article(id=9000, url=text, canonical_url=text, hash=text, content=text, source_id=lost_src.id, quarantined=True,
+                   quarantine_reason=stand_in.ARTICLE_REASON))
+    kw = db.query(Keyword).filter_by(normalized_term=kw_term, language="fr").one()
+    db.add(ArticleEntity(article_id=9000, name="Zedport", entity_class="organization", mentions=1))
+    db.add(KeywordMention(article_id=9000, keyword_id=kw.id, count=1))
+    db.add(ArticleMentionedPlace(article_id=9000, name="Zedport", country="zz", kind="city", mentions=1))
+    db.commit()
+    return 9000
+
+
+def test_the_dossier_never_counts_lists_or_names_the_stand_in_whose_rows_were_kept(db, seeded, lanes):
+    """The ids, the per-source counts and the corpus passport come from the entity, keyword and place rows kept for an article: the stand-in
+    was an article of every route, a source of the passport, and the channel of a rail."""
+    lost = _a_stand_in_with_the_rows_of_all_three_routes(db)
+    d = DO.qid_dossier(db, ZED, "en")
+    assert {k: v["articles"] for k, v in d["routes"].items()} == {"entities": 1, "keywords": 1, "places": 1}
+    assert lost not in d["article_ids"] and sorted(d["article_ids"]) == sorted([seeded["a1"], seeded["a2"], seeded["a3"]])
+    assert (d["passport"]["articles"], d["passport"]["sources"]) == (3, 3)
+    assert _rail(d, "news")["articles"] == 1 and _rail(d, "wikipedia")["articles"] == 1 and _rail(d, "law")["articles"] == 1
+    assert _rail(d, "places")["places"][0]["articles"] == 1
+    assert "(lost sources" not in str(d)
+
+
 def test_a_name_two_items_share_joins_neither(db, seeded, lanes):
     for q in ("Q999999020", "Q999999021"):
         d = DO.qid_dossier(db, q, "en")

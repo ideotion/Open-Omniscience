@@ -341,16 +341,21 @@ def vacuum() -> dict:
     file and needs exclusive write access — if collection is writing, this
     returns 409 rather than queueing silently.
 
-    SPACE IS CHECKED FIRST (DB-10 §2 carry-over, 2026-09-09). The UI already
-    disclosed an estimated duration and confirmed; nothing checked whether the
-    disk could hold the rebuild. VACUUM writes a COMPLETE second copy of the
-    file before swapping it in, so it needs roughly twice the current size free
-    — and running out mid-rebuild is the worst moment to find that out. A
-    measured shortfall is refused with **507** and the real numbers, kept
-    DISTINCT from the 409 "something else is writing": collapsing two different
-    refusals into one status is how an operator comes to fix the wrong thing.
-    An unreadable free-space figure is NOT a refusal — the vacuum proceeds and
-    the response says it was not preflighted.
+    SPACE AND MEMORY ARE CHECKED FIRST (DB-10 §2 carry-over, 2026-09-09; the
+    memory half 2026-10-06). The UI already disclosed an estimated duration and
+    confirmed; nothing checked whether the machine could hold the rebuild. VACUUM
+    rewrites the pages in use into a second copy before swapping it in: the copy
+    goes through the log into the file, so the database's volume needs about
+    twice the pages in use free (plus the log's size), and the copy is HELD IN
+    MEMORY (every connection of the app keeps its temporary data there), about
+    1.25 times the pages in use on top of the floor the memory guard keeps free
+    — and running out of either mid-rebuild is the worst moment to find that out
+    (the memory case is the out-of-memory kill that ends the whole app). A
+    measured shortfall of EITHER is refused with **507** and the real numbers
+    (``short_on`` says which), kept DISTINCT from the 409 "something else is
+    writing": collapsing two different refusals into one status is how an
+    operator comes to fix the wrong thing. A figure that cannot be read is NOT a
+    refusal — the vacuum proceeds, and the response names what was not checked.
     """
     from sqlalchemy.exc import OperationalError
 

@@ -299,6 +299,24 @@ def test_what_the_guard_keeps_of_a_full_drive_never_carries_the_statement_or_its
     assert g3.note_error(OSError(errno.ENOSPC, "No space left on device"), "export") is True
     assert "No space left on device" in g3.state()["last_disk_full"]["detail"]
 
+    # ... but the FILE it failed on is not part of the cause: an OSError's text names it (a home folder with a person's name in it), and
+    # the detail is served into the page's poll and the bundle. Directly, wrapped in another exception, and as the cause of one.
+    named = "/home/Person Name/data/store.db"
+    wrapper = RuntimeError("could not write " + named)
+    wrapper.__cause__ = OSError(errno.ENOSPC, "No space left on device", named)
+    for what, exc in {
+        "direct": OSError(errno.ENOSPC, "No space left on device", named),
+        "as a cause": wrapper,
+        "a wrapper that quotes the path and no OSError": RuntimeError("write failed: " + named + ": No space left on device"),
+    }.items():
+        g5 = _guard()
+        assert g5.note_error(exc, "export") is True, what
+        d5 = g5.state()["last_disk_full"]["detail"]
+        assert "Person Name" not in d5 and "store.db" not in d5, (what, d5)
+    g6 = _guard()
+    g6.note_error(OSError(errno.ENOSPC, "No space left on device", named), "export")
+    assert g6.state()["last_disk_full"]["detail"] == "export: OSError: No space left on device"
+
     # the engine's own error hook keeps the same detail, from the driver's exception
     g4 = _guard()
     monkey_guard = storage_guard.storage_guard
@@ -310,6 +328,60 @@ def test_what_the_guard_keeps_of_a_full_drive_never_carries_the_statement_or_its
     finally:
         storage_guard.storage_guard = monkey_guard
     assert g4.state()["last_disk_full"]["detail"] == "OperationalError: database or disk is full"
+
+
+def test_a_driver_error_of_another_code_is_not_shown_though_a_full_drive_is_found_beside_it():
+    """A full drive found through an ``OSError`` in the chain does not make the driver error beside it a full-drive message: code 1 can
+    echo a query (a marker here), and only the two codes whose message is SQLite's fixed phrase (13 and 10) are shown as the driver said
+    them. Any other driver error is its class and a fixed label."""
+    marker = "MARKER-ECHOED-QUERY"
+    driver = sqlite3.OperationalError(f"no such column: {marker}")
+    driver.sqlite_errorcode = 1  # type: ignore[attr-defined]
+    driver.sqlite_errorname = "SQLITE_ERROR"  # type: ignore[attr-defined]
+    driver.__context__ = OSError(errno.ENOSPC, "No space left on device", "/home/Person Name/data/store.db")
+    wrapped = OperationalError("SELECT 1", (), driver)
+    g = _guard()
+    assert g.note_error(wrapped, "export") is True, "premise: the full drive is found through the context"
+    detail = g.state()["last_disk_full"]["detail"]
+    assert detail == "export: OperationalError: SQLITE_ERROR", detail
+    assert marker not in detail and "Person Name" not in detail
+
+    # the two codes whose message is SQLite's own phrase are shown as the driver said them, with or without a code
+    for code, name, phrase in ((13, "SQLITE_FULL", "database or disk is full"), (10, "SQLITE_IOERR", "disk I/O error")):
+        driver = sqlite3.OperationalError(phrase)
+        driver.sqlite_errorcode = code  # type: ignore[attr-defined]
+        driver.sqlite_errorname = name  # type: ignore[attr-defined]
+        assert storage_guard._first_line_detail(driver) == f"OperationalError: {phrase}"
+    # a driver without a code, and a line that is not one of the phrases, is the class and no word
+    no_code = sqlite3.OperationalError(f"near {marker}: syntax error")
+    assert storage_guard._first_line_detail(no_code) == "OperationalError"
+
+
+@pytest.mark.parametrize(
+    "quoted, shown",
+    [
+        pytest.param("(sqlite3.OperationalError) database or disk is full", True, id="a-driver-with-sqlites-phrase"),
+        pytest.param("(sqlcipher3.dbapi2.OperationalError) database or disk is full", True, id="the-encrypted-driver-with-its-dotted-class"),
+        pytest.param("(sqlite3.OperationalError) no such column: database or disk is full", False, id="a-driver-echoing-a-query"),
+        pytest.param("(sqlite3.OperationalError) database or disk is full MARKER-TRAILING", False, id="text-after-the-phrase"),
+        pytest.param("[Errno 28] No space left on device: '/home/Person Name/data/store.db'", False, id="an-oserror-with-its-path"),
+        pytest.param("MARKER-NOT-A-DRIVER database or disk is full", False, id="any-other-text"),
+    ],
+)
+def test_the_quote_of_a_rollback_error_is_kept_only_for_a_driver_with_sqlites_phrase(quoted, shown):
+    pend = PendingRollbackError(
+        "This Session's transaction has been rolled back due to a previous exception during flush. "
+        f"Original exception was: {quoted}\n[SQL: INSERT INTO articles (title) VALUES (?)]\n[parameters: ('t',)]"
+    )
+    g = _guard()
+    # the full drive is found by the message in the head, as it is for a rollback error quoting a DBAPI error
+    assert g.note_error(pend, "collect pass") is True
+    detail = g.state()["last_disk_full"]["detail"]
+    if shown:
+        assert detail == f"collect pass: PendingRollbackError: {quoted}", detail
+    else:
+        assert detail == "collect pass: PendingRollbackError", detail
+    assert "Person Name" not in detail and "MARKER" not in detail
 
 
 def test_a_bound_value_that_says_disk_full_is_not_a_full_drive():

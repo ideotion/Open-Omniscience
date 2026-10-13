@@ -30,6 +30,7 @@ from src.database.models import (
     WikiPage,
 )
 from src.database.session import get_db
+from src.database.stand_in import not_a_stand_in_article_id
 
 router = APIRouter(prefix="/api/links", tags=["links"])
 
@@ -86,7 +87,8 @@ def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
 
     # How much of the user's own corpus cites this URL (the citation substrate).
     cite_q = db.query(ArticleLink.article_id).filter(
-        or_(ArticleLink.normalized_url == norm, ArticleLink.url == url)
+        or_(ArticleLink.normalized_url == norm, ArticleLink.url == url),
+        not_a_stand_in_article_id(ArticleLink.article_id),  # the links kept for a lost article cite nothing: a stand-in is no article
     )
     citing_ids = sorted({aid for (aid,) in cite_q.all()})
     citing = []

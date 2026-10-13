@@ -174,6 +174,7 @@ from __future__ import annotations
 import errno
 import logging
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -262,6 +263,9 @@ PHASE_DISK = "paused-low-disk"
 #: The corpus file was reported damaged (``database/damage.py``). Not a storage reading: the latch is
 #: the damage registry's, and it is released by the operator starting collection again.
 PHASE_DAMAGE = "paused-damaged"
+#: The check after an unexpected stop is reading the data files (``database/verify.py``): collection waits for
+#: it, and the pause ends by itself when it ends. Not a storage reading either: the registry's ``verifying()``.
+PHASE_VERIFY = "paused-verifying"
 
 #: The plain-words sentences, as frames the page fills with the numbers in its own
 #: language (the pattern of ``estimate_method_i18n``). Each is also a locale key, x12.
@@ -343,6 +347,12 @@ FRAME_OVERRIDE_NO_SUPERVISOR = (
 FRAME_OVERRIDE_DAMAGE = (
     "Collection cannot be forced on: the database reported damage in your library's file, and writing "
     "on only makes that worse. Starting collection again tries once more."
+)
+#: The check after an unexpected stop is still reading the data files: forcing collection on would write
+#: into files the check has not finished reading, so the click is refused with a sentence.
+FRAME_OVERRIDE_VERIFYING = (
+    "Collection cannot be forced on while the app checks your data files after an unexpected stop. The "
+    "pause ends by itself when the check ends."
 )
 
 
@@ -483,6 +493,24 @@ def is_io_error(exc: BaseException | None) -> bool:
     return False
 
 
+#: SQLite's own messages for ``SQLITE_FULL`` and ``SQLITE_IOERR`` (every extended code), lower-cased: the only driver lines this guard keeps.
+_FIXED_PHRASES = ("database or disk is full", "disk i/o error")
+#: The first line the Session's ``PendingRollbackError`` quotes of a DRIVER's original that is one of those phrases.
+_QUOTED_DRIVER_PHRASE = re.compile(r"\((?:sqlite3|sqlcipher3)\.[\w.]+\) (?:database or disk is full|disk I/O error)", re.IGNORECASE)
+
+
+def _os_error_behind(exc: BaseException | None) -> OSError | None:
+    """The first ``OSError`` with an errno in ``exc``'s chain (``.orig``, ``__cause__``, ``__context__``), or ``None``."""
+    seen: set[int] = set()
+    cur = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, OSError) and isinstance(cur.errno, int) and cur.errno > 0:
+            return cur
+        cur = getattr(cur, "orig", None) or cur.__cause__ or cur.__context__
+    return None
+
+
 def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -> str:
     """What the guard keeps of an error: the DRIVER's exception class and FIRST line of its message
     (``OperationalError: disk I/O error``), never SQLAlchemy's wrapper text, which carries the SQL and
@@ -494,10 +522,30 @@ def _first_line_detail(exc: BaseException | None, *, quote_head: bool = False) -
         return ""
     orig = _dbapi_cause(exc)
     if orig is not None:
-        shown, text = orig, str(orig)
+        # The driver's own line only for the two codes whose message is SQLite's fixed phrase (SQLITE_FULL 13, SQLITE_IOERR 10); a driver
+        # without a code only when the line IS one of those phrases. Any other driver error found in the chain (code 1 can echo a query, and a
+        # full drive can be found through an OSError beside it) is its class and a fixed label.
+        code = getattr(orig, "sqlite_errorcode", None)
+        first_line = (str(orig).splitlines() or [""])[0]
+        if (isinstance(code, int) and (code & 0xFF) in (13, 10)) or (not isinstance(code, int) and first_line.strip().lower() in _FIXED_PHRASES):
+            shown, text = orig, str(orig)
+        else:
+            return damage.failure_text(orig)
     elif quote_head:
-        # the Session's rollback error opens with a paragraph of advice and then quotes the original
-        shown, text = exc, _text_head(exc).rpartition("Original exception was: ")[2]
+        os_error = _os_error_behind(exc)
+        if os_error is not None:
+            # An ``OSError``'s text names the file it failed on (a home folder with a person's name in it) and this detail is served into the
+            # status payload and the bundle: the class and the errno's standard phrase ("No space left on device"), never the path.
+            return f"{type(os_error).__name__}: {os.strerror(int(os_error.errno or 0))}"
+        if type(exc).__name__ != "PendingRollbackError":
+            return type(exc).__name__  # any other exception's words are its author's, and can hold a path or a value
+        # the Session's rollback error opens with a paragraph of advice and then quotes the original: kept only when the original is a
+        # DRIVER's error with SQLite's fixed phrase (``(sqlite3.OperationalError) database or disk is full``); the quoted text of any other
+        # original (an ``OSError`` raised in a flush hook names its path) is the class of the rollback error alone
+        quoted = _text_head(exc).rpartition("Original exception was: ")[2]
+        if not _QUOTED_DRIVER_PHRASE.fullmatch((quoted.splitlines() or [""])[0].strip()):
+            return type(exc).__name__
+        shown, text = exc, quoted
     else:
         return type(exc).__name__
     first = (text.splitlines() or [""])[0]
@@ -770,13 +818,17 @@ class StorageGuard:
 
     def kind(self) -> str | None:
         """``"disk"`` (the more severe, wins), ``"wal"``, ``"damage"`` (the corpus file was reported
-        damaged) or None."""
+        damaged), ``"verifying"`` (the check after an unexpected stop is reading the data files) or None."""
         with self._lock:
             storage = "disk" if self._disk else ("wal" if self._wal else None)
-        return storage or ("damage" if damage.registry.corpus_latched() else None)
+        return storage or _damage_kind()
 
     def admit(self) -> str | None:
-        """None = start the next unit of work; else ``"disk"``, ``"wal"`` or ``"damage"``.
+        """None = start the next unit of work; else ``"disk"``, ``"wal"``, ``"damage"`` or ``"verifying"``.
+
+        ``"verifying"`` is the check after an unexpected stop (``database/verify.py``): collection waits for it
+        and the pause ends by itself when it ends. Like ``"damage"`` it is not a storage reading, so it follows
+        neither this guard's switch nor the operator's override (its own switch is ``OO_BOOT_VERIFY``).
 
         ``"damage"`` is the CORPUS file's latch in ``database/damage.py``: the database reported it
         damaged, and writing on only makes that worse. It is not a storage reading and it follows
@@ -797,11 +849,11 @@ class StorageGuard:
             with self._lock:
                 if self._override is None:
                     storage = "disk" if self._disk else ("wal" if self._wal else None)
-        return storage or ("damage" if damage.registry.corpus_latched() else None)
+        return storage or _damage_kind()
 
     def phase(self) -> str | None:
         kind = self.kind()
-        return {"disk": PHASE_DISK, "wal": PHASE_WAL, "damage": PHASE_DAMAGE}.get(kind or "")
+        return {"disk": PHASE_DISK, "wal": PHASE_WAL, "damage": PHASE_DAMAGE, "verifying": PHASE_VERIFY}.get(kind or "")
 
     # -- the latches ---------------------------------------------------------------
     def observe(
@@ -1222,14 +1274,17 @@ class StorageGuard:
         return bool("disk" in kinds and self._disk and (free is None or reserve is None or free < reserve))
 
     def _override_refusal_locked(
-        self, free: int | None, floor: int, now_mono: float, damaged: bool = False
+        self, free: int | None, floor: int, now_mono: float, damaged: bool = False, verifying: bool = False
     ) -> dict[str, Any] | None:
         """What a click on "Resume anyway" would be answered with right now, or None when it
         would be granted: the ONE place the refusals are decided, so the button that is
         offered and the click that is answered cannot disagree. Caller holds the lock;
-        ``damaged`` is the corpus latch of ``database/damage.py``, read BEFORE the lock was taken."""
+        ``damaged`` is the corpus latch of ``database/damage.py`` and ``verifying`` its check after an
+        unexpected stop, both read BEFORE the lock was taken."""
         if damaged:
             return {"kind": "damage", "frame": FRAME_OVERRIDE_DAMAGE, "vars": {}}
+        if verifying:
+            return {"kind": "verifying", "frame": FRAME_OVERRIDE_VERIFYING, "vars": {}}
         if self._hold_until is not None and now_mono < self._hold_until:
             return {"kind": "held", "frame": FRAME_OVERRIDE_HELD, "vars": {}}
         if free is None:
@@ -1256,6 +1311,7 @@ class StorageGuard:
         wal, free = r.get("wal_bytes"), r.get("disk_free_bytes")
         now_mono = self._clock()
         damaged = damage.registry.corpus_latched()  # before the lock: the registry's lock is never nested here
+        verifying = damage.registry.verifying()
         refused: dict[str, Any] | None = None
         with self._lock:
             out["engaged"] = self._wal or self._disk
@@ -1263,7 +1319,7 @@ class StorageGuard:
                 self._override = self._withdrawn = None  # nothing left to override
                 return out
             floor = override_floor_bytes(wal if wal is not None else self._wal_seen)
-            refused = self._override_refusal_locked(free, floor, now_mono, damaged)
+            refused = self._override_refusal_locked(free, floor, now_mono, damaged, verifying)
             if refused is None:
                 self._override = {
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1578,6 +1634,7 @@ class StorageGuard:
         # registry's lock is never held while this one is awaited (nor the reverse).
         dmg = damage.registry.state(detail=detail)
         damaged = _corpus_latched_in(dmg)
+        verifying = bool(dmg.get("enabled") and dmg.get("verifying"))
         with self._lock:
             wal, disk = self._wal, self._disk
             thr = dict(self._thresholds)
@@ -1659,7 +1716,9 @@ class StorageGuard:
             reason = " ".join(_render_english(n) for n in notes) or None
             if dmg["notes"]:
                 # The damage latch has no numbers to render: its sentences are plain frames.
-                reason = " ".join([*([reason] if reason else []), *(n["frame"] for n in dmg["notes"])])
+                reason = " ".join(
+                    [*([reason] if reason else []), *(n["frame"].format(**n["vars"]) for n in dmg["notes"])]
+                )
             return {
                 "enabled": self.enabled(),
                 "engaged": wal or disk,
@@ -1670,7 +1729,7 @@ class StorageGuard:
                     else (
                         PHASE_WAL
                         if wal and not overridden
-                        else (PHASE_DAMAGE if damaged else None)
+                        else (PHASE_DAMAGE if damaged else (PHASE_VERIFY if verifying else None))
                     )
                 ),
                 # An operator's override (R112): collection runs although the latch holds. The
@@ -1681,7 +1740,7 @@ class StorageGuard:
                 # page offers the button only then, and says the refusal otherwise (a supervisor
                 # that is not running is the route's own answer and is not in this preview).
                 "override_refusal": (
-                    self._override_refusal_locked(free_now, floor_now, self._clock(), damaged)
+                    self._override_refusal_locked(free_now, floor_now, self._clock(), damaged, verifying)
                     if (wal or disk) and not overridden
                     else None
                 ),
@@ -1765,6 +1824,14 @@ class StorageGuard:
                     "the end of the pass in flight (an upper bound: it counts every writer)."
                 ),
             }
+
+
+def _damage_kind() -> str | None:
+    """The kind the DATABASE'S own state gives: ``"damage"`` (the corpus file is latched) before ``"verifying"``
+    (the check after an unexpected stop is reading the files), else None."""
+    if damage.registry.corpus_latched():
+        return "damage"
+    return "verifying" if damage.registry.verifying() else None
 
 
 def _corpus_latched_in(dmg: dict[str, Any]) -> bool:

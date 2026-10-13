@@ -40,6 +40,7 @@ from src.database.models import (
     Keyword,
     MarketExtractionRule,
 )
+from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -170,6 +171,9 @@ def _daily_series(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[in
                 KeywordMentionRead.observed_on >= cutoff,
                 KeywordMentionRead.observed_on < hi,
                 KeywordMentionRead.observed_on.isnot(None),
+                # a day's count is a count of articles: a mention kept for a lost one is none, and
+                # it would otherwise carry a keyword past min_nonzero_days on its own
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.observed_on)
             .all()
@@ -195,6 +199,8 @@ def _daily_totals(session, cutoff: date, hi: date) -> dict[date, int]:
             KeywordMentionRead.observed_on >= cutoff,
             KeywordMentionRead.observed_on < hi,
             KeywordMentionRead.observed_on.isnot(None),
+            # the denominator counts articles, so it leaves the same ones out as the series do
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
         )
         .group_by(KeywordMentionRead.observed_on)
         .all()
@@ -217,6 +223,8 @@ def _source_counts(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[i
                 KeywordMentionRead.observed_on >= cutoff,
                 KeywordMentionRead.observed_on < hi,
                 KeywordMentionRead.source_id.isnot(None),
+                # the independence gate counts outlets: a mention kept for a lost article is none
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .group_by(KeywordMentionRead.keyword_id)
             .all()
@@ -402,6 +410,7 @@ def _pair_article_ids(session, cid: int, kid: int, cutoff, hi, cap: int) -> list
                 KeywordMentionRead.keyword_id == k,
                 KeywordMentionRead.observed_on >= cutoff,
                 KeywordMentionRead.observed_on < hi,
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .distinct()
         }

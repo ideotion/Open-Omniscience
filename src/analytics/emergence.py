@@ -60,6 +60,7 @@ def find_manufactured_emergence(
     """
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Article, ArticleMentionedDate, Keyword
+    from src.database.stand_in import not_a_stand_in_article_id
 
     today = date.today()
     r_start = today - timedelta(days=recent_days)
@@ -74,7 +75,12 @@ def find_manufactured_emergence(
         kept, _groups = grouped_counts(
             session,
             select(KeywordMentionRead.keyword_id, func.count(distinct(KeywordMentionRead.article_id)))
-            .where(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi)
+            .where(
+                KeywordMentionRead.observed_on >= lo,
+                KeywordMentionRead.observed_on < hi,
+                # the mentions kept for a lost article: a stand-in is no article, so it is neither a "recent article" of a keyword nor a source
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            )
             .group_by(KeywordMentionRead.keyword_id),
             keep,
         )
@@ -115,6 +121,7 @@ def find_manufactured_emergence(
                 KeywordMentionRead.keyword_id == kid,
                 KeywordMentionRead.observed_on >= r_start,
                 KeywordMentionRead.observed_on < today + timedelta(days=1),
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
             )
             .distinct()
             .all()
