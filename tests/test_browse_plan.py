@@ -117,9 +117,10 @@ def _reference(session, *, language=None, source=None, start_date=None, end_date
         session, source=source, start_date=start_date, end_date=end_date, language=language,
         tags=tags, provenance=None, source_type=source_type,
     )
+    from src.database.stand_in import not_a_stand_in_article
+
     q = session.query(Article)
-    if not include_quarantined:
-        q = q.filter(Article.quarantined.isnot(True))
+    q = q.filter(not_a_stand_in_article()) if include_quarantined else q.filter(Article.quarantined.isnot(True))
     if filters:
         q = q.filter(and_(*filters))
     total = q.count()
@@ -219,8 +220,9 @@ def test_the_include_quarantined_view_shows_every_row_and_nothing_is_dropped_by_
 
 def test_the_include_quarantined_view_leaves_a_stand_in_out(db):
     """A stand-in row (a place-holder a repair wrote for a lost article, never data) is quarantined, so the default
-    view leaves it out through the id list; the view that INCLUDES quarantined rows must still leave it out. The page
-    statement used to drop the whole gate there, which showed the place-holder as an article."""
+    view leaves it out through the id list; the view that INCLUDES quarantined rows must still leave it out. Main
+    already did; the id-first page statement had to keep it (a first draft of that statement dropped the whole gate
+    for this view, and this test and test_stand_in_rows.py are what fail if it does again)."""
     from src.database.stand_in import ARTICLE_REASON, lost_text
 
     stand_in = Article(
@@ -236,10 +238,16 @@ def test_the_include_quarantined_view_leaves_a_stand_in_out(db):
         assert total == (N if include else sum(1 for a in db.query(Article).all() if a.quarantined is not True)), include
 
 
-def test_the_export_path_is_the_old_single_statement(db):
-    """``limit=None`` is every match with its body, for the export: unchanged, and still in order."""
+def test_the_export_path_is_the_old_single_statement(db, statements):
+    """MUTATION TARGET. ``limit=None`` is every match with its body, for the export: unchanged, still in order, and
+    still ONE statement that selects the bodies (no id query beside a load by id: that is the paged shape)."""
     for sort_by in (None, "title"):
-        assert _new(db, sort_by=sort_by) == _reference(db, sort_by=sort_by)
+        statements.clear()
+        got = _new(db, sort_by=sort_by)
+        with_body = [s for s, _p in statements if _selects_body(s)]  # the export's statements, before the reference runs
+        assert len(with_body) == 1 and not re.search(r"articles\.id IN \(", with_body[0]), with_body
+        assert " LIMIT " not in with_body[0], with_body[0]
+        assert got == _reference(db, sort_by=sort_by)
 
 
 # --------------------------------------------------------------------------- #

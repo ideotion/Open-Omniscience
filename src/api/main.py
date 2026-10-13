@@ -1542,7 +1542,15 @@ def _not_quarantined_by_index():
     Measured on a 40,000-article, 2 GB synthetic store (cold cache, plaintext): the first page
     107 -> 3 ms and a page 20,000 rows deep 715 -> 15 ms (the old form read every skipped row's
     body); the plan went from ``SCAN ... USING INDEX idx_article_published_at`` to ``SCAN ...
-    USING COVERING INDEX idx_article_published_at``."""
+    USING COVERING INDEX idx_article_published_at``.
+
+    Cost, measured by the independent read of this change (300,000 rows, tiny bodies, warm,
+    plaintext): SQLite builds the id list once PER STATEMENT (twice on a filtered browse: the count
+    and the page), so a store where most rows are quarantined pays one pass over those ids for every
+    page: about 15 ms at 75,000, 48 ms at 225,000 and 63 ms at 297,000 quarantined ids, against
+    about 0.1 ms for the old form's first page on bodies that small. The plan is the same whatever
+    the count, so the plan tests cannot see it; the old form was far dearer wherever the bodies are
+    real, deep pages are read, the store is cold or encrypted, or the newest rows are quarantined."""
     from sqlalchemy import select
 
     return Article.id.notin_(select(Article.id).where(Article.quarantined.is_(True)))

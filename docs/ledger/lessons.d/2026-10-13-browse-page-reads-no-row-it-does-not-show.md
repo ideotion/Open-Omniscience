@@ -16,6 +16,8 @@ spill to temp files when they did not fit). A paged browse now asks for ids and 
 variable ceiling, the shape the text path has had since S2.5; `limit=None` (the export: every match, bodies included) keeps the single
 full-row query.
 
+**What it costs, found by the independent read (300,000 rows, tiny bodies, warm, plaintext):** SQLite builds the quarantined-id list once per statement (twice on a filtered browse: the count and the page), so a store where most rows are quarantined pays one pass over those ids per page: about 15 ms at 75,000, 48 ms at 225,000 and 63 ms at 297,000 ids, against about 0.1 ms for the old form's first page on bodies that small. The plan is the same whatever the count, so the plan tests cannot see it. The old form was far dearer wherever bodies are real, deep pages are read, the store is cold or encrypted, or the newest rows are quarantined. A row quarantined by another connection between the id query and the row load can still appear once in the default view (each read sees its own snapshot); the text path has had the same gap since S2.5, a Python re-check of the loaded rows would close it, and nothing was built for it because the window is a few milliseconds and the effect one stale row on one page.
+
 **What the first version of this change got wrong, found when it was restacked on the repaired-database work:** the id-first form dropped the
 whole gate for a reader that INCLUDES quarantined items, and that gate carries one more condition since the repair writes stand-in rows
 (`not_a_stand_in_article()`, a place-holder is quarantined, so the default view left it out through the list and the opt-in view needed the
