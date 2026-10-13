@@ -2601,8 +2601,11 @@ def _write_all_diagnostics_zip(
                 if scan_window is not None and exclusive is None:
                     try:
                         scan_claim = window.enter_context(scan_window())
-                    except Exception:  # noqa: BLE001 - a build never fails for want of the hold
-                        _LOG.warning("all-diagnostics could not claim the machine for its scans", exc_info=True)
+                    except Exception as scan_claim_err:  # noqa: BLE001 - a build never fails for want of the hold
+                        log_failure(
+                            _LOG, "all-diagnostics could not claim the machine for its scans", scan_claim_err,
+                            level=logging.WARNING,
+                        )
                         scan_claim = {"held": False, "reason": "could not claim the machine"}
                 scans_began_at = _mono()
                 scans_began_iso = datetime.now().isoformat(timespec="seconds")

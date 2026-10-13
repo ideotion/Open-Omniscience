@@ -466,6 +466,63 @@ def test_the_reason_the_vitals_recorder_keeps_is_the_class_and_the_systems_own_r
 
 
 # --------------------------------------------------------------------------- #
+#  the unattended-run log: three WARNING lines that were written with exc_info
+# --------------------------------------------------------------------------- #
+def _the_one_record(caplog, fragment: str) -> logging.LogRecord:
+    mine = [rec for rec in caplog.records if rec.name == "src.monitoring.expedition" and fragment in rec.getMessage()]
+    assert len(mine) == 1, [rec.getMessage() for rec in caplog.records]
+    assert mine[0].exc_info is None and mine[0].exc_text is None, "no traceback rides the record"
+    return mine[0]
+
+
+def test_an_expedition_file_that_cannot_be_written_logs_the_failure_scrubbed_with_no_traceback_on_the_record(
+    _data, monkeypatch, caplog
+):
+    from src.monitoring import expedition as ex
+
+    _held(monkeypatch)
+
+    def refused(*args, **kwargs):
+        raise OSError(28, f"No space left on device ({SECRET})")
+
+    monkeypatch.setattr(ex.os, "replace", refused)
+    caplog.set_level(logging.DEBUG)
+    _inside_another_failure(lambda: ex._write({"armed": True}))
+    assert "OSError" in _the_one_record(caplog, "could not persist expedition.json").getMessage()
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+
+
+def test_an_event_that_cannot_be_recorded_logs_the_failure_scrubbed_with_no_traceback_on_the_record(_data, monkeypatch, caplog):
+    from src.monitoring import expedition as ex
+
+    _held(monkeypatch)
+
+    def unreadable():
+        raise RuntimeError(f"the state said {SECRET}")
+
+    monkeypatch.setattr(ex, "_read", unreadable)
+    caplog.set_level(logging.DEBUG)
+    _inside_another_failure(lambda: ex.record_event("armed", "x"))
+    assert "RuntimeError" in _the_one_record(caplog, "expedition event not recorded").getMessage()
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+
+
+def test_a_refresh_that_fails_logs_the_failure_scrubbed_with_no_traceback_on_the_record(_data, monkeypatch, caplog):
+    from src.monitoring import expedition as ex
+
+    _held(monkeypatch)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError(f"the counters said {SECRET}")
+
+    monkeypatch.setattr(ex, "_series_window", broken)
+    caplog.set_level(logging.DEBUG)
+    _inside_another_failure(lambda: ex.refresh(object()))
+    assert "RuntimeError" in _the_one_record(caplog, "expedition refresh failed").getMessage()
+    _no_passphrase_in(_everything_a_handler_would_write(caplog))
+
+
+# --------------------------------------------------------------------------- #
 #  the modules of the crash witnesses log no traceback and print no exception raw
 # --------------------------------------------------------------------------- #
 #: The modules this PR creates or rewrites for the crash witnesses and the runs, each read whole.
@@ -478,19 +535,42 @@ _WITNESS_MODULES = (
     "src/monitoring/chronology.py",
     "src/api/diagnostics/runs.py",
     "src/monitoring/vitals_history.py",
+    "src/monitoring/expedition.py",
 )
 #: Calls a module of the list above may hand a caught exception to besides the common ones, each with what it writes: the vitals
 #: recorder's ``_reason`` is the exception's class and the operating system's own reason, never its message ("Never its message,
 #: which can name a path or carry text a user typed"), ``_note_error`` writes only that, and ``_debug_failure`` is ``log_failure`` behind a
 #: check that DEBUG is on (tested below).
 _EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"}}
-#: Files too old to hold to the second rule (every handler's exception through a scrubbing call): the bundle writer has 53 handlers,
-#: 23 of them binding a name, and writes through its own scrub (``_all_diag_err_str`` / ``_err_str``, which the guard does not know)
-#: or a fixed text; with those two names allowed the full guard still reports 12 lines on main (three ``HTTPException(detail=str(exc))``
-#: answers of the volumes route to the local page, from splitting a finished zip on disk with no engine in the path, and re-raises).
-#: The full reading of it is the next PR's. They are held to the first rule only: no log call asks for a traceback (``exc_info``,
-#: ``.exception()``, the ``traceback`` module, a ``**`` mapping into a log call, a log method kept in a name or reached by ``getattr``).
-_NO_TRACEBACK_MODULES = ("src/api/diagnostics/bundle.py",)
+#: The bundle writer is read whole, like the witnesses, with its own two scrubbing helpers added: ``_all_diag_err_str`` is
+#: ``exception_text(limit=300)`` and ``_err_str`` its older spelling. What the guard still reports there is each LINE below, with the
+#: reason it stands. A line is allowed by its text, so a second copy of the same line elsewhere is allowed with it (a reviewer sees it
+#: in the diff); an allowance that no longer matches a hit fails, so the table cannot outlive the code it excuses.
+_BUNDLE_SCRUBS = {"_all_diag_err_str", "_err_str"}
+_BUNDLE_ALLOWED = {
+    ") from exc": (
+        "the closing line of a raise whose own detail is a fixed sentence: the cause chain rides the HTTPException the route answers "
+        "with, and nothing logs an HTTPException's chain (the member handlers write it through _all_diag_err_str)"
+    ),
+    "raise HTTPException(status_code=507, detail=str(exc)) from exc": (
+        "a VolumeRoomError, whose text diagnostics_volumes composes from sizes and the drive; the answer goes to the local page"
+    ),
+    "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc": (
+        "the error of splitting a FINISHED zip on disk, answered to the local page, which puts its own translated sentence before it: "
+        "no engine and no passphrase in the path (_ensure_volume_set reads a zip and writes volumes). If an engine ever enters it, "
+        "this allowance is wrong"
+    ),
+    'if no_room_refusal(exc, "splitting the archive") is None:': "no_room_refusal reads errno and nothing else (keyword_log_scan)",
+    'f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "': (
+        "the operating system's own reason (\"No space left on device\"), never the message, which carries the path"
+    ),
+    'box["error"] = exc': (
+        "stored for the caller's side to re-raise, where the per-member handler writes it through _all_diag_err_str"
+    ),
+    "cause = exc.__cause__ if isinstance(exc, HTTPException) else None": (
+        "the cause is asked its type (isinstance) or handed to _all_diag_err_str, and the HTTPException itself is not read"
+    ),
+}
 _LOG_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "exception", "log", "fatal"}
 _TRACEBACK_CALLS = {
     "exception",
@@ -592,10 +672,31 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
     assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
 
 
-@pytest.mark.parametrize("rel", _NO_TRACEBACK_MODULES)
-def test_the_bundle_writer_logs_no_traceback(rel):
-    source = (ROOT / rel).read_text(encoding="utf-8")
-    assert _leaks(source, handlers=False) == [], f"{rel}: {_leaks(source, handlers=False)}"
+def _bundle_hits(source: str) -> dict[str, list[str]]:
+    """The hits of the full guard on the bundle writer, grouped by the text of the line they stand on."""
+    lines = source.splitlines()
+    out: dict[str, list[str]] = {}
+    for hit in _leaks(source, also_scrubbing=_BUNDLE_SCRUBS):
+        out.setdefault(lines[int(hit.split(":", 1)[0]) - 1].strip(), []).append(hit)
+    return out
+
+
+def test_the_bundle_writer_logs_no_traceback_and_prints_no_caught_exception_raw_but_the_lines_it_states():
+    got = _bundle_hits((ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8"))
+    assert sorted(set(got) - set(_BUNDLE_ALLOWED)) == [], {k: v for k, v in got.items() if k not in _BUNDLE_ALLOWED}
+
+
+def test_every_line_the_bundle_writer_is_allowed_still_stands_there():
+    got = _bundle_hits((ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8"))
+    assert sorted(set(_BUNDLE_ALLOWED) - set(got)) == [], "an allowance that no longer matches a line of the code"
+
+
+def test_a_raw_use_planted_in_the_bundle_writer_is_not_one_of_the_lines_it_is_allowed():
+    source = (ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
+    planted = source + "\n\ndef _planted():\n    try:\n        go()\n    except OSError as exc:\n        _LOG.warning('x %s', exc)\n"
+    assert set(_bundle_hits(planted)) - set(_BUNDLE_ALLOWED), "the full guard does not see a raw use added to the bundle writer"
+    planted = source + "\n\ndef _planted():\n    _LOG.warning('x', exc_info=True)\n"
+    assert set(_bundle_hits(planted)) - set(_BUNDLE_ALLOWED)
 
 
 def test_the_traceback_only_reading_ignores_how_a_handler_uses_its_exception():
