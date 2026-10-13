@@ -118,24 +118,6 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
 #: a record written from the same function is not in this table.
 _UNLOCK_DETAIL = "detail=exception_text("
 KEPT: dict[str, dict[tuple[str, str], int]] = {
-    # The fetch layer's own refusals and failures (a DNS answer, a robots refusal, a request error, an XML parse error): no database
-    # call can raise in these handlers, so ruling (2) keeps the scrubbed words.
-    "src/ingest/__init__.py": {
-        ("EthicalFetcher._resolve_cached", 'raise FetchFailed(f"cannot resolve host {host!r}: {exception_text(exc, typed=False)}") from None'): 1,
-        ("EthicalFetcher._guarded_redirect_get", "raise BlockedTarget(exception_text(exc, typed=False)) from None"): 1,
-        ("EthicalFetcher._fetch_locked", 'transient = FetchFailed(f"request error for {url}: {exception_text(exc, typed=False)}")'): 1,
-    },
-    "src/ingest/pipeline.py": {
-        ("ingest_url", "return IngestOutcome(url, IngestResult.BLOCKED_ROBOTS, detail=exception_text(exc, typed=False))"): 1,
-        ("ingest_url", "return IngestOutcome(url, IngestResult.ROBOTS_UNAVAILABLE, detail=exception_text(exc, typed=False))"): 1,
-        ("ingest_url", "return IngestOutcome(url, IngestResult.CRAWL_DELAY_DEFERRED, detail=exception_text(exc, typed=False))"): 1,
-        ("ingest_url", "return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=exception_text(exc, typed=False))"): 1,
-    },
-    "src/ingest/sitemap.py": {
-        ("parse_sitemap_xml", 'raise SitemapError(f"refused unsafe XML (entity expansion/external entity): {exception_text(exc, typed=False)}") from None'): 1,
-        ("parse_sitemap_xml", 'raise SitemapError(f"malformed sitemap XML: {exception_text(exc, typed=False)}") from None'): 1,
-        ("discover_sitemap_urls", 'report.errors.append(f"{sm_url}: {exception_text(exc, typed=False)}")'): 2,
-    },
     "src/api/unlock.py": {
         # One WARNING line (the class and the scrubbed FIRST line, never the statement or a trailing line): the log, not a record.
         ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
