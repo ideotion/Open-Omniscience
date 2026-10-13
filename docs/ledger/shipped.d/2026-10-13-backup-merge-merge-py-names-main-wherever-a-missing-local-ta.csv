@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,backup/merge,merge.py names main wherever a missing local table would reach the attached backup,shipped,PR #1351,src/backup/merge.py tests/test_merge_main_schema.py docs/ledger/OPEN_QUEUE.md,"The four presence guards (stamps, title translations, wikidata items, places) also test the local table, the alternates path and _capture_alternates name main, and the stamps DELETE is main-qualified and skipped without the table; these paths never write into the incoming backup. About sixty other writes stay open in the ledger."

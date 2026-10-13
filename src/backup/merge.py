@@ -2445,6 +2445,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     )
     here_origin, here_at, here_version = here[0] if here else ("unsigned", None, None)
     notnull: dict[str, set[str]] = {}
+    on_main: dict[str, bool] = {}
     incoming = _q(
         con,
         "SELECT table_name, identity, fields, provenance, origin FROM inc.metadata_alternates"
@@ -2468,16 +2469,23 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         ):
             r.duplicate += 1
             continue
+        if table not in on_main:
+            on_main[table] = _local_has_table(con, table)
+        if not on_main[table]:
+            # Named for `main`, never the attached backup: an unqualified name would fall
+            # through to the incoming file's table when this corpus lacks it.
+            r.deferred += 1
+            continue
         tbl = _ident(table)
         if table not in notnull:
             notnull[table] = {
-                c[1] for c in _q(con, f"PRAGMA table_info({tbl})") if c[3]  # nosec B608 - tbl is a key of ALTERNATE_SPECS
+                c[1] for c in _q(con, f"PRAGMA main.table_info({tbl})") if c[3]  # nosec B608 - tbl is a key of ALTERNATE_SPECS
             }
         where, params = _alternate_local_match(con, spec, identity, notnull[table])
         if where is None:
             r.deferred += 1
             continue
-        rows = _q(con, f"SELECT MIN(rowid) FROM {tbl} WHERE {where}", tuple(params))  # nosec B608 - table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
+        rows = _q(con, f"SELECT MIN(rowid) FROM main.{tbl} WHERE {where}", tuple(params))  # nosec B608 - table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
         local_id = rows[0][0] if rows else None
         if local_id is None:
             r.deferred += 1
@@ -2485,7 +2493,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         same = " AND ".join(f"{c} IS ?" for c in spec["differs"])
         if _count(
             con,
-            f"SELECT COUNT(*) FROM {tbl} WHERE {where} AND {same}",  # nosec B608 - as above
+            f"SELECT COUNT(*) FROM main.{tbl} WHERE {where} AND {same}",  # nosec B608 - as above
             tuple(params) + tuple(fields.get(c) for c in spec["differs"]),
         ):
             r.duplicate += 1  # this corpus already holds that value: no difference here
@@ -3341,11 +3349,12 @@ def _merge_articles(con, batch_id, results) -> None:
     # again after it is deleted -- so a leftover stamp could certify a NEW article's
     # absent rows, and the post-swap re-index skips a certified article. Cheap insurance:
     # two narrow tables, normally nothing to delete. The carry writes its own stamps after.
-    con.execute(
-        "DELETE FROM article_index_stamps WHERE article_id IN ("
-        " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
-        (batch_id,),
-    )
+    if _local_has_table(con, "article_index_stamps"):  # else an unqualified name reaches the backup's
+        con.execute(
+            "DELETE FROM main.article_index_stamps WHERE article_id IN ("
+            " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
+            (batch_id,),
+        )
     r.samples = _new_row_samples(
         con, batch_id, "articles", "COALESCE(NULLIF(m.title, ''), '(untitled)')"
     )
@@ -3590,6 +3599,9 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         return
     if not _inc_has_table(con, "article_index_stamps"):
         plan["reason"] = "the backup predates engine stamps"
+        return
+    if not _local_has_table(con, "article_index_stamps"):
+        plan["reason"] = "this corpus has no stamps table to record a carry in"
         return
     try:
         from src.analytics.engine_identity import baseline_engine_id
@@ -4198,7 +4210,7 @@ def _capture_alternates(
     confirmed it and one that did not, do. A re-import of the same backup records nothing new."""
     from src.backup.provenance import producer_tag_sql
 
-    if not _local_has_table(con, "metadata_alternates"):
+    if not _local_has_table(con, "metadata_alternates") or not _local_has_table(con, table):
         return 0
     arrived = _q(
         con, "SELECT origin_fingerprint, imported_at, app_version FROM merge_batches WHERE id = ?",
@@ -4218,8 +4230,8 @@ def _capture_alternates(
     # the corpus already holds it in a sibling row.
     where = (
         f" FROM inc.{tbl} i {joins}"  # nosec B608 - joins/key/differs are module literals from this file's own callers and tbl is _ident-quoted; no request, user or file value reaches them
-        f" WHERE EXISTS (SELECT 1 FROM {tbl} t WHERE {key})"
-        f" AND NOT EXISTS (SELECT 1 FROM {tbl} t WHERE {key} AND {same})"
+        f" WHERE EXISTS (SELECT 1 FROM main.{tbl} t WHERE {key})"
+        f" AND NOT EXISTS (SELECT 1 FROM main.{tbl} t WHERE {key} AND {same})"
     )
     contradicting = int(_q(con, "SELECT COUNT(*)" + where)[0][0])  # nosec B608 - identifiers come from the app's OWN fixed schema maps, never input
     if not contradicting:
@@ -4230,7 +4242,7 @@ def _capture_alternates(
         "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
         " provenance, origin, status, created_at)"
         f" SELECT :batch, :table, json_object({ident}),"
-        f" (SELECT MIN(t.rowid) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
+        f" (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key}), json_object({fields}), {tag},"
         " :origin, 'pending', :now"
         f"{where}"
         " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
@@ -4745,7 +4757,9 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     # Identity is the schema's own `uq_article_title_translation`; a different model or prompt
     # is a different measurement and arrives as its own row. A backup that predates the table
     # has nothing to carry, and says so by not reporting the domain.
-    if _inc_has_table(con, "article_title_translations"):
+    if _inc_has_table(con, "article_title_translations") and _local_has_table(
+        con, "article_title_translations"
+    ):
         tt = DomainResult()
         tt_key = (
             "t.article_id = ma.new AND t.target_lang = i.target_lang AND t.model = i.model"
@@ -4804,7 +4818,7 @@ def _merge_places(con, batch_id, results) -> None:
     keeps the report reading the way the data depends. A backup that predates either table has
     nothing to carry and says so by not reporting the domain.
     """
-    if _inc_has_table(con, "wikidata_items"):
+    if _inc_has_table(con, "wikidata_items") and _local_has_table(con, "wikidata_items"):
         wd = DomainResult()
         wd_key = "t.qid = i.qid"
         wd.conflict = _capture_alternates(
@@ -4829,7 +4843,7 @@ def _merge_places(con, batch_id, results) -> None:
         wd.duplicate = max(0, wd.duplicate - wd.conflict)
         results["wikidata_items"] = wd
 
-    if _inc_has_table(con, "places"):
+    if _inc_has_table(con, "places") and _local_has_table(con, "places"):
         pl = DomainResult()
         pl_key = "t.id = i.id"
         pl.conflict = _capture_alternates(
