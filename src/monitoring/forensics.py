@@ -1731,12 +1731,26 @@ def render_text(d: dict[str, Any] | None = None) -> str:
     try:
         from src.monitoring import expedition
 
-        lines.append(expedition.render_text())
+        # The payload's own copy when it has one, so the text is a rendering of the JSON and nothing
+        # else: every fact the plain-text file holds is in `session_forensics()["expedition"]`.
+        lines.append(expedition.render_text(d.get("expedition") if isinstance(d.get("expedition"), dict) else None))
     except Exception as exc:  # noqa: BLE001 - the forensics file must survive a broken sidecar
         log_failure(_LOG, "session forensics: expedition log unavailable", exc, level=logging.DEBUG)
         lines.append("The expedition log could not be read for this report.")
 
     return "\n".join(lines)
+
+
+def _expedition_digest() -> dict[str, Any]:
+    """The expedition log's digest (a plain file read, O(1) in corpus size), or a stated absence. An
+    exception's TEXT is not recorded: the type is enough to say what failed, and a report that is
+    shared must not carry text a lower layer composed."""
+    try:
+        from src.monitoring import expedition
+
+        return expedition.digest()
+    except Exception as exc:  # noqa: BLE001 - the forensics block must survive a broken sidecar
+        return {"available": False, "reason": f"the expedition log could not be read ({type(exc).__name__})"}
 
 
 def session_forensics() -> dict[str, Any]:
@@ -1745,6 +1759,9 @@ def session_forensics() -> dict[str, Any]:
     debug bundle / the all-diagnostics zip."""
     cur = _read_state() or {}
     return {
+        # The unattended-run log: the one part of the plain-text rendering that was not already in this
+        # payload (R119: the stand-alone text file goes, so what it held must be here).
+        "expedition": _expedition_digest(),
         "inventory": data_dir_inventory(),
         "storage_footprint": storage_footprint(),
         "data_dir_persistence": data_dir_persistence(),

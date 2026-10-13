@@ -133,7 +133,7 @@ All of it is counts, times, sizes, settings and reasons: no term, no article, no
 | Damaged database not detected (8.5; WAL 4) | `database-damage.json` | WAL: `data/database-damage.json` from its E1 | 40 KB |
 | Storage words that misled (WAL 1); drive vs freelist | `storage.json` | WAL: `freelist_bytes` and `drive_free_bytes` renamed in the merge | 120 KB |
 | Who held the gate, checkpoint, guard and pool history (WAL 2, 3, 6) | `contention.json` | WAL | 200 KB |
-| Backups, exports and restores that failed (WAL 5) | `transfers.json` | WAL | 40 KB |
+| Backups, exports and restores that failed (WAL 5) | `transfers.json` | WAL | 40 KB (WITHDRAWN 2026-10-06: WAL builds no such record and `src.backup.transfers` does not exist; the Diagnostics zip's own transfers are in `runs.json`) |
 | What each boot replayed; the tier and allocator at boot (RC 1, 2; WAL 2) | `boots.json` | RC: the stamp goes on every boot record of `session_history.jsonl` in the PR after #1312, with WAL's fields (log bytes at open, phases, previous end clean); sessions before 10-01 have no allocator field and will not get one | 30 KB |
 | A restore that failed and why (RC 3: rows B and J wait for the real restore; the 09-19 runs recorded `measured` after a child exit 1) | `release-run.json` | RC extends `last_release_run_report()` itself, which the member already calls, so no `bundle.py` edit: the restore phases in full (label, seconds, return code, scrubbed stderr tail, restore block), `restore_why` per board row, and the restore phase summaries of the last 10 runs | 150 KB |
 | Rollup build attempts and the killed-build marker; corpus sizes; re-index; ranking counts (keyword 1 to 5) | `keyword-pipeline.json` | keyword | 60 KB |

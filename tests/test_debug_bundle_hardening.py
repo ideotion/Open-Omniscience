@@ -29,7 +29,8 @@ _SECTIONS = (
 def test_debug_bundle_opens_the_db_read_only():
     # Source-pinned (the wiring lesson): the bundle must never take the write gate.
     src = diagnostics_source()
-    assert "def debug_bundle(db: Session = Depends(read_only_db))" in src
+    signature = src.split("def debug_bundle(", 1)[1].split(") -> JSONResponse", 1)[0]
+    assert "db: Session = Depends(read_only_db)" in signature
 
 
 def test_a_raising_member_and_a_slow_member_yield_a_complete_bounded_bundle(monkeypatch):

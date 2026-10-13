@@ -56,15 +56,16 @@ eventually eats the `run_begin` line.
 
 ## How to send it
 
-It rides the existing one-button download: **Settings → Diagnostics → all
-diagnostics**, as two members —
+It rides the existing one-button download: **Settings → Diagnostics → Diagnostics**, as ONE
+member, `run-journal.json` (it was two files until 2026-10-06, `run-journal.json` and
+`run-journal-raw.json`; the manifest's `merged.replaces` says so) —
 
-- `run-journal.json` — the summary for each run: stages and their seconds,
-  outcome, the knobs it resolved, errors, the last heartbeat.
-- `run-journal-raw.json` — the raw lines behind that, bounded to the newest few
-  runs. The summary is the answer; this is the evidence, and a stall is a
-  *shape* across hundreds of beats (swap climbing while CPU flatlines, the write
-  gate held with waiters piling up) that no summary substitutes for.
+- the summary for each run, at the top: stages and their seconds, outcome, the
+  knobs it resolved, errors, the last heartbeat.
+- `raw` — the raw lines behind that, bounded to the newest few runs. The summary
+  is the answer; this is the evidence, and a stall is a *shape* across hundreds
+  of beats (swap climbing while CPU flatlines, the write gate held with waiters
+  piling up) that no summary substitutes for.
 
 ## What a heartbeat carries
 

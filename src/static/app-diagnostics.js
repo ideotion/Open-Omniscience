@@ -219,6 +219,36 @@
     }
     // Called when Settings → Advanced → Diagnostics opens (app-boot.js): one status read per
     // job line, which keeps watching only if that job is running or paused.
+    // THE "AGAIN" LINK (R119: one button; sending the last one again is a text link under it, shown only
+    // when a finished archive exists, with its age and size). The facts are the server's own (`last_archive`
+    // of the job status: two stats, no read of the file), so the page never guesses that one exists and a
+    // restart of the app does not lose the link while the file is on disk.
+    let _diagAgainLast = null;   // the facts last painted, so a language switch redraws from them (no fetch)
+    function _repaintDiagAgain() { if (_diagAgainLast) _paintDiagAgain(_diagAgainLast); }
+    function _paintDiagAgain(last) {
+      const link = $("all-diag-again");
+      if (!link) return;
+      _diagAgainLast = (last && last.name) ? last : null;
+      if (!last || !last.name) { link.hidden = true; return; }
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const size = (typeof _fmtBytes === "function") ? _fmtBytes(last.bytes) : String(last.bytes);
+      const when = (typeof fmtAgo === "function") ? fmtAgo(last.modified) : String(last.modified || "");
+      link.textContent = tf("Save the last Diagnostics again ({size}, built {when})", {size, when});
+      link.hidden = false;
+    }
+    // When the Diagnostics section opens: the Thorough box is empty (R124: never remembered, so a run
+    // that was thorough once is not thorough the next time by default), and the link shows the last
+    // archive. The link is a courtesy line: a status that cannot be read leaves it as it was.
+    async function diagnosticsPanelOpened() {
+      const box = $("diag-thorough");
+      if (box) box.checked = false;
+      try {
+        const s = await api("/api/diagnostics/all-job/status");
+        _paintDiagAgain(s && s.last_archive);
+      } catch (_e) { /* no link rather than a guess */ }
+    }
+
     function watchDiagnosticsJobs() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       _watchJobLine("reindex", "/api/insights/reindex-job/status", null, _reindexStatusText,
@@ -711,90 +741,6 @@
       btn.disabled = false;
     }
 
-    // The bulletin-language diagnostic. It answers a question about the UI's own
-    // language, so the status line summarises the locale the operator is IN before
-    // offering the file — a per-locale table nobody can read at a glance is what the
-    // download is for.
-    async function bulletinLanguageReport(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-      const out = $("bul-lang-status");
-      if (btn) btn.disabled = true;
-      if (out) out.textContent = t("Reading the report…");
-      try {
-        const d = await api("/api/diagnostics/bulletin-language");
-        const here = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
-        const mine = (d.languages || []).find((r) => r.language === here);
-        const bits = [];
-        if (mine && mine.coverage != null) {
-          // The numerator and the denominator, not only the share: a percentage with
-          // no n cannot be judged.
-          bits.push(tf("{lang}: {done} of {total} sentences translated",
-            {lang: here, done: mine.translated, total: mine.strings_seen}));
-        } else if (mine) {
-          bits.push(t("English — nothing to translate"));
-        }
-        // A failure COUNT here and the names in the file. The status line is a pointer;
-        // the report is the artifact, and it is where a finding can be acted on.
-        const ri = d.render_integrity || {};
-        const bad = (ri.deterministic === false ? 1 : 0)
-          + (ri.unresolved_placeholders || []).length
-          + (ri.sections_missing_from_document || []).length
-          + (ri.articles_not_printed_total ? 1 : 0)
-          + (ri.dangling_references || []).length;
-        bits.push(bad
-          ? tf("{n} render check(s) failed — the report names each one", {n: bad})
-          : t("every render check passed"));
-        if (d.measured) bits.push(d.measured);
-        if (out) out.textContent = bits.join(" · ");
-        window.open("/api/diagnostics/bulletin-language?download=1", "_blank");
-      } catch (e) {
-        if (out) out.textContent = (e && e.message) ? e.message : t("Could not read the report.");
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    // Windows refuses to replace an OPEN file, so a restore dies with [WinError 32]
-    // naming the FILE and never the holder. This asks who holds it and prints the
-    // answer here, because an operator staring at that error needs the sentence, not
-    // a download. The report still downloads: it is what travels in a bug report.
-    async function windowsLocksReport(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const out = $("win-locks-status");
-      if (btn) btn.disabled = true;
-      if (out) out.textContent = t("Checking…");
-      try {
-        const d = await api("/api/diagnostics/windows-locks");
-        const r = (d && d.data) || {};
-        const bits = [];
-        // The reading first: it is the only line that answers the question.
-        if (r.reading) bits.push(r.reading);
-        // Then the names, when there are any. A holder list is the actionable part,
-        // and an empty one is NOT published as "nobody" -- the report's own caveat
-        // carries why, and the counts below say whether anything was even visible.
-        const other = r.other_processes || {};
-        if (other.available && (other.holders || []).length) {
-          const who = other.holders
-            .map((h) => `${h.name || "?"} (pid ${h.pid})`)
-            .filter((v, i, a) => a.indexOf(v) === i);
-          bits.push(t("Holding it:") + " " + who.join(", "));
-        } else if (other.available && !other.complete) {
-          bits.push(t("no holder was visible, but not every process could be inspected"));
-        }
-        const av = r.antivirus || {};
-        if (av.probed && av.defender_realtime_enabled && av.data_dir_excluded === false) {
-          bits.push(t("Defender real-time scanning is on and your data folder is not excluded."));
-        }
-        if (out) out.textContent = bits.join(" · ");
-        window.open("/api/diagnostics/windows-locks?download=1", "_blank");
-      } catch (e) {
-        if (out) out.textContent = _apiErrorMessage ? _apiErrorMessage(e) : String(e);
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    }
-
     async function viewKeywordGrowth(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) btn.disabled = true;
@@ -854,7 +800,9 @@
     // to upload. The page only ASKS THE BROWSER to save: it cannot see a refused multiple-download
     // prompt or a file the browser failed to fetch, so no message says a file "was saved".
     const _PARTS_PER_CLICK = 5;
-    // {files, base, kind, pos, mcount, pcount, shown, saving, offered}: the set the bar is offering. `pos`
+    // {files, base, kind, single, pos, mcount, pcount, shown, saving, offered}: the set the bar is offering. `single`
+    // is true for the archive handed over as ONE file (R119: an archive that fits one file is not split), the
+    // one case the wording says "the file", not "N files". `pos`
     // is where the next click starts: the furthest file any click has reached, so sending part 3 again
     // after twenty files never sends "Save the next 5" back over files already saved; `shown` the number the page itself last wrote in the box (a
     // different value in the box is the person's own), `saving` is true while one click's files are
@@ -885,11 +833,12 @@
     }
 
     // The label of the Save button: what ONE click will do from here.
-    function _partsNextLabel(total, pos) {
+    function _partsNextLabel(total, pos, single) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const n = Math.min(_PARTS_PER_CLICK, total - pos);
+      if (single) return t("Save the Diagnostics file");
       if (pos === 0 && total <= _PARTS_PER_CLICK) return tf("Save all {n} files", {n});
       if (pos === 0) return tf("Save the first {n}", {n});
       if (total - pos === 1) return t("Save the last file");
@@ -913,7 +862,7 @@
       if (next) {
         next.hidden = left <= 0;
         next.disabled = busy;
-        if (set) next.textContent = _partsNextLabel(set.files.length, set.pos);
+        if (set) next.textContent = _partsNextLabel(set.files.length, set.pos, set.single);
       }
       if (rest) { rest.hidden = left <= _PARTS_PER_CLICK; rest.disabled = busy; }
       if (box) box.hidden = !fromShown;
@@ -930,7 +879,8 @@
     function _partsOffer(listing, kind) {
       const files = _partsFiles(listing);
       const pcount = files.filter((f) => f.kind !== "manifest").length;
-      _partsSet = {files, base: listing.download_base, kind, pos: 0, mcount: files.length - pcount, pcount,
+      const single = !!(listing && listing.single_file) && files.length === 1 && files[0].kind === "archive";
+      _partsSet = {files, base: listing.download_base, kind, single, pos: 0, mcount: files.length - pcount, pcount,
                    shown: "", saving: false, offered: new Set()};
       _partsRender();
       return _partsSet;
@@ -994,7 +944,11 @@
       if (_partsSet !== set) return;   // never write the status of a set that is no longer shown
       _partsRender();
       const done = set.offered.size;
-      if (fresh === 0 && win.to > win.from) {
+      if (set.single) {
+        // one file: «those files» and «all N files» would say what was not asked. A second press of the
+        // «again» link offers the file as a new set, so it reads the same as the first: asked, not saved.
+        _partsStatus(t("Asked your browser to save the Diagnostics file. Check that it arrived, then send it."));
+      } else if (fresh === 0 && win.to > win.from) {
         // a resend changes no count, so the line says what the click did
         _partsStatus(note + t("Asked your browser to save those files again."));
       } else if (done >= set.files.length) {
@@ -1012,14 +966,24 @@
       return _partsSave(_PARTS_PER_CLICK, typed ? parseInt(typed.value, 10) : NaN);
     }
 
-    // The set is ready: say how many files, and wait for the click that saves the first five.
+    // The set is ready: say how many files, and wait for the click that saves the first five. The size
+    // named is the one the SERVER cut to (its listing says so), never a number written here: the cap is
+    // the upload channel's and one constant on the server moves it.
     function _partsReady(listing, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const set = _partsOffer(listing, kind);
-      _partsStatus(tf("{n} files of at most 1 MB each are ready (manifest: {m}, numbered parts: {parts}).",
-                      {n: set.files.length, m: set.mcount, parts: set.pcount})
+      if (set.single) {
+        const size = (typeof _fmtBytes === "function") ? _fmtBytes(set.files[0].bytes) : String(set.files[0].bytes);
+        _partsStatus(tf("The Diagnostics file is ready ({size}).", {size}));
+        return set;
+      }
+      const cap = Number((listing && (listing.part_max_bytes || listing.volume_max_bytes)) || 0);
+      // A cap under 1 MB (an operator's OO_DIAG_VOLUME_MAX_MB below 1) reads «0.02», never «0 MB each».
+      const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "4");
+      _partsStatus(tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
+                      {n: set.files.length, mb, m: set.mcount, parts: set.pcount})
         + " " + t("Your browser may ask once to allow several downloads: allow them."));
       return set;
     }
@@ -1093,7 +1057,7 @@
     }
 
     // THE ARCHIVE AS NUMBERED FILES, AGAIN (field session 2026-09-11, reshaped 2026-10-01).
-    // It splits the ALREADY-BUILT archive into files of at most 1 MB that each open on their own
+    // It hands over the ALREADY-BUILT archive: itself when it fits one file, else files of at most 4 MB that each open on their own
     // and saves them from the typed part number on. It deliberately does NOT start a build:
     // "send it again" and "spend the next few hours rebuilding" are different asks, and a button
     // that quietly did the second when the operator meant the first would be the worst moment to
@@ -1125,7 +1089,7 @@
           const status = e && e.status;
           const why = (e && (e.detail || e.message)) || t("unknown error");
           if (status === 404) {
-            _partsStatus(t("No archive to split yet — build one with the All diagnostics button first."));
+            _partsStatus(t("Nothing is built yet — press the Diagnostics button first."));
           } else if (status === 409) {
             _partsStatus(t("A build is running — wait for it, then split the archive it produces."));
           } else {
@@ -1161,12 +1125,13 @@
       try {
         // Start (idempotent: if one is already running the backend returns started:false and
         // we simply poll the in-flight build).
-        // The profile rides the START call only, and is read at press time rather than
-        // stored: the backend refuses to remember it for the same reason (a remembered
-        // "light" would quietly make a later gate-closing bundle light too).
-        const lightEl = $("all-diag-light");
-        const profile = (lightEl && lightEl.checked) ? "light" : "full";
-        try { await api("/api/diagnostics/all-job?profile=" + profile, { method: "POST" }); }
+        // The mode rides the START call only, and is read at press time rather than stored: the
+        // backend refuses to remember it for the same reason (a remembered "quick" would quietly
+        // make a later gate-closing bundle quick too), and the box is empty again each time the
+        // panel opens (R124). The profile is not sent: the panel has no light bundle since R122.
+        const thoroughEl = $("diag-thorough");
+        const mode = (thoroughEl && thoroughEl.checked) ? "thorough" : "quick";
+        try { await api("/api/diagnostics/all-job?mode=" + mode, { method: "POST" }); }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }
         let miss = 0;
         // `settled` is the honesty latch: it is set by EVERY terminal branch, and whatever
@@ -1186,9 +1151,10 @@
           }
           const state = s && s.state;
           if (state === "done" && s.ready) {
-            // The build is done: offer it as numbered files of at most 1 MB (five to a click),
-            // not as one download. The single archive is still served by /all-job/download for
-            // API callers; the page no longer hands a person one big file.
+            _paintDiagAgain(s.last_archive);
+            // The build is done: the page asks the server for the file or files to hand over (the
+            // archive itself when it fits one file, else numbered files, five to a click) and never
+            // opens /all-job/download, which stays for API callers.
             settled = true;
             set(t("Ready — preparing the numbered files…"));
             let handOver = 0;   // files to hand over once the bar is set; the hand-over is outside the try
@@ -1217,7 +1183,7 @@
                 set("");   // already on the bar: the earlier press fetched this very archive
               } else if ((keywordsOnBar && bar.offered.size > 0)
                          || (pressedSince && ((!bar && _partsBusy === _partsGen) || keywordsOnBar))) {
-                set(t("The archive is ready. Press “All diagnostics, again” to save it as numbered files."));
+                set(t("The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it."));
               } else {
                 ++_partsGen;
                 set("");
@@ -1241,7 +1207,7 @@
                 if (barEl) barEl.hidden = true;
               }
               if (status === 404) {
-                set(t("No archive to split yet — build one with the All diagnostics button first."));
+                set(t("Nothing is built yet — press the Diagnostics button first."));
               } else if (status === 409) {
                 set(t("A build is running — wait for it, then split the archive it produces."));
               } else {

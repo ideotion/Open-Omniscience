@@ -178,9 +178,9 @@ def session_forensics_report(download: bool = Query(False)) -> dict | Response:
     ``download=1`` returns the same facts as a dated PLAIN-TEXT attachment (2026-08-23
     field ask). This is a deliberate exception to the 2026-07-20 button-consolidation
     ruling, whose rationale was that the ratchet guarantees the bundle carries every
-    report: it does, and `session-forensics.txt` is now in it — but this is the one
-    file that explains a crash, and making an operator sit through a full bundle run
-    to send it is the wrong cost for that question."""
+    report: it does (session-forensics.json; the text is not written a second time, R119) —
+    but this is the one file that explains a crash, and making an operator sit through a
+    full bundle run to send it is the wrong cost for that question."""
     from src.monitoring.forensics import render_text as _render
     from src.monitoring.forensics import session_forensics as _sf
 
@@ -193,14 +193,6 @@ def session_forensics_report(download: bool = Query(False)) -> dict | Response:
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
     return payload
-
-
-def _session_forensics_text() -> Response:
-    """The text rendering as a bundle member. Returns a ``Response`` so the archive
-    writer's own encoder writes the bytes verbatim instead of JSON-quoting them."""
-    from src.monitoring.forensics import render_text as _render
-
-    return Response(content=_render(), media_type="text/plain; charset=utf-8")
 
 
 def _p0_validation_last() -> dict:

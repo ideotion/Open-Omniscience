@@ -30,6 +30,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.api import diagnostics_plan as _plan
+from src.api import diagnostics_slots as _slots
 from src.database.derived_views import KeywordMentionRead
 from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
 from src.database.models import Article, Keyword, Source
@@ -55,7 +57,6 @@ from .corpus import (
     lemma_preview,
     month_occupancy,
     non_article_scan,
-    power_profile,
     power_profile_selftest,
 )
 from .dates import date_extraction_log
@@ -65,7 +66,6 @@ from .evals import (
     keyword_triage_selftest,
     kpi,
     merge_diag,
-    perception_eval_live_last,
     perception_eval_selftest,
     recursive_loop,
     run_journal,
@@ -90,11 +90,9 @@ from .sources import (
 )
 from .system import (
     _p0_validation_last,
-    _session_forensics_text,
     columnar_status,
     corpus_integrity_report,
     data_dir_persistence_report,
-    elections_coverage_floor,
     external_freshness,
     frontend_errors,
     law_coverage,
@@ -131,8 +129,42 @@ def _debug_bundle_member_budget_s() -> float:
     return min(v, 3600.0)
 
 
+#: The sections of ``debug-bundle`` that are ALSO carried by a member of the Diagnostics archive, and
+#: the member that carries each (R119, the plan's section 3: "drops 8 embedded copies of members that
+#: stand alone", 408 KB raw on the Lenovo bundle; the ninth, ``error_log``, is 428 bytes and was found
+#: by the guard that no two members share an identical subtree). In the archive the bundle names the member instead of
+#: repeating it (``slim=True``); on its own route it is whole, as it always was. A test fails if a
+#: section named here stops being one the bundle builds, or points at a member that is not written.
+_DEBUG_BUNDLE_STANDS_ALONE: dict[str, str] = {
+    "network": "network.json",
+    "request_latency": "request-latency.json",
+    "slow_queries": "slow-queries.json",
+    "schema_drift": "schema-drift.json",
+    "corpus_integrity": "corpus-integrity.json",
+    "session_forensics": "session-forensics.json",
+    "storage_composition": "storage.json",
+    "p0_validation": "p0-validation.json",
+    # Not a member of its own: the rolling log's counts are ``summary`` of frontend-errors.json (the
+    # same ``errorlog.summary()``, read a moment apart), which a guard of identical subtrees found.
+    "error_log": "frontend-errors.json",
+}
+
+#: Where in that member the section is, when it is not the member's top level.
+_DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
+    "storage_composition": "sections.storage-composition",
+    "error_log": "summary",
+}
+
+#: How many of the newest collection-performance ticks the SLIM bundle keeps. The log is one line per
+#: tick and covers about five minutes in 330 KB (the Lenovo bundle); the hours and days are
+#: ``vitals.json``'s, so what the bundle keeps is the last minutes of the collector itself.
+_DEBUG_BUNDLE_SLIM_PERF_TICKS = 20
+
+
 @router.get("/debug-bundle")
-def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
+def debug_bundle(
+    db: Session = Depends(read_only_db), slim: bool = Query(False)
+) -> JSONResponse:
     """ONE downloadable bundle with everything a developer needs to diagnose a
     live install remotely (maintainer-ruled 2026-06-10: "I'll click every
     download/scrape/refresh button and send you the log"). Sections:
@@ -152,6 +184,11 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
     connection is unsafe to touch concurrently), bounded by a statement deadline inside the
     thunk so a runaway query is aborted rather than scanned to the end.
     """
+    # Only an explicit True slims. Called directly, a ``Query`` default is a truthy sentinel OBJECT, and
+    # a caller that forgot the argument must get the WHOLE bundle (more bytes), never a slim one that
+    # points at members it was not asked to be one of.
+    slim = slim is True
+
     import json as _json
     import platform
     import sys as _sys
@@ -207,7 +244,17 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
         materialisation around them, so a DB worker could not be cleanly abandoned mid-query.
         DB members are instead bounded INSIDE the thunk (``_bounded`` or the member's own
         internal deadline), so they can never hang the bundle and never leave a stray
-        progress handler on the connection for the next member."""
+        progress handler on the connection for the next member.
+
+        UNDER ``slim`` (the copy inside the Diagnostics archive, R119) a section that is ALSO a member
+        of that archive in its own right is NOT BUILT here: the pointer names the member that carries
+        it, so the work and the bytes are not paid twice. The pointer says where the section is; it
+        is never an empty section."""
+        if slim and name in _DEBUG_BUNDLE_STANDS_ALONE:
+            pointer = {"see": _DEBUG_BUNDLE_STANDS_ALONE[name], "slim": True}
+            if name in _DEBUG_BUNDLE_POINTER_SECTION:
+                pointer["section"] = _DEBUG_BUNDLE_POINTER_SECTION[name]
+            return pointer
         if not threaded:
             # A section before this one may have met a damaged page, whether it raised or caught its own error and
             # went on: the shared session is then rolled back before this one reads, so every DB section starts on a
@@ -363,7 +410,11 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
         # Collection-performance timeline + end-of-pass bottleneck classification
         # (download rate, in-flight fetches, writer-gate contention, CPU/memory).
         # The bandwidth governor's own log — what to read when collection is slow.
-        "collect_perf": _member("collect_perf", _collect_perf_samples),
+        "collect_perf": _member(
+            "collect_perf",
+            (lambda: _collect_perf_samples(limit=_DEBUG_BUNDLE_SLIM_PERF_TICKS))
+            if slim else _collect_perf_samples,
+        ),
         # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
         # opt-out. Will be removed when the cycle ends.
@@ -422,6 +473,23 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
             "a failed member shows {error}, a slow non-DB member {skipped: budget}."
         ),
     }
+    if slim:
+        payload["slim"] = {
+            "on": True,
+            "pointers": {
+                key: member + (
+                    " " + _DEBUG_BUNDLE_POINTER_SECTION[key] if key in _DEBUG_BUNDLE_POINTER_SECTION else ""
+                )
+                for key, member in _DEBUG_BUNDLE_STANDS_ALONE.items()
+            },
+            "collect_perf_newest_ticks": _DEBUG_BUNDLE_SLIM_PERF_TICKS,
+            "why": (
+                "this copy is the one inside the Diagnostics archive: a section that is a member of "
+                "the archive in its own right is named here (`see`), not written twice, and the "
+                "collection-performance log is cut to its newest ticks. The same route downloaded "
+                "alone is whole."
+            ),
+        }
     body = envelope(kind="debug-bundle", query={}, count=count, payload=payload)
     fname = f"oo-debug-bundle-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
     return JSONResponse(
@@ -938,18 +1006,17 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     # The split (Q1139) put these readers in submodules imported AFTER this one, so
     # `__init__` can keep the original route order. They are imported HERE, at call
     # time, which is exactly when the single-file module resolved them as globals.
-    from .ai import ai_diagnostics, qualification_assist_last, qualification_assist_selftest
-    from .ai_check import ai_check_last
-    from .keyword_triage import keyword_triage_last, keyword_triage_proposal
-    from .model_bench import model_bench_last
-    from .perception import perception_extract_last
-    from .source_tags import source_tags_last, source_tags_selftest
+    from .ai import ai_diagnostics
 
     return [
-        ("debug-bundle.json", lambda: debug_bundle(db=db)),
+        # slim=True EXPLICITLY (a Query default is a truthy sentinel OBJECT when called directly):
+        # in the archive the bundle names the eight sections that are members of their own.
+        ("debug-bundle.json", lambda: debug_bundle(db=db, slim=True)),
         ("home-cards.json", lambda: home_card_diagnostics(download=False, db=db)),
         ("keyword-engine.json", lambda: keyword_engine(download=False, db=db)),
-        ("keyword-selftest.json", lambda: keyword_selftest(download=False)),
+        # THE MECHANISM SELF-TESTS, one verdict each in ONE member (R119): thirteen files that said
+        # the same words on every machine of one build. Read in `_selftest_calls`.
+        ("selftests.json", lambda: _selftests_member()),
         # EVERY Query()-defaulted parameter passed EXPLICITLY: called directly (not
         # through FastAPI) the default IS the Query sentinel object, and Query(False)
         # is TRUTHY. `run_journal` proved it in the field -- limit reached a slice as a
@@ -974,19 +1041,12 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("benchmark.json", lambda: benchmark_report(repeats=2, db=db)),
         ("columnar.json", lambda: columnar_status()),
         ("freshness.json", lambda: external_freshness()),
-        ("elections-floor.json", lambda: elections_coverage_floor()),
         # Recursive-augmentation logs #1-#5 (maintainer 2026-07-02).
         ("request-latency.json", lambda: request_latency()),
-        # S2.6 (2026-09-02): the two pins, named. Point-in-time and in-memory, so
-        # it is cheap and the bundle carries it beside the latency log the stalls
-        # show up in.
-        ("write-gate.json", lambda: write_gate_report()),
-        # The data-drive watchdog's state and incident log (R86). File reads on the
-        # internal disk only, no DB.
-        ("data-volume.json", lambda: _data_volume_report()),
-        # Cause attribution for the requests the latency log shows as stalls. Cheap:
-        # an in-memory ring read, no DB work, so it needs no deadline of its own.
-        ("stall-forensics.json", lambda: stall_forensics_report(limit=200)),
+        # WHO WAITED FOR WHOM, one member (R119): S2.6 (2026-09-02)'s two pins, named (point-in-time
+        # and in-memory), and the cause attribution for the requests the latency log shows as
+        # stalls (an in-memory ring read). No DB work, so it needs no deadline of its own.
+        ("contention.json", lambda: _contention_member()),
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
@@ -1012,15 +1072,14 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("frontend-errors.json", lambda: frontend_errors(limit=500)),
         # download=False EXPLICITLY: called directly, `Query(False)` is a sentinel
         # OBJECT and truthy, which would have put the TEXT in the .json member.
-        ("session-forensics.json", lambda: session_forensics_report(download=False)),
-        # The SAME facts rendered for a human (2026-08-23 field ask). It rides beside
-        # the JSON rather than replacing it: the JSON is what a tool reads, the text is
-        # what an operator pastes into a chat when something went wrong.
-        ("session-forensics.txt", lambda: _session_forensics_text()),
-        # A12b: itemized footprint across ALL stores incl. the external Ollama model store.
-        ("storage-footprint.json", lambda: storage_footprint_report(download=False)),
-        # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.
-        ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
+        ("session-forensics.json", lambda: _session_forensics_member()),
+        # WHERE THE BYTES ARE AND WHETHER THE DRIVE IS THERE, one member (R119): A12b's itemized
+        # footprint across ALL stores incl. the external Ollama model store, P1.5's per-table and
+        # per-index bytes (dbstat: what the on-disk GB actually IS), the data-drive watchdog's
+        # state and incident log (R86, file reads on the internal disk only) and where the data
+        # directory lives. The session's forensics are ONE file: the JSON above (its text twin, the
+        # same facts for a human to paste, is not written a second time).
+        ("storage.json", lambda: _storage_member(db)),
         ("windows-locks.json", lambda: windows_locks_report(download=False)),
         # S4 (2026-09-07): the soak window -- the durable readings composed with the
         # window each one actually covers, so a multi-day run can be read after it ends.
@@ -1028,12 +1087,14 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # 2026-10-06: the Wikipedia lane's own hourly history (a LAZY import inside the
         # function, so the route slice registers at its pinned position, not here).
         ("wiki-lane-history.json", lambda: _wiki_lane_history_member()),
-        # 2026-10-06 (R119): the vitals as a HISTORY -- memory, drive, database and log counts
-        # over days, the shape of a climb that no per-tick series of five minutes can show. A
-        # LAZY import inside the function, so the route slice registers at its pinned position.
-        ("vitals.json", lambda: _vitals_history_member()),
-        # 2026-10-06 (R119): which runs began, how each ended, and which files were sent.
-        ("runs.json", lambda: _runs_member()),
+        # THE SLOTS (R119, ``diagnostics_slots``): the records an owner writes in their own module and
+        # names in one table row, so adding one never touches this file. Built here: the vitals as a
+        # HISTORY (memory, drive, database and log counts over days, the shape of a climb that no
+        # per-tick series of five minutes can show), which runs began and how each ended, and the
+        # light memory snapshots of the minutes before a kill. A slot whose module is not in this build
+        # writes nothing here and is named in the manifest's ``slots`` block. Their modules are imported
+        # when the member RUNS (so the route slices register at their pinned positions).
+        *_slots.members(),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
         # The 0.4 release acceptance run's last report (2026-09-18; read-only, never runs
@@ -1049,7 +1110,6 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # a Query(...) default is a sentinel object when the route is called directly.
         ("month-occupancy.json", lambda: month_occupancy(sample=400, download=False, db=db)),
         ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
-        ("recursive-loop.json", lambda: recursive_loop(download=False)),
         ("kpi.json", lambda: kpi(download=False)),
         # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
         # instrument_search is wired into the search endpoint on the operator's rig).
@@ -1060,12 +1120,12 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # over minutes, for a 17 GB set -- so every such backup would carry a member
         # its own restore rejects as "sha256 mismatch (corrupted or altered)". The
         # bundle is a read-at-one-moment snapshot, with no hash to contradict.
-        ("run-journal.json", lambda: run_journal(download=False, limit=20)),
-        # ...and the raw lines behind it. The summary is the answer; this is the
-        # evidence, and a stall is a SHAPE across hundreds of beats (swap climbing
-        # while CPU flatlines; the gate held with waiters piling up) that no summary
+        #
+        # ...with the raw lines behind it, in the SAME member (R119). The summary is the answer;
+        # the lines are the evidence, and a stall is a SHAPE across hundreds of beats (swap
+        # climbing while CPU flatlines; the gate held with waiters piling up) that no summary
         # substitutes for. Bounded, with what was dropped stated.
-        ("run-journal-raw.json", lambda: _run_journal_raw()),
+        ("run-journal.json", lambda: _run_journal_member()),
         ("run-timeline.json", lambda: run_timeline(max_runs=4)),
         # The MERGE diagnostic (2026-08-06). Every Query()-defaulted parameter passed
         # EXPLICITLY, per the ai.json/run_journal lesson three members above: called
@@ -1112,40 +1172,15 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # persisted record (or the synthetic sample when there is none), so it costs no
         # query and works on a fresh install.
         ("bulletin-language.json", lambda: bulletin_language(download=False)),
-        ("bulletin-language-selftest.json", lambda: bulletin_language_selftest()),
-        ("power-profile.json", lambda: power_profile(profile="optimized", download=False)),
-        ("data-dir-persistence.json", lambda: data_dir_persistence_report()),
-        ("ir-eval-selftest.json", lambda: ir_eval_selftest(download=False)),
-        ("perception-eval-selftest.json", lambda: perception_eval_selftest(download=False)),
-        ("keyword-triage-selftest.json", lambda: keyword_triage_selftest(download=False)),
-        # Section 8 real run (2026-07-20 ruling): the last saved keyword-triage JSONL run,
-        # summarised (read-only; never RUNS a triage -- that is its own background job).
-        ("keyword-triage-run.json", lambda: keyword_triage_last()),
-        # The reviewable PROPOSAL built from that run: junk verdicts grouped per language,
-        # with the evidence and what was held back. Cheap (a streamed log read + one
-        # indexed term lookup), read-only, and it applies nothing -- the artifact a human
-        # judges before any stoplist ever changes. Query() default passed EXPLICITLY.
-        ("keyword-triage-proposal.json", lambda: keyword_triage_proposal(download=False, db=db)),
-        # The sibling LLM source-tag-assignment run: selftest + last saved summary.
-        ("source-tags-selftest.json", lambda: source_tags_selftest(download=False)),
-        ("source-tags-run.json", lambda: source_tags_last()),
-        # B6 (2026-07-24 Session B): the last saved LIVE perception-eval-against-model
-        # run (read-only; never RUNS an eval -- that is a POST, /perception-eval-live).
-        ("perception-eval-live.json", lambda: perception_eval_live_last()),
-        # B6.2/B6.3: the last saved who/where/when EXTRACTION sweep summary (read-only;
-        # never RUNS a sweep -- that is its own background job, /perception-extract/run).
-        ("perception-extract-run.json", lambda: perception_extract_last()),
-        # The last saved side-by-side TRANSLATION comparison (read-only; never runs a
-        # probe -- that is a POST). Carries corpus excerpts, and the payload says so.
-        # E-S2 (2026-08-01): the newest COMPARATIVE model-bench artifact, summarised
-        # (every metric, without the hundreds of per-term answers per pair). Read-only
-        # -- running the bench is a heavy operator job, never a bundle member.
-        ("model-bench.json", lambda: model_bench_last(full=False)),
-        # The one-button AI check (maintainer 2026-08-09): the last run's report, so a
-        # debug bundle carries what this machine measured about its own model rather
-        # than sending somebody to run five diagnostics by hand. Read-only -- RUNNING it
-        # is a background job of its own, never a bundle member.
-        ("ai-check.json", lambda: ai_check_last()),
+        # THE LAST SAVED RESULTS OF THE AI JOBS that `ai.json` below does not carry, in ONE member
+        # (R119): the keyword-triage PROPOSAL (2026-07-20: junk verdicts grouped per language with
+        # the evidence and what was held back; read-only, applies nothing), the comparative model
+        # bench (E-S2, 2026-08-01: every metric, without the per-term answers), the one-button AI
+        # check (2026-08-09) and the qualification-assist run (B7.2). Read-only: RUNNING any of
+        # them is a job of its own, never a bundle member. The keyword-triage, source-tags and
+        # both perception jobs' last summaries are `ai.json`'s `jobs`: the same four reporters, so
+        # they are not written a second time (tests/test_diagnostic_slots.py shows it).
+        ("ai-runs.json", lambda: _ai_runs_member(db)),
         # What the bench COULD cover on this machine. Read-only, and pointedly WITHOUT
         # the endpoint's `wake`: a bundle reports what it can see and starts nothing.
         # It answers the first question every one of the 10 August field reports raised
@@ -1158,13 +1193,6 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # measure_corpus branch and hand article_length_report a Depends sentinel. The
         # file's own convention for a db-taking member (leads_quality below) is the fix.
         ("ai.json", lambda: ai_diagnostics(measure_corpus=False, db=db)),
-        # B7.2: the qualification-assist self-test + the newest saved proposals run
-        # (across every source ever checked -- read-only, never runs a new check).
-        ("qualification-assist-selftest.json", lambda: qualification_assist_selftest(download=False)),
-        ("qualification-assist-run.json", lambda: qualification_assist_last(source_id=None)),
-        ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
-        ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
-        ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
         # What this instance would contribute to the shipped qualification overlay, and
         # the split of its app-provided sources (judged vs still pending). Read-only.
         ("source-qualification-export.json",
@@ -1173,15 +1201,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # carry the verdict its own history recorded? Read-only, and cheap -- the exact
         # re-read runs only over the candidates the grouped query surfaced.
         ("qualification-integrity.json", lambda: qualification_integrity(db=db)),
-        # The concurrency sweep's own MECHANISM (2026-08-09). The sweep itself is an
-        # operator action needing a live model; this proves it really runs concurrently
-        # -- a bench that silently ran serially would still publish a plausible curve.
-        ("llm-throughput-selftest.json", llm_throughput_selftest),
         # What the background AI has been doing lately, read from the sweeps' own
         # logs (2026-08-09). Bounded tail reads, so a long-running sweep cannot make
         # this member grow without limit.
         ("ai-activity.json", lambda: ai_activity(recent=12, hours=24, db=db)),
-        ("ai-activity-selftest.json", ai_activity_selftest),
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
@@ -1501,32 +1524,31 @@ def _all_diag_err_str(exc: BaseException, *, typed: bool = False) -> str:
 # silently diverge from each other.
 _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/keywords": "keyword-log-digest.json",  # digest form; full dump exempt below
-    "/keyword-selftest": "keyword-selftest.json",
-    "/ir-eval-selftest": "ir-eval-selftest.json",
-    "/perception-eval-selftest": "perception-eval-selftest.json",
-    "/perception-eval-live/last": "perception-eval-live.json",
-    "/keyword-triage-selftest": "keyword-triage-selftest.json",
-    "/recursive-loop": "recursive-loop.json",
+    "/keyword-selftest": "selftests.json",
+    "/ir-eval-selftest": "selftests.json",
+    "/perception-eval-selftest": "selftests.json",
+    "/perception-eval-live/last": "ai.json",
+    "/keyword-triage-selftest": "selftests.json",
+    "/recursive-loop": "selftests.json",
     "/merge": "merge-diag.json",
     "/kpi": "kpi.json",
     "/search-timing": "search-timing.json",
     "/run-journal": "run-journal.json",
     "/run-timeline": "run-timeline.json",
-    "/search-timing-selftest": "search-timing-selftest.json",
+    "/search-timing-selftest": "selftests.json",
     "/lemma-preview": "lemma-preview.json",
     "/bulletin-language": "bulletin-language.json",
-    "/bulletin-language-selftest": "bulletin-language-selftest.json",
+    "/bulletin-language-selftest": "selftests.json",
     "/home-cards": "home-cards.json",
     "/keyword-engine": "keyword-engine.json",
-    "/power-profile": "power-profile.json",
-    "/power-profile-selftest": "power-profile-selftest.json",
+    "/power-profile-selftest": "selftests.json",
     "/article-length": "article-length.json",
     "/month-occupancy": "month-occupancy.json",
     "/non-article-scan": "non-article-scan.json",
     "/criteria-calibration": "criteria-calibration.json",  # S3.1 of the 2026-07-23 field-feedback workflow
     "/keyword-growth": "keyword-growth.json",
     "/source-audit": "source-audit.json",
-    "/source-audit-selftest": "source-audit-selftest.json",
+    "/source-audit-selftest": "selftests.json",
     "/source-qualification-export": "source-qualification-export.json",
     "/qualification-integrity": "qualification-integrity.json",
     "/dates": "date-extraction.json",
@@ -1535,11 +1557,10 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/network": "network.json",
     "/columnar": "columnar.json",
     "/freshness": "freshness.json",
-    "/elections-floor": "elections-floor.json",
     "/session-forensics": "session-forensics.json",
-    "/data-dir-persistence": "data-dir-persistence.json",
-    "/storage-footprint": "storage-footprint.json",
-    "/storage-composition": "storage-composition.json",
+    "/data-dir-persistence": "storage.json",
+    "/storage-footprint": "storage.json",
+    "/storage-composition": "storage.json",
     "/windows-locks": "windows-locks.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
@@ -1547,8 +1568,8 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/soak-window": "soak-window.json",  # S4 (2026-09-07): the multi-day soak reading
     "/vitals-history": "vitals.json",  # 2026-10-06 (R119): memory, drive, database and logs over days
     "/runs": "runs.json",  # 2026-10-06 (R119): the runs and the files served
-    "/write-gate": "write-gate.json",  # S2.6 (2026-09-02): who holds the gate / a connection
-    "/stall-forensics": "stall-forensics.json",
+    "/write-gate": "contention.json",  # S2.6 (2026-09-02): who holds the gate / a connection
+    "/stall-forensics": "contention.json",
     "/slow-queries": "slow-queries.json",
     "/schema-drift": "schema-drift.json",
     "/integrity": "corpus-integrity.json",
@@ -1562,19 +1583,19 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
     "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period
-    "/keyword-triage/last": "keyword-triage-run.json",
-    "/keyword-triage/proposal": "keyword-triage-proposal.json",
-    "/llm-throughput-selftest": "llm-throughput-selftest.json",
+    "/keyword-triage/last": "ai.json",
+    "/keyword-triage/proposal": "ai-runs.json",
+    "/llm-throughput-selftest": "selftests.json",
     "/ai-activity": "ai-activity.json",
-    "/ai-activity-selftest": "ai-activity-selftest.json",
-    "/source-tags-selftest": "source-tags-selftest.json",
-    "/source-tags/last": "source-tags-run.json",
-    "/perception-extract/last": "perception-extract-run.json",
+    "/ai-activity-selftest": "selftests.json",
+    "/source-tags-selftest": "selftests.json",
+    "/source-tags/last": "ai.json",
+    "/perception-extract/last": "ai.json",
     "/ai": "ai.json",
-    "/qualification-assist-selftest": "qualification-assist-selftest.json",
-    "/qualification-assist/last": "qualification-assist-run.json",
-    "/model-bench/last": "model-bench.json",
-    "/ai-check/last": "ai-check.json",
+    "/qualification-assist-selftest": "selftests.json",
+    "/qualification-assist/last": "ai-runs.json",
+    "/model-bench/last": "ai-runs.json",
+    "/ai-check/last": "ai-runs.json",
     # transversal audit 09 (2026-07-25), C2: /fixity is a genuine diagnostic-shaped
     # report (a local re-hash audit) that happened to live in the SIBLING
     # src/api/integrity.py router -- see _DIAG_SIBLING_FILES below, which is what
@@ -1583,13 +1604,21 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/fixity": "fixity.json",
 }
 _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
+    "/power-profile": (
+        "a table shipped in the code, identical on all 17 instances read (R119): the build the "
+        "manifest's `machine` block names identifies it, so it is not written into every archive"
+    ),
+    "/elections-floor": (
+        "a table shipped in the code, identical on all 17 instances read (R119): the build the "
+        "manifest's `machine` block names identifies it, so it is not written into every archive"
+    ),
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
     "/llm-throughput": (
         "heavy operator-run concurrency sweep, needs a live model — minutes of real "
-        "generation (manifest 'excluded'); its MECHANISM rides the bundle as "
-        "llm-throughput-selftest.json"
+        "generation (manifest 'excluded'); its MECHANISM rides the bundle in "
+        "selftests.json"
     ),
     "/source-coverage-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
@@ -1615,16 +1644,16 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/model-bench/status": "job control", "/model-bench/download": "job control",
     "/ai-check/status": "job control", "/ai-check/download": "job control",
     "/model-bench/batch": (
-        "the frozen bench INPUT's own summary — the RESULTS ride the bundle as "
-        "model-bench.json, and that member already states the batch digest it answered"
+        "the frozen bench INPUT's own summary — the RESULTS ride the bundle as the "
+        "model-bench section of ai-runs.json, which already states the batch digest it answered"
     ),
     "/model-bench/anchors": (
         "the interactive grading sitting (and its sample), not a report — the anchors' "
-        "effect is reported inside model-bench.json as anchor accuracy"
+        "effect is reported inside the model-bench section of ai-runs.json as anchor accuracy"
     ),
     "/model-bench/gates": (
         "a LIVE per-language gate view computed from the bench artifact, not a static "
-        "report — the artifact itself (model-bench.json) is the bundle member"
+        "report — the artifact itself (the model-bench section of ai-runs.json) is the bundle member"
     ),
     "/card-audit/status": "job control", "/card-audit/download": "job control",
     "/card-audit/preflight": (
@@ -1673,8 +1702,13 @@ def _diagnostics_coverage_report() -> dict:
         unclassified = sorted(gets - covered - exempt)
         stale = sorted((covered | exempt) - gets)
         members_block = src.split("def _all_diagnostics_members", 1)[1].split("def _", 1)[0]
+        # A member is either written out in the list above or comes from the slot table (R119): a slot
+        # whose module is not in this build is NOT a member of this build, so a route mapped to it is
+        # reported missing rather than counted as covered by a file that is not written.
+        slot_names = {name for name, _fn in _slots.members()}
         missing_members = sorted(
-            fname for fname in _DIAG_COVERAGE_MAP.values() if f'"{fname}"' not in members_block
+            fname for fname in _DIAG_COVERAGE_MAP.values()
+            if f'"{fname}"' not in members_block and fname not in slot_names
         )
         return {
             "available": True,
@@ -1695,18 +1729,6 @@ def _wiki_lane_history_member() -> dict:
     from src.wiki.service import lane_history
 
     return lane_history()
-
-
-def _runs_member() -> dict:
-    """The all-diagnostics runs and the files served as a bundle member (read-only; never raises)."""
-    return _diag_runs.diagnostics_member()
-
-
-def _vitals_history_member() -> dict:
-    """The vitals history as a bundle member (read-only; never raises; held to its budget)."""
-    from src.monitoring.vitals_history import diagnostics_member
-
-    return diagnostics_member()
 
 
 def _chronology_member() -> dict:
@@ -1737,6 +1759,281 @@ def _data_volume_report() -> dict:
     from src.safety.data_volume import report
 
     return report()
+
+
+# --------------------------------------------------------------------------------------
+# MERGED MEMBERS (R119, the 2026-10-06 plan, section 4). One subject, one file: the members that
+# said the same kind of thing in several files are written as ONE member whose sections carry the
+# old members' names, so an analyst's reading of an old bundle maps onto the new one section by
+# section, and the manifest says so (``merged.replaces``). Nothing is summarised on the way: a
+# section is exactly what its own member held.
+# --------------------------------------------------------------------------------------
+
+
+def _section_value(value) -> Any:
+    """What one section holds: a dict or a list as it is, anything else (a JSONResponse, a
+    streamed body) decoded the way a stand-alone member would have been written."""
+    if isinstance(value, (dict, list)):
+        return value
+    return json.loads(_member_bytes(value))
+
+
+def _merged_member(
+    sections: dict[str, Callable[[], Any]], *, replaces: list[str], why: str
+) -> dict:
+    """The sections of a merged member, each read on its own: ONE that fails is recorded as
+    ``{"error": ...}`` in its place (the text scrubbed of the passphrase like every member error)
+    and the others stand, and ``complete`` says whether any failed so a merged member can never be
+    read as whole when a part of it is missing. A statement deadline that ends a section is not
+    swallowed: the build's own deadline reading (``partial-deadline``) sees it, and the sections
+    after it say they were not reached."""
+    out: dict[str, Any] = {"merged": {"replaces": list(replaces), "why": why}, "sections": {}}
+    failed: list[str] = []
+    expired = False
+    for key, fn in sections.items():
+        if expired:
+            out["sections"][key] = {"skipped": "the member's deadline had passed before this section"}
+            failed.append(key)
+            continue
+        try:
+            out["sections"][key] = _section_value(fn())
+        except StatementTimeout:
+            expired = True
+            out["sections"][key] = {"skipped": "the member's deadline ended this section"}
+            failed.append(key)
+        except Exception as exc:  # noqa: BLE001 - one failing section must not hide the others
+            cause = exc.__cause__ if isinstance(exc, HTTPException) else None
+            if isinstance(cause, StatementTimeout):
+                expired = True
+                out["sections"][key] = {"skipped": "the member's deadline ended this section"}
+            else:
+                out["sections"][key] = {"error": _all_diag_err_str(exc)}
+            failed.append(key)
+    out["complete"] = not failed
+    if failed:
+        out["sections_not_collected"] = failed
+    return out
+
+
+#: What the zip's ``session-forensics.json`` names instead of repeating (R119): the two storage blocks
+#: are ``storage.json``'s sections (the same reads, one subject), and the previous session's light
+#: memory snapshots are ``pressure-light.json``. The route on its own is whole.
+_FORENSICS_POINTERS: dict[str, tuple[str, str]] = {
+    "storage_footprint": ("storage.json", "sections.storage-footprint.data"),
+    "data_dir_persistence": ("storage.json", "sections.data-dir-persistence"),
+}
+
+
+def _session_forensics_member() -> dict:
+    """The session's forensics as the zip carries them: the same document the route serves, with the
+    blocks that stand alone as members named instead of copied. ``download=False`` EXPLICITLY (a Query
+    default is a truthy sentinel OBJECT when called directly, which would put the TEXT in the JSON)."""
+    out = dict(_section_value(session_forensics_report(download=False)))
+    named: dict[str, str] = {}
+    for key, (member, section) in _FORENSICS_POINTERS.items():
+        if key in out:
+            out[key] = {"see": member, "section": section}
+            named[key] = f"{member} {section}"
+    peaks = out.get("previous_session_peaks")
+    if isinstance(peaks, dict) and "pressure_light" in peaks:
+        peaks = dict(peaks)
+        ring = peaks["pressure_light"]
+        peaks["pressure_light"] = {
+            "see": "pressure-light.json",
+            "section": "previous_session.snapshots",
+            "snapshots_here_before": len(ring) if isinstance(ring, list) else None,
+        }
+        out["previous_session_peaks"] = peaks
+        named["previous_session_peaks.pressure_light"] = "pressure-light.json previous_session.snapshots"
+    if named:
+        out["slim"] = {
+            "on": True,
+            "pointers": named,
+            "why": "these blocks are members of this archive in their own right and are named here "
+                   "instead of written twice; the route downloaded on its own is whole",
+        }
+    return out
+
+
+def _storage_member(db) -> dict:
+    """Where the bytes are and whether the drive is there: the four storage reads in one member."""
+    return _merged_member(
+        {
+            "storage-footprint": lambda: storage_footprint_report(download=False),
+            "storage-composition": lambda: storage_composition_report(download=False, db=db),
+            "data-volume": _data_volume_report,
+            "data-dir-persistence": data_dir_persistence_report,
+        },
+        replaces=[
+            "storage-footprint.json", "storage-composition.json",
+            "data-volume.json", "data-dir-persistence.json",
+        ],
+        why="one subject: where the bytes are and whether the drive is there",
+    )
+
+
+def _contention_member() -> dict:
+    """Who waited for whom: the write gate's holders and the stall attribution in one member."""
+    return _merged_member(
+        {
+            "write-gate": write_gate_report,
+            "stall-forensics": lambda: stall_forensics_report(limit=200),
+        },
+        replaces=["write-gate.json", "stall-forensics.json"],
+        why="one subject: who held what while a request waited",
+    )
+
+
+def _run_journal_member() -> dict:
+    """The import/export run journal: the summary and the lines behind it in one member (the
+    summary keeps its own keys at the top, the raw lines are under ``raw``)."""
+    out = dict(_section_value(run_journal(download=False, limit=20)))
+    out["merged"] = {
+        "replaces": ["run-journal-raw.json"],
+        "why": "one subject: the summary and the lines it is read from; the raw lines stay "
+               "bounded by their own producer, which says what it dropped",
+    }
+    try:
+        out["raw"] = _section_value(_run_journal_raw())
+        out["complete"] = True
+    except Exception as exc:  # noqa: BLE001 - the summary stands without its raw lines
+        out["raw"] = {"error": _all_diag_err_str(exc)}
+        out["complete"] = False
+        out["sections_not_collected"] = ["raw"]
+    return out
+
+
+def _ai_runs_member(db) -> dict:
+    """The last saved results of the AI jobs that ``ai.json`` does not carry. (``ai.json`` holds
+    the last summary of the keyword triage, source tags and both perception jobs under ``jobs``,
+    read by the same functions these four routes call: those four members are not written twice.)"""
+    from .ai import qualification_assist_last
+    from .ai_check import ai_check_last
+    from .keyword_triage import keyword_triage_proposal
+    from .model_bench import model_bench_last
+
+    return _merged_member(
+        {
+            "model-bench": lambda: model_bench_last(full=False),
+            "ai-check": ai_check_last,
+            "qualification-assist-run": lambda: qualification_assist_last(source_id=None),
+            "keyword-triage-proposal": lambda: keyword_triage_proposal(download=False, db=db),
+        },
+        replaces=[
+            "model-bench.json", "ai-check.json", "qualification-assist-run.json",
+            "keyword-triage-proposal.json",
+        ],
+        why="one subject: what the AI jobs last produced; each is read-only and starts nothing",
+    )
+
+
+#: The self-tests that stand in ``selftests.json``, in the order the members stood: (name, how it
+#: is called). A self-test proves a MECHANISM of the code, so on one build it answers the same on
+#: every machine that can run it; what a reader needs from each is whether the code works HERE.
+def _selftest_calls() -> list[tuple[str, Callable[[], Any]]]:
+    # Lazy, like the members list: these two live in submodules imported after this one.
+    from .ai import qualification_assist_selftest
+    from .source_tags import source_tags_selftest
+
+    return [
+        ("keyword-selftest", lambda: keyword_selftest(download=False)),
+        ("recursive-loop", lambda: recursive_loop(download=False)),
+        ("bulletin-language-selftest", bulletin_language_selftest),
+        ("ir-eval-selftest", lambda: ir_eval_selftest(download=False)),
+        ("perception-eval-selftest", lambda: perception_eval_selftest(download=False)),
+        ("keyword-triage-selftest", lambda: keyword_triage_selftest(download=False)),
+        ("source-tags-selftest", lambda: source_tags_selftest(download=False)),
+        ("qualification-assist-selftest", lambda: qualification_assist_selftest(download=False)),
+        ("search-timing-selftest", lambda: search_timing_selftest(download=False)),
+        ("power-profile-selftest", lambda: power_profile_selftest(download=False)),
+        ("source-audit-selftest", lambda: source_audit_selftest(download=False)),
+        ("llm-throughput-selftest", llm_throughput_selftest),
+        ("ai-activity-selftest", ai_activity_selftest),
+    ]
+
+
+def _selftest_verdict(value: Any) -> dict:
+    """One self-test's verdict, read from the shape of its own answer: ``pass`` only when the test
+    SAYS it passed and ran at least one check, ``fail`` when it says it did not, ``unknown`` for a
+    shape this reader does not know (never a pass by default, and the full output is kept)."""
+    if not isinstance(value, dict):
+        return {"verdict": "unknown", "why": "the answer was not an object"}
+
+    def _count(v: Any) -> int | None:
+        return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+    # Two shapes carry counts: a ``summary`` object (total, passed, failed) and top-level
+    # total, passed_count, failed_count. Neither is guessed from the other.
+    raw_summary = value.get("summary")
+    summary: dict = raw_summary if isinstance(raw_summary, dict) else {}
+    total, passed, failed = (_count(summary.get(k)) for k in ("total", "passed", "failed"))
+    if total is None:
+        total = _count(value.get("total"))
+    if passed is None:
+        passed = _count(value.get("passed_count"))
+    if failed is None:
+        failed = _count(value.get("failed_count"))
+    flag = value.get("passed")
+    if isinstance(flag, bool):
+        says_pass: bool | None = flag
+    elif failed is not None and total is not None:
+        says_pass = failed == 0
+    else:
+        says_pass = None
+    out: dict[str, Any] = {}
+    if total is not None:
+        out["total"] = total
+    if passed is not None:
+        out["passed"] = passed
+    if failed is not None:
+        out["failed"] = failed
+    if says_pass is None:
+        out["verdict"] = "unknown"
+        out["why"] = "the answer carries neither a passed flag nor a total with a failed count"
+    elif says_pass and total == 0:
+        out["verdict"] = "unknown"
+        out["why"] = "the test reports a pass over zero checks, which proves nothing"
+    elif says_pass and failed:
+        # A flag and a count that disagree are read against the flag: the finding is the disagreement.
+        out["verdict"] = "fail"
+        out["why"] = "the test says it passed but reports failed checks"
+    else:
+        out["verdict"] = "pass" if says_pass else "fail"
+    return out
+
+
+def _selftests_member() -> dict:
+    """The thirteen mechanism self-tests as ONE member: a verdict per test, and the test's full
+    output only for one that did not pass (a pass is the same words on every machine of one
+    build, 13 files of them were byte-identical on every instance read)."""
+    tests: dict[str, Any] = {}
+    names: list[str] = []
+    for name, call in _selftest_calls():
+        names.append(name + ".json")
+        try:
+            value = _section_value(call())
+        except Exception as exc:  # noqa: BLE001 - a self-test that cannot run is a finding, never a blank
+            tests[name] = {"verdict": "error", "error": _all_diag_err_str(exc)}
+            continue
+        entry = _selftest_verdict(value)
+        if entry["verdict"] != "pass":
+            entry["output"] = value
+        tests[name] = entry
+    counts = {v: sum(1 for t in tests.values() if t["verdict"] == v) for v in ("pass", "fail", "unknown", "error")}
+    return {
+        "schema": "oo-selftests-1",
+        "merged": {
+            "replaces": names,
+            "why": "a mechanism proof is a function of the build: its full output is kept only "
+                   "for a test that did not pass",
+        },
+        "summary": {"tests": len(tests), **counts, "all_pass": counts["pass"] == len(tests)},
+        "tests": tests,
+        "method": "each self-test's own answer, read for its passed flag or its failed count; "
+                  "a shape this reader does not know is `unknown`, never a pass",
+        "caveat": "a pass says the mechanism works on THIS build on THIS machine; it says nothing "
+                  "about the data the mechanism is later run over",
+    }
 
 
 def _country_code_scan(db) -> dict:
@@ -1902,7 +2199,18 @@ def _hardware_profile() -> dict:
     return profile
 
 
-def _profile_block(profile: str, results: list[dict]) -> dict:
+def _machine_record_block() -> dict:
+    """The manifest's ``machine`` block (see ``src.monitoring.machine_record``): a LAZY import, so the
+    reader costs nothing at import, and never raises: it answers a reason, never a failed build."""
+    try:
+        from src.monitoring.machine_record import machine_block
+
+        return machine_block()
+    except Exception as exc:  # noqa: BLE001 - the header is never worth the archive
+        return {"unavailable": type(exc).__name__}
+
+
+def _profile_block(profile: str, results: list[dict], mode: str = "thorough") -> dict:
     """The manifest's `profile` block: what was declined, by whom, and whether the
     bundle is COMPLETE.
 
@@ -1926,7 +2234,17 @@ def _profile_block(profile: str, results: list[dict]) -> dict:
         if r.get("outcome") in ("declined-light", "declined-ram")
     ]
     by_machine = [d["file"] for d in declined if d["declined_by"] == "machine"]
-    if not declined:
+    # A scan the Quick budget did not reach is not collected either, and a gate that reads
+    # `complete_profile` must not take a Quick build for a whole one: it is named in `scans`, and
+    # it is the reason this boolean is False (a Thorough build collects it).
+    over_budget = [r["file"] for r in results if r.get("outcome") == "skipped-budget"]
+    if not declined and over_budget:
+        note = (
+            f"This is a {mode.upper()} build, and it is INCOMPLETE: " + ", ".join(over_budget)
+            + " did not start because the scan budget was spent (see `scans`). Nothing was "
+            "declined by the machine or by the operator. Run the Thorough build to collect them."
+        )
+    elif not declined:
         note = "Every member ran; nothing was declined."
     elif profile == "full":
         note = (
@@ -1948,9 +2266,14 @@ def _profile_block(profile: str, results: list[dict]) -> dict:
                 " Note that " + ", ".join(by_machine) + " was declined by the MACHINE "
                 "(R27), not by the profile, and would not have run under FULL either."
             )
+    if declined and over_budget:
+        note += (
+            " Also, " + ", ".join(over_budget) + " did not start because the scan budget was "
+            "spent (see `scans`)."
+        )
     return {
         "name": profile,
-        "complete_profile": not declined,
+        "complete_profile": not declined and not over_budget,
         "declined": declined,
         "note": note,
     }
@@ -1966,6 +2289,9 @@ def _all_diagnostics_manifest(
     profile: str = "full",
     previous_runs: dict | None = None,
     read_release: dict | None = None,
+    mode: str = "thorough",
+    phases: dict | None = None,
+    machine: dict | None = None,
 ) -> dict:
     import platform
     import sys as _sys
@@ -1996,6 +2322,16 @@ def _all_diagnostics_manifest(
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "python": _sys.version.split()[0],
         "platform": platform.platform(),
+        # THE MACHINE RECORD (R119): the build, the libraries a crash lives in, the memory tier the
+        # process was resolved to beside the one the machine gives now, the allocator setting and the
+        # names of the switches set. Read ONCE, at the start of the build, so a declined or failed
+        # member still leaves it here; nothing in it is repeated in another member. ABSENT for a
+        # caller that did not take one.
+        **({"machine": machine} if machine is not None else {}),
+        # THE SLOTS NOT BUILT YET (R119): an owner's member whose module is not in this build writes no
+        # file, and the manifest says so by name, so a reader of this archive is told the member did
+        # not exist yet rather than that it came back empty.
+        "slots": {"not_in_build": _slots.not_in_build()},
         # RUN HEADER (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the 0.3 gate row-3 tie-in --
         # a failed hour-long 5M-scale run must be diagnosable FROM THE ARCHIVE ITSELF, not
         # just from having watched it live. Corpus size + app/schema version + the hardware
@@ -2036,6 +2372,10 @@ def _all_diagnostics_manifest(
             "exclusive": exclusive
             if exclusive is not None
             else {"held": False, "reason": "not requested by this caller"},
+            # WHEN EACH HALF OF THE BUILD RAN (R124): the records first, with collection running,
+            # then the scans under the exclusive window above. ABSENT for a caller that did not
+            # split the build.
+            **({"phases": phases} if phases is not None else {}),
             # THE SESSION'S READ TRANSACTION, member boundary by member boundary. ABSENT when the
             # build had no session (a caller that passed none); a count of 0 released beside a
             # high `declined` would say a member wrote and the old standing reader is back.
@@ -2057,7 +2397,15 @@ def _all_diagnostics_manifest(
         # member non-zero") is only meaningful against a FULL run. `complete_profile` is
         # the one boolean a gate check should read -- never the member count, which a light
         # run keeps intact by design because the declined members are still listed.
-        "profile": _profile_block(profile, results),
+        "profile": _profile_block(profile, results, mode),
+        # THE MODE AND WHAT IT LEFT OUT (R124): Quick spends one budget on the scans and names
+        # every scan it did not reach; Thorough runs them all under their own deadlines. Read from
+        # the members this run wrote, so it cannot disagree with them.
+        "mode": mode,
+        "scan_budget_s": _plan.SCAN_BUDGET_S if mode == "quick" else None,
+        "scans": _plan.scans_block(
+            results, mode=mode, budget_s=_plan.SCAN_BUDGET_S if mode == "quick" else None
+        ),
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
         # so "all diagnostics" states its own boundary instead of implying totality.
         "excluded": [
@@ -2091,7 +2439,8 @@ def _all_diagnostics_manifest(
                 "endpoint": "/api/diagnostics/model-bench/run",
                 "reason": "the comparative model bench loads every roster model in turn "
                 "and can run for hours — operator-run from its own button on the machine "
-                "that hosts the models. Its RESULT rides the bundle as model-bench.json",
+                "that hosts the models. Its RESULT rides the bundle as the model-bench section "
+                "of ai-runs.json",
             },
             {
                 "endpoint": "/api/diagnostics/ir-eval",
@@ -2116,9 +2465,30 @@ def _all_diagnostics_manifest(
     }
 
 
+def _mono() -> float:
+    """The build's own clock for the scan budget (one name, so a test can drive it)."""
+    import time as _t
+
+    return _t.monotonic()
+
+
+def _scan_deadline(
+    cap_s: float, is_scan: bool, elapsed_s: float, budget_s: float | None
+) -> tuple[float, bool]:
+    """The deadline a member runs under and whether the scan budget set it: the member's own ``cap_s``
+    for a record or without a budget, the smaller of the cap and the time the budget has left for a
+    scan in Quick. The skip decision has already been made from the same ``elapsed_s``, so a scan
+    that gets here has at least the floor left; ``cap_s`` is the fallback for a value that cannot be
+    computed, never a longer deadline than the budget allows."""
+    if not is_scan or budget_s is None:
+        return cap_s, False
+    deadline, from_budget = _plan.scan_deadline_s(cap_s, elapsed_s, budget_s)
+    return (cap_s, False) if deadline is None else (deadline, from_budget)
+
+
 def _write_all_diagnostics_zip(
     members, zf, *, progress=None, should_stop=None, journal_path=None, db=None,
-    exclusive=None, profile="full", previous_runs=None,
+    exclusive=None, profile="full", previous_runs=None, mode="thorough", scan_window=None,
 ) -> list[dict]:
     """Write every member (+ manifest) into the open ZipFile ``zf``; return the per-member
     results. Shared by the sync endpoint (an in-memory BytesIO) and the job (a file on disk).
@@ -2164,6 +2534,18 @@ def _write_all_diagnostics_zip(
     ``"full"`` (the default) declines nothing and is byte-identical to the behaviour before
     this parameter existed.
 
+    MODE (R124): the members run in two halves. The RECORDS first, in the order given, with
+    collection still running; then the SCANS (``diagnostics_plan.SCAN_EST_S``), shortest estimate
+    first, inside the exclusive window ``scan_window`` opens (a callable returning a context
+    manager that yields the claim; the job passes ``_bundle_exclusive_window``; a caller that
+    already holds the machine passes ``exclusive`` instead and gets one window over everything,
+    as before). ``"quick"`` gives the scans one shared budget (``SCAN_BUDGET_S``): a scan starts only
+    while at least ``SCAN_FLOOR_S`` of it are left and gets the smaller of its own deadline and the
+    time left, so the budget is a hard bound on the pause; a scan that never starts is
+    ``skipped-budget`` with its estimate and the reason, one that is cut keeps what it gathered
+    (``partial-deadline``). ``"thorough"`` (the default HERE, so a direct caller still gets every
+    member) has no shared budget: every scan runs under its own deadline, as before.
+
     JOURNAL: when ``journal_path`` is given (the background job path only — the sync route's
     in-memory BytesIO build has no durable file to journal against), a begin/end JSON line is
     appended + fsync'd around every member, so a HARD-killed run's last ``begin`` with no
@@ -2180,8 +2562,21 @@ def _write_all_diagnostics_zip(
     import time as _time
 
     results: list[dict] = []
-    total = len(members)
+    mode = _plan.resolve_mode(mode)
+    budget_s = _plan.SCAN_BUDGET_S if mode == "quick" else None
+    records, scans = _plan.split_members(list(members))
+    ordered = records + scans
+    scan_names = {m[0] for m in scans}
+    total = len(ordered)
     run_started_at = _time.time()
+    machine = _machine_record_block()
+    # THE SCANS' WINDOW: opened at the first scan, closed the moment the last one is over (or the
+    # build is stopped), so collection runs again before the manifest is made.
+    window = contextlib.ExitStack()
+    scan_claim: dict[str, Any] | None = None
+    scans_began_at: float | None = None  # time.monotonic() when the scans' window was entered
+    scans_began_iso: str | None = None
+    records_ended_iso: str | None = None
     # What ending the session's read transaction at each boundary came to (see
     # _release_read_between_members); reported in the manifest, never assumed.
     read_release = {"released": 0, "none_held": 0, "declined": 0}
@@ -2196,9 +2591,21 @@ def _write_all_diagnostics_zip(
     # rebuilt per reading perturbs the very thing it reads (measured 5/5).
     _rss = _RssProbe()
     try:
-        for i, (name, fn) in enumerate(members):
+        for i, (name, fn) in enumerate(ordered):
             if should_stop is not None and should_stop():
                 break
+            if scans and scans_began_at is None and name in scan_names:
+                # THE FIRST SCAN: the records are in the archive, so the window is taken now, and
+                # the budget counts from here (it protects the time collection is paused).
+                records_ended_iso = datetime.now().isoformat(timespec="seconds")
+                if scan_window is not None and exclusive is None:
+                    try:
+                        scan_claim = window.enter_context(scan_window())
+                    except Exception:  # noqa: BLE001 - a build never fails for want of the hold
+                        _LOG.warning("all-diagnostics could not claim the machine for its scans", exc_info=True)
+                        scan_claim = {"held": False, "reason": "could not claim the machine"}
+                scans_began_at = _mono()
+                scans_began_iso = datetime.now().isoformat(timespec="seconds")
             if progress is not None:
                 progress(i, total, name)
             started_t = _time.time()
@@ -2242,8 +2649,33 @@ def _write_all_diagnostics_zip(
             declined_reason = ram_reason or (
                 _LIGHT_DECLINED.get(name) if profile == "light" else None
             )
+            # THE SCAN BUDGET (Quick). `elapsed` is read ONCE for this member: the skip decision and
+            # the deadline below must agree about how much time is left.
+            is_scan_member = name in scan_names
+            elapsed_s = (
+                _mono() - scans_began_at
+                if (is_scan_member and scans_began_at is not None) else 0.0
+            )
+            skipped_reason: str | None = None
+            if (
+                budget_s is not None and is_scan_member and declined_reason is None
+                and _plan.scan_deadline_s(_plan.DEFAULT_SCAN_S, elapsed_s, budget_s)[0] is None
+            ):
+                skipped_reason = (
+                    f"the Quick build's scan budget of {budget_s:.0f} s was spent ({elapsed_s:.0f} s "
+                    f"used by the scans before this one); this scan is expected to take about "
+                    f"{_plan.scan_est_s(name):.0f} s. Run the Thorough build to collect it"
+                )
+            budget_cut = False
+            deadline_used: float | None = None
             try:
-                if declined_reason is not None:
+                if skipped_reason is not None:
+                    outcome = "skipped-budget"
+                    zf.writestr(
+                        name + ".skipped-budget.txt",
+                        (f"{name} was NOT collected: {skipped_reason}.\n").encode(),
+                    )
+                elif declined_reason is not None:
                     # DECLINED BEFORE IT RUNS, which is the whole point: the cost this
                     # avoids is paid at the first byte, so a deadline or a byte cap would
                     # arrive far too late to keep a 4 GB machine out of swap.
@@ -2269,7 +2701,10 @@ def _write_all_diagnostics_zip(
                     )
                     zf.writestr(name + ".declined.txt", body.encode())
                 elif db is not None and _member_touches_db(fn):
-                    with statement_deadline(db, _all_diag_db_member_deadline_s()):
+                    deadline_used, budget_cut = _scan_deadline(
+                        _all_diag_db_member_deadline_s(), is_scan_member, elapsed_s, budget_s
+                    )
+                    with statement_deadline(db, deadline_used):
                         value = fn()
                         # S2.2: a member that STOPPED at the deadline and returned
                         # what it had is PARTIAL, not skipped. Recording
@@ -2281,7 +2716,10 @@ def _write_all_diagnostics_zip(
                         if deadline_expired(db):
                             outcome = "partial-deadline"
                 else:
-                    value = _run_nondb_member_bounded(fn, _all_diag_nondb_member_deadline_s())
+                    deadline_used, budget_cut = _scan_deadline(
+                        _all_diag_nondb_member_deadline_s(), is_scan_member, elapsed_s, budget_s
+                    )
+                    value = _run_nondb_member_bounded(fn, deadline_used)
                     if value is _ALL_DIAG_DEADLINE_SENTINEL:
                         outcome = "skipped-deadline"
                 if outcome in ("ok", "partial-deadline"):
@@ -2298,8 +2736,10 @@ def _write_all_diagnostics_zip(
                     # cause for something the operator chose. An outcome that writes its
                     # own marker must name itself here.
                     marker = (
-                        f"member exceeded its {_all_diag_nondb_member_deadline_s():.0f}s "
-                        "wall-clock deadline and was abandoned (non-DB member)"
+                        f"member exceeded its {deadline_used or _all_diag_nondb_member_deadline_s():.0f}s "
+                        "wall-clock deadline"
+                        + (" (the time the Quick scan budget had left)" if budget_cut else "")
+                        + " and was abandoned (non-DB member)"
                     ).encode()
                     zf.writestr(name + ".skipped-deadline.txt", marker)
             except StatementTimeout as exc:
@@ -2328,7 +2768,29 @@ def _write_all_diagnostics_zip(
                 "started_at": started_iso,
                 "wall_s": wall_s,
                 "bytes": nbytes,
+                "kind": "scan" if is_scan_member else "record",
+                # WHAT THE MEMBER IS ABOUT (R119), so a reader goes to "memory" or "database" rather
+                # than read 50 names. A class, never a severity.
+                "area": _slots.area_of(name),
             }
+            slot_budget = _slots.budget_of(name)
+            if slot_budget is not None:
+                # A slot's producer is ASKED to keep this much raw JSON. It is not cut here (a cut
+                # that is not the producer's own would break its structure): one that wrote more says
+                # so, and the producer's own test holds it to its number.
+                entry["budget_bytes"] = slot_budget
+                if nbytes > slot_budget:
+                    entry["over_budget"] = True
+            if is_scan_member:
+                entry["est_s"] = _plan.scan_est_s(name)
+                if deadline_used is not None:
+                    entry["deadline_s"] = round(deadline_used, 1)
+                if budget_cut:
+                    # The deadline this scan ran under was the time the budget had left, not its
+                    # own 300 s: what it did not finish is the budget's doing, and says so.
+                    entry["budget_cut"] = True
+                if skipped_reason is not None and outcome == "skipped-budget":
+                    entry["skipped_reason"] = skipped_reason
             if err is not None:
                 entry["error"] = err
             if gate_reading:
@@ -2406,8 +2868,28 @@ def _write_all_diagnostics_zip(
     finally:
         if journal_fp is not None:
             journal_fp.close()
+        window.close()  # the machine is the collector's again, whatever ended the scans
 
     run_ended_at = _time.time()
+    scans_ended_iso = datetime.now().isoformat(timespec="seconds")
+    phases = {
+        "records": {
+            "members": len(records),
+            "ended_at": records_ended_iso if scans_began_at is not None else scans_ended_iso,
+            "note": (
+                "the caller held the machine for the whole build, records included"
+                if exclusive is not None
+                else "read with collection running: the exclusive window was taken after them"
+            ),
+        },
+        "scans": {
+            "members": len(scans),
+            "began_at": scans_began_iso,
+            "ended_at": scans_ended_iso if scans_began_at is not None else None,
+            "wall_s": round(_mono() - scans_began_at, 1) if scans_began_at is not None else None,
+            "exclusive": exclusive if exclusive is not None else scan_claim,
+        },
+    }
     previous_text, previous_block = "", None
     if previous_runs is not None:
         try:
@@ -2424,8 +2906,9 @@ def _write_all_diagnostics_zip(
             }
     manifest = _all_diagnostics_manifest(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
-        exclusive=exclusive, profile=profile, previous_runs=previous_block,
-        read_release=read_release if db is not None else None,
+        exclusive=exclusive if exclusive is not None else scan_claim, profile=profile,
+        previous_runs=previous_block, read_release=read_release if db is not None else None,
+        mode=mode, phases=phases, machine=machine,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
@@ -2756,7 +3239,7 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
     return text, block
 
 
-def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
+def _all_diagnostics_worker(ctx, profile: str = "full", mode: str = "thorough") -> dict:
     """Build the all-diagnostics archive to a server-side file (D2), and record that it began
     and how it ended in ``data/diagnostics/runs.jsonl`` (R119): a run that fails by an
     exception or is killed left nothing that any later bundle carried, and the operator pressed
@@ -2766,9 +3249,10 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
 
     fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     started = _time.monotonic()
-    run = _diag_runs.begin_run(fname, profile=profile)
+    mode = _plan.resolve_mode(mode)
+    run = _diag_runs.begin_run(fname, profile=profile, mode=mode)
     try:
-        result = _all_diagnostics_build(ctx, profile, fname)
+        result = _all_diagnostics_build(ctx, profile, fname, mode)
     except BaseException as exc:
         # The failure's words enter a record that ships in the zip and answers GET /runs. ``exc_line`` writes
         # them through ``secret_scrub.exception_text`` (the passphrase out of the whole text, fixed words for a
@@ -2788,7 +3272,7 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     return result
 
 
-def _all_diagnostics_build(ctx, profile: str, fname: str) -> dict:
+def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough") -> dict:
     """Build the all-diagnostics archive to a server-side file (D2). Read-only; opens its own
     session so it never borrows the request's. Writes to a ``.part`` file and atomically
     renames on success, so a cancelled/failed run never leaves a half-written archive that
@@ -2817,7 +3301,9 @@ def _all_diagnostics_build(ctx, profile: str, fname: str) -> dict:
         # The scrubbed text, not the traceback (see the fold below).
         _LOG.warning("could not read the previous runs' journals (%s)", read_error)
         previous_runs = {"carried": [], "not_carried": [], "error": read_error}
-    with _bundle_exclusive_window() as excl, session_scope() as db:
+    # THE EXCLUSIVE WINDOW IS NOT TAKEN HERE any more: the writer opens it for the scans, after the
+    # records (R124), and closes it at the last scan.
+    with session_scope() as db:
         members = _all_diagnostics_members(db)
 
         def _progress(done, total, name):
@@ -2826,8 +3312,9 @@ def _all_diagnostics_build(ctx, profile: str, fname: str) -> dict:
         with zipfile.ZipFile(part_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             results = _write_all_diagnostics_zip(
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
-                journal_path=journal_path, db=db, exclusive=excl,
+                journal_path=journal_path, db=db, scan_window=_bundle_exclusive_window,
                 profile=resolve_bundle_profile(profile), previous_runs=previous_runs,
+                mode=mode,
             )
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
@@ -2873,6 +3360,7 @@ _ALL_DIAG_JOB = register_job(
 @router.post("/all-job")
 def all_diagnostics_job_start(
     profile: str = Query("full", description="full | light"),
+    mode: str = Query("quick", description="quick | thorough"),
 ) -> JSONResponse:
     """Start the all-diagnostics archive build as a BACKGROUND job (D2). Returns immediately;
     poll ``/all-job/status`` (or the task manager) for per-member progress, then GET
@@ -2883,10 +3371,21 @@ def all_diagnostics_job_start(
     A remembered "light" would quietly make a LATER bundle light too -- including the one
     taken to close a release gate whose bar is every member non-zero -- and the operator
     would have no reason to suspect it. Asking once per run costs a click; a sticky choice
-    costs the evidence."""
+    costs the evidence.
+
+    ``mode`` is per run and not stored either (R124): ``quick`` (the default) reads the records,
+    then spends one budget on the scans and names the ones it did not reach; ``thorough`` runs every
+    scan under its own deadline. A name that is not one of the two is ``thorough``, so a typo never
+    makes a smaller build than the caller meant. ``profile=light`` stays for the maintainers; the
+    panel no longer sends it."""
     try:
         return JSONResponse(
-            {"started": True, "job": _ALL_DIAG_JOB.start(profile=resolve_bundle_profile(profile))}
+            {
+                "started": True,
+                "job": _ALL_DIAG_JOB.start(
+                    profile=resolve_bundle_profile(profile), mode=_plan.resolve_mode(mode)
+                ),
+            }
         )
     except RuntimeError:
         return JSONResponse({"started": False, "job": _ALL_DIAG_JOB.status()})
@@ -2901,7 +3400,28 @@ def all_diagnostics_job_status() -> JSONResponse:
     st["ready"] = bool(st.get("state") == "done" and res.get("path"))
     st["download_filename"] = res.get("filename")
     st["download_bytes"] = res.get("bytes")
+    # The newest archive ON DISK, whatever this process knows of it: the page offers "Diagnostics,
+    # again" only when there is something to hand over, and the job object lives as long as the
+    # process while the archive outlives a restart (the same fall-back ``/all-job/download`` makes).
+    st["last_archive"] = _last_archive_facts()
     return JSONResponse(st)
+
+
+def _last_archive_facts() -> dict | None:
+    """The newest finished archive's name (as a person receives it), size and time, or ``None``
+    when there is none. Two stats and no read of the file; never raises."""
+    try:
+        newest = _newest_all_diagnostics_archive()
+        if newest is None:
+            return None
+        info = newest.stat()
+        return {
+            "name": _published_archive_name(newest),
+            "bytes": info.st_size,
+            "modified": datetime.fromtimestamp(info.st_mtime, tz=UTC).isoformat(timespec="seconds"),
+        }
+    except Exception:  # noqa: BLE001 - a line about the last archive never fails the status
+        return None
 
 
 def _newest_all_diagnostics_archive() -> pathlib.Path | None:
@@ -3131,9 +3651,55 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
             shutil.rmtree(build, ignore_errors=True)
 
 
+#: The name a person receives the archive under: the build's own name without the "all", so the
+#: file in their downloads folder is ``oo-diagnostics-<stamp>.zip`` (R119: one Diagnostics button).
+_ARCHIVE_STEM = "oo-all-diagnostics-"
+_PUBLISHED_STEM = "oo-diagnostics-"
+
+
+def _published_archive_name(src: pathlib.Path) -> str:
+    """``oo-all-diagnostics-20261006-120000.zip`` -> ``oo-diagnostics-20261006-120000.zip``."""
+    name = src.name
+    return _PUBLISHED_STEM + name[len(_ARCHIVE_STEM):] if name.startswith(_ARCHIVE_STEM) else name
+
+
+def _single_archive_listing(src: pathlib.Path, size: int, cap: int) -> dict:
+    """The listing for an archive that fits one file: the archive itself, as the one file of the set.
+
+    The same ``files`` + ``download_base`` shape as a numbered set, so the page's one routine that
+    saves files serves both, with ``kind: "archive"`` where a numbered set has ``manifest`` and
+    ``part``. No split is made, so no second copy of the archive's weight is written, no manifest zip
+    and no ``volumes-readme.json`` exist, and the person handles ONE file."""
+    from src.analytics.upload_parts import sha256_file
+
+    name = _published_archive_name(src)
+    return {
+        "kind": "oo-diagnostics-single-1",
+        "single_file": True,
+        "source": src.name,
+        "volume_count": 0,
+        "part_count": 1,
+        "part_max_bytes": cap,
+        "files": [{"name": name, "bytes": size, "sha256": sha256_file(src), "kind": "archive"}],
+        "download_base": "/api/diagnostics/all-job/volumes/",
+        "note": (
+            f"The archive is {size:,} bytes, within the {cap:,}-byte limit on one file, so it is "
+            "handed over as it is: no numbered files, no manifest zip."
+        ),
+    }
+
+
 @router.get("/all-job/volumes")
 def all_diagnostics_volumes() -> JSONResponse:
-    """The finished archive split into size-bounded, independently-openable ZIP volumes.
+    """The finished archive as the file or files to hand over: ITSELF when it fits one file, otherwise
+    split into size-bounded, independently-openable ZIP volumes.
+
+    WHEN THE ARCHIVE FITS (``UPLOAD_PART_BYTES``, 4,000,000 bytes, R119) the answer is the archive
+    as it is, ``oo-diagnostics-<stamp>.zip``, listed in the same shape as a numbered set with one file
+    of ``kind: "archive"``: no split (seconds to a minute saved, and none of the doubled disk
+    footprint below), no manifest zip, no ``volumes-readme.json``. A numbered set left from an
+    earlier, larger archive is removed then, since it belongs to a bundle that is gone. An archive
+    above the cap is split exactly as before.
 
     Returns the manifest: every volume's name, byte count and SHA-256, which volume
     carries each member, and -- when a member was too large to fit one volume at all --
@@ -3179,6 +3745,19 @@ def all_diagnostics_volumes() -> JSONResponse:
         )
     from src.api import diagnostics_volumes as dvol
 
+    try:
+        size = src.stat().st_size
+    except OSError as exc:
+        raise HTTPException(
+            status_code=404, detail="the archive was removed while it was being listed — start a new build"
+        ) from exc
+    cap = dvol.volume_max_bytes()
+    if size <= cap:
+        with _ALL_DIAG_VOLUMES_LOCK:
+            # A numbered set belongs to the bundle it was split from. This archive needs none, and
+            # an operator who collects files by name must not find the old bundle's parts beside it.
+            dvol.remove_volume_set(_all_diagnostics_volumes_dir())
+        return JSONResponse(_single_archive_listing(src, size, cap))
     try:
         manifest = _ensure_volume_set(src)
     except dvol.VolumeRoomError as exc:
@@ -3230,6 +3809,12 @@ def all_diagnostics_volume_download(name: str) -> FileResponse:
     """
     from src.api import diagnostics_volumes as dvol
 
+    # THE ARCHIVE ITSELF, when it was handed over whole (see the listing above): resolved by the one
+    # name the listing gave, against the newest FINISHED archive and nothing else, so no other path
+    # is reachable. A name that is not that one falls through to the numbered set.
+    newest = _newest_all_diagnostics_archive()
+    if newest is not None and name == _published_archive_name(newest):
+        return _diag_runs.served_file_response(newest, name)
     out = _all_diagnostics_volumes_dir()
     try:
         manifest = dvol.load_manifest(out)

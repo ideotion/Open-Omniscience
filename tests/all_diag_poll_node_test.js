@@ -74,6 +74,7 @@ function install() {
   readyListings = [];
   global._partsReady = (m) => readyListings.push(m);   // the numbered-files bar, defined elsewhere
   shownFor = []; savedCounts = [];
+  global._paintDiagAgain = () => {};                            // the "again" link (its own test is parts_delivery_node_test.js)
   global._partsShow = (near) => shownFor.push(near);           // brings the bar into view (its own test is parts_delivery_node_test.js)
   global._partsSave = async (count) => { savedCounts.push(count); };   // hands files to the browser
   global._partsSet = null; global._partsGen = 0; global._partsBusy = 0;       // the bar's state: a finished build takes a number

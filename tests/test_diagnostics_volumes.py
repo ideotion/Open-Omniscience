@@ -31,6 +31,21 @@ import pytest
 
 from src.api import diagnostics_volumes as dv
 
+#: The shipped default cap, read before any test changes it (4,000,000 since R119).
+_REAL_CAP = dv.UPLOAD_PART_BYTES
+
+
+@pytest.fixture(autouse=True)
+def _the_numbered_scheme_at_a_cap_the_fixtures_exceed(monkeypatch):
+    """THE NUMBERED SCHEME IS TESTED AT 300,000 BYTES, so these fixtures need it.
+
+    The archives of this file are a megabyte or less, and an archive that fits the default cap of
+    4,000,000 is handed over whole, not split (R119; ``tests/test_diagnostics_single_file.py`` pins that
+    and the split above the real cap). The scheme is the same at any cap, so these tests pin a cap
+    their fixtures exceed instead of growing every fixture tenfold; the two that assert the shipped
+    default say so and read ``_REAL_CAP``."""
+    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", 300_000)
+
 
 def _build_bundle(tmp_path: Path) -> Path:
     """An archive shaped like a real all-diagnostics bundle: orientation files, a dozen
@@ -346,14 +361,15 @@ def test_load_manifest_refuses_a_directory_with_no_manifest(tmp_path):
 
 
 def test_the_cap_is_env_tunable_and_floored_against_a_zero(monkeypatch):
+    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", _REAL_CAP)
     monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "25")
     assert dv.volume_max_bytes() == 25 * 1024 * 1024
     monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "0")
     assert dv.volume_max_bytes() == 4096
     monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "not-a-number")
-    assert dv.volume_max_bytes() == 1_000_000, "a bad value falls back, never crashes"
+    assert dv.volume_max_bytes() == _REAL_CAP, "a bad value falls back, never crashes"
     monkeypatch.delenv("OO_DIAG_VOLUME_MAX_MB")
-    assert dv.volume_max_bytes() == dv.UPLOAD_PART_BYTES == 1_000_000
+    assert dv.volume_max_bytes() == dv.UPLOAD_PART_BYTES == _REAL_CAP == 4_000_000
 
 
 # --------------------------------------------------------------------------- #
@@ -528,20 +544,21 @@ def _noisy_json_member(n: int) -> str:
                                 for i in range(n)], "meta": {"kind": "test"}})
 
 
-def test_the_default_cap_is_one_million_bytes_and_volumes_carry_position_and_total(tmp_path):
+def test_the_default_cap_is_four_million_bytes_and_volumes_carry_position_and_total(tmp_path, monkeypatch):
+    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", _REAL_CAP)
     src = tmp_path / "oo-all-diagnostics-20261001-010000.zip"
     with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", "{}")
         for i in range(5):
-            z.writestr(f"big-{i}.bin", os.urandom(500_000))
+            z.writestr(f"big-{i}.bin", os.urandom(2_000_000))
     manifest = dv.write_volume_set(src, tmp_path / "v")
-    assert manifest["volume_max_bytes"] == 1_000_000
+    assert manifest["volume_max_bytes"] == 4_000_000
     n = len(manifest["volumes"])
     assert n > 2
     assert [v["name"] for v in manifest["volumes"]] == [
         f"oo-all-diagnostics-20261001-010000-part-{i:02d}-of-{n:02d}.zip" for i in range(1, n + 1)
     ]
-    assert all(v["bytes"] <= 1_000_000 for v in manifest["volumes"])
+    assert all(v["bytes"] <= 4_000_000 for v in manifest["volumes"])
     assert [f["name"] for f in manifest["manifest_files"]] == [
         "oo-all-diagnostics-20261001-010000-manifest.zip"
     ]
@@ -1041,5 +1058,5 @@ def test_a_set_built_under_another_cap_is_rebuilt_not_re_served(_diag_dir, monke
     first = json.loads(bytes(d.all_diagnostics_volumes().body))
     monkeypatch.setenv("OO_DIAG_VOLUME_MAX_MB", "0.2")
     second = json.loads(bytes(d.all_diagnostics_volumes().body))
-    assert first["volume_max_bytes"] == 1_000_000 and second["volume_max_bytes"] == int(0.2 * 1024 * 1024)
+    assert first["volume_max_bytes"] == 300_000 and second["volume_max_bytes"] == int(0.2 * 1024 * 1024)
     assert second["volume_count"] > first["volume_count"]
