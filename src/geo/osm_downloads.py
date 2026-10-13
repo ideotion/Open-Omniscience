@@ -43,11 +43,16 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, log_failure, scrubbed
 
 _LOG = logging.getLogger(__name__)
 
 _CHUNK = 1024 * 1024  # 1 MiB
+
+#: What ``scrubbed`` is asked to return when it cannot take the held passphrases out of a stored error text (what this process
+#: holds could not be read). Compared with ``==``, never written anywhere: a text that could not be checked is not a text to
+#: put a marker over on disk.
+_UNCHECKED = "\x00osm-downloads-unchecked-error\x00"
 
 # OSM extracts are large (continents are multi-GB, the planet ~72 GB), so the
 # default parallelism is conservative; raise via OO_OSM_CONCURRENCY. Parallel
@@ -114,8 +119,22 @@ class OsmDownloadEntry:
     mirrors: list[str] = field(default_factory=list)
     expected_sha256: str = ""
 
+    def __post_init__(self) -> None:
+        # Not dataclass fields (``asdict`` skips them): the keys a NEWER build wrote beside the ones this build knows, kept so
+        # that a rewrite by this build hands them back; and the stored error text this process could not check.
+        self._extra: dict = {}
+        self._unchecked_error: str | None = None
+
+    def state_dict(self) -> dict:
+        """What the state file holds for this entry: the fields this build declares, and every key a newer build added."""
+        return {**self._extra, **asdict(self)}
+
     def to_dict(self) -> dict:
         d = asdict(self)
+        if self._unchecked_error is not None and self.error == self._unchecked_error:
+            # The words on disk were written by an earlier build and cannot be checked for a passphrase now: the page gets the
+            # marker, the file keeps the words (they come back readable once what the process holds can be read again).
+            d["error"] = UNREADABLE_TEXT
         d["paused_by"] = self.paused_by if self.status == "paused" else None
         d["percent"] = (
             round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
@@ -171,6 +190,7 @@ class OsmDownloadManager:
             max_concurrent if max_concurrent and max_concurrent > 0 else _DEFAULT_OSM_CONCURRENCY
         )
         self._order: list[str] = []
+        self._extra_state: dict = {}  # top-level keys a newer build wrote beside ``entries`` / ``queue_order``
         self._load()
 
     # -- state ------------------------------------------------------------- #
@@ -182,18 +202,24 @@ class OsmDownloadManager:
                 raw = json.loads(self.state_path.read_text("utf-8"))
                 if isinstance(raw, dict) and "entries" in raw:
                     self._order = [k for k in raw.get("queue_order", []) if isinstance(k, str)]
+                    self._extra_state = {k: v for k, v in raw.items() if k not in ("entries", "queue_order")}
                     raw = raw["entries"]
                 for k, v in raw.items():
-                    self._entries[k] = OsmDownloadEntry(
-                        **{f: v[f] for f in OsmDownloadEntry.__annotations__ if f in v}
-                    )
+                    entry = OsmDownloadEntry(**{f: v[f] for f in OsmDownloadEntry.__annotations__ if f in v})
+                    entry._extra = {f: val for f, val in v.items() if f not in OsmDownloadEntry.__annotations__}
+                    self._entries[k] = entry
                 parsed = True
             except Exception as exc:  # noqa: BLE001 - a bad state file must not crash startup
                 log_failure(_LOG, "OSM downloads state unreadable; ignoring", exc, level=logging.WARNING)
         changed = False
         for e in self._entries.values():
             if e.error:  # an error stored by a build that wrote it unscrubbed is read, served and written back scrubbed
-                clean = scrubbed(e.error)
+                clean = scrubbed(e.error, withheld=_UNCHECKED)
+                if clean == _UNCHECKED:
+                    # What the process holds could not be read, so the text cannot be checked: it is served as the marker
+                    # (``to_dict``) and left as it is on disk, not replaced by the marker for good.
+                    e._unchecked_error = e.error
+                    continue
                 changed = changed or clean != e.error
                 e.error = clean
         # No worker thread survives a process restart, so a persisted
@@ -219,7 +245,8 @@ class OsmDownloadManager:
             tmp.write_text(
                 json.dumps(
                     {
-                        "entries": {k: asdict(e) for k, e in self._entries.items()},
+                        **self._extra_state,
+                        "entries": {k: e.state_dict() for k, e in self._entries.items()},
                         "queue_order": list(self._order),
                     },
                     indent=2,
