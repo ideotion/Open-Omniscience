@@ -3191,16 +3191,17 @@ def test_diagnostics_panel_button_consolidation():
         assert url not in html, f"a covered per-report download button survived: {url}"
 
     # (b) DELIBERATELY KEPT exceptions -- NOT weakening the ratchet:
-    #   - the full keyword-corpus dump (both size variants): the manifest's own
-    #     'excluded' block says the bundle carries only the bounded DIGEST, so these
-    #     buttons are each report's ONLY full-dump access, not a redundant download.
-    # Both keyword buttons build a NUMBERED SET of files of at most 4 MB (1 MB from 2026-10-01 to
-    # 2026-10-06, when R119 moved the one constant; the maintainer's uploads failed from about 1.2 MB a
-    # file), five to a click, so neither is a
-    # plain download any more: they call downloadKeywordParts with the mode that picks the URL.
-    assert "downloadKeywordParts(this, 'default')" in html and "Keyword log (4 MB files)" in html
+    #   - the full keyword-corpus dump ("All keywords", a text link): the manifest's own
+    #     'excluded' block says the bundle carries only the bounded DIGEST, so this link is the
+    #     report's ONLY full-dump access, not a redundant download.
+    # It builds a NUMBERED SET of files of at most 4 MB (1 MB from 2026-10-01 to 2026-10-06, when
+    # R119 moved the one constant; the maintainer's uploads failed from about 1.2 MB a file), five
+    # to a click, so it is not a plain download any more: it calls downloadKeywordParts with the mode
+    # that picks the URL. R123 (29b) removed its two siblings, "Keyword log (4 MB files)" and "Last
+    # keyword files, again"; the evidence is tests/test_keyword_log_buttons_removal.py.
+    assert "downloadKeywordParts(this, 'default')" not in html and "Keyword log (4 MB files)" not in html
+    assert "downloadKeywordParts(this, 'again')" not in html and "Last keyword files, again" not in html
     assert "downloadKeywordParts(this, 'all')" in html and ">All keywords</button>" in html
-    assert "downloadKeywordParts(this, 'again')" in html and "Last keyword files, again" in html
     # The "All keywords" button asks for NO size cap (2026-09-30): the archive is streamed to
     # disk a batch at a time, and a button called "All" that silently kept the top 9 MB was the
     # other half of the crash report. The URLs live in the one routine that serves the buttons.
@@ -6603,7 +6604,7 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # R119: ONE button, named for what it makes; sending the last one again is a text link under it
     assert re.search(r'<button id="all-diag-btn"[^>]*>Diagnostics</button>', html)
     assert 'id="all-diag-again"' in html and ">Save the last Diagnostics again<" in html
-    assert ">Keyword log (4 MB files)<" in html  # kept -- the FULL dump, exempt from the bundle
+    assert ">Keyword log (4 MB files)<" not in html  # R123 (29b): gone; "All keywords" is the FULL dump
     assert "/api/diagnostics/home-cards?download=1" not in html, (
         "the standalone home-cards download button must be gone (bundle carries it)"
     )

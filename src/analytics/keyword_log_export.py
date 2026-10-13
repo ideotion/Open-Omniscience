@@ -186,7 +186,8 @@ def retire_old_parts_sets(d: Path) -> None:
     ``_PARTS_GRACE_S`` seconds: its files may still be on their way to the browser).
 
     Called AFTER a new set is complete, not before it is begun: a build that is refused, cancelled
-    or fails must leave the person the set they already have (the page's "again" button reads it)."""
+    or fails must leave the person the set they already have (the "again" route reads it; the
+    page's button for it went with R123)."""
     for p in _retirable_parts_sets(d):
         shutil.rmtree(p, ignore_errors=True)
 
