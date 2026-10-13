@@ -16391,7 +16391,7 @@ counts and no `top_source_share`), so the feeds behind each cause are NOT named 
 
 **TOOL GAP (found by the guard, not by the tool):** `scripts/stopword_batch.py --apply` writes a batch to the file of the language it was run for, so a Latin-script word read in a log of a
 non-Latin language lands in a file the script test (`tests/test_stopword_file_scripts.py`) refuses. The batch-1 ko words were moved to `_multilingual.yml` by hand. Teach `--apply` that rule before
-any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will otherwise fail on its first non-Latin language.
+any batch for ar, bn, ru, zh, ja or ko goes out; the 6,586-word gate list will otherwise fail on its first non-Latin language. **CLOSED 2026-10-12 (the stoplist thread):** `--apply` files a word whose letters are not in the script of the language's file in `_multilingual.yml` (the table in the script is pinned equal to the guard's `_NON_LATIN_FILES`; both files are prepared before either is written, so a refusal leaves both as they were; `tests/test_stopword_batch.py`). A language the script map does not know (zh, ja: the maps hold the files that exist) writes everything to its own file, so a first batch for a new non-Latin language still adds it to `_NON_LATIN_FILES`, as the tool's closing hint says.
 
 - **THE POISONED-CONNECTION FIX (PR #1333): WHAT IT DOES NOT NAME, AND THE RAW STATEMENTS IT DOES NOT GUARD (WAL / DISK THREAD, 2026-10-06).** The fix discards a pooled SQLCipher connection that
   raised code 11 or answers an empty `MemoryError`, for the engine's statements (the `handle_error` observer) and for the three raw driver statements that read pages
@@ -16475,3 +16475,5 @@ readers. Enforced by `tests/test_t2_groups_and_topics_hide_stoplisted.py`.
 `/mnt/project-files/keyword-session/t2-rest-2026-10-12/bulletin-t2-rest.patch`); it travels through the export thread, the sole pusher of the bulletin code, and the PR that carries it records it and
 its test (`tests/test_bulletin_hides_stoplisted.py`). Its two consequences, to be stated there: the bulletin is a listing, so the full predicate applies and two-letter terms (`eu`, `un`, `ai`) no longer
 take part in story grouping; and `articles_in_period` counts every article of the window, including one whose keywords are all hidden. This entry is cleared by that PR.
+
+**FOR THE T5 LAYOUT WORK (found by the coordinator's check of #1341, 2026-10-12):** `ring_country_split` and `ring_country_article_ids` now return a caveat that says every keyword of a ring is hidden by the stoplist or the user's exclusions (`queries._empty_ring_caveat`), but the concept map never shows it: an empty split draws "No located sources for this concept yet." The caveat is an f-string with a count, so whoever renders it needs a `tf` template (×12 locales), not the raw English string. Until then the wording is reachable only through the API.
