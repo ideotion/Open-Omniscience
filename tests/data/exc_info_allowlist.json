@@ -411,10 +411,6 @@
   "count": 5,
   "owner": "rc-sweep"
  },
- "src/monitoring/expedition.py": {
-  "count": 3,
-  "owner": "export"
- },
  "src/monitoring/feed_preflight.py": {
   "count": 2,
   "owner": "rc-sweep"
