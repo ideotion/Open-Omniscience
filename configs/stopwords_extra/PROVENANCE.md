@@ -437,3 +437,35 @@ Vietnamese list waits for a reader of Vietnamese. The Japanese, Korean and Chine
 Hiding is retroactive with no re-index; extraction also drops them from now on. The two Arabic-script words the triage accepted for id are not here, so nothing is filed in `_multilingual.yml` by this batch. Batch 4 flagged Serbian `kad` as also the Malay "kad" (card, as in "kad merah", red card): the Malay list here does not contain it, and the Serbian entry stays; whether the Malay card sense matters is for a reader of Malay to weigh when the next Malay batch is read.
 
 **Kept on purpose after the independent read:** tl `mga` (also the Malta Gaming Authority acronym), id `sih` (also the Smart India Hackathon acronym), id `ahad` (Sunday; also the given name Ahad), and the marginal collisions `siyam`, `isang`, `maret`, `juta`, `serta`, `niya`, `ilang`, `lamang`, `boleh`, `dahil`. The apostrophe forms are junk left by closing quotes (the tokenizer keeps "'s", so "guru's" is never cut to `guru'`).
+
+## Stoplist batch 6: chrome lines, function words and number debris in Japanese, Korean and Chinese (2026-10-13, R131, language group 5)
+
+379 words from the same triage and the same method as batches 2 to 5 (read batch 2 first): ja 215, ko 26, zh 138, ja and zh in two NEW files (the loader unions every file in the directory) and eight entries that carry
+Latin letters inside Japanese or Chinese text in `_multilingual.yml`, because `ja.yml` and `zh.yml` may hold their own scripts only (`test_stopword_file_scripts`; the tool's script map knows both now). Of the 1,333
+candidates the tool itself refused 548 (a phrase containing a listed word, already hidden, or also an entity), the thread left out 404 by hand and kept 381; the independent read then removed two more.
+
+**How these entries match, which the other groups did not need to say.** Hiding is exact: at read time the whole stored keyword must equal an entry, and at extraction a word must equal an entry (a phrase containing one
+is dropped). The stored keywords of these three languages are whole sentences or runs of text because the log's tokenizer has no spaces to cut at, so most entries hide only the stored run they name, retroactively and
+with no re-index. New Chinese keywords are split into words by jieba (a core dependency since 2026-09-25) and new Japanese ones by janome when the optional `[segmentation]` extra is installed (measured for Chinese,
+reasoned for Japanese: janome was not installed to test). The independent read ran jieba over every entry: 13 come out as a single word (`上周五`, `亿美元`, `值得一提的是`, `八萬五`, `据介绍`, `责任编辑`, `點這裡` and the
+seven Japanese weekday names), none of which means anything else in Chinese. So the page chrome is mostly about the stored runs, and the short function words and weekday names act on new extraction too.
+
+The accepted candidates are mostly page chrome read as one keyword (ja 132 `bp` lines such as `この記事は有料会員限定です` "this article is for paying members" and `閉じる` "close", zh 97 such as `保證天天中獎`, `更新時間` and the
+photo credits `記者…攝`), plus ja 19 and ko 12 function words (`一方で`, `つまり`, `자신의`), 15 weekday and date words (`月曜日` … `日曜日`, ko `금요일`, `일까지`, `일부터`), 23 number-and-clock fragments (`午後6`,
+`口座番号4097270`, zh `億美元`) and the stock reporting phrases (ja `と述べた`, `と語った`, `警察によりますと`, zh `他表示`, `據了解`, `值得一提的是`).
+
+**Left out on purpose:** (1) the fragments the triage coded `fr`: ko 225 (and 7 apostrophe forms), ja 60, zh 25 — a Korean word is a noun with its particle (`기자회견을`, `한국이`), a real word cut at the particle, and a
+stopword drops every phrase that contains it, so hiding it hides the name or topic built on it; the same holds for a Japanese or Chinese cut. (2) Sentences that name a person, an organisation or an event, however
+generic the rest: ja `第十一菅区海上保安本部によると` (sic: the agency is 第十一管区, quoted as the log spelled it), `代表荒木が参加`, zh `习近平指出`, `盧秀燕表示`, `翁曉玲說`, `教育局表示`, `關務署表示`, and the clauses that are the story itself
+(ja `いずれも機関砲を搭載している`, zh `海基會也在搞統戰`, `近日已補發差額`, and the other headline fragments). (3) The mojibake runs (zh 19, ja 1) and the English words, by the batch 1 ruling: `reserved`, `aired`, `20s`, `48mm`,
+`00utc`; the mojibake filter also caught `β版音声読み上げは` (page chrome, a Greek letter inside Japanese), and 5 ja rows had no triage verdict under their spelling. (4) ja `フォロー` and `万円の修理代` (content senses),
+ja `ついに登場` and `登場の裏で` (headline hype), `完成したムービーを圧縮してファイルサイズを小さくする` (a how-to). (5) After the independent read: zh `徐欣瑩競辦提供` (a credit that names a political candidate and
+her campaign office, not a journalist) and ja `ホーム` (once Japanese is split into words it is the station platform and the home game, and every phrase containing it would be dropped). The triage labelled its
+reading of these three languages "partial", and no word kept carries the `single_reader` flag.
+
+**Kept on purpose:** the photo credits that name the source rather than a person (`記者林正堃攝`, `警方提供`, `法新社檔案照`, `路透資料照`, `翻攝自微博`) are bylines, not subjects; the credits that name a government body
+(`台南市政府提供`, `屏東縣政府提供`, `觀光局提供`) have the shape of the statement lines left out above (`教育局表示`), but a credit line says who supplied a picture and never what that body did or said, so hiding it
+loses no statement. The suicide-prevention footer lines (`生命線專線`, `自殺不能解決問題`) are a fixed block of Taiwanese newsrooms. ja `ログイン` is kept for its volume (76 articles) although, once Japanese is split,
+it would also drop a phrase such as `不正 ログイン` (unauthorised login); `お知らせ`, `購読料`, `オススメ`, `閉じる` and ko `등록번호` are marginal labels that can also be words, hidden at read time and so reversible. Not done
+and for a later batch: the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious; `々` (as in 人々) is not yet allowed in
+`ja.yml` by the script guard. Hiding is retroactive with no re-index; extraction also drops them from now on.
