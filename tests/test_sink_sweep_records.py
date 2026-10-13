@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_runs_log_sinks import _leaks
+from tests.test_runs_log_sinks import _enclosing_function, _leaks
 
 ROOT = Path(__file__).resolve().parents[1]
 #: The calls that may be handed a caught exception: the class, and the scrubbing line. ``note_error``/``log_failure_once`` are the
@@ -44,8 +44,8 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 #: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
 CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/scheduler/plan_cache.py": {
-        ('_label', 'if err is not None:'): 1,
-        ('_label', 'out["refresh_error"] = err'): 1,
+        ('PlanPreviewCache._label', 'if err is not None:'): 1,
+        ('PlanPreviewCache._label', 'out["refresh_error"] = err'): 1,
     },
     "src/scheduler/storage_guard.py": {
         ('_text_head', 'return str(exc).split("\\n[SQL:", 1)[0]'): 1,
@@ -60,12 +60,12 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_first_line_detail', 'quoted = _text_head(exc).rpartition("Original exception was: ")[2]'): 1,
         ('_io_error_detail', 'return _first_line_detail(exc)'): 1,
         ('_disk_full_detail', 'return _first_line_detail(exc, quote_head=True)'): 1,
-        ('note_error', 'if is_disk_full(exc):'): 1,
-        ('note_error', 'return self.note_io_error(exc, where)'): 1,
-        ('note_error', 'self.note_disk_full(f"{where + \': \' if where else \'\'}{_disk_full_detail(exc)}")'): 1,
-        ('note_io_error', 'if not is_io_error(exc):'): 1,
-        ('note_io_error', '"detail": _io_error_detail(exc),'): 1,
-        ('log_failure_once', 'first = (str(exc).splitlines() or [""])[0][:80]'): 1,
+        ('StorageGuard.note_error', 'if is_disk_full(exc):'): 1,
+        ('StorageGuard.note_error', 'return self.note_io_error(exc, where)'): 1,
+        ('StorageGuard.note_error', 'self.note_disk_full(f"{where + \': \' if where else \'\'}{_disk_full_detail(exc)}")'): 1,
+        ('StorageGuard.note_io_error', 'if not is_io_error(exc):'): 1,
+        ('StorageGuard.note_io_error', '"detail": _io_error_detail(exc),'): 1,
+        ('StorageGuard.log_failure_once', 'first = (str(exc).splitlines() or [""])[0][:80]'): 1,
     },
     "src/wiki/history.py": {
         ('retry_after_of', 'response = getattr(exc, "response", None)'): 1,
@@ -89,7 +89,7 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         # One WARNING line (the class and the scrubbed FIRST line, never the statement or a trailing line): the log, not a record.
         ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
         ("_finish_unlock", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
-        ("_upkeep", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
+        ("_finish_unlock._upkeep", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
         ("_file_opens_with", _UNLOCK_DETAIL): 1,
         ("_unlock_locked", _UNLOCK_DETAIL): 1,
         (
@@ -101,7 +101,7 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         ("find_page", 'return {"found": False, "reason": "block-unreadable", "error": exception_text(exc, typed=False),'): 1,
     },
     "src/wiki/lane_search.py": {
-        ("_run", "raise _TrackerUnavailable(exception_text(exc)) from None"): 1,
+        ("_TrackerReader._run", "raise _TrackerUnavailable(exception_text(exc)) from None"): 1,
         ("search", 'return {**base, "total": None, "items": [], "error": "query_invalid", "detail": exception_text(exc, typed=False)}'): 1,
     },
 }
@@ -110,15 +110,19 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 def _found(rel: str, source: str) -> list[str]:
     table = {k: v for k, v in KEPT.get(rel, {}).items() if v}
     lines = source.splitlines()
-    fns = [n for n in ast.walk(ast.parse(source)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    tree = ast.parse(source)
+    parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    nodes_by_line = {}
+    for n in ast.walk(tree):
+        if hasattr(n, 'lineno'):
+            nodes_by_line.setdefault(n.lineno, n)
     allowed = dict(CLASSIFIED.get(rel, {}))
     out = []
     seen: dict[str, int] = {}
     for finding in _leaks(source, only_scrubbing=CALLS, words_kept=table or None, params=True):
         line, _, message = finding.partition(": ")
         if line.isdigit():
-            enclosing = sorted((n for n in fns if n.lineno <= int(line) <= n.end_lineno), key=lambda n: n.end_lineno - n.lineno)
-            key = (enclosing[0].name if enclosing else "", lines[int(line) - 1].strip())
+            key = (_enclosing_function(nodes_by_line[int(line)], parent) if int(line) in nodes_by_line else "", lines[int(line) - 1].strip())
             if allowed.get(key, 0) > 0:
                 allowed[key] -= 1
                 continue

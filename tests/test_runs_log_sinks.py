@@ -637,11 +637,16 @@ _WORDS_KEPT_CALLS = frozenset({"exception_text", "_scope_mismatch_detail"})
 
 
 def _enclosing_function(node: ast.AST, parent: dict) -> str:
+    """The QUALIFIED name of the innermost function (``Class.method``, ``outer.inner``): a bare name would let a line moved into another
+    class's method of the same name hide behind the allowance written for the first."""
+    names: list[str] = []
+    in_function = False
     while node in parent:
         node = parent[node]
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            return node.name
-    return "<module>"
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(node.name)
+            in_function = in_function or not isinstance(node, ast.ClassDef)
+    return ".".join(reversed(names)) if in_function else "<module>"
 
 
 #: Parameter names read as a caught exception when ``params`` is on.
@@ -1124,3 +1129,16 @@ def test_the_guard_flags_each_way_a_failure_is_printed_raw(name):
 @pytest.mark.parametrize("name", sorted(_ALLOWED))
 def test_the_guard_lets_the_calls_that_scrub_through(name):
     assert _leaks(_ALLOWED[name]) == [], name
+
+
+def test_a_words_kept_line_moved_to_another_class_with_the_same_method_name_is_reported():
+    """The allowance is keyed by the QUALIFIED function: ``B.run`` does not inherit what was written for ``A.run``."""
+    text = (
+        "class {cls}:\n    def run(self):\n        try:\n            pass\n        except Exception as exc:\n"
+        "            return exception_text(exc, typed=False)\n"
+    )
+    line = "return exception_text(exc, typed=False)"
+    table = {("A.run", line): 1}
+    assert _leaks(text.format(cls="A"), only_scrubbing={"type", "isinstance", "log_failure"}, words_kept=table) == []
+    moved = _leaks(text.format(cls="B"), only_scrubbing={"type", "isinstance", "log_failure"}, words_kept=table)
+    assert any("'B.run'" in m for m in moved) and any("'A.run'" in m for m in moved), moved
