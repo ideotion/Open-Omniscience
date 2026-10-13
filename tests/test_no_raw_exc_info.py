@@ -148,6 +148,14 @@ def test_the_named_text_makers_are_exactly_these():
     } == scan.SYS_ATTRIBUTES
 
 
+@pytest.mark.parametrize("helper", sorted(scan.SCRUB_HELPERS))
+def test_every_scrub_helper_is_a_clean_spelling(helper):
+    """MUTATION TARGET: a helper dropped from ``SCRUB_HELPERS`` makes its calls look like raw uses of the exception."""
+    snippet = f"try: pass\nexcept Exception as exc:\n    log.warning('x: %s', {helper}(exc))"
+    assert scan.scan_source(snippet) == []
+    assert scan.scan_source(snippet.replace(f"{helper}(exc)", "str(exc)")) != []
+
+
 def test_two_sinks_on_one_line_are_two():
     assert (
         len(scan.scan_source("log.warning('a', exc_info=True); log.error('b', exc_info=True)")) == 2
