@@ -683,7 +683,7 @@ def test_the_marker_counts_only_when_every_row_of_the_word_carries_it(tmp_path):
 
 
 def test_twice_read_languages_are_exactly_the_four_and_the_marker_is_required_there(tmp_path):
-    assert sb.TWICE_READ == {"vi", "ko", "as", "tl"}
+    assert set(sb.TWICE_READ) == {"vi", "ko", "as", "tl"}
     for lang in sorted(sb.TWICE_READ):
         v = _marker_verdicts(tmp_path, lang, "zzalpha\tN\tbp\tH\treader\t",
                              "zzbeta\tN\tbp\tH\treader\trepeat_agreed")
