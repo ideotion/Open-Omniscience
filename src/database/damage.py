@@ -305,7 +305,7 @@ def failure_text(exc: BaseException) -> str:
     name = getattr(driver, "sqlite_errorname", None)
     if isinstance(name, str) and _SQLITE_NAME.fullmatch(name):
         return f"{type(driver).__name__}: {name}"
-    return f"{failure_label(driver)}: {driver}"
+    return failure_label(driver)
 
 
 def is_corruption(exc: BaseException | None) -> bool:
