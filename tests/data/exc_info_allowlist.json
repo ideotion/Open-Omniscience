@@ -331,10 +331,6 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/geo/osm_downloads.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
  "src/hazards/ingest.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -414,10 +410,6 @@
  "src/monitoring/collect_perf.py": {
   "count": 5,
   "owner": "rc-sweep"
- },
- "src/monitoring/expedition.py": {
-  "count": 3,
-  "owner": "export"
  },
  "src/monitoring/feed_preflight.py": {
   "count": 2,
