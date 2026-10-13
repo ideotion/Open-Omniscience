@@ -5435,6 +5435,64 @@ def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
         con.close()
 
 
+def _carry_live_settings(working: Path) -> dict:
+    """Bring the LIVE corpus's ``app_state`` rows (the settings) into the working copy, just before the swap.
+
+    The swap makes the working copy the live corpus, and ``app_state`` is not merged (local wins entirely, ``_MERGE_IGNORED``),
+    so the live settings of a restore were whatever the SNAPSHOT held. Anything written to the live file after the snapshot was
+    thrown away by the swap: a legacy ``app_settings.json`` migrated into the row by a settings read, a setting saved from the
+    Settings page during a long import, and in a checkpoint group (a CARRIED working copy that takes no snapshot of its own)
+    all of it since the first item's snapshot. Local data never gives way on import (R100), so the rows are read from the live
+    file now, after the writers have quiesced, and written over the working copy's.
+
+    UPSERT ONLY, never a delete: a key the live file no longer has stays as the snapshot had it (the status quo), because a
+    failed or partial read must never wipe a setting. A failure is reported by CLASS ONLY and changes nothing (the swap goes on
+    exactly as it did before this existed), and the report says what was carried or why not, so the carry is never silent.
+    A save made in the instants between this read and the swap is still lost; ``swap_in_corpus`` refuses connections made
+    inside its own window, so such a save fails loudly rather than vanishing."""
+    from src.backup.sqlite_backup import live_db_path
+    from src.database.connect import connect as db_connect
+
+    try:
+        live = live_db_path()
+        if not Path(live).exists():
+            return {"carried": 0, "of": 0, "why": "no live corpus file"}
+        src_con = db_connect(live, check_same_thread=False, read_only=True)
+        try:
+            has = src_con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_state'"
+            ).fetchone()
+            rows = (
+                [tuple(r) for r in src_con.execute("SELECT key, value, updated_at FROM app_state")]
+                if has
+                else []
+            )
+        finally:
+            src_con.close()
+        if not rows:
+            return {"carried": 0, "of": 0}
+        dst = db_connect(working, check_same_thread=False)
+        try:
+            dst.execute(
+                "CREATE TABLE IF NOT EXISTS app_state "
+                "(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)"
+            )
+            have = {r[0]: r[1] for r in dst.execute("SELECT key, value FROM app_state")}
+            changed = [r for r in rows if have.get(r[0]) != r[1]]
+            for key, value, updated_at in changed:
+                dst.execute(
+                    "INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                    (key, value, updated_at),
+                )
+            dst.commit()
+        finally:
+            dst.close()
+        return {"carried": len(changed), "of": len(rows)}
+    except Exception as exc:  # noqa: BLE001 - the swap must go on as before; the class says why, the engine's words stay out
+        return {"carried": 0, "skipped": type(exc).__name__}
+
+
 def merge_side_files(staged: StagedArtifact) -> dict:
     report: dict = {}
     base = data_dir()
@@ -7243,9 +7301,9 @@ def run_restore(
     # the settings read can migrate a legacy ``app_settings.json`` into the live
     # ``app_state`` row (a write on the live file), and a write made after the
     # snapshot is thrown away by the swap. Before it, the migration lands in the
-    # live file and the snapshot carries it into the working copy, so the swap keeps
-    # it. A CARRIED working copy takes no snapshot, so there a migration is still
-    # not carried (rare; the next settings read migrates it again).
+    # live file and the snapshot carries it into the working copy. A write that lands
+    # after the snapshot, or in a CARRIED working copy that takes none, is carried
+    # forward by ``_carry_live_settings`` just before the swap.
     _trust_history = resolve_trust_fetch_history(trust_fetch_history)
     with timings.stage("snapshot_working_copy"):
         if not carried:
@@ -7557,6 +7615,9 @@ def run_restore(
                     + f") after waiting {_SWAP_QUIESCE_S:.0f}s — nothing was written to "
                     "your corpus. Stop that job, or let it finish, and import again."
                 )
+            # The writers have quiesced: carry the settings the live file holds NOW into the copy that is about to become
+            # it (see _carry_live_settings; a failure there changes nothing and is reported).
+            report["settings_carry"] = _carry_live_settings(working)
             target = live_db_path()
             # Empty the live WAL BEFORE letting go of the engine. Two reasons, and
             # the second is the data-safety one:
