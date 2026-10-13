@@ -100,3 +100,13 @@ def test_a_soak_block_that_crashed_names_no_passphrase():
 
     out = soak_window._block("x", _boom)
     assert out["measured"] is False and _PW not in out["block_error"] and _PW not in str(out)
+
+
+def test_a_selftest_row_is_cut_after_the_paths_are_tokenised(monkeypatch):
+    """A cut at 300 inside a path would leave a fragment (``/home/ali``) no tokenising recognises."""
+    from src.monitoring import recursive_loop
+
+    home = "/home/alice-secret-project"
+    exc = RuntimeError("x" * 280 + f" {home}/data/db.sqlite")
+    text = recursive_loop._failure_text(exc)
+    assert len(text) <= 300 and "alice" not in text and "/home/al" not in text

@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from src.database.damage import failure_text
 from src.database.maintenance import StatementTimeout, statement_deadline
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -443,7 +443,7 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
             "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES),
         }
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
-        _LOG.debug("content share estimate unavailable: %s", exc)
+        log_failure(_LOG, "content share estimate unavailable", exc, level=logging.DEBUG)
         return None
 
     sampled = len(payloads)

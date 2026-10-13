@@ -10,6 +10,9 @@ message, a logger's always does) and ``logging.exception``; and the ``traceback`
 (:data:`TRACEBACK_MAKERS`, :data:`SYS_MAKERS`), resolved through the file's own imports so ``import traceback as tb`` and
 ``from sys import exc_info`` are the same sink. Every call node counts once, so two sinks on one line are two.
 
+ALSO ``exc-arg``: inside an ``except ... as name`` block, a log call (a receiver named for a logger) that is handed ``name``, ``str(name)``
+or ``repr(name)`` as an argument or interpolates ``{name}`` in an f-string, which writes the engine's own words with no scrub.
+
 WHAT IT DOES NOT: ``stack_info=True`` prints the current call stack (files, lines, source), not an exception, so it cannot carry
 the words an exception carries; ``log.warning("%s", exc)`` is a different rule (the text made by hand), covered where the text
 enters a record. A swap inside one file (one site converted, another added) keeps its count; the diff is where that is read."""
@@ -40,6 +43,58 @@ _LOG_METHODS = frozenset(
 )
 #: The modules that ARE the scrub (they read an exception to scrub it) or read a record's ``exc_info`` back; nothing else.
 EXEMPT = {"src/monitoring/secret_scrub.py", "src/monitoring/errorlog.py"}
+
+
+_LOGGER_TOKENS = frozenset({"log", "logger", "logging", "journal"})
+
+
+def _is_logger(node: ast.expr) -> bool:
+    name = (
+        node.id
+        if isinstance(node, ast.Name)
+        else node.attr
+        if isinstance(node, ast.Attribute)
+        else ""
+    )
+    return bool(_LOGGER_TOKENS & set(name.lower().replace(".", "_").split("_")))
+
+
+def _is_exception_text(node: ast.expr, name: str) -> bool:
+    """``name``, ``str(name)`` or ``repr(name)``: the exception's own words."""
+    if isinstance(node, ast.Name):
+        return node.id == name
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"str", "repr"}
+        and len(node.args) == 1
+        and _is_exception_text(node.args[0], name)
+    )
+
+
+def _exception_arguments(tree: ast.AST) -> list[tuple[int, str]]:
+    found: list[tuple[int, str]] = []
+    for handler in ast.walk(tree):
+        if not (isinstance(handler, ast.ExceptHandler) and handler.name):
+            continue
+        for node in (n for stmt in handler.body for n in ast.walk(stmt)):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _LOG_METHODS
+                and _is_logger(node.func.value)
+            ):
+                continue
+            for arg in node.args:
+                if _is_exception_text(arg, handler.name):
+                    found.append((node.lineno, "exc-arg"))
+                elif isinstance(arg, ast.JoinedStr):
+                    for part in ast.walk(arg):
+                        if isinstance(part, ast.FormattedValue) and _is_exception_text(
+                            part.value, handler.name
+                        ):
+                            found.append((node.lineno, "exc-arg"))
+    return found
 
 
 def _falsy(node: ast.expr) -> bool:
@@ -83,7 +138,7 @@ def scan_source(text: str, name: str = "<source>") -> list[tuple[int, str]]:
             f"{name}: the exception-sink guard cannot parse it ({exc.msg}, line {exc.lineno})"
         ) from None
     alias = _aliases(tree)
-    found: list[tuple[int, str]] = []
+    found: list[tuple[int, str]] = _exception_arguments(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and node.value == "exc_info":
             found.append((node.lineno, "exc_info-key"))

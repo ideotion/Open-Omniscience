@@ -8,7 +8,7 @@
   "owner": "rc-sweep"
  },
  "src/ai_layer/model_bench.py": {
-  "count": 1,
+  "count": 4,
   "owner": "rc-sweep"
  },
  "src/ai_layer/translation_sweep.py": {
@@ -21,6 +21,10 @@
  },
  "src/analytics/bulk_build.py": {
   "count": 2,
+  "owner": "rc-sweep"
+ },
+ "src/analytics/columnar.py": {
+  "count": 1,
   "owner": "rc-sweep"
  },
  "src/analytics/corpus_epoch.py": {
@@ -53,6 +57,10 @@
  },
  "src/analytics/reindex_parallel.py": {
   "count": 8,
+  "owner": "rc-sweep"
+ },
+ "src/analytics/ring_loader.py": {
+  "count": 1,
   "owner": "rc-sweep"
  },
  "src/analytics/rollup_marker.py": {
@@ -96,7 +104,11 @@
   "owner": "rc-sweep"
  },
  "src/api/insights.py": {
-  "count": 7,
+  "count": 8,
+  "owner": "rc-sweep"
+ },
+ "src/api/keyword_management.py": {
+  "count": 9,
   "owner": "rc-sweep"
  },
  "src/api/law.py": {
@@ -108,7 +120,7 @@
   "owner": "rc-sweep"
  },
  "src/api/main.py": {
-  "count": 40,
+  "count": 43,
   "owner": "rc-sweep"
  },
  "src/api/scheduler.py": {
@@ -176,7 +188,7 @@
   "owner": "rc-sweep"
  },
  "src/backup/volume_job.py": {
-  "count": 1,
+  "count": 2,
   "owner": "rc-sweep"
  },
  "src/briefing/card_audit.py": {
@@ -264,7 +276,7 @@
   "owner": "rc-sweep"
  },
  "src/catalog/qualification.py": {
-  "count": 3,
+  "count": 5,
   "owner": "rc-sweep"
  },
  "src/catalog/qualification_integrity.py": {
@@ -273,6 +285,10 @@
  },
  "src/catalog/qualification_overlay.py": {
   "count": 3,
+  "owner": "rc-sweep"
+ },
+ "src/config/settings.py": {
+  "count": 2,
   "owner": "rc-sweep"
  },
  "src/custody/pending.py": {
@@ -292,6 +308,10 @@
   "owner": "rc-sweep"
  },
  "src/database/fts.py": {
+  "count": 2,
+  "owner": "rc-sweep"
+ },
+ "src/database/fts_norm.py": {
   "count": 2,
   "owner": "rc-sweep"
  },
@@ -321,6 +341,10 @@
  },
  "src/discovery/channels.py": {
   "count": 4,
+  "owner": "rc-sweep"
+ },
+ "src/entities/items.py": {
+  "count": 1,
   "owner": "rc-sweep"
  },
  "src/entities/places.py": {
@@ -363,6 +387,10 @@
   "count": 1,
   "owner": "rc-sweep"
  },
+ "src/ingest/pdf.py": {
+  "count": 2,
+  "owner": "rc-sweep"
+ },
  "src/ingest/pdf_import.py": {
   "count": 2,
   "owner": "rc-sweep"
@@ -377,6 +405,10 @@
  },
  "src/law/corpus.py": {
   "count": 1,
+  "owner": "rc-sweep"
+ },
+ "src/law/lane_sync.py": {
+  "count": 2,
   "owner": "rc-sweep"
  },
  "src/law/pit_search.py": {
@@ -399,8 +431,20 @@
   "count": 1,
   "owner": "rc-sweep"
  },
+ "src/llm/activation.py": {
+  "count": 6,
+  "owner": "rc-sweep"
+ },
+ "src/llm/model_store.py": {
+  "count": 1,
+  "owner": "rc-sweep"
+ },
+ "src/llm/ollama_lifecycle.py": {
+  "count": 1,
+  "owner": "rc-sweep"
+ },
  "src/llm/vllm_lifecycle.py": {
-  "count": 3,
+  "count": 8,
   "owner": "rc-sweep"
  },
  "src/markets/pipeline.py": {
@@ -427,8 +471,12 @@
   "count": 1,
   "owner": "rc-sweep"
  },
+ "src/scheduler/capacity.py": {
+  "count": 1,
+  "owner": "rc-sweep"
+ },
  "src/scheduler/hygiene.py": {
-  "count": 3,
+  "count": 4,
   "owner": "rc-sweep"
  },
  "src/scheduler/maintenance.py": {
@@ -463,8 +511,16 @@
   "count": 4,
   "owner": "rc-sweep"
  },
+ "src/services/article_intelligence.py": {
+  "count": 1,
+  "owner": "rc-sweep"
+ },
  "src/services/duckduckgo.py": {
-  "count": 2,
+  "count": 11,
+  "owner": "rc-sweep"
+ },
+ "src/services/link_analyzer/extractor.py": {
+  "count": 7,
   "owner": "rc-sweep"
  },
  "src/testing/scale_bench.py": {
@@ -472,7 +528,15 @@
   "owner": "rc-sweep"
  },
  "src/utils/compression.py": {
-  "count": 1,
+  "count": 2,
+  "owner": "rc-sweep"
+ },
+ "src/utils/security.py": {
+  "count": 2,
+  "owner": "rc-sweep"
+ },
+ "src/utils/url_utils.py": {
+  "count": 3,
   "owner": "rc-sweep"
  },
  "src/versioned/budget.py": {
@@ -512,7 +576,7 @@
   "owner": "rc-sweep"
  },
  "src/wiki/lane_search.py": {
-  "count": 5,
+  "count": 9,
   "owner": "rc-sweep"
  },
  "src/wiki/ores.py": {
@@ -520,11 +584,15 @@
   "owner": "rc-sweep"
  },
  "src/wiki/runner.py": {
-  "count": 18,
+  "count": 27,
   "owner": "rc-sweep"
  },
  "src/wiki/service.py": {
   "count": 4,
+  "owner": "rc-sweep"
+ },
+ "src/wiki/stream.py": {
+  "count": 1,
   "owner": "rc-sweep"
  },
  "src/wiki/track.py": {

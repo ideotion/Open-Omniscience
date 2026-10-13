@@ -45,6 +45,7 @@ import contextlib
 import logging
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
 from src.monitoring.ui_walk import Surface
 
 _LOG = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ class PlaywrightUiWalkDriver:
         try:
             self.page.evaluate("document.documentElement.style.filter = 'grayscale(1)'")
         except Exception as exc:  # noqa: BLE001 - a cosmetic filter must never abort a walk
-            _LOG.warning("could not apply greyscale filter: %s", exc)
+            log_failure(_LOG, "could not apply greyscale filter", exc, level=logging.WARNING)
 
     def _on_console(self, msg: object) -> None:
         if getattr(msg, "type", None) == "error":
@@ -184,7 +185,7 @@ class PlaywrightUiWalkDriver:
                 self.page.keyboard.press("Escape")
                 self.page.wait_for_timeout(150)
         except Exception as exc:  # noqa: BLE001 - this is a courtesy reset, never fatal
-            _LOG.warning("could not close a leftover open dialog: %s", exc)
+            log_failure(_LOG, "could not close a leftover open dialog", exc, level=logging.WARNING)
 
     # -- UiWalkDriver Protocol ------------------------------------------------------------- #
 
@@ -289,7 +290,7 @@ class PlaywrightUiWalkDriver:
         try:
             self.page.screenshot(path=str(path), full_page=True, timeout=10_000)
         except Exception as exc:  # noqa: BLE001 - a screenshot failure must degrade, never crash
-            _LOG.warning("screenshot failed for %s: %s", surface.id, exc)
+            log_failure(_LOG, f"screenshot failed for {surface.id}", exc, level=logging.WARNING)
             return None
         return str(path)
 

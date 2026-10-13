@@ -97,9 +97,30 @@ def test_it_is_silent_when_raise_exceptions_is_off_and_never_raises(hooked, monk
     handler.handleError(logging.LogRecord("x", logging.ERROR, __file__, 1, "m", None, None))
 
 
-def test_the_hook_is_idempotent_and_in_place_at_import():
-    assert logging.Handler.handleError is secret_scrub._scrubbed_handle_error
-    assert secret_scrub._hook_handle_error() is False
+def test_the_hook_is_in_place_the_moment_the_module_is_imported():
+    """MUTATION TARGET: the module-level ``_hook_handle_error()`` call. A fresh interpreter (the ``hooked`` fixture would put the
+    replacement back in this process) must find ``Handler.handleError`` replaced right after the import and nothing else."""
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    code = (
+        f"import sys\nsys.path.insert(0, {str(root)!r})\n"
+        "import logging\n"
+        "stock = logging.Handler.handleError\n"
+        "import src.monitoring.secret_scrub as s\n"
+        "assert logging.Handler.handleError is s._scrubbed_handle_error is not stock\n"
+        "assert s._hook_handle_error() is False\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", code],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
 
 
 def _handler_classes(base=logging.Handler):
@@ -109,20 +130,19 @@ def _handler_classes(base=logging.Handler):
 
 
 def test_no_handler_in_src_overrides_handle_error():
-    """A handler class that defines its own ``handleError`` would bypass the replacement."""
-    import importlib
-    import pkgutil
+    """A handler class that defines its own ``handleError`` would bypass the replacement. Read from the source, so a module that
+    cannot be imported here (an optional dependency) is covered as well."""
+    import ast
+    from pathlib import Path
 
-    import src
-
-    for mod in pkgutil.walk_packages(src.__path__, "src."):
-        try:
-            importlib.import_module(mod.name)
-        except Exception:  # noqa: BLE001, S112 - an optional dependency missing; the source read below still covers the file
+    root = Path(__file__).resolve().parents[1]
+    own = []
+    for path in sorted((root / "src").rglob("*.py")):
+        if path.relative_to(root).as_posix() == "src/monitoring/secret_scrub.py":
             continue
-    own = [
-        c
-        for c in _handler_classes()
-        if c.__module__.startswith("src.") and "handleError" in vars(c)
-    ]
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ClassDef) and any(
+                isinstance(b, ast.FunctionDef) and b.name == "handleError" for b in node.body
+            ):
+                own.append(f"{path.relative_to(root).as_posix()}:{node.name}")
     assert not own, own
