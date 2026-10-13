@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from src.database.damage import failure_text
 from src.database.maintenance import StatementTimeout, statement_deadline
+from src.monitoring.secret_scrub import exception_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -286,7 +287,7 @@ def storage_composition(session: Session) -> dict[str, Any]:
     except StatementTimeout as exc:
         out["available"] = False
         out["reason"] = (
-            f"aborted by the statement deadline ({exc}); the page walk exceeds the "
+            f"aborted by the statement deadline ({exception_text(exc, typed=False)}); the page walk exceeds the "
             "deadline on this corpus — the PRAGMA-level totals above still stand."
         )
         out["method"] = _METHOD
@@ -438,7 +439,7 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
     except StatementTimeout as exc:
         return {
             "aborted": True,
-            "reason": f"stopped before the sample finished, by the statement deadline or the memory guard ({exc})",
+            "reason": f"stopped before the sample finished, by the statement deadline or the memory guard ({exception_text(exc, typed=False)})",
             "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES),
         }
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises

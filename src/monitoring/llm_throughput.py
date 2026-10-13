@@ -58,7 +58,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from src.monitoring.llm_bench import _one_call, _pct, _prompt_of, _SHAPES_BY_ID
+from src.monitoring.llm_bench import _SHAPES_BY_ID, _one_call, _pct, _prompt_of
+from src.monitoring.secret_scrub import exception_text
 
 SCHEMA = "oo-llm-throughput-1"
 
@@ -298,7 +299,7 @@ def run_throughput_bench(
                 "schema": SCHEMA,
                 "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "available": False,
-                "reason": f"could not resolve a backend: {type(exc).__name__}: {exc}",
+                "reason": f"could not resolve a backend: {exception_text(exc)}",
             }
 
     shape_id, shape_name, chars, system = _SHAPES_BY_ID.get(shape, _SHAPES_BY_ID["perception"])

@@ -35,7 +35,7 @@ import time
 from contextlib import suppress
 from datetime import UTC, datetime
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.scheduler import process_budget
 
 _LOG = logging.getLogger("monitoring.collect_perf")
@@ -740,7 +740,7 @@ class CollectionMonitor:
             return latency.loop_pressure(threshold_ms, since=self._started_mono)
         except Exception as exc:  # noqa: BLE001
             log_failure(_LOG, "loop-pressure read failed", exc, level=logging.DEBUG)
-            return {"measured": False, "reason": f"loop-lag read failed: {exc}"}
+            return {"measured": False, "reason": f"loop-lag read failed: {exception_text(exc, typed=False)}"}
 
     def _loop_lag_gate(self, lagging: bool, fraction: float | None) -> bool:
         """P4a's lesson as a MECHANISM: stop cutting when cutting is not helping.
@@ -1054,7 +1054,7 @@ class CollectionMonitor:
         except Exception as exc:  # noqa: BLE001 - a report line is never worth a pass
             # Named, never a bare {}: "the budget could not be read" and "there
             # was nothing to read" are different facts.
-            return {"unavailable": f"{type(exc).__name__}: {exc}"[:200]}
+            return {"unavailable": exception_text(exc, limit=200)}
 
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:

@@ -93,3 +93,10 @@ def test_a_selftest_row_that_failed_carries_no_passphrase_and_no_home_path(monke
     rows = {r["name"]: r for r in report["instruments"]}
     assert rows["ok-gate"]["passed"] is False and "RuntimeError" in rows["ok-gate"]["error"]
     assert "ModuleNotFoundError" in rows["missing"]["error"]
+
+
+def test_a_soak_block_that_crashed_names_no_passphrase():
+    from src.monitoring import soak_window
+
+    out = soak_window._block("x", _boom)
+    assert out["measured"] is False and _PW not in out["block_error"] and _PW not in str(out)
