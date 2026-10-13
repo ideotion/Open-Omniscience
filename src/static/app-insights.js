@@ -511,7 +511,10 @@
             aria: ariaLabel,
             // The endpoint's method and caveat are fixed sentences, keyed x12 (row R, R5):
             // passed raw they read in English under every locale.
-            method: d.method ? t(d.method) : "", caveat: d.caveat ? t(d.caveat) : "",
+            method: d.method ? t(d.method) : "",
+            // An empty concept's caveat carries its own fixed template and the count to fill it with: the frame
+            // translates, the number stays data (tf), and the plain sentence is the fallback.
+            caveat: d.caveat_i18n && tf ? tf(d.caveat_i18n, d.caveat_vars) : (d.caveat ? t(d.caveat) : ""),
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
         }
