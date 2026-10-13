@@ -22,7 +22,8 @@ WHERE THE DIGEST DOES NOT RUN this proves nothing, and the texts that rely on it
 a Quick build on a large corpus can leave it out for time (``skipped-budget`` in the scan table,
 ``tests/test_diagnostics_modes.py``) and a machine without the memory declines it (``declined-ram``,
 ``ram_declined_reason``, ``tests/test_keyword_export_bounded.py``). There
-"All keywords" is the way to the keywords, and Thorough the way to the digest.
+"All keywords" is the way to the keywords. Thorough undoes the first (it runs every scan) and not the second:
+the memory gate declines the digest on Thorough too, unless ``OO_ALLOW_BIG_SCANS=1`` is set.
 
 No fixed number is asserted that the code does not state itself: the sample size is ``_DIGEST_SAMPLE``, and
 the window the digest uses is the constant the module states (patched small here for the corpus whose
@@ -297,7 +298,7 @@ def test_all_keywords_begins_with_the_entries_the_removed_button_gave(corpus, da
     "Keyword log (4 MB files)" built. A small window stands for the default one here (that the real round IS
     the default window is pinned in ``test_keyword_parts_route.py``, and the route's default above). The
     entries are the same; the SUMMARY is not: the first files' ``summary.json`` is built over every keyword
-    of the corpus, which is why the texts send a person to the digest (or Thorough) for the log's summary."""
+    of the corpus, which is why the texts send a person to the digest, where the build ran it, for the log's summary."""
     window = 40
     monkeypatch.setattr(kle, "PARTS_ROUND_RECORDS", window)
     db = _session(corpus["larger"])
@@ -346,7 +347,7 @@ def test_on_a_computer_short_of_memory_the_summary_says_it_covers_only_the_first
     assert "a keyword beyond that prefix is in no family" in summary["method"]
     # ...and points at the link that covers the rest.
     assert "'All keywords'" in prov["selection_bias"]
-    # The export it replaces was partial in exactly the same way: no loss against the removed button.
+    # The export it replaces was partial in the same way: no loss against the removed button.
     for key in ("basis_is_whole_window", "basis_per_language", "basis_keywords", "basis_budget_keywords"):
         assert log["families_provenance"][key] == prov[key]
     assert log["families"] == digest["families"]
