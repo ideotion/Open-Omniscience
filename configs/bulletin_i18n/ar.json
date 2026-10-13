@@ -236,6 +236,7 @@
   "The count of keyword mentions with no date could not be read — unknown, not zero.": "لم يتسنَّ قراءة عدد إشارات الكلمات المفتاحية التي لا تحمل تاريخًا — غير معروف، وليس صفرًا.",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} مقالًا مستوردًا في انتظار إعادة الفهرسة، فهي لا تحمل كلمات مفتاحية بعد وتغيب عن كل أرقام الكلمات المفتاحية هنا.",
   "The re-index backlog could not be read — unknown, not zero.": "لم يتسنَّ قراءة قائمة انتظار إعادة الفهرسة — غير معروفة، وليست صفرًا.",
+  "The baseline coverage could not be read — unknown, not assumed complete.": "لم يتسنَّ قراءة تغطية خط الأساس — غير معروفة، ولا تُفترض كاملة.",
   "Nothing excluded beyond what the methods above state.": "لا شيء مستبعد خارج ما تذكره المناهج أعلاه.",
   "the corpus's earliest observed date could not be read, so baseline coverage is unknown — not assumed complete": "لم يتسنَّ قراءة أقدم تاريخ ملاحظ في المدونة، فتغطية خط الأساس غير معروفة — ولا تُفترض كاملة",
 

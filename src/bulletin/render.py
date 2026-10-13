@@ -1332,12 +1332,14 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
     # document is least complete is the case where it says least about itself.
     if not d and not sel:
         return []
-    out = [f"### {T.t('What this edition cannot see')}", ""]
+    # The bullets this section states. "Nothing excluded" closes it only when there are none: counted here, not
+    # inferred from how long the output happens to be, so a new header line cannot switch it on over a statement.
+    stated: list[str] = []
     if sel:
-        out.append(f"- {sel}")
+        stated.append(f"- {sel}")
     q = d.get("quarantined_in_period")
     if q:
-        out.append(
+        stated.append(
             T.f(
                 "- {n} article(s) in the period are quarantined and excluded throughout.",
                 n=_fmt(q),
@@ -1346,39 +1348,46 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
     elif "quarantined_in_period" in d and q is None:
         # None is "the count could not be read" (facts.disclosures), which is a different fact from 0: say so, so the
         # closing "Nothing excluded" line cannot be printed over an unread count.
-        out.append("- " + T.t("The count of quarantined articles could not be read — unknown, not zero."))
+        stated.append("- " + T.t("The count of quarantined articles could not be read — unknown, not zero."))
     u = d.get("mentions_without_a_date")
     if u:
-        out.append(
+        stated.append(
             T.f(
                 "- {n} keyword mention(s) carry no date and are invisible to every window.",
                 n=_fmt(u),
             )
         )
     elif "mentions_without_a_date" in d and u is None:
-        out.append("- " + T.t("The count of keyword mentions with no date could not be read — unknown, not zero."))
-    backlog = d.get("reindex_backlog") or {}
-    if backlog.get("available") and backlog.get("articles_pending"):
-        out.append(
-            T.f(
-                "- {n} imported article(s) await re-index, so they carry no keywords yet "
-                "and are missing from every keyword figure here.",
-                n=_fmt(backlog["articles_pending"]),
-            )
-        )
-    elif backlog.get("available") is False:
-        out.append(
-            "- " + T.t("The re-index backlog could not be read — unknown, not zero.")
-        )
+        stated.append("- " + T.t("The count of keyword mentions with no date could not be read — unknown, not zero."))
+    # A recorded backlog that is not a measurement (``available`` False, None or missing, or a record that is not a
+    # mapping at all) is an unread backlog, the same fact as an unread count; only an ABSENT key says nothing.
+    if "reindex_backlog" in d:
+        backlog = d["reindex_backlog"] if isinstance(d["reindex_backlog"], dict) else {}
+        if backlog.get("available"):
+            if backlog.get("articles_pending"):
+                stated.append(
+                    T.f(
+                        "- {n} imported article(s) await re-index, so they carry no keywords yet "
+                        "and are missing from every keyword figure here.",
+                        n=_fmt(backlog["articles_pending"]),
+                    )
+                )
+        else:
+            stated.append("- " + T.t("The re-index backlog could not be read — unknown, not zero."))
     cov = d.get("baseline_coverage") or {}
     # ``complete`` False: the corpus is short of the nominal baseline. ``complete`` None: coverage could not be measured
-    # (``baseline_coverage(period, None)``, which names that in its note); that is not a pass either.
-    if cov.get("complete") is False or ("complete" in cov and cov["complete"] is None and cov.get("note")):
-        out.append(f"- {T.t(str(cov.get('note')))}")
-    if len(out) == 2:
-        out.append("- " + T.t("Nothing excluded beyond what the methods above state."))
-    out.append("")
-    return out
+    # (``baseline_coverage(period, None)``, which names that in its note); that is not a pass either, and a record
+    # that says None without a note still says so, in the fixed sentence below.
+    if cov.get("complete") is False:
+        stated.append(f"- {T.t(str(cov.get('note')))}")
+    elif "complete" in cov and cov["complete"] is None:
+        if cov.get("note"):
+            stated.append(f"- {T.t(str(cov['note']))}")
+        else:
+            stated.append("- " + T.t("The baseline coverage could not be read — unknown, not assumed complete."))
+    if not stated:
+        stated.append("- " + T.t("Nothing excluded beyond what the methods above state."))
+    return [f"### {T.t('What this edition cannot see')}", "", *stated, ""]
 
 
 # --------------------------------------------------------------------------- #

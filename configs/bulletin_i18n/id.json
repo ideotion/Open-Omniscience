@@ -236,6 +236,7 @@
   "The count of keyword mentions with no date could not be read — unknown, not zero.": "Jumlah penyebutan kata kunci tanpa tanggal tidak dapat dibaca — tidak diketahui, bukan nol.",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} artikel hasil impor menunggu pengindeksan ulang, jadi belum memiliki kata kunci dan tidak tercakup dalam angka kata kunci mana pun di sini.",
   "The re-index backlog could not be read — unknown, not zero.": "Tumpukan pengindeksan ulang tidak dapat dibaca — tidak diketahui, bukan nol.",
+  "The baseline coverage could not be read — unknown, not assumed complete.": "Cakupan garis dasar tidak dapat dibaca — tidak diketahui, tidak diandaikan lengkap.",
   "Nothing excluded beyond what the methods above state.": "Tidak ada yang dikecualikan di luar apa yang dinyatakan metode di atas.",
   "the corpus's earliest observed date could not be read, so baseline coverage is unknown — not assumed complete": "tanggal teramati paling awal pada korpus tidak dapat dibaca, jadi cakupan garis dasar tidak diketahui — tidak diandaikan lengkap",
 
