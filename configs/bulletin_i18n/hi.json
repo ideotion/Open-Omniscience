@@ -231,7 +231,9 @@
   "This edition shows {parts}; the rest were excluded by the operator before publishing. The record it was rendered from is unchanged.": "यह अंक {parts} दिखाता है; शेष को प्रकाशन से पहले संचालक ने बाहर रखा। जिस अभिलेख से यह बनाया गया, वह अपरिवर्तित है।",
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- इस अवधि के {n} लेख पृथक्कृत हैं और पूरे दस्तावेज़ में बाहर रखे गए हैं।",
+  "The count of quarantined articles could not be read — unknown, not zero.": "पृथक्कृत लेखों की संख्या पढ़ी नहीं जा सकी — अज्ञात, शून्य नहीं।",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- {n} मुख्य-शब्द उल्लेखों पर कोई तिथि नहीं है और वे हर विंडो के लिए अदृश्य हैं।",
+  "The count of keyword mentions with no date could not be read — unknown, not zero.": "बिना तिथि वाले मुख्य-शब्द उल्लेखों की संख्या पढ़ी नहीं जा सकी — अज्ञात, शून्य नहीं।",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} आयातित लेख पुनःअनुक्रमण की प्रतीक्षा में हैं, अतः उन पर अभी कोई मुख्य शब्द नहीं है और वे यहाँ के हर मुख्य-शब्द आँकड़े से अनुपस्थित हैं।",
   "The re-index backlog could not be read — unknown, not zero.": "पुनःअनुक्रमण की शेष कतार पढ़ी नहीं जा सकी — अज्ञात, शून्य नहीं।",
   "Nothing excluded beyond what the methods above state.": "ऊपर की विधियों में बताए गए के अतिरिक्त कुछ बाहर नहीं रखा गया।",

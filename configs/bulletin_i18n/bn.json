@@ -231,7 +231,9 @@
   "This edition shows {parts}; the rest were excluded by the operator before publishing. The record it was rendered from is unchanged.": "এই সংখ্যা {parts} দেখাচ্ছে; বাকিটা প্রকাশের আগে পরিচালক বাদ দিয়েছেন। যে নথি থেকে এটি গড়া হয়েছে তা অপরিবর্তিত।",
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- এই সময়কালের {n} টি নিবন্ধ পৃথকীকৃত এবং সর্বত্র বাদ রাখা হয়েছে।",
+  "The count of quarantined articles could not be read — unknown, not zero.": "পৃথকীকৃত নিবন্ধের সংখ্যা পড়া যায়নি — অজানা, শূন্য নয়।",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- {n} টি মূল-শব্দ উল্লেখে কোনও তারিখ নেই এবং সেগুলি প্রতিটি পরিসরের কাছে অদৃশ্য।",
+  "The count of keyword mentions with no date could not be read — unknown, not zero.": "তারিখহীন মূল-শব্দ উল্লেখের সংখ্যা পড়া যায়নি — অজানা, শূন্য নয়।",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} টি আমদানি করা নিবন্ধ পুনঃসূচিকরণের অপেক্ষায়, তাই সেগুলিতে এখনও কোনও মূল শব্দ নেই এবং এখানকার প্রতিটি মূল-শব্দ সংখ্যা থেকে সেগুলি অনুপস্থিত।",
   "The re-index backlog could not be read — unknown, not zero.": "পুনঃসূচিকরণের জমে থাকা কাজ পড়া যায়নি — অজানা, শূন্য নয়।",
   "Nothing excluded beyond what the methods above state.": "উপরের পদ্ধতিগুলি যা বলে তার বাইরে কিছু বাদ দেওয়া হয়নি।",

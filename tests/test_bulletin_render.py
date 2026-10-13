@@ -200,6 +200,116 @@ def test_the_disclosures_are_rendered(fmt):
     assert "only reaches back 120 days" in text
 
 
+_UNREAD_QUARANTINE = "The count of quarantined articles could not be read — unknown, not zero."
+_UNREAD_UNDATED = "The count of keyword mentions with no date could not be read — unknown, not zero."
+
+
+def _with_disclosures(**d) -> dict:
+    return dict(_EDITION, disclosures={"reindex_backlog": {"available": True, "articles_pending": 0}, **d})
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+@pytest.mark.parametrize(
+    ("key", "sentence", "other"),
+    [
+        ("quarantined_in_period", _UNREAD_QUARANTINE, {"mentions_without_a_date": 0}),
+        ("mentions_without_a_date", _UNREAD_UNDATED, {"quarantined_in_period": 0}),
+    ],
+    ids=["quarantine", "undated"],
+)
+def test_a_count_that_could_not_be_read_is_never_printed_as_nothing_excluded(fmt, key, sentence, other):
+    """None is "could not read" (facts.disclosures), a different fact from 0: the document says so, and the closing
+    "Nothing excluded" line must not stand over a count nobody read."""
+    text = render(_with_disclosures(**{key: None}, **other), fmt)
+    assert sentence in text
+    assert "Nothing excluded" not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_a_measured_zero_still_reads_as_nothing_excluded_and_says_nothing_about_an_unread_count(fmt):
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0), fmt)
+    assert "Nothing excluded" in text
+    assert "could not be read" not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_a_disclosures_record_that_never_had_the_count_says_nothing_about_it(fmt):
+    """An absent key is not a failed read: only a recorded None is."""
+    text = render(_with_disclosures(), fmt)
+    assert _UNREAD_QUARANTINE not in text and _UNREAD_UNDATED not in text
+
+
+def test_both_unread_counts_are_named_and_a_readable_one_still_prints_its_figure():
+    text = render(_with_disclosures(quarantined_in_period=None, mentions_without_a_date=None), "markdown")
+    assert _UNREAD_QUARANTINE in text and _UNREAD_UNDATED in text
+    text = render(_with_disclosures(quarantined_in_period=None, mentions_without_a_date=5), "markdown")
+    assert _UNREAD_QUARANTINE in text and "5 keyword mention(s) carry no date" in text
+    assert _UNREAD_UNDATED not in text
+
+
+def _baseline(earliest, **extra) -> dict:
+    from datetime import date
+
+    from src.bulletin.period import baseline_coverage, resolve_period
+
+    return baseline_coverage(resolve_period("weekly", end=date(2026, 8, 1)), earliest) | extra
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+@pytest.mark.parametrize("extra", [{}, {"error": "RuntimeError"}], ids=["no-earliest-date", "probe-raised"])
+def test_a_baseline_coverage_that_could_not_be_measured_is_never_printed_as_nothing_excluded(fmt, extra):
+    """``complete: None`` is "unknown, not assumed complete" (``baseline_coverage(period, None)``): the same defect as an unread count."""
+    cov = _baseline(None, **extra)
+    assert cov["complete"] is None
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0, baseline_coverage=cov), fmt)
+    assert "baseline coverage is unknown" in text
+    assert "Nothing excluded" not in text
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_a_baseline_the_corpus_spans_still_reads_as_nothing_excluded(fmt):
+    from datetime import date
+
+    cov = _baseline(date(2020, 1, 1))
+    assert cov["complete"] is True
+    text = render(_with_disclosures(quarantined_in_period=0, mentions_without_a_date=0, baseline_coverage=cov), fmt)
+    assert "Nothing excluded" in text and "baseline coverage is unknown" not in text
+
+
+def _shipped_catalogs() -> list[str]:
+    from pathlib import Path
+
+    return sorted(p.stem for p in (Path(__file__).resolve().parents[1] / "configs" / "bulletin_i18n").glob("*.json"))
+
+
+def test_the_catalog_folder_is_the_eleven_languages_this_test_expects():
+    assert _shipped_catalogs() == ["ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"]
+
+
+@pytest.mark.parametrize("lang", _shipped_catalogs())
+def test_the_unread_disclosure_sentences_are_translated_and_printed_translated_in_every_shipped_catalog(lang):
+    """Read from the catalog folder, not a list here; checks the DOCUMENT (a sentence printed without ``T.t`` is English in every locale
+    and is never "seen", so ``missing_strings`` cannot flag it) as well as the catalog."""
+    from src.bulletin.i18n import Translator
+
+    note = _baseline(None)["note"]
+    sentences = (_UNREAD_QUARANTINE, _UNREAD_UNDATED, note)
+    tr = Translator(lang)
+    translated = [tr.t(sentence) for sentence in sentences]
+    for sentence, got in zip(sentences, translated, strict=True):
+        assert got != sentence, f"{lang}: {sentence}"
+    assert len(set(translated)) == len(translated), f"{lang}: two of the sentences share a translation"
+    tr = Translator(lang)
+    text = render(
+        _with_disclosures(quarantined_in_period=None, mentions_without_a_date=None, baseline_coverage=_baseline(None)),
+        "markdown",
+        tr=tr,
+    )
+    for got in translated:
+        assert got in text, f"{lang}: {got!r} is not in the rendered document"
+    assert not set(sentences) & set(tr.report()["missing_strings"])
+
+
 @pytest.mark.parametrize("fmt", ["markdown", "html"])
 def test_the_framing_verb_is_what_rose_never_what_trended(fmt):
     text = render(_EDITION, fmt)

@@ -231,7 +231,9 @@
   "This edition shows {parts}; the rest were excluded by the operator before publishing. The record it was rendered from is unchanged.": "Edisi ini menampilkan {parts}; sisanya dikecualikan oleh operator sebelum diterbitkan. Catatan yang menjadi sumber pembuatannya tidak berubah.",
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- {n} artikel pada periode ini dikarantina dan dikecualikan di seluruh dokumen.",
+  "The count of quarantined articles could not be read — unknown, not zero.": "Jumlah artikel yang dikarantina tidak dapat dibaca — tidak diketahui, bukan nol.",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- {n} penyebutan kata kunci tidak memiliki tanggal dan tidak terlihat oleh jendela mana pun.",
+  "The count of keyword mentions with no date could not be read — unknown, not zero.": "Jumlah penyebutan kata kunci tanpa tanggal tidak dapat dibaca — tidak diketahui, bukan nol.",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} artikel hasil impor menunggu pengindeksan ulang, jadi belum memiliki kata kunci dan tidak tercakup dalam angka kata kunci mana pun di sini.",
   "The re-index backlog could not be read — unknown, not zero.": "Tumpukan pengindeksan ulang tidak dapat dibaca — tidak diketahui, bukan nol.",
   "Nothing excluded beyond what the methods above state.": "Tidak ada yang dikecualikan di luar apa yang dinyatakan metode di atas.",

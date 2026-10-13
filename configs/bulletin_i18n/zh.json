@@ -231,7 +231,9 @@
   "This edition shows {parts}; the rest were excluded by the operator before publishing. The record it was rendered from is unchanged.": "本期显示 {parts}；其余部分由操作者在发布前排除。据以生成本期的记录并未改变。",
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- 本期有 {n} 篇文章被隔离，并在全文中一律排除。",
+  "The count of quarantined articles could not be read — unknown, not zero.": "无法读取被隔离文章的数量 — 未知，而非零。",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- 有 {n} 次关键词提及没有日期，对任何窗口都不可见。",
+  "The count of keyword mentions with no date could not be read — unknown, not zero.": "无法读取没有日期的关键词提及数量 — 未知，而非零。",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- 有 {n} 篇导入的文章正在等待重建索引，因此尚无关键词，并且不在此处任何关键词数字之内。",
   "The re-index backlog could not be read — unknown, not zero.": "无法读取重建索引的积压量 — 未知，而非零。",
   "Nothing excluded beyond what the methods above state.": "除上述方法所述之外，没有其他排除。",
