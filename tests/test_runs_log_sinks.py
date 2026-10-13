@@ -964,11 +964,19 @@ def test_an_allowed_slot_producer_line_copied_into_another_function_or_used_twic
     got = _slot_producer_hits(rel, planted)
     assert ("_planted", line) in got and _slot_producer_not_excused(rel, got) == {("_planted", line): got[("_planted", line)]}
     # the function is allowed, a second use of the text in it is not
-    indent = source[source.index(line) - 12 : source.index(line)].rsplit("\n", 1)[-1]
+    at = source.index(line)
+    indent = source[source.rindex("\n", 0, at) + 1 : at]
     doubled = source.replace(line, line + "\n" + indent + line, 1)
     got = _slot_producer_hits(rel, doubled)
     assert len(got[(fn, line)]) == 2 and _slot_producer_not_excused(rel, got) == {(fn, line): got[(fn, line)]}
     assert _slot_producer_not_excused(rel, _slot_producer_hits(rel, source)) == {}
+    # the line MOVED into a method of another class that has the allowed function's name is not the allowed place
+    start = source.rindex("\n", 0, at) + 1
+    moved = source.replace(source[start : at + len(line)], f"{indent}pass", 1)
+    moved += f"\n\nclass _Elsewhere:\n    def {fn}(self, pool, name):\n        {line}\n"
+    got = _slot_producer_hits(rel, moved)
+    assert (f"_Elsewhere.{fn}", line) in got
+    assert _slot_producer_not_excused(rel, got) == {(f"_Elsewhere.{fn}", line): got[(f"_Elsewhere.{fn}", line)]}
 
 
 def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
@@ -981,7 +989,9 @@ def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
 
 
 def _qualified_names(tree: ast.AST) -> dict[int, str]:
-    """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``)."""
+    """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``,
+    ``Class.method``): a class is part of the name, so a method of another class that happens to share a
+    function's name is a different owner."""
     owner: dict[int, str] = {}
 
     def walk(node: ast.AST, prefix: str) -> None:
@@ -991,6 +1001,8 @@ def _qualified_names(tree: ast.AST) -> dict[int, str]:
                 for line in range(child.lineno, (child.end_lineno or child.lineno) + 1):
                     owner[line] = name
                 walk(child, name)
+            elif isinstance(child, ast.ClassDef):
+                walk(child, f"{prefix}.{child.name}" if prefix else child.name)
             else:
                 walk(child, prefix)
 
