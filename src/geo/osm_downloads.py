@@ -43,16 +43,12 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
+from src.monitoring import secret_scrub
 from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, log_failure, scrubbed
 
 _LOG = logging.getLogger(__name__)
 
 _CHUNK = 1024 * 1024  # 1 MiB
-
-#: What ``scrubbed`` is asked to return when it cannot take the held passphrases out of a stored error text (what this process
-#: holds could not be read). Compared with ``==``, never written anywhere: a text that could not be checked is not a text to
-#: put a marker over on disk.
-_UNCHECKED = "\x00osm-downloads-unchecked-error\x00"
 
 # OSM extracts are large (continents are multi-GB, the planet ~72 GB), so the
 # default parallelism is conservative; raise via OO_OSM_CONCURRENCY. Parallel
@@ -214,12 +210,14 @@ class OsmDownloadManager:
         changed = False
         for e in self._entries.values():
             if e.error:  # an error stored by a build that wrote it unscrubbed is read, served and written back scrubbed
-                clean = scrubbed(e.error, withheld=_UNCHECKED)
-                if clean == _UNCHECKED:
-                    # What the process holds could not be read, so the text cannot be checked: it is served as the marker
-                    # (``to_dict``) and left as it is on disk, not replaced by the marker for good.
+                if secret_scrub.held_passphrases() is None:
+                    # What the process holds could not be read, so the text cannot be checked AT ALL: it is served as the marker
+                    # (``to_dict``) and left as it is on disk, not replaced by the marker for good. Only this case: a text that WAS
+                    # checked and has to be withheld whole (it holds a secret under the floor, or none can be taken out cleanly) is
+                    # written back as the marker below, so no readable passphrase stays in the file.
                     e._unchecked_error = e.error
                     continue
+                clean = scrubbed(e.error)
                 changed = changed or clean != e.error
                 e.error = clean
         # No worker thread survives a process restart, so a persisted

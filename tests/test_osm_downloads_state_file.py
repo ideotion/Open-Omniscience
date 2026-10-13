@@ -41,14 +41,13 @@ def test_keys_a_newer_build_wrote_survive_a_rewrite_by_this_one(tmp_path):
 
 
 def test_a_key_this_build_declares_is_never_taken_from_the_extras(tmp_path):
-    m = _seed(tmp_path)
-    state = _state(m)
-    state["entries"]["europe"]["status"] = "paused"
-    m.state_path.write_text(json.dumps(state), "utf-8")
-    reloaded = OsmDownloadManager(base_dir=tmp_path, http_get=None)
-    reloaded._entries["europe"].status = "queued"
-    reloaded._save()
-    assert _state(reloaded)["entries"]["europe"]["status"] == "queued"
+    # MUTATION TARGET: the order of the merge in `state_dict` (the extras go UNDER the declared fields).
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    entry = m._entry_for("europe")
+    entry._extra = {"status": "paused", "newer_key": 1}
+    m._save()
+    saved = _state(m)["entries"]["europe"]
+    assert saved["status"] == "queued" and saved["newer_key"] == 1
 
 
 def test_the_extras_never_reach_the_api_dict(tmp_path):
@@ -131,3 +130,20 @@ def test_a_failed_download_is_recorded_by_class_when_the_held_passphrases_cannot
     assert entry.error == "ConnectionResetError: its text is withheld"
     assert entry.error != secret_scrub.UNREADABLE_TEXT
     assert "connection reset by peer" not in m.state_path.read_text("utf-8")
+
+
+def test_a_text_that_was_checked_and_withheld_whole_is_written_back_as_the_marker(
+    tmp_path, monkeypatch
+):
+    # MUTATION TARGET: the gate in `_load` (`held_passphrases() is None` is the ONLY case that keeps the words on disk). A held
+    # secret under the floor makes the scrub withhold the whole text; the long passphrase in it must not stay in the file.
+    long_one = "a-long-held-passphrase-for-a-state-file-8842"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", long_one)
+    monkeypatch.setenv("OO_KEY_PASSPHRASE", "xyz")
+    _store_an_error(tmp_path, f"open failed key={long_one} xyz")
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    on_disk = m.state_path.read_text("utf-8")
+    assert long_one not in on_disk
+    assert _state(m)["entries"]["europe"]["error"] == secret_scrub.UNREADABLE_TEXT
+    m._save()
+    assert long_one not in m.state_path.read_text("utf-8")
