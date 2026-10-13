@@ -375,10 +375,6 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/versioned/pipeline.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
  "src/versioned/store.py": {
   "count": 1,
   "owner": "rc-sweep"

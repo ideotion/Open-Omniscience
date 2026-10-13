@@ -519,7 +519,7 @@ def test_a_store_that_fails_in_the_LINK_leaves_no_half_stored_page(lane, monkeyp
     monkeypatch.setattr(pipeline_mod, "_link_ingested", link_fails)
     with lane_session("wiki") as db:
         report = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
-    assert any("link failed" in e for p in report.passes.values() for e in p.get("errors", []))
+    assert any(e.endswith(": store: RuntimeError") for p in report.passes.values() for e in p.get("errors", []))  # the class; the words are in the log line
     with lane_session("wiki") as db:
         assert db.execute(select(VersionedBaseline)).scalars().first() is None, (
             "the baseline the store wrote was rolled back with the failed link"

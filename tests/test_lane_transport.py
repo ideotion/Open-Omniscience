@@ -168,7 +168,7 @@ def test_the_stream_records_WHY_it_is_failing_and_forgets_it_on_the_next_event()
     assert stream.counters.last_failure is None, "a wait that ended still reports its reason"
 
 
-def test_the_reason_is_bounded() -> None:
+def test_the_reason_is_the_class_alone_whatever_the_message_holds() -> None:
     from tests.test_wiki_stream import _Response, _Session, _stream
 
     session = _Session([_Response([], raises=OSError("x" * 5000))])

@@ -10,6 +10,7 @@ asked the failure's words (a response that is not stored) are the table below, c
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -25,15 +26,31 @@ CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", 
 MODULES = sorted(
     p.relative_to(ROOT).as_posix()
     for entry in ("src/scheduler", "src/wiki")
-    for p in (ROOT / entry).glob("*.py")
+    for p in (ROOT / entry).rglob("*.py")
 ) + ["src/api/unlock.py"]
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
-#: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by text, so a new one is reported.
-NOT_RECORDS = {
-    "src/scheduler/settings.py": ("getattr reaches key, a way round the scan of the log calls",),
-    "src/scheduler/storage_guard.py": ("_LOG.warning is kept as a name", "_LOG.info is kept as a name"),
-    "src/wiki/lane_search.py": ("getattr reaches how, a way round the scan of the log calls",),
+#: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
+#: second one in the same file is reported.
+NOT_RECORDS: dict[str, dict[str, int]] = {
+    "src/scheduler/settings.py": {"getattr reaches key, a way round the scan of the log calls": 1},
+    "src/scheduler/storage_guard.py": {"_LOG.warning is kept as a name, a log call the scan cannot read": 1,
+                                       "_LOG.info is kept as a name, a log call the scan cannot read": 1},
+    "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
+}
+
+#: Functions that take a caught exception to CLASSIFY it (a bool, an enum, an int, a class name) or to build an in-memory dedupe
+#: key, and return no record text: read by name, so a new function is held to the rule. Each reason was read in the code.
+CLASSIFIERS: dict[str, frozenset[str]] = {
+    # ``err`` is the refresh-error DICT (class only), not an exception.
+    "src/scheduler/plan_cache.py": frozenset({"_label"}),
+    # disk-full / I/O classification (bool, kind) and the per-path dedupe key kept in memory; the words go to log_failure.
+    "src/scheduler/storage_guard.py": frozenset({
+        "_dbapi_cause", "_disk_full_detail", "_first_line_detail", "_io_error_detail", "_os_error_behind", "_text_head",
+        "is_disk_full", "is_io_error", "log_failure_once", "note_error", "note_io_error",
+    }),
+    "src/wiki/history.py": frozenset({"retry_after_of"}),  # an int, capped
+    "src/wiki/walk.py": frozenset({"_http_status", "_is_json_error", "refusal_detail", "refusal_token"}),  # constants and the class
 }
 
 #: Operator-facing text that nothing stores: the unlock answer and the start-up status the lock screen shows, a dump lookup's HTTP
@@ -42,9 +59,10 @@ NOT_RECORDS = {
 _UNLOCK_DETAIL = "detail=exception_text("
 KEPT: dict[str, dict[tuple[str, str], int]] = {
     "src/api/unlock.py": {
+        # One WARNING line (the class and the scrubbed FIRST line, never the statement or a trailing line): the log, not a record.
+        ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
         ("_finish_unlock", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
         ("_upkeep", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
-        ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
         ("_file_opens_with", _UNLOCK_DETAIL): 1,
         ("_unlock_locked", _UNLOCK_DETAIL): 1,
         (
@@ -62,10 +80,30 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 }
 
 
+def _spans(source: str, names: frozenset[str]) -> list[tuple[int, int]]:
+    return [
+        (n.lineno, n.end_lineno)
+        for n in ast.walk(ast.parse(source))
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names
+    ]
+
+
 def _found(rel: str, source: str) -> list[str]:
     table = {k: v for k, v in KEPT.get(rel, {}).items() if v}
-    out = _leaks(source, only_scrubbing=CALLS, words_kept=table or None)
-    return [f for f in out if not any(note in f for note in NOT_RECORDS.get(rel, ()))]
+    spans = _spans(source, CLASSIFIERS.get(rel, frozenset()))
+    out = []
+    seen: dict[str, int] = {}
+    for finding in _leaks(source, only_scrubbing=CALLS, words_kept=table or None, params=True):
+        line, _, message = finding.partition(": ")
+        if line.isdigit() and any(lo <= int(line) <= hi for lo, hi in spans):
+            continue
+        if message in NOT_RECORDS.get(rel, {}):
+            seen[message] = seen.get(message, 0) + 1
+            if seen[message] <= NOT_RECORDS[rel][message]:
+                continue
+        out.append(finding)
+    out += [f"0: {m!r} expected {n} time(s), found {seen.get(m, 0)}" for m, n in NOT_RECORDS.get(rel, {}).items() if seen.get(m, 0) < n]
+    return out
 
 
 @pytest.mark.parametrize("rel", MODULES)
@@ -74,8 +112,8 @@ def test_a_stored_or_served_record_names_the_class_and_not_the_words(rel):
     assert found == [], f"{rel}: {found}"
 
 
-def test_the_sweep_reads_the_whole_scheduler_and_wiki_directories():
-    on_disk = {p.relative_to(ROOT).as_posix() for entry in ("src/scheduler", "src/wiki") for p in (ROOT / entry).glob("*.py")}
+def test_the_sweep_reads_the_whole_scheduler_and_wiki_trees():
+    on_disk = {p.relative_to(ROOT).as_posix() for entry in ("src/scheduler", "src/wiki") for p in (ROOT / entry).rglob("*.py")}
     assert on_disk <= set(MODULES)
     assert len(on_disk) >= 20, "the directory glob found no module: the test would pass over nothing"
 

@@ -448,7 +448,6 @@ def test_the_failures_REASON_lives_on_the_runner_and_not_only_in_the_log(lane):
     runner.run_until_stopped()
     assert runner.last_error is not None
     assert runner.last_error == "RuntimeError"
-    assert "RuntimeError" in runner.last_error
 
 
 def test_a_loop_that_CANNOT_succeed_keeps_trying_slowly_rather_than_ending_or_spinning(lane):

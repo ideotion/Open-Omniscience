@@ -49,6 +49,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
 from src.versioned import feed as feedmod
 from src.versioned import revisions as revmod
 from src.versioned.adapters.base import FetchedVersion, ReadBudget, VersionedAdapter
@@ -474,7 +475,8 @@ def run_feed_once(
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
-            result.errors.append(f"{external_id}: {type(exc).__name__}: {exc}")
+            log_failure(_LOG, f"fetching {external_id} failed", exc, level=logging.WARNING)
+            result.errors.append(f"{external_id}: {type(exc).__name__}")
             continue
         allowance -= 1
         if version is None:
@@ -519,19 +521,21 @@ def run_feed_once(
             try:
                 lane_sp.rollback()
             except Exception as rollback_exc:
+                log_failure(_LOG, f"{external_id}: the savepoint rollback failed after a failure", rollback_exc)
+                log_failure(_LOG, f"{external_id}: the failure the savepoint rollback followed", exc)
                 raise LaneTransactionLost(
-                    f"{external_id}: {type(exc).__name__}: {exc}; then the savepoint rollback "
-                    f"failed: {type(rollback_exc).__name__}: {rollback_exc}"
-                ) from exc
+                    f"{external_id}: {type(exc).__name__}; then the savepoint rollback "
+                    f"failed: {type(rollback_exc).__name__}"
+                ) from None
             if corpus is not None and hasattr(corpus, "rollback"):
                 # The corpus index path commits per article, so nothing already stored is lost
                 # here; what this clears is a session a failed flush left pending-rollback.
                 try:
                     corpus.rollback()
-                except Exception:  # noqa: BLE001 - the original failure is the one to report
-                    _LOG.debug("the corpus session could not be rolled back", exc_info=True)
-            _LOG.warning("storing %s failed", external_id, exc_info=True)
-            result.errors.append(f"{external_id}: store: {type(exc).__name__}: {exc}")
+                except Exception as rollback_exc:  # noqa: BLE001 - the original failure is the one to report
+                    log_failure(_LOG, "the corpus session could not be rolled back", rollback_exc, level=logging.DEBUG)
+            log_failure(_LOG, f"storing {external_id} failed", exc, level=logging.WARNING)
+            result.errors.append(f"{external_id}: store: {type(exc).__name__}")
             continue
         if outcome == "baseline":
             result.baselines_captured += 1
