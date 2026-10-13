@@ -34,6 +34,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _DIR = "bulletin"
@@ -80,8 +82,9 @@ def _sweep(d: Path) -> None:
                     p.unlink(missing_ok=True)
             except OSError:
                 continue
-    except Exception:  # noqa: BLE001 - housekeeping, never fatal
-        _LOG.debug("bulletin: edition temp sweep failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - housekeeping, never fatal
+        if _LOG.isEnabledFor(logging.DEBUG):
+            log_failure(_LOG, "bulletin: edition temp sweep failed", exc, level=logging.DEBUG)
 
 
 def persist_edition(edition: dict[str, Any], period, *, edition_id: str | None = None) -> Path:

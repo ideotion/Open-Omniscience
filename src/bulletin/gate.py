@@ -31,6 +31,12 @@ stated, and the verdict reports ``overridden`` so neither direction is silent.
 
 from __future__ import annotations
 
+import logging
+
+from src.monitoring.secret_scrub import log_failure
+
+_LOG = logging.getLogger(__name__)
+
 # OPEN QUESTION 4 (design record §20) lives here, and here only: *should Layer A be
 # available below the hardware gate, given it needs no model?*
 #
@@ -89,14 +95,18 @@ _CAVEAT_UNMEASURED = (
 )
 
 
-def _degraded(exc: Exception) -> dict:
-    """A probe that raised answers UNAVAILABLE for both verdicts, with the error.
+def _degraded(failure: str) -> dict:
+    """A probe that raised answers UNAVAILABLE for both verdicts, with the failure's class.
+
+    ``failure`` is the CLASS of what the probe raised and none of its words: this record is
+    returned to every caller and rides the diagnostics bundle, and the words (a driver's
+    message can quote what it was asked) are in the scrubbed log line the handler writes.
 
     Never an assumed pass, and never an assumed refusal dressed as a measurement:
     the reason names the probe, so "we could not tell" cannot be read as "this
     machine cannot".
     """
-    reason = f"the hardware capability probe failed: {type(exc).__name__}: {exc}"
+    reason = f"the hardware capability probe failed ({failure})"
     return {
         "available": False,
         "reason": reason,
@@ -130,7 +140,8 @@ def bulletin_available(*, capability: dict | None = None) -> dict:
 
             cap = inference_capability()
         except Exception as exc:  # noqa: BLE001 - a probe failure degrades, never raises
-            return _degraded(exc)
+            log_failure(_LOG, "bulletin: the hardware capability probe failed", exc, level=logging.WARNING)
+            return _degraded(type(exc).__name__)
 
     # THE ONE READ of the open-question-4 constant, bound once so the verdict, the
     # reason and the caveat all derive from the same value. A local is not a second

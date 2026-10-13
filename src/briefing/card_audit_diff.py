@@ -45,6 +45,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text
+
 SCHEMA = "oo-card-audit-metrics-1"
 DIFF_SCHEMA = "oo-card-audit-diff-1"
 
@@ -273,7 +275,7 @@ def _read_report(name: str) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - a corrupt saved file degrades loudly here
-        raise CardAuditDiffError(f"{name}: unreadable card-audit report ({exc})") from exc
+        raise CardAuditDiffError(f"{name}: unreadable card-audit report ({type(exc).__name__})") from None
 
 
 def diff_latest_card_audits() -> dict:
@@ -298,7 +300,7 @@ def diff_latest_card_audits() -> dict:
     try:
         old, new = _read_report(names[-2]), _read_report(names[-1])
     except CardAuditDiffError as exc:
-        return {"available": False, "reason": str(exc), "saved_runs": names}
+        return {"available": False, "reason": exception_text(exc, typed=False), "saved_runs": names}
     out = diff_card_audit_reports(old, new)
     out.update({"available": True, "old_report": names[-2], "new_report": names[-1]})
     return out

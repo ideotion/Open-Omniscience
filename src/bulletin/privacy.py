@@ -41,6 +41,7 @@ from typing import Any
 from sqlalchemy import func
 
 from src.database.models import Article, Source
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -446,6 +447,6 @@ def quarantined_in_period(session, period) -> int | None:
             .scalar()
             or 0
         )
-    except Exception:  # noqa: BLE001 - an unreadable count is unknown, never zero
-        _LOG.warning("bulletin: could not count quarantined articles", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable count is unknown, never zero
+        log_failure(_LOG, "bulletin: could not count quarantined articles", exc, level=logging.WARNING)
         return None

@@ -32,6 +32,8 @@ import logging
 import re
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 INTRODUCTION_PROMPT_VERSION = "bulletin-introduction-v1"
@@ -193,12 +195,12 @@ def narrate_introduction(
         )
         raw = (getattr(result, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001 - a model failure degrades to the template
-        _LOG.warning("bulletin: introduction narration failed", exc_info=True)
+        log_failure(_LOG, "bulletin: introduction narration failed", exc, level=logging.WARNING)
         return {
             **base,
             "text": deterministic_introduction(edition),
             "narrated": False,
-            "fallback_reason": f"the model call failed: {type(exc).__name__}: {exc}",
+            "fallback_reason": f"the model call failed ({type(exc).__name__})",
             "sentences": [],
         }
 

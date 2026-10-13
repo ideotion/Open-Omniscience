@@ -541,7 +541,9 @@ _WITNESS_MODULES = (
 #: recorder's ``_reason`` is the exception's class and the operating system's own reason, never its message ("Never its message,
 #: which can name a path or carry text a user typed"), ``_note_error`` writes only that, and ``_debug_failure`` is ``log_failure`` behind a
 #: check that DEBUG is on (tested below).
-_EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"}}
+_EXTRA_SCRUBBING_CALLS = {
+    "src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"},
+}
 #: The bundle writer is read whole, like the witnesses, with its own two scrubbing helpers added: ``_all_diag_err_str`` is
 #: ``exception_text(limit=300)`` and ``_err_str`` its older spelling. What the guard still reports there is each LINE below, with the
 #: reason it stands. A line is allowed in the FUNCTION it stands in and as many times as the table counts: the same text copied into
@@ -630,14 +632,46 @@ def _is_not_the_text_of_the_failure(use: ast.Name, parent: dict[ast.AST, ast.AST
     return isinstance(up, ast.Subscript) and up.value is attr and isinstance(parent.get(up), ast.Raise)
 
 
-def _leaks(source: str, *, handlers: bool = True, also_scrubbing: frozenset[str] | set[str] = frozenset()) -> list[str]:
+#: The calls that hand a failure's WORDS (the held passphrase out) to the person who just asked; only :data:`_SWEEP_WORDS_KEPT` sites may.
+_WORDS_KEPT_CALLS = frozenset({"exception_text", "_scope_mismatch_detail"})
+
+
+def _enclosing_function(node: ast.AST, parent: dict) -> str:
+    while node in parent:
+        node = parent[node]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return node.name
+    return "<module>"
+
+
+def _leaks(
+    source: str,
+    *,
+    handlers: bool = True,
+    also_scrubbing: frozenset[str] | set[str] = frozenset(),
+    only_scrubbing: frozenset[str] | set[str] | None = None,
+    words_kept: dict[tuple[str, str], int] | None = None,
+) -> list[str]:
     """The ways a module of the witnesses could print a failure raw: a log call asked for the traceback (``exc_info`` that is not
     the constant False/None, ``.exception()``, the ``traceback`` module however it is imported, ``exc_info()`` however it is
     imported, a ``**`` mapping a log call could carry ``exc_info`` in, a log method reached through ``getattr`` or kept in a name),
-    and a handler's bound exception used anywhere but as an argument of a scrubbing call or of ``type()``/``isinstance()``."""
+    and a handler's bound exception used anywhere but as an argument of a scrubbing call or of ``type()``/``isinstance()``.
+
+    ``only_scrubbing`` is the STRICT reading the bulletin sweep uses: the calls named there are the only ones that may be handed the
+    exception (``_SCRUBBING_CALLS`` and ``also_scrubbing`` are not consulted), and ``log_failure`` takes it as its THIRD argument, where
+    the exception goes, never as the first words (``log_failure(_LOG, exc, exc)`` writes the unscrubbed words into the line).
+
+    ``words_kept`` (only with ``only_scrubbing``) names the few sites where the person who just asked is told the failure's words: keyed by
+    (the function the call stands in, the call's line text) with the NUMBER of uses it excuses, like :data:`_BUNDLE_ALLOWED`. The same text
+    copied into another function, or one more use in the same function, is reported, and so is an allowance that no longer matches a use,
+    so the table cannot outlive the code it excuses. Without a table (``None``) a call of :data:`_WORDS_KEPT_CALLS` is reported like any
+    other use of the exception."""
     tree = ast.parse(source)
+    lines = source.splitlines()
     parent = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
     out: list[str] = []
+    kept_hits: dict[tuple[str, str], int] = {}
+    counted: set[int] = set()
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.keyword)
@@ -677,11 +711,30 @@ def _leaks(source: str, *, handlers: bool = True, also_scrubbing: frozenset[str]
                     if not (isinstance(use, ast.Name) and use.id == node.name and isinstance(use.ctx, ast.Load)):
                         continue
                     call = parent.get(use)
-                    if isinstance(call, ast.Call) and _call_name(call) in _SCRUBBING_CALLS | also_scrubbing and use in call.args:
+                    if (
+                        words_kept is not None
+                        and isinstance(call, ast.Call)
+                        and _call_name(call) in _WORDS_KEPT_CALLS
+                        and use in call.args
+                    ):
+                        if id(use) not in counted:  # a handler inside a handler is walked twice
+                            counted.add(id(use))
+                            key = (_enclosing_function(call, parent), lines[call.lineno - 1].strip())
+                            kept_hits[key] = kept_hits.get(key, 0) + 1
+                        continue
+                    allowed = (_SCRUBBING_CALLS | also_scrubbing) if only_scrubbing is None else only_scrubbing
+                    if isinstance(call, ast.Call) and _call_name(call) in allowed and use in call.args:
+                        if only_scrubbing is not None and _call_name(call) == "log_failure" and call.args.index(use) != 2:
+                            out.append(f"{use.lineno}: the caught exception {node.name!r} is handed to log_failure as its words, not as the failure")
                         continue
                     if _is_not_the_text_of_the_failure(use, parent):
                         continue
                     out.append(f"{use.lineno}: the caught exception {node.name!r} is used outside a scrubbing call")
+    if words_kept is not None:
+        for key in sorted(kept_hits.keys() | words_kept.keys()):
+            got, excused = kept_hits.get(key, 0), words_kept.get(key, 0)
+            if got != excused:
+                out.append(f"0: the failure's words are kept {got} time(s) at {key!r} and the table excuses {excused}")
     return out
 
 
@@ -690,6 +743,127 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
     source = (ROOT / rel).read_text(encoding="utf-8")
     extra = _EXTRA_SCRUBBING_CALLS.get(rel, set())
     assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
+
+
+#: Every module of the bulletin, its routes and the card audit, which ride the diagnostics bundle or answer the operator: no log call
+#: asks for a traceback and no record carries a caught exception's words (``tests/test_bulletin_sink_sites.py`` drives each site with a
+#: held passphrase). The bulletin directory is READ, not listed, so a module added to it is held to the rule from its first commit.
+_SWEEP_MODULES = (
+    "src/briefing/card_audit.py",
+    "src/briefing/card_audit_diff.py",
+    "src/api/bulletin.py",
+    *sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src" / "bulletin").glob("*.py")),
+)
+
+
+def test_the_sweep_reads_the_whole_bulletin_directory():
+    """The directory is globbed again HERE, apart from the expression that built the list, so a filter added to that expression (a module
+    left out) is a failure of this test and not a quiet gap."""
+    on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "src" / "bulletin").glob("*.py")}
+    assert on_disk <= set(_SWEEP_MODULES), sorted(on_disk - set(_SWEEP_MODULES))
+    assert len(on_disk) >= 15, "the directory glob found no module: the test would pass over nothing"
+    assert {"src/api/bulletin.py", "src/briefing/card_audit.py", "src/briefing/card_audit_diff.py"} <= set(_SWEEP_MODULES), "the routes and the card audit are read too"
+
+
+#: STRICT: a record of these modules keeps the exception's CLASS (``type``) and a log line goes through ``log_failure``; nothing else
+#: may be handed a caught exception, except where the person who just asked is told the words (the scrub keeps the sentence and takes
+#: the held passphrase out of it): a route's refusal and the evidence plan's folder check. Each such site is a line of
+#: :data:`_SWEEP_WORDS_KEPT`, keyed like :data:`_BUNDLE_ALLOWED`: a record written from one of those functions (``edition["x"] =
+#: exception_text(exc)``) is a line the table does not hold.
+_SWEEP_CALLS = {"type", "isinstance", "log_failure"}
+_HTTP_400 = "raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None"
+_SWEEP_WORDS_KEPT: dict[str, dict[tuple[str, str], int]] = {
+    # An HTTP refusal answers the request that was just made and writes nothing: each is the response's ``detail``.
+    "src/api/bulletin.py": {
+        ("generate", _HTTP_400): 1,
+        ("render_edition", _HTTP_400): 1,
+        ("export_privacy_route", _HTTP_400): 2,
+        ("evidence_plan_route", _HTTP_400): 1,
+        ("evidence_build_route", _HTTP_400): 2,
+        ("evidence_build_route", 'status_code=500, detail=f"could not write the archive: {exception_text(exc, typed=False)}"'): 1,
+        ("edition", 'status_code=500, detail=f"edition unreadable: {exception_text(exc, typed=False)}"'): 1,
+        ("publish", 'status_code=500, detail=f"could not stamp the edition: {exception_text(exc, typed=False)}"'): 1,
+        ("narrate_edition", 'detail={"reason": exception_text(exc, typed=False), "status": _NARRATION_JOB.status()},'): 1,
+        ("narrate_edition", "raise HTTPException(status_code=409, detail=_scope_mismatch_detail(exc)) from None"): 1,
+        # "Built, but not saved": the generated edition is returned with this beside it and nothing is persisted (it is the case where
+        # the write failed), so it is an answer, never a record.
+        ("generate", 'edition["persist_error"] = exception_text(exc, limit=300)'): 1,
+    },
+    # The folder the operator just chose cannot be written: the plan is answered to them and not saved.
+    "src/bulletin/evidence.py": {("evidence_plan", 'out["destination_error"] = exception_text(exc, limit=300)'): 1},
+    # The refusal of a diff the operator asked for; the exception is the module's own ``CardAuditDiffError`` (fixed words, a file name and
+    # the class). Nothing in src calls it yet.
+    "src/briefing/card_audit_diff.py": {
+        ("diff_latest_card_audits", 'return {"available": False, "reason": exception_text(exc, typed=False), "saved_runs": names}'): 1
+    },
+}
+
+
+def _sweep_leaks(rel: str, source: str) -> list[str]:
+    """What the sweep reports for ``source`` read as module ``rel``: the ONE reading both the parametrized sweep and the snippet tests use,
+    so loosening the sweep's own call (``also_scrubbing`` for ``only_scrubbing``, a wider allowance) fails a snippet test."""
+    return _leaks(source, only_scrubbing=_SWEEP_CALLS, words_kept=_SWEEP_WORDS_KEPT.get(rel))
+
+
+@pytest.mark.parametrize("rel", _SWEEP_MODULES)
+def test_the_bulletin_its_routes_and_the_card_audit_log_no_traceback_and_keep_no_caught_exception_raw(rel):
+    found = _sweep_leaks(rel, (ROOT / rel).read_text(encoding="utf-8"))
+    assert found == [], f"{rel}: {found}"
+
+
+_HANDLER = "def f():\n    try:\n        pass\n    except Exception as exc:\n        {body}\n"
+
+
+@pytest.mark.parametrize(
+    ("snippet", "flagged"),
+    [
+        (_HANDLER.format(body="log_failure(_LOG, 'x', exc)"), False),
+        (_HANDLER.format(body="return {'error': type(exc).__name__}"), False),
+        (_HANDLER.format(body="log_failure(_LOG, exc, exc)"), True),
+        (_HANDLER.format(body="return {'error': exception_text(exc)}"), True),
+        (_HANDLER.format(body="return {'error': traceback_text(exc)}"), True),
+        (_HANDLER.format(body="return {'error': str(exc)[:12]}"), True),
+    ],
+    ids=["log_failure", "class", "exc-as-words", "exception_text", "traceback_text", "cut-words"],
+)
+def test_the_strict_reading_flags_what_a_record_must_not_carry(snippet, flagged):
+    assert bool(_sweep_leaks("src/bulletin/cards.py", snippet)) is flagged
+
+
+@pytest.mark.parametrize(
+    ("rel", "body"),
+    [
+        # a module with no table: the words are not kept anywhere
+        ("src/bulletin/cards.py", "raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None"),
+        # the same words written into a RECORD of a module that does keep some: not a line the table holds
+        ("src/api/bulletin.py", "edition['gate_error'] = exception_text(exc)"),
+        ("src/bulletin/evidence.py", "out['archive_error'] = exception_text(exc, limit=300)"),
+        ("src/briefing/card_audit_diff.py", "return {'available': False, 'reason': exception_text(exc)}"),
+    ],
+    ids=["no-table", "record-in-api", "record-in-evidence", "record-in-diff"],
+)
+def test_the_words_kept_table_excuses_lines_not_modules(rel, body):
+    found = _sweep_leaks(rel, _HANDLER.format(body=body))
+    assert any("excuses 0" in f or "used outside a scrubbing call" in f for f in found), found
+
+
+def test_an_allowance_that_no_longer_matches_a_use_is_reported():
+    """The table cannot outlive the code it excuses: the source of a module is read with its excused line turned into a class."""
+    source = (ROOT / "src/bulletin/evidence.py").read_text(encoding="utf-8")
+    assert 'out["destination_error"] = exception_text' in source
+    found = _sweep_leaks("src/bulletin/evidence.py", source.replace('out["destination_error"] = exception_text', 'out["destination_error"] = type'))
+    assert any("kept 0 time(s)" in f and "table excuses 1" in f for f in found), found
+
+
+def test_a_second_use_in_a_function_the_table_excuses_once_is_reported():
+    line = 'out["destination_error"] = exception_text(exc, limit=300)'
+    source = (ROOT / "src/bulletin/evidence.py").read_text(encoding="utf-8")
+    assert source.count(line) == 1
+    assert _sweep_leaks("src/bulletin/evidence.py", source) == []
+    twice = _sweep_leaks("src/bulletin/evidence.py", source.replace(line, line + "\n" + " " * 12 + line, 1))
+    assert any("kept 2 time(s)" in f and "table excuses 1" in f for f in twice), twice
+    other = _sweep_leaks("src/bulletin/evidence.py", source.replace(line, line + "\n" + " " * 12 + 'out["again"] = exception_text(exc)', 1))
+    assert any("again" in f and "excuses 0" in f for f in other), other
 
 
 #: The modules whose ``diagnostics_member`` a slot runs and that no other list above reads (the vitals and runs producers are in

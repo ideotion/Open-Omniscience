@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import exception_text
 
 router = APIRouter(prefix="/api/bulletin", tags=["bulletin"])
 
@@ -113,7 +114,7 @@ def generate(
     try:
         period = resolve_period(cadence)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
 
     # The narration verdict is the model one, not the document one. A machine below
     # the bar still builds the edition; asking it to narrate is refused HERE, before
@@ -131,7 +132,7 @@ def generate(
             # A generated edition that could not be written is still a real answer:
             # return it with the failure stated rather than losing the work to a 500.
             edition["persisted"] = False
-            edition["persist_error"] = f"{type(exc).__name__}: {exc}"
+            edition["persist_error"] = exception_text(exc, limit=300)
     else:
         edition["persisted"] = False
     return edition
@@ -163,10 +164,18 @@ def edition(filename: str) -> dict:
     _require_gate()
     try:
         return read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
     except ValueError as exc:  # malformed JSON on disk — say so, never return {}
-        raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"edition unreadable: {exception_text(exc, typed=False)}"
+        ) from None
+
+
+def _scope_mismatch_detail(exc) -> dict:
+    """The 409 body for a paused run that is not the one asked for: the refusal's words through the one scrub, then the run's own state
+    (its cursor, the paused edition and the way out), which the job builds itself and which holds no exception text."""
+    return {"reason": exception_text(exc, typed=False), **exc.state}
 
 
 def _narrate_introduction(explicit: bool | None) -> bool:
@@ -237,8 +246,8 @@ def narrate_edition(
         )
     try:
         read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
 
     try:
         return _NARRATION_JOB.start(
@@ -249,15 +258,15 @@ def narrate_edition(
             max_stories=int(max_stories) or None,
         )
     except NarrationScopeMismatch as exc:  # pragma: no cover - raised inside the worker
-        raise HTTPException(status_code=409, detail={"reason": str(exc), **exc.state}) from exc
+        raise HTTPException(status_code=409, detail=_scope_mismatch_detail(exc)) from None
     except RuntimeError as exc:
         # A run of this kind is already going. Return its status rather than a bare
         # refusal: the caller asked for narration and what they need to know is that
         # it is already happening, and how far along.
         raise HTTPException(
             status_code=409,
-            detail={"reason": str(exc), "status": _NARRATION_JOB.status()},
-        ) from exc
+            detail={"reason": exception_text(exc, typed=False), "status": _NARRATION_JOB.status()},
+        ) from None
 
 
 @router.get("/narration")
@@ -309,8 +318,8 @@ def review(filename: str) -> dict:
     _require_gate()
     try:
         return review_view(read_edition(filename))
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
 
 
 def _selection(exclude_sections: str, exclude_stories: str) -> dict:
@@ -348,8 +357,8 @@ def ai_plan(
     _require_gate()
     try:
         edition = read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
     return ai_worklist(
         edition,
         target_lang=target_lang or None,
@@ -387,8 +396,8 @@ def export_privacy_route(
     _require_gate()
     try:
         edition = read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
 
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
     if kind == "evidence":
@@ -401,7 +410,7 @@ def export_privacy_route(
         try:
             period = resolve_period(str((edition.get("period") or {}).get("cadence") or "weekly"))
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
         from src.bulletin.evidence import _period_article_ids
 
         ids = _period_article_ids(db, period)
@@ -413,7 +422,7 @@ def export_privacy_route(
             db, edition, kind=kind, article_ids=ids, full_text=bool(full_text)
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
 
 
 @router.get("/editions/{filename}/render")
@@ -460,8 +469,8 @@ def render_edition(
     _require_gate()
     try:
         edition = read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
 
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
 
@@ -482,7 +491,7 @@ def render_edition(
     try:
         text = render(edition, fmt, tr=tr)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
 
     # The DOWNLOADED name is the report's own, not the record's: the record is
     # `20260810-OOS-weekly-<id>.json` and the document an operator keeps is
@@ -582,8 +591,8 @@ def annexes(
     _require_gate()
     try:
         edition = read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
 
     ordinal = _ordinal(edition, filename)
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
@@ -629,17 +638,19 @@ def publish(
     sel = _selection(exclude_sections, exclude_stories)
     try:
         edition = read_edition(filename)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
 
     recorded = (apply_selection(edition, **sel)).get("selection") or {}
     recorded.update(sel)
     try:
         out = mark_published(filename, selection=recorded)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="no such edition") from None
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"could not stamp the edition: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"could not stamp the edition: {exception_text(exc, typed=False)}"
+        ) from None
     return {
         "filename": filename,
         "state": out.get("state"),
@@ -669,7 +680,7 @@ def evidence_plan_route(
     try:
         period = resolve_period(cadence)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
     return evidence_plan(db, period, dest=dest or None)
 
 
@@ -695,22 +706,24 @@ def evidence_build_route(
     try:
         period = resolve_period(cadence)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
 
     if edition_file:
         try:
             edition = read_edition(edition_file)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="no such edition") from exc
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="no such edition") from None
     else:
         edition = layer_a(db, period)
 
     try:
         return build_evidence_archive(db, edition, period, dest)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"could not write the archive: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"could not write the archive: {exception_text(exc, typed=False)}"
+        ) from None
 
 
 @router.delete("/editions/{filename}")

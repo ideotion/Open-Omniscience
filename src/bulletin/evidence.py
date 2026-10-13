@@ -49,6 +49,7 @@ from src.backup.attribution import (
 )
 from src.bulletin.period import Period
 from src.database.models import Article, Source
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -136,8 +137,8 @@ def evidence_plan(session, period: Period, *, dest: str | os.PathLike | None = N
         )
         sampled = len(sample)
         estimate = int(content_bytes / sampled * len(ids)) if sampled else 0
-    except Exception:  # noqa: BLE001 - an estimate that cannot be made is stated as unknown
-        _LOG.warning("bulletin: evidence size estimate failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an estimate that cannot be made is stated as unknown
+        log_failure(_LOG, "bulletin: evidence size estimate failed", exc, level=logging.WARNING)
         estimate, sampled = 0, 0
 
     # THE §18 ENUMERATION RIDES THE PLAN. The plan step exists so the operator
@@ -149,10 +150,10 @@ def evidence_plan(session, period: Period, *, dest: str | os.PathLike | None = N
 
         privacy = export_privacy(session, {}, kind="evidence", article_ids=ids)
     except Exception as exc:  # noqa: BLE001 - a failed enumeration is stated, never silent
-        _LOG.warning("bulletin: export privacy enumeration failed", exc_info=True)
+        log_failure(_LOG, "bulletin: export privacy enumeration failed", exc, level=logging.WARNING)
         privacy = {
             "kind": "evidence",
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": type(exc).__name__,
             "caveat": (
                 "The list of what a reader of this archive could see could not be "
                 "computed. That is an unanswered question, not an all-clear."
@@ -180,7 +181,8 @@ def evidence_plan(session, period: Period, *, dest: str | os.PathLike | None = N
             out["free_bytes"] = shutil.disk_usage(d).free if d.is_dir() else None
         except OSError as exc:
             out["destination_writable"] = False
-            out["destination_error"] = str(exc)
+            # The operator chose this path and is told why it fails (the route answers them; no record keeps it): the OS words, scrubbed.
+            out["destination_error"] = exception_text(exc, limit=300)
     return out
 
 
@@ -331,12 +333,12 @@ def build_evidence_archive(
                     ),
                 )
             except Exception as exc:  # noqa: BLE001 - never lose the archive to its own note
-                _LOG.warning("bulletin: could not write the privacy note", exc_info=True)
+                log_failure(_LOG, "bulletin: could not write the privacy note", exc, level=logging.WARNING)
                 _add(
                     zf,
                     "WHAT-A-READER-CAN-SEE.md",
                     "# What a reader of this file can see\n\n"
-                    f"This list could not be computed: {type(exc).__name__}: {exc}.\n"
+                    f"This list could not be computed ({type(exc).__name__}).\n"
                     "That is an unanswered question, not an all-clear.\n",
                 )
 

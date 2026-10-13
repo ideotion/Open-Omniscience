@@ -23,6 +23,7 @@ only the RESOLVED client type changes when a GPU + an installed vLLM are present
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess  # noqa: S404 - fixed argv, no shell, 5s timeout (nvidia-smi probe only)
@@ -30,6 +31,9 @@ from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from src.llm.ollama import GenerationResult, reason_first, total_ram_gb
+from src.monitoring.secret_scrub import log_failure
+
+_LOG = logging.getLogger(__name__)
 
 _VALID_OVERRIDES = ("auto", "ollama", "vllm")
 
@@ -224,7 +228,10 @@ def detect_apple_silicon() -> dict:
         system = platform.system()
         machine = platform.machine()
     except Exception as exc:  # noqa: BLE001 - a probe must never crash the resolver
-        return {"available": False, "reason": f"platform probe failed: {str(exc)[:120]}"}
+        # The reason rides the capability dict into the edition's gate record, the backup and the diagnostics bundle: the class
+        # only. The failure's own words are in the scrubbed log line.
+        log_failure(_LOG, "backend: the platform probe failed", exc, level=logging.WARNING)
+        return {"available": False, "reason": f"platform probe failed ({type(exc).__name__})"}
     if system != "Darwin":
         return {
             "available": False,
@@ -394,11 +401,13 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
         try:
             gpu = detect_gpu()
         except Exception as exc:  # noqa: BLE001 - a failed probe is never a "no GPU"
-            gpu = {"available": False, "reason": f"GPU probe failed: {str(exc)[:120]}"}
+            log_failure(_LOG, "backend: the GPU probe failed", exc, level=logging.WARNING)
+            gpu = {"available": False, "reason": f"GPU probe failed ({type(exc).__name__})"}
     try:
         apple = detect_apple_silicon()
     except Exception as exc:  # noqa: BLE001 - likewise; degrade, never crash
-        apple = {"available": False, "reason": f"Apple Silicon probe failed: {str(exc)[:120]}"}
+        log_failure(_LOG, "backend: the Apple Silicon probe failed", exc, level=logging.WARNING)
+        apple = {"available": False, "reason": f"Apple Silicon probe failed ({type(exc).__name__})"}
 
     # ---- ruling 15's HARD floor, applied where it actually decides something.
     #

@@ -52,6 +52,7 @@ from src.database.models import (
     Keyword,
     Source,
 )
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -237,8 +238,9 @@ def article_rows(
         aid = int(a.id)
         try:
             text = (a.get_content() or "").strip()
-        except Exception:  # noqa: BLE001 - one unreadable body never costs the row
-            _LOG.debug("bulletin: article %s body unreadable", aid, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one unreadable body never costs the row
+            if _LOG.isEnabledFor(logging.DEBUG):  # log_failure makes the whole traceback text, once per unreadable body
+                log_failure(_LOG, f"bulletin: article {aid} body unreadable", exc, level=logging.DEBUG)
             text = ""
         excerpt = text[: int(excerpt_chars)]
         # Sentiment is VADER, which reads English and nothing else, so a score is
@@ -304,8 +306,9 @@ def article_bodies(session, article_ids: list[int]) -> dict[int, str]:
         ):
             try:
                 out[int(art.id)] = art.get_content() or ""
-            except Exception:  # noqa: BLE001 - one unreadable body never costs the rest
-                _LOG.debug("bulletin: article %s body unreadable", art.id, exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - one unreadable body never costs the rest
+                if _LOG.isEnabledFor(logging.DEBUG):
+                    log_failure(_LOG, f"bulletin: article {art.id} body unreadable", exc, level=logging.DEBUG)
     return out
 
 

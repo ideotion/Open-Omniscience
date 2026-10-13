@@ -395,5 +395,5 @@ def test_a_card_layer_failure_never_costs_the_record(corpus, monkeypatch):
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("producers exploded")),
     )
     out = cards_by_type(corpus, resolve_period("weekly", end=date(2026, 8, 11)))
-    assert "producers exploded" in out["error"]
+    assert out["error"] == "RuntimeError", "the record names the failure's class; its words are in the scrubbed log line"
     assert out["caveat"]

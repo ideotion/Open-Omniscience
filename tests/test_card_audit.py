@@ -23,6 +23,7 @@ import pytest
 
 from src.briefing.card import Card
 from src.briefing.card_audit import (
+    _WORDS_NOT_KEPT,
     DEPTHS,
     SCHEMA,
     ProducerOutcome,
@@ -73,7 +74,7 @@ def test_producer_inventory_separates_error_from_no_signal(clean_registry):
     A producer that RAISES and a producer that returns [] are indistinguishable in
     run_all (both contribute []) and therefore in every other card diagnostic. Here
     they must land in different states, and the erroring one must carry its actual
-    exception type + message -- otherwise a permanently-broken producer stays
+    exception type (its words go to the scrubbed log line, not the report) -- otherwise a permanently-broken producer stays
     invisible, which is precisely the 'absent reads as passed' defect this closes.
     """
 
@@ -96,7 +97,9 @@ def test_producer_inventory_separates_error_from_no_signal(clean_registry):
     # The erroring producer is NOT reported as "no signal".
     assert outcomes["boom"].outcome == "error"
     assert outcomes["boom"].error_type == "ValueError"
-    assert "this producer is broken" in (outcomes["boom"].error_message or "")
+    # the class says what failed; the words ("this producer is broken") are in the scrubbed log line, not in the report
+    assert "this producer is broken" not in (outcomes["boom"].error_message or "")
+    assert outcomes["boom"].error_message == _WORDS_NOT_KEPT
     assert outcomes["boom"].cards_proposed == 0
 
     # The quiet producer is NOT reported as an error.
