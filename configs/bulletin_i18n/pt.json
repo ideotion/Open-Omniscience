@@ -231,7 +231,9 @@
   "This edition shows {parts}; the rest were excluded by the operator before publishing. The record it was rendered from is unchanged.": "Esta edição mostra {parts}; o restante foi excluído pelo operador antes da publicação. O registo a partir do qual foi gerada permanece inalterado.",
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- {n} artigo(s) do período estão em quarentena e são excluídos em todo o documento.",
+  "The count of quarantined articles could not be read — unknown, not zero.": "Não foi possível ler o número de artigos em quarentena — desconhecido, não zero.",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- {n} menção(ões) de palavras-chave não têm data e são invisíveis para todas as janelas.",
+  "The count of keyword mentions with no date could not be read — unknown, not zero.": "Não foi possível ler o número de menções de palavras-chave sem data — desconhecido, não zero.",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} artigo(s) importado(s) aguardam reindexação, pelo que ainda não têm palavras-chave e faltam em todos os valores de palavras-chave deste documento.",
   "The re-index backlog could not be read — unknown, not zero.": "Não foi possível ler a fila de reindexação — desconhecida, não zero.",
   "Nothing excluded beyond what the methods above state.": "Nada excluído além do que os métodos acima indicam.",

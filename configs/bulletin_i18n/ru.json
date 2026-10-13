@@ -231,7 +231,9 @@
   "This edition shows {parts}; the rest were excluded by the operator before publishing. The record it was rendered from is unchanged.": "Этот выпуск показывает {parts}; остальное оператор исключил перед публикацией. Запись, из которой он построен, не изменена.",
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- {n} статей за период находятся в карантине и исключены везде.",
+  "The count of quarantined articles could not be read — unknown, not zero.": "Число статей в карантине прочитать не удалось — неизвестно, а не ноль.",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- {n} упоминаний ключевых слов не имеют даты и невидимы для любого окна.",
+  "The count of keyword mentions with no date could not be read — unknown, not zero.": "Число упоминаний ключевых слов без даты прочитать не удалось — неизвестно, а не ноль.",
   "- {n} imported article(s) await re-index, so they carry no keywords yet and are missing from every keyword figure here.": "- {n} импортированных статей ожидают переиндексации, поэтому у них ещё нет ключевых слов, и они отсутствуют во всех цифрах по ключевым словам здесь.",
   "The re-index backlog could not be read — unknown, not zero.": "Очередь переиндексации прочитать не удалось — неизвестно, а не ноль.",
   "Nothing excluded beyond what the methods above state.": "Ничего не исключено сверх того, что указано в методах выше.",

@@ -1343,6 +1343,10 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
                 n=_fmt(q),
             )
         )
+    elif "quarantined_in_period" in d and q is None:
+        # None is "the count could not be read" (facts.disclosures), which is a different fact from 0: say so, so the
+        # closing "Nothing excluded" line cannot be printed over an unread count.
+        out.append("- " + T.t("The count of quarantined articles could not be read — unknown, not zero."))
     u = d.get("mentions_without_a_date")
     if u:
         out.append(
@@ -1351,6 +1355,8 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
                 n=_fmt(u),
             )
         )
+    elif "mentions_without_a_date" in d and u is None:
+        out.append("- " + T.t("The count of keyword mentions with no date could not be read — unknown, not zero."))
     backlog = d.get("reindex_backlog") or {}
     if backlog.get("available") and backlog.get("articles_pending"):
         out.append(
@@ -1365,7 +1371,9 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
             "- " + T.t("The re-index backlog could not be read — unknown, not zero.")
         )
     cov = d.get("baseline_coverage") or {}
-    if cov.get("complete") is False:
+    # ``complete`` False: the corpus is short of the nominal baseline. ``complete`` None: coverage could not be measured
+    # (``baseline_coverage(period, None)``, which names that in its note); that is not a pass either.
+    if cov.get("complete") is False or ("complete" in cov and cov["complete"] is None and cov.get("note")):
         out.append(f"- {T.t(str(cov.get('note')))}")
     if len(out) == 2:
         out.append("- " + T.t("Nothing excluded beyond what the methods above state."))
