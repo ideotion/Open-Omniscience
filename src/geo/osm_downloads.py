@@ -43,6 +43,7 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
+from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed
 
 _LOG = logging.getLogger(__name__)
 
@@ -175,6 +176,7 @@ class OsmDownloadManager:
     # -- state ------------------------------------------------------------- #
 
     def _load(self) -> None:
+        parsed = False
         if self.state_path.exists():
             try:
                 raw = json.loads(self.state_path.read_text("utf-8"))
@@ -185,8 +187,15 @@ class OsmDownloadManager:
                     self._entries[k] = OsmDownloadEntry(
                         **{f: v[f] for f in OsmDownloadEntry.__annotations__ if f in v}
                     )
-            except Exception:  # noqa: BLE001 - a bad state file must not crash startup
-                _LOG.warning("OSM downloads state unreadable; ignoring", exc_info=True)
+                parsed = True
+            except Exception as exc:  # noqa: BLE001 - a bad state file must not crash startup
+                log_failure(_LOG, "OSM downloads state unreadable; ignoring", exc, level=logging.WARNING)
+        changed = False
+        for e in self._entries.values():
+            if e.error:  # an error stored by a build that wrote it unscrubbed is read, served and written back scrubbed
+                clean = scrubbed(e.error)
+                changed = changed or clean != e.error
+                e.error = clean
         # No worker thread survives a process restart, so a persisted
         # "downloading" status is stale -- demote it to "paused" (the partial file
         # is kept and resumable) rather than leaving a phantom blocking a slot.
@@ -194,6 +203,13 @@ class OsmDownloadManager:
             if e.status == "downloading":
                 e.status = "paused"
                 e.paused_by = "restart"
+        if changed and parsed:
+            # Written back now, not at the next save: the file on disk is what an older text sits in. Only after a COMPLETE
+            # read, so that a partly read file never replaces the one on disk with fewer entries.
+            try:
+                self._save()
+            except Exception as save_exc:  # noqa: BLE001 - startup must not fail on its own bookkeeping
+                log_failure(_LOG, "OSM downloads state could not be rewritten after a scrub", save_exc, level=logging.WARNING)
 
     def _save(self) -> None:
         # Serialized under one lock so each written state file is internally
@@ -436,6 +452,7 @@ class OsmDownloadManager:
             except Exception:  # noqa: BLE001 - mirror selection is best-effort
                 fetch_url = entry.url
 
+        failure: Exception | None = None
         try:
             # A segmented multi-circuit fetch ONLY on a fresh start (no partial
             # file — segmented+resume semantics are out of scope) with a
@@ -489,9 +506,18 @@ class OsmDownloadManager:
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
             entry.status = "error"
-            entry.error = str(exc)
-            self._save()
-            _LOG.warning("OSM region download failed for %s", entry.key, exc_info=True)
+            # The text the page shows is the engine's own words, minus any passphrase this process holds (a UnicodeError
+            # is written by class alone: its message names a letter and an offset).
+            entry.error = exception_text(exc, typed=False)
+            failure = exc
+        if failure is not None:
+            # Saved and logged AFTER the handler: a save that fails (a full disk is the likely reason a download just failed) then
+            # raises with no exception to chain, and the thread's excepthook would otherwise print the original one, unscrubbed.
+            try:
+                self._save()
+            except Exception as save_exc:  # noqa: BLE001 - the worker thread must not die on its own bookkeeping
+                log_failure(_LOG, f"OSM region download state for {entry.key} could not be saved", save_exc, level=logging.WARNING)
+            log_failure(_LOG, f"OSM region download failed for {entry.key}", failure, level=logging.WARNING)
         return entry
 
     def start(
