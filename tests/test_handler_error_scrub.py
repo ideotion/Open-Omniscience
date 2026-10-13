@@ -97,9 +97,30 @@ def test_it_is_silent_when_raise_exceptions_is_off_and_never_raises(hooked, monk
     handler.handleError(logging.LogRecord("x", logging.ERROR, __file__, 1, "m", None, None))
 
 
-def test_the_hook_is_idempotent_and_in_place_at_import():
-    assert logging.Handler.handleError is secret_scrub._scrubbed_handle_error
-    assert secret_scrub._hook_handle_error() is False
+def test_the_hook_is_in_place_the_moment_the_module_is_imported():
+    """MUTATION TARGET: the module-level ``_hook_handle_error()`` call. A fresh interpreter (the ``hooked`` fixture would put the
+    replacement back in this process) must find ``Handler.handleError`` replaced right after the import and nothing else."""
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    code = (
+        f"import sys\nsys.path.insert(0, {str(root)!r})\n"
+        "import logging\n"
+        "stock = logging.Handler.handleError\n"
+        "import src.monitoring.secret_scrub as s\n"
+        "assert logging.Handler.handleError is s._scrubbed_handle_error is not stock\n"
+        "assert s._hook_handle_error() is False\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", code],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
 
 
 def _handler_classes(base=logging.Handler):
@@ -108,21 +129,57 @@ def _handler_classes(base=logging.Handler):
         yield from _handler_classes(cls)
 
 
-def test_no_handler_in_src_overrides_handle_error():
-    """A handler class that defines its own ``handleError`` would bypass the replacement."""
-    import importlib
-    import pkgutil
+def _classes_defining_handle_error(source: str) -> list[str]:
+    """Classes whose body defines ``handleError`` by ``def``, ``async def``, assignment (``handleError = lambda ...``) or annotated
+    assignment."""
+    import ast
 
-    import src
-
-    for mod in pkgutil.walk_packages(src.__path__, "src."):
-        try:
-            importlib.import_module(mod.name)
-        except Exception:  # noqa: BLE001, S112 - an optional dependency missing; the source read below still covers the file
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.ClassDef):
             continue
-    own = [
-        c
-        for c in _handler_classes()
-        if c.__module__.startswith("src.") and "handleError" in vars(c)
-    ]
+        for item in node.body:
+            names = (
+                [item.name]
+                if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                else [t.id for t in item.targets if isinstance(t, ast.Name)]
+                if isinstance(item, ast.Assign)
+                else [item.target.id]
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+                else []
+            )
+            if "handleError" in names:
+                found.append(node.name)
+    return found
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "def handleError(self, record): pass",
+        "async def handleError(self, record): pass",
+        "handleError = lambda self, record: None",
+        "handleError: object = None",
+    ],
+)
+def test_the_override_scan_sees_every_way_to_define_it(body):
+    """MUTATION TARGET: a form dropped from ``_classes_defining_handle_error``."""
+    assert _classes_defining_handle_error(f"class H:\n    {body}\n") == ["H"]
+    assert _classes_defining_handle_error("class H:\n    def emit(self, record): pass\n") == []
+
+
+def test_no_handler_in_src_overrides_handle_error():
+    """A handler class that defines its own ``handleError`` would bypass the replacement. Read from the source, so a module that
+    cannot be imported here (an optional dependency) is covered as well."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    own = []
+    for path in sorted((root / "src").rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        if rel != "src/monitoring/secret_scrub.py":
+            own += [
+                f"{rel}:{name}"
+                for name in _classes_defining_handle_error(path.read_text(encoding="utf-8"))
+            ]
     assert not own, own

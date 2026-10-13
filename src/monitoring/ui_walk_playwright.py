@@ -45,6 +45,8 @@ import contextlib
 import logging
 from pathlib import Path
 
+from src.monitoring.path_tokens import tokenise_paths
+from src.monitoring.secret_scrub import log_failure
 from src.monitoring.ui_walk import Surface
 
 _LOG = logging.getLogger(__name__)
@@ -92,7 +94,7 @@ class PlaywrightUiWalkDriver:
 
     def __init__(
         self,
-        page: "Page",
+        page: Page,
         *,
         base_url: str,
         screenshot_dir: Path | None = None,
@@ -112,7 +114,7 @@ class PlaywrightUiWalkDriver:
         self._console_lines: list[str] = []
         self.last_pageerrors: list[str] = []
         self.last_console_error_lines: list[str] = []
-        page.on("pageerror", lambda exc: self._pageerrors.append(str(exc)))
+        page.on("pageerror", lambda exc: self._pageerrors.append(tokenise_paths(str(exc))))
         page.on("console", self._on_console)
         # Only auto-boot when a REAL base_url is configured (the actual app-walking case) --
         # an empty base_url (a hermetic test against a page whose content was set directly via
@@ -136,7 +138,7 @@ class PlaywrightUiWalkDriver:
         try:
             self.page.evaluate("document.documentElement.style.filter = 'grayscale(1)'")
         except Exception as exc:  # noqa: BLE001 - a cosmetic filter must never abort a walk
-            _LOG.warning("could not apply greyscale filter: %s", exc)
+            log_failure(_LOG, "could not apply greyscale filter", exc, level=logging.WARNING)
 
     def _on_console(self, msg: object) -> None:
         if getattr(msg, "type", None) == "error":
@@ -184,7 +186,7 @@ class PlaywrightUiWalkDriver:
                 self.page.keyboard.press("Escape")
                 self.page.wait_for_timeout(150)
         except Exception as exc:  # noqa: BLE001 - this is a courtesy reset, never fatal
-            _LOG.warning("could not close a leftover open dialog: %s", exc)
+            log_failure(_LOG, "could not close a leftover open dialog", exc, level=logging.WARNING)
 
     # -- UiWalkDriver Protocol ------------------------------------------------------------- #
 
@@ -289,7 +291,7 @@ class PlaywrightUiWalkDriver:
         try:
             self.page.screenshot(path=str(path), full_page=True, timeout=10_000)
         except Exception as exc:  # noqa: BLE001 - a screenshot failure must degrade, never crash
-            _LOG.warning("screenshot failed for %s: %s", surface.id, exc)
+            log_failure(_LOG, f"screenshot failed for {surface.id}", exc, level=logging.WARNING)
             return None
         return str(path)
 

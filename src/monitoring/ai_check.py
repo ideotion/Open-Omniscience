@@ -44,7 +44,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger("monitoring.ai_check")
 
@@ -100,7 +100,7 @@ def _step(name: str, fn: Callable[[], Any], *, monotonic=time.monotonic) -> dict
         out = fn()
         return {"step": name, "ok": True, "seconds": round(monotonic() - t0, 3), "report": out}
     except Exception as exc:  # noqa: BLE001 - a broken step is data, not a crash
-        _LOG.warning("ai-check step %s failed: %s", name, exc)
+        log_failure(_LOG, f"ai-check step {name} failed", exc, level=logging.WARNING)
         return {
             "step": name,
             "ok": False,

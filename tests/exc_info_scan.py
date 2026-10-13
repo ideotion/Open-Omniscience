@@ -10,6 +10,11 @@ message, a logger's always does) and ``logging.exception``; and the ``traceback`
 (:data:`TRACEBACK_MAKERS`, :data:`SYS_MAKERS`), resolved through the file's own imports so ``import traceback as tb`` and
 ``from sys import exc_info`` are the same sink. Every call node counts once, so two sinks on one line are two.
 
+ALSO ``exc-arg``: inside an ``except ... as name`` block, a log-method call (``debug`` ... ``critical``, ``log``, on ANY receiver) with
+an argument that carries ``name`` by any route but its class (``type(name)``, ``name.__class__``) or a scrub helper
+(:data:`SCRUB_HELPERS`): ``name``, ``str(name)[:200]``, ``"%s" % name``, ``.format(name)``, ``name.args``, ``name.__cause__``,
+f-strings. Those write the engine's own words with no scrub. Not followed: ``e = name`` rebinding, and non-log text sinks (``print``).
+
 WHAT IT DOES NOT: ``stack_info=True`` prints the current call stack (files, lines, source), not an exception, so it cannot carry
 the words an exception carries; ``log.warning("%s", exc)`` is a different rule (the text made by hand), covered where the text
 enters a record. A swap inside one file (one site converted, another added) keeps its count; the diff is where that is read."""
@@ -40,6 +45,80 @@ _LOG_METHODS = frozenset(
 )
 #: The modules that ARE the scrub (they read an exception to scrub it) or read a record's ``exc_info`` back; nothing else.
 EXEMPT = {"src/monitoring/secret_scrub.py", "src/monitoring/errorlog.py"}
+
+
+#: Calls that take an exception and write it through the scrub (or write its class): an argument inside one of these is safe.
+SCRUB_HELPERS = frozenset(
+    {
+        "log_failure",
+        "exception_text",
+        "engine_text",
+        "failure_label",
+        "tidy_error",
+        "exc_line",
+        "traceback_text",
+        "scrubbed",
+        "scrubbed_value",
+        "type",
+    }
+)
+
+
+def _call_name(call: ast.Call) -> str:
+    return (
+        call.func.id
+        if isinstance(call.func, ast.Name)
+        else call.func.attr
+        if isinstance(call.func, ast.Attribute)
+        else ""
+    )
+
+
+def _unsafe_uses(arg: ast.expr, name: str) -> bool:
+    """Is the handler's exception ``name`` used anywhere in ``arg`` other than as its class (``type(name)``, ``name.__class__``) or
+    inside a scrub helper's arguments? ``str(name)[:200]``, ``"%s" % name``, ``name.args``, ``name.__cause__``, ``"a" + str(name)``
+    and ``.format(name)`` are all uses. A name the handler rebinds (``e = name``) is not followed."""
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(arg):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+    for node in ast.walk(arg):
+        if not (isinstance(node, ast.Name) and node.id == name):
+            continue
+        cursor: ast.AST = node
+        safe = False
+        while cursor in parents:
+            above = parents[cursor]
+            if isinstance(above, ast.Attribute) and above.attr == "__class__":
+                safe = True
+                break
+            if isinstance(above, ast.Call) and _call_name(above) in SCRUB_HELPERS:
+                safe = True
+                break
+            cursor = above
+        if not safe:
+            return True
+    return False
+
+
+def _exception_arguments(tree: ast.AST) -> list[tuple[int, str]]:
+    """Inside ``except ... as name``, a log-method call (any receiver: ``getLogger(...).warning``, ``lg``, ``self.logs[0]``) with an
+    argument, positional or keyword, that carries ``name`` by any route but its class or a scrub helper."""
+    found: list[tuple[int, str]] = []
+    for handler in ast.walk(tree):
+        if not (isinstance(handler, ast.ExceptHandler) and handler.name):
+            continue
+        for node in (n for stmt in handler.body for n in ast.walk(stmt)):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _LOG_METHODS
+            ):
+                continue
+            values = [*node.args, *(k.value for k in node.keywords)]
+            if any(_unsafe_uses(v, handler.name) for v in values):
+                found.append((node.lineno, "exc-arg"))
+    return found
 
 
 def _falsy(node: ast.expr) -> bool:
@@ -83,7 +162,7 @@ def scan_source(text: str, name: str = "<source>") -> list[tuple[int, str]]:
             f"{name}: the exception-sink guard cannot parse it ({exc.msg}, line {exc.lineno})"
         ) from None
     alias = _aliases(tree)
-    found: list[tuple[int, str]] = []
+    found: list[tuple[int, str]] = _exception_arguments(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and node.value == "exc_info":
             found.append((node.lineno, "exc_info-key"))

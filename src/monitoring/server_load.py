@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def _section(name: str, fn) -> dict[str, Any]:
         return out
     except Exception as exc:  # noqa: BLE001 - a load reading must never break a poll
         log_failure(_LOG, f"server_load: could not read {name}", exc, level=logging.DEBUG)
-        return {"read": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        return {"read": False, "reason": exception_text(exc, limit=200)}
 
 
 def _loop_lag() -> dict[str, Any]:

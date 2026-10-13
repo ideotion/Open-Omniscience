@@ -27,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                 # counters agree, and is a real fact worth keeping regardless (a
                 # missing/corrupt table or an uncaught interrupt is a genuine problem,
                 # not merely a degraded diagnostic read).
-                _LOG.warning("corpus-integrity: counter-drift query failed (%s)", exc)
+                log_failure(_LOG, "corpus-integrity: counter-drift query failed", exc, level=logging.WARNING)
             for kid, term, mc, ac, live_m, live_a in rows:
                 checked += 1
                 dm = abs(int(mc or 0) - int(live_m or 0))
