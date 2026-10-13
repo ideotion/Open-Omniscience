@@ -14,6 +14,7 @@ holds the gate is refused at once (it cannot wait without making the restore wai
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sqlite3
 import threading
@@ -64,11 +65,8 @@ def test_a_settings_write_entered_with_the_gate_held_fails_the_suite(store):
 
 
 def test_an_except_exception_around_a_save_does_not_hide_the_violation(store):
-    with write_lock():
-        try:
-            kv_store.kv_set_json("settings.y", {"v": 1})
-        except Exception:  # noqa: BLE001 - what thirteen callers do
-            pass
+    with write_lock(), contextlib.suppress(Exception):  # what thirteen callers do
+        kv_store.kv_set_json("settings.y", {"v": 1})
     assert kv_store.STRICT_VIOLATIONS
     kv_store.STRICT_VIOLATIONS.clear()
 
@@ -231,7 +229,6 @@ def test_the_strict_read_does_not_fill_the_cache_after_an_invalidation(store, mo
 
 
 def test_a_failed_read_that_an_invalidation_overtook_is_not_held_against_the_live_file(store, monkeypatch):
-    real = kv_store._read_value
 
     def failing(path, key, *, read_only):
         kv_store.kv_invalidate()
