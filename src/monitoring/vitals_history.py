@@ -151,21 +151,26 @@ REBASE_MIN_GAP_S = FINE_S
 #: A step FORWARD of the wall clock, measured against the boot-time clock (which keeps counting
 #: through a suspend and never jumps) between two ticks, is recorded when it is at least this big,
 #: whatever the tick's place in its bucket: it is the span ``_gaps`` lists a gap from (two buckets).
-#: Below it a step is recorded in exactly one case: when it is what opened a listed gap (without
-#: it the tick's bucket would have been within ``_gaps``' reach of the open one; ``_opens_gap`` is
-#: the one rule both use). No constant can say how small that step is: it depends on where in its
-#: bucket the last tick fell and how late this one came (about 595 s at the 5 second cadence, less for
-#: a late tick, and any size where the process was also stalled), which is why a step of 600 s is
-#: not "the smallest that can open a gap" and the case below it is decided per tick.
+#: On ticks every 5 s that line up with the buckets, a gap needs a wall advance of at least 605 s between
+#: two ticks (two empty buckets and the tick's own 5 s), of which 600 s are step; ticks need not line up,
+#: and then a smaller step opens one, so 600 s is the span, not "the smallest step that can open a gap".
+#: Below it a step is recorded in exactly one case: when it is what opened a listed gap (without it the
+#: tick's bucket would have been within ``_gaps``' reach of the open one; ``_opens_gap`` is the one rule
+#: both use). A step inside a gap the process's absence opened anyway is not recorded under this size:
+#: that gap is down time first. No constant can say how small the step that opens a gap is: it depends on
+#: where in its bucket the last tick fell and how late this one came (about 595 s at the 5 second
+#: cadence, less for a late tick, and any size where the process was also stalled), so that case is
+#: decided per tick.
 FORWARD_STEP_MIN_S = 2 * FINE_S
 #: A step smaller than this is never recorded: two reads of different clocks agree to milliseconds,
 #: and a stalled interval that happens to end on a bucket edge is not a clock event.
 FORWARD_STEP_FLOOR_S = 1.0
 #: The boot-time clock is read on both sides of the wall clock, and the pair is used only when the two
 #: readings are this close (they are microseconds apart): far above the time two reads in a row
-#: take, far below the smallest recorded step. A pause between them (the interpreter lock, a frozen
-#: process, a suspend) would otherwise look like a step of its own length.
-_BOOT_READ_SKEW_MAX_S = 1.0
+#: take, a tenth of ``FORWARD_STEP_FLOOR_S`` so that the midpoint's own error (at most this) can never
+#: make a step of the floor's size. A pause between them (the interpreter lock, a frozen process, a
+#: suspend) would otherwise look like a step of its own length.
+_BOOT_READ_SKEW_MAX_S = 0.1
 #: After a failed write the next try is this soon, not on every five-second tick.
 FLUSH_RETRY_S = 60.0
 #: What the member may weigh, raw JSON. Measured on the test's fixture
@@ -1209,9 +1214,11 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "whose `n` says by how much) and where it stepped forward (`forward_s`: between two ticks "
                 "the wall clock advanced that much more than the machine's boot-time clock, which keeps counting "
                 "through a suspend the kernel measured, so that and a stalled process record nothing; recorded "
-                f"from {FORWARD_STEP_MIN_S} s, and below that where the step is what opened a gap in the "
-                "five-minute rows; only where the platform has a boot-time clock (Linux), never across a "
-                "restart, and not for a tick whose two boot-time readings were more than a second apart; no "
+                f"from {FORWARD_STEP_MIN_S} s, and from {FORWARD_STEP_FLOOR_S:g} s where the step is what opened a gap "
+                "in the five-minute rows (not one the process's absence had opened anyway); only where the "
+                "platform has a boot-time clock (Linux), never across a restart, and not for a tick whose two "
+                f"boot-time readings were more than {_BOOT_READ_SKEW_MAX_S:g} s apart nor for the tick after it, "
+                "which has nothing to compare with; no "
                 "cause is claimed: a clock that was set, a time correction and a virtual machine brought up "
                 "to date after a pause read the same); `clock_stepped_forward` is `null` until a tick has had "
                 "a boot-time clock to compare with (a platform without one, a file of a build that did not "
@@ -1220,7 +1227,9 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 f"longer holds included, while `clock_steps` keeps the newest {CLOCK_STEPS_KEEP} of both; a gap "
                 "marked `clock_step` is next to a step still in that list, back or forward, and may be the clock's "
                 "correction and not down time, and a gap without the mark can still be one wherever a step "
-                "is not recorded (no boot-time clock, a step the list no longer holds, across a restart); `previous_sessions` holds the last "
+                "is not recorded (no boot-time clock, a step the list no longer holds, a step under "
+                f"{FORWARD_STEP_MIN_S} s inside a gap the process's absence opened anyway, across a restart); "
+                "`previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
                 "hour that was open at the last write."
             ),
