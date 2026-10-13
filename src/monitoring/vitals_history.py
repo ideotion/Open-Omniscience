@@ -63,6 +63,7 @@ from pathlib import Path
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
+from src.monitoring.session_history import boottime
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -122,7 +123,9 @@ PREVIOUS_TAIL_MIN = 5
 #: Session starts kept (a month of daily restarts, or a crash loop's last half hour), gaps listed
 #: (the member lists where rows stop; the newest fifty are the ones an investigation reads) and
 #: clock steps recorded: each is one short row, bounded so a clock that keeps stepping cannot
-#: grow the file.
+#: grow the file. Steps back and steps forward share the one list of ``CLOCK_STEPS_KEEP``, the
+#: newest kept; what the limit shrinks is what is printed, never what is counted
+#: (``clock_stepped_back`` and ``clock_stepped_forward`` count every step).
 SESSIONS_KEEP = 30
 GAPS_KEEP = 50
 CLOCK_STEPS_KEEP = 20
@@ -144,6 +147,18 @@ CLOCK_HOLD_S = 2 * FINE_S
 #: new history at the first tick after the interval. One bucket holds at most this many extra
 #: seconds of ticks for that.
 REBASE_MIN_GAP_S = FINE_S
+#: The tick the history is fed at (``session_history.MEMORY_WATCH_S``; a test pins the two together).
+TICK_S = 5
+#: A step FORWARD of the wall clock, measured against the boot-time clock (which keeps counting
+#: through a suspend and never jumps) between two ticks, is recorded from this size. It is
+#: derived from the gap rule, not chosen: ``_gaps`` lists two rows more than ``2 * FINE_S`` apart,
+#: and the worst alignment (the last tick at the end of its bucket) takes a wall advance of
+#: ``2 * FINE_S + TICK_S`` = 605 s between two ticks to land three bucket starts on; the
+#: boot-time clock accounts for the ``TICK_S`` of it, so 600 s of step is the smallest that can
+#: turn up as a gap. Every forward step that could be mistaken for down time is therefore
+#: recorded, and a smaller one cannot be (``tests/test_vitals_history.py`` sweeps every alignment
+#: against ``_gaps`` and fails if either number moves without the other).
+FORWARD_STEP_MIN_S = 2 * FINE_S
 #: After a failed write the next try is this soon, not on every five-second tick.
 FLUSH_RETRY_S = 60.0
 #: What the member may weigh, raw JSON. Measured on the test's fixture
@@ -224,6 +239,7 @@ _MINUTES: list[dict[str, Any]] = []
 _SESSIONS: list[dict[str, Any]] = []
 _PREVIOUS: list[dict[str, Any]] = []
 _CLOCK_BACK = 0
+_CLOCK_FORWARD = 0
 _CLOCK_HOLD = False
 #: The step the running hold recorded: a later rebase that is only that hold ending says when the
 #: new history began on this record, instead of recording the same step a second time.
@@ -231,8 +247,14 @@ _HOLD_STEP: dict[str, Any] | None = None
 _CLOCK_STEPS: list[dict[str, Any]] = []
 _LAST_REBASE = float("-inf")  # monotonic time of the last big step that started a new history
 _LAST_WALL: float | None = None  # the wall clock at the last tick: what a step back is measured from
+_LAST_BOOT: float | None = None  # the boot-time clock at the last tick (None: unread): what a step forward is measured against
 _LAST_FLUSH = float("-inf")
 _LAST_FLUSH_AT: str | None = None
+
+#: ``tick``'s "read the boot-time clock yourself" default, distinct from ``None`` ("there is no boot-time
+#: clock"). Injecting the wall or the monotonic clock without a boot-time reading means the latter, never a
+#: real reading beside an injected wall clock, which would invent a step of the size of the difference.
+_AUTO: Any = object()
 
 _FINE_ACC: _Acc | None = None
 _FINE_T = 0
@@ -676,18 +698,21 @@ def _rebase_clock(wall: float, last_wall: float) -> tuple[int, _Acc] | None:
     return finished
 
 
-def tick(now: float | None = None, mono: float | None = None) -> None:
+def tick(now: float | None = None, mono: float | None = None, boot: Any = _AUTO) -> None:
     """Fold one reading into the history. Called by the session ledger's liveness thread every
     5 seconds, after the high-water marks. Best-effort: never raises, and flushes to disk at
     most every ``FLUSH_S``. Nothing slow runs under the history's lock: the readings are taken
-    before it and the minute's thread sample after it. ``now`` is the wall clock and ``mono`` the
-    monotonic one, both injected by the tests."""
+    before it and the minute's thread sample after it. ``now`` is the wall clock, ``mono`` the
+    monotonic one and ``boot`` the boot-time clock, all injected by the tests; injecting ``now``
+    or ``mono`` without ``boot`` means the platform has no boot-time clock (see ``_AUTO``)."""
     global _FINE_ACC, _FINE_T, _MIN_ACC, _MIN_T, _HOUR_LOGS_T, _CLOCK_BACK, _CLOCK_HOLD, _LAST_REBASE
-    global _LAST_WALL, _HOLD_STEP
+    global _LAST_WALL, _HOLD_STEP, _CLOCK_FORWARD, _LAST_BOOT
     try:
         if not _STARTED:
             return
         started_wall, started_cpu = time.perf_counter(), _thread_cpu()
+        if boot is _AUTO:
+            boot = None if now is not None or mono is not None else boottime()
         wall = time.time() if now is None else now
         mono = time.monotonic() if mono is None else mono
         sample = _fast_readings()
@@ -729,7 +754,16 @@ def tick(now: float | None = None, mono: float | None = None) -> None:
             if _MIN_ACC is None:
                 _MIN_ACC, _MIN_T = _Acc(), max(minute_t, _MIN_T)
             _MIN_ACC.add(sample)
-            _LAST_WALL = wall
+            if boot is not None and _LAST_BOOT is not None and _LAST_WALL is not None:
+                # the wall clock's advance beyond the boot-time clock's: 0 for a stalled thread, a frozen
+                # process and a suspend (the boot-time clock counts through all three), a number only
+                # where the wall clock itself was moved; a step back is the bucket logic's above
+                stepped = (wall - _LAST_WALL) - (boot - _LAST_BOOT)
+                if stepped >= FORWARD_STEP_MIN_S:
+                    _CLOCK_FORWARD += 1
+                    _CLOCK_STEPS.append({"at": _iso(wall), "was": _iso(_LAST_WALL), "forward_s": int(stepped)})
+                    _trim(_CLOCK_STEPS, CLOCK_STEPS_KEEP)
+            _LAST_WALL, _LAST_BOOT = wall, boot
             hour_t = int(wall // COARSE_S) * COARSE_S
             if _HOUR_LOGS_T and hour_t > _HOUR_LOGS_T:
                 _close_hour_logs()
@@ -839,6 +873,7 @@ def _state_doc() -> dict[str, Any]:
             "previous_sessions": [dict(p) for p in _PREVIOUS],
             "session_starts": [dict(s) for s in _SESSIONS],
             "clock_stepped_back": _CLOCK_BACK,
+            "clock_stepped_forward": _CLOCK_FORWARD,
             "clock_steps": [dict(c) for c in _CLOCK_STEPS],
         }
 
@@ -989,7 +1024,7 @@ def start(now: float | None = None) -> None:
     the tests."""
     global _STARTED, _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS, _PREVIOUS, _LAST_FLUSH_AT
     global _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T, _HOUR_LOGS, _HOUR_LOGS_T, _CLOCK_BACK
-    global _CLOCK_STEPS, _LAST_WALL
+    global _CLOCK_STEPS, _LAST_WALL, _CLOCK_FORWARD, _LAST_BOOT
     wall = time.time() if now is None else now
     with _LOCK:
         if _STARTED:
@@ -1001,6 +1036,7 @@ def start(now: float | None = None) -> None:
                 _LOGS = _dicts(prev.get("logs"))
                 _SESSIONS = _dicts(prev.get("session_starts"))
                 _CLOCK_BACK = _whole(prev.get("clock_stepped_back"))
+                _CLOCK_FORWARD = _whole(prev.get("clock_stepped_forward"))
                 _CLOCK_STEPS = _dicts(prev.get("clock_steps"))[-CLOCK_STEPS_KEEP:]
                 open_fine = _rows([prev.get("open_fine")])
                 if open_fine:
@@ -1039,12 +1075,12 @@ def start(now: float | None = None) -> None:
             _FINE, _COARSE, _LOGS, _SESSIONS, _PREVIOUS, _CLOCK_STEPS = [], [], [], [], [], []
             _FINE_ACC = _COARSE_ACC = None
             _FINE_T = _COARSE_T = _HOUR_LOGS_T = 0
-            _CLOCK_BACK = 0
+            _CLOCK_BACK = _CLOCK_FORWARD = 0
             with _LOG_LOCK:
                 _HOUR_LOGS = {}
                 _HOUR_LOG_NAMES.clear()
         _MINUTES = []
-        _LAST_WALL = None
+        _LAST_WALL = _LAST_BOOT = None  # a step is measured between two ticks of one session, never across a restart
         _SESSIONS.append({"t": int(wall), "pid": os.getpid()})
         _trim(_SESSIONS, SESSIONS_KEEP)
         _STARTED = True
@@ -1057,8 +1093,9 @@ def _gaps(fine: list[list[Any]], steps: list[dict[str, Any]] | None = None) -> l
     """Where the five-minute rows stop for longer than two buckets: the process was down, the
     machine asleep, or the file was written by an older build. Newest ``GAPS_KEEP``. A gap that
     has a recorded clock step inside it or at its edge says so (``clock_step``): it may be the
-    clock's correction forward and not time the process was down (a forward step is not recorded,
-    so a gap without the mark can still be one)."""
+    clock's correction and not time the process was down. A forward step is recorded only where
+    the platform has a boot-time clock, from ``FORWARD_STEP_MIN_S``, and not across a restart, so
+    a gap without the mark can still be one."""
     out: list[dict[str, Any]] = []
     times = [int(r[0]) for r in fine]
     stamps = [str(x) for st in steps or [] for x in (st.get("at"), st.get("was")) if x]
@@ -1125,13 +1162,21 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "(c critical, e error, w warning, i info, d debug), the loggers past the eight "
                 "busiest summed in `other`; rows are in the order they were written and "
                 "`clock_steps` says where the clock stepped back and by how much from its own last reading "
-                "(`kept_open`: a step too soon after the last one to start a new history, held in the open "
+                "(`back_s`; `kept_open`: a step too soon after the last one to start a new history, held in the open "
                 "bucket until the interval passes, when `new_history_at` says where the new history "
                 "began; a hold is one record at the size it began with, so a deeper step inside the "
                 "rate-limit window lands in no record; a held step also lengthens one minute row, "
-                "whose `n` says by how much); a gap "
-                "marked `clock_step` is next to a recorded step and may be the clock's correction forward "
-                "(forward steps are not recorded) and not down time; `previous_sessions` holds the last "
+                "whose `n` says by how much) and where it stepped forward (`forward_s`: between two ticks "
+                "the wall clock advanced that much more than the machine's boot-time clock, which keeps counting "
+                "through a suspend, so a suspend and a stalled process record nothing; recorded from "
+                f"{FORWARD_STEP_MIN_S} s, the smallest step that can open a gap, only where the platform has a "
+                "boot-time clock (Linux), and never across a restart; no cause is claimed: a clock that was set, "
+                "a time correction and a virtual machine brought up to date after a pause read the same); "
+                "`clock_stepped_back` and `clock_stepped_forward` count every step while `clock_steps` keeps "
+                f"the newest {CLOCK_STEPS_KEEP} of both; a gap "
+                "marked `clock_step` is next to a recorded step, back or forward, and may be the clock's "
+                "correction and not down time, and a gap without the mark can still be one wherever a step "
+                "is not recorded (no boot-time clock, under the minimum, across a restart); `previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
                 "hour that was open at the last write."
             ),
@@ -1169,6 +1214,7 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
             },
             "now": _iso(time.time()),
             "clock_stepped_back": _whole(doc.get("clock_stepped_back")),
+            "clock_stepped_forward": _whole(doc.get("clock_stepped_forward")),
             "clock_steps": _dicts(doc.get("clock_steps")),
             "cost": cost,
             "errors": errors,
@@ -1240,7 +1286,7 @@ def _fit(member: dict[str, Any], max_bytes: int) -> dict[str, Any]:
 def reset_for_tests() -> None:
     """Forget the in-memory state and detach the log counter. Test-only."""
     global _STARTED, _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS, _PREVIOUS, _CLOCK_BACK
-    global _CLOCK_HOLD, _CLOCK_STEPS, _LAST_REBASE, _LAST_WALL, _HOLD_STEP
+    global _CLOCK_HOLD, _CLOCK_STEPS, _LAST_REBASE, _LAST_WALL, _HOLD_STEP, _CLOCK_FORWARD, _LAST_BOOT
     global _LAST_FLUSH, _LAST_FLUSH_AT, _FINE_ACC, _FINE_T, _COARSE_ACC, _COARSE_T
     global _MIN_ACC, _MIN_T, _HOUR_LOGS, _HOUR_LOGS_T, _SLOW, _LAST_SLOW, _LAST_CPU, _HANDLER
     global _PROC, _COST, TAIL_IN
@@ -1250,12 +1296,12 @@ def reset_for_tests() -> None:
         _STARTED = False
         _FINE, _COARSE, _LOGS, _MINUTES, _SESSIONS = [], [], [], [], []
         _PREVIOUS = []
-        _CLOCK_BACK = 0
+        _CLOCK_BACK = _CLOCK_FORWARD = 0
         _CLOCK_HOLD = False
         _HOLD_STEP = None
         _CLOCK_STEPS = []
         _LAST_REBASE = float("-inf")
-        _LAST_WALL = None
+        _LAST_WALL = _LAST_BOOT = None
         _LAST_FLUSH, _LAST_FLUSH_AT = float("-inf"), None
         _FINE_ACC = _COARSE_ACC = _MIN_ACC = None
         _FINE_T = _COARSE_T = _MIN_T = _HOUR_LOGS_T = 0
