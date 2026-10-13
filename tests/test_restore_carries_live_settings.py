@@ -101,17 +101,45 @@ def test_a_key_that_describes_corpus_tables_is_left_as_the_snapshot_has_it_and_n
     assert _rows(working) == {"search.spell_index": "snap", "settings.app": "a2"}
 
 
-def test_the_search_history_is_never_carried(tmp_path, live_at):
-    """The history is the user's private record, read by its own module only (tests/test_search_advanced_api.py holds that
-    structurally): a restore neither reads its entries nor writes them, and it names only the key."""
-    working = _file(tmp_path / "working.db", {"search.history": "snap"})
-    live_at(_file(tmp_path / "live.db", {"search.history": "SECRET-QUERY"}))
+def test_this_machines_live_search_history_is_carried_and_never_echoed(tmp_path, live_at, caplog):
+    """Searches saved after the snapshot are local data: they land in the new file. The merge never names the history key (the
+    history module is the only one that does, tests/test_search_advanced_api.py) and never echoes a value."""
+    from src.api.search_advanced import HISTORY_KEY
+
+    working = _file(tmp_path / "working.db", {HISTORY_KEY: "snap"})
+    live_at(_file(tmp_path / "live.db", {HISTORY_KEY: "SECRET-QUERY"}))
 
     out = merge._carry_live_settings(working)
 
-    assert out == {"carried": 0, "of": 0, "left_as_snapshot": ["search.history"]}
-    assert "SECRET-QUERY" not in repr(out)
-    assert _rows(working) == {"search.history": "snap"}
+    assert out == {"carried": 1, "of": 1}
+    assert _rows(working) == {HISTORY_KEY: "SECRET-QUERY"}
+    assert "SECRET-QUERY" not in repr(out) and "SECRET-QUERY" not in caplog.text
+    assert HISTORY_KEY not in _MERGE_PY.read_text(encoding="utf-8"), "only the history module names its key"
+
+
+def test_a_history_module_that_cannot_be_asked_leaves_the_history_and_still_carries_the_settings(
+    tmp_path, live_at, monkeypatch, caplog
+):
+    import builtins
+
+    real = builtins.__import__
+
+    def refuse(name, *a, **k):
+        if name == "src.api.search_advanced":
+            raise ImportError("SECRET-PASSPHRASE-MARKER")
+        return real(name, *a, **k)
+
+    working = _file(tmp_path / "working.db", {"search.history": "snap", "settings.app": "a"})
+    live_at(_file(tmp_path / "live.db", {"search.history": "live", "settings.app": "b"}))
+    monkeypatch.setattr(builtins, "__import__", refuse)
+
+    out = merge._carry_live_settings(working)
+
+    monkeypatch.undo()
+    assert out == {"carried": 1, "of": 1, "left_as_snapshot": ["search.history"]}
+    assert _rows(working) == {"search.history": "snap", "settings.app": "b"}
+    assert any("cannot ask the history module" in r.getMessage() for r in caplog.records)
+    assert "SECRET-PASSPHRASE-MARKER" not in caplog.text
 
 
 def test_a_copy_that_lacks_the_table_gets_it(tmp_path, live_at):

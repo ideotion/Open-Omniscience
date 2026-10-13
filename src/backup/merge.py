@@ -5436,10 +5436,9 @@ def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
 
 
 #: The ``app_state`` keys that ARE settings, carried by ``_carry_live_settings``: the ``settings.*`` namespaces, the agenda
-#: preferences and the interface language. Every other key stays as the snapshot has it: the records ABOUT CORPUS TABLES (the
-#: spell-index build note, the qualification repair records and the recheck marker) go the way those tables go, so a note and its
-#: table stay together; and the search history is the user's private record, read by its own module only (a structural test
-#: holds that, and the history is not a setting), so a restore does not reach into it either way.
+#: preferences and the interface language; plus the search history, which that module names (``is_history_key``) so that no
+#: other module does. Every other key stays as the snapshot has it: the records ABOUT CORPUS TABLES (the spell-index build note,
+#: the qualification repair records and the recheck marker) go the way those tables go, so a note and its table stay together.
 _CARRIED_SETTINGS_KEYS = ("settings.", "agenda.", "ui.")
 
 
@@ -5482,7 +5481,15 @@ def _carry_live_settings(working: Path) -> dict:
             )
         finally:
             src_con.close()
-        settings = [r for r in rows if str(r[0]).startswith(_CARRIED_SETTINGS_KEYS)]
+        try:
+            from src.api.search_advanced import is_history_key
+        except Exception as exc:  # noqa: BLE001 - the settings still travel; only the history stays as the snapshot has it
+            _LOG.warning("settings carry cannot ask the history module for its key (%s)", type(exc).__name__)
+
+            def is_history_key(key: str) -> bool:  # noqa: ARG001
+                return False
+
+        settings = [r for r in rows if str(r[0]).startswith(_CARRIED_SETTINGS_KEYS) or is_history_key(str(r[0]))]
         others = [r for r in rows if r not in settings]
         if not rows:
             return {"carried": 0, "of": 0}
