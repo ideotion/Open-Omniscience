@@ -147,3 +147,68 @@ def test_a_text_that_was_checked_and_withheld_whole_is_written_back_as_the_marke
     assert _state(m)["entries"]["europe"]["error"] == secret_scrub.UNREADABLE_TEXT
     m._save()
     assert long_one not in m.state_path.read_text("utf-8")
+
+
+LONG = "a-long-held-passphrase-for-the-extras-test-9013"
+
+
+def _store_extras(tmp_path) -> None:
+    m = _seed(tmp_path)
+    state = _state(m)
+    state["entries"]["europe"].update(
+        {
+            "last_error": f"newer build said {LONG}",
+            "nested": {"a": ["x " + LONG], f"key-{LONG}": 1, "kept": "fine"},
+            "plain": "kept as it is",
+        }
+    )
+    state["note"] = f"top {LONG}"
+    state[f"top-{LONG}"] = 1
+    state["mirror_health"] = {"geofabrik": "ok"}
+    m.state_path.write_text(json.dumps(state), "utf-8")
+
+
+def test_the_keys_a_newer_build_wrote_are_scrubbed_in_values_nested_values_and_key_names(
+    tmp_path, monkeypatch
+):
+    # MUTATION TARGET: `_clean_extra` / its use in `_scrub_stored` (the extras were written back verbatim).
+    monkeypatch.setenv("OO_DB_PASSPHRASE", LONG)
+    _store_extras(tmp_path)
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    assert LONG not in m.state_path.read_text("utf-8"), "the load alone must rewrite the file"
+    m._save()
+    after = _state(m)
+    assert LONG not in m.state_path.read_text("utf-8")
+    entry = after["entries"]["europe"]
+    assert entry["plain"] == "kept as it is" and entry["nested"]["kept"] == "fine"
+    assert "last_error" in entry and "newer build said" in entry["last_error"]
+    assert after["mirror_health"] == {"geofabrik": "ok"} and "note" in after
+
+
+def test_extras_that_could_not_be_checked_at_load_are_checked_again_at_the_next_save(
+    tmp_path, monkeypatch
+):
+    # MUTATION TARGET: the re-check at the top of `_save` (the gate used to run once, at load).
+    monkeypatch.setenv("OO_DB_PASSPHRASE", LONG)
+    _store_extras(tmp_path)
+    state = _state(OsmDownloadManager(base_dir=tmp_path, http_get=None))
+    state["entries"]["europe"]["status"] = "error"
+    state["entries"]["europe"]["error"] = f"the transfer said {LONG}"
+    OsmDownloadManager(base_dir=tmp_path, http_get=None).state_path.write_text(
+        json.dumps(state), "utf-8"
+    )
+    with monkeypatch.context() as unreadable:
+        unreadable.setattr(secret_scrub, "held_passphrases", lambda: None)
+        m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+        assert LONG in m.state_path.read_text("utf-8"), (
+            "nothing can be checked: the words stay as they were"
+        )
+        assert (
+            next(e for e in m.list() if e["key"] == "europe")["error"]
+            == secret_scrub.UNREADABLE_TEXT
+        )
+    m._save()  # the holdings are readable again
+    assert LONG not in m.state_path.read_text("utf-8")
+    assert (
+        next(e for e in m.list() if e["key"] == "europe")["error"] != secret_scrub.UNREADABLE_TEXT
+    )
