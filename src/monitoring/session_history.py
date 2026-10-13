@@ -859,8 +859,8 @@ def _bind_hwm(sid: str) -> None:
         from src.monitoring.session_hwm import bind_session
 
         bind_session(sid)
-    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
-        _LOG.debug("session ledger: the sidecar was not bound", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        _LOG.debug("session ledger: the sidecar was not bound (%s)", type(exc).__name__)
 
 
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
