@@ -155,6 +155,10 @@ ACCEPTED_FLAGS = frozenset({"single_reader", "repeat_agreed"})
 # The languages whose single triage reading is not trusted alone (the maintainer's marker ruling, R131):
 # a word is admitted only when a blind repeat agreed (``repeat_agreed``) or a reader's hand review lists it.
 TWICE_READ = frozenset({"vi", "ko", "as", "tl"})
+# The same languages under their three-letter ISO 639-2/3 codes (a verdict file or ``--language`` may spell them so):
+# without this ``--language kor`` would skip the gate and write ``kor.yml``, which the loader unions for every
+# language. ``fil`` (Filipino) is Tagalog's standardised form and is held to the same rule.
+TWICE_READ_ALIASES = {"kor": "ko", "vie": "vi", "tgl": "tl", "asm": "as", "fil": "tl"}
 # A batch id lands in a YAML comment; it must never be able to open a new line.
 BATCH_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # How many other-language / entity rows the table prints before saying "and N more": two lines of
@@ -357,9 +361,15 @@ def read_hand_reviewed(path: Path, lang: str) -> frozenset[str]:
     return frozenset(out)
 
 
+def primary_code(lang: str) -> str:
+    """The two-letter form of ``lang``'s primary code: ``ko-KR`` and ``kor`` both read ``ko``."""
+    head = re.split(r"[-_]", lang.lower(), maxsplit=1)[0]
+    return TWICE_READ_ALIASES.get(head, head)
+
+
 def is_twice_read(lang: str) -> bool:
-    """Whether ``lang`` is a twice-read language: the primary code decides, so ``ko-kr`` is Korean too."""
-    return re.split(r"[-_]", lang.lower(), maxsplit=1)[0] in TWICE_READ
+    """Whether ``lang`` is a twice-read language, under any spelling ``primary_code`` knows."""
+    return primary_code(lang) in TWICE_READ
 
 
 def twice_read_rule(word: str, lang: str, verdicts: dict[str, dict[str, Any]],

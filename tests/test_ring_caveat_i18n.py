@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from src.analytics import queries
@@ -34,12 +35,12 @@ def test_every_template_is_keyed_in_every_locale_with_its_placeholder_intact():
             assert have == re.findall(r"\{(\w+)\}", template), f"{path.name} changes the placeholders of {template[:50]!r}"
 
 
-def test_the_ring_map_shows_the_caveat_in_its_empty_state_too():
-    """An empty ring's payload has no countries, so the branch that draws no map is the one that must carry the
-    caveat: otherwise "every keyword is hidden" reads as "no located sources" (the misreading R111 T2 exists to stop)."""
-    src = (ROOT / "src" / "static" / "app-insights.js").read_text("utf-8")
-    assert "d.caveat_i18n && tf ? tf(d.caveat_i18n, d.caveat_vars) : (d.caveat ? t(d.caveat) : \"\")" in src
-    start = src.index("if (!shownCountries) {")
-    empty_branch = src[start:src.index("} else {", start)]
-    assert "ringCaveat" in empty_branch, "the empty state dropped the caveat"
-    assert "caveat: ringCaveat" in src
+def test_the_rendered_empty_state_carries_the_caveat_in_every_locale():
+    """showRingMap, extracted from the shipped source, run with the real locale files and the real tf()
+    (tests/ring_caveat_node_test.js): the empty state (which draws no map) shows the translated sentence with its
+    count, the two causes read differently, a missing tf falls back to the plain sentence, an unlocated-only payload
+    keeps the standard caveat beside its Not mapped bucket, and a located payload hands the caveat to the map."""
+    proc = subprocess.run(["node", str(ROOT / "tests" / "ring_caveat_node_test.js")],
+                          capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "28 passed" in proc.stdout, proc.stdout
