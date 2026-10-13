@@ -12,7 +12,7 @@ message, a logger's always does) and ``logging.exception``; and the ``traceback`
 
 ALSO ``exc-arg``: inside an ``except ... as name`` block, a log-method call (``debug`` ... ``critical``, ``log``, on ANY receiver) with
 an argument that carries ``name`` by any route but its class (``type(name)``, ``name.__class__``) or a scrub helper
-(:data:`SCRUB_HELPERS`): ``name``, ``str(name)[:200]``, ``"%s" % name``, ``.format(name)``, ``name.args``, ``name.__cause__``,
+(:data:`SCRUB_HELPERS`); and the ``what`` words of ``log_failure(log, what, name)`` (which scrubs ``name`` itself, not the words built around it): ``name``, ``str(name)[:200]``, ``"%s" % name``, ``.format(name)``, ``name.args``, ``name.__cause__``,
 f-strings. Those write the engine's own words with no scrub. Not followed: ``e = name`` rebinding, and non-log text sinks (``print``).
 
 WHAT IT DOES NOT: ``stack_info=True`` prints the current call stack (files, lines, source), not an exception, so it cannot carry
@@ -109,6 +109,12 @@ def _exception_arguments(tree: ast.AST) -> list[tuple[int, str]]:
         if not (isinstance(handler, ast.ExceptHandler) and handler.name):
             continue
         for node in (n for stmt in handler.body for n in ast.walk(stmt)):
+            if isinstance(node, ast.Call) and _call_name(node) == "log_failure":
+                # ``log_failure(log, what, exc)`` scrubs ``exc``; ``what`` is the code's own words and must not carry it.
+                what = [*node.args[1:2], *(k.value for k in node.keywords if k.arg == "what")]
+                if any(_unsafe_uses(v, handler.name) for v in what):
+                    found.append((node.lineno, "exc-arg"))
+                continue
             if not (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
