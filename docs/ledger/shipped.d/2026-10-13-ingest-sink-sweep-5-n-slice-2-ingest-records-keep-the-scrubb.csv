@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,ingest,"Sink sweep 5/n slice 2: ingest records keep the scrubbed words, drivers by class",shipped,PR #1379,src/ingest;tests/test_sink_sweep_records.py,"The strict records guard now covers src/ingest: fetch refusals and parse errors keep scrubbed words (no database call can raise there), the import job's journal and the pipeline's failure note use record_text/record_traceback (a driver by class only), pdf import reasons likewise; raise-from became from None."

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, FeedFetchState, Source
 from src.ingest.dedup_front import mark_stored, seen_canonical_url, seen_content_hash
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure, record_text
 
 
 # --------------------------------------------------------------------------- #
@@ -138,16 +138,16 @@ def ingest_url(
     try:
         fetched = fetcher.fetch(url, require_html=True)
     except RobotsDisallowed as exc:
-        return IngestOutcome(url, IngestResult.BLOCKED_ROBOTS, detail=str(exc))
+        return IngestOutcome(url, IngestResult.BLOCKED_ROBOTS, detail=exception_text(exc, typed=False))
     except RobotsUnavailable as exc:
-        return IngestOutcome(url, IngestResult.ROBOTS_UNAVAILABLE, detail=str(exc))
+        return IngestOutcome(url, IngestResult.ROBOTS_UNAVAILABLE, detail=exception_text(exc, typed=False))
     # BEFORE the generic FetchError below, which is its base class -- ordering is the
     # whole mechanism here, and reversing it would silently re-file every deferral as
     # a source failure with nothing to show it had happened.
     except CrawlDelayDeferred as exc:
-        return IngestOutcome(url, IngestResult.CRAWL_DELAY_DEFERRED, detail=str(exc))
+        return IngestOutcome(url, IngestResult.CRAWL_DELAY_DEFERRED, detail=exception_text(exc, typed=False))
     except FetchError as exc:
-        return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=str(exc))
+        return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=exception_text(exc, typed=False))
 
     return store_fetched(session, source, fetched, batch=batch)
 
@@ -422,7 +422,7 @@ def _maybe_record_custody(article: Article) -> None:
         if article_id is not None:
             from src.custody.pending import note_failed
 
-            note_failed(article_id, error=f"{type(exc).__name__}: {exc}")
+            note_failed(article_id, error=record_text(exc, typed=True))
 
 
 def ingest_source(

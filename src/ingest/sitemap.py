@@ -50,6 +50,7 @@ from src.database.models import Source
 from src.ingest import EthicalFetcher, FetchError
 from src.ingest.crawl import _registrable_host
 from src.ingest.pipeline import IngestResult, ingest_url
+from src.monitoring.secret_scrub import exception_text
 
 # Bounds -- a sitemap CAN legitimately be huge (a news site's index can list
 # thousands of child sitemaps); these keep ONE discovery call cheap + finite,
@@ -112,9 +113,9 @@ def parse_sitemap_xml(data: bytes | str) -> SitemapParseResult:
     try:
         root = _safe_fromstring(data)
     except DefusedXmlException as exc:
-        raise SitemapError(f"refused unsafe XML (entity expansion/external entity): {exc}") from exc
+        raise SitemapError(f"refused unsafe XML (entity expansion/external entity): {exception_text(exc, typed=False)}") from None
     except Exception as exc:  # noqa: BLE001 - any parse failure -> ONE typed error
-        raise SitemapError(f"malformed sitemap XML: {exc}") from exc
+        raise SitemapError(f"malformed sitemap XML: {exception_text(exc, typed=False)}") from None
 
     root_kind = _localname(root.tag)
     if root_kind == "sitemapindex":
@@ -229,12 +230,12 @@ def discover_sitemap_urls(
         try:
             fetched = fetcher.fetch(sm_url, require_html=False)
         except FetchError as exc:
-            report.errors.append(f"{sm_url}: {exc}")
+            report.errors.append(f"{sm_url}: {exception_text(exc, typed=False)}")
             continue
         try:
             parsed = parse_sitemap_xml(fetched.content)
         except SitemapError as exc:
-            report.errors.append(f"{sm_url}: {exc}")
+            report.errors.append(f"{sm_url}: {exception_text(exc, typed=False)}")
             continue
 
         report.child_sitemaps_fetched += 1

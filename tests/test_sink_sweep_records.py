@@ -23,19 +23,27 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``refusal_text``/``is_damaged`` are the settings store's class-only refusal and its damaged-value test; ``refusal_token``/
 #: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message.
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
-         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver", "restore_failure_text"}
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text"}
 MODULES = sorted(
     p.relative_to(ROOT).as_posix()
     for entry in ("src/scheduler", "src/wiki")
     for p in (ROOT / entry).rglob("*.py")
 ) + sorted(
-    p.relative_to(ROOT).as_posix() for p in (ROOT / "src/backup").rglob("*.py")
+    p.relative_to(ROOT).as_posix() for entry in ("src/backup", "src/ingest") for p in (ROOT / entry).rglob("*.py")
 ) + ["src/api/unlock.py"]
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
+    "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
+    "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
+    "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
+    "src/ingest/fetch_release.py": {
+        "getattr reaches name, a way round the scan of the log calls": 2,
+        "a ** mapping handed to a log call can carry exc_info": 1,
+    },  # the session-releasing proxy forwards attributes of the fetcher
+    "src/ingest/seed_sources.py": {"getattr reaches field, a way round the scan of the log calls": 2},  # a model field name
     "src/scheduler/settings.py": {"getattr reaches key, a way round the scan of the log calls": 1},
     "src/scheduler/storage_guard.py": {"_LOG.warning is kept as a name, a log call the scan cannot read": 1,
                                        "_LOG.info is kept as a name, a log call the scan cannot read": 1},
@@ -47,6 +55,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 #: key, and return no record text. Allowed LINE BY LINE (function plus exact line text, counted), never by function name, so a new
 #: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
 CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    "src/ingest/email.py": {("_is_integrity_error", "for e in (exc, exc.__cause__, exc.__context__):"): 3},
     "src/scheduler/plan_cache.py": {
         ('PlanPreviewCache._label', 'if err is not None:'): 1,
         ('PlanPreviewCache._label', 'out["refresh_error"] = err'): 1,
@@ -109,6 +118,24 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
 #: a record written from the same function is not in this table.
 _UNLOCK_DETAIL = "detail=exception_text("
 KEPT: dict[str, dict[tuple[str, str], int]] = {
+    # The fetch layer's own refusals and failures (a DNS answer, a robots refusal, a request error, an XML parse error): no database
+    # call can raise in these handlers, so ruling (2) keeps the scrubbed words.
+    "src/ingest/__init__.py": {
+        ("EthicalFetcher._resolve_cached", 'raise FetchFailed(f"cannot resolve host {host!r}: {exception_text(exc, typed=False)}") from None'): 1,
+        ("EthicalFetcher._guarded_redirect_get", "raise BlockedTarget(exception_text(exc, typed=False)) from None"): 1,
+        ("EthicalFetcher._fetch_locked", 'transient = FetchFailed(f"request error for {url}: {exception_text(exc, typed=False)}")'): 1,
+    },
+    "src/ingest/pipeline.py": {
+        ("ingest_url", "return IngestOutcome(url, IngestResult.BLOCKED_ROBOTS, detail=exception_text(exc, typed=False))"): 1,
+        ("ingest_url", "return IngestOutcome(url, IngestResult.ROBOTS_UNAVAILABLE, detail=exception_text(exc, typed=False))"): 1,
+        ("ingest_url", "return IngestOutcome(url, IngestResult.CRAWL_DELAY_DEFERRED, detail=exception_text(exc, typed=False))"): 1,
+        ("ingest_url", "return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=exception_text(exc, typed=False))"): 1,
+    },
+    "src/ingest/sitemap.py": {
+        ("parse_sitemap_xml", 'raise SitemapError(f"refused unsafe XML (entity expansion/external entity): {exception_text(exc, typed=False)}") from None'): 1,
+        ("parse_sitemap_xml", 'raise SitemapError(f"malformed sitemap XML: {exception_text(exc, typed=False)}") from None'): 1,
+        ("discover_sitemap_urls", 'report.errors.append(f"{sm_url}: {exception_text(exc, typed=False)}")'): 2,
+    },
     "src/api/unlock.py": {
         # One WARNING line (the class and the scrubbed FIRST line, never the statement or a trailing line): the log, not a record.
         ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
