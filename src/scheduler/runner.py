@@ -31,6 +31,7 @@ from datetime import UTC, datetime, timedelta
 from src.database import damage
 from src.database.query import capped
 from src.ingest.tor_throughput import KindLadder
+from src.monitoring.secret_scrub import log_failure
 from src.scheduler import storage_guard
 from src.scheduler.settings import SchedulerSettings, load_settings
 
@@ -45,8 +46,8 @@ def _ledger_collection(running: bool, **fields: object) -> None:
 
         record_event("collection", running=bool(running),
                      **{k: v for k, v in fields.items() if v is not None})
-    except Exception:  # noqa: BLE001 - an instrument never breaks the thing it measures
-        _LOG.debug("session ledger: collection event failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an instrument never breaks the thing it measures
+        log_failure(_LOG, "session ledger: collection event failed", exc, level=logging.DEBUG)
 
 
 def _activity(action: str, result: object = None, settings: object = None) -> None:
@@ -60,8 +61,8 @@ def _activity(action: str, result: object = None, settings: object = None) -> No
         from src.monitoring import activity_ledger
 
         activity_ledger.record(action, result, settings)
-    except Exception:  # noqa: BLE001 - an instrument never breaks the thing it measures
-        _LOG.debug("activity ledger: %s not recorded", action, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an instrument never breaks the thing it measures
+        log_failure(_LOG, f"activity ledger: {action} not recorded", exc, level=logging.DEBUG)
 
 
 def _tail_phase(name: str, *, pass_id: str | None = None):
@@ -87,8 +88,8 @@ def _drain_owed_custody() -> dict | None:
         from src.custody.pending import drain_owed
 
         return drain_owed()
-    except Exception:  # noqa: BLE001 - the entries stay queued for the next pass
-        _LOG.debug("custody: owed entries not written at this pass end", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the entries stay queued for the next pass
+        log_failure(_LOG, "custody: owed entries not written at this pass end", exc, level=logging.DEBUG)
         return None
 
 
@@ -253,8 +254,8 @@ class _PassWindDown:
             try:
                 if self._should_stop():
                     return "stopping"
-            except Exception:  # noqa: BLE001 - a broken predicate must never wedge a pass
-                _LOG.debug("wind-down stop predicate raised; pass continues", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a broken predicate must never wedge a pass
+                log_failure(_LOG, "wind-down stop predicate raised; pass continues", exc, level=logging.DEBUG)
         if memguard.memory_guard.engaged:
             return "memory"
         # The storage guard (WAL pinned past this machine's limit, or the drive nearly full):
@@ -449,8 +450,8 @@ def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
                 continue
             due.append(s)
         return due, backed_off
-    except Exception:  # noqa: BLE001 - the backoff filter must never break a pass
-        _LOG.debug("feed backoff pre-filter failed; treating all feeds as due", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the backoff filter must never break a pass
+        log_failure(_LOG, "feed backoff pre-filter failed; treating all feeds as due", exc, level=logging.DEBUG)
         return sources, 0
 
 
@@ -738,8 +739,8 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
         if not source.rss_url:
             return {}, 0, 0
         return ingest_source(session, source, fetcher=fetcher), 0, 1
-    except Exception:  # noqa: BLE001 - one bad source must not abort the batch
-        _LOG.warning("scrape run: source %r failed", getattr(source, "domain", "?"), exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - one bad source must not abort the batch
+        log_failure(_LOG, f"scrape run: source {getattr(source, 'domain', '?')!r} failed", exc, level=logging.WARNING)
         return {"errors": 1}, 0, 0
 
 
@@ -838,8 +839,8 @@ def run_scrape_once(
                 sources, deferred = equilibrium_filter(sources, pace=pace, fetch_state=states)
                 if deferred:
                     agg["equilibrium_deferred"] = agg.get("equilibrium_deferred", 0) + deferred
-        except Exception:  # noqa: BLE001 - the lever must never break a pass
-            _LOG.debug("language-equilibrium pre-filter failed; pass proceeds", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the lever must never break a pass
+            log_failure(_LOG, "language-equilibrium pre-filter failed; pass proceeds", exc, level=logging.DEBUG)
 
     countries = len({(s.country or "").strip().lower() for s in sources if s.country})
 
@@ -1186,7 +1187,7 @@ def _concurrency_block(settings: SchedulerSettings) -> dict:
 
         return concurrency_report(int(getattr(settings, "collect_parallelism", 1) or 1))
     except Exception as exc:  # noqa: BLE001 - a panel reading never breaks the status
-        _LOG.debug("concurrency block unreadable", exc_info=True)
+        log_failure(_LOG, "concurrency block unreadable", exc, level=logging.DEBUG)
         return {"read": False, "reason": str(exc)[:160]}
 
 
@@ -1276,7 +1277,7 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
             out["rules_run"] = len(rules)
             out["prices_stored"] = result.get("prices_stored", 0)
         except Exception as exc:  # noqa: BLE001 - the feeds above already counted
-            _LOG.warning("markets lane: price rules failed", exc_info=True)
+            log_failure(_LOG, "markets lane: price rules failed", exc, level=logging.WARNING)
             session.rollback()
             # The class name only: the message can carry a path or a stack detail, and
             # this tally reaches /api/scheduler/activity. The full error is in the log.
@@ -1289,7 +1290,7 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
 
             out["stat_vintages"] = refresh_due(session).get("stored", 0)
         except Exception as exc:  # noqa: BLE001 - never fatal to the lane
-            _LOG.warning("markets lane: stat-subscription refresh failed", exc_info=True)
+            log_failure(_LOG, "markets lane: stat-subscription refresh failed", exc, level=logging.WARNING)
             session.rollback()
             # The class name only: the message can carry a path or a stack detail, and
             # this tally reaches /api/scheduler/activity. The full error is in the log.
@@ -1312,7 +1313,7 @@ def _lane_step_calendar(session, fetcher, settings: SchedulerSettings) -> dict:
     try:
         checked = verify_due_feeds(fetcher, batch=_CALENDAR_VERIFY_PER_PASS)
     except Exception as exc:  # noqa: BLE001 - verification is a rider; imports still count
-        _LOG.warning("calendar feed verification failed this pass", exc_info=True)
+        log_failure(_LOG, "calendar feed verification failed this pass", exc, level=logging.WARNING)
         # RECORD the failure in the tally, do not merely log it. A guard that
         # swallows an exception into "no keys" makes a permanently-broken
         # verification indistinguishable from one that had nothing due -- the
@@ -1341,8 +1342,8 @@ def _lane_step_law(session, fetcher, settings: SchedulerSettings) -> dict:
         sum_res = advance_law_summaries(session)
         if sum_res.get("ran"):
             out["law_summarized"] = sum_res.get("stored", 0)
-    except Exception:  # noqa: BLE001 - AI summarization must never break law tracking
-        _LOG.warning("law auto-summary failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - AI summarization must never break law tracking
+        log_failure(_LOG, "law auto-summary failed", exc, level=logging.WARNING)
     return out
 
 
@@ -1359,8 +1360,8 @@ def _lane_step_hazards(session, fetcher, settings: SchedulerSettings) -> dict:
         wsig = auto_refresh_weather_due(session)
         if wsig.get("refreshed"):
             out["weather_signals"] = wsig["refreshed"]
-    except Exception:  # noqa: BLE001 - never fail the lane on signal refresh
-        _LOG.warning("weather signals refresh failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never fail the lane on signal refresh
+        log_failure(_LOG, "weather signals refresh failed", exc, level=logging.WARNING)
     return out
 
 
@@ -1449,8 +1450,8 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                 pages_fetched += report.pages_fetched
             source.last_crawled_at = datetime.now(UTC)
             sources_crawled += 1
-        except Exception:  # noqa: BLE001 - one source's failure must not skip the rest
-            _LOG.warning("crawl supplement: source %r failed", source.domain, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one source's failure must not skip the rest
+            log_failure(_LOG, f"crawl supplement: source {source.domain!r} failed", exc, level=logging.WARNING)
     return {
         "sources_crawled": sources_crawled,
         "pages_fetched": pages_fetched,
@@ -1539,8 +1540,8 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
         try:
             out[kind] = step(session, fetcher, settings)
             _activity(f"lane:{kind}", out[kind], settings)
-        except Exception:  # noqa: BLE001 - one kind's failure must not skip the rest
-            _LOG.warning("housekeeping lane: %s failed", kind, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one kind's failure must not skip the rest
+            log_failure(_LOG, f"housekeeping lane: {kind} failed", exc, level=logging.WARNING)
             out[kind] = {"error": True}
             _activity(f"lane:{kind}", out[kind], settings)
             # Every step shares this ONE session -- a failure that left it
@@ -1563,8 +1564,8 @@ def _ensure_storage_supervisor() -> None:
     zero network, and a failure to start it never stops collection from starting."""
     try:
         storage_guard.start()
-    except Exception:  # noqa: BLE001 - the guard is a safety net, never a reason not to start
-        _LOG.warning("storage guard supervisor could not be started", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the guard is a safety net, never a reason not to start
+        log_failure(_LOG, "storage guard supervisor could not be started", exc, level=logging.WARNING)
 
 
 class BackgroundScheduler:
@@ -1922,7 +1923,7 @@ class BackgroundScheduler:
             report["ok"] = True
             report["result"] = result
         except Exception as exc:  # noqa: BLE001 - record, never crash the thread
-            _LOG.warning("scheduled scrape run failed", exc_info=True)
+            log_failure(_LOG, "scheduled scrape run failed", exc, level=logging.WARNING)
             # A pass that died of a FULL DRIVE latches the storage guard now, instead of the
             # next pass starting into the same failure (one machine logged fourteen in a row).
             storage_guard.storage_guard.note_error(exc, "collect pass")
@@ -2073,8 +2074,8 @@ class BackgroundScheduler:
                 self._last_maintenance = result
             _activity("idle-maintenance", result)
             return True
-        except Exception:  # noqa: BLE001 - never let maintenance break the loop
-            _LOG.warning("off-peak maintenance failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never let maintenance break the loop
+            log_failure(_LOG, "off-peak maintenance failed", exc, level=logging.WARNING)
             return False
         finally:
             _phase_set(None)
@@ -2129,8 +2130,8 @@ class BackgroundScheduler:
                             _activity("briefing", refreshed)
                 finally:
                     self._heavy_tail_lock.release()
-            except Exception:  # noqa: BLE001 - a background refresh must never crash the thread
-                _LOG.warning("background briefing refresh failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the thread
+                log_failure(_LOG, "background briefing refresh failed", exc, level=logging.WARNING)
             finally:
                 _bgtasks.finish(tok)
                 self._briefing_bg_lock.release()
@@ -2226,8 +2227,8 @@ class BackgroundScheduler:
                         self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
                 finally:
                     self._heavy_tail_lock.release()
-            except Exception:  # noqa: BLE001 - a background lane must never crash the thread
-                _LOG.warning("housekeeping lane failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a background lane must never crash the thread
+                log_failure(_LOG, "housekeeping lane failed", exc, level=logging.WARNING)
             finally:
                 _bgtasks.finish(tok)
                 self._lane_lock.release()
@@ -2279,8 +2280,8 @@ class BackgroundScheduler:
                     )
                     if path:
                         result["delta_export"] = path
-                except Exception:  # noqa: BLE001 - never fail the scrape on export
-                    _LOG.warning("delta drop-folder export failed", exc_info=True)
+                except Exception as exc:  # noqa: BLE001 - never fail the scrape on export
+                    log_failure(_LOG, "delta drop-folder export failed", exc, level=logging.WARNING)
 
             # --- Background housekeeping: best-effort, AFTER the articles, so it
             # never delays the first one. The task manager labels this phase honestly
@@ -2335,8 +2336,8 @@ class BackgroundScheduler:
 
                 if field_test.enabled():
                     field_test.run_field_test(session, fetcher)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("field-test instrumentation failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "field-test instrumentation failed", exc, level=logging.WARNING)
             # Offline source discovery (WP5/RM-19): budgeted, DB-only, and its
             # outcome lands in the run report -- background, never hidden.
             try:
@@ -2356,8 +2357,8 @@ class BackgroundScheduler:
                             _disc_session, per_run=settings.discovery_per_run
                         )
                 _activity("discovery", result["discovery"], settings)
-            except Exception:  # noqa: BLE001 - never fail the scrape on discovery
-                _LOG.warning("offline source discovery failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never fail the scrape on discovery
+                log_failure(_LOG, "offline source discovery failed", exc, level=logging.WARNING)
             # S-B (2026-07-24 throughput brief, C1): world-discovery, qualification,
             # and country-data (each a bounded, budget-gated network ride-along —
             # WORLD source-discovery per maintainer ruling 2026-07-15, qualification
@@ -2385,8 +2386,8 @@ class BackgroundScheduler:
                 if _auto.get("ran"):
                     result["ai_auto"] = _auto
                     _activity("ai-auto", _auto, settings)
-            except Exception:  # noqa: BLE001 - never let AI extraction break a scrape
-                _LOG.warning("auto-on-ingest extraction failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never let AI extraction break a scrape
+                log_failure(_LOG, "auto-on-ingest extraction failed", exc, level=logging.WARNING)
             # AUTO-START language detection (2026-07-24 field-feedback Session A §1, ruled
             # default-ON): a cheap watchdog that (re)starts the CONTINUOUS AI language-
             # detection job whenever it is idle, the local model is available, and unknown-
@@ -2402,8 +2403,8 @@ class BackgroundScheduler:
                     result["langdetect_auto"] = _ld
                     if not _ld.get("skipped"):  # it started the job; a skip did nothing
                         _activity("langdetect-auto", _ld, settings)
-            except Exception:  # noqa: BLE001 - never fail the scrape on the AI-layer watchdog
-                _LOG.warning("language-detection auto-start ride-along failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never fail the scrape on the AI-layer watchdog
+                log_failure(_LOG, "language-detection auto-start ride-along failed", exc, level=logging.WARNING)
             # Auto source-metadata enrichment (local, zero-network): deduce each
             # source's topic tags from the keywords it actually publishes and union
             # them into Source.tags. Freshness-gated (~daily) so it is usually a
@@ -2423,8 +2424,8 @@ class BackgroundScheduler:
                     if _enr.get("ran") and _enr.get("sources_updated"):
                         result["source_enrich"] = _enr
                         _LOG.info("source auto-enrichment: %s", _enr)
-            except Exception:  # noqa: BLE001 - never fail the scrape on enrichment
-                _LOG.warning("source auto-enrichment failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never fail the scrape on enrichment
+                log_failure(_LOG, "source auto-enrichment failed", exc, level=logging.WARNING)
             # S-B (2026-07-24 throughput brief, C1): the hazard snapshot + weather
             # SIGNAL refresh (Wave 4 J; session=session so a freshly-saved snapshot
             # is also ingested as corpus Articles -- zero extra network) now rides
@@ -2885,8 +2886,8 @@ def _resume_watch(sched: BackgroundScheduler, old: threading.Thread | None, gen:
             if not held and sched.start():
                 outcome = "resumed"
                 break
-        except Exception:  # noqa: BLE001 - the watcher must outlive a transient error
-            _LOG.debug("resume watcher: a check failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the watcher must outlive a transient error
+            log_failure(_LOG, "resume watcher: a check failed", exc, level=logging.DEBUG)
     with _RESUME_LOCK:
         if gen == _RESUME_GEN:
             _RESUME_PENDING = None

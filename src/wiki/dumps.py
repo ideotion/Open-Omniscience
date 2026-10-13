@@ -34,6 +34,8 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
+from src.monitoring.secret_scrub import exception_text, log_failure
+
 # Module scope on purpose: ``except NetworkBlocked`` is EVALUATED when an
 # exception propagates, so binding the name inside the guarded ``try`` would
 # turn any earlier failure into a NameError from the handler.
@@ -244,8 +246,8 @@ class DumpDownloadManager:
                     self._entries[k] = DownloadEntry(
                         **{f: v[f] for f in DownloadEntry.__annotations__ if f in v}
                     )
-            except Exception:  # noqa: BLE001 - a bad state file must not crash startup
-                _LOG.warning("wiki dumps state unreadable; ignoring", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a bad state file must not crash startup
+                log_failure(_LOG, "wiki dumps state unreadable; ignoring", exc, level=logging.WARNING)
         # No worker thread survives a process restart, so a persisted
         # "downloading" status is stale -- demote it to "paused" (the partial
         # file is kept and resumable) rather than leaving a phantom that would
@@ -603,9 +605,9 @@ class DumpDownloadManager:
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
             entry.status = "error"
-            entry.error = str(exc)
+            entry.error = exception_text(exc, typed=False)
             self._save()
-            _LOG.warning("dump download failed for %s", entry.key, exc_info=True)
+            log_failure(_LOG, f"dump download failed for {entry.key}", exc, level=logging.WARNING)
         return entry
 
     def start(

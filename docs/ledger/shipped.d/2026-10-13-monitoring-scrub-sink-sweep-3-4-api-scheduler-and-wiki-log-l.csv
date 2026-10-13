@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,monitoring/scrub,"Sink sweep 3/4: api, scheduler and wiki log lines through the shared scrub",shipped,PR pending,src/api; src/scheduler; src/wiki; tests/data/exc_info_allowlist.json,"About 200 exc_info sites in src/api (main.py 40), src/scheduler (runner 27, storage_guard.log_failure_once) and src/wiki (runner 18, dumps) become secret_scrub.log_failure; wiki dump entry errors go through exception_text; allowlist lowered; ruff ceiling 431 to 430."

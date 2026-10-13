@@ -39,6 +39,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("wiki.service")
 
 _LOCK = threading.RLock()
@@ -200,8 +202,8 @@ def _resume_from() -> str | None:
                 .limit(1)
             ).first()
         return str(rows[0]) if rows and rows[0] else None
-    except Exception:  # noqa: BLE001 - an unreadable cursor is a cold start, not a crash
-        _LOG.warning("could not read a stored stream position; starting cold", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable cursor is a cold start, not a crash
+        log_failure(_LOG, "could not read a stored stream position; starting cold", exc, level=logging.WARNING)
         return None
 
 
@@ -369,8 +371,8 @@ def start_wiki_lane() -> bool:
             _DRAIN_THREAD.start()
             _LOG.info("the Wikipedia lane is streaming %d editions", len(_editions()))
             return True
-        except Exception:  # noqa: BLE001 - a lane that cannot start must not fail the toggle
-            _LOG.warning("the Wikipedia lane could not start", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a lane that cannot start must not fail the toggle
+            log_failure(_LOG, "the Wikipedia lane could not start", exc, level=logging.WARNING)
             return False
 
 
@@ -387,8 +389,8 @@ def _finish(runner: Any, thread: threading.Thread | None, timeout: float) -> Non
     if runner is not None:
         try:
             runner.stop(timeout=timeout)
-        except Exception:  # noqa: BLE001
-            _LOG.warning("stopping the Wikipedia lane failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "stopping the Wikipedia lane failed", exc, level=logging.WARNING)
     if thread is not None and thread.is_alive():
         # The drain loop ends at its next ``_should_stop`` check, which reads the
         # runner's own stop event. Joining briefly keeps a restart from overlapping
@@ -434,7 +436,7 @@ def lane_history() -> dict:
             # with a reason, never a measured one with no rows.
             return {"measured": "reason" not in snap, **snap}
     except Exception as exc:  # noqa: BLE001 - a diagnostic never fails the caller
-        _LOG.warning("could not read the Wikipedia lane history", exc_info=True)
+        log_failure(_LOG, "could not read the Wikipedia lane history", exc, level=logging.WARNING)
         return {**base, "measured": False, "reason": f"unreadable: {type(exc).__name__}"}
 
 

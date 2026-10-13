@@ -28,6 +28,7 @@ For inquiries, contact: open-omniscience@ideotion.com
 import csv
 import functools
 import io
+import logging
 import mimetypes
 import os
 import re
@@ -223,8 +224,8 @@ def _run_startup_upkeep() -> None:
         from src.database.session import engine as _engine
 
         optimize_at_boot(_engine)
-    except Exception:  # noqa: BLE001 - upkeep must never block startup
-        logger.warning("planner-statistics refresh failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - upkeep must never block startup
+        log_failure(logger, "planner-statistics refresh failed", exc, level=logging.WARNING)
     # The re-index BACKLOG, stated at boot (the mandatory guard on the 2026-07-29
     # option-(a) ruling). Since the merge no longer copies the incoming corpus's
     # derived rows, an un-re-indexed import has NO keywords -- honoured structurally
@@ -244,16 +245,16 @@ def _run_startup_upkeep() -> None:
                 _bk.get("articles_pending"), _bk.get("batches_pending"),
             )
             _resume_reindex_backlog_at_boot(int(_bk.get("articles_pending") or 0))
-    except Exception:  # noqa: BLE001 - a report must never block startup
-        logger.warning("re-index backlog check failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a report must never block startup
+        log_failure(logger, "re-index backlog check failed", exc, level=logging.WARNING)
 
     # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
     try:
         from src.monitoring.errorlog import install as _install_errorlog
 
         _install_errorlog()
-    except Exception:  # noqa: BLE001 - logging must never block startup
-        logger.warning("could not install the error-log handler", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - logging must never block startup
+        log_failure(logger, "could not install the error-log handler", exc, level=logging.WARNING)
     # Slow-query listener (recursive-augmentation log #3) — records statements slower
     # than OO_SLOW_QUERY_MS into a bounded ring buffer; SQL shape only, best-effort.
     try:
@@ -261,8 +262,8 @@ def _run_startup_upkeep() -> None:
         from src.monitoring.slowquery import install as _install_slowquery
 
         _install_slowquery(_sq_engine)
-    except Exception:  # noqa: BLE001 - instrumentation must never block startup
-        logger.warning("could not install the slow-query listener", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - instrumentation must never block startup
+        log_failure(logger, "could not install the slow-query listener", exc, level=logging.WARNING)
     # Reclaim staging dirs orphaned by a crashed restore (DB-reliability batch).
     try:
         from src.backup.artifact import cleanup_stale_staging
@@ -270,8 +271,8 @@ def _run_startup_upkeep() -> None:
         _n = cleanup_stale_staging()
         if _n:
             logger.info(f"removed {_n} stale restore staging dir(s)")
-    except Exception:  # noqa: BLE001 - the janitor must never block startup
-        logger.warning("stale-staging cleanup failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
+        log_failure(logger, "stale-staging cleanup failed", exc, level=logging.WARNING)
     # W5 (2026-07-26 hardware diagnostics): the recurring off-peak sweep
     # (src.scheduler.maintenance.run_idle_maintenance) is the primary backstop
     # for aged pre-restore-*.db safety-net snapshots, but an instance that
@@ -283,8 +284,8 @@ def _run_startup_upkeep() -> None:
         _removed = prune_pre_restore_snapshots_by_age()
         if _removed:
             logger.info(f"pruned {len(_removed)} aged pre-restore snapshot(s)")
-    except Exception:  # noqa: BLE001 - the janitor must never block startup
-        logger.warning("pre-restore snapshot age sweep failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
+        log_failure(logger, "pre-restore snapshot age sweep failed", exc, level=logging.WARNING)
     # Bundled initial super-groups (maintainer-ruled 2026-06-11): created only
     # where missing; the user's own curation always wins. Offline, best-effort.
     try:
@@ -292,8 +293,8 @@ def _run_startup_upkeep() -> None:
 
         with session_scope() as _s:
             seed_supergroups(_s)
-    except Exception:  # noqa: BLE001 - seeding must never block startup
-        logger.warning("super-group seeding failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - seeding must never block startup
+        log_failure(logger, "super-group seeding failed", exc, level=logging.WARNING)
     # Curated source catalog. CRITICAL (maintainer 2026-06-18 field log: an
     # ENCRYPTED store — the default — unlocked via the web came up with only ~1
     # source and almost nothing to collect). The only seed call used to live in
@@ -353,8 +354,8 @@ def _run_startup_upkeep() -> None:
                     adopted["adopted"], adopted.get("qualified", 0),
                     adopted.get("disqualified", 0), adopted.get("kept_local", 0),
                 )
-        except Exception:  # noqa: BLE001 - seeding must never block startup
-            logger.warning("could not seed the source catalog at startup", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - seeding must never block startup
+            log_failure(logger, "could not seed the source catalog at startup", exc, level=logging.WARNING)
     # WITHDRAW, NEVER RE-ADMIT, what the history already refused (2026-09-30, diagnostics
     # rank 14): a source whose live status is not 'disqualified' although its newest judging
     # attempt says so goes back to disqualified. LOCAL DATABASE ONLY, so airplane mode does
@@ -373,9 +374,8 @@ def _run_startup_upkeep() -> None:
                 "Restored %d source(s) to disqualified: their newest judging attempt says "
                 "disqualified (revert record kept).", repaired["repaired"],
             )
-    except Exception:  # noqa: BLE001 - a repair that could not run never blocks startup
-        logger.warning("could not reconcile qualification inversions at startup",
-                       exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a repair that could not run never blocks startup
+        log_failure(logger, "could not reconcile qualification inversions at startup", exc, level=logging.WARNING)
     # The inversions that repair leaves (a verdict measured here that an imported history disagrees
     # with) are listed for an EARLY LOCAL RE-CHECK: the qualification pass takes them ahead of its
     # ordinary queue, within its own budget. Changes no verdict; local database only.
@@ -385,9 +385,8 @@ def _run_startup_upkeep() -> None:
         flagged = flag_inversions_for_recheck()
         if flagged.get("flagged"):
             logger.info("%d source(s) flagged for an early local re-check.", flagged["flagged"])
-    except Exception:  # noqa: BLE001 - an ordering hint that could not be written never blocks startup
-        logger.warning("could not flag qualification inversions for re-check at startup",
-                       exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an ordering hint that could not be written never blocks startup
+        log_failure(logger, "could not flag qualification inversions for re-check at startup", exc, level=logging.WARNING)
     try:
         from src.api.startup_status import mark_phase as _mp
 
@@ -415,8 +414,8 @@ def _run_startup_upkeep() -> None:
 
                 with session_scope() as session:  # own session: created inside the thread
                     warm_cache(session)
-            except Exception:  # noqa: BLE001 - a cache warm must never affect the app
-                logger.warning("boot-time insights cache warm failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a cache warm must never affect the app
+                log_failure(logger, "boot-time insights cache warm failed", exc, level=logging.WARNING)
 
         # The warm-up, the rollup's first build and the re-index resume run one after the other
         # in this one thread (diagnostics cause C: all three at once got the process killed).
@@ -478,8 +477,8 @@ def _run_startup_upkeep() -> None:
             from src.scheduler.offline_maintenance import start as _start_offline_maintenance
 
             _start_offline_maintenance()
-        except Exception:  # noqa: BLE001 - maintenance must never block startup
-            logger.warning("could not start the offline maintenance timer", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - maintenance must never block startup
+            log_failure(logger, "could not start the offline maintenance timer", exc, level=logging.WARNING)
         # The storage guard's supervisor (WAL pinned past this machine's limit, or the drive
         # nearly full: pause collection, name the holder, resume by itself). After unlock by
         # construction -- this function only runs once the store is open -- and idempotent
@@ -489,8 +488,8 @@ def _run_startup_upkeep() -> None:
             from src.scheduler.storage_guard import start as _start_storage_guard
 
             _start_storage_guard()
-        except Exception:  # noqa: BLE001 - a guard must never block startup
-            logger.warning("could not start the storage guard", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a guard must never block startup
+            log_failure(logger, "could not start the storage guard", exc, level=logging.WARNING)
 
     logger.info(f"Open Omniscience API {APP_VERSION} started")
 
@@ -509,16 +508,16 @@ async def lifespan(app: FastAPI):
         from src.monitoring.secret_scrub import guard_process
 
         guard_process()
-    except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
-        logger.debug("could not engage the core-dump guard", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
+        log_failure(logger, "could not engage the core-dump guard", exc, level=logging.DEBUG)
     # The take of the passphrases out of the environment happens at the first import of ``connect``: it has to come before the boot
     # record reads its outcome and before any child (the kernel-log read below) inherits the environment. Importing this module opens
     # no store (a test pins it: an open here would delete the leftover ``-wal`` the boot record is about to read), so this line is the
     # guarantee. An import opens nothing.
     try:
         from src.database import connect  # noqa: F401 - the take
-    except Exception:  # noqa: BLE001 - a store that cannot be imported is reported where it is opened, never here
-        logger.debug("could not import the store at start", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a store that cannot be imported is reported where it is opened, never here
+        log_failure(logger, "could not import the store at start", exc, level=logging.DEBUG)
     from src.api.unlock import app_lock_state
 
     # Clean-shutdown sentinel (session forensics, 2026-07-09): stamp 'running' now,
@@ -542,16 +541,16 @@ async def lifespan(app: FastAPI):
             from src.monitoring.forensics import start_kernel_evidence_read
 
             start_kernel_evidence_read(_prev)
-        except Exception:  # noqa: BLE001 - forensics must never block startup
-            logger.debug("could not start the kernel-log read", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - forensics must never block startup
+            log_failure(logger, "could not start the kernel-log read", exc, level=logging.DEBUG)
         # A11: honestly warn ONCE at boot if the corpus is on a provably-volatile root
         # (RAM-backed / Qubes disposable), pointing at the opt-in persistent OO_DATA_DIR.
         # Never "stop using disposable VMs" — only how to keep the corpus.
         _persist = data_dir_persistence()
         if _persist.get("at_risk") is True:
             logger.warning("data-dir persistence: %s", _persist.get("note"))
-    except Exception:  # noqa: BLE001 - forensics must never block startup
-        logger.warning("could not stamp the session sentinel", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - forensics must never block startup
+        log_failure(logger, "could not stamp the session sentinel", exc, level=logging.WARNING)
 
     # Import/export run journals that never reached run_end: marked here, BEFORE the
     # lock check, because they need no database (only files under data_dir()) and
@@ -563,8 +562,8 @@ async def lifespan(app: FastAPI):
         from src.backup.runlog import promote_incomplete_runs
 
         promote_incomplete_runs()
-    except Exception:  # noqa: BLE001 - a forensic marker must never block startup
-        logger.debug("could not mark incomplete run journals", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a forensic marker must never block startup
+        log_failure(logger, "could not mark incomplete run journals", exc, level=logging.DEBUG)
 
     # Q1011: the machine reading (cores, RAM, free disk) is taken here, BEFORE the lock
     # check -- it needs no database and no network, so a store that boots locked still
@@ -573,8 +572,8 @@ async def lifespan(app: FastAPI):
         from src.config.hardware_reading import record_boot_reading
 
         record_boot_reading()
-    except Exception:  # noqa: BLE001 - a reading must never block startup
-        logger.debug("could not take the boot hardware reading", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a reading must never block startup
+        log_failure(logger, "could not take the boot hardware reading", exc, level=logging.DEBUG)
 
     # The data-drive watchdog (R86): started before the lock check, since a drive can be
     # pulled while the unlock screen is up. A no-op unless the first-launch step marked
@@ -584,8 +583,8 @@ async def lifespan(app: FastAPI):
 
         mark_booted()
         MONITOR.start()
-    except Exception:  # noqa: BLE001 - a watchdog must never block startup
-        logger.warning("could not start the data-drive watchdog", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a watchdog must never block startup
+        log_failure(logger, "could not start the data-drive watchdog", exc, level=logging.WARNING)
 
     state = app_lock_state()
     if state.startswith("unlocked"):
@@ -608,8 +607,8 @@ async def lifespan(app: FastAPI):
         from src.monitoring.latency import start_watchdog
 
         start_watchdog()
-    except Exception:  # noqa: BLE001 - the watchdog must never block startup
-        logger.warning("could not start the event-loop watchdog", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the watchdog must never block startup
+        log_failure(logger, "could not start the event-loop watchdog", exc, level=logging.WARNING)
     yield
 
     # S0.2: stamp the teardown's own phases. The sentinel used to hold two states,
@@ -620,8 +619,8 @@ async def lifespan(app: FastAPI):
         from src.monitoring.forensics import record_shutdown_phase
 
         record_shutdown_phase("shutting-down", reason="lifespan shutdown")
-    except Exception:  # noqa: BLE001 - best-effort
-        logger.debug("could not stamp the shutdown phase", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not stamp the shutdown phase", exc, level=logging.DEBUG)
 
     # Stop the scheduler thread cleanly if it is running (no-op otherwise). A pending
     # resume is retired FIRST, so its watcher cannot start collection again on a
@@ -631,15 +630,15 @@ async def lifespan(app: FastAPI):
 
         cancel_pending_resume()
         get_scheduler().stop()
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        logger.warning("Error stopping scheduler on shutdown", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        log_failure(logger, "Error stopping scheduler on shutdown", exc, level=logging.WARNING)
     _stop_database_check()
     try:
         from src.scheduler.offline_maintenance import stop as _stop_offline_maintenance
 
         _stop_offline_maintenance()
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        logger.warning("Error stopping offline maintenance on shutdown", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        log_failure(logger, "Error stopping offline maintenance on shutdown", exc, level=logging.WARNING)
     try:
         # The storage guard's supervisor drains the WAL through the corpus engine: stop it
         # BEFORE the engine is disposed. stop() waits up to two seconds for a drain in flight; one
@@ -648,28 +647,28 @@ async def lifespan(app: FastAPI):
         from src.scheduler.storage_guard import stop as _stop_storage_guard
 
         _stop_storage_guard()
-    except Exception:  # noqa: BLE001 - best-effort shutdown
-        logger.warning("Error stopping the storage guard on shutdown", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        log_failure(logger, "Error stopping the storage guard on shutdown", exc, level=logging.WARNING)
 
     dispose_engine()
     try:
         from src.monitoring.forensics import record_shutdown_phase
 
         record_shutdown_phase("dispose-done")
-    except Exception:  # noqa: BLE001 - best-effort
-        logger.debug("could not stamp the dispose phase", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not stamp the dispose phase", exc, level=logging.DEBUG)
     try:
         from src.monitoring.session_hwm import flush as _flush_hwm
 
         _flush_hwm()  # persist this session's peaks past the write throttle
-    except Exception:  # noqa: BLE001 - best-effort
-        logger.debug("could not flush the session high-water marks", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not flush the session high-water marks", exc, level=logging.DEBUG)
     try:
         from src.monitoring.forensics import record_clean_shutdown
 
         record_clean_shutdown()
-    except Exception:  # noqa: BLE001 - best-effort
-        logger.warning("could not stamp the clean-shutdown sentinel", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not stamp the clean-shutdown sentinel", exc, level=logging.WARNING)
     logger.info("Open Omniscience API shut down cleanly")
 
 
@@ -2358,8 +2357,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             # its own oldid address, and is Wikipedia text under the same licence.
             _ver = wiki_version_ref(a.canonical_url or a.url or "")
             _ref = (_ver[0], _ver[1]) if _ver else None
-    except Exception:  # noqa: BLE001 - the reader must never break on provenance
-        logger.warning("wiki page ref failed in reader", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the reader must never break on provenance
+        log_failure(logger, "wiki page ref failed in reader", exc, level=logging.WARNING)
 
     version_row = ""
     if a.source_revision:
@@ -2398,8 +2397,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                     _bits.append(
                         "<span class='muted'>no tracked revisions stored here</span>"
                     )
-            except Exception:  # noqa: BLE001
-                logger.warning("wiki page lookup failed in reader", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(logger, "wiki page lookup failed in reader", exc, level=logging.WARNING)
         version_row = _row("Version (this stored text)", " · ".join(_bits))
 
     source_rows = "".join(
@@ -2441,8 +2440,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                     ),
                 )
             )
-    except Exception:  # noqa: BLE001 - extraction must never break the reader
-        logger.warning("date extraction failed in reader", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - extraction must never break the reader
+        log_failure(logger, "date extraction failed in reader", exc, level=logging.WARNING)
     try:
         from src.timemap import whostore
 
@@ -2466,8 +2465,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                     ),
                 )
             )
-    except Exception:  # noqa: BLE001
-        logger.warning("location extraction failed in reader", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(logger, "location extraction failed in reader", exc, level=logging.WARNING)
     try:
         from src.timemap import whostore
 
@@ -2501,8 +2500,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                     ),
                 )
             )
-    except Exception:  # noqa: BLE001
-        logger.warning("entity extraction failed in reader", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(logger, "entity extraction failed in reader", exc, level=logging.WARNING)
     # Server IP (SOURCE IPs ruling, 2026-07-20): captured at fetch (web + newsletter
     # sender-IP) but never previously surfaced to a reader (verified gap: `server_ip`
     # absent from this file). Honest either way -- an IP shows with its capture reason
@@ -2577,8 +2576,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 "unverified candidates, never confirmed and never part of the trusted "
                 "keyword index.</div></div>"
             )
-    except Exception:
-        logger.warning("AI metadata read failed in reader", exc_info=True)
+    except Exception as exc:
+        log_failure(logger, "AI metadata read failed in reader", exc, level=logging.WARNING)
 
     # Co-citation: the external links THIS article cites, each with how many distinct
     # articles in the corpus cite the same normalized URL (in-degree). > 1 means a
@@ -2783,8 +2782,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                     "not a similarity score. All links stay local.</p>"
                     f"<ul>{items}</ul></section>"
                 )
-    except Exception:  # noqa: BLE001 - related list is optional, never breaks the reader
-        logger.warning("related-articles block failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - related list is optional, never breaks the reader
+        log_failure(logger, "related-articles block failed", exc, level=logging.WARNING)
 
     # Tab panes always exist (consistent tab bar); an empty Related/Links pane
     # shows an honest empty state instead of vanishing.
@@ -2871,8 +2870,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                     f'<details><summary class="muted">Show the copies</summary><ul>{lis}</ul></details>'
                     "</div>"
                 )
-    except Exception:  # noqa: BLE001 - the badge is optional, never breaks the reader
-        logger.warning("near-dup reader badge failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the badge is optional, never breaks the reader
+        log_failure(logger, "near-dup reader badge failed", exc, level=logging.WARNING)
 
     # Q726 = a: "the reader shows the CC BY-SA 4.0 attribution with a link to the page
     # history". VISIBLE BY DEFAULT, never behind a toggle -- it is a licence
@@ -2891,8 +2890,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             from src.wiki.attribution import attribution as _attr
 
             _a = _attr(_ref[0], _ref[1], revision=a.source_revision)
-        except Exception:  # noqa: BLE001 - a licence notice must never break the reader
-            logger.warning("wiki attribution failed in reader", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a licence notice must never break the reader
+            log_failure(logger, "wiki attribution failed in reader", exc, level=logging.WARNING)
             _a = None
         if _a:
             _hist = _html.escape(safe_href(_a["history_url"]) or "")
@@ -3452,8 +3451,8 @@ def _serve() -> None:
         from src.monitoring.secret_scrub import guard_process
 
         guard_process()
-    except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
-        logger.debug("could not engage the core-dump guard", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
+        log_failure(logger, "could not engage the core-dump guard", exc, level=logging.DEBUG)
 
     # The boot reading of the -wal, before ``init_db()`` below (and the seeding) open the store: that connection makes a new -wal or
     # deletes the leftover one, so the lifespan's own reading would describe this process and not the previous end.
@@ -3461,8 +3460,8 @@ def _serve() -> None:
         from src.monitoring.forensics import take_boot_wal_reading
 
         take_boot_wal_reading()
-    except Exception:  # noqa: BLE001 - the lifespan takes it instead
-        logger.debug("could not take the boot -wal reading", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the lifespan takes it instead
+        log_failure(logger, "could not take the boot -wal reading", exc, level=logging.DEBUG)
 
     import uvicorn
 
@@ -3473,8 +3472,8 @@ def _serve() -> None:
         from src.monitoring.exit_evidence import arm_crash_trace
 
         arm_crash_trace()
-    except Exception:  # noqa: BLE001 - a crash recorder never blocks startup
-        logger.debug("could not arm the crash trace", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a crash recorder never blocks startup
+        log_failure(logger, "could not arm the crash trace", exc, level=logging.DEBUG)
 
     # First-run legal notice (non-blocking): point the user at the documents to
     # accept. Acceptance itself happens via the web UI modal or `accept-terms`;

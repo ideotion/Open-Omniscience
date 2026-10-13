@@ -34,6 +34,7 @@ from pathlib import Path
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as _safe_fromstring
 
+from src.monitoring.secret_scrub import log_failure
 from src.wiki.dumps import dump_filename, validate_wiki_code
 
 _LOG = logging.getLogger(__name__)
@@ -181,8 +182,8 @@ def iter_pages(
     for off in offsets:
         try:
             block = _read_stream_block(paths["data"], off)
-        except OSError:
-            _LOG.warning("dump block read failed for %s at offset %s", wiki, off, exc_info=True)
+        except OSError as exc:
+            log_failure(_LOG, f"dump block read failed for {wiki} at offset {off}", exc, level=logging.WARNING)
             continue
         try:
             for page in _iter_block_pages(block, ns_filter):
@@ -190,8 +191,8 @@ def iter_pages(
                 yielded += 1
                 if limit is not None and yielded >= limit:
                     return
-        except (ValueError, ET.ParseError, DefusedXmlException):
-            _LOG.warning("dump block parse failed for %s at offset %s", wiki, off, exc_info=True)
+        except (ValueError, ET.ParseError, DefusedXmlException) as exc:
+            log_failure(_LOG, f"dump block parse failed for {wiki} at offset {off}", exc, level=logging.WARNING)
             continue
 
 
@@ -225,7 +226,7 @@ def find_page(wiki: str, title: str, *, base_dir: Path | None = None) -> dict:
         block = _read_stream_block(paths["data"], hit["offset"])
         page = _extract_page(block, hit["pageid"])
     except (OSError, ValueError, ET.ParseError, DefusedXmlException) as exc:
-        _LOG.warning("dump block read failed for %s:%s", wiki, title, exc_info=True)
+        log_failure(_LOG, f"dump block read failed for {wiki}:{title}", exc, level=logging.WARNING)
         return {"found": False, "reason": "block-unreadable", "error": str(exc),
                 "wiki": wiki.lower()}
     if page is None:

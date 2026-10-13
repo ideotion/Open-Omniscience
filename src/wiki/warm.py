@@ -60,6 +60,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import defer
 
+from src.monitoring.secret_scrub import log_failure
 from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST
 from src.wiki.walk import (
     _BUSY_CODES,
@@ -380,8 +381,8 @@ class WarmFetcher:
         self._asked_now = {}
         try:
             on = bool(self._enabled())
-        except Exception:  # noqa: BLE001 - an unreadable switch is an OFF switch
-            _LOG.warning("could not read the switch for fetching other changed pages; not fetching", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an unreadable switch is an OFF switch
+            log_failure(_LOG, "could not read the switch for fetching other changed pages; not fetching", exc, level=logging.WARNING)
             on = False
         if not on:
             # OFF MEANS NOTHING: no scan either. The bookmark stays where it is, so turning

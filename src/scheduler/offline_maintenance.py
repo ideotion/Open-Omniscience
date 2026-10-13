@@ -48,6 +48,8 @@ import os
 import threading
 import time
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("scheduler.offline_maintenance")
 
 #: Let boot settle first: the unlock path's upkeep, the cache warm and a boot re-index
@@ -231,8 +233,8 @@ def tick(sched=None, *, should_stop=None) -> str:
             return "yielded"
         _continue_prune(sched, stop)
         return "ran"
-    except Exception:  # noqa: BLE001 - a background safety net must never break the app
-        _LOG.warning("offline maintenance tick failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background safety net must never break the app
+        log_failure(_LOG, "offline maintenance tick failed", exc, level=logging.WARNING)
         return "error"
 
 

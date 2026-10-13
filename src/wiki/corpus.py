@@ -39,6 +39,7 @@ from urllib.parse import quote, unquote
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source, WikiPage, WikiRevision
+from src.monitoring.secret_scrub import log_failure
 from src.utils.markup_blocks import (
     Resync,
     needs_char_resync,
@@ -518,9 +519,9 @@ def sync_watched(session: Session, *, extractor=None, limit: int = 200) -> dict:
     for page in pages:
         try:
             res = sync_page_to_corpus(session, page, extractor=extractor)
-        except Exception:  # noqa: BLE001 - one bad page must not abort the batch
+        except Exception as exc:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
-            _LOG.warning("corpus sync failed for %s:%s", page.wiki, page.title, exc_info=True)
+            log_failure(_LOG, f"corpus sync failed for {page.wiki}:{page.title}", exc, level=logging.WARNING)
             out["skipped"] += 1
             continue
         out["pages"] += 1
@@ -590,9 +591,9 @@ def ingest_dump_pages(
     for title in titles[: max(0, limit)]:
         try:
             res = ingest_dump_page(session, wiki, title, extractor=extractor, base_dir=base_dir)
-        except Exception:  # noqa: BLE001 - one bad page must not abort the batch
+        except Exception as exc:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
-            _LOG.warning("dump corpus ingest failed for %s:%s", wiki, title, exc_info=True)
+            log_failure(_LOG, f"dump corpus ingest failed for {wiki}:{title}", exc, level=logging.WARNING)
             res = {"page": title, "status": "error"}
         st = res.get("status", "")
         counts[st if st in counts else "skipped"] += 1

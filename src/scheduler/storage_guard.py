@@ -184,6 +184,7 @@ from pathlib import Path
 from typing import Any
 
 from src.database import damage
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("scheduler.storage_guard")
 
@@ -616,8 +617,8 @@ def read_storage() -> dict[str, Any]:
 
         free, total = disk_bytes(path.parent)
         out["disk_free_bytes"], out["disk_total_bytes"] = free, total
-    except Exception:  # noqa: BLE001 - a reading is best-effort, never a crash
-        _LOG.debug("storage guard: could not read the drive", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a reading is best-effort, never a crash
+        log_failure(_LOG, "storage guard: could not read the drive", exc, level=logging.DEBUG)
     return out
 
 
@@ -1409,8 +1410,8 @@ class StorageGuard:
                 _size_text(tail["wal_at_end"]),
             )
             return tail
-        except Exception:  # noqa: BLE001 - a measurement never disturbs the pass
-            _LOG.debug("storage guard: tail measurement failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a measurement never disturbs the pass
+            log_failure(_LOG, "storage guard: tail measurement failed", exc, level=logging.DEBUG)
             return None
 
     # -- the pull side -------------------------------------------------------------
@@ -1443,8 +1444,11 @@ class StorageGuard:
         with self._lock:
             changed = key != self._failure_keys.get(what)
             self._failure_keys[what] = key
-        (_LOG.warning if changed else _LOG.debug)(
-            "storage guard: %s failed%s", what, "" if changed else " again", exc_info=exc
+        log_failure(
+            _LOG,
+            f"storage guard: {what} failed{'' if changed else ' again'}",
+            exc,
+            level=logging.WARNING if changed else logging.DEBUG,
         )
 
     def clear_failure(self, what: str) -> None:
@@ -1937,8 +1941,8 @@ def _supervise(stop: threading.Event) -> None:
                             )
                             _DRAIN_THREAD = drain  # so stop() can join it
                             drain.start()
-        except Exception:  # noqa: BLE001 - a guard that dies silently is worse than none
-            _LOG.warning("storage guard supervisor tick failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a guard that dies silently is worse than none
+            log_failure(_LOG, "storage guard supervisor tick failed", exc, level=logging.WARNING)
         stop.wait(POLL_EVERY_S)
 
 

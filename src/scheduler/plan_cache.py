@@ -36,6 +36,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 #: A preview younger than this is served as is, with no refresh. It protects the database from the
@@ -157,7 +159,7 @@ class PlanPreviewCache:
                     # and its bound parameters.
                     "message": (str(getattr(exc, "orig", exc)).splitlines() or [""])[0][:160],
                 }
-            _LOG.debug("plan preview refresh failed", exc_info=True)
+            log_failure(_LOG, "plan preview refresh failed", exc, level=logging.DEBUG)
         finally:
             with self._lock:
                 self._inflight = None

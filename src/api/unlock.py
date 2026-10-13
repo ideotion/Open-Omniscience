@@ -427,8 +427,8 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
 
             install_airplane_socket_guard()
             activate_kill_switch()
-        except Exception:  # noqa: BLE001 - never block the unlock on this
-            _LOG.warning("could not engage airplane mode at unlock", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never block the unlock on this
+            log_failure(_LOG, "could not engage airplane mode at unlock", exc, level=logging.WARNING)
     _t.phase("airplane guard")
     _t.finish()  # persist {wal_bytes_before, phases, total_ms} for the next export
 
@@ -437,7 +437,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
             _run_startup_upkeep()
             set_startup("ready", "")
         except Exception as exc:  # noqa: BLE001 - report, never crash the thread
-            _LOG.warning("post-unlock startup upkeep failed", exc_info=True)
+            log_failure(_LOG, "post-unlock startup upkeep failed", exc, level=logging.WARNING)
             # The DB is queryable (init_db ran synchronously) even if upkeep hiccuped,
             # so the corpus is usable — report ready rather than trap the user.
             set_startup("ready", "", error=str(exc))
@@ -447,7 +447,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
     except Exception as exc:  # noqa: BLE001 - e.g. "can't start new thread" on a machine out of memory
         # The upkeep is best-effort and the store is queryable: a thread that cannot be created must not
         # return a usable app to the lock screen (the caller clears the key on any failure here).
-        _LOG.warning("post-unlock startup upkeep could not be started", exc_info=True)
+        log_failure(_LOG, "post-unlock startup upkeep could not be started", exc, level=logging.WARNING)
         set_startup("ready", "", error=str(exc))
 
 
@@ -522,8 +522,8 @@ class _forensic_timer:
                     ),
                 }
             )
-        except Exception:  # noqa: BLE001 - forensics never blocks the unlock
-            _LOG.debug("could not record unlock timing", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - forensics never blocks the unlock
+            log_failure(_LOG, "could not record unlock timing", exc, level=logging.DEBUG)
 
 
 # A log smaller than ``forensics.recovery_floor_bytes()`` is recovered before anyone could read
@@ -544,8 +544,8 @@ def _begin_recovery_notice(wal_state: dict | None) -> int | None:
             return None
         eta_s, basis = recovery_estimate(wal)
         return begin_recovery(wal, eta_s, basis)
-    except Exception:  # noqa: BLE001 - a notice never blocks an unlock
-        _LOG.debug("could not record the recovery notice", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a notice never blocks an unlock
+        log_failure(_LOG, "could not record the recovery notice", exc, level=logging.DEBUG)
         return None
 
 
@@ -614,8 +614,8 @@ def _end_recovery_notice(token: int | None) -> None:
         from src.api.startup_status import end_recovery
 
         end_recovery(token)
-    except Exception:  # noqa: BLE001 - as above
-        _LOG.debug("could not clear the recovery notice", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - as above
+        log_failure(_LOG, "could not clear the recovery notice", exc, level=logging.DEBUG)
 
 
 @router.get("/unlock-progress")

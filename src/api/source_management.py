@@ -28,6 +28,7 @@ including groups, metadata, and discovery functionality.
 Author: Ideotion
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
@@ -39,6 +40,7 @@ from sqlalchemy.orm import Session
 # Import database models and SourceManager
 from src.database.session import get_db
 from src.database.source_manager import SourceManager
+from src.monitoring.secret_scrub import log_failure
 
 # Import logging config
 from src.utils.logging_config import setup_logging
@@ -282,8 +284,8 @@ def overlay_adopt(db: Session = Depends(get_db)) -> dict:
 
         save_settings({"adopt_shipped_verdicts": True})
         preference_held = True
-    except Exception:  # noqa: BLE001 - reported, never swallowed into a clean result
-        logger.warning("adopted the overlay but could not persist the preference", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed into a clean result
+        log_failure(logger, "adopted the overlay but could not persist the preference", exc, level=logging.WARNING)
         preference_held = False
     tally = dict(apply_overlay(db))
     tally["preference_held"] = preference_held

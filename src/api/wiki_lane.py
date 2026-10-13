@@ -19,10 +19,12 @@ read what it stored.
 from __future__ import annotations
 
 import logging
+import sys
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
 
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.store import LaneAbsentError, lane_path, lane_session
 
 _LOG = logging.getLogger("api.wiki.lane")
@@ -57,7 +59,9 @@ _UNREADABLE = {
 
 
 def _unreadable(route: str) -> dict:
-    _LOG.warning("lane %s: the Wikipedia lane could not be read", route, exc_info=True)
+    failure = sys.exception()  # the caller's handler: this runs inside its ``except``
+    if failure is not None:
+        log_failure(_LOG, f"lane {route}: the Wikipedia lane could not be read", failure, level=logging.WARNING)
     return dict(_UNREADABLE)
 
 

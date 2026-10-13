@@ -21,6 +21,7 @@ from src.config.machine_floor import machine_floor
 from src.database import damage
 from src.database.models import Source
 from src.database.session import get_db
+from src.monitoring.secret_scrub import log_failure
 from src.monitoring.server_load import server_load
 from src.scheduler import storage_guard
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
@@ -376,8 +377,8 @@ def _resume_wiki_lane() -> None:
         from src.wiki.service import start_wiki_lane
 
         start_wiki_lane()
-    except Exception:  # noqa: BLE001 - a lane hiccup must never fail the start
-        _LOG.warning("could not resume the Wikipedia lane after the start", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a lane hiccup must never fail the start
+        log_failure(_LOG, "could not resume the Wikipedia lane after the start", exc, level=logging.WARNING)
 
 
 @router.post("/start")
@@ -611,8 +612,8 @@ def _apply_wiki_lane_state(state: str) -> None:
             start_wiki_lane()
         else:
             stop_wiki_lane()
-    except Exception:  # noqa: BLE001 - a lane hiccup must never fail the setting write
-        _LOG.warning("could not apply the wiki lane state %r", state, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a lane hiccup must never fail the setting write
+        log_failure(_LOG, f"could not apply the wiki lane state {state!r}", exc, level=logging.WARNING)
 
 
 @router.get("/runs")

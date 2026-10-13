@@ -36,6 +36,8 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _INDEX_NAME = "dump_index.sqlite"
@@ -267,8 +269,8 @@ def search(
     conn = _open(path)
     try:
         rows = conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError:
-        _LOG.warning("dump FTS search failed for %r", query, exc_info=True)
+    except sqlite3.OperationalError as exc:
+        log_failure(_LOG, f"dump FTS search failed for {query!r}", exc, level=logging.WARNING)
         out["reason"] = "search-error"
         return out
     finally:
@@ -328,7 +330,7 @@ class DumpIndexManager:
                 self._pages = result["pages"]
                 self._state = "cancelled" if result["cancelled"] else "done"
         except Exception as exc:  # noqa: BLE001 - a build failure is reported, never crashes
-            _LOG.warning("dump index build failed for %s", wiki, exc_info=True)
+            log_failure(_LOG, f"dump index build failed for {wiki}", exc, level=logging.WARNING)
             with self._lock:
                 self._state = "error"
                 self._error = str(exc)

@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -86,8 +87,8 @@ def _append(record: dict[str, Any]) -> None:
         with _LOCK:
             with _path().open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record) + "\n")
-    except OSError:
-        _LOG.debug("could not append to %s", _FILE, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"could not append to {_FILE}", exc, level=logging.DEBUG)
 
 
 def trim() -> None:
@@ -104,8 +105,8 @@ def trim() -> None:
             tmp = p.with_suffix(".jsonl.tmp")
             tmp.write_text("\n".join(lines[-_MAX_LINES:]) + "\n", encoding="utf-8")
             os.replace(tmp, p)
-    except OSError:
-        _LOG.debug("could not trim %s", _FILE, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"could not trim {_FILE}", exc, level=logging.DEBUG)
 
 
 class phase:

@@ -41,6 +41,7 @@ from pathlib import Path
 # INSIDE the try would be unbound for any failure raised before that line --
 # turning a real error into a NameError from the handler.
 from src.database.writer import WriteGateBusy
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("scheduler.hygiene")
 
@@ -96,8 +97,8 @@ def release_pass_state() -> dict | None:
 
         reset_caches()
         caches_reset = True
-    except Exception:  # noqa: BLE001 - the library may be absent or change API
-        _LOG.debug("trafilatura reset_caches unavailable", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the library may be absent or change API
+        log_failure(_LOG, "trafilatura reset_caches unavailable", exc, level=logging.DEBUG)
 
     gc_collected = None
     with suppress(Exception):
@@ -373,7 +374,7 @@ def checkpoint_wal(
             "waited_s": gate_timeout,
         }
     except Exception as exc:  # noqa: BLE001 - hygiene must never break the run loop
-        _LOG.warning("wal checkpoint failed; run loop continues", exc_info=True)
+        log_failure(_LOG, "wal checkpoint failed; run loop continues", exc, level=logging.WARNING)
         if errors is not None:
             errors.append(type(exc).__name__)
         return None
@@ -391,6 +392,6 @@ def run_pass_hygiene() -> dict | None:
         # value for "could not run" and "was never asked to").
         out["wal_checkpoint"] = checkpoint_wal()
         return out
-    except Exception:  # noqa: BLE001 - hygiene must never break the run loop
-        _LOG.warning("pass hygiene failed; run loop continues", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - hygiene must never break the run loop
+        log_failure(_LOG, "pass hygiene failed; run loop continues", exc, level=logging.WARNING)
         return None

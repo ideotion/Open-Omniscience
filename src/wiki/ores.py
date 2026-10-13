@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 
 from src.ingest import OO_VERSION
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 ORES_ENDPOINT = "https://ores.wikimedia.org/v3/scores"
@@ -167,7 +168,7 @@ class OresClient:
                 _LOG.info("ORES scoring refused by THIS APP: airplane mode is engaged")
             else:
                 self._note("transport_error", f"{type(exc).__name__}: {exc}")
-                _LOG.warning("ORES scoring failed for %s", wiki, exc_info=True)
+                log_failure(_LOG, f"ORES scoring failed for {wiki}", exc, level=logging.WARNING)
             return {}
         status = getattr(resp, "status_code", None)
         if status in (404, 410):
@@ -186,7 +187,7 @@ class OresClient:
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
             self._note("http_error", f"{type(exc).__name__}: {exc}")
-            _LOG.warning("ORES scoring failed for %s", wiki, exc_info=True)
+            log_failure(_LOG, f"ORES scoring failed for {wiki}", exc, level=logging.WARNING)
             return {}
         try:
             out = parse_ores(resp.json(), wiki)
@@ -194,7 +195,7 @@ class OresClient:
             # A 200 whose BODY is not what this parser expects is its own outcome: it
             # is what a migrated service answering at the old path would look like.
             self._note("unreadable_response", f"{type(exc).__name__}: {exc}")
-            _LOG.warning("ORES answered with a body this build cannot read", exc_info=True)
+            log_failure(_LOG, "ORES answered with a body this build cannot read", exc, level=logging.WARNING)
             return {}
         self._note("ok")
         return out

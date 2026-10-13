@@ -19,6 +19,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _MAX_RUNS_READ = 200
@@ -37,8 +39,8 @@ def record_run(report: dict) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(report, sort_keys=True, default=str) + "\n")
-    except Exception:  # noqa: BLE001 - the log must never break a scrape
-        _LOG.warning("could not append scheduler run report", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the log must never break a scrape
+        log_failure(_LOG, "could not append scheduler run report", exc, level=logging.WARNING)
 
 
 def recent_runs(limit: int = 20) -> list[dict]:
@@ -54,8 +56,8 @@ def recent_runs(limit: int = 20) -> list[dict]:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue  # a torn line (crash mid-write) is skipped, not fatal
-    except Exception:  # noqa: BLE001
-        _LOG.warning("could not read scheduler run log", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "could not read scheduler run log", exc, level=logging.WARNING)
     return list(reversed(rows))[: max(1, min(limit, _MAX_RUNS_READ))]
 
 

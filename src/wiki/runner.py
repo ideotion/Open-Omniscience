@@ -49,6 +49,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.database import damage
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.adapters.base import ReadBudget
 from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
@@ -287,7 +288,7 @@ def drain_once(
     try:
         report.size_sampled = record_size_sample(lane, budget.disk_bytes)
     except Exception as exc:  # noqa: BLE001 - a missing sample must not end a drain
-        _LOG.debug("could not record a lane size sample", exc_info=True)
+        log_failure(_LOG, "could not record a lane size sample", exc, level=logging.DEBUG)
         report.errors.append(f"size sample: {type(exc).__name__}: {exc}")
     admit = make_admit(adapter, hot_sets)
     policy = make_text_policy(budget)
@@ -330,7 +331,7 @@ def drain_once(
             # NAMED, and the drain continues. Eleven editions still collecting while
             # one is broken is the honest outcome; a drain that died on the first
             # would lose the other eleven's buffers to the next overflow.
-            _LOG.warning("the %s feed failed this drain", feed, exc_info=True)
+            log_failure(_LOG, f"the {feed} feed failed this drain", exc, level=logging.WARNING)
             report.errors.append(f"{edition_of(feed)}: {type(exc).__name__}: {exc}")
             continue
         report.add(feed, result)
@@ -501,8 +502,8 @@ class WikiLaneRunner:
             )
             for edition, n in kept.items():
                 self._history.note("stream", edition=edition, kind="kept", n=n)
-        except Exception:  # noqa: BLE001 - a stream that keeps no counters has no differences
-            _LOG.debug("could not read the stream's counters for the history", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a stream that keeps no counters has no differences
+            log_failure(_LOG, "could not read the stream's counters for the history", exc, level=logging.DEBUG)
         if self._history.pending():
             try:
                 with self._lane_session() as lane:
@@ -611,11 +612,11 @@ class WikiLaneRunner:
             return True
         try:
             return self._state_of() != "running"
-        except Exception:  # noqa: BLE001 - an unreadable setting stops the stream
+        except Exception as exc:  # noqa: BLE001 - an unreadable setting stops the stream
             # STOPS rather than continues. A runner that kept streaming because it
             # could not read the setting would be collecting without a permission it
             # can no longer confirm, which is the one direction this must not fail in.
-            _LOG.warning("could not read the lane state; stopping the stream", exc_info=True)
+            log_failure(_LOG, "could not read the lane state; stopping the stream", exc, level=logging.WARNING)
             self.last_error = "the lane setting could not be read; the loop stopped (the next Start or online click restarts it)"
             return True
 
@@ -631,8 +632,8 @@ class WikiLaneRunner:
         if self._resume_from is not None:
             try:
                 resume = self._resume_from()
-            except Exception:  # noqa: BLE001 - an unreadable cursor is a cold start
-                _LOG.warning("could not read the stored stream position", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - an unreadable cursor is a cold start
+                log_failure(_LOG, "could not read the stored stream position", exc, level=logging.WARNING)
                 resume = None
         try:
             self._stream.run(
@@ -653,7 +654,7 @@ class WikiLaneRunner:
             if type(exc).__name__ == "StreamStopped":
                 _LOG.info("the Wikipedia stream ended: %s", exc)
             else:
-                _LOG.warning("the Wikipedia stream ended unexpectedly: %s", exc, exc_info=True)
+                log_failure(_LOG, f"the Wikipedia stream ended unexpectedly: {exc}", exc, level=logging.WARNING)
 
     def start(self) -> bool:
         """Start the stream thread. ``False`` when the setting does not say ``running``."""
@@ -802,8 +803,8 @@ class WikiLaneRunner:
             ident = threading.get_ident()
             watch_holder(ident)
             return ident
-        except Exception:  # noqa: BLE001 - the record is not the work
-            _LOG.debug("could not watch the write gate", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the record is not the work
+            log_failure(_LOG, "could not watch the write gate", exc, level=logging.DEBUG)
             return None
 
     def _take_gate(self, ident: int | None) -> dict | None:
@@ -814,8 +815,8 @@ class WikiLaneRunner:
             from src.database.writer import take_watched_holder
 
             return take_watched_holder(ident)
-        except Exception:  # noqa: BLE001 - the record is not the work
-            _LOG.debug("could not read the write gate's per-thread figures", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the record is not the work
+            log_failure(_LOG, "could not read the write gate's per-thread figures", exc, level=logging.DEBUG)
             return None
 
     def _note_drain(
@@ -858,8 +859,8 @@ class WikiLaneRunner:
                 g["longest_ms"] = max(g["longest_ms"], longest_ms)
             if report is not None and report.gaps_recorded:
                 self._history.note("drain", kind="gaps", n=report.gaps_recorded)
-        except Exception:  # noqa: BLE001 - the record is not the work
-            _LOG.debug("could not record a drain's timing", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the record is not the work
+            log_failure(_LOG, "could not record a drain's timing", exc, level=logging.DEBUG)
 
     def refresh_one_pageview_top(self) -> str | None:
         """Fetch ONE edition's daily top-1,000 if any is due. Returns the edition, or None.
@@ -884,7 +885,7 @@ class WikiLaneRunner:
         try:
             return self._pageviews()
         except Exception as exc:  # noqa: BLE001 - an attention signal must not end a drain
-            _LOG.warning("the daily pageview top-up failed: %s", exc, exc_info=True)
+            log_failure(_LOG, f"the daily pageview top-up failed: {exc}", exc, level=logging.WARNING)
             return None
 
     def idle(self, seconds: float) -> None:
@@ -920,7 +921,7 @@ class WikiLaneRunner:
                 )
                 self.last_index = index_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the index must not end the lane
-                _LOG.warning("the Wikipedia lane search index window failed: %s", exc, exc_info=True)
+                log_failure(_LOG, f"the Wikipedia lane search index window failed: {exc}", exc, level=logging.WARNING)
                 self.last_index = {"error": f"{type(exc).__name__}"}
             self._tick_part("index", self._ms_since(index_t0))
         if self._warm is not None and not self._writing_stopped():
@@ -934,7 +935,7 @@ class WikiLaneRunner:
                 warm_report = self._warm.warm_for(warm_window, should_stop=self._writing_stopped)
                 self.last_warm = warm_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
-                _LOG.warning("the Wikipedia window for fetching other changed pages failed: %s", exc, exc_info=True)
+                log_failure(_LOG, f"the Wikipedia window for fetching other changed pages failed: {exc}", exc, level=logging.WARNING)
                 self.last_warm = {"error": f"{type(exc).__name__}"}
             self._tick_part("warm", self._ms_since(warm_t0))
         if self._walker is not None and not self._writing_stopped() and left() > 0:
@@ -943,7 +944,7 @@ class WikiLaneRunner:
                 report = self._walker.walk_for(left(), should_stop=self._writing_stopped)
                 self.last_walk = report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
-                _LOG.warning("the Wikipedia walk window failed: %s", exc, exc_info=True)
+                log_failure(_LOG, f"the Wikipedia walk window failed: {exc}", exc, level=logging.WARNING)
                 self.last_walk = {"error": f"{type(exc).__name__}"}
             self._tick_part("walk", self._ms_since(walk_t0))
         remaining = left()
@@ -969,8 +970,8 @@ class WikiLaneRunner:
             return None
         try:
             return {**self._walker.status(), "last_window": self.last_walk}
-        except Exception:  # noqa: BLE001 - a status read must not fail the status surface
-            _LOG.debug("could not read the walk status", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a status read must not fail the status surface
+            log_failure(_LOG, "could not read the walk status", exc, level=logging.DEBUG)
             return None
 
     def index_status(self) -> dict | None:
@@ -979,8 +980,8 @@ class WikiLaneRunner:
             return None
         try:
             return {**self._indexer.status(), "last_window": self.last_index}
-        except Exception:  # noqa: BLE001 - a status read must not fail the status surface
-            _LOG.debug("could not read the search index status", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a status read must not fail the status surface
+            log_failure(_LOG, "could not read the search index status", exc, level=logging.DEBUG)
             return None
 
     def warm_status(self) -> dict | None:
@@ -989,8 +990,8 @@ class WikiLaneRunner:
             return None
         try:
             return {**self._warm.status(), "last_window": self.last_warm}
-        except Exception:  # noqa: BLE001 - a status read must not fail the status surface
-            _LOG.debug("could not read the status of fetching other changed pages", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a status read must not fail the status surface
+            log_failure(_LOG, "could not read the status of fetching other changed pages", exc, level=logging.DEBUG)
             return None
 
     def _failure_wait(self) -> float:
@@ -1042,7 +1043,7 @@ class WikiLaneRunner:
                 self.revive_stream()
             except Exception as exc:  # noqa: BLE001 - a failed restart is retried next tick
                 self.last_restart_error = f"{type(exc).__name__}: {exc}"[:300]
-                _LOG.warning("the Wikipedia stream could not be restarted: %s", exc, exc_info=True)
+                log_failure(_LOG, f"the Wikipedia stream could not be restarted: {exc}", exc, level=logging.WARNING)
             try:
                 self.drain()
                 self.consecutive_failures = 0
@@ -1056,10 +1057,7 @@ class WikiLaneRunner:
                 self.consecutive_failures += 1
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 self.last_error_at = datetime.now(UTC).isoformat()
-                _LOG.warning(
-                    "the wiki lane drain failed (%d in a row): %s",
-                    self.consecutive_failures, exc, exc_info=True,
-                )
+                log_failure(_LOG, f"the wiki lane drain failed ({self.consecutive_failures} in a row): {exc}", exc, level=logging.WARNING)
                 if self.consecutive_failures == MAX_CONSECUTIVE_FAILURES:
                     _LOG.error(
                         "the wiki lane has failed %d drains in a row (%s); it keeps trying, "

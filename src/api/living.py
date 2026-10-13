@@ -36,6 +36,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("api.living")
 
@@ -106,10 +107,10 @@ def _wiki_stream(since: datetime) -> dict[str, Any]:
             )
     except LaneAbsentError:
         return {"measured": False, "reason": "lane-never-run"}
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         # A file with no schema (the S5 walk's empty wiki.db) is repaired by the next
         # drain; until then it is named, never a 500 that blanks the other sources.
-        _LOG.warning("living overview: the Wikipedia lane could not be read", exc_info=True)
+        log_failure(_LOG, "living overview: the Wikipedia lane could not be read", exc, level=logging.WARNING)
         return _unreadable("the Wikipedia lane file")
     through = [c.contiguous_through for c in cursors if c.contiguous_through is not None]
     return {
@@ -170,8 +171,8 @@ def _wiki_walk() -> dict[str, Any]:
 
     try:
         enabled = bool(getattr(load_settings(), "wiki_walk_enabled", False))
-    except Exception:  # noqa: BLE001 - an unreadable switch is named, never guessed
-        _LOG.warning("living overview: the walk switch could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable switch is named, never guessed
+        log_failure(_LOG, "living overview: the walk switch could not be read", exc, level=logging.WARNING)
         enabled = None
     live = (lane_service_status() or {}).get("walk")
     out: dict[str, Any] = {
@@ -186,8 +187,8 @@ def _wiki_walk() -> dict[str, Any]:
             coverage = walk_coverage(lane)
     except LaneAbsentError:
         return {**out, "measured": False, "reason_counts": "lane-never-run"}
-    except SQLAlchemyError:
-        _LOG.warning("living overview: the walk's rows could not be read", exc_info=True)
+    except SQLAlchemyError as exc:
+        log_failure(_LOG, "living overview: the walk's rows could not be read", exc, level=logging.WARNING)
         return {**out, "measured": False, "reason_counts": "unreadable"}
     if not coverage.get("measured"):
         return {**out, "measured": False, "reason_counts": coverage.get("reason")}
@@ -210,8 +211,8 @@ def _wiki_warm() -> dict[str, Any]:
 
     try:
         enabled: bool | None = bool(getattr(load_settings(), "wiki_warm_enabled", False))
-    except Exception:  # noqa: BLE001 - an unreadable switch is named, never guessed
-        _LOG.warning("living overview: WARM's switch could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable switch is named, never guessed
+        log_failure(_LOG, "living overview: WARM's switch could not be read", exc, level=logging.WARNING)
         enabled = None
     live = (lane_service_status() or {}).get("warm")
     out: dict[str, Any] = {
@@ -229,8 +230,8 @@ def _wiki_warm() -> dict[str, Any]:
             coverage = warm_coverage(lane)
     except LaneAbsentError:
         return {**out, "measured": False, "reason_counts": "lane-never-run"}
-    except SQLAlchemyError:
-        _LOG.warning("living overview: the WARM rows could not be read", exc_info=True)
+    except SQLAlchemyError as exc:
+        log_failure(_LOG, "living overview: the WARM rows could not be read", exc, level=logging.WARNING)
         return {**out, "measured": False, "reason_counts": "unreadable"}
     if not coverage.get("measured"):
         return {**out, "measured": False, "reason_counts": coverage.get("reason")}
@@ -269,8 +270,8 @@ def _wiki_tracked(db: Session, since: datetime) -> dict[str, Any]:
             .scalar()
             or 0
         )
-    except SQLAlchemyError:
-        _LOG.warning("living overview: tracked Wikipedia pages could not be read", exc_info=True)
+    except SQLAlchemyError as exc:
+        log_failure(_LOG, "living overview: tracked Wikipedia pages could not be read", exc, level=logging.WARNING)
         return _unreadable("the tracked Wikipedia pages")
     return {
         "measured": True,
@@ -314,8 +315,8 @@ def _law(db: Session, since: datetime) -> dict[str, Any]:
             .scalar()
             or 0
         )
-    except SQLAlchemyError:
-        _LOG.warning("living overview: the law tracker could not be read", exc_info=True)
+    except SQLAlchemyError as exc:
+        log_failure(_LOG, "living overview: the law tracker could not be read", exc, level=logging.WARNING)
         return _unreadable("the law tracker")
     return {
         "measured": True,
@@ -341,8 +342,8 @@ def _maps() -> dict[str, Any]:
         from src.geo.osm_downloads import get_manager
 
         entries = get_manager().list()
-    except Exception:  # noqa: BLE001 - a named absence, never a 500 over the other sources
-        _LOG.warning("living overview: the map downloads could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a named absence, never a 500 over the other sources
+        log_failure(_LOG, "living overview: the map downloads could not be read", exc, level=logging.WARNING)
         return _unreadable("the map downloads")
     by_state = dict.fromkeys(_MAP_STATES, 0)
     other = 0
@@ -373,8 +374,8 @@ def _storage(db: Session) -> dict[str, Any]:
 
     try:
         report = storage_report(db)
-    except Exception:  # noqa: BLE001 - the counts above still answer without it
-        _LOG.warning("living overview: the storage report could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the counts above still answer without it
+        log_failure(_LOG, "living overview: the storage report could not be read", exc, level=logging.WARNING)
         return {}
     return {row["kind"]: row for row in report.get("lanes", [])}
 
