@@ -161,9 +161,21 @@ FLUSH_RETRY_S = 60.0
 #: 1 and say nothing), so one history, growing with the number of loggers, cannot crowd them out.
 MEMBER_BUDGET_BYTES = 260_000
 
-#: Which record carries the minutes before a kill. Set once the owner of that record has
-#: confirmed it; until then the member says the 5-minute history is the only record.
-TAIL_IN: dict[str, str] | None = None
+#: Which record carries the minutes before a kill (the plan's section 6a: written ONCE, by the
+#: finer instrument that already has the trigger, so no number is in both files). The memory
+#: pressure snapshots every 15 seconds while available memory is near the guard's line are
+#: ``pressure-light.json`` of the same archive (``src.api.diagnostics_slots`` names it, and
+#: ``tests/test_diagnostic_slots.py`` fails if the slot is renamed without this). ``None`` reads as
+#: "no finer record is built", and the member then says this history is the only record.
+_TAIL_IN_PRESSURE_LIGHT: dict[str, str] = {
+    "member": "pressure-light.json",
+    "why": (
+        "the light memory snapshots taken every 15 seconds while available memory is within 1.5 "
+        "times the guard's line: the minutes before a kill, which a flush of this history every "
+        "five minutes can lose"
+    ),
+}
+TAIL_IN: dict[str, str] | None = _TAIL_IN_PRESSURE_LIGHT
 
 #: The row layout. Memory, drive free and sizes in whole MB (a megabyte is below the noise on a
 #: machine whose memory is counted in gigabytes), blocks in thousands.
@@ -1255,4 +1267,4 @@ def reset_for_tests() -> None:
         _PROC = None
         _COST = {}
         _ERRORS.clear()
-        TAIL_IN = None
+        TAIL_IN = _TAIL_IN_PRESSURE_LIGHT

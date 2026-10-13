@@ -226,8 +226,16 @@ def test_the_background_job_takes_the_hold(clean_window, monkeypatch, tmp_path):
     seen: dict = {}
 
     def _spy(members, zf, **kw):
-        seen["open"] = R.exclusive_window_open()
-        seen["excl"] = kw.get("exclusive")
+        # THE JOB DOES NOT HOLD THE MACHINE AROUND THE WHOLE BUILD ANY MORE (R124): the records
+        # are read with collection running, and the writer opens the window for the scans. So the
+        # job's part is to hand the writer the OPENER, and not a hold of its own.
+        seen["open_during_records"] = R.exclusive_window_open()
+        seen["exclusive_arg"] = kw.get("exclusive")
+        opener = kw.get("scan_window")
+        seen["opener_is_the_bundle_window"] = opener is _diag_bundle._bundle_exclusive_window
+        with opener() as claim:
+            seen["open"] = R.exclusive_window_open()
+            seen["excl"] = claim
         return []
 
     monkeypatch.setattr(_diag_bundle, "_all_diagnostics_dir", lambda: tmp_path)
@@ -243,7 +251,10 @@ def test_the_background_job_takes_the_hold(clean_window, monkeypatch, tmp_path):
 
     assert R.exclusive_window_open() is False, "anti-vacuity: the window starts closed"
     d._all_diagnostics_worker(_Ctx())
-    assert seen["open"] is True, "the background job must hold the machine while it builds"
+    assert seen["opener_is_the_bundle_window"], "the job must hand the writer the bundle's own window"
+    assert seen["exclusive_arg"] is None, "a whole-build hold would put the records inside the pause"
+    assert seen["open_during_records"] is False, "the records are read with collection running"
+    assert seen["open"] is True, "the window the job hands over must hold the machine while it is open"
     assert seen["excl"] and seen["excl"]["held"] is True
     assert R.exclusive_window_open() is False, "released on exit"
 

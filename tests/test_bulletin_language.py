@@ -768,3 +768,25 @@ def test_the_introduction_is_part_of_what_the_sample_exercises():
         "and a PARTIAL one, so the removal note is exercised too — that note is the "
         "string this guard was written after"
     )
+
+
+def test_the_zip_member_is_the_route_and_carries_what_the_removed_button_showed():
+    """R119 (one Diagnostics button) removed the panel's «Bulletin language & render» button. Its status
+    line was read from three fields of the route's payload (`languages`, `render_integrity`,
+    `measured`) and it then downloaded the same payload, so the zip's `bulletin-language.json` member
+    carries everything the button gave if it is the route's own function and still has those fields.
+    No page code reads the report any more."""
+    from tests.diagnostics_source import diagnostics_source
+    from tests.js_source_helper import app_js, read_static
+
+    assert '("bulletin-language.json", lambda: bulletin_language(download=False))' in diagnostics_source()
+
+    from src.api.diagnostics import bulletin_language
+
+    body = json.loads(bulletin_language(download=False).body)
+    assert isinstance(body.get("languages"), list) and body["languages"]
+    assert isinstance(body.get("render_integrity"), dict)
+    assert "measured" in body
+
+    assert "bulletinLanguageReport" not in read_static("index.html")
+    assert "bulletinLanguageReport" not in app_js()

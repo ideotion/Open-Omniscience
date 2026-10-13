@@ -1,13 +1,15 @@
-"""Files of at most one megabyte, numbered, each valid on its own (the diagnostics channel).
+"""Files of at most 4 MB (1 MB until 2026-10-06), numbered, each valid on its own (the diagnostics channel).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHY. The diagnostics are how evidence gets from the maintainer to whoever is diagnosing, and
-the channel refuses files of about 1.2 MB and up (measured by the maintainer, 2026-09-30:
-uploads of ~5 MB zips failed, one-by-one zipped uploads worked). A diagnostic that cannot be
-sent is a diagnostic that does not exist, so the size of every file the maintainer is handed is
-a correctness property here, not a convenience.
+the channel refuses files above some size: the maintainer measured it on 2026-09-30 (uploads of
+~5 MB zips failed, one-by-one zipped uploads worked; then files of about 1.2 MB and up failed, so
+R115 cut every file to 1 MB), and on 2026-10-06 (R119) asked for "one zip, or several, so long as
+they weigh less than 4 MB each". A diagnostic that cannot be sent is a diagnostic that does not
+exist, so the size of every file the maintainer is handed is a correctness property here, not a
+convenience.
 
 THE SHAPE, as asked (2026-10-01): every file is at most ``UPLOAD_PART_BYTES``; the files of one
 export are numbered ``<stem>-part-03-of-12.zip``; each part opens on its own in any unzip tool,
@@ -52,14 +54,16 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-#: The most any file handed to the maintainer may weigh. The maintainer's number, and what it
-#: protects is their UPLOADS: files of about 1.2 MB and up failed to upload (2026-09-30); 1,000,000
-#: bytes and not 2**20 keeps a margin under that. It is not a memory or disk limit, and it bounds
-#: each FILE, never the total (an export asking for no total cap is simply more files). The one
-#: thing that moves it is an operator's own override of the diagnostics set's cap
-#: (``OO_DIAG_VOLUME_MAX_MB``, in MiB, so ``1`` is 1,048,576 bytes, and the manifest zips of that
-#: set follow it); the default, every keyword set and its manifest zips are this number.
-UPLOAD_PART_BYTES = 1_000_000
+#: The most any file handed to the maintainer may weigh. The maintainer's number (R119, 2026-10-06:
+#: "less than 4 MB each"), and what it protects is their UPLOADS: files of about 1.2 MB and up failed
+#: to upload on 2026-09-30, which is why this was 1,000,000 until R119 amended R115. 4,000,000 bytes
+#: and not 4 * 2**20 keeps a margin under the stated limit. It is not a memory or disk limit, and it
+#: bounds each FILE, never the total (an export asking for no total cap is simply more files). If an
+#: upload above the old size fails again, this is the one line to change. The one thing that moves it
+#: otherwise is an operator's own override of the diagnostics set's cap (``OO_DIAG_VOLUME_MAX_MB``,
+#: in MiB, so ``1`` is 1,048,576 bytes, and the manifest zips of that set follow it); the default,
+#: every keyword set and its manifest zips are this number.
+UPLOAD_PART_BYTES = 4_000_000
 
 PART_KIND = "oo-upload-part-1"
 MANIFEST_KIND = "oo-upload-parts-manifest-1"

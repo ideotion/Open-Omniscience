@@ -1578,14 +1578,20 @@ Official **figures** are not here at all — they are data, so they live under
   download and share them. Boot remains fully offline either way.
 - **Diagnostics log:** a shareable synthesis of how the app sees your corpus — generated
   only when you click, counts and structures only (never scores), and only you decide who
-  gets the file. The panel offers a whole suite of exports:
+  gets the file. The panel has ONE **Diagnostics** button, its **Thorough** box, and the keyword
+  files; every other log in this table is a **member of the Diagnostics archive**, not a button of its
+  own (several hold more than one report: `selftests.json` carries the thirteen mechanism self-tests
+  with a verdict each, `storage.json` the footprint, composition, volume and persistence reads,
+  `contention.json` the write gate and the stall attribution, `ai-runs.json` the last AI-job results,
+  `run-journal.json` the summary and its raw lines; a merged member's `merged.replaces` in the manifest
+  names the files it replaced, so an old archive can be read against a new one):
 
-  | Export | What it is |
+  | Export or archive member | What it is |
   |---|---|
-  | **All diagnostics (1 MB files)** | every log below, built into one archive in the background and then handed over as **numbered files of at most 1 MB each** (`…-part-03-of-12.zip`), plus a small `…-manifest.zip` that lists every file with its size and SHA-256. Each file opens on its own in any unzip tool. See "Saving the numbered files" below |
-  | **All diagnostics, again (last build, 1 MB files)** | the same finished archive, saved again as numbered files (type a part number in "Start at part number" first and it starts there, so you can resend only the ones that failed to upload). It only reuses an archive you have already built — it never starts a new build. If a single log is too large to fit one file it is cut on record boundaries into numbered pieces, and the manifest says which (a byte cut, `.part0001of0003`, is the last resort and is named in `volumes.json`) |
-  | **Keyword log (1 MB files)** | the top 5,000 keywords per language with real counts, families, your corrections and super-groups, as numbered files of at most 1 MB (about ten at most; the default aims under 9 MB in all) |
-  | **All keywords (1 MB files)** | every keyword in the corpus (not just the top per language), with no total size cap, as numbered files of at most 1 MB each. The first files hold every language's top 5,000, so if you cannot send them all, send them in number order. It is written to disk a batch at a time, so the app's memory stays flat whatever the corpus size; a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message (and removes its partial files, where the drive lets it) if memory or disk runs short |
+  | **Diagnostics** (and its **Thorough** box) | ONE archive with everything this install can say about itself, built in the background (the app stays usable) and then handed over: **one file** when it fits in 4 MB, otherwise **numbered files of at most 4 MB each** (`…-part-03-of-12.zip`) plus a small `…-manifest.zip` that lists every file with its size and SHA-256. Each file opens on its own in any unzip tool. **Quick** (the default) writes the records first, with collection still running, then as many scans of your corpus as fit in ten minutes, shortest first; a scan that did not fit is **named in the file** as not run, with why, never dropped silently. **Thorough** (the box beside the button, empty again each time the panel opens) runs every scan, each up to five minutes, with collection paused while they run (27 to 47 minutes measured on a large corpus). The file's `manifest.json` says which mode ran, the machine it ran on (build, library versions, memory tier, the names of the `OO_*` switches that were set, never their values), and for each member its area (memory, storage, database, sessions, runs, keywords, interface, sources, AI, self-tests, build). See "Saving the numbered files" below |
+  | **Save the last Diagnostics again** (a link under the button, shown once a build exists) | the same finished archive, saved again (type a part number in "Start at part number" first and it starts there, so you can resend only the ones that failed to upload). It only reuses an archive you have already built — it never starts a new build. If a single log is too large to fit one file it is cut on record boundaries into numbered pieces, and the manifest says which (a byte cut, `.part0001of0003`, is the last resort and is named in `volumes.json`) |
+  | **Keyword log (4 MB files)** | the top 5,000 keywords per language with real counts, families, your corrections and super-groups, as numbered files of at most 4 MB |
+  | **All keywords** (a link) | every keyword in the corpus (not just the top per language), with no total size cap, as numbered files of at most 4 MB each. The first files hold every language's top 5,000, so if you cannot send them all, send them in number order. It is written to disk a batch at a time, so the app's memory stays flat whatever the corpus size; a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message (and removes its partial files, where the drive lets it) if memory or disk runs short |
   | **Last keyword files, again** | saves the numbered keyword files built last time again, without rebuilding them. They stay on this machine until the next build, or twelve hours after you last saved one |
   | **Keyword self-test (.json)** | a golden-case check that keyword pre-selection still behaves (e.g. *WHO* ≠ *who*) |
   | **Keyword-engine report (.json)** | composition, entity precision, translation/tag coverage, per-language status |
@@ -1597,14 +1603,14 @@ Official **figures** are not here at all — they are data, so they live under
   | **Performance report / Scaling benchmark / Rollup benchmark (.json)** | timings and scaling checks |
   | **Debug bundle (.json)** | a consolidated support bundle |
 
-  **Saving the numbered files.** The page says how many files are ready ("13 files of at most 1 MB each are ready (manifest: 1, numbered parts: 12)")
+  **Saving the numbered files.** The page says how many files are ready ("13 files of at most 4 MB each are ready (manifest: 1, numbered parts: 12)")
   and hands them to your browser **five to a click**, the manifest first, because five is what one upload message takes and a click is what makes a
   browser accept a download. Your browser may ask once to allow several downloads: allow them. After the first five the button says "Save the next 5";
   "Save all the rest" is offered whenever more than five files remain, for one click that does everything. A bundle of five files or fewer, which is the usual case, is
-  handed to your browser by the page itself when the build ends (the click that started it is long past); "All diagnostics, again" sends the same files again. The page can only *ask your browser* to save
+  handed to your browser by the page itself when the build ends (the click that started it is long past); "Save the last Diagnostics again" sends the same files again. The page can only *ask your browser* to save
   a file, so it says "Asked your browser to save 5 of 13 files", never that they are saved: look in your downloads folder (a browser that refused the
   several-downloads question saves nothing and does not tell the page). While files are on their way the buttons are greyed, and a second click does
-  nothing. Every file is at most 1,000,000 bytes (files of about 1.2 MB and up failed to upload) and opens on its own, so you can send some now and
+  nothing. Every file is at most 4,000,000 bytes (the size this app splits at) and opens on its own, so you can send some now and
   the rest later. To send again only some files, type a part number in "Start at part number" and press "Save from this part": it hands over five files
   from that part (the manifest is not saved again), and a number past the last part starts at the last one and says so. A number you type in the same box also tells the two
   "again" buttons where to start, for the same kind of set (a number the page wrote there itself is ignored, so "again" with the box untouched
@@ -2126,8 +2132,8 @@ stop (the app's own Stop button, closing the window, logging out) closes the
 window as before.
 
 The next start then says how the previous session ended, under **Settings →
-Advanced → Diagnostics → session forensics** and in the downloaded
-`session-forensics.txt`, from whichever of these witnesses answered:
+Advanced → Diagnostics → session forensics** and in `session-forensics.json`
+inside the Diagnostics archive, from whichever of these witnesses answered:
 
 - the launcher's record of the exit status (`diagnostics/launcher_exits.jsonl`);
 - the kernel log, which names the kernel's own out-of-memory kills;

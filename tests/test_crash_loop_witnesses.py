@@ -209,103 +209,6 @@ def test_the_previous_session_report_carries_the_earlier_ends_for_every_verdict(
 # --------------------------------------------------------------------------- #
 #  E1. the peaks of every unclean end
 # --------------------------------------------------------------------------- #
-def _snap(i: int, *, threads: int = 10, frames: int = 4, width: int = 70) -> dict:
-    return {
-        "at": f"2026-09-30T21:{i:02d}:00+00:00", "why": "memory short", "avail_mb": 900.0 - i, "rss_mb": 3000.0 + i,
-        "swap_used_mb": 1000.0, "memory": {"rss_anon_mb": 1.0},
-        "threads": [{"name": f"oo-thread-{t}", "tid": t, "cpu_s": float(100 - t),
-                     "stack": [f"src/mod{f}.py:{t} fn".ljust(width, "x") for f in range(frames)]}
-                    for t in range(threads)] + [{"name": "sampler", "sampler": True, "stack": ["src/s.py:1 s"]}],
-    }
-
-
-def _hwm(n_snaps: int = 3, **kw) -> dict:
-    return {
-        "pid": 1, "started_at": "2026-09-30T20:00:00+00:00", "last_ts": "2026-09-30T21:59:00+00:00",
-        "rss_max_mb": 3817.0, "rss_max_at": "2026-09-30T21:08:38+00:00",
-        "avail_min_mb": 995.7, "avail_min_at": "2026-09-30T21:08:43+00:00",
-        "swap_used_max_mb": 1024.0, "swap_used_max_at": "2026-09-30T21:03:00+00:00", "phase": "export",
-        "at_peak": {"rss_anon_mb": 3437.3, "heap_free_held_mb": 988.7},
-        "heap_at_peak": {"rss_anon_mb": 3000.0, "heap_free_held_mb": 700.0},
-        "pressure_taken": n_snaps, "pressure": [_snap(i, **kw) for i in range(n_snaps)],
-    }
-
-
-def _size(x) -> int:
-    return len(json.dumps(x, separators=(",", ":"), default=str).encode("utf-8"))
-
-
-def test_a_record_that_fits_is_written_whole_without_a_truncated_flag():
-    peaks = sh._end_peaks(_hwm(1, threads=3, frames=2))
-    assert "truncated" not in peaks and _size(peaks) <= sh.END_PEAKS_MAX_BYTES
-    assert [t["name"] for t in peaks["pressure"][0]["threads"]] == ["oo-thread-0", "oo-thread-1", "oo-thread-2"]
-    assert "last_ts" not in peaks, "the liveness stamp is the end's own time, not a mark"
-    assert peaks["rss_max_at"] and peaks["avail_min_at"] and peaks["phase"] == "export"
-    assert peaks["heap_at_peak"] and "memory" not in peaks["pressure"][0]
-
-
-def test_a_stack_frame_is_cut_to_its_width_so_one_long_line_cannot_take_a_snapshot_with_it():
-    peaks = sh._end_peaks(_hwm(1, threads=2, frames=2, width=600))
-    frames = [f for t in peaks["pressure"][0]["threads"] for f in t["stack"]]
-    assert frames and all(len(f) <= 120 for f in frames)
-
-
-def test_the_sampler_thread_is_left_out_and_heap_at_peak_is_not_repeated_when_it_is_the_same_reading():
-    h = _hwm(1, threads=2, frames=1)
-    h["heap_at_peak"] = dict(h["at_peak"])
-    peaks = sh._end_peaks(h)
-    assert "heap_at_peak" not in peaks
-    assert all(not t.get("sampler") and t["name"] != "sampler" for t in peaks["pressure"][0]["threads"])
-
-
-def test_over_the_cap_frames_go_first_one_notch_at_a_time_and_the_line_says_so(monkeypatch):
-    """The 2026-09-30 shape: three snapshots of ten threads at four frames weigh just over 4 KB."""
-    fixture = _hwm(3, width=24)
-    with monkeypatch.context() as m:
-        m.setattr(sh, "END_PEAKS_MAX_BYTES", 10**9)
-        whole = sh._end_peaks(fixture)
-    assert _size(whole) > sh.END_PEAKS_MAX_BYTES and "truncated" not in whole, "the fixture needs a notch"
-    peaks = sh._end_peaks(fixture)
-    assert _size(peaks) <= sh.END_PEAKS_MAX_BYTES
-    assert peaks["truncated"] == ["frames"], "only as much as the line needed"
-    depths = {len(t["stack"]) for s in peaks["pressure"] for t in s["threads"]}
-    assert len(peaks["pressure"]) == 3 and depths == {sh.END_PEAKS_FRAMES - 1}, "one notch (4 -> 3), not a jump to 1"
-    assert len(peaks["pressure"][0]["threads"]) == sh.END_PEAKS_THREADS == 8
-
-
-def test_further_over_the_threads_thin_before_any_snapshot_goes_and_the_marks_never_do():
-    """The sidecar keeps at most 8 snapshots; forty busy threads each is far past the cap."""
-    heavy = sh._end_peaks(_hwm(8, threads=40, frames=4, width=110))
-    assert _size(heavy) <= sh.END_PEAKS_MAX_BYTES
-    assert heavy["truncated"][:2] == ["frames", "threads"] and "snapshots" not in heavy["truncated"]
-    for key in ("rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at", "swap_used_max_mb", "phase", "pressure_taken"):
-        assert key in heavy, key
-    assert heavy["pressure_taken"] == 8 and len(heavy["pressure"]) == 8, "every snapshot kept, thinner"
-
-
-def test_past_that_the_older_snapshots_go_and_the_newest_stays_it_is_the_one_nearest_the_death():
-    many = sh._end_peaks(_hwm(60, threads=40, frames=4, width=110))     # more than the sidecar keeps: defensive
-    assert _size(many) <= sh.END_PEAKS_MAX_BYTES
-    assert "snapshots" in many["truncated"] and many["pressure_taken"] == 60
-    assert [s["at"] for s in many["pressure"]] == ["2026-09-30T21:59:00+00:00"]
-    for key in ("rss_max_mb", "avail_min_mb", "swap_used_max_mb", "phase"):
-        assert key in many, key
-
-
-def test_the_context_goes_before_the_marks_even_when_nothing_else_fits():
-    h = _hwm(2)
-    h["at_peak"] = {"blob": "x" * 6000}
-    h["heap_at_peak"] = {"blob": "y" * 6000}
-    peaks = sh._end_peaks(h)
-    assert _size(peaks) <= sh.END_PEAKS_MAX_BYTES
-    assert "heap_at_peak" in peaks["truncated"] and "at_peak" in peaks["truncated"]
-    assert peaks["rss_max_mb"] == 3817.0 and peaks["avail_min_at"]
-
-
-def test_no_record_is_no_peaks_and_never_an_empty_dict():
-    assert sh._end_peaks(None) is None and sh._end_peaks({}) is None
-
-
 def _sidecar(dd: Path, pid: int, rss: float = 3500.0) -> None:
     (dd).mkdir(parents=True, exist_ok=True)
     (dd / "session_hwm.json").write_text(json.dumps({
@@ -644,12 +547,12 @@ def test_a_bound_that_cannot_be_met_keeps_the_newest_session_and_says_so():
 def test_the_bundle_member_is_held_to_its_bound_and_the_route_keeps_the_whole_ledger(dd, monkeypatch):
     from src.api.diagnostics import bundle as b
 
-    whole = _chronology_doc(1500, peak_chars=2600)  # a real end carries up to 4 KB of marks (END_PEAKS_MAX_BYTES)
+    whole = _chronology_doc(1500, peak_chars=2600)  # a stress fixture: far more than the marks an end carries in ``previous_peaks`` today
     assert ch._doc_bytes(whole) > ch.CHRONOLOGY_MEMBER_BYTES * 2.5, "the ledger's full size is what the bound is for"
     monkeypatch.setattr(ch, "chronology", lambda **kw: whole)
     member = b._chronology_member()
     assert ch._doc_bytes(member) <= ch.CHRONOLOGY_MEMBER_BYTES
-    # the stacks of the older ends are most of its size: thinning them keeps every session of a full ledger
+    # the peaks of the older ends are most of this fixture's size: thinning them keeps every session of a full ledger
     assert member["cut"]["stacks_omitted_for_size"] == 1500 - ch.CHRONOLOGY_KEEP_PEAKS and len(member["sessions"]) == 1500
     assert member["sessions"][-1]["session_id"] == "s1499"
     assert len(whole["sessions"]) == 1500 and "cut" not in whole

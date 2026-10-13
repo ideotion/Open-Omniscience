@@ -113,3 +113,40 @@ stopwords:
   - är
   - år
   - över
+  # batch sv-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - augusti
+  - både
+  - bör
+  - dessutom
+  - fredagen
+  - följ
+  - helskärmslägeannonstekniskt
+  - hos
+  - ifrån
+  - klicka
+  - knappen
+  - kring
+  - längs
+  - lördag
+  - lördagen
+  - maj
+  - miljoner
+  - måndagen
+  - omkring
+  - prenumerant
+  - runt
+  - samt
+  - själva
+  - såväl
+  - söndag
+  - söndagen
+  - textrobotdenna
+  - textrobottextredaktionens
+  - torsdagen
+  - uppdatera
+  - utifrån
+  - varandra
+  - vecka
+  - vissa
+  - vore
+  - årig

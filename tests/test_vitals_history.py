@@ -419,14 +419,18 @@ def test_the_member_does_not_claim_the_minutes_before_a_kill(hist):
     _ticks(hist, HOUR0, 60, rss=1.0)
     v.flush()
     m = _member()
-    assert m["tail_in"]["member"] is None and "only record" in m["tail_in"]["why"]
+    # The finer record exists (WAL's light snapshot, written every 15 s near the guard's line), and
+    # the member names it rather than claiming the minutes itself.
+    assert m["tail_in"]["member"] == "pressure-light.json" and "15 seconds" in m["tail_in"]["why"]
     assert "before a kill are not claimed" in m["caveat"]
     assert m["last_flush_at"] and isinstance(m["last_flush_age_s"], int)
-    v.TAIL_IN = {"member": "contention.json", "why": "its 15-second snapshot"}
+    # Where no finer record is built, the member says its own history is the only one.
+    v.TAIL_IN = None
     try:
-        assert _member()["tail_in"] == {"member": "contention.json", "why": "its 15-second snapshot"}
+        none = _member()["tail_in"]
+        assert none["member"] is None and "only record" in none["why"]
     finally:
-        v.TAIL_IN = None
+        v.TAIL_IN = v._TAIL_IN_PRESSURE_LIGHT
 
 
 def test_the_member_is_held_to_its_budget_by_dropping_the_oldest_rows(hist):

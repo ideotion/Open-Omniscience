@@ -14,6 +14,8 @@ import pathlib
 import re
 import subprocess
 
+from tests.js_source_helper import function_body
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 _LOCALES = _STATIC / "locales"
@@ -21,15 +23,12 @@ _LOCALES = _STATIC / "locales"
 #: Every English string the delivery can put on screen (keys, with their {placeholders}). Keyed
 #: here rather than trusted to the i18n ratchets, which are MAXIMA.
 _STRINGS = [
-    "All diagnostics (1 MB files)",
-    "All diagnostics, again (last build, 1 MB files)",
-    "All keywords (1 MB files)",
-    "Keyword log (1 MB files)",
+    "Keyword log (4 MB files)",
     "Last keyword files, again",
     "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.",
     "Looking for the last keyword files…",
     "No keyword files are kept on this machine yet — build them with one of the keyword buttons.",
-    "Ready — preparing the numbered files…",
+    "Ready — preparing the download…",
     "Save all the rest",
     "Save the next 5",
     "Start at part number",
@@ -43,12 +42,22 @@ _STRINGS = [
     "Asked your browser to save those files again.",
     "Asked your browser to save {done} of {n} files.",
     "Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
-    "{n} files of at most 1 MB each are ready (manifest: {m}, numbered parts: {parts}).",
+    "{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
     "There are only {n} parts, so saving starts at the last part.",
     "Type a part number from 1 to {n}.",
     "Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.",
     "Could not build the keyword files: {why}",
-    "The archive is ready. Press “All diagnostics, again” to save it as numbered files.",
+    # R119: one Diagnostics button, handed over as ONE file when it fits
+    "Thorough",
+    "All keywords",
+    "Save the last Diagnostics again",
+    "Save the last Diagnostics again ({size}, built {when})",
+    "Save the Diagnostics file",
+    "The Diagnostics file is ready ({size}).",
+    "Asked your browser to save the Diagnostics file. Check that it arrived, then send it.",
+    "The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it.",
+    "Nothing is built yet — press the Diagnostics button first.",
+    "A build was already running, so this page follows it. The Thorough box applies to a build you start.",
 ]
 
 
@@ -131,10 +140,10 @@ def test_the_bar_sits_directly_under_the_buttons_that_fill_it() -> None:
     assert first < bar
     assert re.findall(r'data-on-click="([^"]+)"', html[first:bar]) == [
         "runAllDiagnostics(this)",
-        "downloadDiagnosticsVolumes(this)",
         "downloadKeywordParts(this, 'default')",
-        "downloadKeywordParts(this, 'all')",
         "downloadKeywordParts(this, 'again')",
+        "downloadDiagnosticsVolumes(this)",
+        "downloadKeywordParts(this, 'all')",
     ], "only the buttons that fill the bar may sit between the first of them and the bar"
     after = html[bar:]
     for unrelated in ("viewKeywordGrowth(this)", "discoverWorld(this)", "ooOpenUrl('/api/diagnostics/source-quality?download=1')"):
@@ -162,3 +171,47 @@ def test_the_page_never_opens_one_big_download_for_the_bundle_or_the_keyword_log
     # five to a click is a named constant, and the reason is written beside it
     assert "const _PARTS_PER_CLICK = 5;" in js
     assert "take FIVE files per message" in js
+
+
+def test_the_panel_has_one_diagnostics_button_a_thorough_box_and_two_text_links() -> None:
+    """R119, R122 (the Light checkbox is gone), R123 («again» and «All keywords» are small text links)
+    and R124 (the Thorough box exists, empty, and is never stored)."""
+    html = (_STATIC / "index.html").read_text(encoding="utf-8")
+    js = (_STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
+    boot = (_STATIC / "app-boot.js").read_text(encoding="utf-8")
+    # the one button carries the one word
+    assert re.search(r'<button id="all-diag-btn"[^>]*>Diagnostics</button>', html)
+    # R122: no Light box, no profile in the request; R124: the Thorough box, unchecked in the markup
+    assert "all-diag-light" not in html and "all-diag-light" not in js
+    box = re.search(r'<input type="checkbox" id="diag-thorough"[^>]*>', html)
+    assert box and "checked" not in box.group(0), "the Thorough box starts empty"
+    assert 'mode=" + mode' in js and "profile=" not in js
+    # never stored: the two functions that read and reset the box touch no browser storage, and the
+    # mode rides the start request only (the shared slicer: a body brace-matched from its own declaration)
+    run = function_body(js, "runAllDiagnostics")
+    opened_fn = function_body(js, "diagnosticsPanelOpened")
+    for body in (run, opened_fn):
+        assert "localStorage" not in body and "sessionStorage" not in body
+    assert run.count("diag-thorough") == 1, "the box is read once, at press time"
+    # emptied each time the Diagnostics section opens, by the same listener that watches its jobs
+    # the CALL stands in the toggle listener as code (a commented-out line still contains the text, so the
+    # line is matched whole, from its start): "Thorough off at each open" is true only if the panel calls it
+    toggle = boot[boot.index('diag.addEventListener("toggle"'):]
+    assert re.search(
+        r'^\s*if \(diag\.open && typeof diagnosticsPanelOpened === "function"\) diagnosticsPanelOpened\(\);$',
+        toggle[:toggle.index("});")],
+        re.M,
+    )
+    assert 'box.checked = false' in opened_fn
+    # «again» is a text link (never a second filled button), hidden until the server names an archive
+    again = re.search(r'<button[^>]*id="all-diag-again"[^>]*>', html).group(0)
+    assert 'class="linkish"' in again and " hidden" in again
+    assert "last_archive" in js and "_paintDiagAgain(" in js
+    # the line is built with tf() at paint time, so the page's ONE langchange listener redraws it from the
+    # facts it last painted (a switch left it in the old language: Chromium walk 2026-10-06)
+    assert "_repaintDiagAgain()" in boot
+    # «All keywords» is a text link too, and still calls the full export
+    assert re.search(r'<button type="button" class="linkish" data-on-click="downloadKeywordParts\(this, \'all\'\)"[^>]*>All keywords</button>', html)
+    # the stand-alone «All diagnostics (1 MB files)» and «again» buttons are gone
+    assert "All diagnostics (1 MB files)" not in html
+    assert "All diagnostics, again" not in html

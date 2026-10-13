@@ -108,6 +108,39 @@ def test_every_refusal_has_its_reason(ctx):
     assert "phrase" in _refusals("read more", ctx)[0]
 
 
+def test_a_standing_cross_language_refusal_has_no_override(ctx):
+    # PROVENANCE.md keeps sea / tom / fin / laut out of the union: a function word in one language and
+    # a content word in another. The log cannot always see the other sense, so the tool is told.
+    log = LOG + [_kw(w, "en", 300) for w in sorted(sb.STANDING_REFUSALS)]
+    hidden, ring = sb.app_context("en")
+    index = sb.index_log(log)
+    for word in sorted(sb.STANDING_REFUSALS):
+        ev = sb.evidence(word, "en", index.get(word, []), hidden)
+        for allow in (frozenset(), frozenset({word})):
+            why = sb.refusals(word, ev, ring_words=ring, platforms=sb.platform_names(),
+                              ambiguous=sb.ambiguous_platform_names(), allow=allow)
+            assert why == ["standing_refusal"], (word, allow, why)
+
+
+def test_the_standing_refusals_are_the_four_the_provenance_file_records():
+    import re
+
+    text = (ROOT / "configs" / "stopwords_extra" / "PROVENANCE.md").read_text("utf-8")
+    heading = next(ln for ln in text.splitlines() if ln.startswith("### The four standing cross-language refusals"))
+    assert set(re.findall(r"`([^`]+)`", heading)) == set(sb.STANDING_REFUSALS)  # equal sets, both directions
+    assert len(sb.STANDING_REFUSALS) == 4
+
+
+def test_the_report_names_the_other_languages_a_word_was_read_in(ctx):
+    log = [_kw("pause", "de", 500, language_signature={"de": 480, "id": 71, "en": 2, "?": 5, "ms": 4})]
+    index = sb.index_log(log)
+    ev = sb.evidence("pause", "de", index["pause"], frozenset())
+    assert ev["read_in"] == [("id", 71), ("ms", 4)]  # not its own language, not "?", not one stray article
+    assert sb.evidence("pause", "de", sb.index_log([_kw("pause", "de", 500)])["pause"], frozenset())["read_in"] == []
+    odd = [_kw("pause", "de", 500, language_signature="not a mapping")]
+    assert sb.evidence("pause", "de", sb.index_log(odd)["pause"], frozenset())["read_in"] == []
+
+
 def test_ring_and_platform_refusals_cannot_be_overridden(ctx):
     allow = frozenset({"facebook", "election"})
     assert "platform_name" in _refusals("facebook", ctx, allow)[0]

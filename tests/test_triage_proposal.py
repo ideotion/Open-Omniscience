@@ -358,16 +358,18 @@ def test_the_bundle_member_produces_a_real_report_not_a_sentinel():
     bundle's own guard would swallow either into an error stub and nothing would say so, so
     this drives the REAL member generator: the defect would live in the call, not the
     definition, and a source-level check of the signature would pass right over it."""
-    import json as _json
 
     from src.api import diagnostics as d
     from src.database.session import SessionLocal
 
     with SessionLocal() as s:
         members = dict(d._all_diagnostics_members(s))
-        assert "keyword-triage-proposal.json" in members
-        resp = members["keyword-triage-proposal.json"]()
-    body = _json.loads(bytes(resp.body))
+        # R119 (2026-10-06): the proposal is a SECTION of ai-runs.json now, and the old name is listed.
+        assert "ai-runs.json" in members and "keyword-triage-proposal.json" not in members
+        merged = members["ai-runs.json"]()
+    assert "keyword-triage-proposal.json" in merged["merged"]["replaces"]
+    body = merged["sections"]["keyword-triage-proposal"]
+    assert "error" not in body, body
     assert body["schema"] == P.PROPOSAL_SCHEMA
     # available False is legitimate here (no run log on a fresh install); a SENTINEL leak
     # is not — it would surface as a missing schema or an error stub, never as this pair.

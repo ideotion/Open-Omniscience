@@ -47,6 +47,7 @@ function makePage() {
   const mk = (id, extra) => (els[id] = Object.assign({id, hidden: true, textContent: "", value: ""}, extra));
   mk("parts-bar"); mk("parts-status"); mk("parts-next"); mk("parts-rest"); mk("parts-from-wrap"); mk("parts-from-go");
   mk("parts-from", {value: "1"}); mk("all-diag-status");
+  mk("all-diag-again"); mk("diag-thorough", {checked: false});
   const clicked = [];
   const document = {
     body: {appendChild() {}},
@@ -61,13 +62,13 @@ function load(page, opts) {
   opts = opts || {};
   const src = [
     constLine("_PARTS_PER_CLICK"), constLine("_ALL_DIAG_POLL_CEILING_MS"),
-    "let _partsSet = null;", "let _partsGen = 0;", "let _partsBusy = 0;",
+    "let _partsSet = null;", "let _partsGen = 0;", "let _partsBusy = 0;", "let _diagAgainLast = null;",
     extract("_partsFiles"), extract("_partsWindow"), extract("_partsNextLabel"),
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
     extract("_partsReady"), extract("_partsShow"), extract("downloadKeywordParts"), extract("downloadDiagnosticsVolumes"),
-    extract("runAllDiagnostics"),
-    "return {_partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, _partsShow, partsSaveNext," +
+    extract("runAllDiagnostics"), extract("_paintDiagAgain"), extract("_repaintDiagAgain"), extract("diagnosticsPanelOpened"),
+    "return {_paintDiagAgain, _repaintDiagAgain, diagnosticsPanelOpened, _partsReady, _partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, _partsShow, partsSaveNext," +
     " partsSaveRest, partsSaveFrom, downloadKeywordParts, downloadDiagnosticsVolumes, runAllDiagnostics," +
     " state: () => _partsSet};",
   ].join("\n");
@@ -80,9 +81,11 @@ function load(page, opts) {
   // `opts.hold` (an array) holds the timers instead of running them, so a test can change the page
   // while a save is waiting between two files.
   const delays = opts.delays || [];
-  return new Function("$", "document", "window", "setTimeout", "api", src)($, page.document, fakeWindow,
+  // _fmtBytes and fmtAgo are the page's own formatters (other modules): stubbed so the line is checkable
+  return new Function("$", "document", "window", "setTimeout", "api", "_fmtBytes", "fmtAgo", src)($, page.document, fakeWindow,
     (fn, ms) => { delays.push(ms); if (opts.hold) opts.hold.push(fn); else fn(); return 0; },
-    opts.api || (async () => { throw new Error("no api"); }));
+    opts.api || (async () => { throw new Error("no api"); }),
+    (n) => n + " B", (iso) => "AGO(" + iso + ")");
 }
 
 // The name listing() gives part n of `of` (three digits, as the real set pads them at this size).
@@ -100,7 +103,7 @@ function listing(parts, manifests) {
   return {files, download_base: "/api/diagnostics/keywords/parts/set1/"};
 }
 
-const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again” to save it as numbered files.";
+const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it.";
 
 (async () => {
   // ---- the order: manifest first, then the parts in order, whatever order the listing came in
@@ -298,7 +301,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     await api.downloadKeywordParts({disabled: false}, "default");
     await old;
     assert.ok(page.clicked.length < 31, "the old loop stopped: " + page.clicked.length);
-    assert.ok(/^4 files of at most 1 MB each are ready \(manifest: 1, numbered parts: 3\)\./.test(page.els["parts-status"].textContent),
+    assert.ok(/^4 files of at most 4 MB each are ready \(manifest: 1, numbered parts: 3\)\./.test(page.els["parts-status"].textContent),
       page.els["parts-status"].textContent);
     assert.strictEqual(api.state().files.length, 4);
   }
@@ -379,7 +382,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     await api.downloadKeywordParts(btn, "default");
     assert.strictEqual(calls[0], "/api/diagnostics/keywords?format=parts");
     assert.strictEqual(page.clicked.length, 0, "a build spent the click: nothing is saved until the person clicks again");
-    assert.ok(/^13 files of at most 1 MB each are ready \(manifest: 1, numbered parts: 12\)\./.test(page.els["parts-status"].textContent),
+    assert.ok(/^13 files of at most 4 MB each are ready \(manifest: 1, numbered parts: 12\)\./.test(page.els["parts-status"].textContent),
       page.els["parts-status"].textContent);
     assert.strictEqual(page.els["parts-next"].textContent, "Save the first 5");
     assert.strictEqual(btn.disabled, false, "the button is usable again");
@@ -419,7 +422,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     await api.downloadDiagnosticsVolumes({disabled: false});
     assert.strictEqual(calls[0], "/api/diagnostics/all-job/volumes");
     assert.strictEqual(page.clicked.length, 5, "'All diagnostics, again' saves the first five at once");
-    for (const [status, words] of [[404, /^No archive to split yet/], [409, /^A build is running/], [500, /^Could not split the archive/]]) {
+    for (const [status, words] of [[404, /^Nothing is built yet/], [409, /^A build is running/], [500, /^Could not split the archive/]]) {
       const pg = makePage();
       const a2 = load(pg, {api: async () => { const e = new Error("boom"); e.status = status; throw e; }});
       await a2.downloadDiagnosticsVolumes({disabled: false});
@@ -873,7 +876,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
         await api.partsSaveNext();
         assert.strictEqual(page.clicked.length, before, failure + ": no click can ask for the dead files");
       }
-      const words = {404: /^No archive to split yet/, 409: /^A build is running/}[failure] || /^Could not split the archive: /;
+      const words = {404: /^Nothing is built yet/, 409: /^A build is running/}[failure] || /^Could not split the archive: /;
       assert.ok(words.test(page.els["all-diag-status"].textContent), failure + ": " + page.els["all-diag-status"].textContent);
       if (!["network", "parse", "409", "404"].includes(failure)) {
         assert.ok(/split failed$/.test(page.els["all-diag-status"].textContent), failure + ": the reason follows the sentence");
@@ -988,7 +991,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     const six = makePage(); const a6 = load(six, {api: finishedBuild(listing(5, 1))});
     await a6.runAllDiagnostics({disabled: false});
     assert.strictEqual(six.clicked.length, 0, "six files are two clicks: nothing is handed over without the person");
-    assert.ok(/^6 files of at most 1 MB each are ready \(manifest: 1, numbered parts: 5\)\./.test(six.els["parts-status"].textContent),
+    assert.ok(/^6 files of at most 4 MB each are ready \(manifest: 1, numbered parts: 5\)\./.test(six.els["parts-status"].textContent),
       six.els["parts-status"].textContent);
     assert.strictEqual(six.els["parts-next"].textContent, "Save the first 5", "and the button under the buttons says what one click does");
   }
@@ -1081,7 +1084,7 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     assert.ok(!/Could not split/.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
     assert.strictEqual(page.els["parts-bar"].hidden, false, "the bar and its set are still there");
     assert.strictEqual(api.state().kind, "diagnostics");
-    assert.ok(/^2 files of at most 1 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    assert.ok(/^2 files of at most 4 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
     assert.strictEqual(btn.disabled, false, "the button is released");
   }
   {
@@ -1092,6 +1095,111 @@ const READY_SENTENCE = "The archive is ready. Press “All diagnostics, again”
     await api.runAllDiagnostics({disabled: false});
     assert.strictEqual(page.clicked.length, 0);
     assert.ok(/^Could not split the archive: /.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
+  }
+
+  // ---- R119/R124: the one Diagnostics button. A build asks for the MODE the Thorough box names, hands over a
+  // single archive as ONE file, and the "again" link shows what the server says is on disk.
+  const SINGLE = {single_file: true, part_count: 1, part_max_bytes: 4000000, download_base: "/api/diagnostics/all-job/volumes/",
+    files: [{name: "oo-diagnostics-20261006-1200.zip", bytes: 2500000, sha256: "c", kind: "archive"}]};
+  {
+    // quick by default, thorough when the box is ticked; the profile is never sent (the Light box is gone)
+    for (const [ticked, want] of [[false, "quick"], [true, "thorough"]]) {
+      const page = makePage(); const urls = [];
+      page.els["diag-thorough"].checked = ticked;
+      const api = load(page, {api: (url) => { urls.push(url); return url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+        : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(SINGLE); }});
+      await api.runAllDiagnostics({disabled: false});
+      const start = urls.find((u) => u.startsWith("/api/diagnostics/all-job?"));
+      assert.strictEqual(start, "/api/diagnostics/all-job?mode=" + want);
+      assert.ok(!/profile=/.test(start), "no profile rides the request");
+    }
+  }
+  {
+    // a single archive is handed over at once, as ONE file, in words that name one file
+    const page = makePage();
+    const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status" ? Promise.resolve({state: "done", ready: true}) : Promise.resolve(SINGLE)});
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.clicked.length, 1, "one file went to the browser");
+    assert.strictEqual(page.clicked[0].download, "oo-diagnostics-20261006-1200.zip");
+    assert.strictEqual(page.clicked[0].href, "/api/diagnostics/all-job/volumes/oo-diagnostics-20261006-1200.zip");
+    assert.strictEqual(api.state().single, true);
+    assert.strictEqual(page.els["parts-status"].textContent,
+      "Asked your browser to save the Diagnostics file. Check that it arrived, then send it.");
+    assert.ok(!/files|several downloads|manifest/.test(page.els["parts-status"].textContent), "nothing about several files");
+    assert.strictEqual(page.els["parts-next"].hidden, true, "nothing is left to save");
+    // pressing the link again resends it, and says so
+    await api.downloadDiagnosticsVolumes({disabled: false});
+    assert.strictEqual(page.clicked.length, 2);
+    assert.strictEqual(page.els["parts-status"].textContent,
+      "Asked your browser to save the Diagnostics file. Check that it arrived, then send it.");
+    // the button says what one click does, and the ready line names the size the server measured
+    assert.strictEqual(api._partsNextLabel(1, 0, true), "Save the Diagnostics file");
+    const pg = makePage(); const a2 = load(pg);
+    a2._partsOffer(SINGLE, "diagnostics");
+    assert.strictEqual(pg.els["parts-next"].textContent, "Save the Diagnostics file");
+    assert.strictEqual(pg.els["parts-from-wrap"].hidden, true, "no part-number box for one file");
+  }
+  {
+    // a numbered set names the size the SERVER cut to, never a number written in the page
+    const page = makePage(); const api = load(page);
+    const cut = listing(3, 1); cut.part_max_bytes = 4000000;
+    api._partsReady(cut, "keywords");
+    assert.ok(/^4 files of at most 4 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    const odd = listing(3, 1); odd.volume_max_bytes = 2097152;     // an operator's own override (OO_DIAG_VOLUME_MAX_MB=2)
+    api._partsReady(odd, "diagnostics");
+    assert.ok(/^4 files of at most 2 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    const small = listing(3, 1); small.volume_max_bytes = 20971;   // OO_DIAG_VOLUME_MAX_MB=0.02: «0 MB each» was what the line said
+    api._partsReady(small, "diagnostics");
+    assert.ok(/^4 files of at most 0\.02 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+  }
+  {
+    // the "again" link: hidden with no archive, shown with the server's own size and time when there is one
+    const page = makePage(); const api = load(page);
+    page.els["all-diag-again"].hidden = false;
+    api._paintDiagAgain(null);
+    assert.strictEqual(page.els["all-diag-again"].hidden, true, "no archive, no link");
+    api._paintDiagAgain({name: "oo-diagnostics-x.zip", bytes: 1234, modified: "2026-10-06T12:00:00+00:00"});
+    assert.strictEqual(page.els["all-diag-again"].hidden, false);
+    assert.strictEqual(page.els["all-diag-again"].textContent,
+      "Save the last Diagnostics again (1234 B, built AGO(2026-10-06T12:00:00+00:00))");
+    // a language switch redraws the line from the facts it last painted (no fetch), and a hidden link stays hidden
+    page.els["all-diag-again"].textContent = "stale words in the old language";
+    api._repaintDiagAgain();
+    assert.strictEqual(page.els["all-diag-again"].textContent,
+      "Save the last Diagnostics again (1234 B, built AGO(2026-10-06T12:00:00+00:00))");
+    api._paintDiagAgain(null);
+    api._repaintDiagAgain();
+    assert.strictEqual(page.els["all-diag-again"].hidden, true, "no archive: a repaint does not bring the link back");
+  }
+  {
+    // opening the panel empties the Thorough box (R124: never remembered) and paints the link; a status that
+    // cannot be read leaves the link as it was and still empties the box
+    const page = makePage();
+    page.els["diag-thorough"].checked = true;
+    const api = load(page, {api: async (url) => {
+      assert.strictEqual(url, "/api/diagnostics/all-job/status");
+      return {state: "idle", last_archive: {name: "oo-diagnostics-x.zip", bytes: 99, modified: "2026-10-06T12:00:00+00:00"}};
+    }});
+    await api.diagnosticsPanelOpened();
+    assert.strictEqual(page.els["diag-thorough"].checked, false, "the box is empty again");
+    assert.strictEqual(page.els["all-diag-again"].hidden, false);
+    const pg = makePage(); pg.els["diag-thorough"].checked = true; pg.els["all-diag-again"].hidden = false;
+    const a2 = load(pg, {api: async () => { throw new Error("down"); }});
+    await a2.diagnosticsPanelOpened();
+    assert.strictEqual(pg.els["diag-thorough"].checked, false);
+    assert.strictEqual(pg.els["all-diag-again"].hidden, false, "a status that failed to load does not remove a link already shown");
+  }
+  {
+    // a finished build repaints the link from the final status, so the new archive's age and size show
+    const page = makePage();
+    const api = load(page, {api: (url) => url.startsWith("/api/diagnostics/all-job?") ? Promise.resolve({started: true})
+      : url === "/api/diagnostics/all-job/status"
+        ? Promise.resolve({state: "done", ready: true, last_archive: {name: "n.zip", bytes: 2500000, modified: "2026-10-06T13:00:00+00:00"}})
+        : Promise.resolve(SINGLE)});
+    await api.runAllDiagnostics({disabled: false});
+    assert.strictEqual(page.els["all-diag-again"].hidden, false);
+    assert.ok(page.els["all-diag-again"].textContent.startsWith("Save the last Diagnostics again (2500000 B, built "), page.els["all-diag-again"].textContent);
   }
 
   console.log("all assertions passed");

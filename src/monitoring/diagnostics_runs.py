@@ -515,13 +515,13 @@ def _append(rec: dict[str, Any], *, trim_runs: int | None = None) -> bool:
         return False
 
 
-def begin_run(name: str, *, profile: str) -> str:
+def begin_run(name: str, *, profile: str, mode: str | None = None) -> str:
     """Record that a build has started and return its record id (pass it to :func:`end_run`).
 
     The id is random: two builds of one name (the archive's name has one-second resolution) are two
     runs. Keeps the file to the ``KEEP_RUNS - 1`` runs before this one. The id is returned whether or
     not the line could be written, so the end is still attempted and the process still knows the
-    run is its own."""
+    run is its own. ``mode`` (``quick`` or ``thorough``, R124) is recorded when the caller has one."""
     rid = secrets.token_hex(4)
     with _LOCK:
         _RUNNING.add(rid)
@@ -529,6 +529,8 @@ def begin_run(name: str, *, profile: str) -> str:
         "k": "run", "ev": "begin", "t": _now_iso(), "id": rid, "file": str(name), "profile": str(profile),
         "pid": os.getpid(), "proc": _PROCESS, "boot": _boot_id(), "build": _build_markers(),
     }
+    if mode is not None:
+        rec["mode"] = str(mode)
     _append(rec, trim_runs=KEEP_RUNS - 1)
     return rid
 
@@ -724,6 +726,8 @@ def _runs_view(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "id": begin["id"], "file": begin.get("file"), "profile": begin.get("profile"),
             "started_at": begin.get("t"), "build": begin.get("build") or None,
         }
+        if begin.get("mode"):
+            row["mode"] = begin["mode"]
         if end is not None:
             row.update({
                 "state": end.get("outcome"), "ended_at": end.get("t"),

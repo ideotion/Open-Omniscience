@@ -277,14 +277,19 @@ def test_the_report_modifies_nothing(tmp_path, monkeypatch) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_the_endpoint_and_its_caller_agree_on_the_composed_route() -> None:
-    """Assert the route the router really SERVES, not the decorator string.
+def test_the_route_is_served_and_the_zip_member_is_the_same_function() -> None:
+    """Assert the route the router really SERVES, not the decorator string, and that the zip's member
+    is built by that very function.
 
     A `/windows-locks` decorator under a `/api/diagnostics` prefix composes to
     `/api/diagnostics/windows-locks`; asserting the two halves side by side is
     what let a `/api/backup/...` vs `/api/backup/v2/...` mismatch 404 in the field.
+
+    The panel's own button for this report is gone (R119, one Diagnostics button): the member is what
+    carries the report now, so the member and the route must stay one function, or the report the
+    zip holds could drift from the one the route (still served, for a direct call) answers.
     """
-    from tests.js_source_helper import app_js, function_body
+    from tests.diagnostics_source import diagnostics_source
 
     from src.api.diagnostics import router
 
@@ -300,44 +305,30 @@ def test_the_endpoint_and_its_caller_agree_on_the_composed_route() -> None:
         if "GET" in getattr(r, "methods", set()) and "windows-locks" in r.path
     }
     assert served == {"/api/diagnostics/windows-locks"}, served
-
-    # Assert BOTH call sites by name. A bare `url in js` is satisfied by the
-    # download alone, so a broken FETCH url -- the one that produces the inline
-    # reading, i.e. the whole point of the button -- would slip through it.
-    body = function_body(app_js(), "windowsLocksReport")
-    url = served.pop()
-    assert f'api("{url}")' in body, "the fetch does not call the served path"
-    assert f'window.open("{url}?download=1"' in body, "the download does not call it either"
+    assert '("windows-locks.json", lambda: windows_locks_report(download=False))' in diagnostics_source(), (
+        "the zip's windows-locks member is no longer the route's own function"
+    )
 
 
-def test_the_button_is_wired_to_the_function_that_exists() -> None:
-    """Both halves: markup calling a name, and that name being declared.
+def test_the_member_carries_the_sentence_the_button_used_to_print() -> None:
+    """The value of the removed button for an operator staring at [WinError 32] was the SENTENCE
+    (`reading`), printed beside the button. The zip's member is the same payload, so the sentence
+    travels in it; this pins that the payload still has it, as a non-empty string, where the page
+    used to read it (`data.reading`)."""
+    import json
 
-    Either alone passes while the click throws — `onclick` resolves against the
-    global scope and nothing else.
-    """
+    from src.api.diagnostics import windows_locks_report
+
+    body = json.loads(windows_locks_report(download=False).body)
+    reading = (body.get("data") or {}).get("reading")
+    assert isinstance(reading, str) and reading.strip(), body.keys()
+
+
+def test_the_panel_no_longer_carries_a_button_for_it() -> None:
+    """R119: one Diagnostics button. The report is a member of the zip (above), so a second button
+    that fetches and downloads the same payload is the redundancy that was ruled out."""
     from tests.js_source_helper import app_js, read_static
 
-    html = read_static("index.html")
-    assert 'data-on-click="windowsLocksReport(this)"' in html
-    assert 'id="win-locks-status"' in html, "the reading has nowhere to render"
-    assert "async function windowsLocksReport(" in app_js()
-
-
-def test_the_reading_is_rendered_not_merely_downloaded() -> None:
-    """The value of this button for an operator staring at [WinError 32] is the
-    SENTENCE. A download alone would make them open a file to learn one line."""
-    from tests.js_source_helper import app_js, function_body
-
-    body = function_body(app_js(), "windowsLocksReport")
-    assert "r.reading" in body, "the reading is computed and never shown"
-    assert "win-locks-status" in body
-
-
-def test_the_ui_binds_t_before_calling_it() -> None:
-    """`t` is not a global; an unbound call throws the moment the panel opens."""
-    from tests.js_source_helper import app_js, function_body
-
-    body = function_body(app_js(), "windowsLocksReport")
-    if 't("' in body:
-        assert "OOI18N.t" in body, "t() is called without being bound"
+    assert "windowsLocksReport" not in read_static("index.html")
+    assert "windowsLocksReport" not in app_js()
+    assert "win-locks-status" not in read_static("index.html")

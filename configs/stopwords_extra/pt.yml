@@ -101,3 +101,28 @@ stopwords:
   - você
   - vocês
   - é
+  # batch pt-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
+  - algum
+  - alguém
+  - apontou
+  - assinante
+  - dezembro
+  - disso
+  - horse'
+  - iria
+  - julho
+  - junho
+  - março
+  - mim
+  - nenhum
+  - ninguém
+  - novembro
+  - online'
+  - outubro
+  - porém
+  - pra
+  - serem
+  - setembro
+  - site'
+  - terem
+  - trás
