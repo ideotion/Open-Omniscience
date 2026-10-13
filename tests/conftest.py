@@ -266,8 +266,13 @@ def _damage_registry_not_leaked():
     from src.database import damage
 
     damage.registry._reset_for_tests()
+    # A first failed read is re-read by itself in production (``verify.reread``) and the pause ends when the read is clean. A test that
+    # injects an error into a healthy file asked for the latch it injected, so the suite runs the process-global registry with the
+    # re-read off (a registry a test builds for itself has it on, and tests/test_damage_reread.py turns it on for the global one).
+    damage.registry.rereads = False
     yield
     damage.registry._reset_for_tests()
+    damage.registry.rereads = True
 
 
 @pytest.fixture(autouse=True)
