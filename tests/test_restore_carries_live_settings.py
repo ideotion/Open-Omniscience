@@ -156,7 +156,7 @@ def test_the_live_file_and_its_leftover_log_are_read_and_never_touched(tmp_path,
     assert (live.read_bytes(), wal.read_bytes()) == before, "the live file and its log are byte-identical"
 
 
-def test_a_failure_is_reported_by_class_only_and_changes_nothing(tmp_path, live_at, caplog):
+def test_a_failure_is_reported_by_class_only_and_changes_nothing_planted_file(tmp_path, live_at, caplog):
     marker = "SECRET-PASSPHRASE-MARKER"
     working = _file(tmp_path / "working.db", {"settings.app": "a"})
     live = tmp_path / "live.db"
@@ -169,6 +169,30 @@ def test_a_failure_is_reported_by_class_only_and_changes_nothing(tmp_path, live_
     assert marker not in repr(out) and out["skipped"].isidentifier()
     assert any("settings carry skipped" in r.getMessage() for r in caplog.records), "a skip is never silent"
     assert marker not in caplog.text
+    assert _rows(working) == {"settings.app": "a"}
+
+
+def test_engine_text_never_reaches_the_report_or_the_log(tmp_path, live_at, caplog, monkeypatch):
+    """Drives the failure path with an exception whose TEXT carries a marker (no real driver echoes a planted file's content), and
+    asserts the marker is in neither the report nor the log: a mutant that reports or logs ``str(exc)`` or ``exc_info`` fails."""
+    import src.database.connect as connect
+
+    marker = "SECRET-PASSPHRASE-MARKER"
+    working = _file(tmp_path / "working.db", {"settings.app": "a"})
+    live_at(_file(tmp_path / "live.db", {"settings.app": "b"}))
+
+    def boom(*_a, **_k):
+        raise RuntimeError(marker)
+
+    monkeypatch.setattr(connect, "connect", boom)
+
+    out = merge._carry_live_settings(working)
+
+    assert out == {"carried": 0, "skipped": "RuntimeError"}
+    assert marker not in repr(out)
+    assert any("settings carry skipped" in r.getMessage() for r in caplog.records)
+    assert marker not in caplog.text
+    assert all(r.exc_info is None for r in caplog.records if "settings carry" in r.getMessage()), "no traceback in the log"
     assert _rows(working) == {"settings.app": "a"}
 
 
