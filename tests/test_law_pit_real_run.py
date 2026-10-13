@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -151,7 +152,8 @@ def _script(*args: str, data_dir: Path | None, online_env: bool = False) -> subp
 def test_it_refuses_without_online_and_names_the_host(tmp_path):
     done = _script(data_dir=tmp_path / "fresh")
     assert done.returncode != 0
-    assert "--online" in done.stderr and "legislation.gov.uk" in done.stderr
+    named = re.search(r"contacts (\S+) \(", done.stderr)
+    assert "--online" in done.stderr and named and named.group(1) in R._HOSTS
     fresh = tmp_path / "fresh"
     assert not fresh.exists() or not any(fresh.iterdir())  # no database, no setting: nothing was written
 
@@ -166,3 +168,11 @@ def test_it_refuses_a_store_someone_uses(tmp_path):
 def test_it_refuses_without_a_scratch_directory_at_all():
     done = _script("--online", data_dir=None)
     assert done.returncode != 0 and "OO_DATA_DIR" in done.stderr
+
+
+def test_the_default_act_is_in_the_catalogue_on_the_publishers_host():
+    from urllib.parse import urlparse
+
+    row = R._catalogue_row(R.DEFAULT_TITLE)
+    assert row and urlparse(row["official_url"]).hostname in R._HOSTS
+    assert R._catalogue_row("no such act anywhere") is None

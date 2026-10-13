@@ -55,6 +55,8 @@ DEFAULT_TITLE = "Data Protection Act 2018"
 DEFAULT_DAY = "2019-06-01"
 _WORD = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", re.UNICODE)
 _PHRASE_WORDS = 5
+#: The publisher's host, compared whole (never as a substring of a URL).
+_HOSTS = {"legislation.gov.uk", "www.legislation.gov.uk"}
 
 
 def capture_urls(official_url: str, day: str) -> tuple[str, str]:
@@ -155,7 +157,8 @@ def _catalogue_row(title: str) -> dict | None:
     from src.law.catalog import load_legal_catalog
 
     for d in load_legal_catalog().get("documents") or []:
-        if "legislation.gov.uk" in str((d or {}).get("url") or "") and title.lower() in str(d.get("title") or "").lower():
+        host = (urlparse(str((d or {}).get("url") or "")).hostname or "").lower()
+        if host in _HOSTS and title.lower() in str(d.get("title") or "").lower():
             return {
                 "jurisdiction": d.get("jurisdiction") or "uk", "title": d["title"], "url": d["url"],
                 "official_url": d.get("official_url") or d["url"], "category": d.get("category") or "legislation",
@@ -180,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(why)
     row = _catalogue_row(args.title)
     if row is None:
-        sys.exit(f"refusing: no legislation.gov.uk entry titled like {args.title!r} in configs/legal_sources.yml")
+        sys.exit(f"refusing: no entry on the publisher's host titled like {args.title!r} in configs/legal_sources.yml")
     host = urlparse(row["official_url"]).hostname
     if not args.online:
         sys.exit(f"refusing: this contacts {host} (two GETs of the Act's CLML, through the ethical fetcher); say --online to allow it")
