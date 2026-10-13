@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
 BACKUP_SCHEMA = "oo-folder-backup-1"
@@ -1138,7 +1138,7 @@ class FolderBackupManager:
             except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
                 with self._lock:
                     self._state = "error"
-                    self._error = str(exc)
+                    self._error = record_text(exc)
                 raise
 
     def _run_restore(self, srcp: Path, _items: list[BackupItem], cats: list[str]) -> None:
@@ -1174,7 +1174,7 @@ class FolderBackupManager:
             except Exception as exc:  # noqa: BLE001
                 with self._lock:
                     self._state = "error"
-                    self._error = str(exc)
+                    self._error = record_text(exc)
                 raise
 
     def _run_verify(self, srcp: Path, _items: list[BackupItem], _cats: list[str]) -> None:
@@ -1201,7 +1201,7 @@ class FolderBackupManager:
             except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
                 with self._lock:
                     self._state = "error"
-                    self._error = str(exc)
+                    self._error = record_text(exc)
                 raise
 
     def pause(self) -> None:

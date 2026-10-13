@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,backup,Sink sweep 5/n slice 1: backup records name a driver's class only,shipped,PR #1377,src/monitoring/secret_scrub.py;src/backup;tests/test_record_text.py;tests/test_sink_sweep_records.py,"record_text/record_traceback: a database driver's error (checked on every chain link) is stored as its class only, any other link keeps its scrubbed words; the stored backup records and the restore journal use them; the records guard now covers src/backup with counted tables."

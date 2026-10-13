@@ -33,7 +33,8 @@ def test_classify_restore_error_recognizes_stdlib_sqlite3_integrity_error():
         "restore", sqlite3.IntegrityError("UNIQUE constraint failed: keyword_mentions.keyword_id")
     )
     assert "data-merge issue, not a version mismatch" in detail
-    assert "UNIQUE constraint failed" in detail  # the original detail is kept, not lost
+    assert "UNIQUE constraint failed" not in detail  # a driver's words are never recorded
+    assert "IntegrityError (a database driver's text is withheld)" in detail
 
 
 def test_classify_restore_error_recognizes_a_sqlcipher3_style_integrity_error(monkeypatch):

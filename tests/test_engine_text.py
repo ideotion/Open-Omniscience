@@ -345,7 +345,8 @@ _SCOPES = (
     ("src/monitoring/keyword_write_cost.py", None, 5),
     ("src/analytics/reindex_job.py", None, 1),
     ("src/analytics/store.py", ("_skip_error", "maybe_cleanup_keywords"), 1),
-    ("src/backup/merge.py", ("reindex_backlog", "pending_reindex_batches", "_backlog_engine"), 3),
+    # src/backup/merge.py's three backlog handlers left this list on 2026-10-13: they write through log_failure and record_text (a
+    # database driver is its class only), which tests/test_sink_sweep_records.py reads more strictly than this scan did.
     ("src/analytics/stoplist_recompute.py", ("maybe_recompute_top_keywords",), 1),
 )
 _ALLOWED_HELPERS = {"_cut_reason", "_skip_error"}  # each routes its argument through engine_text

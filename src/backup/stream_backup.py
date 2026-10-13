@@ -2312,15 +2312,12 @@ def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
     candidate key in order. Fails loudly (naming the fix) when none opens it."""
     from src.database.connect import WrongPassphraseError, connect
 
-    last: Exception | None = None
     for key in dict.fromkeys(keys):
         try:
             conn = connect(src, key=key, check_same_thread=False)
-        except WrongPassphraseError as exc:
-            last = exc
+        except WrongPassphraseError:
             continue
-        except Exception as exc:  # noqa: BLE001 - driver/file trouble: keep the cause
-            last = exc
+        except Exception:  # noqa: BLE001 - driver/file trouble: the next key is tried; the driver's words are not carried
             continue
         try:
             dest.unlink(missing_ok=True)
@@ -2338,4 +2335,4 @@ def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
         "the corpus member is SQLCipher-encrypted and none of the available "
         "passphrases open it — the backup carries the source store's own "
         "encryption; pass that passphrase (corpus_passphrase) to restore"
-    ) from last
+    ) from None

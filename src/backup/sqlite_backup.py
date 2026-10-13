@@ -30,6 +30,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from src.monitoring.secret_scrub import record_text
+
 # Tables that any genuine Open Omniscience database must contain. Used to reject
 # an unrelated SQLite file (e.g. someone's Firefox places.sqlite) before it can
 # clobber the live corpus.
@@ -123,7 +125,7 @@ def validate_sqlite_file(path: Path) -> int:
 
         conn = open_plain_read_only(path)
     except sqlite3.Error as exc:  # pragma: no cover - defensive
-        raise BackupError(f"cannot open uploaded file as SQLite: {exc}") from exc
+        raise BackupError(f"cannot open uploaded file as SQLite: {record_text(exc)}") from None
     try:
         check = conn.execute("PRAGMA quick_check").fetchone()
         if not check or check[0] != "ok":
@@ -133,7 +135,7 @@ def validate_sqlite_file(path: Path) -> int:
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
     except sqlite3.DatabaseError as exc:
-        raise BackupError(f"not a valid SQLite database: {exc}") from exc
+        raise BackupError(f"not a valid SQLite database: {record_text(exc)}") from None
     finally:
         conn.close()
 

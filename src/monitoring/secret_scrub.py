@@ -696,6 +696,105 @@ def traceback_text(exc: BaseException, *secrets: str | None) -> str:
     return scrubbed(text, *secrets, withheld=_class_only(exc))
 
 
+#: The modules whose exceptions are a database engine's: their text can quote a statement, a parameter or a key fragment ("near
+#: ..."), which no scrub of the whole string finds. A class from any of them is recorded by NAME only.
+_DRIVER_MODULES = frozenset({"sqlite3", "sqlcipher3", "pysqlcipher3", "apsw", "duckdb"})
+
+
+def is_driver_error(exc: BaseException) -> bool:
+    """``True`` when ``exc`` is a database driver's exception (the ``sqlite3``/``sqlcipher3`` ``Error`` hierarchies, DuckDB's, and
+    SQLAlchemy's ``sqlalchemy.exc`` classes, whose text carries the statement and its parameters), judged by the module of any
+    class in its MRO so a subclass raised from our own code is still one."""
+    try:
+        for cls in type(exc).__mro__:
+            top = (cls.__module__ or "").split(".")[0]
+            if top in _DRIVER_MODULES or (cls.__module__ or "").startswith("sqlalchemy.exc"):
+                return True
+    except Exception:  # noqa: BLE001 - a class that cannot be read is treated as the worst case
+        return True
+    return False
+
+
+def _driver_line(exc: BaseException) -> str:
+    return f"{type(exc).__qualname__}: its text is withheld (a database driver's words)"
+
+
+def record_text(exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = False) -> str:
+    """What a RECORD (a run journal, a queue's state, a report the Diagnostics zip carries) keeps for a caught exception.
+
+    A database driver's exception is its class name only (:func:`is_driver_error`: scrubbing with the held passphrase removes only
+    the whole string, and engine text can quote fragments of a statement); any other exception keeps its words, scrubbed with
+    every secret handed in and every passphrase the process holds (:func:`exception_text`), then cut. Never raises."""
+    try:
+        if is_driver_error(exc) or _quotes_a_driver(exc):
+            out = _driver_line(exc) if typed else f"{type(exc).__qualname__} (a database driver's text is withheld)"
+            return out if limit is None else out[:limit]
+    except Exception:  # noqa: BLE001
+        return _class_only(exc)
+    return exception_text(exc, *secrets, limit=limit, typed=typed)
+
+
+def _quotes_a_driver(exc: BaseException) -> bool:
+    """``True`` when a database driver's exception sits in ``exc``'s chain and ``exc``'s own text repeats that driver's text
+    (``raise BackupError(f"...: {driver_error}") from driver_error``): the words of the driver are then in the message, whatever
+    the class of the exception that carries them."""
+    own = str(exc)
+    for link in _reachable(exc):
+        if link is exc or not is_driver_error(link):
+            continue
+        said = str(link)
+        if len(said) >= 4 and said in own:
+            return True
+    return False
+
+
+def _printed_links(exc: BaseException) -> list[BaseException]:
+    """The exceptions a traceback print shows for ``exc``, oldest first (the cause, or the context unless suppressed, then ``exc``),
+    each once; the members of an exception group follow their group."""
+    order: list[BaseException] = []
+    seen: set[int] = set()
+
+    def visit(cur: BaseException | None) -> None:
+        if cur is None or id(cur) in seen:
+            return
+        seen.add(id(cur))
+        if cur.__cause__ is not None:
+            visit(cur.__cause__)
+        elif cur.__context__ is not None and not cur.__suppress_context__:
+            visit(cur.__context__)
+        order.append(cur)
+        if isinstance(cur, BaseExceptionGroup):
+            for member in cur.exceptions:
+                visit(member)
+
+    visit(exc)
+    return order
+
+
+def record_traceback(exc: BaseException, *secrets: str | None) -> str:
+    """The traceback a RECORD keeps: every link of the chain as its FRAMES (file, line, function and the source line: our code, not
+    engine text), each link's last line written per :func:`record_text` (a database driver's exception is its class only; any
+    other keeps its words), and the assembled text then scrubbed as ONE text (:func:`scrubbed`) for a secret that two links split
+    between them. The fixed note for a ``UnicodeError`` and the class-only fallback are the same as :func:`traceback_text`'s.
+    Never raises."""
+    try:
+        fixed = _unicode_withheld(exc)
+        if fixed is not None:
+            return _withheld_traceback(exc, fixed)
+        parts: list[str] = []
+        for link in _printed_links(exc):
+            frames = "".join(traceback.format_tb(link.__traceback__))
+            if is_driver_error(link):
+                last = _driver_line(link)
+            else:
+                last = "".join(traceback.format_exception_only(link)).rstrip("\n")
+            parts.append("Traceback (most recent call last):\n" + frames + last + "\n")
+        text = "\n".join(parts)
+    except Exception:  # noqa: BLE001 - a traceback that cannot be made is not kept
+        return _class_only(exc)
+    return scrubbed(text, *secrets, withheld=_class_only(exc))
+
+
 def log_failure(
     log: logging.Logger, what: str, exc: BaseException, *secrets: str | None, level: int = logging.ERROR
 ) -> None:
