@@ -898,7 +898,7 @@ def test_a_pass_that_dies_of_a_full_drive_latches_the_guard():
     )
     sched._do_run()
     assert g.kind() == "disk"
-    assert "disk is full" in (sched.status()["last_error"] or "")
+    assert sched.status()["last_error"] == "OperationalError"  # the class only; the words are in the guard's log line
 
 
 def test_off_peak_maintenance_yields_while_the_guard_is_engaged(monkeypatch):

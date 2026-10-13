@@ -50,7 +50,7 @@ def test_do_run_records_success_and_failure_lines(tmp_path, monkeypatch):
     fail, ok = runs[0], runs[1]
     assert ok["ok"] is True and ok["lane"] == "press" and ok["result"] == {"tally": 3}
     assert fail["ok"] is False and fail["lane"] == "press"
-    assert "fetch exploded" in fail["error"]
+    assert fail["error"] == "RuntimeError"
     assert fail["started_at"] and fail["finished_at"]
 
 

@@ -447,7 +447,7 @@ def test_the_failures_REASON_lives_on_the_runner_and_not_only_in_the_log(lane):
     runner.drain = always_fail  # type: ignore[method-assign]
     runner.run_until_stopped()
     assert runner.last_error is not None
-    assert "the disk is gone" in runner.last_error
+    assert runner.last_error == "RuntimeError"
     assert "RuntimeError" in runner.last_error
 
 

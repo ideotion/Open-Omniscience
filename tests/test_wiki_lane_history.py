@@ -88,7 +88,7 @@ def test_a_failed_flush_keeps_everything_for_the_next_one_and_says_so(lane):
 
     with pytest.raises(RuntimeError):
         buf.flush(Broken())
-    assert buf.pending() == 1 and buf.flush_failures == 1 and "locked" in buf.last_flush_error
+    assert buf.pending() == 1 and buf.flush_failures == 1 and buf.last_flush_error == "RuntimeError"
     buf.note("drain", kind="ok", ms=50)
     with lane_session("wiki") as db:
         buf.flush(db)
@@ -431,7 +431,7 @@ def test_a_flush_that_fails_at_the_commit_keeps_its_rows_and_its_prune(lane):
 
         with pytest.raises(RuntimeError):
             buf.flush(CommitFails())
-    assert buf.pending() == 2 and buf.flush_failures == 1 and "full" in buf.last_flush_error
+    assert buf.pending() == 2 and buf.flush_failures == 1 and buf.last_flush_error == "RuntimeError"
     assert buf._last_prune_hour is None, "a rolled-back prune is tried again, not skipped for an hour"
     assert _rows() == []
     with lane_session("wiki") as db:

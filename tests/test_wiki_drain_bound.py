@@ -300,7 +300,7 @@ def test_a_failed_drain_leaves_the_stage_idle_and_the_reason_in_the_status(lane)
     status = runner.drain_status()
     assert status["stage"] == "idle", "a failure must not leave the lane claiming to be mid-drain"
     assert status["consecutive_failures"] == runner_mod.MAX_CONSECUTIVE_FAILURES
-    assert "keyword read timed out" in (status["last_error"] or "")
+    assert status["last_error"] == "RuntimeError"  # the class only; the words go to the log line
     assert status["degraded"] is True, "past the limit the status says so; the loop no longer ends there"
 
 

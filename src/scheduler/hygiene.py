@@ -41,7 +41,7 @@ from pathlib import Path
 # INSIDE the try would be unbound for any failure raised before that line --
 # turning a real error into a NameError from the handler.
 from src.database.writer import WriteGateBusy
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("scheduler.hygiene")
 
@@ -370,7 +370,7 @@ def checkpoint_wal(
         log_failure(_LOG, "wal checkpoint skipped", exc, level=logging.WARNING)
         return {
             "skipped": "gate busy",
-            "detail": exception_text(exc, typed=False),
+            "detail": type(exc).__name__,
             "waited_s": gate_timeout,
         }
     except Exception as exc:  # noqa: BLE001 - hygiene must never break the run loop

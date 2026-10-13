@@ -184,7 +184,7 @@ from pathlib import Path
 from typing import Any
 
 from src.database import damage
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("scheduler.storage_guard")
 
@@ -400,7 +400,7 @@ def _text_head(exc: BaseException) -> str:
     the driver's message is in the head, and everything after it is the statement and the values
     bound to it (a title, a URL), which a classifier must not read and a status payload must not
     keep. The Session's ``PendingRollbackError`` quotes the original the same way."""
-    return exception_text(exc, typed=False).split("\n[SQL:", 1)[0]
+    return str(exc).split("\n[SQL:", 1)[0]
 
 
 def is_disk_full(exc: BaseException | None) -> bool:

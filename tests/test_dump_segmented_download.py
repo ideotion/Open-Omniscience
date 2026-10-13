@@ -187,7 +187,7 @@ def test_a_corrupt_segmented_download_is_recorded_as_a_genuine_error(tmp_path):
     entry = m._entry_for("en", "pages-articles", expected_sha256=PAYLOAD_SHA256)
     res = m._download(entry)
     assert res.status == "error"
-    assert res.error and "checksum" in res.error.lower()
+    assert res.error == "ValueError"  # the class only; the checksum words are in the log line
     # The dest file must NOT exist / must not be silently accepted as complete.
     assert not Path(res.dest).exists() or Path(res.dest).read_bytes() != bytes(tampered)
 

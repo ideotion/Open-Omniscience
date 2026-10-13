@@ -811,7 +811,7 @@ class _TrackerReader:
             result = self.session.execute(stmt)
             return getattr(result, how)()
         except SQLAlchemyError as exc:
-            raise _TrackerUnavailable(exception_text(exc)) from exc
+            raise _TrackerUnavailable(exception_text(exc)) from None
 
     def all(self, stmt: Any) -> list[Any]:
         return self._run(stmt, "all")
@@ -1933,7 +1933,7 @@ def search(
         parsed = parse_query(q, grammar=True)
         match = build_match(q, variants=query_variants, grammar=True, near_default=near_default)
     except SearchQueryError as exc:
-        return {**base, "total": None, "items": [], "error": "query_invalid", "detail": str(exc)}
+        return {**base, "total": None, "items": [], "error": "query_invalid", "detail": exception_text(exc, typed=False)}
     if parsed.fields:
         base["fields_not_applied"] = sorted(
             {f.field + ("=" if f.mode == "exact" else "") for f in parsed.fields}

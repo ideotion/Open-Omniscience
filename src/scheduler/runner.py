@@ -31,7 +31,7 @@ from datetime import UTC, datetime, timedelta
 from src.database import damage
 from src.database.query import capped
 from src.ingest.tor_throughput import KindLadder
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure
 from src.scheduler import storage_guard
 from src.scheduler.settings import SchedulerSettings, load_settings
 
@@ -1188,7 +1188,7 @@ def _concurrency_block(settings: SchedulerSettings) -> dict:
         return concurrency_report(int(getattr(settings, "collect_parallelism", 1) or 1))
     except Exception as exc:  # noqa: BLE001 - a panel reading never breaks the status
         log_failure(_LOG, "concurrency block unreadable", exc, level=logging.DEBUG)
-        return {"read": False, "reason": exception_text(exc, typed=False, limit=160)}
+        return {"read": False, "reason": type(exc).__name__}
 
 
 def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
@@ -1318,7 +1318,7 @@ def _lane_step_calendar(session, fetcher, settings: SchedulerSettings) -> dict:
         # swallows an exception into "no keys" makes a permanently-broken
         # verification indistinguishable from one that had nothing due -- the
         # fallback becomes the hiding place for the bug it was built to survive.
-        out["verify_error"] = exception_text(exc, typed=False, limit=200) or exc.__class__.__name__
+        out["verify_error"] = type(exc).__name__
         return out
     out["verified"] = checked.get("checked", 0)
     out["verified_ok"] = checked.get("ok", 0)
@@ -1929,9 +1929,9 @@ class BackgroundScheduler:
             storage_guard.storage_guard.note_error(exc, "collect pass")
             with self._state_lock:
                 self._last_run = datetime.now(UTC)
-                self._last_error = exception_text(exc, typed=False)
+                self._last_error = type(exc).__name__
             report["ok"] = False
-            report["error"] = exception_text(exc, typed=False)
+            report["error"] = type(exc).__name__
         finally:
             # Between-pass memory hygiene (P0.3 E1): release per-pass state at
             # the run boundary — never mid-worker; the pool is joined and the

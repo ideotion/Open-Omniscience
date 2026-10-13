@@ -36,7 +36,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -155,9 +155,9 @@ class PlanPreviewCache:
                 self._last_error = {
                     "at": self._wall().isoformat(timespec="seconds"),
                     "type": type(exc).__name__,
-                    # The exception's own first line only: SQLAlchemy's wrapper carries the SQL
+                    # The class only: SQLAlchemy's wrapper text carries the SQL
                     # and its bound parameters.
-                    "message": (exception_text(getattr(exc, "orig", exc), typed=False).splitlines() or [""])[0][:160],
+                    "message": type(exc).__name__,
                 }
             log_failure(_LOG, "plan preview refresh failed", exc, level=logging.DEBUG)
         finally:

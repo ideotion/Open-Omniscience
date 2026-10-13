@@ -34,7 +34,7 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure
 
 # Module scope on purpose: ``except NetworkBlocked`` is EVALUATED when an
 # exception propagates, so binding the name inside the guarded ``try`` would
@@ -605,7 +605,7 @@ class DumpDownloadManager:
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
             entry.status = "error"
-            entry.error = exception_text(exc, typed=False)
+            entry.error = type(exc).__name__
             self._save()
             log_failure(_LOG, f"dump download failed for {entry.key}", exc, level=logging.WARNING)
         return entry

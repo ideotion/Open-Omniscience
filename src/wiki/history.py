@@ -58,7 +58,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from src.monitoring.secret_scrub import exception_text
 from src.wiki.lane_models import HOUR_DETAIL_MAX, HOUR_EDITION_MAX, HOUR_KIND_MAX
 
 _LOG = logging.getLogger("wiki.history")
@@ -307,7 +306,7 @@ class HistoryBuffer:
                     del self._rows[k]
                 self.dropped_rows += len(stale)
             self.flush_failures += 1
-            self.last_flush_error = exception_text(exc, limit=200)
+            self.last_flush_error = type(exc).__name__
             raise
         return len(taken)
 
