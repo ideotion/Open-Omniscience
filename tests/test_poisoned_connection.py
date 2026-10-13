@@ -156,7 +156,9 @@ def _assert_poison(exc: BaseException) -> None:
 
 
 def _assert_incident_is_class_only(registry) -> None:
-    """The newest incident carries the driver's CLASS and one of the app's fixed labels, never a word of the driver's own text."""
+    """The newest incident carries the driver's CLASS and one of the app's fixed labels, never a word of the driver's own text.
+    (On SQLCipher 4.19 the driver's text IS the fixed label's words, so this alone cannot catch a record of the raw text there; the
+    guard against that is ``tests/test_database_damage.py``, which uses text no label contains. On 4.12 there is no record to check.)"""
 
     def find(node):
         if isinstance(node, dict):
@@ -276,8 +278,9 @@ def test_canary_without_the_observer_the_pooled_connection_is_poisoned(store):
     with _poisoned() as first:
         _healthy_read(eng)
     _assert_poison(first.value)
-    with _poisoned():
+    with _poisoned() as again:
         _healthy_read(eng)  # and it stays poisoned: the same pooled connection comes back every time
+    _assert_poison(again.value)
     assert len(opened) == 1, "a new connection was opened: the pool did not hand the poisoned one back"
 
 
@@ -447,6 +450,44 @@ def test_the_observer_discards_a_connection_the_last_overflow_page_poisoned_and_
             _assert_incident_is_class_only(registry)
     finally:
         eng.dispose()
+
+
+def test_with_the_production_default_rereads_on_the_latch_of_a_last_page_poison_is_released_by_the_clean_reread(tmp_path, registry):
+    """What the process's own registry does (``rereads=True``; the suite turns it off): on SQLCipher 4.19 the statement that pays for a
+    damaged LAST overflow page raises corruption, the file is latched, and the automatic re-read of the tables that statement named reads
+    the HEALTHY one clean and releases the latch; the incident ends superseded, answered ``clean``. The statement that surfaced it is
+    not the damaged table, and the record does not say so (measured 2026-10-13, stated in docs/ledger/OPEN_QUEUE.md). On 4.12 nothing is
+    latched or recorded in the first place."""
+    import threading
+
+    from src.database import connect as connect_mod
+
+    path = tmp_path / "ov.db"
+    _build_overflow(path, "last")
+    registry.rereads = True
+    before = connect_mod.get_passphrase()
+    connect_mod.set_passphrase(_KEY)  # the re-read opens the file as the process does
+    eng, _opened = _engine(path, observed=True, pool_size=1, url=True)
+    try:
+        with eng.connect() as c:
+            assert c.execute(text("SELECT v FROM ov WHERE id = 1")).scalar_one() != _LONG
+        with _poisoned() as paid:
+            _healthy_read(eng)
+        _assert_poison(paid.value)
+        for t in threading.enumerate():
+            if t.name in ("oo-database-reread", "oo-damage-record"):
+                t.join(30)
+        assert not registry.latched(FILE_CORPUS), "the clean re-read of the named table no longer releases the latch"
+        if _poison_style() == "memory":
+            assert registry.state()["incident_count"] == 0
+        else:
+            assert registry.state()["incident_count"] == 1
+            incident = next(i for i in registry.state(detail=True)["incidents"] if "answered_by" in i)
+            assert incident["superseded"] is True and incident["answered_by"] == "clean"
+    finally:
+        eng.dispose()
+        registry.rereads = False
+        connect_mod.set_passphrase(before)
 
 
 # -- the rule itself, on real driver errors and on stand-ins ----------------------------------------------------
@@ -631,8 +672,9 @@ def test_canary_a_raw_cursor_statement_on_a_damaged_page_poisons_the_pool_past_t
             with pytest.raises(sqc.DatabaseError):
                 raw.execute(_BAD_RANGE.replace(":lo", "1").replace(":hi", "900")).fetchall()
         assert not registry.latched(FILE_CORPUS), "the observer saw a raw statement: this canary is out of date"
-        with _poisoned():
+        with _poisoned() as poisoned:
             _healthy_read(eng)
+        _assert_poison(poisoned.value)
     finally:
         eng.dispose()
 

@@ -345,6 +345,7 @@ def test_the_engines_answers_for_a_damaged_page_are_the_ones_the_module_knows(ba
     allowed = {(VERDICT_DAMAGED, None), (VERDICT_OK, None), (VERDICT_UNCHECKED, 1)}
     assert set(seen) <= allowed, f"the engine answered something the module does not know: {sorted(seen.items(), key=str)}"
     assert seen.get((VERDICT_DAMAGED, None), 0) > 0, "no overwritten page was filed damaged: the check reads nothing"
+    assert seen.get((VERDICT_OK, None), 0) == 1, f"exactly one page (a page nothing reads) may leave the table check ok; an engine that stopped detecting damage fails here: {seen}"
 
 
 def test_a_table_the_check_cannot_answer_for_carries_the_code_and_nothing_else_does(healthy, unchecked):

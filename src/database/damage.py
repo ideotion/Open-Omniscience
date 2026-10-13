@@ -28,12 +28,16 @@ WHAT IT DOES.
 
 * **Discards a poisoned connection.** On an ENCRYPTED file a read of a page that fails its check leaves that
   connection answering an empty ``MemoryError`` to every later read, healthy tables included, until it is closed
-  (measured). The observer therefore marks a SQLCipher ``SQLITE_CORRUPT`` as a disconnect for that ONE connection
+  (measured on SQLCipher 4.12, sqlcipher3 0.6.2 and 0.6.3; SQLCipher 4.19, sqlcipher3 0.6.4, answers the same code-11
+  ``SQLITE_CORRUPT`` instead, on every statement, until it is closed: the branch below that reads an empty ``MemoryError`` is not
+  reached there and stays for the floor). The observer therefore marks a SQLCipher ``SQLITE_CORRUPT`` as a disconnect for that ONE connection
   (:func:`discard_poisoned_connection`), so the pool opens a fresh one instead of handing the poisoned one to the
   next request. It does the same for an empty ``MemoryError`` raised on a SQLCipher connection, because the LAST
   overflow page of a long value fails silently (the read returns the right length with wrong tail bytes and the
   poison arrives on the NEXT statement, measured), and it NEVER latches or records on that: an empty
-  ``MemoryError`` is also what a real allocation failure raises, so by itself it names no file. A wrong key and a
+  ``MemoryError`` is also what a real allocation failure raises, so by itself it names no file (on 4.19 the next
+  statement raises a real corruption error instead, which latches; with the automatic re-read on, the re-read of the tables
+  that statement named is clean and releases the latch again). A wrong key and a
   plain SQLite file's corruption are never reclassified. A statement the driver runs for the app on a pooled
   connection WITHOUT going through SQLAlchemy raises past this observer, so those sites go through
   :func:`guard_raw_driver`, which does the same for them.
