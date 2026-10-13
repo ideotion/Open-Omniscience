@@ -3180,6 +3180,12 @@ def test_diagnostics_panel_button_consolidation():
         "/api/diagnostics/schema-drift')",
         "/api/diagnostics/integrity')",
         "/api/diagnostics/frontend-errors')",
+        # R119 (one Diagnostics button): three more controls whose report is a member of the zip, each
+        # with a test that the member carries what the control gave (tests/test_windows_lock_report.py,
+        # tests/test_session_forensics.py; the bulletin report is the member of the same name)
+        "/api/diagnostics/windows-locks?download=1",
+        "/api/diagnostics/bulletin-language?download=1",
+        "/api/diagnostics/session-forensics?download=1",
     )
     for url in removed_download_urls:
         assert url not in html, f"a covered per-report download button survived: {url}"
@@ -3188,11 +3194,12 @@ def test_diagnostics_panel_button_consolidation():
     #   - the full keyword-corpus dump (both size variants): the manifest's own
     #     'excluded' block says the bundle carries only the bounded DIGEST, so these
     #     buttons are each report's ONLY full-dump access, not a redundant download.
-    # Both keyword buttons build a NUMBERED SET of files of at most 1 MB (2026-10-01; the
-    # maintainer's uploads fail from about 1.2 MB a file), five to a click, so neither is a
+    # Both keyword buttons build a NUMBERED SET of files of at most 4 MB (1 MB from 2026-10-01 to
+    # 2026-10-06, when R119 moved the one constant; the maintainer's uploads failed from about 1.2 MB a
+    # file), five to a click, so neither is a
     # plain download any more: they call downloadKeywordParts with the mode that picks the URL.
-    assert "downloadKeywordParts(this, 'default')" in html and "Keyword log (1 MB files)" in html
-    assert "downloadKeywordParts(this, 'all')" in html and "All keywords (1 MB files)" in html
+    assert "downloadKeywordParts(this, 'default')" in html and "Keyword log (4 MB files)" in html
+    assert "downloadKeywordParts(this, 'all')" in html and ">All keywords</button>" in html
     assert "downloadKeywordParts(this, 'again')" in html and "Last keyword files, again" in html
     # The "All keywords" button asks for NO size cap (2026-09-30): the archive is streamed to
     # disk a batch at a time, and a button called "All" that silently kept the top 9 MB was the
@@ -6593,9 +6600,10 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # when ready.
     assert 'data-on-click="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
     assert '@router.post("/all-job")' in diag  # the non-blocking background-job endpoint
-    assert ">All diagnostics (1 MB files)<" in html
-    assert ">All diagnostics, again (last build, 1 MB files)<" in html
-    assert ">Keyword log (1 MB files)<" in html  # kept -- the FULL dump, exempt from the bundle
+    # R119: ONE button, named for what it makes; sending the last one again is a text link under it
+    assert re.search(r'<button id="all-diag-btn"[^>]*>Diagnostics</button>', html)
+    assert 'id="all-diag-again"' in html and ">Save the last Diagnostics again<" in html
+    assert ">Keyword log (4 MB files)<" in html  # kept -- the FULL dump, exempt from the bundle
     assert "/api/diagnostics/home-cards?download=1" not in html, (
         "the standalone home-cards download button must be gone (bundle carries it)"
     )
@@ -7226,8 +7234,13 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
     stale = sorted((set(covered) | set(exempt)) - gets)
     assert not stale, f"classified paths no longer exist as GET routes: {stale}"
     members_block = src.split("def _all_diagnostics_members", 1)[1].split("def _", 1)[0]
+    # A member is written out in the list, or comes from the slot table (R119) AND is in this build.
+    from src.api import diagnostics_slots as _slots
+
+    in_build_slots = {name for name, _fn in _slots.members()}
     missing_members = sorted(
-        fname for fname in covered.values() if f'"{fname}"' not in members_block
+        fname for fname in covered.values()
+        if f'"{fname}"' not in members_block and fname not in in_build_slots
     )
     assert not missing_members, (
         f"bundle member file(s) named in the coverage map are absent from "
@@ -9441,7 +9454,9 @@ def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
 
     # The bench is bundle-EXCLUDED as a heavy operator run, and says so; its RESULT
     # rides the bundle read-only.
-    assert '"/model-bench/last": "model-bench.json"' in diag
+    # (R119, 2026-10-06: the last result is a SECTION of ai-runs.json now, not a member of its own.)
+    assert '"/model-bench/last": "ai-runs.json"' in diag
+    assert '"model-bench": lambda: model_bench_last(full=False)' in diag
     excluded_block = diag.split('"excluded": [', 1)[1].split("\n        ],", 1)[0]
     assert "/api/diagnostics/model-bench/run" in excluded_block
 

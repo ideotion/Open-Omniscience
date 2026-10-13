@@ -284,12 +284,17 @@ def test_the_diagnostic_endpoint_serves_the_real_measurement():
     assert payload["as_of"] == LANGUAGE_COUNTRIES_AS_OF
 
 
-def test_the_endpoint_is_a_member_of_the_all_diagnostics_bundle():
+def test_the_endpoint_is_a_documented_exemption_of_the_all_diagnostics_bundle():
     """Every GET on the diagnostics router is a bundle member or a documented exemption —
-    the 2026-07-17 ratchet. Named here so the failure points at this slice."""
+    the 2026-07-17 ratchet. Named here so the failure points at this slice. R119 (the 2026-10-06
+    redesign) moved it from member to exemption: the table is shipped in the code and was identical
+    on all 17 instances read, so the build the manifest's `machine` block names identifies it, and
+    the member is no longer written into every archive. The route stays."""
     from src.api import diagnostics as diag
 
-    assert diag._DIAG_COVERAGE_MAP["/elections-floor"] == "elections-floor.json"
+    assert "/elections-floor" not in diag._DIAG_COVERAGE_MAP
+    reason = diag._DIAG_COVERAGE_EXEMPT["/elections-floor"]
+    assert "machine" in reason and "identical" in reason
 
 
 @pytest.mark.parametrize("path", [FLOOR_PATH])

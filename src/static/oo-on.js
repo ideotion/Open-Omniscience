@@ -238,7 +238,7 @@
     "anchorRoot", "appShutdown", "applySrcFilters", "batchSelectAll", "batchToggle",
     "branchByFacet", "branchFromOrigin", "branchFromRelated", "branchSelectedRelated",
     "bulkJobCancel", "bulkJobClearDone", "bulkLlm", "bulkLlmRun", "bulkLlmStop", "bulkPanelHide",
-    "bulletinDelete", "bulletinDownloadBundle", "bulletinGenerate", "bulletinLanguageReport",
+    "bulletinDelete", "bulletinDownloadBundle", "bulletinGenerate",
     "bulletinNarrate", "bulletinOpen", "bulletinOpenFile", "bulletinPublish", "bulletinReview",
     "bulletinToggleSection", "bulletinToggleStory", "cancelP0Validation", "cancelPull",
     "candidateAct", "cardCollapse", "cardResetTunable", "cardSetEnabled", "cardWeatherFetch",
@@ -315,7 +315,7 @@
     "trustAuthor", "unattendedLog", "unattendedStart", "unattendedStop", "undoNewsletterAttach",
     "uninstallAi", "uninstallApp", "updateSourceEnabled", "updateSourcePriority", "vacuumNow",
     "verifyChain", "viewChain", "viewKeywordGrowth", "viewWikiDiff", "vitalsKey", "wikiLaneClick",
-    "windowsLocksReport", "zoomMap",
+    "zoomMap",
   ];
   for (const name of OO_ACTIONS) ACTIONS[name] = null;
 

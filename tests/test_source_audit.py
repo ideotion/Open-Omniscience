@@ -392,7 +392,7 @@ def test_per_source_metrics_are_count_only_and_shaped():
 # caller; text-level so it runs without the crypto/ORM import the endpoint test would
 # need). DIAGNOSE-THE-DIAGNOSTICS ruling #7 (2026-07-20) removed the standalone
 # source-audit/source-audit-selftest download buttons -- the all-diagnostics bundle
-# already carries both (source-audit.json, source-audit-selftest.json; the ratchet in
+# already carries both (source-audit.json, and the source-audit-selftest section of selftests.json; the ratchet in
 # tests/test_repo_invariants.py guarantees it), so only the ROUTES stay pinned here.
 # --------------------------------------------------------------------------- #
 

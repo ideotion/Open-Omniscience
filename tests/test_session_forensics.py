@@ -215,8 +215,11 @@ def test_endpoint_and_bundle_are_wired():
     assert '@router.get("/session-forensics"' in src
     # S8: every debug-bundle member is now individually guarded + budgeted via _member.
     assert '"session_forensics": _member("session_forensics", _session_forensics)' in src
-    assert '"session-forensics.json", lambda: session_forensics_report(download=False)' in src
-    assert '("session-forensics.txt", lambda: _session_forensics_text())' in src
+    assert '("session-forensics.json", lambda: _session_forensics_member())' in src
+    # R119 (2026-10-06): the text twin is no longer a second member (the user asked for session
+    # forensics in the zip ONCE); the route's own ?download=1 text stays.
+    assert '("session-forensics.txt"' not in src
+    assert "_session_forensics_text" not in src
     main = Path("src/api/main.py").read_text(encoding="utf-8")
     assert "record_session_start" in main and "record_clean_shutdown" in main
     unlock = Path("src/api/unlock.py").read_text(encoding="utf-8")
@@ -254,19 +257,13 @@ def test_render_text_never_prints_an_unmeasured_size_as_zero(dd):
     assert "not measured" in forensics.render_text(payload)
 
 
-def test_the_text_member_is_verbatim_and_the_json_member_is_still_json():
+def test_the_json_member_is_still_json():
     """BEHAVIOURAL, not a source grep: `download` defaults to `Query(False)`, which is a
     truthy sentinel OBJECT when the route is called directly the way the bundle calls
     it — so a source-level check of the member list would pass while
-    session-forensics.json quietly contained the TEXT."""
-    from src.api.diagnostics import (
-        _member_bytes,
-        _session_forensics_text,
-        session_forensics_report,
-    )
-
-    txt = _member_bytes(_session_forensics_text())
-    assert txt.startswith(b"# Open Omniscience"), "the .txt member must be verbatim text"
+    session-forensics.json quietly contained the TEXT. (R119, 2026-10-06: the text twin is no
+    longer a second member, so this is the one file that must never turn into the rendering.)"""
+    from src.api.diagnostics import _member_bytes, session_forensics_report
 
     jsn = _member_bytes(session_forensics_report(download=False))
     assert jsn.startswith(b"{"), "the .json member must still be JSON, not the rendering"
@@ -291,6 +288,49 @@ def test_the_download_is_a_dated_plain_text_attachment():
     cd = r.headers.get("content-disposition") or ""
     assert cd.startswith("attachment;") and cd.endswith('.txt"')
     assert r.body.startswith(b"# Open Omniscience")
+
+
+def test_the_json_carries_everything_the_text_file_holds(dd, monkeypatch):
+    """R119 removed the stand-alone «Download (.txt)» link because the zip carries session forensics, and
+    the plan's rule is that no control goes before the zip carries what it gave. The text appended the
+    expedition (unattended-run) log, which the JSON did not hold, so the JSON would have been the
+    poorer of the two. Now `expedition` is a key of the payload and the text renders THAT copy, so the
+    text is a rendering of the JSON and nothing else: the second read below would raise if the
+    rendering made one."""
+    from src.monitoring import expedition
+
+    marker = {
+        "armed": True,
+        "started_at": "2026-10-06T00:00:00+00:00",
+        "window_days": 3,
+        "events": [{"t": "2026-10-06T01:00:00+00:00", "kind": "job", "message": "MARKER-EVENT-7 ended"}],
+    }
+    monkeypatch.setattr(expedition, "digest", lambda: marker)
+    payload = forensics.session_forensics()
+    assert payload["expedition"] == marker
+
+    def _no_second_read():
+        raise AssertionError("the text file read the expedition log a second time")
+
+    monkeypatch.setattr(expedition, "digest", _no_second_read)
+    text = forensics.render_text(payload)
+    assert "MARKER-EVENT-7 ended" in text
+    assert "MARKER-EVENT-7" in json.dumps(payload)
+
+
+def test_an_unreadable_expedition_log_is_a_stated_absence_without_the_error_text(dd, monkeypatch):
+    """The payload says THAT the log could not be read and what kind of failure it was, never the
+    failure's own text: a report that gets shared must not carry words a lower layer composed."""
+    from src.monitoring import expedition
+
+    def _boom():
+        raise OSError("SECRET-PATH-AND-WORDS")
+
+    monkeypatch.setattr(expedition, "digest", _boom)
+    block = forensics.session_forensics()["expedition"]
+    assert block["available"] is False
+    assert "OSError" in block["reason"]
+    assert "SECRET-PATH-AND-WORDS" not in json.dumps(block)
 
 
 # --------------------------------------------------------------------------- #

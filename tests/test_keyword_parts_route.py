@@ -99,7 +99,7 @@ def test_one_click_answers_with_the_listing_every_file_named_sized_and_checksumm
     listing = _listing(db_path)
     d = _set_dir(data_dir, listing)
     names = [f["name"] for f in listing["files"]]
-    assert listing["part_max_bytes"] == up.UPLOAD_PART_BYTES == 1_000_000
+    assert listing["part_max_bytes"] == up.UPLOAD_PART_BYTES == 4_000_000
     assert names[0].endswith("-part-01-of-01.zip") and names[-1].endswith("-manifest.zip")
     assert listing["part_count"] == 1
     for f in listing["files"]:

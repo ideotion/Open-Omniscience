@@ -62,7 +62,8 @@ THE 1 MB CAP, AND CUTS ON RECORD BOUNDARIES (maintainer-asked 2026-10-01: «cap 
 zip to 1MB (same for diagnostics), by splitting and numbering the files adequately»). The
 default cap is now :data:`~src.analytics.upload_parts.UPLOAD_PART_BYTES` (1,000,000 bytes; the
 9 MB default protected the common attachment limit, and the maintainer's own uploads failed from
-about 1.2 MB), volumes are named ``<stem>-part-NN-of-MM.zip`` and the descriptor travels as
+about 1.2 MB; 4,000,000 since 2026-10-06, R119, and an archive that fits it is handed over whole,
+not split: see ``all_diagnostics_volumes``), volumes are named ``<stem>-part-NN-of-MM.zip`` and the descriptor travels as
 ``<stem>-manifest.zip`` (a zip: uploads of other formats are the ones that failed; the
 ``volumes.json`` sidecar stays for the readers that want it). A member too large for a volume is
 no longer cut BY BYTES when it can be cut on RECORD boundaries: a JSON document becomes numbered
@@ -162,12 +163,13 @@ class VolumeRoomError(VolumeError):
 
 
 def volume_max_bytes() -> int:
-    """The per-volume ceiling: ``UPLOAD_PART_BYTES`` (1,000,000 bytes, the maintainer's number),
+    """The per-volume ceiling: ``UPLOAD_PART_BYTES`` (4,000,000 bytes, the maintainer's number),
     env-tunable via ``OO_DIAG_VOLUME_MAX_MB`` for a channel that takes more. The unit is MiB, as it
-    always was, so ``1`` means 1,048,576 bytes: past the default, which is the point of an override.
+    always was, so ``4`` means 4,194,304 bytes: past the default, which is the point of an override.
 
     It was 9 MiB (under the common 10 MB attachment limit); the maintainer then asked for 1 MB
-    files because uploads of about 1.2 MB and up failed.
+    files because uploads of about 1.2 MB and up failed (R115), and on 2026-10-06 for "less than 4 MB
+    each" (R119).
     """
     try:
         mb = float(os.environ["OO_DIAG_VOLUME_MAX_MB"])
@@ -809,6 +811,21 @@ def publish_volume_set(
     os.replace(build / MANIFEST_NAME, out / MANIFEST_NAME)
     retire_unnamed(out, manifest)
     return manifest
+
+
+def remove_volume_set(out_dir: str | os.PathLike[str]) -> None:
+    """Remove the set in ``out_dir``, if there is one: the sidecar FIRST, because it is what makes a
+    set exist and what the download route resolves names against, so from the first unlink nothing of
+    it is served; then every file. A file that cannot be removed (one a download holds open on
+    Windows) stays and is swept by the next publish, as :func:`retire_unnamed` already does. When the
+    sidecar itself cannot be removed NOTHING is: a set whose sidecar still names its files must
+    still have them."""
+    out = Path(out_dir)
+    try:
+        (out / MANIFEST_NAME).unlink(missing_ok=True)
+    except OSError:
+        return
+    retire_unnamed(out, {})
 
 
 def retire_unnamed(out_dir: str | os.PathLike[str], manifest: dict[str, Any]) -> None:

@@ -47,6 +47,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -99,8 +100,8 @@ def _write(state: dict[str, Any]) -> None:
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
         os.replace(tmp, p)
-    except OSError:
-        _LOG.warning("could not persist expedition.json", exc_info=True)
+    except OSError as err:
+        log_failure(_LOG, "could not persist expedition.json", err, level=logging.WARNING)
 
 
 def _now_iso() -> str:
@@ -153,8 +154,8 @@ def record_event(kind: str, message: str) -> None:
             events = events[-_MAX_EVENTS:]
         state["events"] = events
         _write(state)
-    except Exception:  # noqa: BLE001 - a log that breaks the run defeats its own purpose
-        _LOG.warning("expedition event not recorded", exc_info=True)
+    except Exception as err:  # noqa: BLE001 - a log that breaks the run defeats its own purpose
+        log_failure(_LOG, "expedition event not recorded", err, level=logging.WARNING)
 
 
 # --------------------------------------------------------------------------- #
@@ -260,8 +261,8 @@ def refresh(session) -> dict[str, Any]:
         state["counters"] = [_series_window(session, m, days=days) for m in _TRACKED]
         state["window_days"] = days
         state["refreshed_at"] = _now_iso()
-    except Exception:  # noqa: BLE001
-        _LOG.warning("expedition refresh failed", exc_info=True)
+    except Exception as err:  # noqa: BLE001
+        log_failure(_LOG, "expedition refresh failed", err, level=logging.WARNING)
         return state
     _write(state)
     return state
